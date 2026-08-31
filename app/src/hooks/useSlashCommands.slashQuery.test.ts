@@ -14,8 +14,11 @@ describe("slashQueryOf — detecção do modo comando '/'", () => {
     expect(slashQueryOf("/test")).toBe("test")
   })
 
-  it("aceita os caracteres de nome de comando (letras, número, : e -)", () => {
+  it("aceita namespace de comando e plugin com ponto, dois-pontos e hífen", () => {
     expect(slashQueryOf("/deploy:prod-2")).toBe("deploy:prod-2")
+    expect(slashQueryOf("/acme.quality:review")).toBe(
+      "acme.quality:review",
+    )
   })
 
   it("espaço depois do comando encerra o modo (já é argumento, não busca)", () => {

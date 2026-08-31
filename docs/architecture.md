@@ -1,9 +1,9 @@
 # Arquitetura atual
 
-> Documento vivo, revisado em 29/08/2026. Para comportamento por agente, as
-> fontes executáveis são `app/src-tauri/src/adapters.rs` e o espelho
-> `app/src/lib/agents.ts`. Planos e matrizes datadas explicam decisões, mas não
-> substituem esses registries.
+> Documento vivo, revisado em 30/08/2026. Para comportamento por agente, as
+> fontes executáveis são `app/src-tauri/src/adapters.rs` e os espelhos
+> `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`. Planos e matrizes
+> datadas explicam decisões, mas não substituem esses registries.
 
 ## Mapa geral
 
@@ -19,11 +19,12 @@ React 19 (Painel | Trabalho | Features)
                     │
         ┌───────────┼───────────────┐
         │           │               │
-   adapters     MCP control     serviços locais
-        │       + gateways      git, fs, tray,
+   adapters    Tool/Capability  serviços locais
+        │      catalog + policy git, fs, tray,
+        │       + gateways      browser, STT
         │                       Companion, STT
         ▼
-Claude Code · Codex · Antigravity · OpenCode
+             adapters registrados
 ```
 
 A UI conhece eventos normalizados, nunca o stream particular de um fornecedor.
@@ -82,15 +83,49 @@ ADR-122.
 
 - `app/src-tauri/src/agent.rs`: ciclo de vida do processo, Channel e eventos.
 - `app/src-tauri/src/adapters.rs`: trait, capabilities e tradução dos streams.
-- `app/src/lib/agents.ts`: espelho usado pela UI, com testes-gêmeos de contrato.
+- `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`: espelho usado pela UI,
+  separado por domínio e coberto por testes-gêmeos de contrato.
 - `app/src-tauri/src/mcp_control.rs`: registry, bindings, health e transporte
   MCP efetivo por projeto e agente.
+- `app/src-tauri/src/run_manifest.rs`: snapshot sanitizado das instruções,
+  fontes de tools e recursos realmente materializados antes do spawn.
+- `app/src-tauri/src/resource_broker.rs`: recursos operados por tools, dono,
+  evidência e resolução fail-closed do navegador do projeto.
+- `app/src-tauri/src/experience_broker.rs`: uma lease de piloto por navegador
+  de projeto, compartilhada por runs, plugins e takeover humano.
+- `app/src-tauri/src/browser.rs`, `browser_cdp.rs` e `browser_panel.rs`: ciclo
+  de vida do Chromium isolado, inventário/preview/input CDP e janela própria;
+  WebSockets e frames nunca entram no manifesto ou no banco.
+- `app/src-tauri/src/notch.rs` e `hud.rs`: geometria de tela medida e presenter
+  nativo do instrumento, separado do snapshot renderizado.
+- `app/src-tauri/src/desktop.rs`: sondas reais de Screen Recording e
+  Accessibility; permissão não equivale a controller materializado.
+- `app/src-tauri/src/plugin_manifest.rs`: schema fechado, paths contidos,
+  fingerprint e inventário sem efeito de plugins.
+- `app/src-tauri/src/plugin_grants.rs` e `plugin_control.rs`: consentimento
+  renovável, auditoria e projeção única para Configurações.
+- `app/src-tauri/src/plugin_runtime.rs` e `plugin_protocol.rs`: worker efêmero
+  supervisionado e protocolo JSON Lines fechado.
+- `app/src-tauri/src/plugin_contributions.rs`: skills namespaced e revalidação
+  da proveniência invocada, sem escrever em diretórios de provider.
+- `app/src-tauri/src/plugin_mcp.rs`: definições MCP por run, health e launcher
+  stdio supervisionado com descriptor efêmero.
+- `app/src-tauri/src/tool_gateway.rs`: Tool Catalog por run, hoje materializado
+  como o MCP interno `mc-tools` para adapters com essa capability.
 - `app/src-tauri/src/work_gateway.rs`: processos longos iniciados por ferramenta
   e telemetria de trabalho.
+- `app/src/lib/tooling.ts` e `app/src/lib/resources.ts`: espelho do manifesto,
+  materializadores e claims de navegador/desktop.
+- `app/src/components/settings/LocalResourcesSettings.tsx` e
+  `ExtensionsSettings.tsx`: posse de recursos e extensões separadas de MCP.
 
 O contrato conceitual e a evidência histórica por versão estão em
 [`agent-runner.md`](./agent-runner.md). Matrizes datadas precisam ser verificadas
 novamente antes de alterar uma capability.
+
+Tools, MCPs, skills, plugins e recursos locais têm domínios separados. O
+contrato, a comparação com Orca/Paseo e a migração estão em
+[`capability-tooling-architecture.md`](./capability-tooling-architecture.md).
 
 ## Persistência
 
@@ -106,7 +141,9 @@ Entidades centrais:
 - `conversation_drafts`: texto, anexos e atualização do rascunho por conversa;
 - `turn_costs`: ledger de custo por turno;
 - `missions`, `deliveries`, `stage_runs`: execução e evidência das Features;
-- `mcp_servers`, `mcp_bindings`, `mcp_health`: control plane MCP.
+- `mcp_servers`, `mcp_bindings`, `mcp_health`: control plane MCP;
+- `plugin_grants`, `plugin_audit_events`: decisão humana atual e trilha recente
+  de grants, enablement e chamadas de plugin.
 
 O app é local-first. Identificadores como `mycockpit.db`, `.mycockpit/`,
 `mc.app` e `dev.vinicius.mycockpit` permanecem por compatibilidade e não são a
@@ -119,3 +156,5 @@ marca pública.
 - Estado de execução, custo e decisão tem uma fonte única.
 - Mudança estrutural recebe ADR em `docs/decisions.md`.
 - Mudança visível segue `docs/STYLEGUIDE.md` antes da implementação.
+- Processo separado de plugin é contenção de ciclo de vida, não uma alegação de
+  sandbox completo do sistema operacional.

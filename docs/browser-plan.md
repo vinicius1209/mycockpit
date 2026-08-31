@@ -1,19 +1,22 @@
 # Navegador para os agents — plano (mc-browser, Plano 2 do Fio Vivo)
 
-> Status: proposto em 01/08/2026, a partir do incidente "descoberta retornou
-> zero navegadores" (Codex, 31/07) e da pergunta "dá pra ter navegador embutido
-> na interface?". Pré-requisito já feito: Playwright MCP registrado no escopo
-> user do Claude + Chromium instalado (31/07).
+> Status: **B1 e B2.1-B2.4 entregues em 30/08/2026**. O navegador é possuído
+> pela Frota, nasce em segundo plano somente após gesto explícito, aparece num
+> painel próprio e tem arbitragem de um piloto por projeto.
+
+> **Correção de policy (29/08/2026):** marcar um binding como `browser` agora
+> significa exigir a instância possuída pela Frota. Se ela não estiver viva, o
+> run bloqueia antes do spawn. Não existe mais queda silenciosa para um browser
+> aberto pelo MCP. Um endpoint da origem também sai do plano efêmero: a decisão
+> específica do projeto vence, com notice explícito.
 
 ## A pergunta e o veredito
 
 "Plugin/navegador embutido na UI, ou o Playwright MCP já resolve?" — resposta
 em camadas:
 
-- **B0 (já funciona hoje, zero código):** Playwright MCP roteado pelo control
-  plane dá navegador REAL a Claude E Codex — janela headed visível no desktop,
-  o usuário assiste o agent navegar. Não é "dentro da UI", mas é funcional e
-  agnóstico agora.
+- **B0 (fundação):** um MCP de automação compatível pode ser roteado pelo
+  control plane para qualquer adapter com materialização forte por run.
 - **B1 (barato, alto valor): evidência visual NO FIO.** O que falta pra
   "validar coisas" não é o navegador — é VER o que ele viu. Screenshots de
   tool_result renderizados no fio fecham 80% do caso de uso.
@@ -31,7 +34,7 @@ embutir o Chromium no processo.
 
 - [x] `claude mcp add --scope user playwright -- npx @playwright/mcp@latest`
 - [x] `npx playwright install chromium`
-- [ ] Ligar bindings no painel Integrações MCP (por projeto, Claude e Codex) —
+- [ ] Ligar bindings no painel MCPs (por projeto e adapter compatível) —
   gesto do usuário; lembrar da semântica: 1º binding = modo gerenciado.
 - [ ] Config recomendada do binding (quando B1 chegar): `--output-dir` no
   scratch da conversa + `--caps vision`.
@@ -90,37 +93,71 @@ tem visibilidade de primeira classe.
   **FEITO em 06/08/2026**. Identificação por BINDING, nunca por nome de
   fornecedor: **migração 35** (`mcp_bindings.browser`, a máxima anterior era
   34). A injeção acontece no plano efêmero do run, DEPOIS do health, então o
-  preflight (`probe_stdio`) roda com os args de origem e nenhum binding depende
-  de um Chromium ligado (binding `ask` nunca trava o turno por isso).
-  Dedup declarado em `plan.notices`: `--cdp-endpoint` já presente na origem
-  VENCE e nada é tocado; `--browser`/`--headless` da origem saem do run quando
-  o CDP entra. Sem navegador vivo: notice honesto, sem injeção e sem bloqueio.
+  preflight (`probe_stdio`) roda com os args de origem; a policy de recurso é
+  aplicada depois e antes do spawn. `--cdp-endpoint`, `--browser` e
+  `--headless` da origem saem da cópia efêmera quando o endpoint do projeto
+  entra, com notice. Sem navegador vivo, o plano bloqueia e orienta ligar o
+  navegador ou desmarcar o binding. Assim uma configuração que promete o
+  browser do projeto nunca abre outro Chrome ou Firefox por conta própria.
   Fingerprint do plano só hasheia nomes → sem re-anúncio espúrio (com teste).
-- **B2.3** — painel "Navegador" na UI: screencast CDP (`Page.startScreencast`
-  → frames JPEG → canvas) da MESMA aba que o agent dirige, com takeover humano
-  (input via CDP). Um navegador, dois pilotos, **um pilota por vez** (mesma
-  filosofia dos Especialistas/ADR-026).
+- [x] **B2.3** — painel "Navegador" na UI: inventário sanitizado de páginas,
+  screencast CDP (`Page.startScreencast`) da mesma aba e takeover humano por
+  token com heartbeat. O backend guarda somente o frame JPEG mais recente em
+  memória; eventos levam apenas revisão, nunca base64 ou WebSocket. Clique,
+  scroll, teclado, texto, endereço e histórico passam pelo CDP somente depois
+  de validar a posse. Run, chamada de plugin e pessoa disputam uma lease única
+  por projeto; observação continua livre. A lease do run/plugin acompanha seu
+  lifetime por RAII, e a humana expira se o painel desaparecer. Inventário
+  público nunca recebe a URL bruta, preview é coalescido a no máximo 10 avisos
+  por segundo e o frontend impede pulls concorrentes.
 - **B2.4** — política por projeto via binding normal do control plane; perfil
   de browser persistente por projeto (login de dev sobrevive entre turnos).
   Perfil persistente já entrou junto com o B2.1.
 
-### O que fica para o B2.3 (não entrou na etapa 1)
+### Superfície de Configurações (30/08/2026)
 
-- Painel/PiP e screencast CDP (`Page.startScreencast`), takeover humano e a
-  regra "um pilota por vez". A janela headed do Chromium já é visível hoje: a
-  etapa 1 entregou posse e roteamento, não enquadramento.
+O ciclo de vida do Chromium saiu de MCPs e agora vive em **Navegador e
+desktop**. MCPs continua mostrando e editando a entrega por binding, porque o
+transporte ainda mora ali; o recurso mostra processo, perfil, posse e o elo que
+falta. Integrações globais do provider que podem abrir outra janela aparecem
+separadas como advisory. Ligar o Chromium nunca mais sugere que todas as tools
+do provider foram redirecionadas para ele.
+
+Tools de plugin seguem a mesma posse com uma regra adicional: o catálogo só as
+publica quando o recurso pedido já está pronto, e a chamada recebe uma lease
+efêmera. Aprovar ou habilitar plugin nunca liga o Chromium. Pedido de
+`external-browser` é recusado, sem abrir segunda janela; `desktop-control`
+permanece bloqueado até existir broker nativo.
+
+### Hardening posterior, fora do contrato entregue
+
 - **Reaproveitar sessão órfã entre reinícios do app**: hoje o registry de
-  sessões vive só em memória, então reiniciar o MyCockpit perde o ponteiro
+  sessões vive só em memória, então reiniciar a Frota perde o ponteiro
   para um Chromium que continue vivo (o perfil por projeto está no disco, mas
   o `DevToolsActivePort` daquela instância não é reconciliado no boot). Nada
   mente: o painel diz "desligado" e ligar de novo abre um novo. Reconciliação
-  no boot fica para quando o painel existir.
+  no boot fica para a frente de recuperação pós-crash.
 - **Watchdog do navegador**: a morte da janela só é percebida na próxima
   consulta (abrir o painel ou montar o plano de um run). Não há ticker vigiando
   o endpoint; a UI não anuncia vida que não confirmou, mas também não avisa
   sozinha no instante em que o navegador cai.
 - **`--output-dir` no scratch da conversa + `--caps vision`** (config
   recomendada do binding no B0): continua gesto manual do usuário.
+
+O Chromium agora nasce com `--headless=new` por padrão, portanto "Ligar" não
+abre uma janela externa. O painel da Frota é a superfície visual. O processo,
+perfil persistente e endpoint continuam reais; só a apresentação mudou.
+Ligar e desligar são serializados por projeto, e o endpoint declara
+explicitamente `127.0.0.1`; dois gestos concorrentes não criam um segundo
+processo no mesmo perfil.
+
+### Homologação efetiva em 30/08/2026
+
+Um Chromium for Testing foi iniciado em modo headless com perfil temporário e
+controlado diretamente por CDP. O smoke test enumerou duas páginas, recebeu um
+frame real de screencast, inseriu o texto `Frota` e confirmou que o WebSocket
+permaneceu em loopback. O processo foi encerrado e o perfil temporário enviado
+à Lixeira. Nenhum Chrome ou Firefox visível foi aberto durante a validação.
 
 ## Guardas
 

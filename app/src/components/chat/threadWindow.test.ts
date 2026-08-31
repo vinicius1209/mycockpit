@@ -14,6 +14,7 @@ import {
   feedbackTextByResult,
   tsForGroups,
   turnStartIndex,
+  visibleThreadItems,
   windowStartIndex,
 } from "./threadWindow"
 
@@ -23,6 +24,28 @@ const att = (n: string): Attachment => ({
   kind: "image",
   mime: "image/png",
   bytes: 100,
+})
+
+describe("visibleThreadItems — ordem do fechamento do turno", () => {
+  const items: ChatItem[] = [
+    { kind: "user", id: "u0", text: "faça" },
+    { kind: "text", id: "t0", text: "Feito." },
+    { kind: "result", id: "r0", ok: true, costUsd: 0.1 },
+  ]
+
+  it("segura apenas o recibo terminal enquanto o processo finaliza", () => {
+    expect(visibleThreadItems(items, true).map((item) => item.id)).toEqual(["u0", "t0"])
+    expect(items).toHaveLength(3)
+  })
+
+  it("publica o recibo quando chega done", () => {
+    expect(visibleThreadItems(items, false)).toBe(items)
+  })
+
+  it("não esconde falha nem resultado que não seja o último item", () => {
+    const error: ChatItem = { kind: "error", id: "e0", message: "falhou" }
+    expect(visibleThreadItems([...items, error], true)).toEqual([...items, error])
+  })
 })
 
 /** Fio sintético com os nós que o buildNodes costura de verdade num turno:

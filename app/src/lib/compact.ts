@@ -8,11 +8,12 @@
 //   vira aviso no fio (ADR-015).
 // - Motor sem a capability mas com `sessionResume` (codex): TRANSPLANTE PARA
 //   SI MESMO na máquina do revezamento (beginTransplant + `session` commit):
-//   sessão nativa NOVA do MESMO motor, prompt de retomada = recap comprimido
-//   (serializeContext, moldura H3) + doutrina por decideDoctrine(freshSession)
-//   + persona carimbada. O fio (items) continua o MESMO; só o sessionId renova.
+//   sessão nativa NOVA do MESMO motor, prompt de retomada = memória selecionada
+//   por significado (moldura H3) + ponteiro pra memória plena + doutrina por
+//   decideDoctrine(freshSession) + persona carimbada. O fio (items) continua o
+//   MESMO; só o sessionId renova.
 // - Motor sem `sessionResume`: NADA a compactar — cada turno já é sessão
-//   fresca e o recap do fio já viaja a cada envio (buildMemoryPrompt). Renovar
+//   fresca e a memória do fio já viaja a cada envio (buildMemoryPrompt). Renovar
 //   seria teatro pago; a resposta é honesta. (Este caso NÃO é mais o agy: ele
 //   migrou pro resume nativo; hoje só `opencode` e `model` caem aqui.)
 //
@@ -24,11 +25,23 @@ import { toast } from "sonner"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
 import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
-import { serializeContext } from "@/lib/fusion"
+import { contextMeter, type ContextMeter } from "@/lib/contextMeter"
+import { memoriaDaConversa } from "@/lib/memoriaDaConversa"
+import { orcamentoDaMemoria } from "@/lib/orcamentoDaMemoria"
 import { hasAssistantReply, personaHandoffBlock } from "@/lib/presets"
+import {
+  exportConvContext,
+  memoryPointerLine,
+  renderTranscript,
+} from "@/lib/transcript"
 import { HUMANO } from "@/lib/sendOrigin"
 import { useApp } from "@/store/app"
-import { useChat, hasExecutorTurn, type ChatItem } from "@/store/chat"
+import {
+  useChat,
+  hasExecutorTurn,
+  type ChatItem,
+  type ConvState,
+} from "@/store/chat"
 
 /** O texto EXATO que o caminho nativo manda ao motor (empírico 04/08/2026:
  *  `claude -p --resume <sid> "/compact"` processa o comando em print mode). */
@@ -82,7 +95,7 @@ export function planCompact(
   return {
     mode: "none",
     reason:
-      "Nada para compactar: este motor roda cada turno numa sessão fresca e já recebe um resumo do fio a cada envio.",
+      "Nada para compactar: este motor roda cada turno numa sessão fresca e já recebe a memória essencial do fio a cada envio.",
   }
 }
 
@@ -94,35 +107,95 @@ export function compactActionHint(agent: string): string {
     return `Compactar contexto: o ${label} compacta a própria sessão (o detalhe antigo vira resumo).`
   }
   if (def?.sessionResume) {
-    return `Compactar contexto: renova a sessão com um resumo do fio (o ${label} não compacta em modo headless).`
+    return `Compactar contexto: renova a sessão com a memória essencial do fio e um ponteiro para o histórico completo (o ${label} não compacta em modo headless).`
   }
   return "Este motor roda cada turno numa sessão fresca; não há contexto acumulado para compactar."
 }
 
-/** Marco honesto no fio quando a renovação COMMITOU (o `session` novo chegou).
- *  Sem número inventado: quanto liberou não é mensurável num motor que não
- *  compacta em headless. */
-export function renewalNotice(agent: string): string {
-  const label = agentDef(agent)?.label ?? agent
-  return `Sessão renovada com resumo: o quanto de contexto foi liberado não é mensurável (o ${label} não compacta em modo headless).`
+type ContextObservation = Pick<
+  ConvState,
+  "contextBasis" | "contextTokens" | "contextWindow" | "model"
+>
+
+function observedTokens(meter: ContextMeter): number | null {
+  return meter.kind === "absolute" ||
+    meter.kind === "incompatible" ||
+    meter.kind === "ratio"
+    ? meter.tokens
+    : null
 }
 
-/** Instrução fixa da retomada (fica FORA da moldura H3 do recap): a sessão é
+const exactTokens = (value: number) => value.toLocaleString("pt-BR")
+
+/** Marco honesto no fio quando a renovação COMMITOU (o `session` novo chegou).
+ *  Com snapshots confiáveis, mostra o antes/depois OBSERVADO. Sem snapshot,
+ *  não converte custo/uso acumulado em contexto nem inventa percentual. */
+export function renewalNotice(
+  agent: string,
+  before: ContextObservation,
+  after: ContextObservation,
+): string {
+  const label = agentDef(agent)?.label ?? agent
+  const oldMeter = contextMeter({
+    basis: before.contextBasis,
+    tokens: before.contextTokens,
+    runtimeWindow: before.contextWindow,
+    model: before.model,
+  })
+  const newMeter = contextMeter({
+    basis: after.contextBasis,
+    tokens: after.contextTokens,
+    runtimeWindow: after.contextWindow,
+    model: after.model,
+  })
+  const oldTokens = observedTokens(oldMeter)
+  const newTokens = observedTokens(newMeter)
+  if (oldMeter.kind === "ratio" && newMeter.kind === "ratio") {
+    return `Sessão renovada com memória · contexto observado: ${Math.round(oldMeter.pct * 100)}% → ${Math.round(newMeter.pct * 100)}% (${exactTokens(oldMeter.tokens)} → ${exactTokens(newMeter.tokens)} tokens).`
+  }
+  if (oldTokens != null && newTokens != null) {
+    return `Sessão renovada com memória · contexto observado: ${exactTokens(oldTokens)} → ${exactTokens(newTokens)} tokens.`
+  }
+  if (newMeter.kind === "ratio") {
+    return `Sessão renovada com memória · novo contexto observado: ${Math.round(newMeter.pct * 100)}% (${exactTokens(newMeter.tokens)} tokens).`
+  }
+  if (newTokens != null) {
+    return `Sessão renovada com memória · novo contexto observado: ${exactTokens(newTokens)} tokens.`
+  }
+  return `Sessão renovada com memória. O ${label} não informou uma medição comparável da nova sessão.`
+}
+
+/** Instrução fixa da retomada (fica FORA da moldura H3 da memória): a sessão é
  *  nova, o fio é o mesmo, e o turno só confirma a retomada. */
 export const RENEWAL_INSTRUCTION =
   "Renovação de sessão do Frota para liberar contexto: a conversa do bloco acima continua AQUI, nesta sessão nova. Não repita trabalho já feito. Responda em uma linha confirmando que retomou o contexto e aguarde o próximo pedido."
 
-/** Prompt da renovação: identidade → regras → recap emoldurado → instrução.
+/** Prompt da renovação: identidade → regras → memória emoldurada → instrução.
  *  Puro (o caller resolve persona/doutrina pelos canais certos). */
 export function buildRenewalPrompt(opts: {
-  /** serializeContext(items) — já vem com a moldura H3 (frameHistory). */
-  recap: string
+  /** Memória por significado + ponteiro — já vem com a moldura H3. */
+  memory: string
   doctrineBlock?: string | null
   personaBlock?: string | null
 }): string {
-  return [opts.personaBlock, opts.doctrineBlock, opts.recap, RENEWAL_INSTRUCTION]
+  return [opts.personaBlock, opts.doctrineBlock, opts.memory, RENEWAL_INSTRUCTION]
     .filter(Boolean)
     .join("\n\n")
+}
+
+/** Memória da renovação: seleção por SIGNIFICADO dentro do orçamento de uma
+ *  janela vazia + endereço da memória plena. O ponteiro é obrigatório porque
+ *  a projeção declara cortes e precisa oferecer recuperação real. */
+export function buildRenewalMemory(opts: {
+  items: ChatItem[]
+  contextWindow: number | null
+  pointer: string
+}): string {
+  const selected = memoriaDaConversa(
+    opts.items,
+    orcamentoDaMemoria(opts.contextWindow, "transplante"),
+  ).texto
+  return [selected, memoryPointerLine(opts.pointer)].join("\n\n")
 }
 
 /** Meta honesta do turno técnico nativo: só afirma "Contexto compactado"
@@ -253,13 +326,19 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     return
   }
 
-  // RENOVAÇÃO: transplante para si mesmo. O recap sai dos items ANTES da bolha
-  // do comando (o /compactar não entra no próprio resumo); o commit em duas
-  // fases do beginTransplant garante que falha ANTES do `session` novo deixa a
-  // sessão de origem intacta e retomável.
-  const recap = serializeContext(conv.items)
+  // RENOVAÇÃO: transplante para si mesmo. A memória e o transcript pleno saem
+  // dos items ANTES da bolha do comando (o /compactar não entra na própria
+  // memória); o commit em duas fases do beginTransplant garante que falha ANTES
+  // do `session` novo deixa a sessão de origem intacta e retomável.
+  const transcript = renderTranscript(conv.items, { agent: conv.agent })
   const hasReply = hasAssistantReply(conv.items)
   const prevSession = conv.sessionId
+  const beforeContext: ContextObservation = {
+    contextBasis: conv.contextBasis,
+    contextTokens: conv.contextTokens,
+    contextWindow: conv.contextWindow,
+    model: conv.model,
+  }
   chat.beginTransplant(args.convId, runId, agent, {
     model: conv.reqModel,
     effort: conv.effort,
@@ -268,9 +347,23 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
   args.onStarted?.()
   useChat.getState().handleEvent(args.convId, {
     type: "notice",
-    message: `compactar: renovando a sessão do ${label} com resumo (este motor não compacta em modo headless)`,
+    message: `compactar: preparando memória e renovando a sessão do ${label} (este motor não compacta em modo headless)`,
   })
   try {
+    // Fail-closed: sem memória plena recuperável, não abrimos mão da sessão de
+    // origem. O erro ocorre antes do `runAgent`, então o transplante pendente é
+    // descartado no finish e prevSession/contexto continuam retomáveis.
+    let pointer: string
+    try {
+      pointer = await exportConvContext(cwd, args.convId, transcript)
+    } catch {
+      throw "Não foi possível salvar a memória completa; a sessão original foi preservada."
+    }
+    const memory = buildRenewalMemory({
+      items: conv.items,
+      contextWindow: conv.contextWindow ?? null,
+      pointer,
+    })
     // sessão FRESCA nunca viu regra nenhuma: doutrina com freshSession (mesma
     // régua do wheel-switch) + persona carimbada da conversa. Best-effort nas
     // leituras (readDoctrine/personaHandoffBlock degradam pra null); a
@@ -301,7 +394,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
       personaBlock = null
     }
     const prompt = buildRenewalPrompt({
-      recap,
+      memory,
       doctrineBlock: doctrine.body,
       personaBlock,
     })
@@ -328,7 +421,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     if (after?.sessionId && after.sessionId !== prevSession) {
       useChat.getState().handleEvent(args.convId, {
         type: "notice",
-        message: renewalNotice(agent),
+        message: renewalNotice(agent, beforeContext, after),
       })
     }
   } catch (e) {

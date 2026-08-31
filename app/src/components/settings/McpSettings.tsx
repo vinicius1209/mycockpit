@@ -26,13 +26,11 @@ import {
   type McpAuthStatus,
   type McpHealthStatus,
   type McpServer,
+  type ProviderMcpInventory,
 } from "@/lib/mcp"
-import { browserBoundServers, shouldShowBrowserCard } from "@/lib/browser"
-import {
-  ProjectBrowserCard,
-  useProjectBrowser,
-} from "@/components/settings/ProjectBrowserCard"
+import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
 import { McpAgentRows } from "@/components/settings/McpAgentRows"
+import { ProviderMcpInventoryPanel } from "@/components/settings/ProviderMcpInventoryPanel"
 import { cn } from "@/lib/utils"
 
 function toggleKey(
@@ -69,6 +67,9 @@ export function McpSettings() {
     return projects.find((item) => item.id === id) ?? null
   }, [activeProjectId, projects, selectedProjectId])
   const [servers, setServers] = useState<McpServer[]>([])
+  const [providerInventories, setProviderInventories] = useState<
+    ProviderMcpInventory[]
+  >([])
   const [bindingCounts, setBindingCounts] = useState<Record<string, number>>(
     {},
   )
@@ -122,19 +123,24 @@ export function McpSettings() {
     if (!project) {
       shownPathRef.current = null
       setServers([])
+      setProviderInventories([])
       return
     }
     const path = project.path
     if (shownPathRef.current !== path) {
       shownPathRef.current = path
       setServers([])
+      setProviderInventories([])
       setError(null)
     }
     setLoading(true)
     setError(null)
     try {
       const found = await discoverMcpServers(path)
-      if (shownPathRef.current === path) setServers(found)
+      if (shownPathRef.current === path) {
+        setServers(found.servers)
+        setProviderInventories(found.providerInventories)
+      }
     } catch (cause) {
       if (shownPathRef.current === path) {
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -254,7 +260,12 @@ export function McpSettings() {
       path: string,
       serverId: string,
       agent: McpAgentState["agent"],
-      result: { status: McpHealthStatus; detail: string | null; checkedAt: number },
+      result: {
+        status: McpHealthStatus
+        detail: string | null
+        checkedAt: number
+        toolNames: string[]
+      },
     ) => {
       if (shownPathRef.current !== path) return
       setServers((prev) =>
@@ -262,6 +273,7 @@ export function McpSettings() {
           health: result.status,
           detail: result.detail,
           checkedAt: result.checkedAt,
+          toolNames: result.toolNames,
         }),
       )
     },
@@ -409,11 +421,11 @@ export function McpSettings() {
       <div className="mb-1 flex items-start justify-between gap-3 pr-9">
         <div>
           <h2 className="text-[14px] font-semibold text-foreground">
-            Integrações MCP
+            MCPs
           </h2>
           <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-            Cada projeto decide quais MCPs seus agents enxergam; sem binding, o
-            CLI mantém o comportamento nativo.
+            Descubra, teste e entregue tools externas aos agents deste projeto.
+            Sem binding, o CLI mantém o comportamento nativo.
           </p>
         </div>
         <Button
@@ -455,10 +467,7 @@ export function McpSettings() {
         antes de poderem ser roteadas.
       </div>
 
-      {shouldShowBrowserCard(
-        browser.status,
-        browserBoundServers(servers).length > 0,
-      ) && <ProjectBrowserCard browser={browser} servers={servers} />}
+      <ProviderMcpInventoryPanel inventories={providerInventories} />
 
       {error && (
         <div className="mt-3 rounded-lg border border-st-error/30 bg-st-error/5 p-3 text-[12px] text-st-error">
@@ -478,7 +487,7 @@ export function McpSettings() {
         </div>
       ) : servers.length === 0 ? (
         <div className="mt-3 rounded-lg border border-dashed border-border/60 p-5 text-center text-[12px] text-muted-foreground">
-          Nenhum MCP foi encontrado no Claude, Codex ou `.mcp.json`.
+          Nenhum MCP portável foi encontrado nas fontes deste projeto.
         </div>
       ) : (
         <div className="mt-3 space-y-2.5">

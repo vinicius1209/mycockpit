@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 use std::process::Stdio;
 use std::sync::Arc;
 use tauri::ipc::Channel;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::AsyncWriteExt;
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, Notify};
 
@@ -23,6 +23,7 @@ const PROMPT: i64 = 6;
 
 pub struct Outcome {
     pub cancelled: bool,
+    pub failed: bool,
     pub startup_error: Option<String>,
 }
 
@@ -30,12 +31,14 @@ impl Outcome {
     fn startup(message: impl Into<String>) -> Self {
         Self {
             cancelled: false,
+            failed: false,
             startup_error: Some(message.into()),
         }
     }
-    fn done(cancelled: bool) -> Self {
+    fn done(cancelled: bool, failed: bool) -> Self {
         Self {
             cancelled,
+            failed,
             startup_error: None,
         }
     }
@@ -132,19 +135,22 @@ pub async fn run(
     registry: &RunRegistry,
     pending: Arc<PendingApprovals>,
 ) -> Outcome {
-    let mut child = match Command::new("opencode")
-        .args(["acp", "--cwd", &req.cwd])
+    let mut cmd = Command::new("opencode");
+    cmd.args(["acp", "--cwd", &req.cwd])
         .current_dir(&req.cwd)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-    {
+        .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
+    crate::hook_sessions::correlate_run(&mut cmd, run_id);
+    let mut child = match cmd.spawn() {
         Ok(child) => child,
         Err(e) => return Outcome::startup(format!("não consegui subir `opencode acp`: {e}")),
     };
-    if let Some(pid) = child.id() {
+    let child_pid = child.id();
+    if let Some(pid) = child_pid {
         if let Ok(mut pids) = registry.1.lock() {
             pids.insert(run_id.to_string(), pid);
         }
@@ -159,22 +165,19 @@ pub async fn run(
     };
     let stderr = child.stderr.take();
     let stderr_task = tokio::spawn(async move {
-        let mut text = String::new();
-        if let Some(stderr) = stderr {
-            let mut lines = BufReader::new(stderr).lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                text.push_str(&line);
-                text.push('\n');
-            }
+        match stderr {
+            Some(stderr) => crate::run_resources::collect_stderr_tail(stderr).await,
+            None => crate::run_resources::CapturedTail::default(),
         }
-        text
     });
+    let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
     let interactions = Arc::new(DirectInteractions::new(app.clone(), pending));
-    let mut reader = BufReader::new(stdout).lines();
+    let mut reader = crate::run_resources::LimitedLineReader::new(stdout);
     let mut session_id: Option<String> = None;
     let mut prompt_started = false;
     let mut approval_seq = 0u64;
     let mut cancelled = false;
+    let mut failed = false;
 
     if let Err(e) = write(&stdin, &request(INIT, "initialize", json!({
         "protocolVersion": 1,
@@ -186,25 +189,64 @@ pub async fn run(
 
     loop {
         tokio::select! {
+            status = child.wait() => {
+                let detail = status
+                    .ok()
+                    .and_then(|value| value.code())
+                    .map(|code| format!(" (código {code})"))
+                    .unwrap_or_default();
+                if !prompt_started {
+                    interactions.shutdown();
+                    crate::run_processes::terminate_run(run_id, child_pid);
+                    let stderr = stderr_task.await.unwrap_or_default();
+                    let message = if stderr.text.trim().is_empty() {
+                        format!("o ACP encerrou antes do turno{detail}")
+                    } else {
+                        let suffix = if stderr.truncated { "\n[stderr limitado aos 64 KiB finais]" } else { "" };
+                        format!("{}{suffix}", stderr.text.trim())
+                    };
+                    return Outcome::startup(message);
+                }
+                failed = true;
+                let _ = on_event.send(AgentEvent::Error {
+                    message: format!("o ACP encerrou antes do desfecho do turno{detail}"),
+                });
+                break;
+            }
             _ = notify.notified() => {
                 cancelled = true;
                 if let Some(sid) = &session_id {
                     let _ = write(&stdin, &json!({"jsonrpc":"2.0","method":"session/cancel","params":{"sessionId":sid}})).await;
                 }
-                let _ = child.start_kill();
+                crate::run_processes::terminate_run(run_id, child_pid);
                 break;
             }
             line = reader.next_line() => {
                 let line = match line {
                     Ok(Some(line)) => line,
-                    _ => {
+                    Ok(None) => {
                         if !prompt_started {
                             let stderr = stderr_task.await.unwrap_or_default();
-                            let message = if stderr.trim().is_empty() {
+                            let message = if stderr.text.trim().is_empty() {
                                 "o ACP encerrou antes do turno".to_string()
-                            } else { stderr.trim().to_string() };
+                            } else {
+                                let suffix = if stderr.truncated { "\n[stderr limitado aos 64 KiB finais]" } else { "" };
+                                format!("{}{suffix}", stderr.text.trim())
+                            };
                             return Outcome::startup(message);
                         }
+                        failed = true;
+                        let _ = on_event.send(AgentEvent::Error {
+                            message: "o ACP encerrou antes do desfecho do turno".into(),
+                        });
+                        break;
+                    }
+                    Err(error) => {
+                        failed = true;
+                        let _ = on_event.send(AgentEvent::Error {
+                            message: format!("{error}; interrompi o run antes de processar um payload sem teto."),
+                        });
+                        crate::run_processes::terminate_run(run_id, child_pid);
                         break;
                     }
                 };
@@ -233,7 +275,7 @@ pub async fn run(
                                 let _ = write(&stdin, &json!({"jsonrpc":"2.0","id":id,"error":{"code":-32602,"message":"pedido de permissão incompleto"}})).await;
                             }
                         } else {
-                            let _ = write(&stdin, &json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"pedido ainda não suportado pelo MyCockpit"}})).await;
+                            let _ = write(&stdin, &json!({"jsonrpc":"2.0","id":id,"error":{"code":-32601,"message":"pedido ainda não suportado pela Frota"}})).await;
                             let _ = on_event.send(AgentEvent::Notice { message: format!("OpenCode pediu `{metodo}`, ainda sem tela correspondente; o pedido foi recusado.") });
                         }
                     }
@@ -247,6 +289,7 @@ pub async fn run(
                         if let Some(error) = erro {
                             let message = error.get("message").and_then(Value::as_str).unwrap_or("erro ACP").to_string();
                             if !prompt_started { return Outcome::startup(message); }
+                            failed = true;
                             let event = match crate::adapters::opencode_limit(&message) {
                                 Some(hit) => AgentEvent::LimitReached { message, reset_hint: hit.reset_hint },
                                 None => AgentEvent::Error { message },
@@ -310,13 +353,24 @@ pub async fn run(
                     MensagemAcp::Ruido => {}
                 }
             }
+            memory = memory_watch.next() => {
+                match memory {
+                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
+                        let _ = on_event.send(AgentEvent::Notice {
+                            message: format!(
+                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                            ),
+                        });
+                    }
+                }
+            }
         }
     }
     interactions.shutdown();
-    if !cancelled {
-        let _ = child.start_kill();
-    }
-    Outcome::done(cancelled)
+    crate::run_processes::terminate_run(run_id, child_pid);
+    let _ = child.wait().await;
+    let _ = stderr_task.await;
+    Outcome::done(cancelled, failed)
 }
 
 #[cfg(test)]

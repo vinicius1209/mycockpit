@@ -14,6 +14,8 @@ import type {
   MissionPersona,
 } from "@/lib/missionTypes"
 import { handoffInstruction } from "@/lib/missionHandoff"
+import type { RunPhaseArgs } from "@/lib/missionPhaseContract"
+export type { PhaseCostEvent, RunPhaseArgs } from "@/lib/missionPhaseContract"
 
 /** Estado acumulável de UMA fase enquanto os eventos chegam (subset reduzível). */
 function emptyReducible(): ItemReducible {
@@ -323,55 +325,6 @@ export interface PhaseResult {
   budgetExceeded?: boolean
 }
 
-/** MH2.1 — campos de custo de UM result (o subset do AgentEvent que o ledger
- *  precisa). `costUsd` null = consumiu sem preço conhecido (ADR-047), nunca 0. */
-export interface PhaseCostEvent {
-  costUsd: number | null
-  costSource: CostSource | undefined
-  input: number
-  output: number
-  cache: number
-}
-
-export interface RunPhaseArgs {
-  runId: string
-  convId: string
-  agent: string
-  model: string | null
-  effort: string | null
-  prompt: string
-  cwd: string
-  permission: string
-  maxRetries: number
-  /** Anexos do usuário (imagem/PDF): na FASE 1 vêm do launcher (junto do
-   *  pedido); na fase seguinte a um GATE vêm das respostas ricas (answerGate).
-   *  Mesmo caminho do handleSend (runAgent já aceitava a lista; nada muda no
-   *  Rust). Default = sem anexos. */
-  attachments?: Attachment[]
-  /** Callback por tentativa: informa a tentativa corrente (1-based) e os itens
-   *  reduzidos até aqui, p/ o store espelhar na timeline. */
-  onProgress?: (attempt: number, items: ChatItem[]) => void
-  /** MH2.1 — chamado a CADA result com cost_usd (parciais e tentativas
-   *  descartadas inclusive; o gasto é real mesmo quando o retry joga o
-   *  transcript fora). O store grava o ledger por TENTATIVA: results do MESMO
-   *  attempt carregam custo CUMULATIVO do run (padrão do CLI, ver
-   *  docs/stream-json-notes.md), então o REPLACE por runId-da-tentativa
-   *  colapsa os parciais sem contar em dobro. */
-  onCost?: (attempt: number, e: PhaseCostEvent) => void
-  /** MH2.2 — teto RESTANTE da missão em US$ pra esta invocação (maxCostUsd
-   *  menos o costTotal já gasto pelas fases/tentativas anteriores). Cruzou
-   *  DURANTE a fase → cancela o run corrente e NÃO re-tenta (budgetExceeded).
-   *  Degradação HONESTA: os motores só reportam custo em eventos result
-   *  (claude no fim do run; codex estimado no fim) — sem custo incremental
-   *  mid-fase o corte simplesmente não dispara, e o teto morde no check entre
-   *  fases (checkBudget) como sempre. null/undefined = sem teto. */
-  stopAtCostUsd?: number | null
-  /** Injetável nos testes; default = runAgent real. */
-  run?: typeof runAgent
-  /** Injetável nos testes; default = cancelAgent real (corte do MH2.2). */
-  cancel?: typeof cancelAgent
-}
-
 /** Roda UMA fase com retry até maxRetries. Reduz os AgentEvent num array de
  *  ChatItem (como o chat/Fusion) e devolve o resultado. Sucesso = o último
  *  result teve ok=true e não houve error/cancelled.
@@ -461,6 +414,7 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
         args.permission,
         attachments,
         onEvent,
+        { instructionSources: args.instructionSources },
       )
     } catch (err) {
       sawError = err instanceof Error ? err.message : "falha ao iniciar a fase"

@@ -88,7 +88,7 @@ describe("MH2.2 · teto morde DENTRO da fase (stopAtCostUsd)", () => {
     // restante de US$ 1,00 — o retry re-rodaria a fase inteira e dobraria o
     // estouro; o corte segura ali.
     const run = fakeRun([[codexResult(false, 1.2)], [codexResult(true, 1.0)]])
-    const cancel = vi.fn(async () => {})
+    const cancel = vi.fn(async () => true)
     const r = await runPhase(
       args({ maxRetries: 3, stopAtCostUsd: 1.0, run: run as never, cancel }),
     )
@@ -111,7 +111,7 @@ describe("MH2.2 · teto morde DENTRO da fase (stopAtCostUsd)", () => {
         { type: "cancelled" },
       ],
     ])
-    const cancel = vi.fn(async () => {})
+    const cancel = vi.fn(async () => true)
     const r = await runPhase(
       args({
         agent: "claude-code",
@@ -133,7 +133,7 @@ describe("MH2.2 · teto morde DENTRO da fase (stopAtCostUsd)", () => {
     // com o trabalho REAL entregue — o desfecho de teto fica com o checkBudget
     // entre fases, nunca um "cancelado" teatral de trabalho já concluído.
     const run = fakeRun([[claudeResult(true, 2.0)]])
-    const cancel = vi.fn(async () => {})
+    const cancel = vi.fn(async () => true)
     const r = await runPhase(
       args({
         agent: "claude-code",
@@ -149,7 +149,7 @@ describe("MH2.2 · teto morde DENTRO da fase (stopAtCostUsd)", () => {
 
   it("sem teto (stopAtCostUsd ausente) nada é cancelado", async () => {
     const run = fakeRun([[codexResult(true, 3.5)]])
-    const cancel = vi.fn(async () => {})
+    const cancel = vi.fn(async () => true)
     const r = await runPhase(args({ run: run as never, cancel }))
     expect(r.ok).toBe(true)
     expect(cancel).not.toHaveBeenCalled()

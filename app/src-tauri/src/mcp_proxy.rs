@@ -204,7 +204,7 @@ impl EstadoProxy {
 /// já venceu.
 async fn credencial(estado: &EstadoProxy) -> Result<StoredTokens, String> {
     let tokens = mcp_auth::load_tokens(&estado.server_id)?.ok_or_else(|| {
-        "sem login do MyCockpit neste MCP; entre em Configurações → Integrações MCP".to_string()
+        "sem login da Frota neste MCP; entre em Configurações → Integrações MCP".to_string()
     })?;
     if tokens.expirado(agora_secs()) {
         return mcp_auth::refresh(&estado.server_id, &estado.config, &tokens).await;
@@ -393,7 +393,7 @@ async fn loop_stdio() {
                 // Sem resposta do app numa mensagem que ESPERA resposta, o
                 // agent ficaria pendurado. Recusa explícita, fail-closed.
                 if !eh_notificacao(&mensagem) {
-                    let erro = erro_jsonrpc(id.as_ref(), "MyCockpit indisponível para este MCP");
+                    let erro = erro_jsonrpc(id.as_ref(), "Frota indisponível para este MCP");
                     escrever(&mut stdout, &erro).await;
                 }
             }
@@ -550,7 +550,7 @@ mod tests {
     fn falha_de_tool_vira_conteudo_de_erro_e_nao_erro_de_protocolo() {
         // O modelo precisa LER o motivo e decidir; um -32001 seco encerraria a
         // chamada sem explicar.
-        let erro = erro_de_tool(&json!(3), "sem login do MyCockpit neste MCP");
+        let erro = erro_de_tool(&json!(3), "sem login da Frota neste MCP");
         assert_eq!(erro["result"]["isError"], json!(true));
         assert!(erro["result"]["content"][0]["text"]
             .as_str()

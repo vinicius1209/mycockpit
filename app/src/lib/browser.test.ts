@@ -26,6 +26,7 @@ function session(): BrowserSession {
     userDataDir: "/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1",
     binary:
       "/Users/me/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    windowVisible: false,
     startedAt: 1_754_400_000_000,
   }
 }
@@ -62,7 +63,7 @@ function server(name: string, states: Partial<McpAgentState>[]): McpServer {
 }
 
 describe("browserStateLabel", () => {
-  it("ligado mostra o navegador real e o endpoint que o MCP recebe", () => {
+  it("ligado mostra o navegador real sem expor detalhes de transporte", () => {
     const status: BrowserStatus = {
       projectId: "proj-1",
       session: session(),
@@ -71,7 +72,7 @@ describe("browserStateLabel", () => {
       detail: null,
     }
     expect(browserStateLabel(status)).toBe(
-      "ligado · Chrome/149.0.7827.55 · http://127.0.0.1:62934",
+      "ligado · Chrome/149.0.7827.55 · perfil deste projeto",
     )
   })
 
@@ -148,13 +149,12 @@ describe("browserBindingWarning", () => {
     detail: null,
   })
 
-  it("avisa que o MCP vai abrir navegador próprio quando o do projeto está desligado", () => {
+  it("avisa que o run bloqueia antes de abrir outro navegador", () => {
     const servers = [server("playwright", [{ enabled: true, browser: true }])]
     const warning = browserBindingWarning(servers, status(false))
     expect(warning).toContain("playwright pede o navegador do projeto")
-    expect(warning).toContain("navegador próprio")
-    // Degradação, não bloqueio: nada aqui promete que o run vai parar.
-    expect(warning).not.toContain("bloque")
+    expect(warning).toContain("run será bloqueado")
+    expect(warning).toContain("antes que o MCP abra outro navegador")
   })
 
   it("concorda no plural com mais de um MCP marcado", () => {
@@ -293,16 +293,17 @@ describe("browserChainLine", () => {
     const linha = browserChainLine(servers, statusDoIncidente(true))
     expect(linha?.tom).toBe("aviso")
     expect(linha?.texto).toContain("nenhum MCP está ligado neste projeto")
-    expect(linha?.texto).toContain("ligue o MCP de navegador")
+    expect(linha?.texto).toContain("ligue a integração")
   })
 
-  it("desligado com alguém pedindo repete o aviso do navegador próprio", () => {
+  it("desligado com alguém pedindo repete o bloqueio preventivo", () => {
     const servers = [
       server("playwright", [{ agent: "claude-code", enabled: true, browser: true }]),
     ]
     const linha = browserChainLine(servers, statusDoIncidente(false))
     expect(linha?.tom).toBe("aviso")
     expect(linha?.texto).toContain("playwright pede o navegador do projeto")
+    expect(linha?.texto).toContain("run será bloqueado")
   })
 
   it("desligado e sem ninguém pedindo não inventa pendência", () => {
@@ -361,7 +362,7 @@ describe("browserRowNotice", () => {
         { enabled: true, browser: true },
         statusDoIncidente(false),
       ),
-    ).toBe("navegador do projeto desligado, este agent vai abrir um navegador próprio")
+    ).toBe("navegador desligado; ligue em Navegador e desktop ou desmarque antes do run")
   })
 
   it("sem Chromium na máquina, o motivo é outro e é dito", () => {
@@ -370,7 +371,7 @@ describe("browserRowNotice", () => {
         { enabled: true, browser: true },
         { projectId: "proj-1", session: null, binary: null, version: null, detail: null },
       ),
-    ).toBe("não há Chromium nesta máquina, este agent vai abrir um navegador próprio")
+    ).toBe("não há Chromium nesta máquina; o run será bloqueado até instalar ou desmarcar")
   })
 
   it("elo inteiro (ligado e marcado) não vira ruído na linha", () => {
@@ -397,7 +398,7 @@ describe("browserRowNotice", () => {
   it("sem leitura de estado não escolhe uma causa nem finge saber", () => {
     // `null` é fora do app OU falha de leitura: a linha não chuta qual.
     expect(browserRowNotice({ enabled: true, browser: true }, null)).toBe(
-      "estado do navegador do projeto indisponível",
+      "estado indisponível; confira Navegador e desktop antes do run",
     )
   })
 })

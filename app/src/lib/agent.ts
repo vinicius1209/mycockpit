@@ -4,12 +4,17 @@ import { agentDef } from "@/lib/agents"
 import { cumulativeUsageAgents } from "@/lib/agentRoster"
 import { loadUsageBaseline, saveUsageBaseline } from "@/lib/db"
 import { nextBaseline, type CumulativeUsage } from "@/lib/usage"
+import type {
+  EffectiveRunManifest,
+  InstructionSourceClaim,
+} from "@/lib/tooling"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
 export type CostSource = "reported" | "estimated" | "unknown"
 
 /** Eventos normalizados emitidos pelo backend (espelha AgentEvent no Rust). */
 export type AgentEvent =
+  | { type: "run_manifest"; manifest: EffectiveRunManifest }
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
   | { type: "subagent_text"; parent_tool_id: string; text: string }
@@ -78,6 +83,14 @@ export type AgentEvent =
   | { type: "done"; code: number | null }
   | { type: "unknown"; raw: unknown }
 
+export interface RunAgentOptions {
+  planFirst?: boolean
+  memoryFallback?: string | null
+  systemPrompt?: string | null
+  mcpFingerprint?: string | null
+  instructionSources?: InstructionSourceClaim[]
+}
+
 /** Dispara um agent de código (`agent` = claude-code | codex | opencode) na pasta
  *  `cwd` e streama eventos via Channel. */
 export async function runAgent(
@@ -93,21 +106,34 @@ export async function runAgent(
   attachments: Attachment[],
   onEvent: (e: AgentEvent) => void,
   /** "Planejar primeiro" (plan mode por turno): o motor segura os writes. */
-  planFirst = false,
+  planFirstOrOptions: boolean | RunAgentOptions = false,
   /** MyCockpit resume: memória da conversa que o motor SÓ usa se o resume
    *  nativo falhar (prepende ao prompt no restart e emite `resume://fallback`).
    *  null = comportamento atual (falha do resume vira erro). */
-  memoryFallback: string | null = null,
+  legacyMemoryFallback: string | null = null,
   /** H1 (prompt-hygiene-plan): conteúdo de SISTEMA por-run (persona+doutrina).
    *  Motor com `systemChannel` recebe no canal nativo (re-enviado a cada
    *  spawn); sem, o Rust dobra no corpo (fail-open). null = nada. */
-  systemPrompt: string | null = null,
+  legacySystemPrompt: string | null = null,
   /** H2: fingerprint do último plano de MCPs ANUNCIADO nesta conversa (ledger
    *  `injected.mcp` da store, alimentado por `mcp://announced`). O Rust só
    *  re-anuncia mid-conversa quando o plano atual diverge. null = desconhecido
    *  (anuncia — fail-open pra visibilidade). */
-  mcpFingerprint: string | null = null,
+  legacyMcpFingerprint: string | null = null,
+  /** Skills de plugin realmente expandidas neste prompt. O Rust revalida o
+   * fingerprint antes do spawn; esta lista não é aceita como autoridade. */
+  legacyInstructionSources: InstructionSourceClaim[] = [],
 ): Promise<void> {
+  const options: RunAgentOptions =
+    typeof planFirstOrOptions === "boolean"
+      ? {
+          planFirst: planFirstOrOptions,
+          memoryFallback: legacyMemoryFallback,
+          systemPrompt: legacySystemPrompt,
+          mcpFingerprint: legacyMcpFingerprint,
+          instructionSources: legacyInstructionSources,
+        }
+      : planFirstOrOptions
   // ADR-033 — usage acumulado por thread: ÚNICO ponto do app em que o baseline
   // entra e o acumulado volta. Todas as superfícies que rodam agent (chat,
   // disputa, missão, agenda, SDD) passam por aqui, então nenhuma
@@ -144,18 +170,19 @@ export async function runAgent(
     resume,
     permission,
     attachments,
-    planFirst,
-    memoryFallback,
-    systemPrompt,
-    mcpFingerprint,
+    planFirst: options.planFirst ?? false,
+    memoryFallback: options.memoryFallback ?? null,
+    systemPrompt: options.systemPrompt ?? null,
+    mcpFingerprint: options.mcpFingerprint ?? null,
+    instructionSources: options.instructionSources ?? [],
     usageBaseline: baseline,
     onEvent: channel,
   })
 }
 
 /** Cancela um run em andamento (H1). */
-export async function cancelAgent(runId: string): Promise<void> {
-  await invoke("cancel_agent", { runId })
+export async function cancelAgent(runId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_agent", { runId })
 }
 
 /** Aprovação/interação pendente movidas p/ lib/interaction.ts (padrão unificado). */

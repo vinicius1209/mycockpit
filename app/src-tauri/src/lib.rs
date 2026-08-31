@@ -10,26 +10,33 @@ const TRAFFIC_LIGHTS_Y: f32 = 37.0;
 mod acp;
 mod adapters;
 mod agent;
+mod agy_recovery;
 mod approval;
 mod attachments;
 mod browser;
+mod browser_cdp;
+mod browser_panel;
 mod catalog;
 mod claude_usage;
 mod codex_appserver;
+mod codex_resume_guard;
 mod companion;
 mod context;
 mod context_gateway;
 mod despertador;
 mod processos;
 mod detect;
+mod desktop;
 mod editor;
 mod evidence;
+mod experience_broker;
 mod fsx;
 mod git;
 mod github;
 mod hook_gateway;
 mod hook_sessions;
 mod hooks_install;
+mod hud;
 mod mcp_auth;
 mod mcp_control;
 mod mcp_instalacao;
@@ -38,18 +45,32 @@ mod model_list;
 mod model_smoke;
 mod modes;
 mod mycockpit;
+mod notch;
 mod osnotify;
 mod opencode_auth;
 mod opencode_acp;
 mod path;
+mod plugin_control;
+mod plugin_contributions;
+mod plugin_grants;
+mod plugin_manifest;
+mod plugin_mcp;
+mod plugin_protocol;
+mod plugin_runtime;
 mod pricing;
 mod proc;
+mod provider_mcp_inventory;
+mod run_processes;
+mod run_resources;
+mod run_manifest;
+mod resource_broker;
 mod sandbox;
 mod sdd;
 mod skills;
 mod sources;
 mod statusline_install;
 mod stt;
+mod tool_gateway;
 mod tray;
 mod update;
 mod usage_window;
@@ -79,6 +100,18 @@ pub fn run_mcp_proxy_server() {
 /// provider que fale MCP.
 pub fn run_work_server() {
     work_gateway::run_mcp_server();
+}
+
+/// Materializador MCP do Tool Catalog. O subprocesso só fala pelo socket do
+/// run; grants, recursos e workers continuam pertencendo ao app.
+pub fn run_tool_server() {
+    tool_gateway::run_mcp_server();
+}
+
+/// Launcher supervisionado de um MCP stdio contribuído. O descriptor efêmero
+/// é revalidado antes de qualquer byte do pacote ser executado.
+pub fn run_plugin_mcp_server() {
+    plugin_mcp::run_mcp_server();
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -509,6 +542,38 @@ pub fn run() {
                   );",
             kind: MigrationKind::Up,
         },
+        // Plugins só ficam disponíveis depois de uma decisão humana sobre o
+        // fingerprint e o conjunto exato de capabilities. Atualizar qualquer
+        // arquivo do pacote torna o grant antigo obsoleto, sem executar código.
+        Migration {
+            version: 41,
+            description: "create_plugin_grants",
+            sql: "CREATE TABLE IF NOT EXISTS plugin_grants ( \
+                    plugin_key TEXT PRIMARY KEY, \
+                    fingerprint TEXT NOT NULL, \
+                    capabilities_json TEXT NOT NULL, \
+                    enabled INTEGER NOT NULL DEFAULT 1, \
+                    reviewed_at INTEGER NOT NULL, \
+                    updated_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        // Trilha curta e sanitizada das decisões e execuções. Não guarda input,
+        // output, credenciais nem paths; serve para explicar estado e falhas.
+        Migration {
+            version: 42,
+            description: "create_plugin_audit_events",
+            sql: "CREATE TABLE IF NOT EXISTS plugin_audit_events ( \
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, \
+                    plugin_key TEXT NOT NULL, \
+                    event TEXT NOT NULL, \
+                    outcome TEXT NOT NULL, \
+                    detail TEXT, \
+                    fingerprint TEXT, \
+                    created_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -550,6 +615,12 @@ pub fn run() {
             // Tray: o app vive na barra de menu com a janela fechada (as
             // automações agendadas continuam); só "Sair" encerra de verdade.
             tray::create(app.handle())?;
+            // Presenter do instrumento: carrega a preferência nativa, mede a
+            // tela e só então decide entre popover clássico e HUD flutuante.
+            // Falha mantém o popover clássico utilizável.
+            if let Err(error) = hud::initialize(app.handle()) {
+                log::warn!("HUD indisponível no boot: {error}");
+            }
 
             // H0 — receptor local de hooks/statusline (loopback, porta
             // efêmera, token por boot). Falha degrada com log, nunca derruba
@@ -591,15 +662,19 @@ pub fn run() {
                 match event {
                     tauri::WindowEvent::Focused(false) => {
                         tray::mark_popover_blur_hidden(window.app_handle());
-                        let _ = window.hide();
+                        hud::collapse_after_blur(window.app_handle());
                     }
                     // Cmd+W (menu padrão do macOS) DESTRUIRIA o webview e o
                     // popover nunca é recriado (create só roda no setup).
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
-                        let _ = window.hide();
+                        hud::collapse_after_blur(window.app_handle());
                     }
                     _ => {}
+                }
+            } else if window.label().starts_with("browser-panel-") {
+                if matches!(event, tauri::WindowEvent::Destroyed) {
+                    browser_panel::close_panel(window.app_handle(), window.label());
                 }
             }
         })
@@ -620,10 +695,24 @@ pub fn run() {
         )
         .manage(agent::RunRegistry::default())
         .manage(std::sync::Arc::new(work_gateway::ProcessRegistry::default()))
+        .manage(std::sync::Arc::new(
+            plugin_runtime::PluginRuntimeRegistry::default(),
+        ))
+        .manage(std::sync::Arc::new(
+            resource_broker::ResourceLeaseRegistry::default(),
+        ))
+        .manage(std::sync::Arc::new(
+            experience_broker::ExperienceBroker::default(),
+        ))
         // Navegador POR PROJETO (B2.1): só o mapa projeto → sessão viva. O
         // processo em si mora no ProcessRegistry acima, então o kill_all do
         // quit já o alcança.
         .manage(std::sync::Arc::new(browser::BrowserRegistry::default()))
+        .manage(std::sync::Arc::new(
+            browser_cdp::BrowserPreviewRegistry::default(),
+        ))
+        .manage(browser_panel::BrowserPanelRegistry::default())
+        .manage(hud::HudState::default())
         .manage(tray::TrayState::default())
         // Medidor de janela de uso: snapshots vivos por agent (fonte única
         // que o front hidrata no boot; ingest da statusline + poll gravam aqui).
@@ -660,6 +749,11 @@ pub fn run() {
             model_list::model_list,
             model_smoke::model_smoke,
             model_smoke::model_smoke_history,
+            plugin_control::inspect_plugins,
+            plugin_control::approve_plugin,
+            plugin_control::set_plugin_enabled,
+            plugin_control::revoke_plugin_grant,
+            plugin_control::stop_plugin_runtime,
             statusline_install::usage_statusline_status,
             statusline_install::usage_statusline_install,
             statusline_install::usage_statusline_uninstall,
@@ -730,6 +824,24 @@ pub fn run() {
             tray::set_tray_preferences,
             tray::tray_action,
             tray::force_quit,
+            notch::get_notch_geometry,
+            notch::get_screen_geometries,
+            hud::hud_status,
+            hud::set_hud_preferences,
+            hud::set_hud_expanded,
+            experience_broker::browser_pilot_status,
+            experience_broker::browser_pilot_acquire,
+            experience_broker::browser_pilot_heartbeat,
+            experience_broker::browser_pilot_release,
+            desktop::desktop_capability_status,
+            desktop::desktop_permission_request,
+            browser_cdp::browser_pages,
+            browser_cdp::browser_preview_start,
+            browser_cdp::browser_preview_frame,
+            browser_cdp::browser_preview_stop,
+            browser_cdp::browser_input,
+            browser_panel::browser_panel_open,
+            browser_panel::browser_panel_context,
             despertador::set_keep_awake,
             stt::stt_devices,
             stt::stt_start,
@@ -775,6 +887,12 @@ pub fn run() {
                 app_handle
                     .state::<std::sync::Arc<work_gateway::ProcessRegistry>>()
                     .kill_all();
+                app_handle
+                    .state::<std::sync::Arc<plugin_runtime::PluginRuntimeRegistry>>()
+                    .kill_all();
+                app_handle
+                    .state::<std::sync::Arc<resource_broker::ResourceLeaseRegistry>>()
+                    .release_all();
                 // Revisão C4 (F2): o "visto por último" dos aparelhos do
                 // companion persiste no quit (senão só o poll das
                 // Configurações e o stop flushavam).

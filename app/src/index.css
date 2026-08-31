@@ -18,6 +18,9 @@
   --card-foreground: #16181b;
   --popover: #ffffff;
   --popover-foreground: #16181b;
+  /* O notch é hardware preto nos dois temas. O instrumento físico usa este
+     casco; popovers e demais superfícies continuam nos tokens temáticos. */
+  --hud-shell: #000000;
   --primary: #16181b;
   --primary-foreground: #fbfbfa;
   --secondary: #f4f4f2;
@@ -169,6 +172,7 @@
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-hud-shell: var(--hud-shell);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);

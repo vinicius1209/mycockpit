@@ -606,7 +606,7 @@ async fn mcp_loop() {
                             "isError": true
                         }),
                         None => json!({
-                            "content": [{ "type": "text", "text": "MyCockpit indisponível" }],
+                            "content": [{ "type": "text", "text": "Frota indisponível" }],
                             "isError": true
                         }),
                     })
@@ -639,7 +639,7 @@ fn tool_specs() -> Vec<Value> {
     vec![
         json!({
             "name": PROCESS_START_TOOL,
-            "description": "Inicia um processo externo de longa duração sob controle do MyCockpit. Use para dev servers, watchers, containers e comandos que precisam continuar enquanto o turno segue.",
+            "description": "Inicia um processo externo de longa duração sob controle da Frota. Use para dev servers, watchers, containers e comandos que precisam continuar enquanto o turno segue.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -669,7 +669,7 @@ fn tool_specs() -> Vec<Value> {
         }),
         json!({
             "name": WORK_PLAN_TOOL,
-            "description": "Publica o plano/to-do vivo do turno para o MyCockpit.",
+            "description": "Publica o plano/to-do vivo do turno para a Frota.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

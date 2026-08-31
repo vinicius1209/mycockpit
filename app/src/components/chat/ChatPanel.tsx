@@ -7,7 +7,7 @@ import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 import { withNotes } from "@/lib/notes"
-import { LivePlanCard } from "@/components/chat/LivePlanCard"
+import { RunStatusStack } from "@/components/chat/RunStatusStack"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
@@ -45,7 +45,8 @@ import {
   missionHostsInline,
 } from "@/components/mission/MissionTimeline"
 import { InlineInteractions } from "@/components/chat/InteractionHost"
-import { runAgent, cancelAgent, agentLabel } from "@/lib/agent"
+import { runAgent, agentLabel } from "@/lib/agent"
+import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import { avisoDeMotorAusente } from "@/lib/detect"
 import { BannersDoComposer } from "@/components/chat/BannersDoComposer"
@@ -90,11 +91,14 @@ import {
   readDoctrine,
 } from "@/lib/doctrine"
 import {
-  expandDraftForAgent,
   expandPendingForTarget,
   findAppCommand,
-  reexpandIfEmbedded,
 } from "@/lib/slashCommands"
+import {
+  expandDraftWithSources,
+  expandEmbeddedDraft,
+  finalizeSlashExpansion,
+} from "@/lib/slashDispatch"
 import { runCompactTurn } from "@/lib/compact"
 import { serializeContext } from "@/lib/fusion"
 import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
@@ -164,7 +168,7 @@ export function ChatPanel() {
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
 
-  const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, setAtBottom } = useChatScroll({
+  const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom } = useChatScroll({
     activeId,
     items,
     running,
@@ -262,12 +266,12 @@ export function ChatPanel() {
      *  projeto Y. Sem alvo = envio manual, vale a conversa em foco AGORA. */
     originConvId?: string,
   ) {
+    if (origem.autor === "humano") followLatest()
     if (!isTauri()) {
       toast("O dispatch dos agents roda no app (bun run tauri dev)")
       return
     }
-    // Alvo do envio: conversa + o projeto DONO dela (conv.projectId), nunca o
-    // projeto em foco — cwd, permissão e lições são os do fio, não os da tela.
+    // Alvo: conversa + projeto DONO; cwd, permissão e lições são do fio.
     // `conv`/`project` daqui SOMBREIAM os do componente de propósito.
     const target = resolveSendTarget(
       originConvId ?? useChat.getState().activeId,
@@ -506,7 +510,8 @@ export function ChatPanel() {
     // resto expande AQUI — em codex/agy o /nome literal era texto que o motor
     // ignorava. A BOLHA mostra o que você digitou (text, já gravado no start);
     // a expansão entra só no prompt. Sem match → segue como texto (fail-open).
-    const sendText = await expandDraftForAgent(text, project.path, agent)
+    const slashExpansion = await expandDraftWithSources(text, project.path, agent)
+    const sendText = slashExpansion.text
     let lessonsBlock: string | null = null
     {
       try {
@@ -576,13 +581,10 @@ export function ChatPanel() {
     // comando nativo que sobreviveu CRU acima viraria barra morta atrás do
     // bloco (ex.: doutrina + /review em conversa claude). Nesse caso o pedido
     // re-expande com `embedded`; sem blocos, o cru nativo segue valendo.
-    let promptText = await reexpandIfEmbedded(
-      sendText,
-      text,
-      project.path,
-      agent,
-      !!lessonsBlock || !!broughtAdvice || !!doctrineBlock || !!personaBlock,
-    )
+    const hasPromptEnvelope = !!lessonsBlock || !!broughtAdvice || !!doctrineBlock || !!personaBlock
+    const embeddedExpansion = await finalizeSlashExpansion(slashExpansion, text, project.path, agent, hasPromptEnvelope)
+    let promptText = embeddedExpansion.text
+    let instructionSources = embeddedExpansion.instructionSources
     // cascata (de dentro pra fora): lições → parecer → doutrina → persona.
     promptText = withNotes(convId, conv.items, promptText)
     if (lessonsBlock) promptText = `${lessonsBlock}\n\n---\n\n${promptText}`
@@ -601,15 +603,15 @@ export function ChatPanel() {
           text: `Parecer trazido para o executor:\n${broughtAdvice}`,
         })
       }
+      const wheelExpansion = await expandEmbeddedDraft(text, project.path, agent)
+      instructionSources = wheelExpansion.instructionSources
       wheelItems.push({
         kind: "user",
         id: `wheel-request-${runId}`,
         // o novo agent recebe o pedido já EXPANDIDO (o /comando cru não
         // significaria nada pra ele). Embutido no envelope de handoff, nem o
         // comando nativo pode viajar cru (G2.3) — re-expande com embedded.
-        text: await expandDraftForAgent(text, project.path, agent, {
-          embedded: true,
-        }),
+        text: wheelExpansion.text,
       })
       const prepared = await prepareHybridHandoff({
         projectId: project.id,
@@ -700,6 +702,7 @@ export function ChatPanel() {
         systemPrompt,
         // H2: último plano de MCPs anunciado nesta conversa (ledger efêmero).
         useChat.getState().byId[convId]?.injected?.mcp ?? null,
+        instructionSources,
       )
     } catch (e) {
       recordDispatchError(convId, e, "Falha ao executar o agent")
@@ -957,6 +960,7 @@ export function ChatPanel() {
         null,
         systemPrompt,
         useChat.getState().byId[convId]?.injected?.mcp ?? null,
+        pendingForTarget.instructionSources,
       )
     } catch (e) {
       recordDispatchError(convId, e, "Falha no revezamento")
@@ -985,18 +989,9 @@ export function ChatPanel() {
   function handleStop() {
     const convId = useChat.getState().activeId
     if (!convId) return
-    // parar o run também cancela qualquer auto-resume agendado (intenção explícita).
-    useChat.getState().cancelAutoResume(convId)
-    // Disputa Fusion em voo: o Stop era no-op silencioso (runId null) enquanto
-    // N candidatos queimavam dinheiro. Agora aborta a disputa de verdade.
-    const fusion = useFusion.getState().byConv[convId]
-    if (fusion && (fusion.phase === "running" || fusion.phase === "judging")) {
-      useFusion.getState().abort(convId)
-      toast("Disputa cancelada")
-      return
-    }
-    const runId = useChat.getState().byId[convId]?.runId
-    if (runId) void cancelAgent(runId)
+    void cancelConversationTurn(convId).then((fusion) => {
+      if (fusion) toast("Disputa cancelada")
+    })
   }
 
   const hasConversation = items.length > 0
@@ -1159,10 +1154,8 @@ export function ChatPanel() {
             <ArrowDown className="size-3.5" /> Rolar pro fim
           </button>
         )}
-        <LivePlanCard
-          items={items}
-          running={running}
-          finalizing={finalizing}
+        <RunStatusStack
+          conversation={conv}
           detailInSidebar={planDetailedInSidebar}
         />
         {/* px-8 casa a borda do composer com o texto do transcript (que usa

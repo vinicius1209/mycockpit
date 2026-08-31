@@ -96,6 +96,7 @@ import {
   feedbackTextByResult,
   turnStartIndex,
   tsForGroups,
+  visibleThreadItems,
   windowStartIndex,
 } from "@/components/chat/threadWindow"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
@@ -839,7 +840,6 @@ const ToolGroup = memo(function ToolGroup({
     (tool) => tool.deferred?.status === "running",
   )
   const live = active || processLive || deferredLive
-  const wasActive = useRef(live)
   const forest = useMemo(() => buildToolForest(tools), [tools])
   const activeToolId = live
     ? [...tools]
@@ -852,6 +852,9 @@ const ToolGroup = memo(function ToolGroup({
             tool.deferred?.status === "running",
         )?.id ?? null
     : null
+  // Entre tool_result e tool_use o turno vive, mas não há atividade presente.
+  const executing = live && activeToolId != null
+  const wasActive = useRef(executing)
   // Digest do cabeçalho numa passada só, memoizado por grupo: este é o
   // componente mais quente do app — nada de varredura extra por render.
   const digest = useMemo(
@@ -868,10 +871,9 @@ const ToolGroup = memo(function ToolGroup({
     [digest.labelWorkId],
   )
   const failedInGroup = digest.failed > 0
-  // Concluído NASCE recolhido; só o vivo nasce aberto; falha nasce aberta
-  // mostrando a culpada (regra em toolGroupDisclosure.ts).
+  // Só atividade PRESENTE e falha nascem abertas (toolGroupDisclosure.ts).
   const [open, setOpen] = useState(() =>
-    bornOpen({ live, failed: failedInGroup }),
+    bornOpen({ live: executing, failed: failedInGroup }),
   )
   const lastActivity = tools.reduce(
     (latest, tool) =>
@@ -897,13 +899,11 @@ const ToolGroup = memo(function ToolGroup({
     [tools],
   )
 
-  // A atividade corrente abre pra dar feedback ao vivo. Quando termina,
-  // recolhe sozinha SÓ quando não puxa o tapete de ninguém: nunca sobre toggle
-  // manual, nunca sobre falha, e nunca se o leitor desancorou do fundo com o
-  // grupo visível (regra exata documentada em toolGroupDisclosure.ts).
+  // Atividade presente abre; ao terminar, recolhe sem contrariar toggle,
+  // falha ou leitor desancorado (regra exata em toolGroupDisclosure.ts).
   useEffect(() => {
-    if (live && !manuallyToggled.current) setOpen(true)
-    if (wasActive.current && !live) {
+    if (executing && !manuallyToggled.current) setOpen(true)
+    if (wasActive.current && !executing) {
       const el = rootRef.current
       const container = el ? scrollContainerOf(el) : null
       const rect = el?.getBoundingClientRect()
@@ -913,10 +913,8 @@ const ToolGroup = memo(function ToolGroup({
         crect != null &&
         rect.bottom > crect.top &&
         rect.top < crect.bottom
-      const followingBottom = container
-        ? container.scrollHeight - container.scrollTop - container.clientHeight <
-          80
-        : true
+      // A intenção vem do mesmo dono do autoscroll; reflow não vira gesto.
+      const followingBottom = container?.dataset.threadFollowing !== "false"
       if (
         shouldAutoCollapseOnSettle({
           manuallyToggled: manuallyToggled.current,
@@ -933,8 +931,8 @@ const ToolGroup = memo(function ToolGroup({
         setOpen(false)
       }
     }
-    wasActive.current = live
-  }, [live, failedInGroup])
+    wasActive.current = executing
+  }, [executing, failedInGroup])
 
   // Aplica a compensação no MESMO frame do colapso (antes do paint): desconta
   // do scrollTop exatamente o quanto o grupo encolheu, e o que o leitor vê não
@@ -2065,16 +2063,15 @@ export function MessageList({
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
 }) {
-  const nodes = useStableNodes(items)
-  // MESMA derivação que o ChatPanel consome (memo por identidade do array em
-  // taskPlansOf): antes pai e filho varriam o fio inteiro cada um, por token.
-  const planView = useMemo(() => taskPlansOf(items), [items])
+  const threadItems = useMemo(() => visibleThreadItems(items, finalizing), [items, finalizing])
+  const nodes = useStableNodes(threadItems)
+  // Mesma derivação memoizada que o ChatPanel consome.
+  const planView = useMemo(() => taskPlansOf(threadItems), [threadItems])
   const taskPlans = planView.plans
   const activePlanAnchor = running ? (planView.live?.anchorId ?? null) : null
-  // Trabalho diferido VIVO (D1.3): alimenta a LINHA VIVA, dona única do "agora"
-  // (background-status B2.2). Derivado de items — replay-safe, sem estado
-  // paralelo: no restore o diferido vira interrompido e a linha some sozinha.
-  const liveDeferred = useMemo(() => pendingDeferred(items), [items])
+  // Trabalho diferido VIVO alimenta a LINHA VIVA e deriva de items:
+  // replay-safe, sem estado paralelo; no restore vira interrompido e some.
+  const liveDeferred = useMemo(() => pendingDeferred(threadItems), [threadItems])
 
   // Janela de renderização (política e porquês em `useStableNodes`): a cauda
   // primeiro, o teto depois, e `showAll` revela o histórico inteiro.
@@ -2098,23 +2095,23 @@ export function MessageList({
   const windowStart = useMemo(
     // Nada escondido (fio curto ou "mostrar anteriores" clicado) = a janela
     // começa no 1º item; não há o que procurar.
-    () => (hiddenCount > 0 ? windowStartIndex(items, firstVisibleKey) : 0),
-    [items, firstVisibleKey, hiddenCount],
+    () => (hiddenCount > 0 ? windowStartIndex(threadItems, firstVisibleKey) : 0),
+    [threadItems, firstVisibleKey, hiddenCount],
   )
   const feedbackByResult = useMemo(
-    () => feedbackTextByResult(items, turnStartIndex(items, windowStart)),
-    [items, windowStart],
+    () => feedbackTextByResult(threadItems, turnStartIndex(threadItems, windowStart)),
+    [threadItems, windowStart],
   )
   // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui e entregue
   // pronto ao MessageItem: fazer dentro do item quebraria o memo dele a cada
   // delta do streaming. Indexado POR ITEM e com a referência preservada enquanto
   // os rótulos daquele item não mudam — sem isso o `memo` do MessageItem
   // recebia um objeto novo por token e não memoizava nada.
-  const attReads = useStableAttReads(items, agent, running, windowStart)
+  const attReads = useStableAttReads(threadItems, agent, running, windowStart)
   // id → ts APENAS dos itens que abrem grupo visível (o cabeçalho lê o ts do 1º
   // item via a key do 1º nó, que buildNodes deriva do id desse item). Itens
   // antigos sem `ts` → undefined, e o grupo omite a hora.
-  const tsById = useMemo(() => tsForGroups(items, groups), [items, groups])
+  const tsById = useMemo(() => tsForGroups(threadItems, groups), [threadItems, groups])
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)

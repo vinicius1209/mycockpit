@@ -85,7 +85,7 @@ import {
 import { ensureMissionCwd } from "@/lib/missionWorktree"
 import { clearUnattendedRun, markUnattendedRun } from "@/lib/unattendedRuns"
 import { handoffFileName } from "@/lib/missionPaths"
-import { expandDraftForAgent } from "@/lib/slashCommands"
+import { expandEmbeddedDraft } from "@/lib/slashDispatch"
 import {
   ensureMissionsGitignore,
   readInterruptedFor,
@@ -586,9 +586,8 @@ export const useMission = create<MissionState>((set, get) => {
         // vai EMBUTIDA no prompt da fase, então até comando nativo precisa do
         // corpo. Fail-open: sem match/inventário, a task segue como texto. O
         // fio e a entrega guardam a task DIGITADA (a expansão é só do prompt).
-        const phaseTask = await expandDraftForAgent(task, cwd, def.agent, {
-          embedded: true,
-        })
+        const phaseExpansion = await expandEmbeddedDraft(task, cwd, def.agent)
+        const phaseTask = phaseExpansion.text
 
         const prompt = phasePrompt({
           persona: def.persona,
@@ -652,6 +651,7 @@ export const useMission = create<MissionState>((set, get) => {
               // permissão POR MEMBRO: a fase marcada "auto" roda autônoma (com o
               // freio do CLI); as demais herdam a permissão do projeto.
               permission: phasePermission(permission, cur),
+              instructionSources: phaseExpansion.instructionSources,
               maxRetries: cur.maxRetries,
               // anexos: 1ª fase (i === 0) = os do launcher, junto do pedido
               // original; fase seguinte a um GATE = os das respostas ricas

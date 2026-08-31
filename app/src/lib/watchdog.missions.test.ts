@@ -118,6 +118,27 @@ beforeEach(() => {
 })
 
 describe("checkStalledMissions (MH1.2)", () => {
+  it("fase com ferramenta estática é avisada após uma janela sem progresso", () => {
+    const active: ChatItem = {
+      kind: "tool",
+      id: "330585d6-21f1-4fd5-a5f6-63647be48bce",
+      name: "run_command",
+      input: {},
+      toolId: "agy-step-94",
+    }
+    useMission.setState({
+      byConv: { c1: missionRun({ phases: [phase({ items: [active] })] }) },
+    })
+    checkStalledMissions(T0)
+    checkStalledMissions(T0 + 10 * MIN)
+    expect(notifyMissionStalled).toHaveBeenCalledWith(
+      "c1",
+      "codex",
+      "Executar",
+      10,
+    )
+  })
+
   it("fase muda além do limiar dispara UMA vez (nativa + toast com Parar missão)", () => {
     useMission.setState({ byConv: { c1: missionRun() } })
     checkStalledMissions(T0) // baseline

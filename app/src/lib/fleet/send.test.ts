@@ -46,7 +46,7 @@ vi.mock("sonner", () => ({
 }))
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async () => {}),
-  cancelAgent: vi.fn(async () => {}),
+  cancelAgent: vi.fn(async () => true),
   agentLabel: (id: string) =>
     ({ "claude-code": "Claude Code", codex: "Codex", agy: "Antigravity" })[
       id as "claude-code"

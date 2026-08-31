@@ -8,6 +8,7 @@ import {
   expandPendingForTarget,
   expandQueuedForJoin,
   expandSlashCommand,
+  expandSlashCommandWithSources,
   parseSlashInvocation,
   reexpandIfEmbedded,
   slashEmptyHint,
@@ -42,6 +43,10 @@ describe("parseSlashInvocation", () => {
     expect(parseSlashInvocation("/deploy prod\ncom rollback")).toEqual({
       name: "deploy",
       args: "prod\ncom rollback",
+    })
+    expect(parseSlashInvocation("/acme.quality:review diff")).toEqual({
+      name: "acme.quality:review",
+      args: "diff",
     })
   })
 
@@ -120,6 +125,38 @@ describe("expandSlashCommand — fonte×motor", () => {
     expect(expandSlashCommand("/deploy prod", commands, "codex")).toBe(
       "/deploy prod",
     )
+  })
+
+  it("skill de plugin expande em qualquer motor e carrega claim do fingerprint", () => {
+    const command = cmd({
+      name: "acme.quality:review",
+      source: "plugin",
+      kind: "skill",
+      origin: "global",
+      body: "Revise $ARGUMENTS",
+      pluginKey: "acme.quality",
+      pluginName: "Quality",
+      pluginFingerprint: "hash-atual",
+      contributionId: "review",
+    })
+    expect(
+      expandSlashCommandWithSources(
+        "/acme.quality:review src",
+        [command],
+        "claude-code",
+      ),
+    ).toEqual({
+      text: "Revise src",
+      instructionSources: [
+        {
+          kind: "plugin-skill",
+          pluginKey: "acme.quality",
+          fingerprint: "hash-atual",
+          contributionId: "review",
+          invocation: "acme.quality:review",
+        },
+      ],
+    })
   })
 })
 
@@ -275,14 +312,22 @@ describe("expandPendingForTarget — pendente do revezamento (G2.3)", () => {
 
   it("texto que não é invocação passa direto, sem tocar no disco", async () => {
     const out = await expandPendingForTarget("conserta o build", "/repo", "codex")
-    expect(out).toEqual({ text: "conserta o build", note: null })
+    expect(out).toEqual({
+      text: "conserta o build",
+      note: null,
+      instructionSources: [],
+    })
     expect(vi.mocked(readProjectCommands)).not.toHaveBeenCalled()
   })
 
   it("inventário indisponível → texto SEM nota (não afirma ausência sem evidência)", async () => {
     vi.mocked(readProjectCommands).mockRejectedValue(new Error("sem disco"))
     const out = await expandPendingForTarget("/deploy prod", "/repo", "codex")
-    expect(out).toEqual({ text: "/deploy prod", note: null })
+    expect(out).toEqual({
+      text: "/deploy prod",
+      note: null,
+      instructionSources: [],
+    })
   })
 })
 

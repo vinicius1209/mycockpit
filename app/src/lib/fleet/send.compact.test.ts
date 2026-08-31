@@ -1,7 +1,7 @@
 // /compactar interceptado no send — a peça que trava as DUAS pontas do
 // builtin: em motor com nativeCompact o que viaja é o texto LITERAL "/compact"
 // via resume (turno técnico, sem doutrina/expansão de .md — o inventário de
-// disco nem é lido); em motor sem, transplante para si mesmo com recap
+// disco nem é lido); em motor sem, transplante para si mesmo com memória
 // emoldurado (H3) em sessão fresca. Superfície testada: sendFromDesk (a
 // paridade com o handleSend do ChatPanel é a mesma disciplina do send.test.ts;
 // scaffolding espelha o send.slash.test.ts, só o subset usado).
@@ -13,6 +13,7 @@ import { RENEWAL_INSTRUCTION } from "@/lib/compact"
 import type { ConversationMeta } from "@/lib/db/conversations"
 import { readDoctrine } from "@/lib/doctrine"
 import { readProjectCommands, type SlashCommand } from "@/lib/sources"
+import { exportConvContext } from "@/lib/transcript"
 import { HISTORY_OPEN } from "@/lib/trust"
 import type { ChatItem, ConvState, QueuedMsg } from "@/store/chat"
 import { sendFromDesk } from "./send"
@@ -36,7 +37,7 @@ vi.mock("sonner", () => ({
 }))
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async () => {}),
-  cancelAgent: vi.fn(async () => {}),
+  cancelAgent: vi.fn(async () => true),
   agentLabel: (id: string) => id,
 }))
 vi.mock("@/lib/autoResume", () => ({
@@ -82,6 +83,8 @@ vi.mock("@/lib/presets", () => ({
 vi.mock("@/lib/transcript", () => ({
   renderTranscript: vi.fn(() => "# transcript"),
   exportConvContext: vi.fn(async () => ".mycockpit/context/conv.md"),
+  memoryPointerLine: (path: string) =>
+    `Memória completa desta conversa (leia se precisar de mais contexto): ${path}`,
   buildMemoryPrompt: vi.fn(
     (_items: unknown, _pointer: string | null, prompt: string) => prompt,
   ),
@@ -234,7 +237,7 @@ describe("sendFromDesk — /compactar em motor SEM nativeCompact (codex)", () =>
     )
   })
 
-  it("transplanta PARA SI MESMO: sessão fresca, recap emoldurado (H3), nunca o /compactar cru", async () => {
+  it("transplanta PARA SI MESMO: sessão fresca, memória emoldurada + ponteiro, nunca o /compactar cru", async () => {
     await sendFromDesk({ ...args, agent: "codex" })
     const begin = h.chat.beginTransplant as ReturnType<typeof vi.fn>
     expect(begin).toHaveBeenCalledWith("c1", expect.any(String), "codex", {
@@ -246,10 +249,16 @@ describe("sendFromDesk — /compactar em motor SEM nativeCompact (codex)", () =>
     expect(call[2]).toBe("codex") // MESMO motor
     expect(call[7]).toBeNull() // sessão FRESCA (renovar É abrir mão da antiga)
     const prompt = call[5] as string
-    expect(prompt).toContain(HISTORY_OPEN) // recap dentro da moldura H3
+    expect(prompt).toContain(HISTORY_OPEN) // memória dentro da moldura H3
     expect(prompt).toContain("implementa o login")
+    expect(prompt).toContain(".mycockpit/context/conv.md")
     expect(prompt).toContain(RENEWAL_INSTRUCTION)
     expect(prompt).not.toContain("/compactar") // o builtin nunca vira texto
+    expect(vi.mocked(exportConvContext)).toHaveBeenCalledWith(
+      "/proj",
+      "c1",
+      "# transcript",
+    )
   })
 
   it("doutrina viaja FRESCA no corpo (freshSession; codex não tem canal system) e o fingerprint é carimbado", async () => {
@@ -279,6 +288,15 @@ describe("sendFromDesk — /compactar em motor SEM nativeCompact (codex)", () =>
       .map(([, e]) => (e as { message: string }).message)
     expect(notices.some((m) => m.includes("renovando a sessão"))).toBe(true)
     expect(notices.some((m) => /\d+\s*%/.test(m))).toBe(false)
+  })
+
+  it("sem conseguir salvar a memória plena, preserva a sessão e não abre uma nova", async () => {
+    vi.mocked(exportConvContext).mockRejectedValueOnce(new Error("disco cheio"))
+    await sendFromDesk({ ...args, agent: "codex" })
+    expect(vi.mocked(runAgent)).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      "Não foi possível salvar a memória completa; a sessão original foi preservada.",
+    )
   })
 })
 

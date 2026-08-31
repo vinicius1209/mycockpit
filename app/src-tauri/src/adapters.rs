@@ -49,6 +49,9 @@ pub struct RunRequest {
     /// MCP de trabalho/processos gerenciado pelo MyCockpit. Mesmo contrato no
     /// Claude e Codex; ausente em providers sem MCP.
     pub work_gateway: Option<crate::work_gateway::GatewayConfig>,
+    /// Materialização por-run do Tool Catalog da Frota. O catálogo é montado
+    /// pelo app; este MCP só transporta a lista e as chamadas ao worker.
+    pub tool_gateway: Option<crate::tool_gateway::GatewayConfig>,
     /// MCPs externos selecionados pelo control plane. Sem bindings explícitos,
     /// `managed=false` preserva os configs nativos dos CLIs.
     pub mcp_plan: crate::mcp_control::McpRunPlan,
@@ -352,8 +355,80 @@ impl McpEscopo {
     }
 }
 
+/// Como uma fonte torna ferramentas disponíveis ao motor. MCP é só UM dos
+/// transportes; o domínio não pode depender dele para representar tools
+/// nativas, ACP ou uma futura API de provider.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToolTransport {
+    Native,
+    Mcp,
+    Cli,
+    Acp,
+}
+
+/// Tempo de vida da configuração que materializa a fonte de ferramentas.
+/// `User` fica no vocabulário mesmo sem consumidor atual: é diferente de uma
+/// configuração global da máquina e evita outro bool que colapse realidades.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CapabilityScope {
+    Run,
+    Project,
+    User,
+    Global,
+}
+
+/// Quanto a Frota consegue garantir que a fonte descrita é exatamente a que o
+/// run recebeu. `Hard` nasce e morre sob controle do runner; `Advisory` depende
+/// também de estado que o provider mantém fora do run.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PolicyEnforceability {
+    Hard,
+    Advisory,
+}
+
+/// Qual evidência permite enumerar a superfície. Não confundir stream
+/// estruturado com inventário: um provider pode narrar tool calls sem publicar
+/// a lista completa de tools disponíveis.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToolInventoryEvidence {
+    /// Catálogo fixo e versionado pela própria Frota.
+    Declared,
+    /// O handshake do provider informa ao menos a contagem da superfície.
+    RuntimeCount,
+    /// A Frota executa descoberta/`tools/list` antes do run.
+    Probe,
+    /// Não existe uma fonte completa auditada; a UI deve dizer isso.
+    Opaque,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolMaterializerDef {
+    pub kind: ToolMaterializerKind,
+    pub transport: ToolTransport,
+    pub scope: CapabilityScope,
+    pub enforceability: PolicyEnforceability,
+    pub inventory: ToolInventoryEvidence,
+    pub filters_per_run: bool,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum ToolMaterializerKind {
+    ProviderNative,
+    FrotaGateway,
+    ExternalMcp,
+}
+
 #[allow(dead_code)]
 pub struct Capabilities {
+    /// Evidência disponível para a superfície NATIVA do provider. A fonte
+    /// existe em todo adapter; o que varia é se conseguimos enumerá-la.
+    pub native_tool_inventory: ToolInventoryEvidence,
     /// Fala MCP e recebe o `mc-work` (processos longos + planos vivos).
     pub work_mcp: bool,
     /// Recebe o `mc-context` (memória read-only por MCP).
@@ -485,9 +560,49 @@ pub struct Capabilities {
     pub model_smoke: Option<ModelSmokeDialect>,
 }
 
+impl Capabilities {
+    /// Fontes de tools declaradas por este adapter, sem comparar seu nome.
+    /// Gateways internos da Frota entram depois, no manifesto do run, porque
+    /// só ali sabemos quais listeners realmente nasceram.
+    pub fn tool_materializers(&self) -> Vec<ToolMaterializerDef> {
+        let mut out = vec![ToolMaterializerDef {
+            kind: ToolMaterializerKind::ProviderNative,
+            transport: ToolTransport::Native,
+            scope: CapabilityScope::Run,
+            enforceability: PolicyEnforceability::Advisory,
+            inventory: self.native_tool_inventory,
+            filters_per_run: false,
+        }];
+        let scope = match self.mcp_escopo {
+            McpEscopo::PorRun => Some(CapabilityScope::Run),
+            McpEscopo::PorProjeto => Some(CapabilityScope::Project),
+            McpEscopo::Global => Some(CapabilityScope::Global),
+            McpEscopo::Nenhum => None,
+        };
+        if let Some(scope) = scope {
+            let hard = matches!(scope, CapabilityScope::Run);
+            out.push(ToolMaterializerDef {
+                kind: ToolMaterializerKind::ExternalMcp,
+                transport: ToolTransport::Mcp,
+                scope,
+                enforceability: if hard {
+                    PolicyEnforceability::Hard
+                } else {
+                    PolicyEnforceability::Advisory
+                },
+                inventory: ToolInventoryEvidence::Probe,
+                filters_per_run: hard,
+            });
+        }
+        out
+    }
+}
+
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
 /// tasks, resume, stream-json e custo pronto em USD.
 pub const CLAUDE_CAPS: Capabilities = Capabilities {
+    // O `system/init.tools` traz a contagem real da superfície deste run.
+    native_tool_inventory: ToolInventoryEvidence::RuntimeCount,
     work_mcp: true,
     context_mcp: true,
     // claude 2.1.220: config MCP injetada no spawn, morre com o processo.
@@ -541,6 +656,8 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
 /// resume de thread, stream JSON — mas sem background task, sem slash nativo
 /// no `exec` e sem USD no stream (custo é estimado por tokens × tabela).
 pub const CODEX_CAPS: Capabilities = Capabilities {
+    // `exec`/app-server não publicam catálogo completo das tools nativas.
+    native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: true,
     context_mcp: true,
     // codex 0.146: idem, config por run no exec.
@@ -597,6 +714,8 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
 /// estruturado, usage e resume — três campos que estavam `false` por versão
 /// velha, não por medição. Cada campo abaixo cita a evidência e a data.
 pub const AGY_CAPS: Capabilities = Capabilities {
+    // O evento `init.tools` traz a contagem real da superfície deste run.
+    native_tool_inventory: ToolInventoryEvidence::RuntimeCount,
     // agy 1.1.21 (medido 26/08/2026): o motor SUPORTA MCP, e desde a 1.1.13
     // ganhou CLI própria (`agy mcp add|remove|list|enable|disable`, stdio e
     // http, com `--header` e `--env`). A evidência de antes ("só por arquivo,
@@ -732,6 +851,11 @@ pub trait AgentAdapter: Send {
     fn on_close(&mut self) -> Vec<AgentEvent> {
         Vec::new()
     }
+    /// Última chance após gesto de parar. Só adapters com fonte autoritativa
+    /// externa ao stream devem devolver eventos; o default não inventa nada.
+    fn on_cancel(&mut self) -> Vec<AgentEvent> {
+        Vec::new()
+    }
 
     /// Como tratar UMA linha CRUA de stdout. Default (adapters ESTRUTURADOS):
     /// trima, pula vazia, parseia JSON → `map_line`; linha não-JSON vira `Unknown`
@@ -813,7 +937,6 @@ fn extract_reset_hint(msg: &str) -> Option<String> {
     (!hint.is_empty()).then(|| hint.to_string())
 }
 
-
 /// OpenCode 1.17.9 — capabilities MEDIDAS no stream real (26/08/2026), não na
 /// documentação. O que foi verificado rodando `opencode run --format json`:
 ///
@@ -833,6 +956,8 @@ fn extract_reset_hint(msg: &str) -> Option<String> {
 /// MCP, canal de sistema, compactação nativa e janela de uso. O CLI faz mais;
 /// a flag diz o que o APP já usa.
 pub const OPENCODE_CAPS: Capabilities = Capabilities {
+    // ACP anuncia capabilities de protocolo, não a lista completa de tools.
+    native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: false,
     context_mcp: false,
     // opencode 1.18.21 (medido 26/08/2026): a chave `mcp` do `opencode.json`
@@ -899,7 +1024,9 @@ pub fn opencode_limit(msg: &str) -> Option<LimitHit> {
         || lower.contains("rate_limit")
         || lower.contains("quota")
         || lower.contains("out of credits"))
-    .then(|| LimitHit { reset_hint: extract_reset_hint(msg) })
+    .then(|| LimitHit {
+        reset_hint: extract_reset_hint(msg),
+    })
 }
 
 /// Adapter do OpenCode: `opencode run --format json`.
@@ -997,7 +1124,9 @@ impl AgentAdapter for OpenCodeAdapter {
                     return Vec::new();
                 }
                 self.texto.push_str(t);
-                vec![AgentEvent::Text { text: t.to_string() }]
+                vec![AgentEvent::Text {
+                    text: t.to_string(),
+                }]
             }
             "step_finish" => {
                 if let Some(p) = part {
@@ -1055,7 +1184,9 @@ impl AgentAdapter for OpenCodeAdapter {
                         message: msg.to_string(),
                         reset_hint: hit.reset_hint,
                     }],
-                    None => vec![AgentEvent::Error { message: msg.to_string() }],
+                    None => vec![AgentEvent::Error {
+                        message: msg.to_string(),
+                    }],
                 }
             }
             _ => Vec::new(),
@@ -1118,10 +1249,26 @@ fn build_opencode() -> Box<dyn AgentAdapter> {
 }
 
 static SPECS: [AgentSpec; 4] = [
-    AgentSpec { id: "claude-code", caps: &CLAUDE_CAPS, build: build_claude },
-    AgentSpec { id: "codex", caps: &CODEX_CAPS, build: build_codex },
-    AgentSpec { id: "agy", caps: &AGY_CAPS, build: build_agy },
-    AgentSpec { id: "opencode", caps: &OPENCODE_CAPS, build: build_opencode },
+    AgentSpec {
+        id: "claude-code",
+        caps: &CLAUDE_CAPS,
+        build: build_claude,
+    },
+    AgentSpec {
+        id: "codex",
+        caps: &CODEX_CAPS,
+        build: build_codex,
+    },
+    AgentSpec {
+        id: "agy",
+        caps: &AGY_CAPS,
+        build: build_agy,
+    },
+    AgentSpec {
+        id: "opencode",
+        caps: &OPENCODE_CAPS,
+        build: build_opencode,
+    },
 ];
 
 /// Id canônico: string vazia = claude-code (convenção histórica das conversas
@@ -1424,24 +1571,30 @@ impl AgentAdapter for ClaudeAdapter {
                 for external in &req.mcp_plan.selected {
                     servers.insert(external.runtime_name.clone(), external.launch.claude_json());
                 }
-                if !req.mcp_plan.selected.is_empty() {
-                    // Mesmo anúncio do preâmbulo do prompt (agent.rs): o nome
-                    // de RUNTIME é o que o modelo precisa citar nas tools.
-                    system_nudges.push(format!(
-                        "Ferramentas MCP desta sessão:\n{}\nUse somente quando a tarefa exigir.",
-                        req.mcp_plan
-                            .selected
-                            .iter()
-                            .map(|server| {
-                                format!(
-                                    "- {}: {} (MCP externo roteado pelo MyCockpit)",
-                                    server.runtime_name, server.display_name
-                                )
-                            })
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    ));
-                }
+            }
+            for contributed in &req.mcp_plan.contributed {
+                servers.insert(
+                    contributed.runtime_name.clone(),
+                    contributed.launch.claude_json(),
+                );
+            }
+            let announced = req.mcp_plan.announced_servers();
+            if !announced.is_empty() {
+                // Mesmo anúncio do preâmbulo do prompt (agent.rs): o nome de
+                // runtime é o que o modelo precisa citar nas tools.
+                system_nudges.push(format!(
+                    "Ferramentas MCP desta sessão:\n{}\nUse somente quando a tarefa exigir.",
+                    announced
+                        .iter()
+                        .map(|server| {
+                            format!(
+                                "- {}: {} (MCP roteado pela Frota)",
+                                server.runtime_name, server.display_name
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                ));
             }
             if let Some(gateway) = &req.context_gateway {
                 servers.insert(
@@ -1476,13 +1629,23 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Use mcp__{}__{} para dev servers, watchers, containers e outros processos longos; isso mantém PID, saída e controle no MyCockpit. Publique planos vivos com mcp__{}__{} quando a tarefa tiver várias etapas e marque cada início/conclusão com mcp__{}__{}. Se usar a checklist nativa, atualize os estados equivalentes também.",
+                    "Use mcp__{}__{} para dev servers, watchers, containers e outros processos longos; isso mantém PID, saída e controle na Frota. Publique planos vivos com mcp__{}__{} quando a tarefa tiver várias etapas e marque cada início/conclusão com mcp__{}__{}. Se usar a checklist nativa, atualize os estados equivalentes também.",
                     crate::work_gateway::MCP_SERVER_NAME,
                     crate::work_gateway::PROCESS_START_TOOL,
                     crate::work_gateway::MCP_SERVER_NAME,
                     crate::work_gateway::WORK_PLAN_TOOL,
                     crate::work_gateway::MCP_SERVER_NAME,
                     crate::work_gateway::WORK_UPDATE_TOOL,
+                ));
+            }
+            if let Some(gateway) = &req.tool_gateway {
+                servers.insert(
+                    crate::tool_gateway::MCP_SERVER_NAME.into(),
+                    gateway.claude_server_json(),
+                );
+                system_nudges.push(format!(
+                    "As tools de plugins revisados desta sessão chegam pelo MCP {}. O worker só nasce quando uma tool é chamada; não use uma extensão fora da necessidade da tarefa.",
+                    crate::tool_gateway::MCP_SERVER_NAME,
                 ));
             }
             if let Some((server_bin, sock)) = &req.approval {
@@ -2084,6 +2247,9 @@ impl AgentAdapter for CodexAdapter {
             if let Some(gateway) = &req.work_gateway {
                 gateway.configure_codex(&mut cmd);
             }
+            if let Some(gateway) = &req.tool_gateway {
+                gateway.configure_codex(&mut cmd);
+            }
         }
         // TODO `-c` VAI ANTES DO SUBCOMANDO (codex 0.147, empírico 13/08/2026).
         // Os overrides passados DEPOIS de `exec` não fazem merge: eles
@@ -2521,6 +2687,9 @@ pub struct AgyAdapter {
     /// NOVA em silêncio quando o id não existe, e sem essa comparação o app
     /// acharia que tem contexto que não tem.
     resume: Option<String>,
+    /// Conversa confirmada pelo `init`, usada para consultar o transcript do
+    /// próprio Agy se a ponte parar depois de uma ferramenta em background.
+    conversation_id: Option<String>,
     /// Acumulado da conversa já contabilizado (ADR-033): entra como baseline do
     /// run e vira o total lido no fim. None = conversa nova.
     usage_seen: Option<crate::agent::CumulativeUsage>,
@@ -2538,6 +2707,10 @@ pub struct AgyAdapter {
     /// global à conversa retomada; esta régua local deixa a decisão terminal
     /// comparar apenas fatos observados no turno corrente.
     stream_position: u64,
+    /// Maior step global que efetivamente atravessou o stream externo.
+    last_provider_step: u64,
+    /// Um `result` normal vence qualquer recuperação de transcript.
+    result_seen: bool,
     /// Step de resposta que está recebendo deltas e se ele já trouxe texto.
     /// ACTIVE e DONE chegam em linhas diferentes para a mesma resposta.
     response_step: Option<String>,
@@ -2599,11 +2772,34 @@ impl AgyAdapter {
         }
     }
 
+    fn recover_answer(&self) -> Vec<AgentEvent> {
+        if self.result_seen {
+            return Vec::new();
+        }
+        let Some(session_id) = self.conversation_id.as_deref() else {
+            return Vec::new();
+        };
+        let Some(text) = crate::agy_recovery::completed_answer(session_id, self.last_provider_step)
+        else {
+            return Vec::new();
+        };
+        vec![
+            AgentEvent::TextDelta { text },
+            AgentEvent::TextStop,
+            AgentEvent::Notice {
+                message: "Recuperei a resposta final no histórico do Agy; as métricas deste trecho não chegaram pela ponte.".to_string(),
+            },
+        ]
+    }
+
     /// Um `step_update` → eventos. É AQUI que a narração deixa de virar
     /// resposta: o texto sai amarrado ao SEU step, e o step de ferramenta que
     /// vem logo depois entra como cartão entre um texto e outro.
     fn map_step(&mut self, step: &serde_json::Value) -> Vec<AgentEvent> {
         self.stream_position = self.stream_position.saturating_add(1);
+        if let Some(step_index) = step.get("step_index").and_then(|x| x.as_u64()) {
+            self.last_provider_step = self.last_provider_step.max(step_index);
+        }
         let position = self.stream_position;
         let state = step.get("state").and_then(|x| x.as_str()).unwrap_or("");
         let kind = step.get("step_type").and_then(|x| x.as_str()).unwrap_or("");
@@ -2682,14 +2878,10 @@ impl AgyAdapter {
                         parent_tool_id: None,
                     });
                 } else {
-                    let erro = info
-                        .and_then(|i| i.get("error"))
-                        .filter(|e| !e.is_null());
+                    let erro = info.and_then(|i| i.get("error")).filter(|e| !e.is_null());
                     let full = erro
                         .and_then(|e| e.get("message").and_then(|x| x.as_str()))
-                        .or_else(|| {
-                            info.and_then(|i| i.get("output").and_then(|x| x.as_str()))
-                        })
+                        .or_else(|| info.and_then(|i| i.get("output").and_then(|x| x.as_str())))
                         .unwrap_or_default()
                         .to_string();
                     let lines = if full.trim().is_empty() {
@@ -2986,6 +3178,7 @@ impl AgentAdapter for AgyAdapter {
                     .and_then(|x| x.as_str())
                     .unwrap_or_default()
                     .to_string();
+                self.conversation_id = (!cid.is_empty()).then_some(cid.clone());
                 // O agy NÃO falha em resume de id inexistente: escreve
                 // `warning: conversation "…" not found` no stderr e abre
                 // conversa NOVA (medido 14/08/2026). O único jeito de saber é
@@ -3021,7 +3214,10 @@ impl AgentAdapter for AgyAdapter {
                 out.extend(self.map_step(step));
                 out
             }
-            ("result", Some(result)) => self.map_result(result),
+            ("result", Some(result)) => {
+                self.result_seen = true;
+                self.map_result(result)
+            }
             // `command_result` (resposta de `/comando` nativo, ex. `/credits`)
             // e qualquer evento novo: surfaça em vez de descartar.
             _ => vec![AgentEvent::Unknown { raw: v.clone() }],
@@ -3067,11 +3263,17 @@ impl AgentAdapter for AgyAdapter {
     /// EOF sem `result` (processo morto, timeout do `--print-timeout`): fecha o
     /// bloco de texto aberto pra bolha não ficar pendurada.
     fn on_close(&mut self) -> Vec<AgentEvent> {
+        let mut out = Vec::new();
         if self.text_open {
             self.text_open = false;
-            return vec![AgentEvent::TextStop];
+            out.push(AgentEvent::TextStop);
         }
-        Vec::new()
+        out.extend(self.recover_answer());
+        out
+    }
+
+    fn on_cancel(&mut self) -> Vec<AgentEvent> {
+        self.recover_answer()
     }
 
     /// Frase LITERAL do stderr do agy 1.1.13 quando o `--conversation <ID>`
@@ -3155,6 +3357,7 @@ mod tests {
             approval: None,
             context_gateway: None,
             work_gateway: None,
+            tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,
             usage_baseline: None,
@@ -3327,6 +3530,7 @@ mod tests {
                 args: vec!["serve".into()],
                 ..Default::default()
             },
+            tool_names: Vec::new(),
         }
     }
 
@@ -3397,6 +3601,32 @@ mod tests {
     }
 
     #[test]
+    fn claude_registra_catalogo_de_plugins_sem_autoaprovar_tools() {
+        let mut r = req(Permission::Padrao, false);
+        r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
+            server_bin: "/app/frota".into(),
+            socket: "/tmp/mc-tools.sock".into(),
+        });
+        let mut a = ClaudeAdapter::default();
+        let args = argv(&a.build_command(&r).unwrap());
+        let config = args
+            .windows(2)
+            .find(|pair| pair[0] == "--mcp-config")
+            .map(|pair| &pair[1])
+            .expect("config MCP efêmero");
+        assert!(config.contains(crate::tool_gateway::MCP_SERVER_NAME));
+        assert!(config.contains("tool-server"));
+        assert!(config.contains("/tmp/mc-tools.sock"));
+        assert!(
+            !args
+                .windows(2)
+                .filter(|pair| pair[0] == "--allowedTools")
+                .any(|pair| pair[1].contains(crate::tool_gateway::MCP_SERVER_NAME)),
+            "estar no catálogo não equivale a autoaprovação no provider"
+        );
+    }
+
+    #[test]
     fn claude_managed_mcp_usa_config_estrita_sem_autoaprovar_tool_externa() {
         let mut r = req(Permission::Padrao, false);
         r.mcp_plan = crate::mcp_control::McpRunPlan {
@@ -3424,6 +3654,27 @@ mod tests {
     }
 
     #[test]
+    fn claude_recebe_mcp_contribuido_sem_transformar_config_legada_em_gerenciada() {
+        let mut server = external_mcp();
+        server.runtime_name = "plugin__acme_quality__docs".into();
+        let mut r = req(Permission::Padrao, false);
+        r.mcp_plan = crate::mcp_control::McpRunPlan {
+            contributed: vec![server],
+            ..Default::default()
+        };
+        let mut a = ClaudeAdapter::default();
+        let args = argv(&a.build_command(&r).unwrap());
+        assert!(!args.iter().any(|arg| arg == "--strict-mcp-config"));
+        let config = args
+            .windows(2)
+            .find(|pair| pair[0] == "--mcp-config")
+            .map(|pair| &pair[1])
+            .expect("config MCP contribuída");
+        assert!(config.contains("plugin__acme_quality__docs"));
+        assert!(config.contains("/opt/mcp/hostinger-wrapper"));
+    }
+
+    #[test]
     fn claude_anuncia_runtime_dos_mcps_externos_no_system_prompt() {
         let mut r = req(Permission::Padrao, false);
         r.mcp_plan = crate::mcp_control::McpRunPlan {
@@ -3442,7 +3693,7 @@ mod tests {
         // O nome de RUNTIME (não só o display) precisa chegar ao modelo: é
         // ele que aparece no prefixo mcp__<nome>__<tool> das chamadas.
         assert!(nudge.contains(
-            "- mcx-claude-hostinger: Hostinger (MCP externo roteado pelo MyCockpit)"
+            "- mcx-claude-hostinger: Hostinger (MCP roteado pela Frota)"
         ));
     }
 
@@ -3952,6 +4203,25 @@ mod tests {
     }
 
     #[test]
+    fn codex_catalogo_de_plugins_vem_antes_do_exec() {
+        let mut r = req(Permission::Padrao, false);
+        r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
+            server_bin: "/app/frota".into(),
+            socket: "/tmp/mc-tools.sock".into(),
+        });
+        let mut a = CodexAdapter::default();
+        let args = argv(&a.build_command(&r).unwrap());
+        let exec = args.iter().position(|arg| arg == "exec").unwrap();
+        let config = args
+            .iter()
+            .position(|arg| arg.contains("mcp_servers.mc-tools.command"))
+            .unwrap();
+        assert!(config < exec);
+        assert!(args.iter().any(|arg| arg.contains("tool-server")));
+        assert!(args.iter().any(|arg| arg.contains("/tmp/mc-tools.sock")));
+    }
+
+    #[test]
     fn codex_managed_mcp_desliga_origem_e_injeta_runtime_antes_do_exec() {
         let mut r = req(Permission::Padrao, false);
         r.mcp_plan = crate::mcp_control::McpRunPlan {
@@ -4092,7 +4362,9 @@ mod tests {
     }
 
     /// Telemetria do Result (tokens, custo, acumulado devolvido).
-    fn result_of(evs: &[AgentEvent]) -> (u64, u64, u64, f64, Option<crate::agent::CumulativeUsage>) {
+    fn result_of(
+        evs: &[AgentEvent],
+    ) -> (u64, u64, u64, f64, Option<crate::agent::CumulativeUsage>) {
         match evs.iter().find(|e| matches!(e, AgentEvent::Result { .. })) {
             Some(AgentEvent::Result {
                 input_tokens,
@@ -5105,10 +5377,18 @@ mod tests {
     #[test]
     fn so_o_agy_tem_teto_de_duracao_a_desarmar() {
         let mut claude = ClaudeAdapter::default();
-        let args = argv(&claude.build_command(&req(Permission::Padrao, false)).unwrap());
+        let args = argv(
+            &claude
+                .build_command(&req(Permission::Padrao, false))
+                .unwrap(),
+        );
         assert!(!args.iter().any(|a| a.contains("timeout")));
         let mut codex = CodexAdapter::default();
-        let args = argv(&codex.build_command(&req(Permission::Padrao, false)).unwrap());
+        let args = argv(
+            &codex
+                .build_command(&req(Permission::Padrao, false))
+                .unwrap(),
+        );
         assert!(!args.iter().any(|a| a.contains("timeout")));
     }
 
@@ -5349,16 +5629,15 @@ mod tests {
     /// suportados precisam conservar um carrier mesmo quando o texto é vazio.
     #[test]
     fn turno_so_com_anexo_conserva_o_carrier_do_prompt() {
-        let mut r = req_com_anexo(
-            AttachmentKind::Image,
-            "/tmp/anexos/c1/abc.png",
-            "image/png",
-        );
+        let mut r = req_com_anexo(AttachmentKind::Image, "/tmp/anexos/c1/abc.png", "image/png");
         r.prompt.clear();
 
         let mut claude = ClaudeAdapter::default();
         let claude_args = argv(&claude.build_validated_command(&r).unwrap());
-        assert!(claude_args.last().unwrap().contains("/tmp/anexos/c1/abc.png"));
+        assert!(claude_args
+            .last()
+            .unwrap()
+            .contains("/tmp/anexos/c1/abc.png"));
 
         let mut codex = CodexAdapter::default();
         let codex_args = argv(&codex.build_validated_command(&r).unwrap());
@@ -5446,8 +5725,16 @@ mod tests {
     fn slug_limpo_e_ausencia_de_modelo_passam() {
         // sem modelo = default do CLI, que é um estado legítimo (não é erro).
         assert!(validate_model_slug(None).is_ok());
-        for limpo in ["gemini-3.7-flash-high", "claude-opus-5[1m]", "gpt-5.6-sol", "default"] {
-            assert!(validate_model_slug(Some(limpo)).is_ok(), "{limpo} é slug válido");
+        for limpo in [
+            "gemini-3.7-flash-high",
+            "claude-opus-5[1m]",
+            "gpt-5.6-sol",
+            "default",
+        ] {
+            assert!(
+                validate_model_slug(Some(limpo)).is_ok(),
+                "{limpo} é slug válido"
+            );
         }
     }
 
@@ -5480,7 +5767,10 @@ mod tests {
                 server_bin: "/app/mycockpit".into(),
                 socket: "/tmp/mc-work-contrato.sock".into(),
             });
-            r.approval = Some(("/app/mycockpit".into(), "/tmp/mc-approval-contrato.sock".into()));
+            r.approval = Some((
+                "/app/mycockpit".into(),
+                "/tmp/mc-approval-contrato.sock".into(),
+            ));
             r.mcp_plan = crate::mcp_control::McpRunPlan {
                 managed: true,
                 selected: vec![external_mcp()],
@@ -5614,13 +5904,14 @@ mod tests {
             let evs = resolve(agent)
                 .unwrap()
                 .on_stdout_line("linha crua que não é JSON");
-            let unknown = evs
+            let unknown = evs.iter().any(|e| matches!(e, AgentEvent::Unknown { .. }));
+            let texto = evs
                 .iter()
-                .any(|e| matches!(e, AgentEvent::Unknown { .. }));
-            let texto = evs.iter().any(|e| {
-                matches!(e, AgentEvent::TextDelta { .. } | AgentEvent::Text { .. })
-            });
-            assert_eq!(unknown, caps.structured_output, "{agent}: structured_output");
+                .any(|e| matches!(e, AgentEvent::TextDelta { .. } | AgentEvent::Text { .. }));
+            assert_eq!(
+                unknown, caps.structured_output,
+                "{agent}: structured_output"
+            );
             assert_eq!(
                 texto, !caps.structured_output,
                 "{agent}: adapter não-estruturado degrada a linha pra texto"
@@ -5848,5 +6139,52 @@ mod tests {
                 "{agent}: nenhum motor do registry pode ser chamado de 'não suporta MCP'"
             );
         }
+    }
+
+    #[test]
+    fn materializadores_de_tools_preservam_escopo_e_forca_de_controle() {
+        use CapabilityScope::*;
+        use PolicyEnforceability::*;
+        use ToolInventoryEvidence::*;
+        use ToolMaterializerKind::*;
+
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            let materializers = caps.tool_materializers();
+            let native = materializers
+                .iter()
+                .find(|item| item.kind == ProviderNative)
+                .expect("todo adapter declara a superfície nativa");
+            assert_eq!(native.scope, Run, "{agent}: tool nativa vive no run");
+            assert_eq!(native.enforceability, Advisory);
+            assert!(!native.filters_per_run);
+
+            let external = materializers
+                .iter()
+                .find(|item| item.kind == ExternalMcp)
+                .expect("os quatro CLIs auditados falam MCP");
+            let expected_scope = match caps.mcp_escopo {
+                McpEscopo::PorRun => Run,
+                McpEscopo::PorProjeto => Project,
+                McpEscopo::Global => Global,
+                McpEscopo::Nenhum => panic!("motor desta matriz fala MCP"),
+            };
+            assert_eq!(external.scope, expected_scope, "{agent}: escopo MCP");
+            assert_eq!(external.inventory, Probe);
+            assert_eq!(
+                external.enforceability,
+                if expected_scope == Run {
+                    Hard
+                } else {
+                    Advisory
+                }
+            );
+            assert_eq!(external.filters_per_run, expected_scope == Run);
+        }
+
+        assert_eq!(CLAUDE_CAPS.native_tool_inventory, RuntimeCount);
+        assert_eq!(AGY_CAPS.native_tool_inventory, RuntimeCount);
+        assert_eq!(CODEX_CAPS.native_tool_inventory, Opaque);
+        assert_eq!(OPENCODE_CAPS.native_tool_inventory, Opaque);
     }
 }

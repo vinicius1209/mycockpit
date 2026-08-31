@@ -12,14 +12,14 @@ export default defineConfig({
       '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
-  // Dois entries: a janela principal (index.html → main.tsx, o App) e o popover
-  // da tray (tray.html → tray.tsx, só o TrayPopover). O webview escondido para
-  // de bootar o grafo inteiro do App.
+  // Entries independentes: app principal, instrumento da barra e painel do
+  // Navegador do projeto. Janelas auxiliares não bootam o grafo inteiro do App.
   build: {
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),
         tray: fileURLToPath(new URL('./tray.html', import.meta.url)),
+        browser: fileURLToPath(new URL('./browser.html', import.meta.url)),
       },
     },
   },

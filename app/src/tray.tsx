@@ -1,6 +1,5 @@
-// Entry SEPARADO do popover da tray — carrega SÓ o TrayPopover, não o grafo do
-// App inteiro (stores, react-query, etc.). Antes o webview escondido bootava o
-// bundle completo só pra mostrar um painel de 360×430.
+// Entry SEPARADO do instrumento da barra. O backend decide a geometria efetiva;
+// este webview apenas roteia entre o popover clássico e o HUD flutuante.
 
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
@@ -9,7 +8,7 @@ import "@fontsource-variable/geist"
 import "@fontsource-variable/geist-mono"
 
 import "./index.css"
-import { TrayPopover } from "@/components/tray/TrayPopover"
+import { TraySurface } from "@/components/tray/TraySurface"
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
 
 // O popover da tray é OUTRO webview: a guarda do menu do motor é por janela, e
@@ -36,6 +35,6 @@ void import("@tauri-apps/api/window")
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <TrayPopover />
+    <TraySurface />
   </StrictMode>,
 )

@@ -33,6 +33,9 @@ import type { Enfileirar } from "@/lib/sendOrigin"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
 import { markNotesSentImpl } from "@/store/chat/notes"
+import { settleOrphanedTool, settleTerminalTools } from "@/store/chat/terminalTools"
+export { pendingDeferred } from "@/store/chat/terminalTools"
+import { reduceRunManifest } from "@/store/chat/runManifest"
 import { removeConversationImpl } from "@/store/chat/remove"
 import { setSessionModeImpl } from "@/store/chat/sessionMode"
 import {
@@ -158,57 +161,8 @@ export type ChatItem = ChatItemBody & { ts?: number }
  * processo do CLI que morreu junto com a instância anterior — `running` vindo
  * do disco vira `interrupted`, nunca "rodando" falso após restart. */
 export function markOrphanedProcesses(items: ChatItem[]): ChatItem[] {
-  return items.map((item) => {
-    if (item.kind !== "tool") return item
-    if (item.deferred?.status === "running") {
-      const message =
-        "O aplicativo reiniciou com este trabalho em background em andamento; ele morreu junto com o processo do agent. Envie uma nova mensagem para retomar."
-      return {
-        ...item,
-        deferred: {
-          ...item.deferred,
-          status: "interrupted" as const,
-          updatedAt: Date.now(),
-        },
-        result: { ok: false, text: message, lines: 1 },
-      }
-    }
-    if (
-      !item.managedProcess ||
-      !["running", "stopping"].includes(item.managedProcess.status)
-    )
-      return item
-    const message =
-      "O aplicativo reiniciou e perdeu o controle deste processo. O PID histórico foi preservado para auditoria."
-    return {
-      ...item,
-      managedProcess: {
-        ...item.managedProcess,
-        status: "orphaned",
-        updatedAt: Date.now(),
-      },
-      result: {
-        ok: false,
-        text: [item.managedProcess.output, message].filter(Boolean).join("\n"),
-        lines: item.managedProcess.output.trim()
-          ? item.managedProcess.output.split("\n").length + 1
-          : 1,
-      },
-    }
-  })
-}
-
-/** Trabalhos diferidos ainda VIVOS no fio (deferred-work-plan D1.3). DERIVADO
- *  de items (replay-safe, fonte única): alimenta o meta honesto do turno
- *  (a LINHA VIVA do rodapé), o aviso do botão de parar e a contagem
- *  do diálogo de saída. Puro e testável. */
-export function pendingDeferred(items: ChatItem[]): DeferredWork[] {
-  const out: DeferredWork[] = []
-  for (const it of items) {
-    if (it.kind === "tool" && it.deferred?.status === "running")
-      out.push(it.deferred)
-  }
-  return out
+  const now = Date.now()
+  return items.map((item) => settleOrphanedTool(item, now))
 }
 
 /** `task_type` do provider → palavra que um humano usa (background-status B2.3:
@@ -412,6 +366,7 @@ export interface ConvState extends ContextSnapshotState {
   finalizing: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
+  runManifest?: import("@/lib/tooling").EffectiveRunManifest
   /** Revezamento em duas fases: o target está iniciando, mas ainda NÃO assumiu
    *  a conversa. O agent/sessão de origem só são trocados quando o novo CLI
    *  emite `session`; falha antes disso deixa a origem integralmente retomável.
@@ -1093,34 +1048,18 @@ export function reduceItems(
       }
     case "cancelled":
       return {
-        items: [...c.items, { kind: "cancelled", id: uid(), ts: now }],
+        items: [
+          ...settleTerminalTools(c.items, "cancelled", now),
+          { kind: "cancelled", id: uid(), ts: now },
+        ],
         streamingTextId: null,
       }
-    // EOF do processo do CLI: trabalho diferido ainda "rodando" morreu junto —
-    // vira `interrupted` na hora (deferred-work-plan D1.3). Nunca "rodando"
-    // falso depois que o processo acabou.
+    // EOF nunca deixa ferramenta ou trabalho diferido com spinner vivo.
     case "done": {
-      if (!c.items.some((it) => it.kind === "tool" && it.deferred?.status === "running"))
-        return { streamingTextId: null }
-      const message =
-        "O processo do agent encerrou sem a conclusão deste trabalho em background. Envie uma nova mensagem para retomar."
-      return {
-        streamingTextId: null,
-        items: c.items.map((it) =>
-          it.kind === "tool" && it.deferred?.status === "running"
-            ? {
-                ...it,
-                deferred: {
-                  ...it.deferred,
-                  status: "interrupted" as const,
-                  updatedAt: now,
-                },
-                result: { ok: false, text: message, lines: 1 },
-                activityAt: now,
-              }
-            : it,
-        ),
-      }
+      const items = settleTerminalTools(c.items, "done", now)
+      return items === c.items
+        ? { streamingTextId: null }
+        : { streamingTextId: null, items }
     }
     default:
       return {}
@@ -1149,6 +1088,7 @@ function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
   return {
     ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }),
     ...controlFlow(c, e),
+    ...reduceRunManifest(c.runManifest, e),
   }
 }
 
@@ -1749,6 +1689,7 @@ export const useChat = create<ChatState>((set, get) => {
               running: true,
               finalizing: false,
               runId,
+              runManifest: undefined,
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,

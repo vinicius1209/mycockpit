@@ -104,6 +104,8 @@ describe("sectionsByGroup", () => {
       "interface",
       "conversas",
       "agentes",
+      "capacidades",
+      "extensoes",
       "conexoes",
       "app",
     ])

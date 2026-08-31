@@ -61,6 +61,14 @@ export interface GlobalSettings {
   preferredEditor: string | null
   /** Fechar a janela mantém o motor vivo e acessível pela barra de menus. */
   keepInTrayOnClose: boolean
+  /** Instrumento persistente nas bordas. Desligado preserva o popover clássico. */
+  hudEnabled: boolean
+  /** Posição do Dynamic HUD na tela. */
+  hudPosition: "notch" | "island" | "left" | "right" | "bottom" | "menubar"
+  /** Habilita expansão automática ao passar o mouse sobre o HUD. */
+  hudHoverExpand: boolean
+  /** Segue a tela ativa com o cursor em setups multi-monitor. */
+  hudFollowActiveScreen: boolean
   /** Dedupe persistido do aviso educativo exibido no primeiro hide. */
   trayCloseHintShown: boolean
   /** Último snapshot da detecção de agents (por id). Alimenta o seletor e o
@@ -96,8 +104,7 @@ export interface GlobalSettings {
   /** Companion Web (celular na LAN): liga o servidor local + a ponte de push.
    *  OPT-IN (default false) — abre uma porta na rede local. */
   companionEnabled: boolean
-  /** Vigia de turno mudo: minutos de silêncio (turno running sem NENHUM item
-   *  novo) até notificar. 0 = desligado. */
+  /** Vigia: minutos sem evento novo NEM trabalho reportado ativo. 0 desliga. */
   stalledAfterMin: number
   /** Automação DESASSISTIDA: minutos que um pedido bloqueante (permissão ou
    *  pergunta) de um run disparado por automação espera antes do app responder
@@ -148,6 +155,10 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   setupGuideDismissed: false,
   preferredEditor: null,
   keepInTrayOnClose: true,
+  hudEnabled: false,
+  hudPosition: "notch",
+  hudHoverExpand: true,
+  hudFollowActiveScreen: true,
   trayCloseHintShown: false,
   detected: {},
   lastUpdateCheck: 0,

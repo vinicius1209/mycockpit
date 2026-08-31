@@ -84,6 +84,13 @@ export function useChatScroll({
   // "Me leva junto." Nasce ligado (abrir conversa é aterrissar no fim), morre
   // no primeiro gesto de leitura e renasce quando você volta pro fim.
   const seguindoRef = useRef(true)
+  // O disclosure das ferramentas consulta a mesma intenção no scroller. Sem
+  // isso ele voltaria a inferi-la por posição durante um reflow.
+  const setFollowing = useCallback((value: boolean) => {
+    seguindoRef.current = value
+    const el = scrollRef.current
+    if (el) el.dataset.threadFollowing = String(value)
+  }, [])
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -93,17 +100,28 @@ export function useChatScroll({
     // reflow com gesto e parava o fio no meio do turno.
     const perto = pertoDoFim(el)
     atBottomRef.current = perto
-    if (perto) seguindoRef.current = true
+    if (perto) setFollowing(true)
     setAtBottom(perto)
-  }, [])
+  }, [setFollowing])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
     atBottomRef.current = true
-    seguindoRef.current = true
+    setFollowing(true)
     setAtBottom(true)
-  }, [])
+  }, [setFollowing])
+
+  // Enviar é um gesto explícito de voltar ao presente. Diferente do botão
+  // "Rolar pro fim", aqui o salto é imediato: o item do humano entra logo
+  // depois e o efeito de crescimento precisa encontrá-lo já ancorado.
+  const followLatest = useCallback(() => {
+    const el = scrollRef.current
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
+    atBottomRef.current = true
+    setFollowing(true)
+    setAtBottom(true)
+  }, [setFollowing])
 
   // Gesto de leitura solta o fio. Ouvido no container porque o alvo real pode
   // ser qualquer filho (um bloco de código, uma imagem).
@@ -111,7 +129,7 @@ export function useChatScroll({
     const el = scrollRef.current
     if (!el) return
     const soltar = () => {
-      seguindoRef.current = false
+      setFollowing(false)
     }
     const porTecla = (e: KeyboardEvent) => {
       if (ehGestoDeLeitura(e.key)) soltar()
@@ -124,7 +142,7 @@ export function useChatScroll({
       el.removeEventListener("touchmove", soltar)
       el.removeEventListener("keydown", porTecla)
     }
-  }, [])
+  }, [setFollowing])
 
   // Autoscroll enquanto a conversa cresce. `atBottom` NÃO é dependência (ver o
   // espelho acima): o efeito responde a conteúdo novo, não a mudança de flag.
@@ -167,7 +185,7 @@ export function useChatScroll({
   const vazio = items.length === 0
   useEffect(() => {
     atBottomRef.current = true
-    seguindoRef.current = true
+    setFollowing(true)
     setAtBottom(true)
     const el = scrollRef.current
     if (!el) return
@@ -182,7 +200,7 @@ export function useChatScroll({
     land()
     const rafId = requestAnimationFrame(land)
     return () => window.cancelAnimationFrame(rafId)
-  }, [activeId, vazio])
+  }, [activeId, vazio, setFollowing])
 
-  return { scrollRef, contentRef: setContentEl, atBottom, onScroll, scrollToBottom, setAtBottom }
+  return { scrollRef, contentRef: setContentEl, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom }
 }

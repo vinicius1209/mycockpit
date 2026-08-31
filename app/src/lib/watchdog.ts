@@ -33,7 +33,8 @@
 // contra a fila viva, então run que acaba antes do prazo não deixa nada.
 
 import { toast } from "sonner"
-import { agentLabel, cancelAgent } from "@/lib/agent"
+import { agentLabel } from "@/lib/agent"
+import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import {
   notifyCardStalled,
   notifyMissionStalled,
@@ -108,13 +109,8 @@ export function _resetWatchdogState(): void {
   missionMarks.clear()
 }
 
-/** Assinatura leve do andamento (padrão itemsSignature do derive): muda quando
- *  chega delta/tool/result — é o "sinal de vida" que o vigia observa.
- *  DECISÃO (P2): uma tool RODANDO há muito sem result (build/suíte longa) NÃO
- *  muda a assinatura — conta como "mudo" e o aviso dispara. Intencional: o
- *  aviso é informativo ("o turno segue em execução"), não cancela nada, e uma
- *  tool acima do limiar é exatamente o que o usuário quer conferir. Streaming
- *  de texto lento ≠ mudo: cada delta muda text.length ⇒ re-arma o cronômetro. */
+/** Assinatura leve do andamento: presença não é heartbeat. Só evento ou
+ * progresso observável re-arma o relógio. */
 function itemsSignature(items: ChatItem[]): string {
   const last = items[items.length - 1]
   if (!last) return "0"
@@ -122,23 +118,20 @@ function itemsSignature(items: ChatItem[]): string {
     last.kind === "text"
       ? String(last.text.length)
       : last.kind === "tool"
-        ? `${last.name}:${last.result ? 1 : 0}`
+        ? `${last.name}:${last.result ? 1 : 0}:${last.activityAt ?? ""}`
         : ""
   // Trabalho DIFERIDO vivo (deferred-work-plan D2A.3): o `task_progress`
   // atualiza o nó IN PLACE — e ele raramente é o último item, então sem este
   // componente uma pesquisa em background de 15 min viraria falso "turno mudo".
-  // Progresso de diferido É sinal de vida: muda a assinatura, re-arma o
-  // cronômetro. Além do summary, os TOKENS entram na assinatura: uma fase
-  // longa mantém a MESMA description por vários ticks, mas o usage avança —
-  // sem ele, fase de 15+ min virava falso aviso. Diferido vivo mas SEM
-  // progresso novo (nem summary nem tokens) segue contando como mudo (mesma
-  // DECISÃO da tool longa acima: aviso informativo, nada é cancelado).
-  let deferred = ""
+  let work = ""
   for (const it of items) {
-    if (it.kind === "tool" && it.deferred?.status === "running")
-      deferred += `|${it.deferred.id}:${it.deferred.summary ?? ""}:${it.deferred.tokens ?? ""}`
+    if (it.kind !== "tool") continue
+    if (it.deferred?.status === "running")
+      work += `|d:${it.deferred.id}:${it.deferred.summary ?? ""}:${it.deferred.tokens ?? ""}:${it.deferred.updatedAt}`
+    if (it.managedProcess && ["running", "stopping"].includes(it.managedProcess.status))
+      work += `|p:${it.managedProcess.id}:${it.managedProcess.status}:${it.managedProcess.updatedAt}:${it.managedProcess.output.length}`
   }
-  return `${items.length}:${last.id}:${last.kind}:${extra}${deferred}`
+  return `${items.length}:${last.id}:${last.kind}:${extra}${work}`
 }
 
 /** F-D (follow-up S2): há episódio de TURNO MUDO aberto e JÁ AVISADO pra esta
@@ -154,10 +147,7 @@ export function stalledTurnEpisodeOpen(convId: string): boolean {
 /** Cancela o turno mudo (ação do toast): mata o auto-resume agendado e o run
  *  corrente — o mesmo par do "stop-activity" da tray (App.tsx). */
 export async function cancelStalledTurn(convId: string): Promise<void> {
-  const chat = useChat.getState()
-  chat.cancelAutoResume(convId)
-  const runId = chat.byId[convId]?.runId
-  if (runId) await cancelAgent(runId)
+  await cancelLinearTurn(convId)
 }
 
 /** Navega até a conversa muda (padrão openConversation da tray). */
@@ -176,8 +166,8 @@ function showStalledToast(
   agent: string,
   minutes: number,
 ): void {
-  toast(`${agentLabel(agent)} está mudo há ${minutes} min`, {
-    description: "O turno segue em execução, mas sem produzir nada novo.",
+  toast(`Sem atualizações de ${agentLabel(agent)} há ${minutes} min`, {
+    description: "O turno ainda aparece em execução, mas a ponte não publicou progresso novo.",
     duration: 15_000,
     action: {
       label: "Ver conversa",

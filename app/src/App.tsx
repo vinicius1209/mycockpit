@@ -48,6 +48,7 @@ import {
   setTrayPreferences,
   type TrayAction,
 } from "@/lib/tray"
+import { setHudPreferences } from "@/lib/hud"
 import { nativeNotify } from "@/lib/notify"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
@@ -58,7 +59,7 @@ import {
   useExternalSessions,
   visibleSessions,
 } from "@/lib/externalSessions"
-import { cancelAgent } from "@/lib/agent"
+import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import { enviarSnapshotDaTray } from "@/lib/traySnapshot"
 import { isTauri, listProjects } from "@/lib/db"
 import {
@@ -93,6 +94,12 @@ export default function App() {
   const onboarded = useApp((s) => s.settings.onboarded)
   const keepInTrayOnClose = useApp((s) => s.settings.keepInTrayOnClose)
   const trayCloseHintShown = useApp((s) => s.settings.trayCloseHintShown)
+  const hudEnabled = useApp((s) => s.settings.hudEnabled)
+  const hudPosition = useApp((s) => s.settings.hudPosition)
+  const hudHoverExpand = useApp((s) => s.settings.hudHoverExpand)
+  const hudFollowActiveScreen = useApp(
+    (s) => s.settings.hudFollowActiveScreen,
+  )
   const activeProjectId = useApp((s) => s.activeProjectId)
 
   // Atalho de ditado (estilo Wispr): tap alterna, hold é push-to-talk. O combo
@@ -370,6 +377,18 @@ export default function App() {
     setTrayPreferences(keepInTrayOnClose, trayCloseHintShown)
   }, [keepInTrayOnClose, trayCloseHintShown])
 
+  // A intenção persiste no store, mas geometria, fallback e hit-testing são
+  // nativos. O backend devolve o estado EFETIVO e o publica ao webview da tray.
+  useEffect(() => {
+    if (!isTauri()) return
+    void setHudPreferences({
+      enabled: hudEnabled,
+      position: hudPosition,
+      hoverExpand: hudHoverExpand,
+      followActiveScreen: hudFollowActiveScreen,
+    }).catch((cause) => console.error("Falha ao aplicar o instrumento:", cause))
+  }, [hudEnabled, hudPosition, hudHoverExpand, hudFollowActiveScreen])
+
   // Ações do menu/popover chegam por um único canal e já abrem a janela. Cada
   // ação navega até o objeto, sem deixar o usuário procurar novamente.
   useEffect(() => {
@@ -436,12 +455,9 @@ export default function App() {
           // Promoção é one-shot (abort no-opa): não finge que parou.
           void feedback("Disputa promovendo o vencedor, aguarde concluir")
         } else {
-          const chat = useChat.getState()
-          chat.cancelAutoResume(convId)
-          const runId = chat.byId[convId]?.runId
-          if (runId) await cancelAgent(runId)
+          const disposition = await cancelLinearTurn(convId)
           void feedback(
-            runId ? "Tarefa interrompida" : "Tarefa já não estava em execução",
+            disposition === "idle" ? "Tarefa já não estava em execução" : "Tarefa interrompida",
           )
         }
       } else if (payload.action === "show-running") {

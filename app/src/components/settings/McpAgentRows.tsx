@@ -18,15 +18,7 @@ import {
   type McpServer,
 } from "@/lib/mcp"
 import { browserRowNotice, type BrowserStatus } from "@/lib/browser"
-
-/** Ordem e rótulo das linhas. A lista fecha o layout (uma linha por agent
- *  suportado); o que cada agent PODE fazer segue vindo de `state.compatible`,
- *  que é capability do backend, nunca comparação de nome aqui. */
-const AGENTS = [
-  { id: "claude-code", label: "Claude" },
-  { id: "codex", label: "Codex" },
-  { id: "agy", label: "Agy" },
-] as const
+import { agentDef } from "@/lib/agents"
 
 const FALLBACKS: { value: McpFallback; label: string }[] = [
   { value: "ask", label: "Pausar e avisar" },
@@ -72,9 +64,11 @@ export function McpAgentRows({
 }) {
   return (
     <div className="mt-3 divide-y divide-border/40 rounded-lg border border-border/50 bg-background/30">
-      {AGENTS.map((agent) => {
-        const state = server.agentStates.find((item) => item.agent === agent.id)
-        if (!state) return null
+      {server.agentStates.map((state) => {
+        // A ordem e a presença vêm do registry Rust. O espelho TS só resolve
+        // identidade visual; id ainda desconhecido continua aparecendo.
+        const agent = agentDef(state.agent)
+        const label = agent?.shortLabel ?? state.agent
         const key = `${server.id}:${state.agent}`
         const writeBusy = busyKeys.has(key)
         const checkBusy = busyKeys.has(`check:${key}`)
@@ -91,16 +85,16 @@ export function McpAgentRows({
         const acao = rotuloDaAcao(gesto)
         const consequencia = consequenciaDaAcao(gesto)
         return (
-          <div key={agent.id} className="px-2.5 py-1.5">
+          <div key={state.agent} className="px-2.5 py-1.5">
             <div className="flex min-h-10 items-center gap-2">
               <Switch
                 checked={state.enabled}
                 onCheckedChange={(enabled) => onUpdate(server, state, { enabled })}
                 disabled={!utilizavel || writeBusy}
-                aria-label={`Usar ${server.name} no ${agent.label}`}
+                aria-label={`Usar ${server.name} no ${label}`}
               />
-              <span className="w-12 text-[12px] text-foreground">
-                {agent.label}
+              <span className="w-16 truncate text-[12px] text-foreground" title={label}>
+                {label}
               </span>
               <span
                 className="flex min-w-0 flex-1 items-center gap-1 text-[11px] text-muted-foreground"
@@ -114,7 +108,14 @@ export function McpAgentRows({
                 <span className="truncate">
                   {verifying
                     ? "verificando…"
-                    : mcpAgentStatusLabel(server, state)}
+                    : [
+                        mcpAgentStatusLabel(server, state),
+                        state.checkedAt != null && state.toolNames
+                          ? `${state.toolNames.length} tools`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
                 </span>
               </span>
               {state.enabled && (
@@ -159,7 +160,7 @@ export function McpAgentRows({
                     }
                     disabled={writeBusy}
                     className="h-6 rounded border border-border/60 bg-background px-1 text-[11px] text-foreground"
-                    aria-label={`Fallback de ${server.name} no ${agent.label}`}
+                    aria-label={`Fallback de ${server.name} no ${label}`}
                   >
                     {FALLBACKS.map((item) => (
                       <option key={item.value} value={item.value}>
@@ -188,8 +189,8 @@ export function McpAgentRows({
                   onClick={() => onCheck(server, state)}
                   disabled={writeBusy || checkBusy || verifying}
                   className="grid size-6 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-40"
-                  title={`Testar a conexão antes de usar no ${agent.label}`}
-                  aria-label={`Testar ${server.name} no ${agent.label}`}
+                  title={`Testar a conexão antes de usar no ${label}`}
+                  aria-label={`Testar ${server.name} no ${label}`}
                 >
                   {checkBusy ? (
                     <Loader2 className="size-3.5 animate-spin" />

@@ -5,7 +5,8 @@
 > assinaturas e matrizes abaixo preservam o raciocínio e as provas datadas; não
 > são uma API para copiar. A fonte executável atual é
 > `app/src-tauri/src/adapters.rs`, com espelho de UI em
-> `app/src/lib/agents.ts` e testes-gêmeos nos dois lados.
+> `app/src/lib/agents.ts` (com o domínio de tools em `agentTooling.ts`) e
+> testes-gêmeos nos dois lados.
 
 ## Princípio
 
@@ -145,16 +146,33 @@ parser e os fixtures atuais antes de reutilizar um nome de evento.
 | stdout cru | `AssistantText{is_final:true}` em chunks |
 | processo sai | `Done{ ok: exit==0 }` |
 
-## 6. Empacotamento dos "plugins"
+## 6. Empacotamento dos plugins
 
 - **Hoje, adapters são módulos Rust compilados** num *registry*. Simples e
-  type-safe. Não há protocolo externo ainda.
-- **Mas defina o schema JSON dos eventos normalizados desde já** (espelho do enum §1).
-  Assim, um futuro **protocolo de plugin externo** vira *drop-in*: um agent descrito por
-  um *manifesto* + um processo que emite `AgentEvent` em JSON no stdout — **sem
-  recompilar** o app. Não construir essa maquinaria até precisar.
+  type-safe. O protocolo externo de adapter continua futuro.
+- Plugins de extensão já possuem contrato externo v1. `plugin_manifest.rs`
+  valida `frota-plugin.json`, capabilities, contribuições, paths e fingerprint
+  sem executar `main`; `plugin_grants.rs` exige revisão do fingerprint atual.
+- Tools aprovadas entram no Tool Catalog do run. A chamada passa pelo
+  `mc-tools`, revalida o pacote e só então cria um worker efêmero em processo
+  separado, com JSON Lines limitado, timeout, grupo de processo e env em
+  allowlist. Discovery, Configurações e enablement não iniciam worker.
+- O processo separado contém ciclo de vida e falhas, mas não barra syscalls como
+  um sandbox completo. Capability descreve a superfície revisada e controla o
+  que a Frota entrega. Plugin executável continua sendo código local confiável.
+- O protocolo externo de adapter continua futuro: um agent descrito por
+  manifesto + processo que emite `AgentEvent` normalizado no stdout, sem
+  recompilar o app.
+- Um plugin de extensão e um adapter de agent não são sinônimos. Têm APIs,
+  capabilities, eventos e consentimentos distintos.
 
-Manifesto futuro (forma esperada):
+O formato do pacote e o protocolo do worker estão em
+[`plugin-runtime.md`](./plugin-runtime.md). Skills são expandidas pelo app e
+revalidadas no runner; MCPs entram somente em adapters com materialização forte
+por run e nunca são instalados silenciosamente na configuração global. Schemas
+e exemplo executável ficam no [`plugin-sdk`](../plugin-sdk/README.md).
+
+Manifesto futuro de adapter (forma esperada, separado de `frota-plugin.json`):
 ```jsonc
 {
   "id": "meu-agent",
@@ -226,7 +244,8 @@ o app já surfaça como aviso no fio (ADR-015) ⇒ `native_compact=true`.
 **codex 0.146** — `/compact` é comando só do TUI; `codex exec` não expõe (help
 verificado) ⇒ `false`. **agy** — nada ⇒ `false`. Motor sem a capability e COM
 `session_resume` (codex): o /compactar degrada pra renovação de sessão com
-recap (transplante para si mesmo, `lib/compact.ts`); sem `session_resume`
+memória por significado + ponteiro para o histórico pleno (transplante para si
+mesmo, `lib/compact.ts`); sem `session_resume`
 (agy) não há o que compactar — cada turno já é sessão fresca com recap, e a
 UI diz isso em vez de fingir.
 
@@ -414,6 +433,41 @@ retomada, memória sintética do agy) viaja emoldurado em
 `<historico-de-contexto>…</historico-de-contexto>` + a linha fixa de que o
 bloco é dado, não pedido (`lib/trust.ts`). O conteúdo nunca é reescrito — a
 defesa é a moldura.
+
+### 7.4 Término e descendentes do run
+
+Cada transporte iniciado pelo app nasce em grupo de processo próprio e herda
+`MYCOCKPIT_RUN_ID`. O grupo resolve o filho direto; o marcador resolve também
+backgrounds que criaram outro grupo ou foram reparentados. Parar, sair do app e
+terminar normalmente limpam somente processos com esse id exato.
+
+O loop do runner observa a saída do processo principal em paralelo ao stdout.
+EOF não é fonte de verdade suficiente: um background pode herdar o pipe e
+mantê-lo aberto depois que o CLI terminou. No frontend, ferramenta sem resultado
+é encerrada como interrompida quando chegam `cancelled` ou `done`; spinner nunca
+sobrevive a um terminal.
+
+stdout e stderr também não governam a memória do processo do Frota. Os três
+transportes interativos usam um frame máximo de 64 MiB antes da desserialização
+e retêm somente os 64 KiB finais do stderr, drenado por chunks mesmo quando o
+provider nunca publica uma quebra de linha. O watchdog mede, a cada cinco
+segundos, o RSS combinado do backend e do filho direto e avisa ao cruzar 2, 4,
+8, 16 e 32 GiB. O run continua; `Parar` permanece decisão humana.
+
+Retomadas cujo dialeto oferece rollout local passam ainda por um preflight de
+metadata. Um histórico conhecido acima de 64 MiB recebe um aviso antes do
+spawn, mas continua sem teto artificial; o fio oferece `/compactar`, que renova
+a sessão por gesto humano com memória por significado e ponteiro para o
+transcript completo. Se o inventário nativo não puder ser medido, o watchdog
+continua dando visibilidade durante o run.
+
+O cancelamento responde se o runner ainda existe. Resposta negativa autoriza a
+reconciliação do snapshot local, porque não há processo vivo registrado para
+publicar os eventos terminais. Para o Agy, há uma recuperação adicional e
+limitada: se o stream congelou, mas o transcript do próprio provider contém uma
+`PLANNER_RESPONSE` final posterior ao último step recebido, esse texto é
+recuperado com aviso de métricas indisponíveis. Sem essa prova, o app não cria
+resposta e registra interrupção.
 
 ## 8. Checklist para evoluir um adapter
 

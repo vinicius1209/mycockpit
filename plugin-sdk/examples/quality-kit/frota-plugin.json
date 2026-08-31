@@ -1,0 +1,20 @@
+{
+  "$schema": "../../schemas/frota-plugin.schema.json",
+  "manifestVersion": 1,
+  "pluginApi": 1,
+  "publisher": "acme",
+  "id": "quality-kit",
+  "name": "Quality Kit",
+  "version": "1.0.0",
+  "description": "Exemplo executável de skill e MCP stdio",
+  "engines": { "frota": ">=0.1.0" },
+  "capabilities": ["mcp:provide", "process:spawn"],
+  "contributes": {
+    "skills": [
+      { "id": "review", "path": "skills/review/SKILL.md" }
+    ],
+    "mcpServers": [
+      { "id": "quality", "path": "mcp/quality.json" }
+    ]
+  }
+}

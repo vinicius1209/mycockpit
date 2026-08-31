@@ -87,6 +87,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Vermelho** (falha + destruição) | `st-error`, `destructive` | Falha consumada (marco vermelho, linha culpada) e ação destrutiva ("Parar", excluir, revogar) | Caminho de saída (Cancelar/fechar/voltar é ghost, sem cor); ênfase; aviso não-fatal (âmbar) |
 | **Azul** (vivo) | `st-running` | O que roda AGORA **no CHROME** (ver §2.2): ponto do projeto, bandeja, seção de missões, linha viva do rodapé | Qualquer coisa parada; link; decoração; **o corpo do fio e o output de ferramenta** (lá o vivo é movimento, §2.2) |
 | **Brass** (gesto) | `brass`, `brass-soft`, `ring` (= `brass`) | Ação primária/sensível, foco **de teclado** (`--ring`, ver §2.1), marca | **Marcar item selecionado em lista, árvore ou aba** (isso é preenchimento neutro + peso + pip, sem tinta — ADR-043); texto pequeno sobre a superfície de seleção no tema claro (3.56:1 < AA, regra S3.6); ícone ilustrativo/empty state; medidor saudável; tinta de "importância" genérica |
+| **Preto do hardware** | `hud-shell` | Casco do instrumento quando ele prolonga um notch físico; o topo encosta em `y=0`, sem raio nem filete | Popover, dialog, cartão, tema escuro do app ou ilha em tela sem notch |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
 | **Categoria de nota** (escolhida pelo humano — ADR-123 revisa ADR-117) | `note-sand`, `note-lime`, `note-teal`, `note-rose`, `note-slate` | O ponto da nota na lista e o seletor de categoria | Fundo da folha, texto, chrome ou estado. A nota usa a superfície e a tipografia neutras do app; cor identifica, não ocupa área |
@@ -405,12 +406,14 @@ nunca em big-bang):
   como irmão direto de seção de painel é o padrão que isto proíbe: eram 7 no
   `ContextPanel`, todos correndo de parede a parede enquanto o conteúdo
   respirava 20px.
-- **Atividade no fio e plano vivo são E0, nunca cartão.** Cabeçalho, linha e
-  checklist usam um trilho neutro contínuo, sem borda envolvente, sombra ou
-  fundo permanente. Cada linha técnica tem **um** slot de glifo: enquanto roda,
-  ele mostra estado; assentada, mostra o tipo da ação. Falha pode tingir o glifo
-  e o resumo do grupo, não a linha inteira. O detalhe aberto separa por fundo +
-  raio, sem hairline aninhado (ADR-123).
+- **Atividade no fio é E0; o plano vivo junto ao composer é E1.** No fio,
+  cabeçalho, linha e checklist usam um trilho neutro contínuo, sem borda
+  envolvente, sombra ou fundo permanente. Cada linha técnica tem **um** slot de
+  glifo: enquanto roda, ele mostra estado; assentada, mostra o tipo da ação.
+  Falha pode tingir o glifo e o resumo do grupo, não a linha inteira. O plano
+  vivo precisa de superfície própria (`bg-card` + borda + `--shadow-sm`) para
+  não se fundir ao canvas; permanece abaixo do composer E2 e conserva glifos
+  neutros (ADR-123, correção de 29/08/2026).
 - **A gaveta de uma nota prioriza escrita.** Largura alvo de 440px (limitada
   pelo viewport), carimbo em 11px mono, escopo em `chip` e editor com mínimo de
   160px. A categoria colorida mora no ponto/seletor, nunca no fundo da folha.

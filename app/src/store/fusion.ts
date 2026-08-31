@@ -29,7 +29,7 @@ import {
 } from "@/lib/db"
 import type { AgentRunConfig } from "@/lib/types"
 import { LEAGUE_AGENTS } from "@/lib/agents"
-import { expandDraftForAgent } from "@/lib/slashCommands"
+import { expandPrefixedDraft } from "@/lib/slashDispatch"
 
 export type CandStatus =
   | "queued"
@@ -384,12 +384,8 @@ export const useFusion = create<FusionState>((set, get) => {
     // preâmbulo/doutrina o pedido vai EMBUTIDO no prompt — aí nem o comando
     // nativo pode viajar cru. Fail-open: sem match, o texto segue.
     const embedded = preamblePrefix !== "" || doctrinePrefix !== ""
-    const promptFor = async (agent: string): Promise<string> => {
-      const sendText = await expandDraftForAgent(prompt, projectPath, agent, {
-        embedded,
-      })
-      return `${doctrinePrefix}${preamblePrefix}${sendText}`
-    }
+    const promptFor = (agent: string) =>
+      expandPrefixedDraft(prompt, projectPath, agent, embedded, `${doctrinePrefix}${preamblePrefix}`)
     const perm = cfg.scope === "read-only" ? "fusion-ro" : permission
 
     await runWithConcurrency(run.candidates, 3, async (c) => {
@@ -408,18 +404,20 @@ export const useFusion = create<FusionState>((set, get) => {
         }
       })
       try {
+        const expanded = await promptFor(c.agent)
         await runAgent(
           c.runId,
           convId,
           c.agent,
           c.reqModel,
           c.effort,
-          await promptFor(c.agent),
+          expanded.text,
           c.cwd,
           null, // resume=null: candidato é sessão fresca
           perm,
           attachments,
           (e) => get().handleCandidateEvent(convId, c.id, e),
+          { instructionSources: expanded.instructionSources },
         )
       } catch {
         get().handleCandidateEvent(convId, c.id, {

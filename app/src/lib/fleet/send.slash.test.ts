@@ -32,7 +32,7 @@ vi.mock("sonner", () => ({
 }))
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async () => {}),
-  cancelAgent: vi.fn(async () => {}),
+  cancelAgent: vi.fn(async () => true),
   agentLabel: (id: string) => id,
 }))
 vi.mock("@/lib/autoResume", () => ({

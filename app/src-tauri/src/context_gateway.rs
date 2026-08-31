@@ -304,7 +304,7 @@ fn read_manifest(root: &Path, conv: &str) -> Result<String, String> {
 
 fn search_from_env(query: &str, limit: usize) -> Result<String, String> {
     let (_, conv, db) = env_context()?;
-    let db = db.ok_or_else(|| "SQLite do MyCockpit indisponível neste run".to_string())?;
+    let db = db.ok_or_else(|| "SQLite da Frota indisponível neste run".to_string())?;
     let rows = search_conversation(&db, &conv, query, limit)?;
     serde_json::to_string_pretty(&json!({
         "query": query,
@@ -397,7 +397,7 @@ fn read_ref_from_env(
         let index = raw
             .parse::<usize>()
             .map_err(|_| "referência de conversa inválida".to_string())?;
-        let db = db.ok_or_else(|| "SQLite do MyCockpit indisponível neste run".to_string())?;
+        let db = db.ok_or_else(|| "SQLite da Frota indisponível neste run".to_string())?;
         return read_conversation_item(&db, &conv, index, max_chars);
     }
     read_project_file(&root, reference, start_line, max_lines, max_chars)

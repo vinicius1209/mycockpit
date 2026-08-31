@@ -1,0 +1,97 @@
+import type { ChatItem } from "@/store/chat"
+import type { DeferredWork } from "@/lib/work"
+
+export type ToolTerminal = "cancelled" | "done"
+
+/** Trabalhos diferidos ainda vivos no fio, derivados dos itens persistidos. */
+export function pendingDeferred(items: ChatItem[]): DeferredWork[] {
+  const out: DeferredWork[] = []
+  for (const item of items) {
+    if (item.kind === "tool" && item.deferred?.status === "running") {
+      out.push(item.deferred)
+    }
+  }
+  return out
+}
+
+/** Reconciles work that came from a persisted snapshot. A new app instance
+ * cannot own an old process, and a tool without a result must not keep
+ * presenting itself as active after hydration. */
+export function settleOrphanedTool(item: ChatItem, now: number): ChatItem {
+  if (item.kind !== "tool") return item
+  if (item.deferred?.status === "running") {
+    const message =
+      "O aplicativo reiniciou com este trabalho em background em andamento; ele morreu junto com o processo do agent. Envie uma nova mensagem para retomar."
+    return {
+      ...item,
+      deferred: { ...item.deferred, status: "interrupted", updatedAt: now },
+      result: { ok: false, text: message, lines: 1 },
+    }
+  }
+  if (
+    item.managedProcess &&
+    ["running", "stopping"].includes(item.managedProcess.status)
+  ) {
+    const message =
+      "O aplicativo reiniciou e perdeu o controle deste processo. O PID histórico foi preservado para auditoria."
+    return {
+      ...item,
+      managedProcess: { ...item.managedProcess, status: "orphaned", updatedAt: now },
+      result: {
+        ok: false,
+        text: [item.managedProcess.output, message].filter(Boolean).join("\n"),
+        lines: item.managedProcess.output.trim()
+          ? item.managedProcess.output.split("\n").length + 1
+          : 1,
+      },
+    }
+  }
+  if (item.result || item.managedProcess || item.deferred) return item
+  return {
+    ...item,
+    result: {
+      ok: false,
+      text: "O aplicativo retomou esta conversa sem receber o desfecho desta ferramenta. O processo anterior não está mais sob controle.",
+      lines: 1,
+    },
+    activityAt: now,
+  }
+}
+
+/** Fecha ações sem resultado apenas no turno atual. Um terminal do runner não
+ * pode deixar spinner vivo, mas também não sobrescreve resultado confirmado. */
+export function settleTerminalTools(
+  items: ChatItem[],
+  terminal: ToolTerminal,
+  now: number,
+): ChatItem[] {
+  const turnStart = items.findLastIndex((item) => item.kind === "user")
+  let changed = false
+  const next = items.map((item, index) => {
+    if (index <= turnStart || item.kind !== "tool" || item.result) return item
+    changed = true
+    const message =
+      terminal === "cancelled"
+        ? "Você interrompeu o turno antes de esta ferramenta publicar um resultado."
+        : item.deferred?.status === "running"
+          ? "O processo do agent encerrou sem a conclusão deste trabalho em background. Envie uma nova mensagem para retomar."
+          : "O processo do agent encerrou sem publicar o desfecho desta ferramenta."
+    return {
+      ...item,
+      managedProcess: item.managedProcess
+        ? {
+            ...item.managedProcess,
+            status: terminal === "cancelled" ? ("stopped" as const) : ("failed" as const),
+            updatedAt: now,
+          }
+        : undefined,
+      deferred:
+        item.deferred?.status === "running"
+          ? { ...item.deferred, status: "interrupted" as const, updatedAt: now }
+          : item.deferred,
+      result: { ok: false, text: message, lines: 1 },
+      activityAt: now,
+    }
+  })
+  return changed ? next : items
+}

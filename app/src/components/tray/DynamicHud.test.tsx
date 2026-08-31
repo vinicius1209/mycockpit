@@ -1,0 +1,115 @@
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
+import { describe, expect, it, vi } from "vitest"
+import { DynamicHud } from "./DynamicHud"
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(() =>
+    Promise.resolve({
+      running: 1,
+      decisions: 0,
+      blocking: 0,
+      activities: [],
+      decisionConvId: null,
+      decisionProjectId: null,
+      nextSchedule: null,
+      lastRun: null,
+      lastTurn: null,
+      enabledSchedules: 0,
+      deferred: 0,
+      external: [],
+    }),
+  ),
+}))
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(() => Promise.resolve(() => {})),
+}))
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: vi.fn(() => ({
+    setTheme: vi.fn(() => Promise.resolve()),
+  })),
+}))
+
+describe("DynamicHud Component", () => {
+  it("renderiza o instrumento compacto a partir do estado efetivo", () => {
+    const html = renderToStaticMarkup(
+      createElement(DynamicHud, {
+        runtime: {
+          enabled: true,
+          requestedPosition: "notch",
+          effectivePosition: "notch",
+          hoverExpand: true,
+          followActiveScreen: true,
+          expanded: false,
+          screen: {
+            id: "1",
+            name: "Built-in Retina Display",
+            hasNotch: true,
+            notchWidth: 185,
+            notchHeight: 32,
+            screenWidth: 1512,
+            screenHeight: 982,
+            originX: 0,
+            originY: 0,
+            visibleX: 0,
+            visibleY: 33,
+            visibleWidth: 1512,
+            visibleHeight: 949,
+            scaleFactor: 2,
+            safeTop: 32,
+            active: true,
+          },
+          fallbackReason: null,
+          supportedPositions: ["notch", "island", "left", "right", "bottom", "menubar"],
+        },
+      }),
+    )
+    expect(html).toContain("dynamic-hud-shell")
+    expect(html).toContain("bg-hud-shell")
+    expect(html).not.toContain("padding-top")
+    expect(html).toContain("grid-template-columns:1fr 185px 1fr")
+    expect(html).toContain("Frota pronta")
+    expect(html).not.toContain("Journey Streak")
+  })
+
+  it("o expandido integra o notch sem diagnóstico ou controle redundante", () => {
+    const html = renderToStaticMarkup(
+      createElement(DynamicHud, {
+        runtime: {
+          enabled: true,
+          requestedPosition: "notch",
+          effectivePosition: "notch",
+          hoverExpand: true,
+          followActiveScreen: true,
+          expanded: true,
+          screen: {
+            id: "1",
+            name: "Built-in Retina Display",
+            hasNotch: true,
+            notchWidth: 185,
+            notchHeight: 32,
+            screenWidth: 1512,
+            screenHeight: 982,
+            originX: 0,
+            originY: 0,
+            visibleX: 0,
+            visibleY: 33,
+            visibleWidth: 1512,
+            visibleHeight: 949,
+            scaleFactor: 2,
+            safeTop: 32,
+            active: true,
+          },
+          fallbackReason: null,
+          supportedPositions: ["notch", "island", "left", "right", "bottom", "menubar"],
+        },
+      }),
+    )
+    expect(html).toContain("Nenhuma automação agendada")
+    expect(html).not.toContain("Built-in Retina Display")
+    expect(html).not.toContain("Recolher")
+    expect(html).toContain("rounded-b-[13px] border-x border-b")
+  })
+})

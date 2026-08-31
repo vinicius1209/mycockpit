@@ -1,6 +1,7 @@
 //! Navegador do projeto (B2.1 do docs/browser-plan.md).
 //!
-//! O app passa a ser DONO de um Chromium por projeto: spawn com
+//! O app passa a ser DONO de um Chromium por projeto, em segundo plano por
+//! padrão: spawn com
 //! `--remote-debugging-port=0` e perfil persistente próprio, ciclo de vida no
 //! `ProcessRegistry` do mc-work (process group, tail, TERM antes de KILL,
 //! kill_all no quit) e endpoint CDP publicado para quem roteia MCP
@@ -20,7 +21,7 @@
 
 use serde::Serialize;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -30,29 +31,47 @@ use tokio::time::timeout;
 
 use crate::work_gateway::ProcessRegistry;
 
-/// Cache do Playwright no macOS (relativo ao HOME).
+/// Cache do Playwright (relativo ao HOME), por plataforma suportada.
+#[cfg(target_os = "macos")]
 const PLAYWRIGHT_CACHE: &str = "Library/Caches/ms-playwright";
+#[cfg(target_os = "linux")]
+const PLAYWRIGHT_CACHE: &str = ".cache/ms-playwright";
 
 /// Sufixos conhecidos do binário dentro de `chromium-<rev>/`, em ordem de
-/// preferência. O layout atual é o "Google Chrome for Testing" por arquitetura;
+/// preferência. O layout atual é o Chrome for Testing completo por arquitetura;
 /// os dois últimos cobrem instalações antigas que ainda usavam `Chromium.app`.
+#[cfg(target_os = "macos")]
 const CHROMIUM_SUFFIXES: [&str; 4] = [
     "chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     "chrome-mac-x64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     "chrome-mac/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     "chrome-mac/Chromium.app/Contents/MacOS/Chromium",
 ];
+#[cfg(target_os = "linux")]
+const CHROMIUM_SUFFIXES: [&str; 3] = [
+    "chrome-linux/chrome",
+    "chrome-linux64/chrome",
+    "chrome-linux/chromium",
+];
 
-/// Fallback: Chromium do sistema. Não é o preferido (o perfil de teste do
-/// Playwright é descartável e não herda o login pessoal), mas evita exigir
+/// Fallback: Chromium do sistema. O perfil continua sendo o isolado da Frota,
+/// sem herdar login pessoal, mas evita exigir
 /// download quando a máquina já tem um.
+#[cfg(target_os = "macos")]
 const SYSTEM_CHROMIUM: [&str; 2] = [
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/Applications/Chromium.app/Contents/MacOS/Chromium",
 ];
+#[cfg(target_os = "linux")]
+const SYSTEM_CHROMIUM: [&str; 4] = [
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+];
 
 const MISSING_CHROMIUM: &str =
-    "não encontrei um Chromium nesta máquina; instale com `npx playwright install chromium` ou tenha o Google Chrome em /Applications";
+    "não encontrei um Chromium nesta máquina; instale com `npx playwright install chromium` ou instale Chrome/Chromium pelo sistema";
 
 /// Quanto esperamos o Chromium anunciar a porta de depuração antes de desistir.
 const ENDPOINT_TIMEOUT: Duration = Duration::from_secs(20);
@@ -75,6 +94,8 @@ pub struct BrowserSession {
     pub browser: Option<String>,
     pub user_data_dir: String,
     pub binary: String,
+    /// `false` = Chromium em segundo plano, observado pelo painel da Frota.
+    pub window_visible: bool,
     pub started_at: i64,
 }
 
@@ -93,10 +114,26 @@ pub struct BrowserStatus {
 #[derive(Default)]
 pub struct BrowserRegistry {
     sessions: Mutex<HashMap<String, BrowserSession>>,
+    lifecycle: Mutex<HashSet<String>>,
+}
+
+/// Serializa ligar/desligar por projeto. Dois gestos concorrentes nunca podem
+/// criar dois Chromiums no mesmo perfil nem devolver uma sessão já encerrada.
+struct BrowserLifecycleGuard {
+    project_id: String,
+    registry: Arc<BrowserRegistry>,
+}
+
+impl Drop for BrowserLifecycleGuard {
+    fn drop(&mut self) {
+        if let Ok(mut projects) = self.registry.lifecycle.lock() {
+            projects.remove(&self.project_id);
+        }
+    }
 }
 
 impl BrowserRegistry {
-    fn get(&self, project_id: &str) -> Option<BrowserSession> {
+    pub(crate) fn get(&self, project_id: &str) -> Option<BrowserSession> {
         self.sessions
             .lock()
             .ok()
@@ -115,13 +152,33 @@ impl BrowserRegistry {
             .ok()
             .and_then(|mut map| map.remove(project_id))
     }
+
+    fn begin_lifecycle(
+        self: &Arc<Self>,
+        project_id: &str,
+    ) -> Result<BrowserLifecycleGuard, String> {
+        let mut projects = self
+            .lifecycle
+            .lock()
+            .map_err(|_| "ciclo de vida do navegador indisponível".to_string())?;
+        if !projects.insert(project_id.into()) {
+            return Err(
+                "o Navegador deste projeto já está ligando ou desligando; aguarde um instante"
+                    .into(),
+            );
+        }
+        Ok(BrowserLifecycleGuard {
+            project_id: project_id.into(),
+            registry: self.clone(),
+        })
+    }
 }
 
 // ---- descoberta do binário (puro + testável) -------------------------------
 
 /// Revisão de um diretório do cache do Playwright. Só `chromium-<rev>` conta:
-/// `chromium_headless_shell-<rev>` é o shell SEM janela (o oposto do que
-/// queremos aqui), e `ffmpeg-*`/`webkit-*` não são Chromium.
+/// o shell reduzido não oferece o mesmo browser/perfil persistente, e
+/// `ffmpeg-*`/`webkit-*` não são Chromium.
 fn playwright_revision(dir_name: &str) -> Option<u64> {
     dir_name.strip_prefix("chromium-")?.parse::<u64>().ok()
 }
@@ -221,22 +278,23 @@ pub(crate) fn parse_browser_version(raw: &str) -> Option<String> {
 }
 
 /// Health real do endpoint. `Some(browser)` = vivo; `None` = morto/indisponível
-/// (o app nunca declara vivo sem esta resposta). curl porque a casa já
-/// orquestra CLIs (mesmo caminho do `probe_http` do control plane).
+/// (o app nunca declara vivo sem esta resposta). A requisição vive no processo
+/// da Frota; disponibilidade de um `curl` externo não vira pré-condição oculta.
 async fn probe_endpoint(endpoint: &str) -> Option<String> {
-    let out = timeout(
+    let response = timeout(
         HEALTH_TIMEOUT,
-        Command::new("curl")
-            .args(["--silent", "--max-time", "2", &format!("{endpoint}/json/version")])
-            .output(),
+        reqwest::Client::new()
+            .get(format!("{endpoint}/json/version"))
+            .send(),
     )
     .await
     .ok()?
     .ok()?;
-    if !out.status.success() {
+    if !response.status().is_success() {
         return None;
     }
-    parse_browser_version(&String::from_utf8_lossy(&out.stdout))
+    let raw = timeout(HEALTH_TIMEOUT, response.text()).await.ok()?.ok()?;
+    parse_browser_version(&raw)
 }
 
 // ---- ciclo de vida ---------------------------------------------------------
@@ -261,14 +319,18 @@ fn shell_quote(raw: &str) -> String {
 /// `--user-data-dir`: perfil POR PROJETO, persistente (login de dev sobrevive
 /// entre turnos) e obrigatório: o Chrome 136+ recusa depuração remota no perfil
 /// padrão do usuário.
-pub(crate) fn browser_command(binary: &str, user_data_dir: &str) -> String {
-    let flags = [
+pub(crate) fn browser_command(binary: &str, user_data_dir: &str, window_visible: bool) -> String {
+    let mut flags = vec![
         "--remote-debugging-port=0".to_string(),
+        "--remote-debugging-address=127.0.0.1".to_string(),
         format!("--user-data-dir={user_data_dir}"),
         "--no-first-run".into(),
         "--no-default-browser-check".into(),
-        "about:blank".into(),
     ];
+    if !window_visible {
+        flags.push("--headless=new".into());
+    }
+    flags.push("about:blank".into());
     let mut parts = vec![shell_quote(binary)];
     parts.extend(flags.iter().map(|flag| shell_quote(flag)));
     parts.join(" ")
@@ -354,6 +416,7 @@ async fn start_session(
     app: &tauri::AppHandle,
     project_id: String,
     project_path: String,
+    window_visible: bool,
 ) -> Result<BrowserSession, String> {
     let binary = find_chromium()?;
     let user_data_dir = profile_dir(app, &project_id)?;
@@ -373,6 +436,7 @@ async fn start_session(
             browser_command(
                 &binary.to_string_lossy(),
                 &user_data_dir.to_string_lossy(),
+                window_visible,
             ),
             cwd,
             Some("Navegador do projeto".into()),
@@ -404,6 +468,7 @@ async fn start_session(
         browser,
         user_data_dir: user_data_dir.to_string_lossy().into_owned(),
         binary: binary.to_string_lossy().into_owned(),
+        window_visible,
         started_at: now_ms(),
     };
     app.state::<Arc<BrowserRegistry>>().put(session.clone());
@@ -411,7 +476,7 @@ async fn start_session(
     Ok(session)
 }
 
-fn project_id_of(app: &tauri::AppHandle, project_path: &str) -> Result<String, String> {
+pub(crate) fn project_id_of(app: &tauri::AppHandle, project_path: &str) -> Result<String, String> {
     let conn = crate::mcp_control::db(app)?;
     crate::mcp_control::project_id_for_path(&conn, project_path)
 }
@@ -423,14 +488,23 @@ fn project_id_of(app: &tauri::AppHandle, project_path: &str) -> Result<String, S
 pub async fn browser_start(
     app: tauri::AppHandle,
     project_path: String,
+    window_visible: Option<bool>,
 ) -> Result<BrowserSession, String> {
     let project_id = project_id_of(&app, &project_path)?;
+    let registry = app.state::<Arc<BrowserRegistry>>().inner().clone();
+    let _lifecycle = registry.begin_lifecycle(&project_id)?;
     if live_endpoint(&app, &project_id).await.is_some() {
-        if let Some(session) = app.state::<Arc<BrowserRegistry>>().get(&project_id) {
+        if let Some(session) = registry.get(&project_id) {
             return Ok(session);
         }
     }
-    start_session(&app, project_id, project_path).await
+    start_session(
+        &app,
+        project_id,
+        project_path,
+        window_visible.unwrap_or(false),
+    )
+    .await
 }
 
 /// Desliga o navegador do projeto (TERM no grupo, como qualquer processo
@@ -438,7 +512,20 @@ pub async fn browser_start(
 #[tauri::command]
 pub async fn browser_stop(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
     let project_id = project_id_of(&app, &project_path)?;
-    let session = app.state::<Arc<BrowserRegistry>>().remove(&project_id);
+    let registry = app.state::<Arc<BrowserRegistry>>().inner().clone();
+    let _lifecycle = registry.begin_lifecycle(&project_id)?;
+    let broker = app.state::<Arc<crate::experience_broker::ExperienceBroker>>();
+    let pilot = broker.status(&project_id);
+    if matches!(pilot.mode.as_str(), "agent" | "plugin") {
+        return Err(format!(
+            "o navegador está em uso por {}; encerre a atividade antes de desligá-lo",
+            pilot.label.to_lowercase()
+        ));
+    }
+    app.state::<Arc<crate::browser_cdp::BrowserPreviewRegistry>>()
+        .stop_project(&project_id);
+    broker.release_project(&project_id);
+    let session = registry.remove(&project_id);
     emit_state(&app, &project_id, None);
     let Some(session) = session else {
         return Ok(());
@@ -480,7 +567,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn escolhe_o_chromium_headed_mais_novo_do_cache_do_playwright() {
+    fn escolhe_o_chromium_completo_mais_novo_do_cache_do_playwright() {
         // Nomes REAIS de ~/Library/Caches/ms-playwright desta máquina.
         let names: Vec<String> = [
             "b",
@@ -493,8 +580,11 @@ mod tests {
         .iter()
         .map(|s| s.to_string())
         .collect();
-        assert_eq!(best_playwright_dir(&names).as_deref(), Some("chromium-1228"));
-        // headless shell é o oposto do que o B2 quer (janela visível).
+        assert_eq!(
+            best_playwright_dir(&names).as_deref(),
+            Some("chromium-1228")
+        );
+        // Headless shell não substitui o Chromium completo com perfil.
         assert_eq!(playwright_revision("chromium_headless_shell-1228"), None);
         assert_eq!(playwright_revision("ffmpeg-1011"), None);
         assert_eq!(best_playwright_dir(&[]), None);
@@ -573,15 +663,30 @@ mod tests {
         let cmd = browser_command(
             "/Users/me/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
             "/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1",
+            false,
         );
         assert!(cmd.starts_with("'/Users/me/Library/Caches"));
         assert!(cmd.contains("'--remote-debugging-port=0'"));
+        assert!(cmd.contains("'--remote-debugging-address=127.0.0.1'"));
         assert!(cmd.contains("'--user-data-dir=/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1'"));
+        assert!(cmd.contains("'--headless=new'"));
+        let visible = browser_command("/usr/bin/chromium", "/tmp/profile", true);
+        assert!(!visible.contains("--headless"));
     }
 
     #[test]
     fn eixos_sinteticos_de_posse_sao_por_projeto() {
         assert_eq!(conv_axis("proj-1"), "browser:proj-1");
         assert_eq!(run_axis("proj-1"), "browser-proj-1");
+    }
+
+    #[test]
+    fn ciclo_de_vida_impede_dois_spawns_do_mesmo_projeto() {
+        let registry = Arc::new(BrowserRegistry::default());
+        let first = registry.begin_lifecycle("proj-1").unwrap();
+        assert!(registry.begin_lifecycle("proj-1").is_err());
+        assert!(registry.begin_lifecycle("proj-2").is_ok());
+        drop(first);
+        assert!(registry.begin_lifecycle("proj-1").is_ok());
     }
 }

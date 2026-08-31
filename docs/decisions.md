@@ -767,6 +767,10 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   `MessageList.tsx`; espec visual e detalhes de implementação em
   `docs/mocks/fio-despoluicao-README.md`. Direção C (trilho) fica registrada
   como evolução futura de "mission control".
+- **Correção de transição (29/08/2026):** “turno ainda rodando” não significa
+  “há ferramenta ativa”. Entre um `tool_result` e o próximo `tool_use`, o grupo
+  agora recolhe as concluídas; a próxima ação abre apenas o presente, com o
+  passado resumido. Antes, esse intervalo reabria o leque inteiro.
 
 ### ADR-038 — Medidor de janela de uso: capability + poll do Orca como regra, statusline encadeada por gesto ✅
 - **Contexto (12/08/2026):** "quanto da janela do meu plano já queimei" (a
@@ -1654,6 +1658,11 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   travamento — missões rodam fases de 15 min de rotina. O teto aqui é só rede
   anti-zumbi: alto o bastante pra nunca ser o gate normal, existente o
   bastante pra que um `agy` de fato pendurado não vire processo eterno.
+- **Correção após incidente real (29/08/2026): presença não é heartbeat.** Um
+  `run_command` do Agy ficou pendente enquanto o transcript interno avançava,
+  mas a ponte não publicou mais nada. Portanto, somente evento ou progresso
+  observável re-arma o limiar; ferramenta, processo gerenciado, diferido e fase
+  de Missão estáticos continuam elegíveis ao aviso configurado.
 - **Decisão 2 — a sintaxe foi TESTADA, não deduzida.** O relatório marcava
   `60m` como não verificado. Verificado: `--print-timeout 60m` é aceito (exit
   0), e `--print-timeout 60banana` é **recusado no parse** com exit 2 e
@@ -4669,6 +4678,14 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   transcript. Além disso, o wrapper com `key={activeId}` é substituído na troca.
   Agora o wrapper entrega uma ref explícita ao hook; nó novo religa o
   `ResizeObserver`, e callback atrasado confere a conversa ativa antes de rolar.
+- **Correção do gesto de envio (29/08/2026):** enviar uma mensagem humana
+  também significa voltar ao presente. O gesto religa a âncora e aterrissa no
+  fim antes de o novo turno crescer; scroll posterior continua sendo respeitado
+  como intenção de leitura.
+- **Correção da ordem terminal (29/08/2026):** `result` já persiste custo e
+  resposta, mas o recibo só aparece depois de `done`. Durante o flush, o fio
+  termina em “finalizando…”; depois ele troca esse estado pelo recibo. Assim a
+  linha do tempo não declara conclusão antes do processo realmente assentar.
 - **Rascunho virou entidade própria:** `conversation_drafts` guarda texto,
   metadados dos anexos e `updated_at`, separado de `items`. Nada entra no fio ou
   no prompt antes do gesto de enviar. A store do composer isola digitação do
@@ -4715,3 +4732,355 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Verificação:** testes de apresentação seguram seleção neutra, categoria sem
   fundo e tipografia do tema. Suítes completas e inspeção renderizada constam na
   entrega do commit.
+- **Correção após uso real (29/08/2026): o plano vivo volta a E1.** Remover ao
+  mesmo tempo fundo, borda e sombra fez o plano se fundir ao canvas e parecer
+  texto solto acima do composer. A despoluição continua válida para a atividade
+  dentro do fio, mas não para este instrumento operacional: ele recupera
+  `bg-card`, aresta e `--shadow-sm`, abaixo do composer E2. Glifos e checks
+  seguem neutros; não volta a cor ambiente nem a sombra de popover anterior.
+
+### ADR-124 — compactar renova com memória recuperável e mostra a redução observada ✅
+- **Contexto (29/08/2026):** uma renovação real do Codex abriu thread nova e
+  reduziu o contexto, mas parecia não ter feito nada. A auditoria achou dois
+  problemas independentes: a copy dizia apenas “não é mensurável”, e o caminho
+  ainda usava `serializeContext` (30% do início + 70% do fim) mesmo depois do G1
+  promover seleção por significado. Na conversa do incidente, 105 itens foram
+  omitidos e só 4 de 7 pedidos humanos viajaram, embora os 7 somassem 1.630
+  caracteres e coubessem com folga.
+- **A renovação passa pelo G1.** `memoriaDaConversa` preserva primeiro intenção
+  humana, decisões, falhas e estado atual; `orcamentoDaMemoria(...,
+  "transplante")` deriva o teto da janela observada. O `/compactar` deixa de
+  chamar o serializador posicional antigo.
+- **O ponteiro pleno é pré-condição, não best-effort.** Antes do run, o Frota
+  exporta o transcript para `.mycockpit/context/<convId>.md` e injeta o caminho
+  na memória. Se a gravação falhar, não abre sessão nova: o transplante pendente
+  é descartado e a sessão original permanece retomável.
+- **Antes/depois só usa snapshot de contexto.** Quando os dois lados publicam
+  `context_usage`, o marco mostra percentual e tokens observados (`65% → 10%`,
+  por exemplo). Sem snapshot novo, diz que a medição não veio; custo, cache e
+  uso acumulado nunca viram contexto por inferência.
+- **Cobertura:** memória preserva pedidos do miolo e inclui o ponteiro; falha de
+  export impede `runAgent`; copy cobre comparação completa e degradação sem
+  número; matrizes de capability e transplante permanecem inalteradas.
+
+### ADR-125 — o terminal do run não depende de EOF, e cancelamento reconcilia o estado real ✅
+- **Incidente (29/08/2026):** o Agy parou de publicar no step 94, mas seu
+  transcript interno avançou até o step 210 e gravou a resposta final. Um
+  `python -m http.server` reparentado para PID 1 conservou os pipes e
+  `MYCOCKPIT_RUN_ID`; o botão Parar fechou o navegador, mas não a árvore nem o
+  turno no Frota.
+- **Propriedade comum aos adapters:** CLI direto, Codex app-server e OpenCode
+  ACP nascem em grupo próprio. O término observa também a saída do filho direto
+  e limpa grupos/PIDs que carregam o id exato do run, inclusive backgrounds
+  reparentados. A regra não compara fornecedor.
+- **Reconciliação explícita:** `cancel_agent` informa se encontrou runner vivo.
+  Se não encontrou, o frontend encerra o snapshot local com `cancelled` e
+  `done`, persiste e fecha qualquer ferramenta sem resultado. Se encontrou, os
+  eventos continuam vindo do runner. Na hidratação, ferramenta histórica sem
+  desfecho também vira interrompida; restart nunca ressuscita um spinner que a
+  nova instância não controla.
+- **Recuperação específica, sem teatro:** somente o Agy tem transcript local
+  autoritativo conhecido. Uma resposta `PLANNER_RESPONSE/DONE`, sem tool call e
+  posterior ao último step recebido, pode voltar ao fio; o aviso deixa claro
+  que as métricas não atravessaram a ponte. Ausência dessa prova continua sendo
+  interrupção, nunca sucesso sintético.
+
+### ADR-126 — tools são o domínio; MCP é materializador e todo run publica o manifesto efetivo ✅
+- **Contexto (30/08/2026):** Integrações MCP misturava descoberta, binding,
+  instalação permanente em CLI e posse de browser. Em uso real, Agy abriu um
+  arquivo pelo app padrão do macOS (Firefox) e um Playwright global pôde abrir
+  seu próprio browser, enquanto o Chromium da Frota era outro recurso. A UI
+  mostrava toggles, não o conjunto efetivo recebido pelo run.
+- **Comparação local:** Paseo mantém `PaseoToolCatalog` independente e o adapta
+  tanto para MCP quanto para host tools nativas. Orca separa Browser de Computer
+  Use, exige alvo estável e põe plugins atrás de manifest, capability,
+  consentimento e processo supervisionado. A Frota preserva sua vantagem de
+  adapters/eventos normalizados e o gesto humano como gate.
+- **Decisão:** capability, tool, materializador, recurso e extensão são entidades
+  distintas. O registry declara materializadores sem comparar ids de provider:
+  nativo do provider, gateway da Frota e MCP externo, com transporte, escopo
+  (`run/project/user/global`), força (`hard/advisory`) e evidência de inventário
+  (`declared/runtime-count/probe/opaque`). Rust e TypeScript têm contrato-gêmeo.
+- **Estado efetivo:** depois de subir gateways e aplicar a policy, mas antes do
+  spawn, `run_manifest.rs` emite `AgentEvent::RunManifest`. O payload só contém
+  identidade pública, tools observadas e força de controle. Launch, env,
+  headers e credenciais não atravessam o Channel. O frontend mantém o snapshot
+  efêmero e completa a contagem nativa pelo evento `session` quando disponível.
+- **UI:** a faixa `Capacidades deste run` fica junto ao composer, soma apenas
+  inventário observado e diz quais fontes dependem do provider. Assim
+  Configurações descreve intenção durável, enquanto a conversa prova o resultado
+  daquele run.
+- **Recursos fail-closed:** marcar um binding como navegador significa exigir o
+  Chromium possuído pela Frota. Sem endpoint vivo, o run bloqueia antes do
+  spawn. Endpoint, `--browser` e `--headless` da origem saem da cópia efêmera;
+  nenhum browser alternativo aparece silenciosamente.
+- **Extensões:** skill, plugin, app e MCP não viram sinônimos. Plugin futuro terá
+  manifest, capabilities mínimas, consentimento renovável e processo separado;
+  Resource Broker tratará browser e Computer Use como recursos diferentes.
+- **Migração:** o manifesto e a policy estrita entram primeiro. Inventário
+  nativo, catálogo interno único, nova IA de Configurações, plugin host e broker
+  completo seguem o plano em `capability-tooling-architecture.md`.
+
+### ADR-127 — recursos e extensões têm posse explícita; descobrir plugin não autoriza execução ✅
+- **Contexto (30/08/2026):** mesmo com o manifesto de tools, Configurações ainda
+  colocava o ciclo de vida do Chromium dentro de MCP e não distinguia um
+  Playwright global, capaz de abrir outra janela, do navegador possuído pela
+  Frota. Skills compartilhadas e convenções nativas também não tinham uma visão
+  única; “plugin” seguia sendo uma intenção sem fronteira de segurança.
+- **Resource Broker v1:** `project-browser`, `external-browser` e
+  `desktop-control` são recursos diferentes. O primeiro tem owner Frota,
+  binding como evidência e enforcement forte. Os demais podem ser observados
+  em configurações do provider por uma allowlist de identidade independente do
+  adapter, mas permanecem advisory. Alias desconhecido não ganha claim por
+  substring, e inventário opaco não vira promessa de ausência.
+- **Manifesto v2:** recursos resolvidos entram no `run_manifest` fora da lista
+  de MCPs, inclusive o claim bloqueado quando falta endpoint. Runs que preservam
+  a configuração externa do provider carregam `unobservedResources=true`; uma
+  lista vazia nunca comunica isolamento que não foi medido.
+- **Configurações:** o rail expande apenas o domínio ativo. `MCPs` cuida de
+  descoberta, health, autenticação e binding; `Navegador e desktop` mostra
+  posse, processo e força de controle; `Skills e plugins` une o inventário
+  efetivo por adapter sem chamar convenção nativa de agnóstica.
+- **Plugin v1, fase segura:** `frota-plugin.json` usa schema fechado, engine/API
+  gate, ids e paths contidos, capability allowlist e contribuição MCP gated por
+  `mcp:provide`. Todo arquivo regular do pacote forma um fingerprint; symlink é
+  recusado e limites de quantidade e bytes impedem varredura sem teto.
+  O inventário lê pacotes em `app_data/plugins`, mas `executionSupported=false`
+  é contrato: nenhum `main` roda antes de host fora do processo, env em allowlist,
+  timeout/kill, host API gated e consentimento persistido pelo fingerprint.
+- **Sem teatro de permissão:** a Frota não publica estado TCC de Accessibility
+  ou Screen Recording enquanto não houver sonda nativa real. Um `computer-use`
+  global fica visível como dependente do provider; visibilidade não é revogação.
+
+### ADR-128 — grant renovável publica Tool Catalog; worker só existe durante a chamada ✅
+- **Contexto (30/08/2026):** o inventário seguro da ADR-127 ainda parava antes
+  da decisão útil. “Plugin validado” não dizia se havia consentimento, se o
+  pacote mudara, se algum processo estava vivo ou o que um run receberia. Um
+  toggle simples repetiria o defeito da antiga tela de MCP: intenção parecendo
+  estado efetivo.
+- **Grant exato e renovável:** a decisão persiste a combinação
+  `(plugin_key, fingerprint, capabilities)`. Mudou qualquer arquivo regular do
+  pacote, o estado vira `stale` e nada é publicado. Symlink e pacote acima dos
+  limites falham fechados. Erro de leitura e identidade duplicada também não
+  viram escolha implícita. Desativar preserva a revisão; revogar apaga o grant.
+  Grant e auditoria são transacionais. As migrações 41 e 42 guardam grants e uma
+  trilha recente limitada de eventos, sem credenciais ou payload de tool.
+- **Discovery continua sem efeito:** abrir Configurações, redescobrir, revisar,
+  habilitar e montar catálogo não executam `main` nem iniciam navegador. Plugin
+  habilitado significa elegível sob demanda, não processo residente.
+- **Um processo por chamada:** o worker nasce sem shell, em grupo próprio, com
+  ambiente reconstruído por allowlist, protocolo JSON Lines fechado, frame de
+  1 MiB, handshake e chamada com timeout, stderr drenado e encerramento
+  TERM/KILL. A lista `ready.tools` precisa ser exatamente a do manifesto
+  revisado. Uma segunda chamada concorrente ao mesmo plugin falha fechado.
+- **Catálogo é domínio; MCP é transporte:** tools válidas ganham nome estável e
+  namespaced no Tool Catalog. `agent.rs` consulta `McpEscopo::por_run`, não id de
+  provider, e injeta `mc-tools` apenas onde a configuração pode nascer e morrer
+  com o run. Claude não ganha auto-allow; Codex recebe todos os overrides antes
+  de `exec` ou `app-server`.
+- **Lease em vez de browser surpresa:** recurso é revalidado ao criar o catálogo
+  e ao chamar. O Chromium do projeto precisa estar ligado e só seu endpoint CDP
+  entra no ambiente efêmero. Outro browser é recusado e desktop aguarda broker
+  nativo. Desabilitar, revogar, parar e sair do app liberam leases e encerram o
+  runtime.
+- **Fronteira de confiança honesta:** processo separado contém crash, timeout e
+  órfão, mas não é sandbox completo do SO. Capabilities controlam o que a Frota
+  publica e entrega; não prometem bloquear syscalls arbitrárias de código local.
+  A revisão na UI diz isso antes de confirmar o fingerprint. Skills e MCPs de
+  plugin permanecem apenas inventariados nesta versão; só tools estão efetivas.
+- **Evolução posterior:** a ADR-130 materializa skills e MCPs sem alterar a
+  fronteira de confiança desta decisão. Este parágrafo registra o estado da
+  ADR-128 no momento em que ela foi fechada, não o estado atual do produto.
+- **Verificação:** contratos Rust/TS, grants, protocolo, catálogo, adapters,
+  manifesto efetivo e apresentação da revisão passaram nos testes focados;
+  vitest completo passou em 335 arquivos e 3.549 testes, Rust passou 646 testes
+  com 7 provas reais ignoradas por desenho, `tsc -b`, as 13 guardas do guia,
+  `git diff --check` e rustfmt isolado dos módulos novos passaram. A inspeção
+  visual não foi registrada porque os runtimes de controle de UI não estavam
+  expostos nesta sessão; nenhum navegador alternativo foi aberto para contornar.
+
+### ADR-129 - Dynamic Notch permanece protótipo até provar integração nativa ⚠️
+- **Contexto (30/08/2026):** foi criado um protótipo React com janela
+  transparente, preferências persistidas e uma aproximação de geometria do
+  notch. A revisão independente encontrou uma divergência crítica entre o que
+  Configurações prometia e o que o app fazia: o entrypoint fixava a posição no
+  frontend, nenhuma preferência reposicionava a janela e a geometria Rust não
+  consumia `NSScreen.safeAreaInsets` nem mudanças de monitor.
+- **Decisão de produto:** o popover clássico de 360×430px continua sendo a
+  superfície de produção. O protótipo e seus testes permanecem no repositório,
+  mas não são carregados pelo entrypoint e seus controles experimentais não
+  aparecem em Configurações. Persistir intenção sem efeito seria estado falso.
+- **Gate nativo:** uma futura ativação exige presenter real por plataforma,
+  geometria baseada em safe area, hotplug e DPI misto, janela compatível com o
+  ciclo do macOS, fallback alcançável no Linux e teste no hardware suportado.
+  O tamanho clicável da janela também precisa acompanhar o estado compacto.
+- **Gate de dados e acesso:** o HUD deve consumir somente `TraySnapshot` real,
+  preservar as informações e ações já disponíveis no `TrayPopover`, representar
+  falhas de snapshot sem inventar “Frota pronta”, expor controles por teclado e
+  respeitar movimento reduzido. Streak e matriz simulados não podem chegar à UI.
+- **Verificação desta correção:** o entrypoint, o tamanho e a sombra da janela
+  voltaram ao popover comprovado e os controles sem efeito saíram da seção
+  Bandeja. A homologação visual do protótipo continua pendente porque o runtime
+  de controle de UI não estava disponível; nenhum segundo navegador foi aberto
+  para contornar essa ausência.
+- **Evolução posterior:** a ADR-132 fecha os gates nativos, substitui o
+  protótipo e reativa o instrumento como opt-in. Este texto preserva o estado e
+  a decisão corretiva no momento da ADR-129, não o estado atual do produto.
+
+### ADR-130 - plugins publicam skills e MCPs por run com proveniência verificável ✅
+- **Contexto (30/08/2026):** o Tool Catalog da ADR-128 tornava tools efetivas,
+  mas skills e definições MCP paravam no inventário. Instalar arquivos em cada
+  CLI repetiria configuração, criaria precedência diferente por provider e
+  faria um toggle parecer controle que a Frota não possuía.
+- **Skills sem instalação:** um `SKILL.md` aprovado ganha o namespace
+  `/publisher.plugin:skill` e é expandido pelo app para qualquer adapter. O
+  claim viaja separado do texto; antes do spawn, Rust reabre o pacote e confirma
+  grant, fingerprint, contribuição e nome. O manifesto v4 registra a instrução
+  efetiva com escopo e força, sem persistir o corpo do prompt.
+- **MCP por capability:** o código genérico pergunta `McpEscopo::por_run`, nunca
+  compara fornecedor. Definições passam por schema fechado e health depois do
+  gesto humano. Adapter incompatível recebe notice e não ganha instalação
+  global. MCP stdio é inventariado por `tools/list`; HTTP continua opaco quando
+  seu health não produz catálogo auditável.
+- **Launcher supervisionado:** o provider recebe o binário da Frota e um
+  descriptor 0600, não o executável do plugin. O launcher revalida pacote,
+  fingerprint e grant, limpa o ambiente e limita frames antes de iniciar o
+  servidor. Desabilitar impede runs novos; o MCP já entregue termina com o run
+  atual, sem alegação de revogação instantânea.
+- **Conformance antes do consentimento:** skill, definição MCP, capability,
+  path e executabilidade são validados durante discovery. O `plugin-sdk` traz
+  schemas v1 e um pacote executável que passa pelo parser e pelo probe MCP reais.
+  O campo `$schema` é metadado conhecido pelo contrato fechado.
+- **UI efetiva:** revisão explica o momento de cada efeito; a faixa do run
+  separa instruções, tools, MCPs, recursos, inventário opaco e dependência do
+  provider. Configurações continua sendo intenção durável; o run é a evidência.
+
+### ADR-131 - um navegador por projeto admite um único piloto, observadores são livres ✅
+- **Incidente:** uma integração global abriu outro Chrome e uma automação abriu
+  conteúdo no Firefox, enquanto o Chromium possuído pela Frota existia em
+  paralelo. Ter endpoint CDP não impedia dois atores de clicar na mesma página,
+  e "ligado" não dizia quem tinha o controle.
+- **Decisão agnóstica:** o Experience Broker arbitra `project-browser` por
+  projeto, sem comparar provider. O owner pode ser um run, uma chamada de
+  plugin ou a pessoa. Run e plugin seguram uma lease RAII pelo lifetime real;
+  a pessoa recebe token com heartbeat e expiração de 15 segundos. Uma segunda
+  tentativa falha antes do efeito e informa o owner por papel, sem expor ids.
+- **Observação separada de pilotagem:** inventário de abas e screencast não
+  exigem posse. Clique, scroll, teclado, texto, histórico e navegação validam o
+  token humano em cada comando. Assim o painel pode acompanhar um agent sem
+  disputar input e só oferece "Assumir controle" quando o broker está livre.
+- **Fronteira CDP:** WebSocket de target nunca atravessa o backend. A Frota
+  mantém apenas o último JPEG em memória; `browser-preview://frame` carrega a
+  revisão, nunca base64. O inventário público nunca recebe a URL bruta e remove
+  userinfo, query, fragmento e paths locais. Avisos de frame são coalescidos e
+  pulls concorrentes são impedidos. Fechar painel interrompe screencast;
+  desligar browser em uso por run/plugin é recusado.
+- **Apresentação:** ligar cria Chromium isolado com `--headless=new` por padrão,
+  portanto não nasce uma janela externa. O painel próprio mostra a mesma aba e
+  o perfil continua persistente por projeto. Ciclo de vida é serializado por
+  projeto e CDP escuta explicitamente em loopback. Não há iframe, child webview
+  ou segundo browser como fallback.
+- **Desktop:** o broker mede Screen Recording e Accessibility no macOS e só
+  abre Ajustes após gesto humano. Permissão do SO não vira capability: enquanto
+  não existir controller próprio por run, `controllerAvailable=false` e
+  `desktop-control` permanece bloqueado. Linux declara o portal ainda ausente.
+
+### ADR-132 - tray e HUD compartilham snapshot, mas geometria pertence ao backend ✅
+- **Contexto:** o Dynamic HUD anterior fixava notch no React, inferia hardware
+  por resolução, persistia controles sem efeito e mostrava uma matriz/streak
+  inventada. A ADR-129 recolocou o popover clássico até existirem presenter e
+  provas nativas.
+- **Geometria real:** `notch.rs` lê frame, visible frame, escala,
+  `safeAreaInsets` e áreas auxiliares de `NSScreen`. O intervalo entre as áreas
+  auxiliares é o notch; sem ambas, não há notch. A conversão usa o topo do
+  `CGMainDisplayID`, como o Tao, e preserva Y negativo para monitor acima da
+  principal. Mudança de configuração de telas dispara recálculo. Linux usa
+  monitores Tauri e nunca infere recorte.
+- **Presenter:** `hud.rs` resolve posição pedida/efetiva e controla tamanho,
+  posição, nível, Spaces, foco, sombra, vibrancy e visibilidade da janela. A
+  área compacta é o hit target real; expandir muda a janela para até 540 × 320
+  e a torna focável. Ler `hud_status` é sem efeito para não esconder o próprio
+  popover clássico.
+- **Opt-in e fonte única:** `hudEnabled=false` é o default. Preferências
+  persistem somente no store global; o backend nasce desligado e recebe a
+  intenção após hidratação. `notch` em tela sem recorte degrada para `island`
+  com motivo visível. Desligado preserva o `TrayPopover` 360 × 430.
+- **Paridade e acesso:** `TraySurface` escolhe o presenter pelo runtime nativo.
+  O HUD usa somente `TraySnapshot`, incluindo todas as atividades visíveis,
+  decisões, última conclusão, automações e sessões externas. Não há telemetria
+  sintética. Botões, nomes acessíveis, `Escape` e movimento reduzido fazem parte
+  do contrato.
+
+### ADR-133 - retenção tem orçamento, mas o trabalho do usuário não ganha teto ✅
+- **Incidente (30/08/2026):** durante `codex exec resume`, o macOS abriu o
+  painel de pressão de memória com mais de 40 GB atribuídos à árvore do Frota.
+  O rollout tinha 85.223.130 bytes, 1.207 tool calls e 15 compactações. Os dois
+  WebViews ficaram abaixo de 400 MB e 26 MB; o processo foi encerrado pelo gesto
+  humano, portanto não sobrou `vmmap` que separasse heap do filho e buffer do
+  pai. A causa exata dessa divisão permanece não afirmada.
+- **Fronteira limitada:** stdout usa frames de no máximo 64 MiB antes do parse.
+  stderr é drenado em chunks crus e conserva somente a cauda de 64 KiB, sem a
+  alocação ilimitada de `lines()` nem uma `String` cumulativa. O contrato vale
+  para CLI direto, Codex app-server e OpenCode ACP.
+- **Watchdog agnóstico sem nerf:** cada transporte mede a cada cinco segundos o
+  RSS somado do backend e do filho direto. Publica avisos ao cruzar 2, 4, 8, 16
+  e 32 GiB, mas não pausa, mata, troca motor, reduz contexto nem remove tools.
+  `Parar` continua sendo gesto humano; o app não promete RAM física infinita.
+- **Preflight por capability:** quando `ContextUsageSource::CodexRollout`
+  declara que o histórico nativo é observável, o Frota procura apenas nome e
+  metadata no `CODEX_HOME`. Acima de 64 MiB, avisa e oferece o gesto
+  `/compactar`, mas inicia normalmente; não lê, corta, move nem apaga o rollout.
+  Inventário ausente degrada para o watchdog, sem declarar a sessão segura.
+- **Comparação local:** Paseo limita retenção e backpressure, não o volume de
+  trabalho: logs de plugin têm cauda por bytes/linhas e sockets abandonados têm
+  fila de 64 MiB, enquanto um cliente que drena continua recebendo output sem
+  snapshot forçado. Orca mede RSS por árvore, coalesce a varredura e expõe a
+  ação de encerrar à pessoa; seus relays limitam filas e reconectam para replay,
+  não impõem um teto de memória ao agent. O Frota adota essa mesma separação:
+  memória interna é limitada, capacidade do motor é observada.
+- **Correção correlata do HUD:** a auditoria também provou que o plano dizia
+  “coalescido”, mas cada notificação de tela criava uma task. O presenter agora
+  usa um worker único, debounce de 75 ms e geração; evento durante o recálculo
+  produz no máximo uma passada final. O HUD continua opt-in e não participou do
+  episódio de memória.
+
+### ADR-134 - o notch é parte da forma, não um popover sobre a tela ✅
+- **Evidência visual (30/08/2026):** o primeiro build nativo provou geometria e
+  conteúdo reais, mas mostrou um cartão branco com quatro cantos arredondados,
+  o nome técnico `Built-in Retina Display`, uma automação truncada e um botão
+  `Recolher`. A janela estava no lugar certo e ainda parecia solta do recorte.
+- **Casco físico:** no modo notch, o instrumento usa preto absoluto em qualquer
+  tema. O topo encosta em `y=0`, sem raio, margem ou filete; somente a saída
+  inferior curva. Ilha e posições laterais continuam temáticas porque não há
+  hardware preto a prolongar.
+- **Faixa visível:** o compacto tem a própria altura do `safeTop`, com mínimo
+  de 28 px, sem empilhar outra faixa abaixo do recorte. A largura medida ganha
+  64 px de respiro lateral; a área nativa continua igual à área visível e não
+  cria hit target fantasma. Uma coluna central com `notchWidth` fica sem
+  conteúdo; as asas mostram somente marca e estado por glifos, enquanto texto
+  completo permanece no nome acessível e no painel expandido.
+- **Gesto:** sair com o ponteiro recolhe o expandido. Clique ainda pede foco
+  para teclado e `Escape`, mas não fixa o painel nem exige um controle de
+  `Recolher`. Apontar expande em 90 ms. O cabeçalho mostra estado da frota, não
+  o nome interno do monitor.
+- **Transição nativa:** o QA provou que `acceptsMouseMovedEvents` não basta no
+  `WKWebView` compacto sem foco. Um único worker dentro do app, dormente quando
+  o HUD não está elegível, lê o ponteiro a cada 50 ms e pede expansão após 90
+  ms dentro do frame. O frame muda com a animação do AppKit e o conteúdo usa
+  fade curto; `Escape` exige uma saída e nova entrada antes de reabrir. O
+  movimento do conteúdo continua governado por `MotionConfig`.
+- **Conteúdo:** nomes de automação quebram em linha em vez de truncar. Nenhuma
+  telemetria, limite ou ação do motor muda; esta decisão é somente forma,
+  legibilidade e gesto do presenter.
+
+### ADR-135 - HUD flutuante e ícone da barra de menus são portas exclusivas ✅
+- **Contexto (30/08/2026):** o QA no hardware mostrou o casco do notch ao lado
+  do ícone da Frota na barra de menus. Ambos abriam o mesmo `TraySnapshot` e as
+  mesmas ações, portanto a duplicação não acrescentava alcance nem informação.
+- **Decisão:** depois que o presenter flutuante é mostrado com sucesso, o
+  backend oculta o ícone da barra de menus. Ao desligar o HUD ou resolver para
+  `menubar`, esconde a janela e restaura o ícone clássico. A transição preserva
+  primeiro a porta de destino, para uma falha não deixar a pessoa sem acesso.
+- **Escopo:** a exclusividade vale para notch, ilha, laterais e base. Snapshot,
+  menu, keep-alive ao fechar, automações, agents, modelos, contexto, tools e
+  limites permanecem iguais; muda apenas qual porta visual apresenta o estado.

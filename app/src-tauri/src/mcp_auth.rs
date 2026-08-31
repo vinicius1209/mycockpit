@@ -314,7 +314,7 @@ pub fn parse_as_metadata(json: &Value, issuer_esperado: &str) -> Result<AsMetada
     let code_challenge_methods_supported = lista("code_challenge_methods_supported");
     if code_challenge_methods_supported.is_empty() {
         return Err(
-            "o servidor de autorização não declara suporte a PKCE; o MyCockpit não faz login sem PKCE".into(),
+            "o servidor de autorização não declara suporte a PKCE; a Frota não faz login sem PKCE".into(),
         );
     }
     if !code_challenge_methods_supported
@@ -322,7 +322,7 @@ pub fn parse_as_metadata(json: &Value, issuer_esperado: &str) -> Result<AsMetada
         .any(|metodo| metodo == "S256")
     {
         return Err(
-            "o servidor de autorização não aceita PKCE S256; o MyCockpit não usa `plain`".into(),
+            "o servidor de autorização não aceita PKCE S256; a Frota não usa `plain`".into(),
         );
     }
     Ok(AsMetadata {
@@ -816,9 +816,9 @@ async fn esperar_callback(porta: u16) -> Result<BTreeMap<String, String>, String
             }
             let params = parse_callback_query(primeira);
             let corpo = if params.contains_key("code") {
-                pagina("Login concluído", "Pode voltar ao MyCockpit.")
+                pagina("Login concluído", "Pode voltar à Frota.")
             } else {
-                pagina("Login não concluído", "Volte ao MyCockpit para ver o motivo.")
+                pagina("Login não concluído", "Volte à Frota para ver o motivo.")
             };
             let _ = stream.write_all(corpo.as_bytes()).await;
             let _ = stream.flush().await;

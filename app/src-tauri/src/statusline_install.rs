@@ -309,12 +309,12 @@ fn resolve_original(
     match current {
         Some(cmd) if cmd == script => match existing_script {
             None => Err(
-                "o slot de statusline aponta pro script do MyCockpit, mas o script sumiu do disco \
+                "o slot de statusline aponta pro script da Frota, mas o script sumiu do disco \
                  (limpador de caches?); não dá pra saber qual statusline estava encadeada"
                     .to_string(),
             ),
             Some(content) if !content.lines().any(|l| l.starts_with(ORIGINAL_MARKER)) => Err(
-                "o script no lugar do MyCockpit não tem o header esperado; não dá pra saber qual \
+                "o script no lugar da Frota não tem o header esperado; não dá pra saber qual \
                  statusline estava encadeada"
                     .to_string(),
             ),

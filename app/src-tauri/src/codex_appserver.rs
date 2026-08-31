@@ -47,6 +47,7 @@ const ID_THREAD_RETRY: i64 = 4;
 /// quem chama só decide os terminais (Cancelled/Done) — mesma divisão do `run_once`.
 pub struct Outcome {
     pub cancelled: bool,
+    pub failed: bool,
     /// Falha ANTES do turno começar (spawn, handshake, abertura da thread). É o
     /// ÚNICO caso em que o caller pode cair no transporte antigo sem duplicar
     /// nada na tela — depois do `turn/start` já saiu conteúdo.
@@ -57,12 +58,14 @@ impl Outcome {
     fn startup(e: impl Into<String>) -> Self {
         Self {
             cancelled: false,
+            failed: false,
             startup_error: Some(e.into()),
         }
     }
-    fn done(cancelled: bool) -> Self {
+    fn done(cancelled: bool, failed: bool) -> Self {
         Self {
             cancelled,
+            failed,
             startup_error: None,
         }
     }
@@ -605,7 +608,10 @@ pub async fn probe_once(
         .stderr(Stdio::piped())
         .kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| {
-        ProbeError::new("spawn", format!("não consegui subir o codex app-server: {e}"))
+        ProbeError::new(
+            "spawn",
+            format!("não consegui subir o codex app-server: {e}"),
+        )
     })?;
     let mut stdin = child
         .stdin
@@ -626,7 +632,7 @@ pub async fn probe_once(
             request(
                 ID_INITIALIZE,
                 "initialize",
-                json!({"clientInfo":{"name":"mycockpit","title":"MyCockpit","version":env!("CARGO_PKG_VERSION")}}),
+                json!({"clientInfo":{"name":"frota","title":"Frota","version":env!("CARGO_PKG_VERSION")}}),
             ),
             json!({"jsonrpc":"2.0","method":"initialized"}),
             request(ID_PROBE, method, params),
@@ -830,6 +836,9 @@ fn app_server_command(req: &RunRequest) -> Command {
         if let Some(gateway) = &req.work_gateway {
             gateway.configure_codex(&mut cmd);
         }
+        if let Some(gateway) = &req.tool_gateway {
+            gateway.configure_codex(&mut cmd);
+        }
     }
     cmd.arg("app-server");
     cmd
@@ -853,6 +862,8 @@ pub async fn run(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
     // Correlação dos hooks de status (mesma env do exec, ver agent.rs): o
     // app-server também herda os hooks globais do codex — sem isto, cada
     // turno nosso apareceria como "sessão externa" no Painel.
@@ -862,7 +873,8 @@ pub async fn run(
         Ok(c) => c,
         Err(e) => return Outcome::startup(format!("não consegui subir o codex app-server: {e}")),
     };
-    if let Some(pid) = child.id() {
+    let child_pid = child.id();
+    if let Some(pid) = child_pid {
         if let Ok(mut pids) = registry.1.lock() {
             pids.insert(run_id.to_string(), pid);
         }
@@ -879,23 +891,19 @@ pub async fn run(
     // encher e travar o filho; só vira mensagem se o turno morrer sem explicação.
     let stderr = child.stderr.take();
     let stderr_task = tokio::spawn(async move {
-        let mut buf = String::new();
-        if let Some(se) = stderr {
-            let mut lines = BufReader::new(se).lines();
-            while let Ok(Some(l)) = lines.next_line().await {
-                buf.push_str(&l);
-                buf.push('\n');
-            }
+        match stderr {
+            Some(stderr) => crate::run_resources::collect_stderr_tail(stderr).await,
+            None => crate::run_resources::CapturedTail::default(),
         }
-        buf
     });
+    let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
 
     // Gate de interação: MESMO registro/evento do socket do Claude, sem socket —
     // aqui o pedido já chega pelo stream. O Drop/shutdown resolve fail-closed
     // qualquer card ainda aberto quando o run morre.
     let interactions = Arc::new(DirectInteractions::new(app.clone(), pending));
 
-    let mut reader = BufReader::new(stdout).lines();
+    let mut reader = crate::run_resources::LimitedLineReader::new(stdout);
     let mut st = StreamState::new(cost_model);
     // Evidência visual (B1): mesmo sink do caminho `exec` — imagem de MCP
     // vira arquivo, nunca base64 no Channel. None degrada honesto.
@@ -905,6 +913,7 @@ pub async fn run(
     let mut prompt = req.prompt.clone();
     let mut turn_started = false;
     let mut cancelled = false;
+    let mut failed = false;
     let mut startup_error: Option<String> = None;
     let mut approval_seq: u64 = 0;
 
@@ -923,15 +932,45 @@ pub async fn run(
 
     loop {
         tokio::select! {
+            status = child.wait() => {
+                let detail = status
+                    .ok()
+                    .and_then(|value| value.code())
+                    .map(|code| format!(" (código {code})"))
+                    .unwrap_or_default();
+                if !turn_started {
+                    startup_error = Some(format!("o codex app-server encerrou antes do turno{detail}"));
+                } else {
+                    failed = true;
+                    let _ = on_event.send(AgentEvent::Error {
+                        message: format!("o codex app-server encerrou antes do desfecho do turno{detail}"),
+                    });
+                }
+                break;
+            }
             line = reader.next_line() => {
                 let line = match line {
                     Ok(Some(l)) => l,
                     // EOF antes do turno = o app-server caiu na largada → o caller
-                    // ainda pode cair no `exec`. Depois do turno, fim normal.
-                    _ => {
+                    // ainda pode cair no `exec`. Depois que o turno começou, só
+                    // `turn/completed` é desfecho normal: EOF não pode virar Done(0).
+                    Ok(None) => {
                         if !turn_started && startup_error.is_none() {
                             startup_error = Some("o codex app-server encerrou antes do turno".into());
+                        } else if turn_started {
+                            failed = true;
+                            let _ = on_event.send(AgentEvent::Error {
+                                message: "o codex app-server encerrou antes do desfecho do turno".into(),
+                            });
                         }
+                        break;
+                    }
+                    Err(error) => {
+                        failed = true;
+                        let _ = on_event.send(AgentEvent::Error {
+                            message: format!("{error}; interrompi o run antes de processar um payload sem teto."),
+                        });
+                        crate::run_processes::terminate_run(run_id, child_pid);
                         break;
                     }
                 };
@@ -995,6 +1034,7 @@ pub async fn run(
                                 .map(str::to_string);
                         }
                         if m == "error" {
+                            failed = true;
                             let message = error_message(&params);
                             let _ = on_event.send(match crate::adapters::codex_limit(&message) {
                                 Some(hit) => AgentEvent::LimitReached { message, reset_hint: hit.reset_hint },
@@ -1072,6 +1112,7 @@ pub async fn run(
                                 }
                             }
                             (ID_TURN, Some(e)) => {
+                                failed = true;
                                 let message = format!("o turno do codex não iniciou: {e}");
                                 let _ = on_event.send(AgentEvent::Error { message });
                                 break;
@@ -1096,8 +1137,19 @@ pub async fn run(
                         "threadId": t, "turnId": tu
                     }))).await;
                 }
-                let _ = child.start_kill();
+                crate::run_processes::terminate_run(run_id, child_pid);
                 break;
+            }
+            memory = memory_watch.next() => {
+                match memory {
+                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
+                        let _ = on_event.send(AgentEvent::Notice {
+                            message: format!(
+                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                            ),
+                        });
+                    }
+                }
             }
         }
     }
@@ -1105,9 +1157,10 @@ pub async fn run(
     // destrava (fail-closed) qualquer card ainda aberto: o turno morreu, ninguém
     // pode ficar esperando resposta de um run que não existe mais.
     interactions.shutdown();
-    let _ = child.start_kill();
+    crate::run_processes::terminate_run(run_id, child_pid);
     let _ = child.wait().await;
-    let stderr_text = stderr_task.await.unwrap_or_default();
+    let stderr_capture = stderr_task.await.unwrap_or_default();
+    let stderr_text = stderr_capture.text;
 
     // Só reporta stderr quando o turno nem começou (senão vira ruído: o
     // app-server loga falha de MCP de terceiros em run perfeitamente saudável).
@@ -1120,12 +1173,15 @@ pub async fn run(
                 .collect::<Vec<_>>()
                 .join(" | ");
             e.push_str(&format!(" ({tail})"));
+            if stderr_capture.truncated {
+                e.push_str(" [stderr limitado aos 64 KiB finais]");
+            }
         }
     }
 
     match startup_error {
         Some(e) => Outcome::startup(e),
-        None => Outcome::done(cancelled),
+        None => Outcome::done(cancelled, failed),
     }
 }
 
@@ -1149,6 +1205,7 @@ mod tests {
             approval: None,
             context_gateway: None,
             work_gateway: None,
+            tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,
             usage_baseline: None,
@@ -1260,6 +1317,29 @@ mod tests {
     }
 
     #[test]
+    fn app_server_carrega_catalogo_de_plugins_antes_do_subcomando() {
+        let mut r = req(Permission::Padrao);
+        r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
+            server_bin: "/app/frota".into(),
+            socket: "/tmp/mc-tools.sock".into(),
+        });
+        let cmd = app_server_command(&r);
+        let args: Vec<String> = cmd
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect();
+        let subcommand = args.iter().position(|arg| arg == "app-server").unwrap();
+        let config = args
+            .iter()
+            .position(|arg| arg.contains("mcp_servers.mc-tools.command"))
+            .unwrap();
+        assert!(config < subcommand);
+        assert!(args.iter().any(|arg| arg.contains("tool-server")));
+        assert!(args.iter().any(|arg| arg.contains("/tmp/mc-tools.sock")));
+    }
+
+    #[test]
     fn app_server_carrega_profile_mcp_gerenciado_antes_do_subcomando() {
         let mut r = req(Permission::Padrao);
         r.mcp_plan = crate::mcp_control::McpRunPlan {
@@ -1273,6 +1353,7 @@ mod tests {
                     args: vec!["serve".into()],
                     ..Default::default()
                 },
+                tool_names: Vec::new(),
             }],
             disabled_codex_names: vec!["global-db".into()],
             ..Default::default()

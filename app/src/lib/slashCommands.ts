@@ -11,6 +11,7 @@
 
 import { agentDef } from "@/lib/agents"
 import { readProjectCommands, type SlashCommand } from "@/lib/sources"
+import type { InstructionSourceClaim } from "@/lib/tooling"
 
 // ---------------------------------------------------------------------------
 // Comandos BUILTIN do app (source "app") — comandos de PRIMEIRA CLASSE do
@@ -83,9 +84,43 @@ export function splitQueueForAppCommand<T extends { text: string }>(
 export function parseSlashInvocation(
   text: string,
 ): { name: string; args: string } | null {
-  const m = text.match(/^\/([\w:-]+)(?:\s+([\s\S]*))?$/)
+  const m = text.match(/^\/([\w:.-]+)(?:\s+([\s\S]*))?$/)
   if (!m) return null
   return { name: m[1], args: (m[2] ?? "").trim() }
+}
+
+export interface SlashExpansion {
+  text: string
+  instructionSources: InstructionSourceClaim[]
+}
+
+function instructionSource(command: SlashCommand): InstructionSourceClaim | null {
+  if (
+    command.source !== "plugin" ||
+    !command.pluginKey ||
+    !command.pluginFingerprint ||
+    !command.contributionId
+  ) {
+    return null
+  }
+  return {
+    kind: "plugin-skill",
+    pluginKey: command.pluginKey,
+    fingerprint: command.pluginFingerprint,
+    contributionId: command.contributionId,
+    invocation: command.name,
+  }
+}
+
+export function mergeInstructionSources(
+  ...groups: InstructionSourceClaim[][]
+): InstructionSourceClaim[] {
+  const unique = new Map<string, InstructionSourceClaim>()
+  for (const source of groups.flat()) {
+    const key = `${source.kind}:${source.pluginKey}:${source.contributionId}:${source.fingerprint}`
+    if (!unique.has(key)) unique.set(key, source)
+  }
+  return [...unique.values()]
 }
 
 /** Remove o frontmatter YAML (bloco `---` inicial) do corpo do comando. */
@@ -112,19 +147,36 @@ export function expandSlashCommand(
   agent: string,
   opts?: { embedded?: boolean },
 ): string {
+  return expandSlashCommandWithSources(text, commands, agent, opts).text
+}
+
+export function expandSlashCommandWithSources(
+  text: string,
+  commands: SlashCommand[],
+  agent: string,
+  opts?: { embedded?: boolean },
+): SlashExpansion {
   const inv = parseSlashInvocation(text.trim())
-  if (!inv) return text
+  if (!inv) return { text, instructionSources: [] }
   const cmd = commands.find((c) => c.name === inv.name)
-  if (!cmd) return text
+  if (!cmd) return { text, instructionSources: [] }
   const def = agentDef(agent)
   if (!opts?.embedded && def?.nativeSlash && cmd.source === def.nativeCommandSource)
-    return text
+    return { text, instructionSources: [] }
   const body = cmd.body ? stripFrontmatter(cmd.body).trim() : ""
-  if (!body) return text
+  if (!body) return { text, instructionSources: [] }
+  const source = instructionSource(cmd)
+  const instructionSources = source ? [source] : []
   if (body.includes("$ARGUMENTS")) {
-    return body.replaceAll("$ARGUMENTS", inv.args)
+    return {
+      text: body.replaceAll("$ARGUMENTS", inv.args),
+      instructionSources,
+    }
   }
-  return inv.args ? `${body}\n\n${inv.args}` : body
+  return {
+    text: inv.args ? `${body}\n\n${inv.args}` : body,
+    instructionSources,
+  }
 }
 
 /** Wrapper de envio: só toca o disco quando o texto É uma invocação "/".
@@ -136,13 +188,22 @@ export async function expandDraftForAgent(
   agent: string,
   opts?: { embedded?: boolean },
 ): Promise<string> {
-  if (!parseSlashInvocation(text.trim())) return text
+  return (await expandDraftForAgentWithSources(text, projectPath, agent, opts)).text
+}
+
+export async function expandDraftForAgentWithSources(
+  text: string,
+  projectPath: string,
+  agent: string,
+  opts?: { embedded?: boolean },
+): Promise<SlashExpansion> {
+  if (!parseSlashInvocation(text.trim())) return { text, instructionSources: [] }
   try {
     const commands = await readProjectCommands(projectPath, agent)
-    return expandSlashCommand(text, commands, agent, opts)
+    return expandSlashCommandWithSources(text, commands, agent, opts)
   } catch (e) {
     console.warn("inventário de comandos indisponível; enviando como texto", e)
-    return text
+    return { text, instructionSources: [] }
   }
 }
 
@@ -161,8 +222,28 @@ export async function reexpandIfEmbedded(
   agent: string,
   willPrefix: boolean,
 ): Promise<string> {
-  if (!willPrefix || !parseSlashInvocation(expanded.trim())) return expanded
-  return expandDraftForAgent(original, projectPath, agent, { embedded: true })
+  return (
+    await reexpandIfEmbeddedWithSources(
+      { text: expanded, instructionSources: [] },
+      original,
+      projectPath,
+      agent,
+      willPrefix,
+    )
+  ).text
+}
+
+export async function reexpandIfEmbeddedWithSources(
+  expanded: SlashExpansion,
+  original: string,
+  projectPath: string,
+  agent: string,
+  willPrefix: boolean,
+): Promise<SlashExpansion> {
+  if (!willPrefix || !parseSlashInvocation(expanded.text.trim())) return expanded
+  return expandDraftForAgentWithSources(original, projectPath, agent, {
+    embedded: true,
+  })
 }
 
 /** Fila coalescida (G2.2): expande CADA texto pendente individualmente ANTES
@@ -190,15 +271,15 @@ export async function expandPendingForTarget(
   text: string,
   projectPath: string,
   targetAgent: string,
-): Promise<{ text: string; note: string | null }> {
+): Promise<SlashExpansion & { note: string | null }> {
   const inv = parseSlashInvocation(text.trim())
-  if (!inv) return { text, note: null }
+  if (!inv) return { text, note: null, instructionSources: [] }
   let commands: SlashCommand[]
   try {
     commands = await readProjectCommands(projectPath, targetAgent)
   } catch (e) {
     console.warn("inventário do destino indisponível; pendente segue como texto", e)
-    return { text, note: null }
+    return { text, note: null, instructionSources: [] }
   }
   const targetLabel = agentDef(targetAgent)?.label ?? targetAgent
   const cmd = commands.find((c) => c.name === inv.name)
@@ -206,17 +287,21 @@ export async function expandPendingForTarget(
     return {
       text,
       note: `nota do revezamento: "/${inv.name}" não existe no inventário do ${targetLabel}; trate a linha acima como texto do pedido.`,
+      instructionSources: [],
     }
   }
-  const expanded = expandSlashCommand(text, commands, targetAgent, { embedded: true })
-  if (expanded === text) {
+  const expanded = expandSlashCommandWithSources(text, commands, targetAgent, {
+    embedded: true,
+  })
+  if (expanded.text === text) {
     // match, mas corpo ilegível/vazio: expandir era impossível — nota honesta.
     return {
       text,
       note: `nota do revezamento: o comando "/${inv.name}" existe mas o corpo está ilegível; trate a linha acima como texto do pedido.`,
+      instructionSources: [],
     }
   }
-  return { text: expanded, note: null }
+  return { ...expanded, note: null }
 }
 
 /** Chips do item no popover "/" (discretos): fonte sempre; "global" quando não

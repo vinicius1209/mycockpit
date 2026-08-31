@@ -488,7 +488,7 @@ pub fn decision_from_answer(answer: &Value) -> HookDecision {
                 .get("message")
                 .and_then(|x| x.as_str())
                 .filter(|s| !s.trim().is_empty())
-                .unwrap_or("negado pelo usuário no MyCockpit")
+                .unwrap_or("negado pelo usuário na Frota")
                 .to_string(),
         ),
         None => HookDecision::Ask,
@@ -979,7 +979,7 @@ mod tests {
         );
         assert_eq!(
             decision_from_answer(&json!({ "allow": false })),
-            HookDecision::Deny("negado pelo usuário no MyCockpit".into())
+            HookDecision::Deny("negado pelo usuário na Frota".into())
         );
         // shape inesperado NUNCA vira deny fabricado: ask (fluxo nativo).
         assert_eq!(decision_from_answer(&json!({})), HookDecision::Ask);

@@ -60,11 +60,11 @@ describe("LivePlanCard", () => {
     expect(html).toContain('aria-label="Etapas do plano"')
   })
 
-  it("é um trilho E0 neutro, não outro cartão sobre o composer", () => {
+  it("é uma superfície E1 neutra e distinta, abaixo do composer E2", () => {
     const html = render(active)
-    expect(html).toContain("border-l border-border/40")
-    expect(html).not.toContain("shadow-")
-    expect(html).not.toContain("bg-card")
+    expect(html).toContain("rounded-lg border bg-card shadow-[var(--shadow-sm)]")
+    expect(html).toContain("border-t border-border/40")
+    expect(html).not.toContain("shadow-[var(--shadow-pop)]")
     expect(html).not.toContain("text-brass")
     expect(html).not.toContain("text-st-success")
   })

@@ -31,10 +31,14 @@ import {
 import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
+import { LocalResourcesSettings } from "@/components/settings/LocalResourcesSettings"
+import { SettingsRail } from "@/components/settings/SettingsRail"
+import { ExtensionsSettings } from "@/components/settings/ExtensionsSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
 import { SessionCostLimit } from "@/components/settings/SessionCostLimit"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
+import { HudSettings } from "@/components/settings/HudSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { ServicosSettings } from "@/components/settings/ServicosSettings"
@@ -54,12 +58,9 @@ import {
 import {
   resolveSection,
   sectionDef,
-  precisaDeAtencao,
-  sectionsByGroup,
   secoesDisponiveis,
   type SectionId,
 } from "@/components/settings/sections"
-import { cn } from "@/lib/utils"
 import {
   CONVERSATION_SCALES,
   DEFAULT_CONVERSATION_SCALE,
@@ -74,7 +75,6 @@ const HELPER_OPTIONS = [
   { value: "sonnet", label: "Sonnet", description: "Mais capaz" },
   { value: "opus", label: "Opus", description: "Máxima qualidade" },
 ]
-
 
 /** Cabeçalho padrão de uma seção do registro (título + a pergunta dela). */
 function Header({ id }: { id: SectionId }) {
@@ -120,6 +120,11 @@ export function SettingsDialog() {
     resolveSection(null, available),
   )
   const [version, setVersion] = useState("")
+  // Enquanto um deep link ainda não foi consumido pelo efeito, o rail já abre
+  // o grupo certo. Assim o alvo existe no DOM quando o Radix pede o foco.
+  const railSection = open && requested
+    ? resolveSection(requested, available)
+    : section
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {})
@@ -161,53 +166,15 @@ export function SettingsDialog() {
           <DialogDescription>Preferências do app.</DialogDescription>
         </DialogHeader>
 
-        {/* Rail — os grupos vêm do registro; com 15 seções ele precisa do
-            próprio scroll (viewport baixo não pode comer a última seção). */}
-        <nav className="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-border/60 bg-rail p-2">
-          {sectionsByGroup(available).map(({ group, sections }) => (
-            <div key={group.id} className="contents">
-              <div className="label-mono px-2 pt-3 pb-1">{group.label}</div>
-              {sections.map((s) => (
-                <button
-                  key={s.id}
-                  data-section={s.id}
-                  onClick={() => setSection(s.id)}
-                  className={cn(
-                    // denso na lateral (régua de ~34px do STYLEGUIDE §8)
-                    "flex items-center gap-2.5 rounded-md px-2 py-1.5 text-left text-[13px] transition-colors",
-                    section === s.id
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                  )}
-                >
-                  <span className="grid size-5 shrink-0 place-items-center">
-                    <s.icon className="size-4" />
-                  </span>
-                  <span className="min-w-0 truncate">{s.label}</span>
-                  {/* Selo à DIREITA e em caixa alta: é estado da seção, não
-                      parte do nome dela. Dentro do título ("Missões (beta)")
-                      ele não podia ser lido nem estilizado como estado. */}
-                  {s.badge && (
-                    <span className="ml-auto shrink-0 rounded bg-secondary px-1 py-px text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-                      {s.badge}
-                    </span>
-                  )}
-                  {/* Ponto de atenção: coisa meio-configurada que VOCÊ pode
-                      consertar (CLI deslogada, gh sem conta). Nunca capacidade
-                      ausente por escolha nem limitação da máquina — ponto que
-                      não apaga ensina a ignorar o ponto. */}
-                  {precisaDeAtencao(s.id, fatosDoRail) && (
-                    <span
-                      className={cn("size-1.5 shrink-0 rounded-full bg-st-warning", !s.badge && "ml-auto")}
-                      title="Precisa de atenção"
-                      aria-label="Precisa de atenção"
-                    />
-                  )}
-                </button>
-              ))}
-            </div>
-          ))}
-        </nav>
+        {/* Rail por domínio: só o grupo ativo expande. Todas as seções seguem
+            no registro, na busca e nos deep links, mas a pessoa não recebe uma
+            parede de 18 destinos toda vez que abre Configurações. */}
+        <SettingsRail
+          available={available}
+          selected={railSection}
+          facts={fatosDoRail}
+          onSelect={setSection}
+        />
 
         {/* Conteúdo — o X padrão do dialog base flutua no canto sup-direito;
             o SectionHeader reserva pr-9 pra nada passar por baixo dele. */}
@@ -321,15 +288,7 @@ export function SettingsDialog() {
                     aria-label="Continuar na barra de menus ao fechar"
                   />
                 </Field>
-                <div className="py-3">
-                  <div className="text-[13px] text-foreground">
-                    Instrumento compacto
-                  </div>
-                  <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-                    Um clique mostra frota, decisões e automações. O clique
-                    secundário abre o menu nativo de segurança.
-                  </p>
-                </div>
+                <HudSettings />
               </div>
               {settings.trayCloseHintShown && (
                 <button
@@ -413,7 +372,7 @@ export function SettingsDialog() {
                 <div className="divide-y divide-border/50">
                   <Field
                     label="Avisar após (minutos)"
-                    hint="Cobre turnos rodando sem produzir nada novo E cards do board parados em revisão/bloqueado. Dispara notificação + aviso acionável. 0 desliga."
+                    hint="Cobre turnos sem evento novo nem etapa ativa E cards parados em revisão/bloqueado. Dispara notificação + aviso acionável. 0 desliga."
                   >
                     <Input
                       type="number"
@@ -425,7 +384,7 @@ export function SettingsDialog() {
                         setSettings({ stalledAfterMin: n })
                       }}
                       className="h-8 w-20 text-[13px]"
-                      aria-label="Minutos de silêncio até avisar turno mudo"
+                      aria-label="Minutos sem atividade identificável até avisar"
                     />
                   </Field>
                 </div>
@@ -495,6 +454,10 @@ export function SettingsDialog() {
           {section === "companion" && <CompanionSettings />}
 
           {section === "integrations" && <McpSettings />}
+
+          {section === "resources" && <LocalResourcesSettings />}
+
+          {section === "extensions" && <ExtensionsSettings />}
 
           {section === "machine" && <MachineAgents />}
 

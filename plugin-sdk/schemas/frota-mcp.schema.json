@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frota.local/schemas/plugin/v1/frota-mcp.schema.json",
+  "title": "Definição MCP contribuída pela Frota v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "name", "transport"],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "schemaVersion": { "const": 1 },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "transport": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "command"],
+          "properties": {
+            "type": { "const": "stdio" },
+            "command": { "$ref": "#/$defs/path" },
+            "args": {
+              "type": "array",
+              "maxItems": 64,
+              "items": { "type": "string", "maxLength": 4096 }
+            },
+            "cwd": { "enum": ["plugin", "project"] }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "url"],
+          "properties": {
+            "type": { "const": "http" },
+            "url": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^(?:https://[^/?#@]+(?::[0-9]+)?(?:/[^?#]*)?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^?#]*)?)$"
+            }
+          }
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    }
+  }
+}

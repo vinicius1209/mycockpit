@@ -372,7 +372,7 @@ export function notifyUnattendedTimeout(o: {
   })
 }
 
-/** Chamado UMA vez por episódio quando um turno RUNNING fica MUDO (sem nenhum
+/** Chamado UMA vez por episódio quando um turno RUNNING fica sem progresso
  *  item novo) além do limiar (settings.stalledAfterMin). Dispara a nativa
  *  SEMPRE — turno travado é exatamente o caso "ninguém está olhando" (app em
  *  background/tray). O toast acionável in-app fica com o watchdog (chamador);
@@ -391,8 +391,8 @@ export function notifyTurnStalled(
     : undefined
   const title = meta?.title ?? "Conversa"
   void nativeNotify(
-    "Frota · turno mudo",
-    `${clipTitle(title)}: ${agentLabel(agent)} está há ${minutes} min sem produzir nada novo. O turno pode ter travado.`,
+    "Frota · turno sem atualizações",
+    `${clipTitle(title)}: a ponte de ${agentLabel(agent)} não publica progresso novo há ${minutes} min. O turno pode ter travado.`,
   )
 }
 

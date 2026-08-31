@@ -5,16 +5,25 @@
 // linha de cada agent, o que falta do outro lado.
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { AlertTriangle, Globe, Loader2 } from "lucide-react"
+import { AlertTriangle, Eye, Globe, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import {
+  Card,
+  CardBody,
+  CardHead,
+  Selo,
+} from "@/components/settings/parts"
+import {
   browserChainLine,
+  browserPilotStatus,
   browserStateLabel,
   browserStatus,
+  openBrowserPanel,
   startProjectBrowser,
   stopProjectBrowser,
   type BrowserStatus,
+  type BrowserPilotStatus,
 } from "@/lib/browser"
 import { listenWorkEvents } from "@/lib/work"
 import type { McpServer } from "@/lib/mcp"
@@ -99,64 +108,141 @@ export function useProjectBrowser(projectPath: string | null): ProjectBrowser {
 export function ProjectBrowserCard({
   browser,
   servers,
+  onConfigureDelivery,
 }: {
   browser: ProjectBrowser
   servers: McpServer[]
+  onConfigureDelivery?: () => void
 }) {
   const { status, busy, toggle } = browser
+  const [pilot, setPilot] = useState<BrowserPilotStatus | null>(null)
   const chain = browserChainLine(servers, status)
+  const stateLabel = !status
+    ? "indisponível"
+    : status.session
+      ? "ligado"
+      : status.binary
+        ? "desligado"
+        : "ausente"
+
+  useEffect(() => {
+    const path = status?.session?.projectPath
+    if (!path) {
+      setPilot(null)
+      return
+    }
+    let disposed = false
+    const refresh = () => {
+      void browserPilotStatus(path)
+        .then((found) => {
+          if (!disposed) setPilot(found)
+        })
+        .catch((cause) => console.warn("Piloto do navegador indisponível:", cause))
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 3_000)
+    return () => {
+      disposed = true
+      window.clearInterval(timer)
+    }
+  }, [status?.session?.projectPath])
+
+  const browserBusy = pilot?.mode === "agent" || pilot?.mode === "plugin"
 
   return (
-    <div className="mt-3 rounded-lg border border-border/60 bg-secondary/15 p-3">
-      <div className="flex items-start gap-2.5">
-        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/60">
-          <Globe className="size-3.5 text-brass" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="text-[13px] font-medium text-foreground">
+    <Card>
+      <CardHead
+        nome={
+          <span className="flex items-center gap-2">
+            <Globe className="size-3.5 text-brass" />
             Navegador do projeto
-          </div>
-          <div className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-            O app abre e mantém um Chromium com perfil próprio deste projeto.
-            Ligar aqui é metade do caminho: o run só recebe este navegador nos
-            MCPs marcados como "navegador" para aquele agent, abaixo.
-          </div>
-          <div
-            className="mt-1 truncate font-mono text-[11px] text-muted-foreground/75"
-            title={status?.binary ?? undefined}
-          >
+          </span>
+        }
+        meta={
+          <span title={status?.binary ?? undefined}>
             {browserStateLabel(status)}
+          </span>
+        }
+        selo={<Selo>{stateLabel}</Selo>}
+        acao={
+          <Button
+            size="compacto"
+            variant={status?.session ? "ghost" : "secondary"}
+            onClick={() => void toggle(!status?.session)}
+            disabled={
+              busy ||
+              browserBusy ||
+              (!status?.session && !status?.binary)
+            }
+            title={
+              browserBusy
+                ? `${pilot?.label}; encerre a atividade antes de desligar`
+                : undefined
+            }
+          >
+            {busy && <Loader2 className="size-3.5 animate-spin" />}
+            {status?.session ? "Desligar" : "Ligar"}
+          </Button>
+        }
+      />
+      <CardBody>
+        <p className="text-[12px] leading-snug text-muted-foreground">
+          A Frota mantém um Chromium isolado em segundo plano, com perfil deste
+          projeto. Você observa e pilota pelo painel próprio; o run só o recebe
+          por um binding MCP marcado como navegador. Se o recurso estiver
+          desligado, o run para antes de abrir outra janela.
+        </p>
+        {status?.session && pilot && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Piloto: {pilot.label}. {pilot.mode === "idle" ? "O painel ou um run pode assumir." : "Outras superfícies permanecem em observação."}
+          </p>
+        )}
+        {chain && (
+          <div
+            className={cn(
+              "mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[11px] leading-snug",
+              // Âmbar é "precisa de você"; o elo inteiro é estado assentado e
+              // estado assentado é cinza (STYLEGUIDE §2: verde é marco, não
+              // badge permanente).
+              chain.tom === "aviso"
+                ? "border border-st-warning/30 bg-st-warning/5 text-st-warning"
+                : "border border-border/40 bg-background/40 text-muted-foreground",
+            )}
+          >
+            {chain.tom === "aviso" && (
+              <AlertTriangle className="mt-px size-3.5 shrink-0" />
+            )}
+            <span>{chain.texto}</span>
           </div>
-        </div>
-        <Button
-          size="padrao"
-          variant={status?.session ? "ghost" : "secondary"}
-          onClick={() => void toggle(!status?.session)}
-          disabled={busy || (!status?.session && !status?.binary)}
-          className="h-7 shrink-0 px-2.5 text-[12px]"
-        >
-          {busy && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
-          {status?.session ? "Desligar" : "Ligar"}
-        </Button>
-      </div>
-      {chain && (
-        <div
-          className={cn(
-            "mt-2 flex items-start gap-1.5 rounded-md px-2 py-1.5 text-[11px] leading-snug",
-            // Âmbar é "precisa de você"; o elo inteiro é estado assentado e
-            // estado assentado é cinza (STYLEGUIDE §2: verde é marco, não
-            // badge permanente).
-            chain.tom === "aviso"
-              ? "border border-st-warning/30 bg-st-warning/5 text-st-warning"
-              : "border border-border/50 bg-background/40 text-muted-foreground",
-          )}
-        >
-          {chain.tom === "aviso" && (
-            <AlertTriangle className="mt-px size-3.5 shrink-0" />
-          )}
-          <span>{chain.texto}</span>
-        </div>
-      )}
-    </div>
+        )}
+        {status?.session && (
+          <Button
+            type="button"
+            size="compacto"
+            variant="outline"
+            className="mt-2"
+            onClick={() => {
+              void openBrowserPanel(status.session!.projectPath).catch((cause) =>
+                toast.error(cause instanceof Error ? cause.message : String(cause)),
+              )
+            }}
+          >
+            <Eye className="size-3.5" />
+            Observar e pilotar
+          </Button>
+        )}
+        {onConfigureDelivery && (
+          <Button
+            type="button"
+            size="chip"
+            variant="ghost"
+            className="mt-2"
+            onClick={onConfigureDelivery}
+          >
+            Configurar entrega em MCPs
+          </Button>
+        )}
+      </CardBody>
+    </Card>
   )
 }

@@ -1,9 +1,10 @@
 // Memória PLENA da conversa, consultável por QUALQUER agent via arquivo (pull):
 // renderTranscript gera o markdown completo (sem truncar) que o backend grava em
 // .mycockpit/context/<convId>.md (export_conv_context, escrita atômica +
-// gitignore). O preâmbulo/recap (push) segue vindo do serializeContext; aqui
-// mora o transcript pleno + o ponteiro + a montagem do prompt pro agy (sem
-// resume, todo turno é sessão fresca).
+// gitignore). As retomadas normais e o /compactar projetam o push por
+// significado (`memoriaDaConversa`); superfícies laterais ainda podem usar
+// `serializeContext`. Aqui mora o transcript pleno + o ponteiro + a montagem do
+// prompt pro agy (sem resume, todo turno é sessão fresca).
 
 import { invoke } from "@tauri-apps/api/core"
 import { agentDef } from "@/lib/agents"

@@ -51,8 +51,8 @@ export function LivePlanCard({
   }
 
   return (
-    <div className="mx-auto mb-1 max-w-[760px] px-8">
-      <div>
+    <div className="mx-auto mb-2 max-w-[760px] px-8">
+      <div className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-sm)]">
         <button
           type="button"
           onClick={() => setCollapsedPlanId(open ? livePlan.id : null)}
@@ -64,7 +64,7 @@ export function LivePlanCard({
           title={detailInSidebar ? "Etapas abertas no painel Plano" : undefined}
           className={cn(
             controle("compacto"),
-            "flex w-full text-left transition-colors hover:bg-sel-hover disabled:cursor-default disabled:hover:bg-transparent",
+            "flex w-full rounded-none text-left transition-colors hover:bg-sel-hover disabled:cursor-default disabled:hover:bg-transparent",
           )}
         >
           {current && (running || finalizing) ? (
@@ -96,7 +96,7 @@ export function LivePlanCard({
         {open && !detailInSidebar && (
           <div
             id={checklistId}
-            className="ml-[7px] max-h-56 overflow-y-auto border-l border-border/40 py-1 pl-3"
+            className="max-h-56 overflow-y-auto border-t border-border/40 px-3 py-2"
           >
             {!current && next && (
               <p className="mb-1.5 px-1 text-[11px] text-muted-foreground/70">

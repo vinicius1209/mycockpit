@@ -19,10 +19,12 @@ import {
   Info,
   Layers,
   Mic,
+  MonitorCog,
   GitPullRequest,
   Network,
   PanelTop,
   Palette,
+  Puzzle,
   Radar,
   ShieldCheck,
   Smartphone,
@@ -44,6 +46,8 @@ export type SectionId =
   | "missions"
   | "machine"
   | "sandbox"
+  | "resources"
+  | "extensions"
   | "models"
   | "hooks"
   | "ledger"
@@ -56,6 +60,8 @@ export type GroupId =
   | "interface"
   | "conversas"
   | "agentes"
+  | "capacidades"
+  | "extensoes"
   | "conexoes"
   | "app"
 
@@ -89,6 +95,8 @@ export const SETTINGS_GROUPS: { id: GroupId; label: string }[] = [
   { id: "interface", label: "Interface" },
   { id: "conversas", label: "Conversas" },
   { id: "agentes", label: "Agentes e uso" },
+  { id: "capacidades", label: "Capacidades" },
+  { id: "extensoes", label: "Extensões" },
   { id: "conexoes", label: "Conexões" },
   { id: "app", label: "App" },
 ]
@@ -178,16 +186,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     busca: ["claude", "codex", "antigravity", "agy", "cli", "versão", "instalar", "atualizar", "login", "path"],
   },
   {
-    id: "sandbox",
-    label: "Confinamento",
-    title: "Confinamento",
-    question:
-      "O que o sistema operacional barra quando um agente roda aqui, e em quais modos.",
-    icon: ShieldCheck,
-    group: "agentes",
-    busca: ["sandbox", "confinamento", "seatbelt", "sandbox-exec", "escrita", "segurança", "modo"],
-  },
-  {
     id: "models",
     label: "Modelos",
     title: "Modelos",
@@ -217,6 +215,36 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     busca: ["custo", "dólar", "gasto", "limite", "janela de uso", "plano", "ledger"],
   },
   {
+    id: "sandbox",
+    label: "Confinamento",
+    title: "Confinamento",
+    question:
+      "O que o sistema operacional barra quando um agente roda aqui, e em quais modos.",
+    icon: ShieldCheck,
+    group: "capacidades",
+    busca: ["sandbox", "confinamento", "seatbelt", "sandbox-exec", "escrita", "segurança", "modo"],
+  },
+  {
+    id: "resources",
+    label: "Navegador e desktop",
+    title: "Navegador e desktop",
+    question:
+      "Quais recursos locais podem ser operados e quem controla o acesso por run.",
+    icon: MonitorCog,
+    group: "capacidades",
+    busca: ["navegador", "browser", "chromium", "chrome", "desktop", "macos", "computer use", "playwright", "recurso", "permissão"],
+  },
+  {
+    id: "extensions",
+    label: "Skills e plugins",
+    title: "Skills e plugins",
+    question:
+      "Quais extensões existem, quem as recebe e quais capabilities pedem.",
+    icon: Puzzle,
+    group: "extensoes",
+    busca: ["skill", "plugin", "extensão", "comando", "slash", "manifesto", "capability", "fingerprint"],
+  },
+  {
     id: "services",
     label: "Serviços",
     title: "Serviços",
@@ -227,8 +255,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "integrations",
-    label: "Integrações MCP",
-    title: "Integrações MCP",
+    label: "MCPs",
+    title: "MCPs",
     question: null,
     icon: Network,
     group: "conexoes",

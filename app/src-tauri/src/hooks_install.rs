@@ -862,7 +862,7 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
     let mut warning = None;
     if installed && !script_exists {
         warning = Some(
-            "as entradas apontam pro script do MyCockpit, mas ele sumiu do disco; reinstale ou desinstale"
+            "as entradas apontam pro script da Frota, mas ele sumiu do disco; reinstale ou desinstale"
                 .to_string(),
         );
     }

@@ -1,0 +1,11 @@
+{
+  "$schema": "../../../schemas/frota-mcp.schema.json",
+  "schemaVersion": 1,
+  "name": "Quality tools",
+  "transport": {
+    "type": "stdio",
+    "command": "bin/server.mjs",
+    "args": [],
+    "cwd": "plugin"
+  }
+}

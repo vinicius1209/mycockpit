@@ -7,7 +7,7 @@
 // (§10), coberta pela lista fechada de testes de paridade em send.test.ts.
 
 import { toast } from "sonner"
-import { agentLabel, cancelAgent, runAgent } from "@/lib/agent"
+import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
@@ -32,13 +32,13 @@ import {
   warnPresetDrift,
 } from "@/lib/presets"
 import {
-  expandDraftForAgent,
   expandPendingForTarget,
   expandQueuedForJoin,
   findAppCommand,
   parseSlashInvocation,
   splitQueueForAppCommand,
 } from "@/lib/slashCommands"
+import { expandDraftWithSources, expandEmbeddedDraft } from "@/lib/slashDispatch"
 import { runCompactTurn } from "@/lib/compact"
 import { readProjectCommands } from "@/lib/sources"
 import {
@@ -56,9 +56,10 @@ import {
   needsPersonaReinject,
   type ChatItem,
 } from "@/store/chat"
-import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import type { OfficeAgentId } from "@/lib/fleet/types"
+
+export { cancelDeskTurn } from "@/lib/fleet/cancel"
 
 /** Argumentos do envio da mesa. `attachments` é interno à drenagem da fila
  *  (mensagens enfileiradas pela OUTRA superfície podem carregar anexos — não
@@ -352,7 +353,8 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // Comandos "/" por fonte×motor (mesma regra do handleSend): só claude-code
   // com comando de fonte claude viaja cru; o resto expande aqui. A bolha
   // mostra o que você digitou; a expansão entra só no prompt.
-  const sendText = await expandDraftForAgent(text, projectPath, agent)
+  const slashExpansion = await expandDraftWithSources(text, projectPath, agent)
+  const sendText = slashExpansion.text
   let lessonsBlock: string | null = null
   try {
     const blocks = await buildLearningBlocks(projectId, sendText, false)
@@ -409,21 +411,25 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   const systemPrompt =
     [systemPersona, doctrine.system].filter(Boolean).join("\n\n") || null
   // Ordem das camadas e re-expansão do comando nativo: `promptCascade.ts`.
-  let promptText = await comporCascata({
+  const preparedPrompt = await comporCascata({
     convId,
     projectId,
     projectPath,
     agent,
     items: conv.items,
-    sendText,
+    slashExpansion,
     text,
     personaBlock,
     lessonsBlock,
     doctrineBlock,
   })
+  let promptText = preparedPrompt.text
+  let instructionSources = preparedPrompt.instructionSources
   // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
   // viaja no envelope híbrido (mesma memória/pointers do revezamento).
   if (wheelSwitch) {
+    const wheelExpansion = await expandEmbeddedDraft(text, projectPath, agent)
+    instructionSources = wheelExpansion.instructionSources
     const wheelItems: ChatItem[] = [
       ...conv.items,
       // o novo agent recebe o pedido já EXPANDIDO (o /comando cru não
@@ -432,9 +438,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       {
         kind: "user",
         id: `wheel-request-${runId}`,
-        text: await expandDraftForAgent(text, projectPath, agent, {
-          embedded: true,
-        }),
+        text: wheelExpansion.text,
       },
     ]
     const prepared = await prepareHybridHandoff({
@@ -507,6 +511,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       systemPrompt,
       // H2: último plano de MCPs anunciado nesta conversa (ledger efêmero).
       useChat.getState().byId[convId]?.injected?.mcp ?? null,
+      instructionSources,
     )
   } catch (e) {
     recordDispatchError(convId, e, "Falha ao executar o agent")
@@ -759,6 +764,7 @@ export async function continueInAgent(
       null,
       systemPrompt,
       useChat.getState().byId[convId]?.injected?.mcp ?? null,
+      pendingForTarget.instructionSources,
     )
   } catch (e) {
     recordDispatchError(convId, e, "Falha no revezamento")
@@ -829,21 +835,4 @@ function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean
   })
   void notifyTurnEnd(convId, agent)
   return true
-}
-
-/** Cancela o turno corrente da conversa da mesa (Stop do dock). Também derruba
- *  um auto-resume agendado — parar é intenção explícita (mesmo gesto do app). */
-export async function cancelDeskTurn(convId: string): Promise<void> {
-  useChat.getState().cancelAutoResume(convId)
-  // Disputa Fusion em voo: beginFusion marca running SEM runId — cancelar pelo
-  // runId seria no-op silencioso enquanto N candidatos queimam dinheiro.
-  // Mesmo gesto do Stop do ChatPanel: aborta a disputa de verdade.
-  const fusion = useFusion.getState().byConv[convId]
-  if (fusion && (fusion.phase === "running" || fusion.phase === "judging")) {
-    useFusion.getState().abort(convId)
-    toast("Disputa cancelada")
-    return
-  }
-  const runId = useChat.getState().byId[convId]?.runId
-  if (runId) await cancelAgent(runId)
 }

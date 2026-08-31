@@ -12,7 +12,7 @@ export const MAX_POPOVER_ITEMS = 8
  *  sem quebra de linha). Devolve a query (o que vem depois da barra) ou null —
  *  o popover é decidido a partir da string do draft. */
 export function slashQueryOf(value: string): string | null {
-  return value.match(/^\/([\w:-]*)$/)?.[1] ?? null
+  return value.match(/^\/([\w:.-]*)$/)?.[1] ?? null
 }
 
 /**

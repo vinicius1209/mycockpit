@@ -1,6 +1,6 @@
 // /compactar — decisão por CAPABILITY (nunca por nome), copy honesta e as
 // pontas do fluxo: em motor nativo o que viaja É o literal "/compact"; sem a
-// capability, renovação de sessão com recap emoldurado (H3); sem sessão/turnos,
+// capability, renovação de sessão com memória emoldurada (H3); sem sessão/turnos,
 // nada dispara (fail-closed no efeito). Fixtures com payloads REAIS (ADR-016):
 // a resposta empírica do claude 2.1.220 ("Not enough messages to compact") e a
 // copy do Notice de compact_boundary que o adapter emite (adapters.rs).
@@ -10,6 +10,7 @@ import {
   COMPACT_OFFER_THRESHOLD,
   NATIVE_COMPACT_PROMPT,
   RENEWAL_INSTRUCTION,
+  buildRenewalMemory,
   buildRenewalPrompt,
   compactActionHint,
   compactOutcomeNotice,
@@ -17,7 +18,6 @@ import {
   planCompact,
   renewalNotice,
 } from "./compact"
-import { serializeContext } from "@/lib/fusion"
 import { HISTORY_OPEN, HISTORY_NOTE } from "@/lib/trust"
 import type { ChatItem } from "@/store/chat"
 
@@ -32,7 +32,7 @@ describe("planCompact — decisão por capability", () => {
     expect(NATIVE_COMPACT_PROMPT).toBe("/compact")
   })
 
-  it("motor sem nativeCompact mas com sessionResume (codex) → renovação com resumo", () => {
+  it("motor sem nativeCompact mas com sessionResume (codex) → renovação com memória", () => {
     expect(
       planCompact("codex", {
         hasExecutorTurn: true,
@@ -81,59 +81,132 @@ describe("planCompact — decisão por capability", () => {
   })
 })
 
-describe("buildRenewalPrompt — recap emoldurado (H3) + doutrina + instrução", () => {
+describe("buildRenewalPrompt — memória emoldurada (H3) + doutrina + instrução", () => {
   const items: ChatItem[] = [
     { kind: "user", id: "u1", text: "implementa o login com magic link" },
     { kind: "text", id: "t1", text: "Implementado em auth.ts; testes verdes." },
   ]
 
-  it("o recap sai DENTRO da moldura H3 e a instrução fixa fecha o prompt", () => {
-    const recap = serializeContext(items)
-    const prompt = buildRenewalPrompt({ recap })
+  it("a memória sai DENTRO da moldura H3 e a instrução fixa fecha o prompt", () => {
+    const memory = buildRenewalMemory({
+      items,
+      contextWindow: 200_000,
+      pointer: ".mycockpit/context/c1.md",
+    })
+    const prompt = buildRenewalPrompt({ memory })
     expect(prompt).toContain(HISTORY_OPEN)
     expect(prompt).toContain(HISTORY_NOTE)
     expect(prompt).toContain("implementa o login com magic link")
+    expect(prompt).toContain(".mycockpit/context/c1.md")
     expect(prompt.endsWith(RENEWAL_INSTRUCTION)).toBe(true)
   })
 
-  it("cascata: identidade → regras → recap → instrução (mesma ordem dos sends)", () => {
+  it("cascata: identidade → regras → memória → instrução (mesma ordem dos sends)", () => {
     const prompt = buildRenewalPrompt({
-      recap: serializeContext(items),
+      memory: buildRenewalMemory({
+        items,
+        contextWindow: 200_000,
+        pointer: ".mycockpit/context/c1.md",
+      }),
       doctrineBlock: '<doutrina fonte=".mycockpit/instructions.md">regras</doutrina>',
       personaBlock: "<persona>Aline</persona>",
     })
     const persona = prompt.indexOf("<persona>")
     const doutrina = prompt.indexOf("<doutrina")
-    const recap = prompt.indexOf(HISTORY_OPEN)
+    const memory = prompt.indexOf(HISTORY_OPEN)
     const instrucao = prompt.indexOf(RENEWAL_INSTRUCTION)
     expect(persona).toBeGreaterThanOrEqual(0)
     expect(persona).toBeLessThan(doutrina)
-    expect(doutrina).toBeLessThan(recap)
-    expect(recap).toBeLessThan(instrucao)
+    expect(doutrina).toBeLessThan(memory)
+    expect(memory).toBeLessThan(instrucao)
   })
 
-  it("sem doutrina/persona, o prompt é só recap + instrução (nada de bloco vazio)", () => {
-    const prompt = buildRenewalPrompt({ recap: serializeContext(items) })
+  it("sem doutrina/persona, o prompt é só memória + instrução (nada de bloco vazio)", () => {
+    const prompt = buildRenewalPrompt({
+      memory: buildRenewalMemory({
+        items,
+        contextWindow: 200_000,
+        pointer: ".mycockpit/context/c1.md",
+      }),
+    })
     expect(prompt.startsWith(HISTORY_OPEN)).toBe(true)
     expect(prompt).not.toContain("<doutrina")
+  })
+
+  it("preserva toda intenção humana que cabe, em vez de cortar o miolo por posição", () => {
+    const long: ChatItem[] = []
+    for (let i = 1; i <= 7; i++) {
+      long.push({ kind: "user", id: `u${i}`, text: `pedido humano ${i}` })
+      for (let j = 0; j < 20; j++) {
+        long.push({
+          kind: "tool",
+          id: `tool-${i}-${j}`,
+          name: "Read",
+          input: { file_path: `src/${i}/${j}.ts` },
+          toolId: `call-${i}-${j}`,
+        })
+      }
+    }
+    const memory = buildRenewalMemory({
+      items: long,
+      contextWindow: 258_400,
+      pointer: ".mycockpit/context/longa.md",
+    })
+    for (let i = 1; i <= 7; i++) expect(memory).toContain(`pedido humano ${i}`)
+    expect(memory).toContain("Memória completa desta conversa")
+    expect(memory).toContain(".mycockpit/context/longa.md")
   })
 })
 
 describe("copy honesta (pt-BR, sem travessão)", () => {
-  it("renewalNotice não promete número que não temos e cita o motor", () => {
-    const msg = renewalNotice("codex")
-    expect(msg).toContain("Sessão renovada com resumo")
-    expect(msg).toContain("não é mensurável")
-    expect(msg).toContain("Codex")
+  it("renewalNotice mostra percentuais e tokens OBSERVADOS dos dois lados", () => {
+    const msg = renewalNotice(
+      "codex",
+      {
+        contextBasis: "last_call",
+        contextTokens: 167_857,
+        contextWindow: 258_400,
+        model: "gpt-5.6-sol",
+      },
+      {
+        contextBasis: "last_call",
+        contextTokens: 24_760,
+        contextWindow: 258_400,
+        model: "gpt-5.6-sol",
+      },
+    )
+    expect(msg).toContain("Sessão renovada com memória")
+    expect(msg).toContain("65% → 10%")
+    expect(msg).toContain("167.857 → 24.760 tokens")
     expect(msg).not.toContain("—")
+  })
+
+  it("sem snapshot novo, diz que a medição não veio em vez de inventar redução", () => {
+    const msg = renewalNotice(
+      "codex",
+      {
+        contextBasis: "last_call",
+        contextTokens: 167_857,
+        contextWindow: 258_400,
+        model: "gpt-5.6-sol",
+      },
+      {
+        contextBasis: "unavailable",
+        model: "gpt-5.6-sol",
+      },
+    )
+    expect(msg).toContain("Codex não informou uma medição comparável")
+    expect(msg).not.toMatch(/\d+\s*%/)
   })
 
   it("compactActionHint explica o que VAI acontecer conforme o motor", () => {
     expect(compactActionHint("claude-code")).toContain("compacta a própria sessão")
-    expect(compactActionHint("codex")).toContain("renova a sessão com um resumo")
-    // agy 1.1.13 retoma sessão, então caiu no mesmo caminho do codex:
-    // renovação com resumo, não "sessão fresca" (medido 14/08/2026).
-    expect(compactActionHint("agy")).toContain("renova a sessão com um resumo")
+    expect(compactActionHint("codex")).toContain("memória essencial")
+    expect(compactActionHint("codex")).toContain("histórico completo")
+    // agy retoma sessão, então cai no mesmo caminho do codex: renovação com
+    // memória recuperável, não "sessão fresca" (medido 14/08/2026).
+    expect(compactActionHint("agy")).toContain("memória essencial")
+    expect(compactActionHint("agy")).toContain("histórico completo")
     expect(compactActionHint("model")).toContain("sessão fresca")
     for (const agent of ["claude-code", "codex", "agy", "model"]) {
       expect(compactActionHint(agent)).not.toContain("—")

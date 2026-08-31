@@ -48,7 +48,7 @@ pub struct ProjectSources {
 /// Lê um campo do frontmatter YAML. Entende valor inline (`key: foo`) E block
 /// scalar (`key: |` / `>`), devolvendo o 1º parágrafo do bloco. Parser mínimo
 /// (sem dep de YAML), suficiente p/ name/description/model dos agents.
-fn frontmatter(text: &str, key: &str) -> Option<String> {
+pub(crate) fn frontmatter(text: &str, key: &str) -> Option<String> {
     let lines: Vec<&str> = text.lines().collect();
     if lines.first()?.trim() != "---" {
         return None;
@@ -278,7 +278,7 @@ pub fn read_text_file(root: String, path: String) -> Result<String, String> {
 /// (.claude/skills). `body` é o markdown INTEIRO do arquivo (frontmatter
 /// incluso) — o front expande app-side quando o motor da conversa não
 /// interpreta `/comando` nativamente (codex/agy, ou comando da casa).
-#[derive(Serialize)]
+#[derive(Clone, Debug, Serialize)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
@@ -288,6 +288,19 @@ pub struct SlashCommand {
     pub source: String,
     /// Conteúdo do .md (None se ilegível) p/ a expansão app-side.
     pub body: Option<String>,
+    /// Metadados presentes somente em contribuição aprovada de plugin. A UI
+    /// os devolve no run para o manifesto registrar o que foi invocado.
+    #[serde(rename = "pluginKey", skip_serializing_if = "Option::is_none")]
+    pub plugin_key: Option<String>,
+    #[serde(rename = "pluginName", skip_serializing_if = "Option::is_none")]
+    pub plugin_name: Option<String>,
+    #[serde(
+        rename = "pluginFingerprint",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub plugin_fingerprint: Option<String>,
+    #[serde(rename = "contributionId", skip_serializing_if = "Option::is_none")]
+    pub contribution_id: Option<String>,
 }
 
 fn collect_commands(
@@ -326,6 +339,10 @@ fn collect_commands(
                 origin: origin.to_string(),
                 source: source.to_string(),
                 body,
+                plugin_key: None,
+                plugin_name: None,
+                plugin_fingerprint: None,
+                contribution_id: None,
             });
         }
     }
@@ -353,8 +370,30 @@ fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
             origin: origin.to_string(),
             source: "claude".to_string(),
             body,
+            plugin_key: None,
+            plugin_name: None,
+            plugin_fingerprint: None,
+            contribution_id: None,
         });
     }
+}
+
+fn collect_plugin_skills(
+    skills: &[crate::plugin_contributions::PluginSkillSpec],
+    out: &mut Vec<SlashCommand>,
+) {
+    out.extend(skills.iter().map(|skill| SlashCommand {
+        name: skill.name.clone(),
+        description: Some(skill.description.clone()),
+        kind: "skill".into(),
+        origin: "global".into(),
+        source: "plugin".into(),
+        body: Some(skill.body.clone()),
+        plugin_key: Some(skill.plugin_key.clone()),
+        plugin_name: Some(skill.plugin_name.clone()),
+        plugin_fingerprint: Some(skill.fingerprint.clone()),
+        contribution_id: Some(skill.contribution_id.clone()),
+    }));
 }
 
 /// Descoberta POR AGENT da conversa. A casa (.mycockpit/commands, agnóstica)
@@ -363,7 +402,17 @@ fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
 /// de agent, só o enum de convenções (G1.1 do capability-registry-plan).
 /// Dedup por NOME: quem entra antes vence — mycockpit antes de provider (a
 /// casa é canônica) e projeto antes de global. `home` injetável p/ teste.
+#[cfg(test)]
 fn collect_agent_commands(project: &Path, home: Option<&Path>, agent: &str) -> Vec<SlashCommand> {
+    collect_agent_commands_with_plugins(project, home, agent, &[])
+}
+
+fn collect_agent_commands_with_plugins(
+    project: &Path,
+    home: Option<&Path>,
+    agent: &str,
+    plugin_skills: &[crate::plugin_contributions::PluginSkillSpec],
+) -> Vec<SlashCommand> {
     let mut out = Vec::new();
     // casa agnóstica primeiro (projeto, depois global): vence o dedup.
     collect_commands(
@@ -382,6 +431,10 @@ fn collect_agent_commands(project: &Path, home: Option<&Path>, agent: &str) -> V
             &mut out,
         );
     }
+    // Plugins aprovados entram depois da casa e antes das convenções nativas.
+    // Assim o namespace é igual em todo provider, sem gravar em ~/.claude ou
+    // ~/.codex, e um comando canônico da casa continua tendo precedência.
+    collect_plugin_skills(plugin_skills, &mut out);
     // Convenções nativas declaradas pelo adapter (agent desconhecido = nenhuma:
     // fail-closed, só a casa).
     let sources = crate::adapters::capabilities_of(agent)
@@ -419,9 +472,19 @@ fn collect_agent_commands(project: &Path, home: Option<&Path>, agent: &str) -> V
 }
 
 #[tauri::command]
-pub fn read_project_commands(path: String, agent: String) -> Vec<SlashCommand> {
+pub fn read_project_commands(
+    app: tauri::AppHandle,
+    path: String,
+    agent: String,
+) -> Result<Vec<SlashCommand>, String> {
     let home = std::env::var("HOME").ok().map(std::path::PathBuf::from);
-    collect_agent_commands(Path::new(&path), home.as_deref(), &agent)
+    let plugin_skills = crate::plugin_contributions::skills(&app)?;
+    Ok(collect_agent_commands_with_plugins(
+        Path::new(&path),
+        home.as_deref(),
+        &agent,
+        &plugin_skills,
+    ))
 }
 
 /// Walk de fallback (projeto sem git): pula pastas pesadas, cap embutido.

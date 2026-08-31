@@ -22,6 +22,17 @@ pub const TRAY_ID: &str = "mycockpit-tray";
 pub const POPOVER_LABEL: &str = "tray-popover";
 const DEFAULT_STATUS: &str = "Frota parada";
 
+/// Tray clássica e presenter flutuante são duas portas para o mesmo snapshot.
+/// A troca só acontece depois que o presenter de destino foi aplicado, então
+/// uma falha preserva pelo menos uma porta alcançável.
+pub(crate) fn set_icon_visible(app: &AppHandle, visible: bool) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        if let Err(error) = tray.set_visible(visible) {
+            log::warn!("não consegui alternar o ícone da barra de menus: {error}");
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TrayActivity {
@@ -86,6 +97,10 @@ pub struct TrayExternalSession {
 pub struct TraySnapshot {
     pub running: u32,
     pub decisions: u32,
+    /// Parte das decisões que é pedido bloqueante, não disputa. O frontend já
+    /// publicava este campo; mantê-lo no contrato Rust evita perdê-lo no roundtrip.
+    #[serde(default)]
+    pub blocking: u32,
     pub activities: Vec<TrayActivity>,
     pub decision_conv_id: Option<String>,
     pub decision_project_id: Option<String>,
@@ -138,7 +153,7 @@ impl Default for TrayState {
 /// desktop). Chamado no 1º show: no setup a contentView ainda é nil e o
 /// addSubview do cocoa faz null-deref (aborta o processo).
 #[allow(unused_variables)]
-fn ensure_vibrancy<R: Runtime>(app: &AppHandle<R>, win: &tauri::WebviewWindow<R>) {
+pub(crate) fn ensure_vibrancy<R: Runtime>(app: &AppHandle<R>, win: &tauri::WebviewWindow<R>) {
     let state = app.state::<TrayState>();
     if state.vibrancy_applied.swap(true, Ordering::Relaxed) {
         return;
@@ -469,6 +484,12 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
     let Some(win) = app.get_webview_window(POPOVER_LABEL) else {
         return;
     };
+    if crate::hud::is_floating(app) {
+        let s = snapshot(&app.state::<TrayState>());
+        let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
+        crate::hud::toggle_from_tray(app);
+        return;
+    }
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
         return;
@@ -553,7 +574,7 @@ pub fn create(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     WebviewWindowBuilder::new(
         app,
         POPOVER_LABEL,
-        // Entry próprio do popover (só o TrayPopover, não o App inteiro).
+        // Entry próprio do instrumento, sem bootar o App inteiro.
         WebviewUrl::App("tray.html".into()),
     )
     .title("Frota")

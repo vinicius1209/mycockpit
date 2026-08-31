@@ -68,4 +68,19 @@ describe("MessageList · tool activity", () => {
     expect(html).not.toContain("/bin/zsh")
     expect(html).not.toContain("SELECT count")
   })
+
+  it("intervalo entre ferramentas não reabre as ações já concluídas", () => {
+    const html = render(
+      [
+        tool("1", "rg ToolGroup app/src"),
+        tool("2", "git status --short"),
+        tool("3", "git diff --check"),
+      ],
+      true,
+    )
+    expect(html).toContain("3 verificações concluídas")
+    expect(html).toContain('aria-expanded="false"')
+    expect(html).not.toContain("Buscar no projeto")
+    expect(html).not.toContain("Verificar o estado do repositório")
+  })
 })

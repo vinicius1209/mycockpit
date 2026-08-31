@@ -347,6 +347,9 @@ pub struct McpAgentState {
     pub health: String,
     pub detail: Option<String>,
     pub checked_at: Option<i64>,
+    /// Inventário real devolvido por `tools/list` no último probe válido.
+    /// Vazio não significa "sem tools" quando o transporte não as enumera.
+    pub tool_names: Vec<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -395,14 +398,32 @@ pub struct McpHealthView {
     pub tool_names: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpDiscoveryView {
+    pub servers: Vec<McpServerView>,
+    pub provider_inventories: Vec<crate::provider_mcp_inventory::ProviderMcpInventory>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct McpRunPlan {
     pub managed: bool,
     pub selected: Vec<McpRuntimeServer>,
+    /// MCPs contribuídos por plugins aprovados. São sempre materializados por
+    /// run e não transformam a configuração legada do provider em gerenciada.
+    pub contributed: Vec<McpRuntimeServer>,
+    /// Recursos locais efetivamente resolvidos pelo broker. Separados dos
+    /// servidores porque o MCP é só o caminho de entrega.
+    pub resources: Vec<crate::resource_broker::EffectiveResourceAccess>,
     /// Proxies MCP autenticados vivos deste run (A2). Ficam AQUI porque o plano
     /// vive exatamente o tempo do run: quando ele cai, o `Drop` do listener
     /// remove o socket. `Arc` porque o plano é `Clone`.
     pub proxies: Vec<Arc<crate::mcp_proxy::ProxyListener>>,
+    /// Mantém descriptors 0600 de launch vivos exatamente pelo tempo do run.
+    pub plugin_leases: Vec<Arc<crate::plugin_mcp::PluginMcpLaunchLease>>,
+    /// Posse exclusiva do navegador do projeto. O endpoint pode ser observado
+    /// por várias superfícies, mas input pertence a um único piloto por vez.
+    pub browser_pilot_leases: Vec<Arc<crate::experience_broker::BrowserPilotLease>>,
     /// MCPs já conhecidos pelo Codex que devem ficar fora deste run. Cada
     /// entrada inclui o transporte descoberto para evitar tabelas parciais.
     pub disabled_codex_servers: Vec<McpRuntimeServer>,
@@ -419,9 +440,19 @@ pub struct McpRuntimeServer {
     pub runtime_name: String,
     pub display_name: String,
     pub launch: McpLaunchConfig,
+    /// Snapshot do mesmo probe que autorizou este servidor no run.
+    pub tool_names: Vec<String>,
 }
 
 impl McpRunPlan {
+    pub fn announced_servers(&self) -> Vec<&McpRuntimeServer> {
+        self.selected
+            .iter()
+            .filter(|_| self.managed)
+            .chain(self.contributed.iter())
+            .collect()
+    }
+
     /// Fingerprint do CONJUNTO anunciável de MCPs deste plano (H2 do
     /// prompt-hygiene-plan): é o que decide o re-anúncio mid-conversa em motor
     /// 1º-turno-só quando o usuário liga/desliga um binding. Só nomes (runtime
@@ -431,12 +462,12 @@ impl McpRunPlan {
     /// lista vazia): desligar TODOS os bindings também é mudança de plano —
     /// N→0 precisa re-anunciar, senão o modelo segue chamando tool morta.
     pub fn fingerprint(&self) -> Option<String> {
-        if !self.managed {
+        if !self.managed && self.contributed.is_empty() {
             return None;
         }
         let mut lines: Vec<String> = self
-            .selected
-            .iter()
+            .announced_servers()
+            .into_iter()
             .map(|s| format!("{}\t{}", s.runtime_name, s.display_name))
             .collect();
         lines.sort();
@@ -450,34 +481,40 @@ impl McpRunPlan {
     }
 
     pub fn configure_codex(&self, cmd: &mut Command) {
-        if !self.managed {
-            return;
-        }
-        for server in &self.disabled_codex_servers {
-            server.launch.disable_in_codex(&server.runtime_name, cmd);
-        }
-        for name in &self.disabled_codex_names {
-            cmd.arg("-c")
-                .arg(format!("mcp_servers.{}.enabled=false", toml_key(name)));
-        }
-        for server in &self.selected {
-            // Server local do proxy autenticado tem caminho próprio: o socket
-            // vive no `env` do launch, que o configure_codex genérico (de
-            // propósito) não copia.
-            if crate::mcp_proxy::is_proxy_launch(&server.launch) {
-                crate::mcp_proxy::configure_codex_launch(&server.runtime_name, &server.launch, cmd);
-            } else {
-                server.launch.configure_codex(&server.runtime_name, cmd);
+        if self.managed {
+            for server in &self.disabled_codex_servers {
+                server.launch.disable_in_codex(&server.runtime_name, cmd);
             }
+            for name in &self.disabled_codex_names {
+                cmd.arg("-c")
+                    .arg(format!("mcp_servers.{}.enabled=false", toml_key(name)));
+            }
+            for server in &self.selected {
+                // Server local do proxy autenticado tem caminho próprio: o socket
+                // vive no `env` do launch, que o configure_codex genérico (de
+                // propósito) não copia.
+                if crate::mcp_proxy::is_proxy_launch(&server.launch) {
+                    crate::mcp_proxy::configure_codex_launch(
+                        &server.runtime_name,
+                        &server.launch,
+                        cmd,
+                    );
+                } else {
+                    server.launch.configure_codex(&server.runtime_name, cmd);
+                }
+            }
+        }
+        for server in &self.contributed {
+            server.launch.configure_codex(&server.runtime_name, cmd);
         }
     }
 }
 
 #[derive(Clone, Debug)]
-struct ProbeOutcome {
-    status: String,
-    detail: Option<String>,
-    tool_names: Vec<String>,
+pub(crate) struct ProbeOutcome {
+    pub(crate) status: String,
+    pub(crate) detail: Option<String>,
+    pub(crate) tool_names: Vec<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -498,11 +535,6 @@ const CDP_FLAG: &str = "--cdp-endpoint";
 /// roteamento pro navegador do app. `bool` = a flag consome o argumento
 /// seguinte (`--browser chrome`) além da forma `--browser=chrome`.
 const CDP_CONFLICTS: [(&str, bool); 2] = [("--browser", true), ("--headless", false)];
-
-fn mentions_flag(args: &[String], flag: &str) -> bool {
-    args.iter()
-        .any(|arg| arg == flag || arg.starts_with(&format!("{flag}=")))
-}
 
 /// Remove uma flag conflitante (nas duas formas) dos args do plano efêmero.
 /// Devolve se removeu algo. Não toca a configuração de ORIGEM do usuário: o
@@ -532,31 +564,26 @@ fn strip_flag(args: &mut Vec<String>, flag: &str, takes_value: bool) -> bool {
 }
 
 /// Roteia um MCP marcado como "navegador do projeto" para o Chromium do app.
-/// Puro (recebe o endpoint já resolvido) e sempre honesto no `plan.notices`:
+/// Puro (recebe o endpoint já resolvido) e fail-closed no efeito:
 ///
-/// - args de origem já com `--cdp-endpoint`: a ORIGEM vence e nada é tocado
-///   (endpoint explícito do usuário é decisão dele, sobrescrever seria teatro);
-/// - sem endpoint vivo: NÃO injeta e avisa. Nunca bloqueia o run: o navegador
-///   do projeto é um gesto humano à parte, e um binding `ask` não pode segurar
-///   um turno por causa de um Chromium que ninguém ligou;
-/// - com endpoint vivo: o CDP manda, e `--browser`/`--headless` da origem saem
-///   deste run (pedir navegador novo + CDP é contradição silenciosa).
+/// - sem endpoint vivo: o binding não pode ser honrado, então o run bloqueia;
+/// - com endpoint vivo: a decisão explícita do binding vence. Endpoint,
+///   `--browser` e `--headless` da origem saem deste run para nenhum browser
+///   alternativo aparecer silenciosamente.
 fn apply_cdp_endpoint(
     launch: &mut McpLaunchConfig,
     endpoint: Option<&str>,
     display_name: &str,
-) -> Vec<String> {
-    if mentions_flag(&launch.args, CDP_FLAG) {
-        return vec![format!(
-            "MCP {display_name} já traz {CDP_FLAG} na configuração de origem; mantive o endpoint do usuário e não roteei para o navegador do projeto."
-        )];
-    }
+) -> Result<Vec<String>, String> {
     let Some(endpoint) = endpoint else {
-        return vec![format!(
-            "MCP {display_name} está marcado para usar o navegador do projeto, que não está ligado; este run segue com o navegador próprio do MCP."
-        )];
+        return Err(format!(
+            "MCP {display_name} exige o navegador deste projeto, mas ele não está ligado. Ligue o navegador ou desmarque o binding antes de iniciar o run."
+        ));
     };
     let mut dropped: Vec<&str> = Vec::new();
+    if strip_flag(&mut launch.args, CDP_FLAG, true) {
+        dropped.push(CDP_FLAG);
+    }
     for (flag, takes_value) in CDP_CONFLICTS {
         if strip_flag(&mut launch.args, flag, takes_value) {
             dropped.push(flag);
@@ -565,12 +592,12 @@ fn apply_cdp_endpoint(
     launch.args.push(CDP_FLAG.to_string());
     launch.args.push(endpoint.to_string());
     if dropped.is_empty() {
-        Vec::new()
+        Ok(Vec::new())
     } else {
-        vec![format!(
-            "MCP {display_name}: {} da configuração de origem ficou fora deste run, o navegador do projeto manda via {CDP_FLAG}.",
+        Ok(vec![format!(
+            "MCP {display_name}: {} da configuração de origem ficou fora deste run; o navegador do projeto manda via {CDP_FLAG}.",
             dropped.join(" e ")
-        )]
+        )])
     }
 }
 
@@ -775,7 +802,7 @@ pub(crate) fn project_id_for_path(
         [project_path],
         |row| row.get(0),
     )
-    .map_err(|_| "projeto não encontrado no registry do MyCockpit".into())
+    .map_err(|_| "projeto não encontrado no registry da Frota".into())
 }
 
 fn project_for_conv(
@@ -809,6 +836,17 @@ fn project_for_conv(
         }
     }
     best.ok_or_else(|| "não consegui resolver o projeto deste run".into())
+}
+
+/// Resolve o mesmo escopo de projeto usado pelo control plane para outros
+/// gateways por-run. Mantém uma única regra para conversa, cwd e worktree.
+pub(crate) fn project_scope(
+    app: &tauri::AppHandle,
+    conv_id: &str,
+    cwd: &str,
+) -> Result<(String, String), String> {
+    let conn = db(app)?;
+    project_for_conv(&conn, conv_id, cwd)
 }
 
 fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
@@ -1232,7 +1270,7 @@ fn persist_registry(conn: &Connection, servers: &[DiscoveredServer]) -> Result<(
         let transport = launch.map(|c| c.transport.as_str()).unwrap_or("internal");
         let locator = launch
             .map(McpLaunchConfig::locator)
-            .unwrap_or_else(|| "gerenciado pelo MyCockpit".into());
+            .unwrap_or_else(|| "gerenciado pela Frota".into());
         let env_keys = launch.map(McpLaunchConfig::env_keys).unwrap_or_default();
         let fingerprint = launch
             .map(McpLaunchConfig::sanitized_fingerprint)
@@ -1311,14 +1349,16 @@ fn agent_state(
         .flatten();
     let health = conn
         .query_row(
-            "SELECT status, detail, checked_at FROM mcp_health
+            "SELECT status, detail, tool_names_json, checked_at FROM mcp_health
              WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
             params![project_id, server.id, agent],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, Option<String>>(1)?,
-                    row.get::<_, i64>(2)?,
+                    serde_json::from_str::<Vec<String>>(&row.get::<_, String>(2)?)
+                        .unwrap_or_default(),
+                    row.get::<_, i64>(3)?,
                 ))
             },
         )
@@ -1346,7 +1386,8 @@ fn agent_state(
             .map(|h| h.0.clone())
             .unwrap_or_else(|| "unchecked".into()),
         detail: health.as_ref().and_then(|h| h.1.clone()),
-        checked_at: health.map(|h| h.2),
+        checked_at: health.as_ref().map(|h| h.3),
+        tool_names: health.map(|h| h.2).unwrap_or_default(),
     }
 }
 
@@ -1362,7 +1403,7 @@ fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -
             .unwrap_or_else(|| "internal".into()),
         locator: launch
             .map(McpLaunchConfig::locator)
-            .unwrap_or_else(|| "gerenciado pelo MyCockpit".into()),
+            .unwrap_or_else(|| "gerenciado pela Frota".into()),
         env_keys: launch.map(McpLaunchConfig::env_keys).unwrap_or_default(),
         source_agent: server.source_agent.clone(),
         source_enabled: server.enabled,
@@ -1381,13 +1422,48 @@ fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -
 pub async fn discover_mcp_servers(
     app: tauri::AppHandle,
     project_path: String,
-) -> Result<Vec<McpServerView>, String> {
+) -> Result<McpDiscoveryView, String> {
     // Valida antes de ler `.mcp.json` ou executar CLI dentro do path recebido
     // pelo WebView.
     let validation = db(&app)?;
     let project_id = project_id_for_path(&validation, &project_path)?;
     drop(validation);
-    let servers = discover_live(&project_path).await;
+    let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
+    let mut canonical: HashMap<
+        String,
+        Vec<crate::provider_mcp_inventory::ProviderMcpServer>,
+    > = HashMap::new();
+    for server in &servers {
+        // Internos e `.mcp.json` compartilhado não são estado nativo de um
+        // provider. Só configurações com origem identificada entram aqui.
+        let (Some(agent), Some(launch)) = (&server.source_agent, &server.launch) else {
+            continue;
+        };
+        let scope = match server.scope.as_str() {
+            "run" => crate::adapters::CapabilityScope::Run,
+            "local" | "project" => crate::adapters::CapabilityScope::Project,
+            "user" => crate::adapters::CapabilityScope::User,
+            _ => crate::adapters::CapabilityScope::Global,
+        };
+        canonical
+            .entry(agent.clone())
+            .or_default()
+            .push(crate::provider_mcp_inventory::ProviderMcpServer {
+                resource_kinds: crate::resource_broker::integration_resources(&server.name),
+                resource_owner: crate::resource_broker::ResourceOwner::Provider,
+                resource_evidence: crate::resource_broker::ResourceEvidence::IntegrationRegistry,
+                name: server.name.clone(),
+                enabled: server.enabled,
+                transport: Some(launch.transport.clone()),
+                scope,
+            });
+    }
+    let provider_inventories = crate::provider_mcp_inventory::inspect(
+        &project_path,
+        canonical,
+        &inventory_errors,
+    )
+    .await;
     let conn = db(&app)?;
     persist_registry(&conn, &servers)?;
     let mut views: Vec<McpServerView> = servers
@@ -1395,7 +1471,10 @@ pub async fn discover_mcp_servers(
         .map(|server| server_view(&conn, &project_id, server))
         .collect();
     annotate_runtime_names(&servers, &mut views);
-    Ok(views)
+    Ok(McpDiscoveryView {
+        servers: views,
+        provider_inventories,
+    })
 }
 
 /// Preenche `runtime_name` nas views com as MESMAS regras do plano de run:
@@ -2001,6 +2080,13 @@ async fn probe(server: &DiscoveredServer, project_path: &str) -> ProbeOutcome {
             tool_names: Vec::new(),
         };
     };
+    probe_launch(config, project_path).await
+}
+
+pub(crate) async fn probe_launch(
+    config: &McpLaunchConfig,
+    project_path: &str,
+) -> ProbeOutcome {
     if config.transport == "stdio" {
         probe_stdio(config, project_path).await
     } else {
@@ -2134,6 +2220,7 @@ fn binding_blocks_without_server(binding: &Binding) -> bool {
 pub async fn plan_for_run(
     app: &tauri::AppHandle,
     conv_id: &str,
+    run_id: &str,
     agent: &str,
     cwd: &str,
 ) -> Result<McpRunPlan, String> {
@@ -2170,12 +2257,14 @@ pub async fn plan_for_run(
                     runtime_name: server.name.clone(),
                     display_name: server.name.clone(),
                     launch: launch.codex_public_transport(),
+                    tool_names: Vec::new(),
                 })
             })
             .collect(),
         ..Default::default()
     };
     let mut policy_lines = Vec::new();
+    let mut browser_pilot_acquired = false;
     for binding in bindings {
         let Some(server) = by_id.get(binding.server_id.as_str()).copied() else {
             let message = format!(
@@ -2215,19 +2304,50 @@ pub async fn plan_for_run(
             || (via_proxy && outcome.status == "auth-required");
         if aceitavel {
             let mut launch = server.launch.clone().expect("compatible exige launch");
+            let mut resolved_resource = None;
             // B2.2 — o roteamento pro navegador do app entra AQUI, no plano
-            // efêmero, e não no preflight: o `probe_stdio` acima rodou com os
-            // args de ORIGEM, então o health nunca depende de um Chromium
-            // ligado (um binding `ask` não trava o run por causa disso). O
-            // fingerprint do plano só hasheia NOMES, então injetar arg não
-            // dispara re-anúncio espúrio.
+            // efêmero, depois do probe com os args de origem. A marca browser é
+            // uma exigência explícita: sem a instância do projeto, bloqueia em
+            // vez de deixar o MCP abrir outra janela silenciosamente.
             if binding.browser {
                 let endpoint = crate::browser::live_endpoint(app, &project_id).await;
-                plan.notices.extend(apply_cdp_endpoint(
+                let mut resource = crate::resource_broker::project_browser(
+                    &server.name,
+                    endpoint.is_some(),
+                );
+                if endpoint.is_some() && !browser_pilot_acquired {
+                    let broker = app
+                        .state::<Arc<crate::experience_broker::ExperienceBroker>>()
+                        .inner()
+                        .clone();
+                    match broker.acquire_agent(&project_id, run_id) {
+                        Ok(lease) => {
+                            plan.browser_pilot_leases.push(Arc::new(lease));
+                            browser_pilot_acquired = true;
+                        }
+                        Err(message) => {
+                            resource.state = crate::resource_broker::ResourceState::Blocked;
+                            plan.resources.push(resource);
+                            plan.blocked = Some(message);
+                            break;
+                        }
+                    }
+                }
+                match apply_cdp_endpoint(
                     &mut launch,
                     endpoint.as_deref(),
                     &server.name,
-                ));
+                ) {
+                    Ok(notices) => {
+                        resolved_resource = Some(resource);
+                        plan.notices.extend(notices);
+                    }
+                    Err(message) => {
+                        plan.resources.push(resource);
+                        plan.blocked = Some(message);
+                        break;
+                    }
+                }
             }
             // A troca acontece AQUI, no plano efêmero: o que o agent recebe é o
             // server local do proxy, sem URL e sem credencial. O token fica no
@@ -2255,10 +2375,14 @@ pub async fn plan_for_run(
                     }
                 }
             }
+            if let Some(resource) = resolved_resource {
+                plan.resources.push(resource);
+            }
             plan.selected.push(McpRuntimeServer {
                 runtime_name: server.runtime_name(),
                 display_name: server.name.clone(),
                 launch,
+                tool_names: outcome.tool_names.clone(),
             });
             continue;
         }
@@ -2291,7 +2415,7 @@ pub async fn plan_for_run(
     }
     if !policy_lines.is_empty() {
         plan.prompt_policy = Some(format!(
-            "## Política MCP do MyCockpit\n\n{}",
+            "## Política MCP da Frota\n\n{}",
             policy_lines.join("\n")
         ));
     }
@@ -2327,6 +2451,7 @@ mod tests {
             runtime_name: name.to_string(),
             display_name: name.to_string(),
             launch: Default::default(),
+            tool_names: Vec::new(),
         };
         let plano = |names: &[&str]| McpRunPlan {
             managed: true,
@@ -2350,6 +2475,44 @@ mod tests {
             plano(&["playwright"]).fingerprint(),
             plano(&["playwright", "hostinger"]).fingerprint()
         );
+        let contribuido = McpRunPlan {
+            contributed: vec![srv("plugin__acme_quality__docs")],
+            ..Default::default()
+        };
+        assert!(contribuido.fingerprint().is_some());
+        assert_eq!(
+            contribuido.announced_servers()[0].runtime_name,
+            "plugin__acme_quality__docs"
+        );
+    }
+
+    #[test]
+    fn mcp_contribuido_entra_no_codex_sem_gerenciar_config_legado() {
+        let plan = McpRunPlan {
+            contributed: vec![McpRuntimeServer {
+                runtime_name: "plugin__acme_quality__docs".into(),
+                display_name: "Quality · Docs".into(),
+                launch: McpLaunchConfig {
+                    transport: "stdio".into(),
+                    command: Some("/Applications/Frota".into()),
+                    args: vec!["plugin-mcp-server".into(), "/tmp/descriptor".into()],
+                    ..Default::default()
+                },
+                tool_names: vec!["search".into()],
+            }],
+            ..Default::default()
+        };
+        let mut command = Command::new("codex");
+        plan.configure_codex(&mut command);
+        let args = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>()
+            .join(" ");
+        assert!(args.contains("plugin__acme_quality__docs"));
+        assert!(args.contains("plugin-mcp-server"));
+        assert!(!args.contains("enabled=false"));
     }
 
     #[test]
@@ -2707,6 +2870,7 @@ mod tests {
                 runtime_name: "paper".into(),
                 display_name: "Paper".into(),
                 launch,
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         };
@@ -2744,6 +2908,7 @@ mod tests {
                 runtime_name: "local-tools".into(),
                 display_name: "Local tools".into(),
                 launch,
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         };
@@ -2781,6 +2946,7 @@ mod tests {
                     args: vec!["serve".into()],
                     ..Default::default()
                 },
+                tool_names: Vec::new(),
             }],
             disabled_codex_servers: vec![McpRuntimeServer {
                 runtime_name: "paper".into(),
@@ -2790,6 +2956,7 @@ mod tests {
                     url: Some("http://127.0.0.1:29979/mcp".into()),
                     ..Default::default()
                 },
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         };
@@ -2819,6 +2986,7 @@ mod tests {
                 command: Some("/bin/server".into()),
                 ..Default::default()
             },
+            tool_names: Vec::new(),
         }
     }
 
@@ -2945,6 +3113,7 @@ mod tests {
                 health: "unchecked".into(),
                 detail: None,
                 checked_at: None,
+                tool_names: Vec::new(),
             }],
         }
     }
@@ -3179,7 +3348,8 @@ mod tests {
             &mut launch,
             Some("http://127.0.0.1:62934"),
             "playwright",
-        );
+        )
+        .unwrap();
         assert_eq!(
             launch.args,
             vec![
@@ -3197,6 +3367,7 @@ mod tests {
                 runtime_name: "playwright".into(),
                 display_name: "playwright".into(),
                 launch,
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         };
@@ -3206,6 +3377,7 @@ mod tests {
                 runtime_name: "playwright".into(),
                 display_name: "playwright".into(),
                 launch: browser_mcp_launch(&[]),
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         };
@@ -3213,28 +3385,35 @@ mod tests {
     }
 
     #[test]
-    fn cdp_endpoint_da_origem_vence_e_o_plano_avisa() {
+    fn binding_do_projeto_substitui_endpoint_da_origem_e_avisa() {
         let mut launch = browser_mcp_launch(&["--cdp-endpoint", "http://127.0.0.1:9222"]);
         let notices = apply_cdp_endpoint(
             &mut launch,
             Some("http://127.0.0.1:62934"),
             "playwright",
-        );
-        // Endpoint explícito do usuário fica intacto e o nosso NÃO entra.
+        )
+        .unwrap();
+        // A marca do binding é a decisão mais específica deste projeto.
         assert_eq!(
             launch.args,
             vec![
                 "@playwright/mcp@latest",
                 "--cdp-endpoint",
-                "http://127.0.0.1:9222"
+                "http://127.0.0.1:62934"
             ]
         );
         assert_eq!(notices.len(), 1);
-        assert!(notices[0].contains("já traz --cdp-endpoint"));
+        assert!(notices[0].contains("--cdp-endpoint"));
         // A forma `--cdp-endpoint=<url>` é reconhecida do mesmo jeito.
         let mut colado = browser_mcp_launch(&["--cdp-endpoint=http://127.0.0.1:9222"]);
-        let notices = apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright");
-        assert_eq!(colado.args.len(), 2);
+        let notices = apply_cdp_endpoint(
+            &mut colado,
+            Some("http://127.0.0.1:62934"),
+            "playwright",
+        )
+        .unwrap();
+        assert_eq!(colado.args.len(), 3);
+        assert_eq!(colado.args[2], "http://127.0.0.1:62934");
         assert_eq!(notices.len(), 1);
     }
 
@@ -3245,7 +3424,8 @@ mod tests {
             &mut launch,
             Some("http://127.0.0.1:62934"),
             "playwright",
-        );
+        )
+        .unwrap();
         assert_eq!(
             launch.args,
             vec![
@@ -3259,27 +3439,23 @@ mod tests {
         assert!(notices[0].contains("--browser e --headless"));
         // Forma colada (`--browser=chrome`) também sai.
         let mut colado = browser_mcp_launch(&["--browser=chrome"]);
-        apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright");
+        apply_cdp_endpoint(
+            &mut colado,
+            Some("http://127.0.0.1:62934"),
+            "playwright",
+        )
+        .unwrap();
         assert!(!colado.args.iter().any(|arg| arg.starts_with("--browser")));
     }
 
     #[test]
-    fn sem_navegador_vivo_o_plano_degrada_honesto_sem_injetar() {
+    fn sem_navegador_vivo_o_binding_bloqueia_sem_tocar_a_origem() {
         let mut launch = browser_mcp_launch(&["--browser", "chrome"]);
-        let notices = apply_cdp_endpoint(&mut launch, None, "playwright");
-        // Nada é tocado: o MCP segue com o navegador próprio dele.
+        let error = apply_cdp_endpoint(&mut launch, None, "playwright").unwrap_err();
+        // O plano aborta antes de materializar o MCP; a cópia da origem fica intacta.
         assert_eq!(launch.args, vec!["@playwright/mcp@latest", "--browser", "chrome"]);
-        assert_eq!(notices.len(), 1);
-        assert!(notices[0].contains("não está ligado"));
-        // O flag de navegador NÃO entra na decisão de bloqueio: ela continua
-        // sendo só sobre o servidor sumir da origem/ficar indisponível. Um
-        // Chromium desligado nunca segura o turno.
-        assert!(binding_blocks_without_server(&Binding {
-            server_id: "server".into(),
-            required: false,
-            fallback: "ask".into(),
-            browser: true,
-        }));
+        assert!(error.contains("não está ligado"));
+        assert!(error.contains("Ligue o navegador ou desmarque o binding"));
     }
 
     #[tokio::test]
@@ -3401,4 +3577,3 @@ done
         let _ = std::fs::remove_dir_all(&temp);
     }
 }
-

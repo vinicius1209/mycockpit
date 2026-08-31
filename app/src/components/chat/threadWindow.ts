@@ -12,6 +12,13 @@
 // reconhece a chave, nunca para "menos".
 import type { ChatItem } from "@/store/chat"
 
+/** Durante o flush final, o `result` já é fonte de verdade no store, mas ainda
+ * não é o último marco VISUAL: `done` precisa assentar o turno primeiro. */
+export function visibleThreadItems(items: ChatItem[], finalizing: boolean): ChatItem[] {
+  const last = items[items.length - 1]
+  return finalizing && last?.kind === "result" ? items.slice(0, -1) : items
+}
+
 /** Índice do primeiro item que a janela visível pode referenciar.
  *
  *  Varre de trás pra frente: o custo é o tamanho da JANELA, não o do fio.

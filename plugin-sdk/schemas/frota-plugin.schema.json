@@ -1,0 +1,161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://frota.local/schemas/plugin/v1/frota-plugin.schema.json",
+  "title": "Manifesto de plugin da Frota v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestVersion",
+    "pluginApi",
+    "publisher",
+    "id",
+    "name",
+    "version",
+    "engines"
+  ],
+  "properties": {
+    "$schema": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "manifestVersion": { "const": 1 },
+    "pluginApi": { "const": 1 },
+    "publisher": { "$ref": "#/$defs/id" },
+    "id": { "$ref": "#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "description": { "type": "string", "maxLength": 4096 },
+    "engines": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frota"],
+      "properties": {
+        "frota": {
+          "type": "string",
+          "pattern": "^>=(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+        }
+      }
+    },
+    "main": { "$ref": "#/$defs/path" },
+    "capabilities": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "workspace:read",
+          "workspace:write",
+          "process:spawn",
+          "network:connect",
+          "mcp:provide",
+          "tools:provide",
+          "browser:control",
+          "desktop:control",
+          "secrets:read",
+          "notifications:show"
+        ]
+      }
+    },
+    "contributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "skills": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/fileContribution" }
+        },
+        "mcpServers": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/fileContribution" }
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 128,
+          "items": { "$ref": "#/$defs/toolContribution" }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "contributes": {
+            "required": ["mcpServers"],
+            "properties": { "mcpServers": { "minItems": 1 } }
+          }
+        },
+        "required": ["contributes"]
+      },
+      "then": {
+        "required": ["capabilities"],
+        "properties": {
+          "capabilities": { "contains": { "const": "mcp:provide" } }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "contributes": {
+            "required": ["tools"],
+            "properties": { "tools": { "minItems": 1 } }
+          }
+        },
+        "required": ["contributes"]
+      },
+      "then": {
+        "required": ["main", "capabilities"],
+        "properties": {
+          "capabilities": { "contains": { "const": "tools:provide" } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\).+$"
+    },
+    "fileContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "path": { "$ref": "#/$defs/path" }
+      }
+    },
+    "toolContribution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "title", "description"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "description": { "type": "string", "minLength": 1, "maxLength": 4096 },
+        "inputSchema": {
+          "type": "object",
+          "required": ["type"],
+          "properties": { "type": { "const": "object" } }
+        },
+        "resources": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": ["project-browser", "external-browser", "desktop-control"]
+          }
+        }
+      }
+    }
+  }
+}

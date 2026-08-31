@@ -23,7 +23,7 @@ import {
 
 export type { AgentModelOption } from "@/lib/curatedModels"
 export { normalizeAgyModel, normalizeModelValue } from "@/lib/curatedModels"
-
+export { agentToolingCaps } from "@/lib/agentTooling"
 export interface AgentDef {
   id: string
   /** Rótulo longo ("Claude Code"), TitleBar, MessageList, DESTINATIONS, liga. */

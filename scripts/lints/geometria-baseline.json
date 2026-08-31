@@ -65,7 +65,6 @@
   "components/settings/OpenCodeProvidersCard.tsx": 3,
   "components/settings/PresetSettings.tsx": 1,
   "components/settings/ServicosSettings.tsx": 3,
-  "components/settings/SettingsDialog.tsx": 1,
   "components/settings/UsageMeterSettings.tsx": 1,
   "components/tray/TrayPopover.tsx": 9
 }

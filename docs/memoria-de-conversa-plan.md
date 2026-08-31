@@ -173,7 +173,9 @@ não mover essa agulha não valeu.
 ## Como ficou o G1 (23/08/2026)
 
 `lib/memoriaDaConversa.ts` + `lib/orcamentoDaMemoria.ts`, ligados no
-`buildMemoryPrompt` e no `buildResumeFallback`.
+`buildMemoryPrompt`, no `buildResumeFallback` e, desde a correção de 29/08, na
+renovação do `/compactar`. O último também exige o ponteiro para a memória plena
+antes de abrir mão da sessão original.
 
 ### O resultado, nas conversas reais desta máquina
 

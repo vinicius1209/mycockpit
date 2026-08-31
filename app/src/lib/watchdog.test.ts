@@ -23,14 +23,12 @@ vi.mock("@/lib/notify", () => ({
   notifyQuestion: vi.fn(),
   nativeNotify: vi.fn(async () => {}),
 }))
-// cancelAgent invoca o Tauri — mocado p/ não vazar (padrão mission.*.test).
-vi.mock("@/lib/agent", async (importOriginal) => {
-  const mod = await importOriginal<typeof import("@/lib/agent")>()
-  return { ...mod, cancelAgent: vi.fn(async () => {}) }
-})
+vi.mock("@/lib/cancelLinearTurn", () => ({
+  cancelLinearTurn: vi.fn(async () => "signaled"),
+}))
 
 import { toast } from "sonner"
-import { cancelAgent } from "@/lib/agent"
+import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import { notifyCardStalled, notifyTurnStalled } from "@/lib/notify"
 import { useApp } from "@/store/app"
 import { useCards, type CardRow } from "@/store/cards"
@@ -108,6 +106,24 @@ beforeEach(() => {
 })
 
 describe("checkStalledTurns", () => {
+  it("ferramenta do Agy sem evento novo vira silêncio no limiar configurado", () => {
+    const active: ChatItem = {
+      kind: "tool",
+      id: "330585d6-21f1-4fd5-a5f6-63647be48bce",
+      name: "run_command",
+      input: {},
+      toolId: "agy-step-94",
+      ts: 1_788_045_262_103,
+      activityAt: 1_788_045_262_103,
+    }
+    useChat.setState({ byId: { c1: conv({ agent: "agy", items: [active] }) } })
+    checkStalledTurns(T0)
+    checkStalledTurns(T0 + 9 * MIN)
+    expect(notifyTurnStalled).not.toHaveBeenCalled()
+    checkStalledTurns(T0 + 10 * MIN)
+    expect(notifyTurnStalled).toHaveBeenCalledWith("c1", "agy", 10)
+  })
+
   it("dispara UMA vez após o limiar de silêncio (nativa + toast + flag)", () => {
     useChat.setState({ byId: { c1: conv() } })
     checkStalledTurns(T0) // baseline
@@ -198,10 +214,10 @@ describe("checkStalledTurns", () => {
     checkStalledTurns(T0 + 20 * MIN)
     expect(notifyTurnStalled).not.toHaveBeenCalled()
 
-    // diferido vivo mas SEM progresso (nem summary nem tokens) por um período
-    // completo segue avisando (mesma decisão da tool longa: informativo)
-    checkStalledTurns(T0 + 31 * MIN)
-    expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
+    // Presença não é heartbeat: sem progresso novo por uma janela completa,
+    // o aviso volta a ser devido mesmo que o provider ainda diga `running`.
+    checkStalledTurns(T0 + 30 * MIN)
+    expect(notifyTurnStalled).toHaveBeenCalledWith("c1", "claude-code", 10)
   })
 
   it("fim do turno limpa o episódio sem notificar de novo", () => {
@@ -236,16 +252,16 @@ describe("checkStalledTurns", () => {
 })
 
 describe("cancelStalledTurn", () => {
-  it("cancela o run corrente (cancelAgent com o runId)", async () => {
+  it("cancela o run corrente pela reconciliação linear", async () => {
     useChat.setState({ byId: { c1: conv({ runId: "r9" }) } })
     await cancelStalledTurn("c1")
-    expect(cancelAgent).toHaveBeenCalledWith("r9")
+    expect(cancelLinearTurn).toHaveBeenCalledWith("c1")
   })
 
-  it("sem runId não invoca cancelAgent (turno já morreu sozinho)", async () => {
+  it("delega também o caso sem runId para a decisão única", async () => {
     useChat.setState({ byId: { c1: conv({ runId: null, running: false }) } })
     await cancelStalledTurn("c1")
-    expect(cancelAgent).not.toHaveBeenCalled()
+    expect(cancelLinearTurn).toHaveBeenCalledWith("c1")
   })
 })
 

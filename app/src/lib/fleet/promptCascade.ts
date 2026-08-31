@@ -16,7 +16,8 @@
 
 import { withNotes } from "@/lib/notes"
 import { withNotasDoBloco } from "@/store/stickyNotes"
-import { reexpandIfEmbedded } from "@/lib/slashCommands"
+import { finalizeSlashExpansion } from "@/lib/slashDispatch"
+import type { SlashExpansion } from "@/lib/slashCommands"
 
 export interface CamadasDoPrompt {
   convId: string
@@ -24,9 +25,9 @@ export interface CamadasDoPrompt {
   projectPath: string
   agent: string
   items: readonly import("@/store/chat").ChatItem[]
-  /** Texto que o motor receberia sem cascata (comando nativo cru, quando é o
-   *  caso) e o texto do humano — a re-expansão decide entre os dois. */
-  sendText: string
+  /** Texto e proveniência antes da cascata; a re-expansão decide se um comando
+   *  nativo ainda pode viajar cru. */
+  slashExpansion: SlashExpansion
   text: string
   personaBlock: string | null
   lessonsBlock: string | null
@@ -42,17 +43,19 @@ export interface CamadasDoPrompt {
  * Sem bloco nenhum, o cru nativo segue valendo. Separar as duas decisões era o
  * que fazia essa correção precisar ser lembrada em dois lugares.
  */
-export async function comporCascata(c: CamadasDoPrompt): Promise<string> {
-  const promptText = await reexpandIfEmbedded(
-    c.sendText,
+export async function comporCascata(
+  c: CamadasDoPrompt,
+): Promise<SlashExpansion> {
+  const expansion = await finalizeSlashExpansion(
+    c.slashExpansion,
     c.text,
     c.projectPath,
     c.agent,
     !!c.lessonsBlock || !!c.doctrineBlock || !!c.personaBlock,
   )
-  let out = withNotes(c.convId, c.items, promptText)
+  let out = withNotes(c.convId, c.items, expansion.text)
   out = withNotasDoBloco(out, { projectId: c.projectId, convId: c.convId })
   if (c.lessonsBlock) out = `${c.lessonsBlock}\n\n---\n\n${out}`
   if (c.doctrineBlock) out = `${c.doctrineBlock}\n\n${out}`
-  return out
+  return { text: out, instructionSources: expansion.instructionSources }
 }

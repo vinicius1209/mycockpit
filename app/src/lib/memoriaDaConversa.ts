@@ -326,5 +326,5 @@ export function declararCortes(c: Cortes): string | null {
   if (c.respostas > 0) partes.push(`${c.respostas} respostas do agente`)
   if (c.outros > 0) partes.push(`${c.outros} outros itens`)
   if (partes.length === 0) return null
-  return `NÃO ESTÁ AQUI (${partes.join(", ")}). O histórico completo está no arquivo de memória apontado acima.`
+  return `NÃO ESTÁ AQUI (${partes.join(", ")}). O histórico completo continua disponível na memória da conversa.`
 }

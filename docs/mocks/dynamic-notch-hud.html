@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Frota · Dynamic Notch & Floating HUD</title>
+<style>
+/* ───────────────────────────────────────────────────────────────────────────
+   TOKENS CANÔNICOS DO FROTA (STYLEGUIDE.md)
+   ─────────────────────────────────────────────────────────────────────────── */
+:root {
+  --background: #08090c;
+  --popover: #0f1115;
+  --card: #13151b;
+  --card-subtle: rgba(255, 255, 255, 0.035);
+  --foreground: #f0f1f3;
+  --muted: #8b929e;
+  --faint: #575e6b;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.16);
+  --accent: #191c24;
+
+  /* Cores de status */
+  --st-running: #3b82f6;
+  --st-running-glow: rgba(59, 130, 246, 0.45);
+  --st-running-border: #2563eb;
+  --brass: #e4a862;
+  --brass-soft: rgba(228, 168, 98, 0.12);
+  --brass-fg: #1a1306;
+  --st-error: #ef4444;
+  --st-idle: #64748b;
+
+  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", Roboto, Helvetica, sans-serif;
+  --mono: "SF Mono", Menlo, Monaco, Consolas, monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: #050608;
+  color: var(--foreground);
+  font-family: var(--ui);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  padding: 24px 20px 60px;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+/* Header */
+.page-hd {
+  margin-bottom: 20px;
+}
+.kicker {
+  font: 600 11px/1 var(--mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brass);
+  margin-bottom: 6px;
+}
+h1 {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.lede {
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+/* Barra de Controles */
+.controls-bar {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.ctrl-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ctrl-label {
+  font: 500 10px/1 var(--mono);
+  color: var(--faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.btn-group {
+  display: flex;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 2px;
+  gap: 2px;
+}
+.btn-toggle {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-family: var(--ui);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.btn-toggle:hover {
+  color: var(--foreground);
+}
+.btn-toggle.active {
+  background: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   PALCO DO SIMULADOR (DISPLAY MACBOOK)
+   ─────────────────────────────────────────────────────────────────────────── */
+.stage-wrap {
+  position: relative;
+  width: 100%;
+  height: 580px;
+  background: radial-gradient(130% 90% at 50% 0%, #1e2838 0%, #0d121a 40%, #06070a 100%);
+  border-radius: 18px;
+  border: 1.5px solid #222630;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.85);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Menu Bar macOS */
+.mac-menubar {
+  height: 32px;
+  background: rgba(10, 12, 16, 0.55);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  font-size: 12px;
+  color: #e2e4e8;
+  position: relative;
+  z-index: 50;
+  user-select: none;
+}
+.mac-menu-left, .mac-menu-right {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.apple-logo { font-size: 13px; font-weight: 600; }
+.menu-item { font-weight: 500; opacity: 0.8; }
+.menu-item.app-name { font-weight: 600; opacity: 1; }
+
+.desktop-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.desktop-hint {
+  text-align: center;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+.stage-wrap:has(.dynamic-hud.expanded) .desktop-hint {
+  opacity: 0;
+}
+.desktop-hint kbd {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #cdd2d8;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   NOTCH & HUD CONTAINER (CORE COMPONENT)
+   ─────────────────────────────────────────────────────────────────────────── */
+.notch-anchor {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* O Container Dinâmico */
+.dynamic-hud {
+  background: #000000;
+  color: #ffffff;
+  position: relative;
+  z-index: 99;
+  cursor: pointer;
+  user-select: none;
+  overflow: hidden;
+  box-sizing: border-box;
+
+  /* Contorno Neon Azul como no Notchy/BoringNotch de referência */
+  border: 1.5px solid var(--st-running-border);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 16px var(--st-running-glow);
+
+  /* Transição fluida de mola a 120Hz */
+  transition:
+    width 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    height 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    border-radius 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.36s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+.dynamic-hud.state-decision {
+  border-color: var(--brass);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.8), 0 0 16px rgba(228, 168, 98, 0.4);
+}
+.dynamic-hud.state-idle {
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+}
+
+/* ── ESTADO FECHADO (COLLAPSED NOTCH BAR) ────────────────────────────────── */
+.notch-anchor .dynamic-hud.collapsed {
+  width: 320px;
+  height: 34px;
+  border-radius: 0 0 14px 14px;
+  border-top: none; /* Funde perfeitamente com a moldura superior */
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Orelhas externas do Notch de hardware */
+.notch-ears-svg {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 98;
+  width: 350px;
+  height: 34px;
+  transition: opacity 0.2s ease;
+}
+
+.dynamic-hud.expanded ~ .notch-ears-svg,
+.notch-anchor:has(.dynamic-hud.expanded) .notch-ears-svg {
+  opacity: 0;
+}
+
+/* Conteúdo compacto (lado esquerdo / lado direito) */
+.compact-bar {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  opacity: 1;
+  transition: opacity 0.15s ease 0.08s;
+  pointer-events: auto;
+}
+.dynamic-hud.expanded .compact-bar {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+}
+
+.compact-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  white-space: nowrap;
+}
+.compact-timer-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--st-running);
+}
+.state-decision .compact-timer-icon {
+  color: var(--brass);
+}
+.state-idle .compact-timer-icon {
+  color: var(--st-idle);
+}
+
+.compact-center-gap {
+  width: 24px; /* Espaço reservado para a lente da câmera */
+  height: 100%;
+}
+
+.compact-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #9ea5b0;
+  max-width: 160px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── ESTADO EXPANDIDO (EXPANDED DYNAMIC HUD) ─────────────────────────────── */
+.notch-anchor .dynamic-hud.expanded {
+  width: 540px;
+  height: 310px;
+  border-radius: 20px;
+  border-top: 1.5px solid var(--st-running-border);
+  margin-top: 6px;
+  padding: 16px;
+  cursor: default;
+  background: rgba(11, 13, 17, 0.96);
+  backdrop-filter: blur(40px) saturate(1.8);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+}
+
+.expanded-hud-layout {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease 0.1s;
+}
+.dynamic-hud.expanded .expanded-hud-layout {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Grid de 2 Colunas como nas referências */
+.hud-body-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 14px;
+  min-height: 0;
+}
+
+/* Coluna 1: Tarefas e Execução */
+.hud-col-left {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.col-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.col-title {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--mono);
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.act-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.act-card.decision-card {
+  background: var(--brass-soft);
+  border-color: rgba(228, 168, 98, 0.35);
+}
+.act-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-card-sub {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.act-card-footer {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.model-pill {
+  background: rgba(255, 255, 255, 0.07);
+  border-radius: 4px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: #d1d5dc;
+}
+.btn-act-action {
+  background: transparent;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  color: var(--st-error);
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-act-action:hover {
+  background: rgba(239, 68, 68, 0.15);
+}
+.btn-act-review {
+  background: var(--brass);
+  color: var(--brass-fg);
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+/* Coluna 2: Telemetria & Streak Matrix */
+.hud-col-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.streak-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted);
+}
+.streak-matrix {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 3px;
+  margin: 4px 0 8px;
+}
+.streak-dot {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+.streak-dot.active {
+  background: var(--st-running);
+  box-shadow: 0 0 4px var(--st-running);
+}
+.streak-dot.recent {
+  background: #60a5fa;
+}
+
+.terminal-mini-list {
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.term-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+.term-tag {
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 120px;
+}
+.term-st {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--st-running);
+}
+
+/* Rodapé do HUD */
+.hud-bottom-bar {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.btn-frota-open {
+  background: #ffffff;
+  color: #000000;
+  border: none;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.btn-frota-open:hover {
+  background: #e2e8f0;
+}
+.hud-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.hud-icon-btn {
+  width: 28px;
+  height: 28px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-size: 12px;
+}
+.hud-icon-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────
+   POSIÇÕES ALTERNATIVAS DA TELA
+   ─────────────────────────────────────────────────────────────────────────── */
+
+/* 1. DYNAMIC ISLAND (Topo Flutuante) */
+.stage-wrap.pos-island .notch-anchor { top: 10px; }
+.stage-wrap.pos-island .notch-ears-svg { display: none; }
+.stage-wrap.pos-island .dynamic-hud.collapsed {
+  width: 300px;
+  height: 36px;
+  border-radius: 18px;
+  border-top: 1.5px solid var(--st-running-border);
+}
+.stage-wrap.pos-island .dynamic-hud.expanded {
+  margin-top: 0;
+  border-radius: 22px;
+}
+
+/* 2. BORDA ESQUERDA (Left Edge) */
+.stage-wrap.pos-left .notch-anchor {
+  top: 50%;
+  left: 0;
+  transform: translateY(-50%);
+  align-items: flex-start;
+}
+.stage-wrap.pos-left .notch-ears-svg { display: none; }
+.stage-wrap.pos-left .dynamic-hud.collapsed {
+  width: 20px;
+  height: 130px;
+  border-radius: 0 10px 10px 0;
+  border-left: none;
+  padding: 0;
+}
+.stage-wrap.pos-left .compact-bar {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  justify-content: center;
+  gap: 8px;
+}
+.stage-wrap.pos-left .compact-right,
+.stage-wrap.pos-left .compact-center-gap { display: none; }
+.stage-wrap.pos-left .dynamic-hud.expanded {
+  width: 500px;
+  height: 310px;
+  border-radius: 0 20px 20px 0;
+  border-left: none;
+}
+
+/* 3. BORDA DIREITA (Right Edge) */
+.stage-wrap.pos-right .notch-anchor {
+  top: 50%;
+  left: auto;
+  right: 0;
+  transform: translateY(-50%);
+  align-items: flex-end;
+}
+.stage-wrap.pos-right .notch-ears-svg { display: none; }
+.stage-wrap.pos-right .dynamic-hud.collapsed {
+  width: 20px;
+  height: 130px;
+  border-radius: 10px 0 0 10px;
+  border-right: none;
+  padding: 0;
+}
+.stage-wrap.pos-right .compact-bar {
+  writing-mode: vertical-rl;
+  justify-content: center;
+  gap: 8px;
+}
+.stage-wrap.pos-right .compact-right,
+.stage-wrap.pos-right .compact-center-gap { display: none; }
+.stage-wrap.pos-right .dynamic-hud.expanded {
+  width: 500px;
+  height: 310px;
+  border-radius: 20px 0 0 20px;
+  border-right: none;
+}
+
+/* 4. BASE (Bottom Dock Capsule) */
+.stage-wrap.pos-bottom .notch-anchor {
+  top: auto;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  flex-direction: column-reverse;
+}
+.stage-wrap.pos-bottom .notch-ears-svg { display: none; }
+.stage-wrap.pos-bottom .dynamic-hud.collapsed {
+  width: 300px;
+  height: 36px;
+  border-radius: 18px;
+}
+.stage-wrap.pos-bottom .dynamic-hud.expanded {
+  border-radius: 22px;
+}
+
+/* 5. MENU BAR CLÁSSICO */
+.stage-wrap.pos-menubar .notch-anchor {
+  top: 36px;
+  left: auto;
+  right: 40px;
+  transform: none;
+}
+.stage-wrap.pos-menubar .notch-ears-svg { display: none; }
+.stage-wrap.pos-menubar .dynamic-hud.collapsed {
+  width: 140px;
+  height: 30px;
+  border-radius: 8px;
+}
+.stage-wrap.pos-menubar .compact-right,
+.stage-wrap.pos-menubar .compact-center-gap { display: none; }
+.stage-wrap.pos-menubar .dynamic-hud.expanded {
+  width: 480px;
+  height: 320px;
+  border-radius: 14px;
+}
+</style>
+</head>
+<body>
+
+<div class="container">
+
+  <header class="page-hd">
+    <p class="kicker">Frota · Protótipo</p>
+    <h1>Dynamic Notch & Multi-Edge Floating HUD</h1>
+    <p class="lede">
+      Simulação com física de mola (springs), borda de neon contínua e suporte a 6 posições na tela.
+    </p>
+  </header>
+
+  <!-- Controles do Mock -->
+  <div class="controls-bar">
+    <div class="ctrl-group">
+      <span class="ctrl-label">Posição:</span>
+      <div class="btn-group" id="posButtons">
+        <button class="btn-toggle active" data-pos="notch">Notch (MacBook)</button>
+        <button class="btn-toggle" data-pos="island">Dynamic Island</button>
+        <button class="btn-toggle" data-pos="left">Borda Esquerda</button>
+        <button class="btn-toggle" data-pos="right">Borda Direita</button>
+        <button class="btn-toggle" data-pos="bottom">Base (Dock)</button>
+        <button class="btn-toggle" data-pos="menubar">Menu Bar</button>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <span class="ctrl-label">Estado:</span>
+      <div class="btn-group" id="stateButtons">
+        <button class="btn-toggle active" data-state="running">1 Tarefa em Voo</button>
+        <button class="btn-toggle" data-state="decision">Decisão Pendente</button>
+        <button class="btn-toggle" data-state="idle">Frota Parada</button>
+      </div>
+    </div>
+
+    <div class="ctrl-group">
+      <button class="btn-toggle" id="btnToggleExpand" style="background:var(--accent); color:#fff;">Alternar Expandido</button>
+    </div>
+  </div>
+
+  <!-- PALCO DO SIMULADOR -->
+  <div class="stage-wrap pos-notch" id="displayStage">
+
+    <!-- macOS Menu Bar -->
+    <div class="mac-menubar">
+      <div class="mac-menu-left">
+        <span class="apple-logo"></span>
+        <span class="menu-item app-name">Frota</span>
+        <span class="menu-item">Arquivo</span>
+        <span class="menu-item">Editar</span>
+        <span class="menu-item">Visualizar</span>
+      </div>
+      <div class="mac-menu-right">
+        <span style="font-family:var(--mono); font-size:11px; color:#93c5fd;">● 1 voo</span>
+        <span>100% 􀛨</span>
+        <span>Sáb 20:00</span>
+      </div>
+    </div>
+
+    <!-- ANCHOR & HUD -->
+    <div class="notch-anchor" id="notchAnchor">
+
+      <!-- SVG das orelhas externas com preenchimento preto -->
+      <svg class="notch-ears-svg" viewBox="0 0 350 34" fill="#000000">
+        <path d="M 0 0 C 14 0 16 34 30 34 L 320 34 C 334 34 336 0 350 0 Z" />
+      </svg>
+
+      <!-- DYNAMIC HUD COMPONENT -->
+      <div class="dynamic-hud collapsed" id="dynamicHud">
+
+        <!-- 1. Conteúdo Fechado / Compacto -->
+        <div class="compact-bar">
+          <div class="compact-left">
+            <svg class="compact-timer-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            <span id="compactTimerText">25:40</span>
+          </div>
+
+          <div class="compact-center-gap"></div>
+
+          <div class="compact-right" id="compactRightText">
+            Do client works
+          </div>
+        </div>
+
+        <!-- 2. Conteúdo Aberto / Cockpit Expandido -->
+        <div class="expanded-hud-layout">
+          <div class="hud-body-grid">
+
+            <!-- Coluna 1: Tarefas & Decisões -->
+            <div class="hud-col-left">
+              <div class="col-header">
+                <span class="col-title" id="expColTitle">
+                  <span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--st-running);"></span>
+                  Em Execução
+                </span>
+                <span style="font-family:var(--mono); font-size:10px; color:var(--muted);" id="expTimeTag">há 3 min</span>
+              </div>
+
+              <!-- Card de Tarefa / Decisão -->
+              <div class="act-card" id="expMainCard">
+                <div class="act-card-title" id="expTaskTitle">estou nessa conversa conforme imagem</div>
+                <div class="act-card-sub" id="expTaskSub">
+                  <span class="model-pill">Codex · gpt-5.6-sol</span>
+                  <span>Redigindo resposta...</span>
+                </div>
+                <div class="act-card-footer">
+                  <span style="font-size:10px; font-family:var(--mono); color:var(--faint);">mycockpit</span>
+                  <button class="btn-act-action" id="expCardBtn">■ Parar</button>
+                </div>
+              </div>
+
+              <!-- Banner de Decisão (quando em estado decision) -->
+              <div class="act-card decision-card" id="expDecisionCard" style="display:none;">
+                <div class="act-card-title" style="color:#fff;">1 decisão aguardando você</div>
+                <div class="act-card-sub" style="color:var(--brass);">Bash pede permissão de execução</div>
+                <div class="act-card-footer">
+                  <span></span>
+                  <button class="btn-act-review">Revisar decisão</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Coluna 2: Atividade & Sessões Terminal -->
+            <div class="hud-col-right">
+              <div class="streak-header">
+                <span style="font-weight:600; font-family:var(--mono); font-size:10px; text-transform:uppercase;">Journey Streak</span>
+                <span style="font-family:var(--mono); font-size:10px; color:var(--st-running);">5d</span>
+              </div>
+
+              <!-- Matrix de Pontos de Telemetria -->
+              <div class="streak-matrix">
+                <div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div>
+                <div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div>
+                <div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot active"></div><div class="streak-dot recent"></div><div class="streak-dot recent"></div>
+              </div>
+
+              <div class="terminal-mini-list">
+                <div class="term-row">
+                  <span class="term-tag">claude · wa-resumo</span>
+                  <span class="term-st">trabalhando</span>
+                </div>
+                <div class="term-row">
+                  <span class="term-tag">codex · tixfy-portal</span>
+                  <span class="term-st" style="color:var(--faint);">ociosa</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Bottom Actions -->
+          <div class="hud-bottom-bar">
+            <button class="btn-frota-open" onclick="alert('Abre janela principal')">
+              <span>+</span> Nova tarefa
+            </button>
+            <div class="hud-btn-group">
+              <button class="hud-icon-btn" title="Automações">🕒</button>
+              <button class="hud-icon-btn" title="Configurações">⚙️</button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <div class="desktop-canvas">
+      <div class="desktop-hint">
+        <p>Passe o mouse sobre o <b>Notch / HUD</b> ou clique para expandir</p>
+        <p style="margin-top:6px"><kbd>Hover</kbd> para espiar · <kbd>Click</kbd> para fixar</p>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const stage = document.getElementById('displayStage');
+const hud = document.getElementById('dynamicHud');
+const posButtons = document.querySelectorAll('#posButtons .btn-toggle');
+const stateButtons = document.querySelectorAll('#stateButtons .btn-toggle');
+const btnToggleExpand = document.getElementById('btnToggleExpand');
+
+let currentPos = 'notch';
+let currentState = 'running';
+let isPinned = false;
+let hoverTimer = null;
+let unhoverTimer = null;
+
+// Troca de Posição
+posButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    posButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentPos = btn.dataset.pos;
+    stage.className = `stage-wrap pos-${currentPos}`;
+    const earsSvg = document.querySelector('.notch-ears-svg');
+    if (currentPos === 'notch') {
+      earsSvg.style.display = 'block';
+    } else {
+      earsSvg.style.display = 'none';
+    }
+  });
+});
+
+// Troca de Estado
+stateButtons.forEach(btn => {
+  btn.addEventListener('click', () => {
+    stateButtons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentState = btn.dataset.state;
+    updateState();
+  });
+});
+
+function updateState() {
+  const timerText = document.getElementById('compactTimerText');
+  const rightText = document.getElementById('compactRightText');
+  const mainCard = document.getElementById('expMainCard');
+  const decisionCard = document.getElementById('expDecisionCard');
+  const expColTitle = document.getElementById('expColTitle');
+
+  hud.classList.remove('state-running', 'state-decision', 'state-idle');
+
+  if (currentState === 'running') {
+    hud.classList.add('state-running');
+    timerText.textContent = '25:40';
+    rightText.textContent = 'Do client works';
+    mainCard.style.display = 'flex';
+    decisionCard.style.display = 'none';
+    expColTitle.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--st-running);"></span> Em Execução';
+  } else if (currentState === 'decision') {
+    hud.classList.add('state-decision');
+    timerText.textContent = 'Decisão';
+    rightText.textContent = 'Bash pede confirmação';
+    mainCard.style.display = 'none';
+    decisionCard.style.display = 'flex';
+    expColTitle.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--brass);"></span> Decisão Pendente';
+  } else { // idle
+    hud.classList.add('state-idle');
+    timerText.textContent = 'Parada';
+    rightText.textContent = 'Frota pronta';
+    mainCard.style.display = 'flex';
+    decisionCard.style.display = 'none';
+    document.getElementById('expTaskTitle').textContent = 'Nenhuma tarefa em voo';
+    document.getElementById('expTaskSub').textContent = 'Inicie uma tarefa ou automação';
+    document.getElementById('expCardBtn').style.display = 'none';
+    expColTitle.innerHTML = '<span style="display:inline-block; width:6px; height:6px; border-radius:50%; background:var(--st-idle);"></span> Frota Parada';
+  }
+}
+
+// Hover Intent
+hud.addEventListener('mouseenter', () => {
+  clearTimeout(unhoverTimer);
+  hoverTimer = setTimeout(() => {
+    expandHud();
+  }, 120);
+});
+
+hud.addEventListener('mouseleave', () => {
+  clearTimeout(hoverTimer);
+  if (!isPinned) {
+    unhoverTimer = setTimeout(() => {
+      collapseHud();
+    }, 300);
+  }
+});
+
+// Click Toggle Pin
+hud.addEventListener('click', (e) => {
+  if (e.target.closest('button')) return;
+  if (hud.classList.contains('collapsed')) {
+    expandHud();
+    isPinned = true;
+  }
+});
+
+btnToggleExpand.addEventListener('click', () => {
+  if (hud.classList.contains('collapsed')) {
+    expandHud();
+    isPinned = true;
+  } else {
+    collapseHud();
+    isPinned = false;
+  }
+});
+
+function expandHud() {
+  hud.classList.remove('collapsed');
+  hud.classList.add('expanded');
+}
+
+function collapseHud() {
+  hud.classList.remove('expanded');
+  hud.classList.add('collapsed');
+}
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    collapseHud();
+    isPinned = false;
+  }
+});
+</script>
+
+</body>
+</html>

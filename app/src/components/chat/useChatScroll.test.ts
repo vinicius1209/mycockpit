@@ -8,6 +8,13 @@ const source = Object.values(
     eager: true,
   }),
 )[0] as string
+const panelSource = Object.values(
+  import.meta.glob("./ChatPanel.tsx", {
+    query: "?raw",
+    import: "default",
+    eager: true,
+  }),
+)[0] as string
 
 describe("pertoDoFim", () => {
   it("no fim exato conta como fim", () => {
@@ -81,5 +88,15 @@ describe("o alvo do observador de crescimento", () => {
     expect(source).toContain("ro.observe(contentEl)")
     expect(source).toContain("contentRef: setContentEl")
     expect(source).not.toContain("ro.observe(el.firstElementChild)")
+  })
+})
+
+describe("envio do humano volta ao presente", () => {
+  it("religa a âncora antes de o novo turno começar a crescer", () => {
+    expect(source).toContain("const followLatest = useCallback")
+    expect(source).toContain('behavior: "auto"')
+    expect(source).toContain("setFollowing(true)")
+    expect(source).toContain("dataset.threadFollowing")
+    expect(panelSource).toContain('if (origem.autor === "humano") followLatest()')
   })
 })

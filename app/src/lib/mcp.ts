@@ -1,6 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
 import { agentDef } from "@/lib/agents"
+import type { ToolEnforceability, ToolScope } from "@/lib/tooling"
+import type {
+  ResourceEvidence,
+  ResourceKind,
+  ResourceOwner,
+} from "@/lib/resources"
 
 export type McpHealthStatus =
   | "unchecked"
@@ -16,7 +22,9 @@ export type McpFallback = "ask" | "deny" | "allow-readonly"
 export type McpNativeReason = "oauth" | "stream" | "headers-helper"
 
 export interface McpAgentState {
-  agent: "claude-code" | "codex" | "agy"
+  /** Id do registry. String de propósito: um adapter novo ou binding órfão
+   * continua visível em vez de quebrar o render de uma versão anterior. */
+  agent: string
   /** Compatível NATIVAMENTE (portável + capability). Sozinho não decide a
    *  tela: um MCP OAuth é sempre `false` aqui e ainda assim pode ser usado. */
   compatible: boolean
@@ -42,6 +50,8 @@ export interface McpAgentState {
   health: McpHealthStatus
   detail: string | null
   checkedAt: number | null
+  /** Inventário do último `tools/list` que validou esta combinação. */
+  toolNames?: string[]
 }
 
 export interface McpServer {
@@ -79,11 +89,43 @@ export interface McpHealth {
   toolNames: string[]
 }
 
+export type ProviderMcpInventoryEvidence =
+  | "structured"
+  | "summary"
+  | "opaque"
+  | "unavailable"
+
+export interface ProviderMcpServer {
+  name: string
+  enabled: boolean
+  transport: string | null
+  scope: ToolScope
+  /** Recursos reconhecidos pelo catálogo de integrações. Vazio não prova que
+   * a fonte não acessa recursos; pode apenas não estar classificada. */
+  resourceKinds: ResourceKind[]
+  resourceOwner: ResourceOwner
+  resourceEvidence: ResourceEvidence
+}
+
+export interface ProviderMcpInventory {
+  agent: string
+  evidence: ProviderMcpInventoryEvidence
+  enforceability: ToolEnforceability
+  defaultScope: ToolScope
+  servers: ProviderMcpServer[]
+  detail: string | null
+}
+
+export interface McpDiscovery {
+  servers: McpServer[]
+  providerInventories: ProviderMcpInventory[]
+}
+
 export async function discoverMcpServers(
   projectPath: string,
-): Promise<McpServer[]> {
-  if (!isTauri()) return []
-  return invoke<McpServer[]>("discover_mcp_servers", { projectPath })
+): Promise<McpDiscovery> {
+  if (!isTauri()) return { servers: [], providerInventories: [] }
+  return invoke<McpDiscovery>("discover_mcp_servers", { projectPath })
 }
 
 export async function setMcpBinding(input: {
@@ -152,6 +194,7 @@ export function applyAgentPatch(
       | "health"
       | "detail"
       | "checkedAt"
+      | "toolNames"
     >
   >,
 ): McpServer[] {

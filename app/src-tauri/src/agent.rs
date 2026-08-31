@@ -12,7 +12,6 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::{Emitter, Manager};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tokio::sync::Notify;
 
@@ -42,15 +41,8 @@ impl RunRegistry {
     /// Síncrono de propósito: no exit o runtime async pode não rodar mais.
     pub fn kill_all(&self) {
         if let Ok(pids) = self.1.lock() {
-            for pid in pids.values() {
-                #[cfg(unix)]
-                {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &pid.to_string()])
-                        .output();
-                }
-                #[cfg(not(unix))]
-                let _ = pid;
+            for (run_id, pid) in pids.iter() {
+                crate::run_processes::terminate_run(run_id, Some(*pid));
             }
         }
     }
@@ -150,6 +142,11 @@ pub enum DeferredStatus {
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AgentEvent {
+    /// Manifesto efetivo calculado depois de materializar gateways e aplicar a
+    /// policy, antes do spawn. Não contém launch, env, header ou credencial.
+    RunManifest {
+        manifest: crate::run_manifest::EffectiveRunManifest,
+    },
     Session {
         session_id: String,
         model: Option<String>,
@@ -323,6 +320,10 @@ pub async fn run_agent(
     // None = nunca anunciado/desconhecido → anuncia (fail-open pra
     // visibilidade). Option = invoke antigo → None.
     mcp_fingerprint: Option<String>,
+    // Skills de plugin expandidas pelo front. O runner não confia no claim:
+    // reabre o pacote e confirma grant, fingerprint e contribution id antes
+    // de registrar a origem no manifesto ou iniciar o provider.
+    instruction_sources: Option<Vec<crate::run_manifest::InstructionSourceClaim>>,
     // ADR-033: acumulado de tokens que a THREAD retomada já tinha (`usageBaseline`
     // no invoke; o front persiste por thread o `cumulative_usage` devolvido no
     // Result anterior). Option = invoke antigo/thread nova → None (o turno vale
@@ -333,10 +334,7 @@ pub async fn run_agent(
     registry: tauri::State<'_, RunRegistry>,
     active: tauri::State<'_, ActiveConvs>,
     pending_approvals: tauri::State<'_, std::sync::Arc<crate::approval::PendingApprovals>>,
-    process_registry: tauri::State<
-        '_,
-        std::sync::Arc<crate::work_gateway::ProcessRegistry>,
-    >,
+    process_registry: tauri::State<'_, std::sync::Arc<crate::work_gateway::ProcessRegistry>>,
 ) -> Result<(), String> {
     let mut adapter = adapters::resolve(&agent)?;
     // Capabilities declaradas (G1.1): TODA decisão genérica deste run consulta
@@ -385,6 +383,19 @@ pub async fn run_agent(
     // um arquivo vivo e suportado chega ao adapter. Sem nenhum conteúdo útil,
     // aborta antes do spawn; stdin é null e omitir o prompt mudaria o modo da CLI.
     validate_run_content(&prompt, used.len())?;
+    let instruction_sources = match crate::plugin_contributions::verify_instruction_sources(
+        &app,
+        instruction_sources.unwrap_or_default(),
+    ) {
+        Ok(sources) => sources,
+        Err(message) => {
+            let _ = on_event.send(AgentEvent::Error {
+                message: format!("skill de plugin não pôde ser confirmada: {message}"),
+            });
+            let _ = on_event.send(AgentEvent::Done { code: None });
+            return Ok(());
+        }
+    };
     // F23: marca a conversa como ativa p/ o GC não apagar os blobs durante o run.
     active.insert(&conv_id);
     let _active_guard = ActiveGuard {
@@ -482,13 +493,71 @@ pub async fn run_agent(
     } else {
         None
     };
+    // Tool Catalog por-run. Discovery e preflight são sem efeito: plugin não
+    // executa e navegador desligado continua desligado. Só adapters capazes de
+    // receber MCP efêmero ganham o gateway; os demais degradam honestamente.
+    let mut tool_catalog = crate::tool_gateway::ToolCatalogSnapshot::default();
+    let mut tool_scope = None;
+    if !matches!(permission, adapters::Permission::FusionRo) {
+        match crate::mcp_control::project_scope(&app, &conv_id, &cwd) {
+            Ok((project_id, project_path)) => {
+                match crate::tool_gateway::catalog_for_run(&app, &project_id).await {
+                    Ok(catalog) => {
+                        tool_catalog = catalog;
+                        tool_scope = Some((project_id, project_path));
+                    }
+                    Err(error) => tool_catalog.notices.push(format!(
+                        "Tool Catalog de plugins indisponível neste run: {error}"
+                    )),
+                }
+            }
+            Err(error) => tool_catalog.notices.push(format!(
+                "Tool Catalog sem escopo de projeto neste run: {error}"
+            )),
+        }
+    }
+    let mut _tool_listener = None;
+    let tool_gateway = if caps.mcp_escopo.por_run() && !tool_catalog.tools.is_empty() {
+        server_bin.as_ref().and_then(|bin| {
+            let (project_id, project_path) = tool_scope.clone()?;
+            let listener = crate::tool_gateway::ToolListener::spawn(
+                app.clone(),
+                run_id.clone(),
+                project_id,
+                project_path,
+                tool_catalog.clone(),
+                app.state::<Arc<crate::plugin_runtime::PluginRuntimeRegistry>>()
+                    .inner()
+                    .clone(),
+                app.state::<Arc<crate::resource_broker::ResourceLeaseRegistry>>()
+                    .inner()
+                    .clone(),
+            )?;
+            let config = crate::tool_gateway::GatewayConfig {
+                server_bin: bin.to_string_lossy().to_string(),
+                socket: listener.path().to_string_lossy().to_string(),
+            };
+            _tool_listener = Some(listener);
+            Some(config)
+        })
+    } else {
+        None
+    };
+    if !tool_catalog.tools.is_empty() && tool_gateway.is_none() {
+        let reason = if caps.mcp_escopo.por_run() {
+            "o gateway deste run não pôde ser iniciado"
+        } else {
+            "o adapter não oferece um materializador forte por run"
+        };
+        tool_catalog.mark_unmaterialized(reason);
+    }
     // Control plane de MCPs externos. Sem binding explícito ele devolve o plano
     // default e preserva integralmente o comportamento legado dos CLIs. Com
     // bindings, faz preflight/circuito de fallback antes de gastar um turno.
-    let mcp_plan = if matches!(permission, adapters::Permission::FusionRo) {
+    let mut mcp_plan = if matches!(permission, adapters::Permission::FusionRo) {
         crate::mcp_control::McpRunPlan::default()
     } else {
-        match crate::mcp_control::plan_for_run(&app, &conv_id, &agent, &cwd).await {
+        match crate::mcp_control::plan_for_run(&app, &conv_id, &run_id, &agent, &cwd).await {
             Ok(plan) => plan,
             Err(error) => {
                 // Um erro na fronteira de policy não pode cair para os MCPs
@@ -502,7 +571,56 @@ pub async fn run_agent(
             }
         }
     };
+    if !matches!(permission, adapters::Permission::FusionRo) {
+        if caps.mcp_escopo.por_run() {
+            match crate::plugin_mcp::materialize_for_run(&app, &cwd).await {
+                Ok(snapshot) => {
+                    mcp_plan.contributed.extend(snapshot.servers);
+                    mcp_plan.plugin_leases.extend(snapshot.leases);
+                    mcp_plan.notices.extend(snapshot.notices);
+                }
+                Err(error) => mcp_plan.notices.push(format!(
+                    "MCPs de plugins indisponíveis neste run: {error}"
+                )),
+            }
+        } else {
+            match crate::plugin_contributions::enabled_packages(&app) {
+                Ok(packages)
+                    if packages
+                        .iter()
+                        .any(|package| !package.manifest.contributes.mcp_servers.is_empty()) =>
+                {
+                    mcp_plan.notices.push(
+                        "MCPs de plugins revisados não entraram neste run: o adapter não oferece materialização forte por run"
+                            .into(),
+                    );
+                }
+                Ok(_) => {}
+                Err(error) => mcp_plan.notices.push(format!(
+                    "inventário de MCPs de plugins indisponível neste run: {error}"
+                )),
+            }
+        }
+    }
+    let _ = on_event.send(AgentEvent::RunManifest {
+        manifest: crate::run_manifest::build(
+            &agent,
+            caps,
+            approval.is_some(),
+            context_gateway.is_some(),
+            work_gateway.is_some(),
+            tool_gateway.is_some(),
+            &tool_catalog,
+            &mcp_plan,
+            instruction_sources,
+        ),
+    });
     for message in &mcp_plan.notices {
+        let _ = on_event.send(AgentEvent::Notice {
+            message: message.clone(),
+        });
+    }
+    for message in &tool_catalog.notices {
         let _ = on_event.send(AgentEvent::Notice {
             message: message.clone(),
         });
@@ -562,10 +680,33 @@ pub async fn run_agent(
         approval,
         context_gateway,
         work_gateway,
+        tool_gateway,
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),
         usage_baseline,
     };
+    // O dialeto do rollout é capability, não nome de motor. A retomada que
+    // causou o incidente de 30/08 tinha 85.223.130 bytes; acima de 64 MiB o
+    // Frota avisa e oferece a renovação explícita, mas não limita o motor.
+    if matches!(
+        caps.context_usage,
+        Some(adapters::ContextUsageSource::CodexRollout)
+    ) {
+        if let Some(session_id) = req.resume.as_deref() {
+            match crate::codex_resume_guard::assess(session_id).await {
+                Ok(Some(risk)) if risk.deserves_warning() => {
+                    let _ = on_event.send(AgentEvent::Notice {
+                        message: format!(
+                            "Esta sessão nativa ocupa {} MiB. A retomada continuará sem teto artificial; se quiser reduzir o risco de pressão de memória, use /compactar para renová-la com a memória e o histórico preservados.",
+                            risk.size_mib()
+                        ),
+                    });
+                }
+                Ok(_) => {}
+                Err(error) => log::warn!("preflight da retomada indisponível: {error}"),
+            }
+        }
+    }
     // Codex no modo Padrão: transporte `codex app-server` (JSON-RPC no stdio) —
     // o ÚNICO em que o Codex PEDE aprovação. O `codex exec` é mão única: sem
     // `--ask-for-approval` e sem TTY ele nunca pausa, então "Padrão" no Codex
@@ -596,7 +737,9 @@ pub async fn run_agent(
                 if out.cancelled {
                     let _ = on_event.send(AgentEvent::Cancelled);
                 }
-                let _ = on_event.send(AgentEvent::Done { code: Some(0) });
+                let _ = on_event.send(AgentEvent::Done {
+                    code: (!out.failed).then_some(0),
+                });
                 return Ok(());
             }
             Some(e) => {
@@ -624,7 +767,9 @@ pub async fn run_agent(
             None => {
                 emit_mcp_announced(&app, &conv_id, &announced_fp);
                 if out.cancelled { let _ = on_event.send(AgentEvent::Cancelled); }
-                let _ = on_event.send(AgentEvent::Done { code: Some(0) });
+                let _ = on_event.send(AgentEvent::Done {
+                    code: (!out.failed).then_some(0),
+                });
                 return Ok(());
             }
             Some(error) => {
@@ -744,7 +889,9 @@ pub async fn run_agent(
             }
             Some(adapters::ContextUsageSource::CodexRollout) => {
                 let snapshot = match outcome.session_id.as_deref() {
-                    Some(thread_id) => crate::codex_appserver::probe_thread_context(thread_id).await,
+                    Some(thread_id) => {
+                        crate::codex_appserver::probe_thread_context(thread_id).await
+                    }
                     None => Err(crate::codex_appserver::ProbeError {
                         kind: "protocol",
                         message: "o stream terminou sem identificar a thread".into(),
@@ -828,10 +975,11 @@ fn compose_mcp_preamble(
     // Sem resume, toda sessão é nova: a régua do "1º turno" vale sempre.
     let first_turn = !resuming || !caps.session_resume;
     let fingerprint = mcp_plan.fingerprint();
+    let announced_servers = mcp_plan.announced_servers();
     let announce_mcp = match fingerprint.as_deref() {
         None => false,
         Some(fp) => {
-            if mcp_plan.selected.is_empty() {
+            if announced_servers.is_empty() {
                 // Plano gerenciado VAZIO só é notícia na TRANSIÇÃO N→0 (o
                 // modelo já viu um plano diferente nesta conversa e chamaria
                 // tool morta). Sem histórico carimbado (1º turno, restart),
@@ -844,18 +992,18 @@ fn compose_mcp_preamble(
     };
     let mut sections = Vec::new();
     if announce_mcp {
-        if mcp_plan.selected.is_empty() {
+        if announced_servers.is_empty() {
             sections.push(
                 "Ferramentas MCP desta sessão: nenhuma. Os MCPs externos anunciados antes foram desligados; não chame mais as tools deles."
                     .to_string(),
             );
         } else {
             let lines: Vec<String> = mcp_plan
-                .selected
-                .iter()
+                .announced_servers()
+                .into_iter()
                 .map(|server| {
                     format!(
-                        "- {}: {} (MCP externo roteado pelo MyCockpit)",
+                        "- {}: {} (MCP roteado pela Frota)",
                         server.runtime_name, server.display_name
                     )
                 })
@@ -868,7 +1016,7 @@ fn compose_mcp_preamble(
     }
     if has_work_gateway && first_turn {
         sections.push(format!(
-            "TELEMETRIA DE TRABALHO: para processos longos (dev servers, watchers, containers), use o MCP `{}` / `{}` em vez de deixá-los presos numa shell comum. Em tarefas com várias etapas, publique o plano por `{}` e mantenha cada etapa atualizada ao iniciar/concluir por `{}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos no MyCockpit.",
+            "TELEMETRIA DE TRABALHO: para processos longos (dev servers, watchers, containers), use o MCP `{}` / `{}` em vez de deixá-los presos numa shell comum. Em tarefas com várias etapas, publique o plano por `{}` e mantenha cada etapa atualizada ao iniciar/concluir por `{}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota.",
             crate::work_gateway::MCP_SERVER_NAME,
             crate::work_gateway::PROCESS_START_TOOL,
             crate::work_gateway::WORK_PLAN_TOOL,
@@ -979,6 +1127,7 @@ struct Outcome {
     success: bool,
     code: Option<i32>,
     stderr: String,
+    stderr_truncated: bool,
     /// O run chegou a EMITIR alguma coisa do stream do motor?
     ///
     /// Não é telemetria: é o único sinal que separa "confinado e trabalhou" de
@@ -1008,7 +1157,7 @@ fn process_failure_fallback(
     if outcome.cancelled || outcome.success || outcome.terminal_incident {
         return None;
     }
-    let msg = if outcome.stderr.trim().is_empty() {
+    let mut msg = if outcome.stderr.trim().is_empty() {
         format!(
             "o agent `{agent}` saiu com código {}",
             outcome.code.unwrap_or(-1)
@@ -1016,6 +1165,9 @@ fn process_failure_fallback(
     } else {
         outcome.stderr.trim().to_string()
     };
+    if outcome.stderr_truncated {
+        msg.push_str("\n[stderr limitado aos 64 KiB finais]");
+    }
     if let Some(hit) = adapter.classify_limit(&msg) {
         Some(AgentEvent::LimitReached {
             message: msg,
@@ -1053,6 +1205,8 @@ async fn run_once(
         // filho morre se o future for dropado (não cobre process::exit; o
         // kill_all no hook de saída do app cobre esse caso).
         .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
     // Correlação dos hooks de status (hooks-plan §4.7): o hook global herda
     // esta env e a manda num header — run NOSSO nunca vira "sessão externa"
     // no Painel. Inofensiva sem hooks instalados (ninguém a lê).
@@ -1062,9 +1216,10 @@ async fn run_once(
     let mut child = cmd.spawn().map_err(|e| {
         format!("não consegui executar o agent `{bin}`: {e}. Ele está instalado e no PATH?")
     })?;
+    let child_pid = child.id();
     // pid no registry: o hook de saída mata todos (órfãos de Cmd-Q). O RunGuard
     // do run_agent limpa a entrada em qualquer saída.
-    if let Some(pid) = child.id() {
+    if let Some(pid) = child_pid {
         if let Ok(mut pids) = registry.1.lock() {
             pids.insert(run_id.to_string(), pid);
         }
@@ -1072,20 +1227,16 @@ async fn run_once(
 
     let stdout = child.stdout.take().ok_or("sem stdout do processo")?;
     let stderr = child.stderr.take();
-    let mut reader = BufReader::new(stdout).lines();
+    let mut reader = crate::run_resources::LimitedLineReader::new(stdout);
 
     // H3, coleta o stderr em paralelo p/ reportar erros de processo.
     let stderr_task = tokio::spawn(async move {
-        let mut buf = String::new();
-        if let Some(se) = stderr {
-            let mut lines = BufReader::new(se).lines();
-            while let Ok(Some(l)) = lines.next_line().await {
-                buf.push_str(&l);
-                buf.push('\n');
-            }
+        match stderr {
+            Some(stderr) => crate::run_resources::collect_stderr_tail(stderr).await,
+            None => crate::run_resources::CapturedTail::default(),
         }
-        buf
     });
+    let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
 
     // H1, o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
@@ -1095,6 +1246,7 @@ async fn run_once(
     let mut terminal_incident = false;
     let mut session_id = None;
     let mut context_reported = false;
+    let mut exit_status = None;
     loop {
         tokio::select! {
             line = reader.next_line() => {
@@ -1124,14 +1276,39 @@ async fn run_once(
                         }
                     }
                     Ok(None) => break, // EOF, processo terminou
-                    Err(_) => break,
+                    Err(error) => {
+                        terminal_incident = true;
+                        let _ = on_event.send(AgentEvent::Error {
+                            message: format!("{error}; interrompi o run antes de processar um payload sem teto."),
+                        });
+                        crate::run_processes::terminate_run(run_id, child_pid);
+                        break;
+                    }
                 }
+            }
+            status = child.wait() => {
+                exit_status = Some(status.map_err(|e| e.to_string())?);
+                break;
             }
             _ = notify.notified() => {
                 cancelled = true;
-                // SIGKILL no processo; a sessão segue resumível via resume.
-                let _ = child.start_kill();
+                for ev in adapter.on_cancel() {
+                    emitiu_saida = true;
+                    let _ = on_event.send(ev);
+                }
+                crate::run_processes::terminate_run(run_id, child_pid);
                 break;
+            }
+            memory = memory_watch.next() => {
+                match memory {
+                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
+                        let _ = on_event.send(AgentEvent::Notice {
+                            message: format!(
+                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                            ),
+                        });
+                    }
+                }
             }
         }
     }
@@ -1149,8 +1326,15 @@ async fn run_once(
         }
     }
 
-    let status = child.wait().await.map_err(|e| e.to_string())?;
-    let stderr_text = stderr_task.await.unwrap_or_default();
+    let status = match exit_status {
+        Some(status) => status,
+        None => child.wait().await.map_err(|e| e.to_string())?,
+    };
+    // O filho direto pode terminar antes de um background que herdou os pipes.
+    // Limpar o run fecha também stdout/stderr e impede o wait abaixo de pendurar.
+    crate::run_processes::terminate_run(run_id, None);
+    let stderr_capture = stderr_task.await.unwrap_or_default();
+    let stderr_text = stderr_capture.text;
 
     // Codex reporta sessão inexistente no STDERR ("no rollout found for thread id"),
     // não no stream JSON → detecta aqui também p/ a degradação graciosa pegar Codex.
@@ -1167,6 +1351,7 @@ async fn run_once(
         success: status.success(),
         code: status.code(),
         stderr: stderr_text,
+        stderr_truncated: stderr_capture.truncated,
         emitiu_saida,
         session_not_found,
         terminal_incident,
@@ -1175,13 +1360,22 @@ async fn run_once(
     })
 }
 
-/// Cancela um run em andamento (H1), sinaliza o loop, que mata o processo.
+/// Cancela um run em andamento. `false` permite ao front reconciliar um estado
+/// persistido cujo runner já não existe; descendentes marcados são limpos mesmo
+/// nesse caso.
 #[tauri::command]
-pub fn cancel_agent(run_id: String, registry: tauri::State<'_, RunRegistry>) {
-    if let Ok(map) = registry.0.lock() {
-        if let Some(n) = map.get(&run_id) {
-            n.notify_one();
-        }
+pub fn cancel_agent(run_id: String, registry: tauri::State<'_, RunRegistry>) -> bool {
+    let notify = registry
+        .0
+        .lock()
+        .ok()
+        .and_then(|map| map.get(&run_id).cloned());
+    if let Some(notify) = notify {
+        notify.notify_one();
+        true
+    } else {
+        crate::run_processes::terminate_run(&run_id, None);
+        false
     }
 }
 
@@ -1358,6 +1552,7 @@ mod tests {
                 runtime_name: "playwright".into(),
                 display_name: "Playwright".into(),
                 launch: Default::default(),
+                tool_names: Vec::new(),
             }],
             ..Default::default()
         }
@@ -1394,7 +1589,7 @@ mod tests {
         let (out, fp) =
             compose_mcp_preamble("faça X".into(), true, &plan, caps_corpo(), false, None);
         assert!(out.starts_with(
-            "Ferramentas MCP desta sessão:\n- playwright: Playwright (MCP externo roteado pelo MyCockpit)"
+            "Ferramentas MCP desta sessão:\n- playwright: Playwright (MCP roteado pela Frota)"
         ));
         // Bloco único: o anúncio e a telemetria do mc-work compartilham o
         // mesmo preâmbulo, com um único separador antes do prompt.
@@ -1488,14 +1683,8 @@ mod tests {
         // 0 sem histórico (1º turno, ou restart com ledger zerado): sem
         // anúncio — não há anúncio anterior a desmentir, corpo byte-idêntico.
         for resuming in [false, true] {
-            let (out3, fp3) = compose_mcp_preamble(
-                "faça X".into(),
-                false,
-                &vazio,
-                caps_corpo(),
-                resuming,
-                None,
-            );
+            let (out3, fp3) =
+                compose_mcp_preamble("faça X".into(), false, &vazio, caps_corpo(), resuming, None);
             assert_eq!(out3, "faça X");
             assert_eq!(fp3, None);
         }
@@ -1548,14 +1737,8 @@ mod tests {
         let caps = &sem_canal_nem_resume;
         let plan = plano_playwright();
         let last = plan.fingerprint();
-        let (out, _) = compose_mcp_preamble(
-            "continua".into(),
-            true,
-            &plan,
-            caps,
-            true,
-            last.as_deref(),
-        );
+        let (out, _) =
+            compose_mcp_preamble("continua".into(), true, &plan, caps, true, last.as_deref());
         assert!(out.starts_with("Ferramentas MCP desta sessão:"));
         assert!(out.contains("TELEMETRIA DE TRABALHO"));
     }
@@ -1592,6 +1775,7 @@ mod tests {
             success: false,
             code: Some(1),
             stderr: "erro secundário do processo".into(),
+            stderr_truncated: false,
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: true,
@@ -1610,6 +1794,7 @@ mod tests {
             success: false,
             code: Some(1),
             stderr: "You've hit your session limit · resets 1:50pm (America/Sao_Paulo)".into(),
+            stderr_truncated: false,
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,
@@ -1634,6 +1819,7 @@ mod tests {
             success: false,
             code: Some(17),
             stderr: String::new(),
+            stderr_truncated: false,
             emitiu_saida: true,
             session_not_found: false,
             terminal_incident: false,

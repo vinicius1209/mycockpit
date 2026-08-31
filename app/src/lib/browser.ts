@@ -18,6 +18,7 @@ export interface BrowserSession {
   browser: string | null
   userDataDir: string
   binary: string
+  windowVisible: boolean
   startedAt: number
 }
 
@@ -40,12 +41,139 @@ export async function browserStatus(
 
 export async function startProjectBrowser(
   projectPath: string,
+  windowVisible = false,
 ): Promise<BrowserSession> {
-  return invoke<BrowserSession>("browser_start", { projectPath })
+  return invoke<BrowserSession>("browser_start", { projectPath, windowVisible })
 }
 
 export async function stopProjectBrowser(projectPath: string): Promise<void> {
   await invoke("browser_stop", { projectPath })
+}
+
+export interface BrowserPage {
+  id: string
+  title: string
+  url: string
+  displayUrl: string
+}
+
+export interface BrowserPilotStatus {
+  projectId: string
+  mode: "idle" | "agent" | "plugin" | "human" | "unavailable"
+  label: string
+  since: number | null
+  expiresAt: number | null
+  canTakeOver: boolean
+}
+
+export interface HumanPilotGrant {
+  token: string
+  status: BrowserPilotStatus
+}
+
+export interface BrowserPreviewStatus {
+  projectId: string
+  targetId: string
+  running: boolean
+  revision: number
+  error: string | null
+}
+
+export interface BrowserPreviewFrame {
+  projectId: string
+  targetId: string
+  revision: number
+  capturedAt: number
+  data: string
+  width: number | null
+  height: number | null
+}
+
+export type BrowserInputAction =
+  | { kind: "click"; x: number; y: number }
+  | {
+      kind: "scroll"
+      x: number
+      y: number
+      deltaX: number
+      deltaY: number
+    }
+  | { kind: "text"; text: string }
+  | { kind: "key"; key: string; code: string }
+  | { kind: "history"; direction: "back" | "forward" }
+  | { kind: "navigate"; url: string }
+
+export function listBrowserPages(projectPath: string): Promise<BrowserPage[]> {
+  return invoke<BrowserPage[]>("browser_pages", { projectPath })
+}
+
+export function browserPilotStatus(
+  projectPath: string,
+): Promise<BrowserPilotStatus> {
+  return invoke<BrowserPilotStatus>("browser_pilot_status", { projectPath })
+}
+
+export function acquireBrowserPilot(
+  projectPath: string,
+): Promise<HumanPilotGrant> {
+  return invoke<HumanPilotGrant>("browser_pilot_acquire", { projectPath })
+}
+
+export function heartbeatBrowserPilot(
+  projectPath: string,
+  token: string,
+): Promise<BrowserPilotStatus> {
+  return invoke<BrowserPilotStatus>("browser_pilot_heartbeat", {
+    projectPath,
+    token,
+  })
+}
+
+export function releaseBrowserPilot(
+  projectPath: string,
+  token: string,
+): Promise<BrowserPilotStatus> {
+  return invoke<BrowserPilotStatus>("browser_pilot_release", {
+    projectPath,
+    token,
+  })
+}
+
+export function startBrowserPreview(
+  projectPath: string,
+  targetId: string,
+): Promise<BrowserPreviewStatus> {
+  return invoke<BrowserPreviewStatus>("browser_preview_start", {
+    projectPath,
+    targetId,
+  })
+}
+
+export function browserPreviewFrame(
+  projectPath: string,
+  afterRevision?: number,
+): Promise<BrowserPreviewFrame | null> {
+  return invoke<BrowserPreviewFrame | null>("browser_preview_frame", {
+    projectPath,
+    afterRevision,
+  })
+}
+
+export function stopBrowserPreview(projectPath: string): Promise<void> {
+  return invoke("browser_preview_stop", { projectPath })
+}
+
+export function sendBrowserInput(
+  projectPath: string,
+  targetId: string,
+  token: string,
+  action: BrowserInputAction,
+): Promise<void> {
+  return invoke("browser_input", { projectPath, targetId, token, action })
+}
+
+export function openBrowserPanel(projectPath: string): Promise<void> {
+  return invoke("browser_panel_open", { projectPath })
 }
 
 /** Estado do navegador em uma linha, sem inventar atividade: sem sessão o
@@ -54,7 +182,7 @@ export function browserStateLabel(status: BrowserStatus | null): string {
   if (!status) return "indisponível fora do app"
   if (status.session) {
     const browser = status.session.browser ?? "navegador"
-    return `ligado · ${browser} · ${status.session.endpoint}`
+    return `ligado · ${browser} · perfil deste projeto`
   }
   if (!status.binary) return status.detail ?? "nenhum Chromium encontrado"
   return status.version
@@ -71,10 +199,9 @@ export function browserBoundServers(servers: McpServer[]): string[] {
     .map((server) => server.name)
 }
 
-/** Aviso honesto quando algum binding pede o navegador do projeto e ele não
- *  está ligado: o run não trava por isso, mas o MCP vai abrir um navegador
- *  próprio, e o usuário precisa saber ANTES de gastar o turno. `null` quando
- *  não há o que avisar. */
+/** Aviso honesto quando algum binding EXIGE o navegador do projeto e ele não
+ *  está ligado. O backend bloqueia antes do spawn para nenhum MCP abrir outra
+ *  janela silenciosamente. `null` quando não há o que avisar. */
 export function browserBindingWarning(
   servers: McpServer[],
   status: BrowserStatus | null,
@@ -82,7 +209,7 @@ export function browserBindingWarning(
   if (status?.session) return null
   const names = browserBoundServers(servers)
   if (names.length === 0) return null
-  return `${names.join(", ")} ${names.length > 1 ? "pedem" : "pede"} o navegador do projeto, que está desligado. Nos runs deste projeto o MCP vai abrir um navegador próprio.`
+  return `${names.join(", ")} ${names.length > 1 ? "pedem" : "pede"} o navegador do projeto, que está desligado. O run será bloqueado antes que o MCP abra outro navegador.`
 }
 
 // ---- o encadeamento honesto (ligar o navegador NÃO basta) ------------------
@@ -168,8 +295,8 @@ export function browserChainLine(
   return {
     tom: "aviso",
     texto: temBinding
-      ? "Nenhum agent vai usar este navegador. Nos MCPs abaixo, marque 'navegador' na linha do agent que deve pilotá-lo; só assim o run recebe o endpoint."
-      : "Nenhum agent vai usar este navegador: nenhum MCP está ligado neste projeto. Abaixo, ligue o MCP de navegador para o agent que você usa e marque 'navegador' na linha dele.",
+      ? "Nenhum agent vai usar este navegador. Em MCPs, marque 'navegador' na linha do agent que deve pilotá-lo; só assim o run recebe o endpoint."
+      : "Nenhum agent vai usar este navegador: nenhum MCP está ligado neste projeto. Em MCPs, ligue a integração para o agent que você usa e marque 'navegador' na linha dele.",
   }
 }
 
@@ -197,9 +324,10 @@ export function browserRowNotice(
   if (status?.session) return null
   // `null` cobre fora do app E falha de leitura (que já foi ao toast): não
   // escolhe uma das causas, só para de prometer o que não sabe.
-  if (!status) return "estado do navegador do projeto indisponível"
+  if (!status)
+    return "estado indisponível; confira Navegador e desktop antes do run"
   if (!status.binary) {
-    return "não há Chromium nesta máquina, este agent vai abrir um navegador próprio"
+    return "não há Chromium nesta máquina; o run será bloqueado até instalar ou desmarcar"
   }
-  return "navegador do projeto desligado, este agent vai abrir um navegador próprio"
+  return "navegador desligado; ligue em Navegador e desktop ou desmarque antes do run"
 }

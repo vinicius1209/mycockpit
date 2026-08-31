@@ -49,16 +49,20 @@ export interface SlashCommand {
   description: string | null
   kind: string // "command" | "skill"
   origin: string // "project" | "global"
-  /** De onde o comando veio: "mycockpit" | "claude" | "codex". */
+  /** De onde o comando veio: "mycockpit" | "claude" | "codex" | "plugin". */
   source: string
   /** Markdown inteiro do arquivo (frontmatter incluso) p/ a expansão
    *  app-side; null se o arquivo estava ilegível. */
   body: string | null
+  /** Proveniência fechada de uma skill de plugin aprovada. */
+  pluginKey?: string
+  pluginName?: string
+  pluginFingerprint?: string
+  contributionId?: string
 }
 
-/** Inventário de comandos "/" POR AGENT da conversa: a casa
- *  (.mycockpit/commands) vale pra todos; claude-code soma .claude/commands e
- *  .claude/skills; codex soma ~/.codex/prompts; agy só vê a casa. */
+/** Inventário de comandos "/" POR AGENT da conversa: casa e skills de plugin
+ *  aprovadas valem para todos; convenções nativas vêm do registry do agent. */
 export async function readProjectCommands(
   path: string,
   agent: string,
