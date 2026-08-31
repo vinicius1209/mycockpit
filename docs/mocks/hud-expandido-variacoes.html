@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Frota · três direções para o instrumento expandido</title>
+  <title>Frota · quatro direções para o instrumento expandido</title>
   <style>
     @font-face {
       font-family: Geist;
@@ -72,7 +72,7 @@
     .same-data { color: var(--faint); font: 500 11px/1.5 var(--mono); text-align: right; }
     .switcher {
       display: grid;
-      grid-template-columns: repeat(3, 1fr);
+      grid-template-columns: repeat(4, 1fr);
       gap: 4px;
       padding: 4px;
       border: 1px solid var(--border);
@@ -278,6 +278,62 @@
     .c-foot { justify-content: center; }
     .c-foot .icon-only { position: absolute; right: 12px; margin: 0; }
 
+    /* D · INSTRUMENTO VIVO */
+    .d-shell { height: 100%; display: grid; grid-template-rows: 44px 1fr; }
+    .d-head {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .d-head .brand { margin-right: auto; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .d-body { min-height: 0; }
+    .d-scene { display: none; height: 100%; grid-template-rows: 1fr 48px; }
+    .d-scene.active { display: grid; animation: d-shift 180ms ease-out; }
+    @keyframes d-shift { from { opacity: 0; transform: translateY(3px); } }
+    .d-main { min-height: 0; padding: 20px 28px 15px; }
+    .d-flight-board {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      align-items: center;
+      min-height: 106px;
+    }
+    .d-time { padding-right: 18px; border-right: 1px solid var(--border); }
+    .d-time strong { display: block; font: 660 30px/1 var(--mono); letter-spacing: -.04em; }
+    .d-time span { display: block; margin-top: 6px; color: var(--faint); font: 600 11px/1 var(--mono); }
+    .d-flight-copy { min-width: 0; padding-left: 20px; }
+    .d-flight-copy .label { margin-bottom: 7px; color: var(--running); }
+    .d-flight-copy h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+    .d-flight-copy p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .d-route { position: relative; height: 13px; margin: 14px 0 11px 102px; }
+    .d-route-base, .d-route-past { position: absolute; left: 0; top: 5px; height: 1px; }
+    .d-route-base { right: 0; background: var(--border-strong); }
+    .d-route-past { width: 34%; background: var(--running); }
+    .d-route-head { position: absolute; left: 34%; top: 2px; width: 7px; height: 7px; margin-left: -3px; border-radius: 50%; background: var(--running); box-shadow: 0 0 0 3px #000; }
+    .d-system-line { margin: 0 0 0 102px; color: var(--faint); font-size: 11px; }
+    .d-system-line strong { color: var(--muted); font-weight: 550; }
+    .d-foot {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,.025);
+    }
+    .d-foot .icon-only { position: absolute; right: 12px; }
+    .d-decision-main { display: grid; align-content: center; padding: 10px 50px 18px; }
+    .d-decision-main .label { margin-bottom: 10px; color: var(--brass); }
+    .d-decision-main h2 { margin: 0; font-size: 14px; }
+    .d-decision-main p { max-width: 390px; margin: 7px 0 0; color: var(--muted); font-size: 12px; }
+    .d-decision-seam { width: 42px; height: 2px; margin-top: 17px; background: var(--brass); }
+    .d-stopped-main { display: grid; align-content: center; justify-items: center; padding: 10px 36px 18px; text-align: center; }
+    .d-stop-glyph { display: grid; width: 28px; height: 28px; margin-bottom: 11px; place-items: center; color: var(--muted); }
+    .d-stopped-main h2 { margin: 0; font-size: 14px; }
+    .d-stopped-main p { margin: 6px 0 0; color: var(--muted); font-size: 12px; }
+    .hud[data-d-mode="stopped"] .d-presence-dot { background: var(--faint); }
+
     .notes {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
@@ -322,8 +378,8 @@
     <header class="topline">
       <div>
         <p class="eyebrow">Instrumento expandido · 540 × 320</p>
-        <h1>Três hierarquias para o mesmo estado real</h1>
-        <p class="lede">Uma tarefa em voo, nenhuma automação e uma sessão externa ociosa. Só muda a organização, nunca os dados.</p>
+        <h1>Quatro hierarquias para o mesmo estado real</h1>
+        <p class="lede">Uma tarefa em voo, nenhuma automação e uma sessão externa ociosa. A direção D também demonstra como a composição reage a uma ação.</p>
       </div>
       <div class="same-data">casco #000<br>Geist + Geist Mono<br>uma cor de estado</div>
     </header>
@@ -332,6 +388,7 @@
       <button type="button" data-pick="a" aria-selected="true">A · Pista de voo</button>
       <button type="button" data-pick="b" aria-selected="false">B · Matriz operacional</button>
       <button type="button" data-pick="c" aria-selected="false">C · Foco adaptativo</button>
+      <button type="button" data-pick="d" aria-selected="false">D · Instrumento vivo</button>
     </nav>
 
     <section class="stage" aria-label="Monitor externo com o instrumento expandido">
@@ -388,12 +445,51 @@
           <footer class="c-foot"><button class="hud-button stop"><svg class="icon"><use href="#stop"/></svg>Parar tarefa</button><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
         </div>
       </article>
+
+      <article class="hud variant" data-variant="d" data-d-mode="flight" aria-label="Variação D, Instrumento vivo">
+        <div class="d-shell">
+          <header class="d-head"><span class="brand"><svg class="icon"><use href="#mark"/></svg>Frota</span><span class="dot d-presence-dot"></span><span class="mono muted" data-d-status>1 em voo · 16 min</span><button class="hud-button"><svg class="icon"><use href="#open"/></svg>Abrir</button></header>
+          <div class="d-body" aria-live="polite">
+            <section class="d-scene active" data-d-scene="flight">
+              <div class="d-main">
+                <div class="d-flight-board">
+                  <div class="d-time"><strong>16</strong><span>MIN</span></div>
+                  <div class="d-flight-copy"><p class="label">Em voo agora</p><h2>revisao de branches</h2><p>Maclan · Redigindo resposta</p></div>
+                </div>
+                <div class="d-route" aria-hidden="true"><span class="d-route-base"></span><span class="d-route-past"></span><span class="d-route-head"></span></div>
+                <p class="d-system-line"><strong>Sem automações</strong> · Codex observado, ocioso</p>
+              </div>
+              <footer class="d-foot"><button class="hud-button stop" data-d-action="request-stop"><svg class="icon"><use href="#stop"/></svg>Parar tarefa</button><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
+            </section>
+
+            <section class="d-scene" data-d-scene="decision">
+              <div class="d-decision-main">
+                <p class="label">Decisão antes de agir</p>
+                <h2>Parar revisao de branches?</h2>
+                <p>A tarefa continua em voo até você confirmar. O histórico e os 16 minutos permanecem preservados.</p>
+                <span class="d-decision-seam" aria-hidden="true"></span>
+              </div>
+              <footer class="d-foot"><button class="hud-button" data-d-action="keep-flight">Manter em voo</button><button class="hud-button primary" data-d-action="confirm-stop"><svg class="icon"><use href="#stop"/></svg>Parar agora</button></footer>
+            </section>
+
+            <section class="d-scene" data-d-scene="stopped">
+              <div class="d-stopped-main">
+                <span class="d-stop-glyph"><svg class="icon"><use href="#stop"/></svg></span>
+                <h2>revisao de branches interrompida</h2>
+                <p>16 min registrados · histórico preservado</p>
+              </div>
+              <footer class="d-foot"><button class="hud-button" data-d-action="resume-flight">Retomar tarefa</button><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
+            </section>
+          </div>
+        </div>
+      </article>
     </section>
 
     <section class="notes" aria-live="polite">
       <article class="note active" data-note="a"><div class="note-grid"><div><p class="meta">Direção A</p><h2>Pista de voo</h2><p class="verdict">Melhor equilíbrio geral.</p></div><div><p class="meta">Ganha</p><p>Uma tarefa domina sem apagar automações e terminal. A linha viva comunica atividade sem inventar percentual.</p></div><div><p class="meta">Custo</p><p>Escala bem para uma ou duas tarefas; com quatro, precisa virar lista ou escolher uma principal.</p></div></div></article>
       <article class="note" data-note="b"><div class="note-grid"><div><p class="meta">Direção B</p><h2>Matriz operacional</h2><p class="verdict">Melhor para volume.</p></div><div><p class="meta">Ganha</p><p>Trilhos fixos deixam tempo, nome e ação comparáveis. A lateral reúne sistemas sem criar cartões dentro de cartões.</p></div><div><p class="meta">Custo</p><p>É a mais densa e menos emocional. Com uma única tarefa, sobra mais estrutura do que conteúdo.</p></div></div></article>
       <article class="note" data-note="c"><div class="note-grid"><div><p class="meta">Direção C</p><h2>Foco adaptativo</h2><p class="verdict">Mais silenciosa e memorável.</p></div><div><p class="meta">Ganha</p><p>O tempo real vira o instrumento principal; estados vazios recuam para uma frase. Quase nenhum contêiner compete.</p></div><div><p class="meta">Custo</p><p>Precisa mudar de composição quando houver várias tarefas ou uma decisão urgente; é a direção mais adaptativa.</p></div></div></article>
+      <article class="note" data-note="d"><div class="note-grid"><div><p class="meta">Direção D</p><h2>Instrumento vivo</h2><p class="verdict">C com a pista e ação da A.</p></div><div><p class="meta">Experimente</p><p>Clique em <strong>Parar tarefa</strong>. A pista recua, a decisão assume o foco e o repouso volta a ser silencioso depois da confirmação.</p></div><div><p class="meta">Regra</p><p>O centro pertence ao evento que pede leitura agora. Tempo domina em voo; uma decisão humana sempre vence o tempo.</p></div></div></article>
     </section>
   </main>
 
@@ -402,7 +498,7 @@
     const variants = [...document.querySelectorAll("[data-variant]")]
     const notes = [...document.querySelectorAll("[data-note]")]
     function select(id, updateHash = true) {
-      if (!/^[abc]$/.test(id)) id = "a"
+      if (!/^[abcd]$/.test(id)) id = "a"
       picks.forEach(button => button.setAttribute("aria-selected", String(button.dataset.pick === id)))
       variants.forEach(variant => variant.classList.toggle("active", variant.dataset.variant === id))
       notes.forEach(note => note.classList.toggle("active", note.dataset.note === id))
@@ -417,6 +513,22 @@
         const target = picks[(index + direction + picks.length) % picks.length]
         target.focus()
         select(target.dataset.pick)
+      })
+    })
+    const dHud = document.querySelector('[data-variant="d"]')
+    const dStatus = dHud.querySelector("[data-d-status]")
+    const dScenes = [...dHud.querySelectorAll("[data-d-scene]")]
+    function setDMode(mode) {
+      dHud.dataset.dMode = mode
+      dScenes.forEach(scene => scene.classList.toggle("active", scene.dataset.dScene === mode))
+      dStatus.textContent = mode === "stopped" ? "sem tarefa em voo" : "1 em voo · 16 min"
+    }
+    dHud.querySelectorAll("[data-d-action]").forEach(button => {
+      button.addEventListener("click", () => {
+        const action = button.dataset.dAction
+        if (action === "request-stop") setDMode("decision")
+        if (action === "keep-flight" || action === "resume-flight") setDMode("flight")
+        if (action === "confirm-stop") setDMode("stopped")
       })
     })
     select(location.hash.slice(1), false)

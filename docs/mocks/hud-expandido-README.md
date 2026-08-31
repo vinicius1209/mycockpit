@@ -1,4 +1,4 @@
-# Instrumento expandido, três direções
+# Instrumento expandido, quatro direções
 
 Mock comparável: [`hud-expandido-variacoes.html`](./hud-expandido-variacoes.html).
 
@@ -14,6 +14,9 @@ cena é a do incidente visual enviado em 31/08/2026, sem dado inventado:
 - Codex observado no terminal, ocioso;
 - ações reais: abrir, parar, nova tarefa e configurações.
 
+A direção D acrescenta uma simulação de interação sobre esses mesmos dados:
+pedir para parar, manter em voo, confirmar a parada e retomar a tarefa.
+
 ## Sistema visual
 
 - Casco preto absoluto, Geist para interface e Geist Mono para tempo/dados.
@@ -25,14 +28,14 @@ cena é a do incidente visual enviado em 31/08/2026, sem dado inventado:
 - Movimento serve apenas à entrada do mock e à linha viva; `reduced-motion`
   desliga ambos.
 
-## As três teses
+## As quatro teses
 
 ### A, Pista de voo
 
 A tarefa vira uma faixa única com tempo, título, detalhe e parada. Automações e
 terminal ficam como dois instrumentos secundários sem moldura própria.
 
-É a recomendação inicial: dá prioridade ao trabalho vivo sem esconder os
+Foi a recomendação inicial: dá prioridade ao trabalho vivo sem esconder os
 outros dois domínios e ainda cabe na geometria atual.
 
 ### B, Matriz operacional
@@ -51,6 +54,20 @@ mais forte.
 
 O custo é estrutural: múltiplas tarefas ou uma decisão pendente exigem outra
 composição, não apenas acrescentar linhas.
+
+### D, Instrumento vivo
+
+Combina o silêncio da C com o trilho temporal e as ações diretas da A. O centro
+não tem dono fixo: em voo, tempo e percurso conduzem a leitura; quando uma ação
+pede confirmação, a decisão ocupa o espaço; depois da parada, a composição
+volta ao repouso.
+
+É a recomendação após o feedback sobre a C. No HTML, `Parar tarefa`, `Manter em
+voo`, `Parar agora` e `Retomar tarefa` demonstram a troca sem atividade
+inventada: a tarefa só para depois da confirmação humana.
+
+O custo é de implementação, porque a composição precisa derivar de uma
+prioridade explícita entre estados, não apenas esconder blocos com CSS.
 
 ## O que o mock não decide
 

@@ -5,7 +5,7 @@
 > permanecem cobertas por contrato/testes, sem alegação de inspeção visual.
 > O mock histórico continua em `docs/mocks/dynamic-notch-hud.html`, mas não é
 > fonte de comportamento nem de tokens visuais.
-> A comparação pós-#334 em `docs/mocks/hud-expandido-variacoes.html` propõe três
+> A comparação pós-#334 em `docs/mocks/hud-expandido-variacoes.html` propõe quatro
 > hierarquias para o estado expandido. É material de escolha, não contrato de
 > produção, até uma direção ser aprovada.
 
