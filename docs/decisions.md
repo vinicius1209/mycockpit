@@ -5117,3 +5117,25 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Fronteira:** o preto pertence somente ao instrumento flutuante. Popover da
   barra de menus, dialogs, cartões e o restante do app continuam obedecendo ao
   tema escolhido pela pessoa. Nenhuma ação, execução ou capacidade muda.
+
+### ADR-138 - altura e hover seguem a geometria efetiva de qualquer tela ✅
+- **Incidente visual (31/08/2026):** numa tela sem notch, a ilha recolhida de
+  36 px ultrapassava a faixa realmente reservada pelo macOS. O hover expandia,
+  mas o observador nativo parava de acompanhar o ponteiro assim que o runtime
+  virava `expanded`; se o WebView não publicasse `pointerleave`, o painel só
+  recolhia depois de novos cliques.
+- **Geometria sem identidade de monitor:** a ilha mede a diferença entre o topo
+  do `frame` e o topo do `visibleFrame` da tela efetiva e nunca passa de 32 px.
+  Se o sistema não reservar faixa superior, mantém 32 px como alvo compacto.
+  Nome, fabricante, resolução, escala e a distinção entre tela interna ou
+  externa não participam da decisão. Troca de tela, rotação, DPI e arranjo
+  continuam recalculando a mesma função.
+- **Origem da expansão:** hover e clique no próprio instrumento são expansões
+  transitórias; a abertura explícita em Configurações não é. O worker nativo
+  continua medindo o frame expandido somente no caso transitório, pede o fade
+  depois de 260 ms fora e, iniciado o fechamento, só rearma depois de observar
+  o ponteiro realmente fora do compacto. O resize ocorre após a transição curta
+  já existente no frontend, sem interpretar o frame em animação como entrada.
+- **Escopo:** a regra vale para notch, ilha, laterais e base porque o worker usa
+  o `layout_for` da posição efetiva. Estado da frota, ações, foco de teclado,
+  agents, contexto, tools, desempenho e limites do motor não mudam.

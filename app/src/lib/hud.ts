@@ -63,9 +63,14 @@ export async function setHudPreferences(
 export async function setHudExpanded(
   expanded: boolean,
   focus = false,
+  autoCollapse = false,
 ): Promise<HudRuntimeView | null> {
   if (!isTauri()) return null
-  return invoke<HudRuntimeView>("set_hud_expanded", { expanded, focus })
+  return invoke<HudRuntimeView>("set_hud_expanded", {
+    expanded,
+    focus,
+    autoCollapse,
+  })
 }
 
 export function listenHudState(

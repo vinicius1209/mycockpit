@@ -12,9 +12,10 @@ vi.mock("@/lib/db", () => ({ isTauri: () => true }))
 describe("contrato de foco do instrumento", () => {
   beforeEach(() => mocks.invoke.mockClear())
 
-  it("hover pode expandir sem roubar foco", async () => {
-    await setHudExpanded(true)
+  it("hover expande sem roubar foco e declara recolhimento automático", async () => {
+    await setHudExpanded(true, false, true)
     expect(mocks.invoke).toHaveBeenCalledWith("set_hud_expanded", {
+      autoCollapse: true,
       expanded: true,
       focus: false,
     })
@@ -23,6 +24,7 @@ describe("contrato de foco do instrumento", () => {
   it("gesto explícito pode pedir foco para teclado e Esc", async () => {
     await setHudExpanded(true, true)
     expect(mocks.invoke).toHaveBeenCalledWith("set_hud_expanded", {
+      autoCollapse: false,
       expanded: true,
       focus: true,
     })

@@ -125,6 +125,7 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hoverBlockedUntilLeave = useRef(false)
+  const nativeCollapseCommitted = useRef(false)
   const reduceMotion = useReducedMotion()
   const expanded = runtime.expanded
   const position = runtime.effectivePosition
@@ -133,12 +134,25 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   const primary = snapshot.activities[0]
   const requiresDecision = snapshot.decisions > 0
 
-  const changeExpanded = (next: boolean, focus = false, blockHover = false) => {
+  const cancelCollapse = () => {
+    if (nativeCollapseCommitted.current) return
+    if (leaveTimer.current) clearTimeout(leaveTimer.current)
+    leaveTimer.current = null
+    if (collapseTimer.current) clearTimeout(collapseTimer.current)
+    collapseTimer.current = null
+    setClosing(false)
+  }
+
+  const changeExpanded = (
+    next: boolean,
+    focus = false,
+    blockHover = false,
+    autoCollapse = false,
+  ) => {
     if (next) {
-      if (collapseTimer.current) clearTimeout(collapseTimer.current)
-      collapseTimer.current = null
-      setClosing(false)
-      void setHudExpanded(true, focus).catch((cause) =>
+      if (nativeCollapseCommitted.current) return
+      cancelCollapse()
+      void setHudExpanded(true, focus, autoCollapse).catch((cause) =>
         console.error("Falha ao redimensionar o instrumento:", cause),
       )
       return
@@ -146,15 +160,17 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
     if (collapseTimer.current) return
     if (blockHover) hoverBlockedUntilLeave.current = true
     if (reduceMotion) {
-      void setHudExpanded(false, false).catch((cause) =>
-        console.error("Falha ao redimensionar o instrumento:", cause),
-      )
+      void setHudExpanded(false, false).catch((cause) => {
+        nativeCollapseCommitted.current = false
+        console.error("Falha ao redimensionar o instrumento:", cause)
+      })
       return
     }
     setClosing(true)
     collapseTimer.current = setTimeout(() => {
       collapseTimer.current = null
       void setHudExpanded(false, false).catch((cause) => {
+        nativeCollapseCommitted.current = false
         setClosing(false)
         console.error("Falha ao redimensionar o instrumento:", cause)
       })
@@ -162,7 +178,10 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   }
 
   useEffect(() => {
-    if (!expanded) setClosing(false)
+    if (!expanded) {
+      nativeCollapseCommitted.current = false
+      setClosing(false)
+    }
   }, [expanded])
 
   useEffect(() => {
@@ -194,6 +213,12 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
           .catch((cause) => console.warn("Tema do instrumento indisponível:", cause))
       }),
     )
+    track(
+      listen("hud://hover-leave", () => {
+        nativeCollapseCommitted.current = true
+        changeExpanded(false)
+      }),
+    )
     const timer = window.setInterval(() => {
       if (!document.hidden) setNow(Date.now())
     }, 30_000)
@@ -216,15 +241,14 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   }, [])
 
   const enter = () => {
-    if (leaveTimer.current) clearTimeout(leaveTimer.current)
-    if (expanded) {
-      if (collapseTimer.current) clearTimeout(collapseTimer.current)
-      collapseTimer.current = null
-      setClosing(false)
-      return
-    }
+    if (nativeCollapseCommitted.current) return
+    cancelCollapse()
+    if (expanded) return
     if (!runtime.hoverExpand || hoverBlockedUntilLeave.current) return
-    hoverTimer.current = setTimeout(() => changeExpanded(true), 90)
+    hoverTimer.current = setTimeout(
+      () => changeExpanded(true, false, false, true),
+      90,
+    )
   }
 
   const leave = () => {
@@ -283,7 +307,7 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
                     }
                   : undefined
               }
-              onClick={() => changeExpanded(true, true)}
+              onClick={() => changeExpanded(true, true, false, true)}
               aria-label={`${statusText}. Expandir instrumento`}
             >
               {notch ? (

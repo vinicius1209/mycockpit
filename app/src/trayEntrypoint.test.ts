@@ -38,5 +38,6 @@ describe("instrumento efetivo da bandeja", () => {
     expect(hud).toContain("set_size")
     expect(hud).toContain("set_position")
     expect(hud).toContain("set_focusable(runtime.expanded)")
+    expect(hud).toContain('"hud://hover-leave"')
   })
 })

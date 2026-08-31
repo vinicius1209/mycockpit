@@ -5,9 +5,10 @@
 //! este módulo mede a tela, aplica o fallback e só então publica o estado.
 
 use serde::{Deserialize, Serialize};
-#[cfg(target_os = "macos")]
-use std::sync::atomic::Ordering;
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Mutex,
+};
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 #[cfg(not(target_os = "macos"))]
@@ -16,7 +17,8 @@ use tauri::{LogicalPosition, LogicalSize};
 use crate::notch::{HudPosition, ScreenGeometry};
 
 const COMPACT_ISLAND_WIDTH: f64 = 300.0;
-const COMPACT_HEIGHT: f64 = 36.0;
+const COMPACT_TOP_HEIGHT: f64 = 32.0;
+const COMPACT_BOTTOM_HEIGHT: f64 = 36.0;
 const NOTCH_HORIZONTAL_REVEAL: f64 = 64.0;
 const EDGE_WIDTH: f64 = 36.0;
 const EDGE_HEIGHT: f64 = 64.0;
@@ -29,6 +31,8 @@ const HOVER_DWELL_MS: u64 = 90;
 const HOVER_POLL_MS: u64 = 50;
 #[cfg(target_os = "macos")]
 const HOVER_IDLE_MS: u64 = 300;
+#[cfg(target_os = "macos")]
+const HOVER_LEAVE_MS: u64 = 260;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -94,6 +98,7 @@ pub struct HudState {
     runtime: Mutex<HudRuntimeView>,
     screen_changes: Mutex<ScreenChangeQueue>,
     hover_worker_started: AtomicBool,
+    auto_collapse: AtomicBool,
 }
 
 #[derive(Default)]
@@ -139,42 +144,108 @@ struct HudLayout {
 }
 
 #[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+enum HoverPhase {
+    #[default]
+    Inactive,
+    Compact,
+    Expanded,
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum HoverAction {
+    None,
+    Expand,
+    BeginCollapse,
+}
+
+#[cfg(target_os = "macos")]
 #[derive(Default)]
 struct HoverTracker {
-    initialized: bool,
+    phase: HoverPhase,
     inside_last: bool,
-    entered_at_ms: Option<u64>,
+    changed_at_ms: Option<u64>,
+    collapse_requested: bool,
 }
 
 #[cfg(target_os = "macos")]
 impl HoverTracker {
-    fn observe(&mut self, active: bool, inside: bool, now_ms: u64) -> bool {
-        if !active {
+    fn observe(&mut self, phase: HoverPhase, inside: bool, now_ms: u64) -> HoverAction {
+        if phase == HoverPhase::Inactive {
             *self = Self::default();
-            return false;
+            return HoverAction::None;
         }
-        if !self.initialized {
-            self.initialized = true;
+        if self.phase != phase {
+            self.phase = phase;
             self.inside_last = inside;
-            return false;
+            self.changed_at_ms = (phase == HoverPhase::Expanded && !inside).then_some(now_ms);
+            if phase == HoverPhase::Compact && self.collapse_requested {
+                if !inside {
+                    self.collapse_requested = false;
+                }
+                return HoverAction::None;
+            }
+            self.collapse_requested = false;
+            return HoverAction::None;
         }
-        if !inside {
-            self.inside_last = false;
-            self.entered_at_ms = None;
-            return false;
+
+        match phase {
+            HoverPhase::Inactive => HoverAction::None,
+            HoverPhase::Compact => {
+                // Depois de iniciar o fechamento, o frame em animação pode
+                // reaparecer sob um cursor parado. Só uma saída real rearma o
+                // hover; essa amostra nunca conta como uma nova entrada.
+                if self.collapse_requested {
+                    if !inside {
+                        self.inside_last = false;
+                        self.changed_at_ms = None;
+                        self.collapse_requested = false;
+                    }
+                    return HoverAction::None;
+                }
+                if !inside {
+                    self.inside_last = false;
+                    self.changed_at_ms = None;
+                    return HoverAction::None;
+                }
+                if !self.inside_last {
+                    self.inside_last = true;
+                    self.changed_at_ms = Some(now_ms);
+                    return HoverAction::None;
+                }
+                let ready = self
+                    .changed_at_ms
+                    .is_some_and(|entered| now_ms.saturating_sub(entered) >= HOVER_DWELL_MS);
+                if ready {
+                    self.changed_at_ms = None;
+                    HoverAction::Expand
+                } else {
+                    HoverAction::None
+                }
+            }
+            HoverPhase::Expanded => {
+                if inside {
+                    self.inside_last = true;
+                    self.changed_at_ms = None;
+                    return HoverAction::None;
+                }
+                if self.inside_last {
+                    self.inside_last = false;
+                    self.changed_at_ms = Some(now_ms);
+                    return HoverAction::None;
+                }
+                let ready = self
+                    .changed_at_ms
+                    .is_some_and(|left| now_ms.saturating_sub(left) >= HOVER_LEAVE_MS);
+                if ready && !self.collapse_requested {
+                    self.collapse_requested = true;
+                    HoverAction::BeginCollapse
+                } else {
+                    HoverAction::None
+                }
+            }
         }
-        if !self.inside_last {
-            self.inside_last = true;
-            self.entered_at_ms = Some(now_ms);
-            return false;
-        }
-        let ready = self
-            .entered_at_ms
-            .is_some_and(|entered| now_ms.saturating_sub(entered) >= HOVER_DWELL_MS);
-        if ready {
-            self.entered_at_ms = None;
-        }
-        ready
     }
 }
 
@@ -223,6 +294,17 @@ fn clamp_size(wanted: f64, available: f64) -> f64 {
     wanted.min((available - SIZE_GUTTER * 2.0).max(160.0))
 }
 
+fn compact_top_height(screen: &ScreenGeometry) -> f64 {
+    // `visibleFrame` já incorpora barra, escala e arranjo desta tela. Quando o
+    // macOS reserva uma faixa superior, o casco não ultrapassa essa faixa.
+    let reserved = screen.visible_y - screen.origin_y;
+    if reserved > 0.0 {
+        reserved.min(COMPACT_TOP_HEIGHT)
+    } else {
+        COMPACT_TOP_HEIGHT
+    }
+}
+
 fn layout_for(screen: &ScreenGeometry, position: HudPosition, expanded: bool) -> Option<HudLayout> {
     if position == HudPosition::Menubar {
         return None;
@@ -249,8 +331,10 @@ fn layout_for(screen: &ScreenGeometry, position: HudPosition, expanded: bool) ->
             // O compacto ocupa a própria faixa do recorte. Somar outra linha
             // abaixo faria o hardware parecer duas vezes mais alto.
             HudPosition::Notch => screen.safe_top.max(28.0),
+            HudPosition::Island => compact_top_height(screen),
             HudPosition::Left | HudPosition::Right => EDGE_HEIGHT,
-            _ => COMPACT_HEIGHT,
+            HudPosition::Bottom => COMPACT_BOTTOM_HEIGHT,
+            HudPosition::Menubar => unreachable!(),
         }
     };
     let frame_right = screen.origin_x + screen.screen_width;
@@ -407,6 +491,9 @@ fn apply_window(app: &AppHandle, runtime: &HudRuntimeView) -> Result<(), String>
 
 async fn recompute(app: &AppHandle, expanded: Option<bool>) -> Result<HudRuntimeView, String> {
     let state = app.state::<HudState>();
+    if expanded == Some(false) {
+        state.auto_collapse.store(false, Ordering::Release);
+    }
     let preferences = state
         .preferences
         .lock()
@@ -464,20 +551,36 @@ fn install_hover_observer(app: &AppHandle) {
                 .ok()
                 .map(|runtime| runtime.clone())
                 .unwrap_or_default();
-            let active = runtime.enabled
+            let auto_collapse = handle
+                .state::<HudState>()
+                .auto_collapse
+                .load(Ordering::Acquire);
+            let phase = if runtime.enabled
                 && runtime.effective_position != HudPosition::Menubar
                 && runtime.hover_expand
-                && !runtime.expanded;
-            if !active {
-                tracker.observe(false, false, 0);
+            {
+                if runtime.expanded && auto_collapse {
+                    HoverPhase::Expanded
+                } else if !runtime.expanded {
+                    HoverPhase::Compact
+                } else {
+                    HoverPhase::Inactive
+                }
+            } else {
+                HoverPhase::Inactive
+            };
+            if phase == HoverPhase::Inactive {
+                tracker.observe(HoverPhase::Inactive, false, 0);
                 tokio::time::sleep(std::time::Duration::from_millis(HOVER_IDLE_MS)).await;
                 continue;
             }
-            let inside = match runtime
-                .screen
-                .as_ref()
-                .and_then(|screen| layout_for(screen, runtime.effective_position, false))
-            {
+            let inside = match runtime.screen.as_ref().and_then(|screen| {
+                layout_for(
+                    screen,
+                    runtime.effective_position,
+                    phase == HoverPhase::Expanded,
+                )
+            }) {
                 Some(layout) => crate::notch::cursor_position(&handle)
                     .await
                     .map(|point| contains_point(layout, point))
@@ -485,10 +588,24 @@ fn install_hover_observer(app: &AppHandle) {
                 None => false,
             };
             let now_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
-            if tracker.observe(true, inside, now_ms) {
-                if let Err(error) = recompute(&handle, Some(true)).await {
-                    log::warn!("não consegui expandir o HUD ao apontar: {error}");
+            match tracker.observe(phase, inside, now_ms) {
+                HoverAction::Expand => {
+                    handle
+                        .state::<HudState>()
+                        .auto_collapse
+                        .store(true, Ordering::Release);
+                    if let Err(error) = recompute(&handle, Some(true)).await {
+                        handle
+                            .state::<HudState>()
+                            .auto_collapse
+                            .store(false, Ordering::Release);
+                        log::warn!("não consegui expandir o HUD ao apontar: {error}");
+                    }
                 }
+                HoverAction::BeginCollapse => {
+                    let _ = handle.emit_to(crate::tray::POPOVER_LABEL, "hud://hover-leave", ());
+                }
+                HoverAction::None => {}
             }
             tokio::time::sleep(std::time::Duration::from_millis(HOVER_POLL_MS)).await;
         }
@@ -618,8 +735,23 @@ pub async fn set_hud_expanded(
     app: AppHandle,
     expanded: bool,
     focus: Option<bool>,
+    auto_collapse: Option<bool>,
 ) -> Result<HudRuntimeView, String> {
-    let runtime = recompute(&app, Some(expanded)).await?;
+    let transient = expanded && auto_collapse.unwrap_or(false);
+    app.state::<HudState>()
+        .auto_collapse
+        .store(transient, Ordering::Release);
+    let runtime = match recompute(&app, Some(expanded)).await {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            if transient {
+                app.state::<HudState>()
+                    .auto_collapse
+                    .store(false, Ordering::Release);
+            }
+            return Err(error);
+        }
+    };
     if runtime.expanded && focus.unwrap_or(false) {
         if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
             window.set_focus().map_err(|error| error.to_string())?;
@@ -660,22 +792,102 @@ mod tests {
     #[test]
     fn hover_exige_entrada_real_e_permanencia_curta() {
         let mut hover = HoverTracker::default();
-        assert!(!hover.observe(true, false, 0));
-        assert!(!hover.observe(true, true, 10));
-        assert!(!hover.observe(true, true, 99));
-        assert!(hover.observe(true, true, 100));
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, false, 0),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 10),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 99),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 100),
+            HoverAction::Expand
+        );
     }
 
     #[cfg(target_os = "macos")]
     #[test]
     fn hud_que_recolhe_sob_o_ponteiro_nao_reabre_sem_nova_entrada() {
         let mut hover = HoverTracker::default();
-        assert!(!hover.observe(false, true, 0));
-        assert!(!hover.observe(true, true, 500));
-        assert!(!hover.observe(true, true, 1_000));
-        assert!(!hover.observe(true, false, 1_001));
-        assert!(!hover.observe(true, true, 1_010));
-        assert!(hover.observe(true, true, 1_100));
+        assert_eq!(
+            hover.observe(HoverPhase::Inactive, true, 0),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 500),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 1_000),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, false, 1_001),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 1_010),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 1_100),
+            HoverAction::Expand
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn expansao_transitoria_so_rearma_depois_de_sair_do_compacto() {
+        let mut hover = HoverTracker::default();
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, true, 100),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, false, 101),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, false, 360),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, false, 361),
+            HoverAction::BeginCollapse
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, false, 400),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Expanded, true, 410),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 500),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 800),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, false, 801),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 810),
+            HoverAction::None
+        );
+        assert_eq!(
+            hover.observe(HoverPhase::Compact, true, 900),
+            HoverAction::Expand
+        );
     }
 
     fn tela_com_notch() -> ScreenGeometry {
@@ -737,6 +949,7 @@ mod tests {
         let island = layout_for(&screen, HudPosition::Island, false).unwrap();
         assert_eq!(island.x, -1_110.0);
         assert_eq!(island.y, screen.origin_y);
+        assert_eq!(island.height, 25.0);
 
         let left = layout_for(&screen, HudPosition::Left, false).unwrap();
         assert_eq!(left.x, screen.origin_x);
@@ -753,6 +966,21 @@ mod tests {
             bottom.y + bottom.height,
             screen.origin_y + screen.screen_height
         );
+    }
+
+    #[test]
+    fn ilha_respeita_a_faixa_superior_medida_em_qualquer_tela() {
+        let mut screen = tela_com_notch();
+        screen.id = "display-arbitrario".into();
+        screen.name = "Qualquer fabricante".into();
+        screen.has_notch = false;
+        screen.origin_y = -900.0;
+        screen.visible_y = -873.5;
+        screen.scale_factor = 1.25;
+
+        let island = layout_for(&screen, HudPosition::Island, false).unwrap();
+        assert_eq!(island.y, -900.0);
+        assert_eq!(island.height, 26.5);
     }
 
     #[test]

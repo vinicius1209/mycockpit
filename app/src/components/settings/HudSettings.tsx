@@ -124,7 +124,7 @@ export function HudSettings() {
           </Field>
           <Field
             label="Expandir ao apontar"
-            hint="O instrumento volta a recolher quando o ponteiro sai; clique fixa durante a interação."
+            hint="O instrumento volta a recolher quando o ponteiro sai; clique mantém o foco durante a interação."
           >
             <Switch
               checked={settings.hudHoverExpand}
