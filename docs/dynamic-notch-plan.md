@@ -1,10 +1,13 @@
 # Instrumento flutuante da Frota, plano de implementação
 
-> Status em 30/08/2026: **N1-N5 implementadas; homologação automatizada e QA
-> nativo do notch atualizados até o build #327**. Ilha, bordas e troca de monitor
+> Status em 31/08/2026: **N1-N5 implementadas; homologação automatizada e QA
+> nativo do notch atualizados até o build #334**. Ilha, bordas e troca de monitor
 > permanecem cobertas por contrato/testes, sem alegação de inspeção visual.
 > O mock histórico continua em `docs/mocks/dynamic-notch-hud.html`, mas não é
 > fonte de comportamento nem de tokens visuais.
+> A comparação pós-#334 em `docs/mocks/hud-expandido-variacoes.html` propõe três
+> hierarquias para o estado expandido. É material de escolha, não contrato de
+> produção, até uma direção ser aprovada.
 
 ## Correção que governa este plano
 

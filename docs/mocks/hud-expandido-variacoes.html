@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frota · três direções para o instrumento expandido</title>
+  <style>
+    @font-face {
+      font-family: Geist;
+      src: url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Geist Mono";
+      src: url("../../app/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    :root {
+      color-scheme: dark;
+      --page: #0c0f13;
+      --page-raised: #12161c;
+      --hud: #000;
+      --card: #141619;
+      --foreground: #e7e8ea;
+      --muted: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255,255,255,.08);
+      --border-strong: rgba(255,255,255,.13);
+      --hover: #1e2126;
+      --running: #5bb8e8;
+      --brass: #e4a862;
+      --error: #f2766b;
+      --shadow-pop: 0 20px 60px -16px rgba(0,0,0,.8);
+      --sans: Geist, ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, monospace;
+    }
+    * { box-sizing: border-box; }
+    html { min-width: 860px; background: var(--page); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--foreground);
+      background: var(--page);
+      font: 13px/1.4 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; }
+    button:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+    .page {
+      width: min(1120px, calc(100vw - 48px));
+      margin: 0 auto;
+      padding: 28px 0 56px;
+    }
+    .topline {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 20px;
+    }
+    .eyebrow {
+      margin: 0 0 6px;
+      color: var(--faint);
+      font: 600 11px/1 var(--mono);
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    h1 { margin: 0; font-size: 20px; line-height: 1.15; letter-spacing: -.02em; }
+    .lede { max-width: 620px; margin: 7px 0 0; color: var(--muted); font-size: 13px; }
+    .same-data { color: var(--faint); font: 500 11px/1.5 var(--mono); text-align: right; }
+    .switcher {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 4px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: rgba(0,0,0,.35);
+      margin-bottom: 16px;
+    }
+    .switcher button {
+      min-height: 36px;
+      border: 0;
+      border-radius: 8px;
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      transition: color 120ms ease, background 120ms ease;
+    }
+    .switcher button:hover { color: var(--foreground); background: rgba(255,255,255,.03); }
+    .switcher button[aria-selected="true"] {
+      color: var(--foreground);
+      background: rgba(255,255,255,.07);
+      font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0,0,0,.35);
+    }
+    .stage {
+      position: relative;
+      height: 424px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: #161b22;
+      box-shadow: inset 0 1px rgba(255,255,255,.025);
+    }
+    .screen-bar {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      color: rgba(255,255,255,.72);
+      background: #222934;
+      border-bottom: 1px solid rgba(255,255,255,.05);
+      font-size: 12px;
+    }
+    .screen-bar span { display: flex; align-items: center; gap: 15px; }
+    .screen-bar strong { color: #fff; }
+    .desktop-lines {
+      position: absolute;
+      inset: 32px 0 0;
+      opacity: .55;
+      background: #11161d;
+    }
+    .hud {
+      position: absolute;
+      top: 32px;
+      left: 50%;
+      width: 540px;
+      height: 320px;
+      transform: translateX(-50%);
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-top: 0;
+      border-radius: 0 0 13px 13px;
+      color: var(--foreground);
+      background: var(--hud);
+      box-shadow: var(--shadow-pop);
+    }
+    .variant { display: none; }
+    .variant.active { display: block; animation: enter 180ms ease-out; }
+    @keyframes enter { from { opacity: 0; transform: translateY(-3px); } }
+    .icon { width: 14px; height: 14px; stroke-width: 1.8; fill: none; stroke: currentColor; }
+    .dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--running); }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+    .label {
+      color: var(--faint);
+      font: 600 11px/1 var(--mono);
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .muted { color: var(--muted); }
+    .faint { color: var(--faint); }
+    .hud-button {
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--foreground);
+      background: transparent;
+      font-size: 12px;
+      font-weight: 550;
+      cursor: pointer;
+    }
+    .hud-button:hover { background: var(--hover); }
+    .hud-button.primary { border-color: transparent; color: #0a0b0d; background: var(--foreground); }
+    .hud-button.icon-only { width: 28px; padding: 0; color: var(--muted); }
+    .hud-button.stop { border: 0; color: var(--muted); }
+    .hud-button.stop:hover { color: var(--error); background: rgba(242,118,107,.1); }
+
+    /* A · PISTA DE VOO */
+    .a-shell { height: 100%; display: grid; grid-template-rows: 44px 1fr 48px; }
+    .a-head, .b-head, .c-head {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .a-head strong, .b-head strong { margin-right: auto; font-size: 13px; }
+    .a-main { padding: 14px; }
+    .flight-strip {
+      position: relative;
+      display: grid;
+      grid-template-columns: 54px 1fr auto;
+      gap: 12px;
+      align-items: center;
+      min-height: 100px;
+      padding: 13px 12px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.045);
+    }
+    .flight-strip::after, .flight-strip::before {
+      content: "";
+      position: absolute;
+      left: 78px;
+      bottom: 11px;
+      height: 1px;
+    }
+    .flight-strip::after {
+      right: 14px;
+      background: rgba(255,255,255,.10);
+    }
+    .flight-strip::before {
+      z-index: 1;
+      width: 92px;
+      background: var(--running);
+    }
+    .flight-time { align-self: stretch; display: grid; align-content: center; border-right: 1px solid var(--border); }
+    .flight-time strong { display: block; font: 650 20px/1 var(--mono); }
+    .flight-time span { display: block; margin-top: 5px; color: var(--faint); font: 600 11px/1 var(--mono); }
+    .flight-copy { min-width: 0; padding-bottom: 10px; }
+    .flight-copy h2 { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+    .flight-copy p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .a-systems { display: grid; grid-template-columns: 1fr 1fr; margin-top: 14px; }
+    .a-system { display: grid; grid-template-columns: 16px 1fr; gap: 9px; padding: 2px 12px; }
+    .a-system + .a-system { border-left: 1px solid var(--border); }
+    .a-system .icon { margin-top: 2px; color: var(--faint); }
+    .a-system strong { display: block; margin-bottom: 2px; font-size: 12px; font-weight: 550; }
+    .a-system span { color: var(--muted); font-size: 11px; }
+    .a-foot, .b-foot, .c-foot {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,.025);
+    }
+    .a-foot .icon-only, .b-foot .icon-only, .c-foot .icon-only { margin-left: auto; }
+
+    /* B · MATRIZ OPERACIONAL */
+    .b-shell { height: 100%; display: grid; grid-template-rows: 44px 1fr 48px; }
+    .b-main { display: grid; grid-template-columns: 1.35fr .85fr; min-height: 0; }
+    .b-live { padding: 15px 14px; }
+    .ledger-head { display: grid; grid-template-columns: 18px 1fr 52px 28px; gap: 8px; margin-bottom: 10px; }
+    .ledger-row {
+      display: grid;
+      grid-template-columns: 18px 1fr 52px 28px;
+      gap: 8px;
+      align-items: center;
+      min-height: 68px;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    .ledger-glyph { width: 9px; height: 9px; border: 1px solid var(--running); border-radius: 50%; box-shadow: inset 0 0 0 2px #000; background: var(--running); }
+    .ledger-copy { min-width: 0; }
+    .ledger-copy strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+    .ledger-copy span { display: block; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+    .ledger-time { color: var(--muted); font: 500 11px/1 var(--mono); text-align: right; }
+    .live-caption { margin: 12px 0 0 26px; color: var(--faint); font-size: 11px; }
+    .b-rail { padding: 15px 14px; border-left: 1px solid var(--border); background: rgba(255,255,255,.018); }
+    .rail-row { display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 11px 0; }
+    .rail-row + .rail-row { border-top: 1px solid var(--border); }
+    .rail-row .icon { color: var(--faint); }
+    .rail-row strong { display: block; font-size: 12px; font-weight: 550; }
+    .rail-row span { display: block; margin-top: 2px; color: var(--muted); font-size: 11px; }
+
+    /* C · FOCO ADAPTATIVO */
+    .c-shell { height: 100%; display: grid; grid-template-rows: 44px 1fr 48px; }
+    .c-head { border-bottom-color: transparent; }
+    .c-head .brand { margin-right: auto; display: flex; align-items: center; gap: 8px; font-weight: 600; }
+    .c-main { display: grid; align-content: center; justify-items: center; padding: 6px 30px 16px; text-align: center; }
+    .c-time { display: flex; align-items: baseline; gap: 5px; margin-bottom: 9px; }
+    .c-time strong { font: 660 30px/1 var(--mono); letter-spacing: -.04em; }
+    .c-time span { color: var(--faint); font: 600 11px/1 var(--mono); }
+    .c-main h2 { max-width: 390px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+    .c-main > p { margin: 5px 0 0; color: var(--muted); font-size: 12px; }
+    .live-seam { position: relative; width: min(360px, 100%); height: 1px; margin: 19px 0 13px; background: var(--border-strong); }
+    .live-seam::before { content: ""; position: absolute; left: 0; top: -1px; width: 28%; height: 3px; border-radius: 99px; background: var(--running); }
+    .c-status { color: var(--faint); font-size: 11px; }
+    .c-status strong { color: var(--muted); font-weight: 550; }
+    .c-foot { justify-content: center; }
+    .c-foot .icon-only { position: absolute; right: 12px; margin: 0; }
+
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .note {
+      display: none;
+      min-height: 116px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--page-raised);
+    }
+    .note.active { display: block; grid-column: 1 / -1; }
+    .note-grid { display: grid; grid-template-columns: 160px 1fr 1fr; gap: 20px; }
+    .note h2 { margin: 0 0 5px; font-size: 14px; }
+    .note p { margin: 0; color: var(--muted); font-size: 12px; }
+    .note .verdict { color: var(--foreground); font-weight: 600; }
+    .note .meta { margin-bottom: 5px; color: var(--faint); font: 600 11px/1 var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+    @media (max-width: 920px) {
+      .page { width: 820px; }
+      .note-grid { grid-template-columns: 1fr; gap: 12px; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="open" viewBox="0 0 24 24"><path d="M14 5h5v5M11 13l8-8M19 13v6H5V5h6"/></symbol>
+    <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
+    <symbol id="calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></symbol>
+    <symbol id="terminal" viewBox="0 0 24 24"><path d="m5 7 4 4-4 4M11 17h8"/></symbol>
+    <symbol id="stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"/></symbol>
+    <symbol id="mark" viewBox="0 0 24 24"><path d="M5 16.5 12 4l7 12.5-7-3.5-7 3.5Z"/></symbol>
+  </svg>
+
+  <main class="page">
+    <header class="topline">
+      <div>
+        <p class="eyebrow">Instrumento expandido · 540 × 320</p>
+        <h1>Três hierarquias para o mesmo estado real</h1>
+        <p class="lede">Uma tarefa em voo, nenhuma automação e uma sessão externa ociosa. Só muda a organização, nunca os dados.</p>
+      </div>
+      <div class="same-data">casco #000<br>Geist + Geist Mono<br>uma cor de estado</div>
+    </header>
+
+    <nav class="switcher" aria-label="Variações do instrumento">
+      <button type="button" data-pick="a" aria-selected="true">A · Pista de voo</button>
+      <button type="button" data-pick="b" aria-selected="false">B · Matriz operacional</button>
+      <button type="button" data-pick="c" aria-selected="false">C · Foco adaptativo</button>
+    </nav>
+
+    <section class="stage" aria-label="Monitor externo com o instrumento expandido">
+      <div class="screen-bar"><span><strong>Frota</strong> Arquivo Editar Janela</span><span>Seg. 31 de ago. 14:30</span></div>
+      <div class="desktop-lines" aria-hidden="true"></div>
+
+      <article class="hud variant active" data-variant="a" aria-label="Variação A, Pista de voo">
+        <div class="a-shell">
+          <header class="a-head"><span class="dot"></span><strong>1 em voo</strong><button class="hud-button"><svg class="icon"><use href="#open"/></svg>Abrir Frota</button></header>
+          <div class="a-main">
+            <section class="flight-strip" aria-label="Tarefa em voo">
+              <div class="flight-time"><strong>16</strong><span>MIN</span></div>
+              <div class="flight-copy"><h2>revisao de branches</h2><p>Maclan · Redigindo resposta</p></div>
+              <button class="hud-button stop" aria-label="Parar revisao de branches"><svg class="icon"><use href="#stop"/></svg>Parar</button>
+            </section>
+            <div class="a-systems">
+              <div class="a-system"><svg class="icon"><use href="#calendar"/></svg><div><strong>Nenhuma automação</strong><span>0 ativas</span></div></div>
+              <div class="a-system"><svg class="icon"><use href="#terminal"/></svg><div><strong>Terminal observado</strong><span>Codex · ocioso</span></div></div>
+            </div>
+          </div>
+          <footer class="a-foot"><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
+        </div>
+      </article>
+
+      <article class="hud variant" data-variant="b" aria-label="Variação B, Matriz operacional">
+        <div class="b-shell">
+          <header class="b-head"><span class="dot"></span><strong>Frota em operação</strong><span class="mono faint">1 em voo</span><button class="hud-button"><svg class="icon"><use href="#open"/></svg>Abrir</button></header>
+          <div class="b-main">
+            <section class="b-live">
+              <div class="ledger-head label"><span></span><span>Em voo</span><span style="text-align:right">Tempo</span><span></span></div>
+              <div class="ledger-row"><span class="ledger-glyph"></span><div class="ledger-copy"><strong>revisao de branches</strong><span>Maclan · Redigindo resposta</span></div><span class="ledger-time">16 min</span><button class="hud-button icon-only stop" aria-label="Parar revisao de branches"><svg class="icon"><use href="#stop"/></svg></button></div>
+              <p class="live-caption">A linha permanece aberta somente enquanto o turno está vivo.</p>
+            </section>
+            <aside class="b-rail">
+              <p class="label">Sistemas</p>
+              <div class="rail-row"><svg class="icon"><use href="#calendar"/></svg><div><strong>Sem automações</strong><span>0 ativas</span></div></div>
+              <div class="rail-row"><svg class="icon"><use href="#terminal"/></svg><div><strong>Codex observado</strong><span>ocioso</span></div></div>
+            </aside>
+          </div>
+          <footer class="b-foot"><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><span class="muted" style="font-size:11px">Nenhuma decisão pendente</span><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
+        </div>
+      </article>
+
+      <article class="hud variant" data-variant="c" aria-label="Variação C, Foco adaptativo">
+        <div class="c-shell">
+          <header class="c-head"><span class="brand"><svg class="icon"><use href="#mark"/></svg>Frota</span><span class="dot"></span><span class="mono muted">1 em voo</span><button class="hud-button"><svg class="icon"><use href="#open"/></svg>Abrir</button></header>
+          <div class="c-main">
+            <div class="c-time"><strong>16</strong><span>MIN EM VOO</span></div>
+            <h2>revisao de branches</h2>
+            <p>Maclan · Redigindo resposta</p>
+            <div class="live-seam" aria-hidden="true"></div>
+            <p class="c-status"><strong>Sem automações</strong> · Codex observado, ocioso</p>
+          </div>
+          <footer class="c-foot"><button class="hud-button stop"><svg class="icon"><use href="#stop"/></svg>Parar tarefa</button><button class="hud-button primary"><svg class="icon"><use href="#plus"/></svg>Nova tarefa</button><button class="hud-button icon-only" aria-label="Abrir configurações"><svg class="icon"><use href="#gear"/></svg></button></footer>
+        </div>
+      </article>
+    </section>
+
+    <section class="notes" aria-live="polite">
+      <article class="note active" data-note="a"><div class="note-grid"><div><p class="meta">Direção A</p><h2>Pista de voo</h2><p class="verdict">Melhor equilíbrio geral.</p></div><div><p class="meta">Ganha</p><p>Uma tarefa domina sem apagar automações e terminal. A linha viva comunica atividade sem inventar percentual.</p></div><div><p class="meta">Custo</p><p>Escala bem para uma ou duas tarefas; com quatro, precisa virar lista ou escolher uma principal.</p></div></div></article>
+      <article class="note" data-note="b"><div class="note-grid"><div><p class="meta">Direção B</p><h2>Matriz operacional</h2><p class="verdict">Melhor para volume.</p></div><div><p class="meta">Ganha</p><p>Trilhos fixos deixam tempo, nome e ação comparáveis. A lateral reúne sistemas sem criar cartões dentro de cartões.</p></div><div><p class="meta">Custo</p><p>É a mais densa e menos emocional. Com uma única tarefa, sobra mais estrutura do que conteúdo.</p></div></div></article>
+      <article class="note" data-note="c"><div class="note-grid"><div><p class="meta">Direção C</p><h2>Foco adaptativo</h2><p class="verdict">Mais silenciosa e memorável.</p></div><div><p class="meta">Ganha</p><p>O tempo real vira o instrumento principal; estados vazios recuam para uma frase. Quase nenhum contêiner compete.</p></div><div><p class="meta">Custo</p><p>Precisa mudar de composição quando houver várias tarefas ou uma decisão urgente; é a direção mais adaptativa.</p></div></div></article>
+    </section>
+  </main>
+
+  <script>
+    const picks = [...document.querySelectorAll("[data-pick]")]
+    const variants = [...document.querySelectorAll("[data-variant]")]
+    const notes = [...document.querySelectorAll("[data-note]")]
+    function select(id, updateHash = true) {
+      if (!/^[abc]$/.test(id)) id = "a"
+      picks.forEach(button => button.setAttribute("aria-selected", String(button.dataset.pick === id)))
+      variants.forEach(variant => variant.classList.toggle("active", variant.dataset.variant === id))
+      notes.forEach(note => note.classList.toggle("active", note.dataset.note === id))
+      if (updateHash) history.replaceState(null, "", `#${id}`)
+    }
+    picks.forEach((button, index) => {
+      button.addEventListener("click", () => select(button.dataset.pick))
+      button.addEventListener("keydown", event => {
+        if (!event.key.startsWith("Arrow")) return
+        event.preventDefault()
+        const direction = event.key === "ArrowLeft" || event.key === "ArrowUp" ? -1 : 1
+        const target = picks[(index + direction + picks.length) % picks.length]
+        target.focus()
+        select(target.dataset.pick)
+      })
+    })
+    select(location.hash.slice(1), false)
+  </script>
+</body>
+</html>
