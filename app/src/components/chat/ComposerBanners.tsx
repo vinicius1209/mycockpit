@@ -3,24 +3,24 @@
 // painel, e o arquivo de lá é o maior do app (a catraca de tamanho do
 // STYLEGUIDE §10 manda dividir, nunca subir o teto).
 //
-// Os dois falam a MESMA língua de aviso (st-warning em E0, saída em ghost):
-// pedem uma decisão sua, sem afirmar que o app já agiu.
+// Gate de diretório e motor ausente pedem decisão em âmbar. Auto-resume é
+// estado automático e fica neutro: compartilhar posição não iguala semântica.
 
 import { Copy, FolderGit2, PackageX, Timer, X } from "lucide-react"
 import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
 import { fmtTime } from "@/lib/format"
 import { controle } from "@/components/ui/controle"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
 
-/** Banner (acima do composer) quando um auto-resume está agendado: horário do
+/** Faixa (acima do composer) quando um auto-resume está agendado: horário do
  *  próximo reenvio (relógio via fmtTime, não contagem — mesmo formato HH:MM
  *  do "Disponível novamente" do cartão de limite em MessageList, pra não
- *  parecer que os dois relógios se contradizem), quantas tentativas restam, e
- *  as saídas (Cancelar / Retomar agora). Reusa o estilo st-warning do
- *  BlockedDirBanner. Um envio manual (ou o Stop) cancela o agendamento por
- *  fora deste componente. */
+ *  parecer que os dois relógios se contradizem), próxima tentativa e saídas.
+ *  Não é decisão pendente: o sistema prossegue sem gesto humano, portanto a
+ *  superfície é neutra e a única tinta fica na ação primária. */
 export function AutoResumeBanner({
   nextAt,
   tries,
@@ -38,39 +38,36 @@ export function AutoResumeBanner({
   onCancel: () => void
   onResumeNow: () => void
 }) {
-  const remaining = Math.max(0, maxTries - tries)
   return (
-    <div
-      className={cn(
-        "mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2",
-        PENDING_DECISION,
-      )}
-    >
-      <Timer className="size-4 shrink-0 animate-pulse text-st-warning" />
+    <div className="mb-2 flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2">
+      <Timer className="size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <p className="text-[13px] text-foreground">
-          {resumeBannerLabel(reason)}, retomando automaticamente às{" "}
-          <span className="font-mono tabular-nums">{fmtTime(nextAt)}</span>{" "}
+          <span className="font-medium">Retoma às </span>
+          <span className="font-mono font-medium tabular-nums">{fmtTime(nextAt)}</span>
           <span className="text-muted-foreground">
-            (tentativa {tries}/{maxTries}
-            {remaining > 0 ? `, ${remaining} restante${remaining > 1 ? "s" : ""}` : ""})
+            {" "}· {resumeBannerLabel(reason)} · próxima tentativa {tries} de {maxTries}
           </span>
         </p>
       </div>
-      <button
+      <Button
+        type="button"
+        size="compacto"
         onClick={onResumeNow}
-        className="shrink-0 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
       >
         Retomar agora
-      </button>
-      <button
+      </Button>
+      <Button
+        type="button"
+        size="icone-compacto"
+        variant="ghost"
         onClick={onCancel}
         title="Cancelar auto-resume"
         aria-label="Cancelar auto-resume"
-        className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+        className="text-muted-foreground"
       >
         <X className="size-3.5" />
-      </button>
+      </Button>
     </div>
   )
 }

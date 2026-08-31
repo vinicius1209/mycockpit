@@ -50,6 +50,11 @@ describe("cartão de incidente", () => {
     expect(html).toContain("Detalhes técnicos")
     expect(html).not.toContain("Não foi possível concluir esta execução")
     expect(html).not.toContain("text-st-error")
+    expect(html).toContain("border-st-warning/40 bg-st-warning/10")
+    expect(html).not.toContain("border-st-warning/30")
+    expect(html).not.toContain("bg-st-warning/[0.08]")
+    expect(html).not.toContain("border-brass/40")
+    expect(html).not.toContain("bg-brass/10")
   })
 
   it("reserva vermelho para erro real e recolhe a causa técnica", () => {

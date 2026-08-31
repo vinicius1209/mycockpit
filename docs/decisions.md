@@ -5165,3 +5165,24 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Escopo:** muda somente a resolução de geometria do presenter. Snapshot,
   hover, foco, tarefas, automações, agents, contexto, tools, desempenho e
   limites continuam intactos.
+
+### ADR-140 - horário autoritativo de reset nunca recebe teto de backoff ✅
+- **Incidente real (31/08/2026):** o SQLite registrou o limite da Claude às
+  11:29:04 com `reset_hint` `2:30pm (America/Sao_Paulo)`, seguido de um
+  auto-resume às 11:30:05. O parser aceitava duração, ISO e epoch, mas não o
+  relógio civil com fuso que o adapter já preservava. A ausência virava
+  backoff de 60 segundos e consumia tentativa antes das 14:30.
+- **Segunda causa:** mesmo um horário entendido era truncado em 15 minutos.
+  Esse teto pertence somente ao backoff estimado, quando nenhum prazo
+  confiável existe. Relógio, duração, ISO ou epoch reconhecidos mantêm o
+  prazo integral, com dois segundos de folga depois do reset. Em nova recusa,
+  o backoff da tentativa é um piso, nunca um teto, para não criar loop rápido
+  na borda do minuto anunciado.
+- **Contrato temporal:** relógio de 12 horas com fuso IANA resolve a próxima
+  ocorrência civil no fuso informado, inclusive mudança de offset. Até cinco
+  minutos depois do minuto declarado ainda pertence à mesma janela e espera
+  pelo menos o backoff; fuso ou forma inválida degrada sem derrubar o turno.
+- **Despoluição:** o limite continua sendo o único incidente âmbar no fio.
+  A faixa ativa junto ao composer ficou neutra porque auto-resume não espera
+  decisão humana; ela informa horário e próxima tentativa. Revezamentos são
+  ações secundárias neutras, sem três pílulas brass competindo entre si.

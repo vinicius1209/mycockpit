@@ -23,6 +23,9 @@ import type { ChatItem } from "@/store/chat"
 /** Backoff exponencial (ms) quando NÃO há reset_hint: 60s, 120s, 240s… cap 15min. */
 const BACKOFF_BASE_MS = 60_000
 export const BACKOFF_CAP_MS = 15 * 60_000
+const RESET_SAFETY_MS = 2_000
+const MAX_TIMER_DELAY_MS = 2_147_000_000
+const PAST_CLOCK_GRACE_MS = 5 * 60_000
 
 /** Padrões (pt-BR + en) que indicam "o agent quer/precisa continuar depois". */
 const RESUME_PATTERNS: RegExp[] = [
@@ -75,8 +78,8 @@ export function resumePrompt(reason: string): string {
 /** O que o banner mostra enquanto o resume está agendado. */
 export function resumeBannerLabel(reason: string): string {
   return reason === RESUME_REASON_LIMIT
-    ? "Aguardando reset do limite"
-    : "O turno disse que continuaria depois"
+    ? "após o reset do limite"
+    : "porque o turno pediu continuação"
 }
 
 /** Backoff exponencial pela tentativa (0-based): 0→60s, 1→120s… cap 15min. */
@@ -86,9 +89,127 @@ export function backoffMs(tries: number): number {
   return Math.min(raw, BACKOFF_CAP_MS)
 }
 
+interface ZonedParts {
+  year: number
+  month: number
+  day: number
+  hour: number
+  minute: number
+  second: number
+}
+
+/** Componentes civis de um instante num fuso IANA. Fuso inválido é hint
+ *  inválido, não erro do app: o caller degrada para o backoff estimado. */
+function zonedParts(at: number, timeZone: string): ZonedParts | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US-u-ca-gregory", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(new Date(at))
+    const value = (type: Intl.DateTimeFormatPartTypes) =>
+      Number(parts.find((part) => part.type === type)?.value)
+    const out = {
+      year: value("year"),
+      month: value("month"),
+      day: value("day"),
+      hour: value("hour"),
+      minute: value("minute"),
+      second: value("second"),
+    }
+    return Object.values(out).every(Number.isFinite) ? out : null
+  } catch {
+    return null
+  }
+}
+
+/** Offset real do fuso naquele instante, inclusive horário de verão. */
+function zoneOffsetMs(at: number, timeZone: string): number | null {
+  const parts = zonedParts(at, timeZone)
+  if (!parts) return null
+  const representedAsUtc = Date.UTC(
+    parts.year,
+    parts.month - 1,
+    parts.day,
+    parts.hour,
+    parts.minute,
+    parts.second,
+  )
+  const roundedAt = Math.trunc(at / 1000) * 1000
+  return representedAsUtc - roundedAt
+}
+
+function epochForZonedClock(
+  date: Pick<ZonedParts, "year" | "month" | "day">,
+  hour: number,
+  minute: number,
+  timeZone: string,
+): number | null {
+  const wallClockAsUtc = Date.UTC(
+    date.year,
+    date.month - 1,
+    date.day,
+    hour,
+    minute,
+  )
+  const firstOffset = zoneOffsetMs(wallClockAsUtc, timeZone)
+  if (firstOffset == null) return null
+  let candidate = wallClockAsUtc - firstOffset
+  // O offset do palpite pode atravessar uma mudança de horário de verão.
+  const effectiveOffset = zoneOffsetMs(candidate, timeZone)
+  if (effectiveOffset == null) return null
+  candidate = wallClockAsUtc - effectiveOffset
+  return candidate
+}
+
+/** Próxima ocorrência de um relógio civil com fuso explícito, formato real
+ *  emitido pela Claude: `2:30pm (America/Sao_Paulo)`. */
+function clockWithZoneDelay(hint: string, now: number): number | null {
+  const match = hint.match(
+    /\b(\d{1,2})(?::(\d{2}))?\s*([ap])\.?m\.?\s*\(\s*([A-Za-z_]+(?:\/[A-Za-z0-9_+\-]+)+)\s*\)/i,
+  )
+  if (!match) return null
+  const rawHour = Number(match[1])
+  const minute = Number(match[2] ?? "0")
+  if (rawHour < 1 || rawHour > 12 || minute < 0 || minute > 59) return null
+  const hour = rawHour % 12 + (match[3].toLowerCase() === "p" ? 12 : 0)
+  const timeZone = match[4]
+  const today = zonedParts(now, timeZone)
+  if (!today) return null
+  let target = epochForZonedClock(today, hour, minute, timeZone)
+  if (target == null) return null
+  if (target <= now) {
+    // O provider informa só minuto, então alguns segundos depois ainda é a
+    // mesma janela. O caller aplica o backoff como piso antes de tentar.
+    if (now - target <= PAST_CLOCK_GRACE_MS) return 0
+    const next = new Date(Date.UTC(today.year, today.month - 1, today.day + 1))
+    target = epochForZonedClock(
+      {
+        year: next.getUTCFullYear(),
+        month: next.getUTCMonth() + 1,
+        day: next.getUTCDate(),
+      },
+      hour,
+      minute,
+      timeZone,
+    )
+    if (target == null) return null
+  }
+  return target - now
+}
+
+function delayAfterReset(parsedDelay: number): number {
+  return Math.min(Math.max(0, parsedDelay) + RESET_SAFETY_MS, MAX_TIMER_DELAY_MS)
+}
+
 /** Extrai um delay (ms) de um reset_hint textual do CLI. Aceita formas comuns:
- *  "60s", "2m", "in 90 seconds", "reseta em 5 min", ou um epoch/ISO absoluto.
- *  Retorna null se não der pra extrair um número plausível. */
+ *  "60s", "2m", relógio com fuso IANA, ou um epoch/ISO absoluto. Retorna null
+ *  se não der pra extrair um número plausível. */
 export function parseResetHint(hint: string | undefined, now = Date.now()): number | null {
   if (!hint) return null
   const h = hint.trim()
@@ -106,8 +227,11 @@ export function parseResetHint(hint: string | undefined, now = Date.now()): numb
     const n = Number(epochMatch[1])
     const ms = n < 1e12 ? n * 1000 : n // 10 dígitos = segundos
     const delta = ms - now
-    if (delta > 0 && delta < 24 * 60 * 60_000) return delta
+    if (delta > 0 && delta <= MAX_TIMER_DELAY_MS) return delta
   }
+
+  const clockDelay = clockWithZoneDelay(h, now)
+  if (clockDelay != null) return clockDelay
 
   // duração relativa: "90s", "2m", "in 5 minutes", "3 h".
   const dur = h.match(
@@ -173,7 +297,11 @@ export function wantsAutoResume(
   if (limit?.hit) {
     const fromHint = parseResetHint(limit.resetHint ?? undefined, now)
     // hint costuma marcar o instante EXATO do reset; +2s de folga pra não cair cedo.
-    const delayMs = fromHint != null ? Math.min(fromHint + 2000, BACKOFF_CAP_MS) : backoff
+    // O teto de 15min pertence ao backoff sem fonte. Aplicá-lo ao relógio do
+    // provider antecipa uma retomada paga, que foi o incidente de 31/08/2026.
+    const delayMs = fromHint != null
+      ? Math.max(delayAfterReset(fromHint), backoff)
+      : backoff
     return { resume: true, delayMs, reason: RESUME_REASON_LIMIT }
   }
 
@@ -188,7 +316,9 @@ export function wantsAutoResume(
     if (matched) {
       // se o texto cita uma duração ("60s", "2 min"), usa; senão backoff.
       const fromText = parseResetHint(text, now)
-      const delayMs = fromText != null ? Math.min(fromText + 2000, BACKOFF_CAP_MS) : backoff
+      const delayMs = fromText != null
+        ? Math.max(delayAfterReset(fromText), backoff)
+        : backoff
       return { resume: true, delayMs, reason: RESUME_REASON_TEXT }
     }
   }

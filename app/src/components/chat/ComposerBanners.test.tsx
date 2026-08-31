@@ -17,9 +17,11 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import {
+  AutoResumeBanner,
   BlockedDirBanner,
   MotorAusenteBanner,
 } from "@/components/chat/ComposerBanners"
+import { RESUME_REASON_LIMIT } from "@/lib/autoResume"
 import { PENDING_DECISION } from "@/lib/attention"
 
 const PASTA = "/Users/viniciusmachado/.gemini/antigravity-cli"
@@ -114,5 +116,36 @@ describe("MotorAusenteBanner", () => {
     )
     expect(html).toContain("não vou chutar")
     expect(html).not.toContain("Copiar")
+  })
+})
+
+describe("AutoResumeBanner", () => {
+  const html = renderToStaticMarkup(
+    <AutoResumeBanner
+      nextAt={Date.parse("2026-08-31T14:30:02-03:00")}
+      tries={2}
+      maxTries={5}
+      reason={RESUME_REASON_LIMIT}
+      onCancel={() => {}}
+      onResumeNow={() => {}}
+    />,
+  )
+
+  it("diz que é a próxima tentativa, sem fingir que ela já aconteceu", () => {
+    expect(html).toContain("próxima tentativa 2 de 5")
+    expect(html).toContain("após o reset do limite")
+  })
+
+  it("é uma faixa neutra, não um segundo cartão âmbar", () => {
+    expect(html).toContain("border bg-card")
+    for (const parte of PENDING_DECISION.split(" ")) {
+      expect(html).not.toContain(parte)
+    }
+    expect(html).not.toContain("animate-pulse")
+  })
+
+  it("preserva o gesto imediato e a saída", () => {
+    expect(html).toContain("Retomar agora")
+    expect(html).toContain('aria-label="Cancelar auto-resume"')
   })
 })

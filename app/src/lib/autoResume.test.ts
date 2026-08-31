@@ -52,6 +52,21 @@ describe("parseResetHint", () => {
     const epochSec = Math.floor((NOW + 120_000) / 1000)
     expect(parseResetHint(String(epochSec), NOW)).toBe(120_000)
   })
+
+  it("lê o relógio com fuso da Claude no incidente real de 31/08", () => {
+    const incidentAt = Date.parse("2026-08-31T11:29:04-03:00")
+    const resetAt = Date.parse("2026-08-31T14:30:00-03:00")
+    expect(
+      parseResetHint("2:30pm (America/Sao_Paulo)", incidentAt),
+    ).toBe(resetAt - incidentAt)
+    expect(parseResetHint("3pm (America/Sao_Paulo)", incidentAt)).toBe(
+      Date.parse("2026-08-31T15:00:00-03:00") - incidentAt,
+    )
+  })
+
+  it("fuso inválido degrada sem derrubar o agendador", () => {
+    expect(parseResetHint("2:30pm (Fuso/Inexistente)", NOW)).toBeNull()
+  })
 })
 
 describe("wantsAutoResume", () => {
@@ -118,9 +133,36 @@ describe("wantsAutoResume", () => {
     expect(wantsAutoResume(items, undefined, 0, NOW).resume).toBe(false)
   })
 
-  it("capa o delay em 15min mesmo com hint gigante", () => {
+  it("não trunca um reset confiável no teto do backoff", () => {
     const v = wantsAutoResume([text("ok")], { hit: true, resetHint: "1h" }, 0, NOW)
-    expect(v.delayMs).toBe(BACKOFF_CAP_MS)
+    expect(v.delayMs).toBe(3_602_000)
+    expect(v.delayMs).toBeGreaterThan(BACKOFF_CAP_MS)
+  })
+
+  it("agenda o reset real das 14:30, não uma tentativa em 60s", () => {
+    // Fixture do SQLite: limite às 11:29:04, reset_hint abaixo e reenvio
+    // incorreto registrado às 11:30:05. A espera correta passa de 3h.
+    const incidentAt = Date.parse("2026-08-31T11:29:04-03:00")
+    const resetAt = Date.parse("2026-08-31T14:30:00-03:00")
+    const v = wantsAutoResume(
+      [limitItem("You've hit your session limit · resets 2:30pm (America/Sao_Paulo)")],
+      { hit: true, resetHint: "2:30pm (America/Sao_Paulo)" },
+      0,
+      incidentAt,
+    )
+    expect(v.delayMs).toBe(resetAt - incidentAt + 2_000)
+    expect(v.delayMs).toBeGreaterThan(BACKOFF_CAP_MS)
+  })
+
+  it("usa o backoff como piso se o minuto do reset acabou de passar", () => {
+    const justAfterReset = Date.parse("2026-08-31T14:30:04-03:00")
+    const v = wantsAutoResume(
+      [limitItem("You've hit your session limit · resets 2:30pm (America/Sao_Paulo)")],
+      { hit: true, resetHint: "2:30pm (America/Sao_Paulo)" },
+      1,
+      justAfterReset,
+    )
+    expect(v.delayMs).toBe(120_000)
   })
 })
 
@@ -205,7 +247,7 @@ describe("o app conta o gatilho real (nada de limite inventado)", () => {
   })
 
   it("banner não jura reset de limite quando ninguém bateu limite", () => {
-    expect(resumeBannerLabel(RESUME_REASON_LIMIT)).toBe("Aguardando reset do limite")
+    expect(resumeBannerLabel(RESUME_REASON_LIMIT)).toBe("após o reset do limite")
     expect(resumeBannerLabel(RESUME_REASON_TEXT)).not.toMatch(/limite/i)
   })
 })

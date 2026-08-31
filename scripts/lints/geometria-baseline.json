@@ -1,7 +1,7 @@
 {
   "components/chat/AdviceInThread.tsx": 3,
   "components/chat/ChatPanel.tsx": 1,
-  "components/chat/ComposerBanners.tsx": 2,
+  "components/chat/ComposerBanners.tsx": 1,
   "components/chat/ComposerExecutionControls.tsx": 1,
   "components/chat/ComposerParts.tsx": 2,
   "components/chat/ContextRing.tsx": 2,

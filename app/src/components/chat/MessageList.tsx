@@ -1271,7 +1271,7 @@ function TurnTelemetry({
             it.ok
               ? "text-st-success"
               : incidentTone === "limit"
-                ? "text-st-warning"
+                ? "text-muted-foreground"
                 : "text-st-error",
           )}
         >
@@ -1400,7 +1400,7 @@ function IncidentCard({
       className={cn(
         "overflow-hidden rounded-lg border",
         limited
-          ? "border-st-warning/45 bg-st-warning/[0.07]"
+          ? "border-st-warning/40 bg-st-warning/10"
           : "border-st-error/40 bg-st-error/[0.07]",
       )}
     >
@@ -1408,10 +1408,10 @@ function IncidentCard({
         <div className="flex items-start gap-2.5">
           <span
             className={cn(
-              "mt-0.5 grid size-7 shrink-0 place-items-center rounded-md border",
+              "mt-0.5 grid size-7 shrink-0 place-items-center rounded-md",
               limited
-                ? "border-st-warning/35 bg-st-warning/10 text-st-warning"
-                : "border-st-error/30 bg-st-error/10 text-st-error",
+                ? "text-st-warning"
+                : "border border-st-error/30 bg-st-error/10 text-st-error",
             )}
           >
             <Icon className="size-4" />
@@ -1420,7 +1420,7 @@ function IncidentCard({
             <p
               className={cn(
                 "text-[13px] font-medium",
-                limited ? "text-st-warning" : "text-st-error",
+                limited ? "text-foreground" : "text-st-error",
               )}
             >
               {title}
@@ -1432,10 +1432,10 @@ function IncidentCard({
         </div>
 
         {limited && incident.resetHint && (
-          <div className="mt-2.5 flex items-center gap-2 rounded-md border border-st-warning/30 bg-st-warning/[0.08] px-2.5 py-2 text-[12px] text-foreground/80">
-            <RotateCcw className="size-3.5 shrink-0 text-st-warning" />
+          <div className="mt-2.5 flex items-center gap-2 pl-9 text-[12px] text-muted-foreground">
+            <RotateCcw className="size-3.5 shrink-0" />
             <span>Disponível novamente</span>
-            <strong className="font-mono font-medium text-st-warning">
+            <strong className="font-mono font-medium text-foreground">
               {formatIncidentReset(incident.resetHint)}
             </strong>
           </div>
@@ -1687,7 +1687,7 @@ function ContinueRow({
             "flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] transition-colors",
             subtle
               ? "text-muted-foreground hover:bg-accent hover:text-foreground"
-              : "border-brass/40 bg-brass/10 text-brass hover:bg-brass/20",
+              : "text-muted-foreground hover:bg-accent hover:text-foreground",
           )}
         >
           <ArrowRightLeft className="size-3.5" /> Continuar no {d.label}
