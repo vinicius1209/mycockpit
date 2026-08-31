@@ -5154,6 +5154,11 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   usa temporariamente a tela ativa (ou a primeira disponível), mostra o motivo
   e não apaga a preferência. Quando o display volta, o mesmo recálculo por
   mudança de configuração restaura a escolha sem novo gesto.
+- **Modo automático no macOS:** enquanto o instrumento está compacto, o mesmo
+  worker que lê o ponteiro para hover compara o ponto com os frames já medidos.
+  Ao atravessar para outra tela, recalcula uma vez e move o presenter; não
+  enumera monitores a cada tick. Painel expandido não salta durante interação,
+  e uma escolha nominal desarma completamente esse acompanhamento.
 - **Compatibilidade:** o booleano anterior continua no contrato durante a
   transição para preservar quem já havia desligado o acompanhamento. Uma nova
   escolha escreve os dois campos de forma coerente; não há migração de banco.

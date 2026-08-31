@@ -417,6 +417,19 @@ fn contains_point(layout: HudLayout, point: crate::notch::DesktopPoint) -> bool 
 }
 
 #[cfg(target_os = "macos")]
+fn screen_at_point(
+    screens: &[ScreenGeometry],
+    point: crate::notch::DesktopPoint,
+) -> Option<&ScreenGeometry> {
+    screens.iter().find(|screen| {
+        point.x >= screen.origin_x
+            && point.x < screen.origin_x + screen.screen_width
+            && point.y >= screen.origin_y
+            && point.y < screen.origin_y + screen.screen_height
+    })
+}
+
+#[cfg(target_os = "macos")]
 fn configure_native_layer(window: &WebviewWindow, floating: bool) -> Result<(), String> {
     use objc2_app_kit::{
         NSFloatingWindowLevel, NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior,
@@ -613,6 +626,31 @@ fn install_hover_observer(app: &AppHandle) {
             } else {
                 HoverPhase::Inactive
             };
+            let follows_pointer = runtime.enabled
+                && runtime.effective_position != HudPosition::Menubar
+                && runtime.follow_active_screen
+                && runtime.screen_id.is_none()
+                && !runtime.expanded;
+            let cursor = if follows_pointer || phase != HoverPhase::Inactive {
+                crate::notch::cursor_position(&handle).await.ok()
+            } else {
+                None
+            };
+            let moved_to_another_screen = follows_pointer
+                && cursor
+                    .and_then(|point| screen_at_point(&runtime.available_screens, point))
+                    .is_some_and(|target| {
+                        runtime.screen.as_ref().map(|screen| screen.id.as_str())
+                            != Some(target.id.as_str())
+                    });
+            if moved_to_another_screen {
+                tracker.observe(HoverPhase::Inactive, false, 0);
+                if let Err(error) = recompute(&handle, None).await {
+                    log::warn!("não consegui acompanhar a tela sob o ponteiro: {error}");
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(HOVER_POLL_MS)).await;
+                continue;
+            }
             if phase == HoverPhase::Inactive {
                 tracker.observe(HoverPhase::Inactive, false, 0);
                 tokio::time::sleep(std::time::Duration::from_millis(HOVER_IDLE_MS)).await;
@@ -625,8 +663,7 @@ fn install_hover_observer(app: &AppHandle) {
                     phase == HoverPhase::Expanded,
                 )
             }) {
-                Some(layout) => crate::notch::cursor_position(&handle)
-                    .await
+                Some(layout) => cursor
                     .map(|point| contains_point(layout, point))
                     .unwrap_or(false),
                 None => false,
@@ -988,6 +1025,18 @@ mod tests {
         let (screen, reason) = pick_screen(&screens, None, true);
         assert_eq!(screen.unwrap().id, "display-externo");
         assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn ponteiro_resolve_o_frame_real_mesmo_com_origem_negativa() {
+        let mut screens = duas_telas();
+        screens[0].origin_x = -1_512.0;
+        screens[1].origin_x = 0.0;
+        let point = crate::notch::DesktopPoint {
+            x: -400.0,
+            y: 120.0,
+        };
+        assert_eq!(screen_at_point(&screens, point).unwrap().id, "1");
     }
 
     #[test]
