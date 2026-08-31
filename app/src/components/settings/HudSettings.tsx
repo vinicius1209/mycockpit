@@ -28,22 +28,22 @@ const POSITIONS: Array<{
   {
     value: "island",
     label: "Ilha no topo",
-    description: "Instrumento compacto centralizado, sem depender do hardware.",
+    description: "Instrumento centralizado e acoplado à borda superior.",
   },
   {
     value: "left",
     label: "Borda esquerda",
-    description: "Recolhido na lateral da tela ativa.",
+    description: "Marca e estado recolhidos na lateral da tela ativa.",
   },
   {
     value: "right",
     label: "Borda direita",
-    description: "Recolhido na lateral da tela ativa.",
+    description: "Marca e estado recolhidos na lateral da tela ativa.",
   },
   {
     value: "bottom",
     label: "Base da tela",
-    description: "Ilha compacta acima da borda inferior.",
+    description: "Ilha compacta acoplada à borda inferior.",
   },
 ]
 

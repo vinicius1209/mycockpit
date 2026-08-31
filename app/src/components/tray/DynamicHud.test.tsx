@@ -112,4 +112,47 @@ describe("DynamicHud Component", () => {
     expect(html).not.toContain("Recolher")
     expect(html).toContain("rounded-b-[13px] border-x border-b")
   })
+
+  it("acopla a ilha à aresta superior sem criar um cartão de quatro cantos", () => {
+    const html = renderToStaticMarkup(
+      createElement(DynamicHud, {
+        runtime: {
+          enabled: true,
+          requestedPosition: "island",
+          effectivePosition: "island",
+          hoverExpand: true,
+          followActiveScreen: true,
+          expanded: false,
+          screen: null,
+          fallbackReason: null,
+          supportedPositions: ["notch", "island", "left", "right", "bottom", "menubar"],
+        },
+      }),
+    )
+    expect(html).toContain("rounded-b-[13px] border-x border-b")
+    expect(html).not.toContain("rounded-[13px]")
+    expect(html).not.toContain("p-1")
+  })
+
+  it("resume a borda direita em marca e estado, sem texto vertical cortado", () => {
+    const html = renderToStaticMarkup(
+      createElement(DynamicHud, {
+        runtime: {
+          enabled: true,
+          requestedPosition: "right",
+          effectivePosition: "right",
+          hoverExpand: true,
+          followActiveScreen: true,
+          expanded: false,
+          screen: null,
+          fallbackReason: null,
+          supportedPositions: ["notch", "island", "left", "right", "bottom", "menubar"],
+        },
+      }),
+    )
+    expect(html).toContain("rounded-l-[13px] border-y border-l")
+    expect(html).toContain("viewBox=\"0 0 44 44\"")
+    expect(html).toContain("lucide-circle")
+    expect(html).not.toContain("writing-mode")
+  })
 })

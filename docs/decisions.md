@@ -5084,3 +5084,23 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Escopo:** a exclusividade vale para notch, ilha, laterais e base. Snapshot,
   menu, keep-alive ao fechar, automações, agents, modelos, contexto, tools e
   limites permanecem iguais; muda apenas qual porta visual apresenta o estado.
+
+### ADR-136 - posições de borda pertencem ao frame físico da tela ✅
+- **Incidente visual (31/08/2026):** num monitor externo sem notch, “Ilha no
+  topo” aparecia em `visibleY + 8`, abaixo da barra de menus, como um cartão
+  solto. Na direita, uma janela de 28 × 128 px tentava acomodar texto em escrita
+  vertical e mostrava apenas uma lâmina cortada.
+- **Geometria:** ilha, laterais e base usam o `frame` físico medido, não o
+  `visibleFrame` reservado por barra e Dock. A ilha encosta no topo; esquerda e
+  direita encostam na respectiva aresta e centralizam no frame; a base encosta
+  embaixo. Ao expandir, a janela preserva a mesma aresta, sem margem interna que
+  desfaça o acoplamento.
+- **Forma:** a aresta contra a tela é reta e não recebe filete. Só os cantos
+  voltados para dentro arredondam. Nas laterais, o compacto mede 36 × 64 px e
+  mostra marca + glifo de estado; o texto completo continua no nome acessível e
+  aparece depois do hover ou clique. Não se gira nem se trunca copy em 36 px.
+- **Comparação local:** Orca e Paseo não trazem um presenter equivalente para
+  copiar. A regra aproveitável do Paseo é tratar obstrução e chrome pela região
+  física realmente ocupada, em vez de inferir um layout compacto global.
+- **Escopo:** posição, forma e hit target mudam juntos. Snapshot, hover nativo,
+  ações, foco, automações, execução, contexto, tools e limites não mudam.

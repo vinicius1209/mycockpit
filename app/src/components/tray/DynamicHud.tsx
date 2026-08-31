@@ -63,6 +63,12 @@ function externalLabel(status: string): string {
   return "ociosa"
 }
 
+function HudStatusGlyph({ decisions, running }: { decisions: number; running: number }) {
+  if (decisions > 0) return <AlertCircle className="size-3.5 text-st-warning" />
+  if (running > 0) return <Plane className="size-3.5 text-st-running" />
+  return <Circle className="size-2.5 fill-st-idle text-st-idle" />
+}
+
 function ActivityRow({ activity, now }: { activity: TrayActivity; now: number }) {
   return (
     <article className="group flex items-center gap-2 rounded-lg border border-border bg-card/40 px-2.5 py-2">
@@ -121,8 +127,9 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   const hoverBlockedUntilLeave = useRef(false)
   const reduceMotion = useReducedMotion()
   const expanded = runtime.expanded
-  const side = runtime.effectivePosition === "left" || runtime.effectivePosition === "right"
-  const notch = runtime.effectivePosition === "notch"
+  const position = runtime.effectivePosition
+  const side = position === "left" || position === "right"
+  const notch = position === "notch"
   const primary = snapshot.activities[0]
   const requiresDecision = snapshot.decisions > 0
 
@@ -236,10 +243,7 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
   return (
     <MotionConfig reducedMotion="user">
       <main
-        className={cn(
-          "flex h-screen w-screen select-none",
-          expanded && !notch ? "p-1" : "p-0",
-        )}
+        className="flex h-screen w-screen select-none"
         onPointerEnter={enter}
         onPointerLeave={leave}
       >
@@ -251,8 +255,11 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
             "dynamic-hud-shell h-full w-full overflow-hidden",
             notch
               ? "dark rounded-b-[13px] border-x border-b bg-hud-shell text-popover-foreground"
-              : "border bg-popover text-popover-foreground shadow-[var(--shadow-pop)]",
-            !notch && (expanded ? "rounded-xl" : side ? "rounded-lg" : "rounded-[13px]"),
+              : "bg-popover text-popover-foreground shadow-[var(--shadow-pop)]",
+            position === "island" && "rounded-b-[13px] border-x border-b",
+            position === "left" && "rounded-r-[13px] border-y border-r",
+            position === "right" && "rounded-l-[13px] border-y border-l",
+            position === "bottom" && "rounded-t-[13px] border-x border-t",
           )}
           aria-label="Instrumento da Frota"
         >
@@ -266,8 +273,9 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
                 "h-full w-full overflow-hidden text-[12px] font-medium focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-ring",
                 notch
                   ? "grid items-center"
-                  : "flex items-center justify-center gap-2 px-2",
-                side && "flex-col px-0 py-2 [writing-mode:vertical-rl]",
+                  : side
+                    ? "flex flex-col items-center justify-center gap-2"
+                    : "flex items-center justify-center gap-2 px-2",
               )}
               style={
                 notch
@@ -286,14 +294,13 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
                   </span>
                   <span aria-hidden />
                   <span className="flex h-full items-center justify-center" aria-hidden>
-                    {requiresDecision ? (
-                      <AlertCircle className="size-3.5 text-st-warning" />
-                    ) : snapshot.running > 0 ? (
-                      <Plane className="size-3.5 text-st-running" />
-                    ) : (
-                      <Circle className="size-2.5 fill-st-idle text-st-idle" />
-                    )}
+                    <HudStatusGlyph decisions={snapshot.decisions} running={snapshot.running} />
                   </span>
+                </>
+              ) : side ? (
+                <>
+                  <FrotaMark className="size-3.5 stroke-current text-foreground" />
+                  <HudStatusGlyph decisions={snapshot.decisions} running={snapshot.running} />
                 </>
               ) : (
                 <>
@@ -307,18 +314,13 @@ export function DynamicHud({ runtime }: { runtime: HudRuntimeView }) {
                           : "bg-st-idle",
                     )}
                   />
-                  {!side && (
-                    <>
-                      <span className="shrink-0 font-mono text-[11px]">
-                        {primary ? elapsed(primary.startedAt, now) : statusText}
-                      </span>
-                      <span className="min-w-0 truncate text-muted-foreground">
-                        {primary?.title ??
-                          (requiresDecision ? "Aguardando você" : "Sem tarefa em voo")}
-                      </span>
-                    </>
-                  )}
-                  {side && <span>{snapshot.running || snapshot.decisions || "F"}</span>}
+                  <span className="shrink-0 font-mono text-[11px]">
+                    {primary ? elapsed(primary.startedAt, now) : statusText}
+                  </span>
+                  <span className="min-w-0 truncate text-muted-foreground">
+                    {primary?.title ??
+                      (requiresDecision ? "Aguardando você" : "Sem tarefa em voo")}
+                  </span>
                 </>
               )}
             </motion.button>

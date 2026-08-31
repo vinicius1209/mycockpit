@@ -18,11 +18,11 @@ use crate::notch::{HudPosition, ScreenGeometry};
 const COMPACT_ISLAND_WIDTH: f64 = 300.0;
 const COMPACT_HEIGHT: f64 = 36.0;
 const NOTCH_HORIZONTAL_REVEAL: f64 = 64.0;
-const EDGE_WIDTH: f64 = 28.0;
-const EDGE_HEIGHT: f64 = 128.0;
+const EDGE_WIDTH: f64 = 36.0;
+const EDGE_HEIGHT: f64 = 64.0;
 const EXPANDED_WIDTH: f64 = 540.0;
 const EXPANDED_HEIGHT: f64 = 320.0;
-const SCREEN_MARGIN: f64 = 8.0;
+const SIZE_GUTTER: f64 = 8.0;
 #[cfg(target_os = "macos")]
 const HOVER_DWELL_MS: u64 = 90;
 #[cfg(target_os = "macos")]
@@ -220,7 +220,7 @@ fn resolve_position(
 }
 
 fn clamp_size(wanted: f64, available: f64) -> f64 {
-    wanted.min((available - SCREEN_MARGIN * 2.0).max(160.0))
+    wanted.min((available - SIZE_GUTTER * 2.0).max(160.0))
 }
 
 fn layout_for(screen: &ScreenGeometry, position: HudPosition, expanded: bool) -> Option<HudLayout> {
@@ -253,28 +253,28 @@ fn layout_for(screen: &ScreenGeometry, position: HudPosition, expanded: bool) ->
             _ => COMPACT_HEIGHT,
         }
     };
-    let visible_right = screen.visible_x + screen.visible_width;
-    let visible_bottom = screen.visible_y + screen.visible_height;
+    let frame_right = screen.origin_x + screen.screen_width;
+    let frame_bottom = screen.origin_y + screen.screen_height;
     let (x, y) = match position {
         HudPosition::Notch => (
             screen.origin_x + (screen.screen_width - width) / 2.0,
             screen.origin_y,
         ),
         HudPosition::Island => (
-            screen.visible_x + (screen.visible_width - width) / 2.0,
-            screen.visible_y + SCREEN_MARGIN,
+            screen.origin_x + (screen.screen_width - width) / 2.0,
+            screen.origin_y,
         ),
         HudPosition::Left => (
-            screen.visible_x,
-            screen.visible_y + (screen.visible_height - height) / 2.0,
+            screen.origin_x,
+            screen.origin_y + (screen.screen_height - height) / 2.0,
         ),
         HudPosition::Right => (
-            visible_right - width,
-            screen.visible_y + (screen.visible_height - height) / 2.0,
+            frame_right - width,
+            screen.origin_y + (screen.screen_height - height) / 2.0,
         ),
         HudPosition::Bottom => (
-            screen.visible_x + (screen.visible_width - width) / 2.0,
-            visible_bottom - height - SCREEN_MARGIN,
+            screen.origin_x + (screen.screen_width - width) / 2.0,
+            frame_bottom - height,
         ),
         HudPosition::Menubar => unreachable!(),
     };
@@ -723,14 +723,47 @@ mod tests {
     }
 
     #[test]
-    fn bordas_expandem_sem_sair_da_area_visivel() {
+    fn posicoes_recolhidas_encostam_no_frame_fisico() {
+        let mut screen = tela_com_notch();
+        screen.origin_x = -1_920.0;
+        screen.origin_y = 140.0;
+        screen.screen_width = 1_920.0;
+        screen.screen_height = 1_080.0;
+        screen.visible_x = -1_920.0;
+        screen.visible_y = 165.0;
+        screen.visible_width = 1_920.0;
+        screen.visible_height = 1_015.0;
+
+        let island = layout_for(&screen, HudPosition::Island, false).unwrap();
+        assert_eq!(island.x, -1_110.0);
+        assert_eq!(island.y, screen.origin_y);
+
+        let left = layout_for(&screen, HudPosition::Left, false).unwrap();
+        assert_eq!(left.x, screen.origin_x);
+        assert_eq!(left.y, 648.0);
+        assert_eq!((left.width, left.height), (36.0, 64.0));
+
+        let right = layout_for(&screen, HudPosition::Right, false).unwrap();
+        assert_eq!(right.x + right.width, screen.origin_x + screen.screen_width);
+        assert_eq!(right.y, left.y);
+
+        let bottom = layout_for(&screen, HudPosition::Bottom, false).unwrap();
+        assert_eq!(bottom.x, island.x);
+        assert_eq!(
+            bottom.y + bottom.height,
+            screen.origin_y + screen.screen_height
+        );
+    }
+
+    #[test]
+    fn painel_expandido_preserva_a_aresta_da_posicao() {
         let screen = tela_com_notch();
         let right = layout_for(&screen, HudPosition::Right, true).unwrap();
-        assert_eq!(
-            right.x + right.width,
-            screen.visible_x + screen.visible_width
-        );
+        assert_eq!(right.x + right.width, screen.origin_x + screen.screen_width);
         let bottom = layout_for(&screen, HudPosition::Bottom, true).unwrap();
-        assert!(bottom.y + bottom.height <= screen.visible_y + screen.visible_height);
+        assert_eq!(
+            bottom.y + bottom.height,
+            screen.origin_y + screen.screen_height
+        );
     }
 }
