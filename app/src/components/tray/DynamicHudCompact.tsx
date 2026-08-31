@@ -1,34 +1,31 @@
 import { motion } from "motion/react"
-import { AlertCircle, Circle, Plane } from "lucide-react"
+import { AlertCircle, Circle, LoaderCircle, Plane } from "lucide-react"
 import { FrotaMark } from "@/components/brand/FrotaMark"
 import type { HudRuntimeView } from "@/lib/hud"
-import type { TrayActivity, TraySnapshot } from "@/lib/tray"
+import {
+  elapsedLabel,
+} from "@/lib/hudPresentation"
+import type { TrayActivity } from "@/lib/tray"
 import { cn } from "@/lib/utils"
 
-function elapsed(startedAt: number | null, now: number): string {
-  if (!startedAt) return "em execução"
-  const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000))
-  if (minutes < 1) return "agora"
-  if (minutes < 60) return `${minutes} min`
-  return `${Math.floor(minutes / 60)}h ${minutes % 60}min`
-}
-
-function HudStatusGlyph({ decisions, running }: { decisions: number; running: number }) {
-  if (decisions > 0) return <AlertCircle className="size-3.5 text-st-warning" />
-  if (running > 0) return <Plane className="size-3.5 text-st-running" />
+function HudStatusGlyph({ status }: { status: "loading" | "unavailable" | "decision" | "flight" | "idle" }) {
+  if (status === "loading") return <LoaderCircle className="size-3.5 text-st-idle" />
+  if (status === "unavailable") return <AlertCircle className="size-3.5 text-st-idle" />
+  if (status === "decision") return <AlertCircle className="size-3.5 text-st-warning" />
+  if (status === "flight") return <Plane className="size-3.5 text-st-running" />
   return <Circle className="size-2.5 fill-st-idle text-st-idle" />
 }
 
 export function DynamicHudCompact({
   runtime,
-  snapshot,
+  statusKind,
   primary,
   statusText,
   now,
   onExpand,
 }: {
   runtime: HudRuntimeView
-  snapshot: TraySnapshot
+  statusKind: "loading" | "unavailable" | "decision" | "flight" | "idle"
   primary: TrayActivity | undefined
   statusText: string
   now: number
@@ -37,8 +34,6 @@ export function DynamicHudCompact({
   const position = runtime.effectivePosition
   const notch = position === "notch"
   const side = position === "left" || position === "right"
-  const requiresDecision = snapshot.decisions > 0
-
   return (
     <motion.button
       initial={{ opacity: 0 }}
@@ -70,31 +65,31 @@ export function DynamicHudCompact({
           </span>
           <span aria-hidden />
           <span className="flex h-full items-center justify-center" aria-hidden>
-            <HudStatusGlyph decisions={snapshot.decisions} running={snapshot.running} />
+            <HudStatusGlyph status={statusKind} />
           </span>
         </>
       ) : side ? (
         <>
           <FrotaMark className="size-3.5 stroke-current text-foreground" />
-          <HudStatusGlyph decisions={snapshot.decisions} running={snapshot.running} />
+          <HudStatusGlyph status={statusKind} />
         </>
       ) : (
         <>
           <span
             className={cn(
               "size-1.5 shrink-0 rounded-full",
-              requiresDecision
+              statusKind === "decision"
                 ? "bg-st-warning"
-                : snapshot.running > 0
+                : statusKind === "flight"
                   ? "bg-st-running"
                   : "bg-st-idle",
             )}
           />
           <span className="shrink-0 font-mono text-[11px]">
-            {primary ? elapsed(primary.startedAt, now) : statusText}
+            {primary ? elapsedLabel(primary.startedAt, now) : statusText}
           </span>
           <span className="min-w-0 truncate text-muted-foreground">
-            {primary?.title ?? (requiresDecision ? "Aguardando você" : "Sem tarefa em voo")}
+            {primary?.title ?? (statusKind === "decision" ? "Aguardando você" : statusText)}
           </span>
         </>
       )}

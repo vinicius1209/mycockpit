@@ -5187,7 +5187,7 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   decisão humana; ela informa horário e próxima tentativa. Revezamentos são
   ações secundárias neutras, sem três pílulas brass competindo entre si.
 
-### ADR-141 - o centro do instrumento segue a próxima decisão humana 📋
+### ADR-141 - o centro do instrumento segue a próxima decisão humana ✅
 - **Direção aprovada (31/08/2026):** a variação D, Instrumento vivo, substitui
   o conteúdo expandido do HUD. Ela combina o tempo e o trilho da Pista de voo
   com a composição silenciosa do Foco adaptativo. Compacto, popover clássico,
@@ -5205,6 +5205,10 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Assinatura visual:** o trilho comunica presença viva, nunca progresso. Seu
   movimento pertence ao CSS e some em movimento reduzido; não nasce intervalo
   periódico, store subscription, worker, migração ou limite operacional novo.
-- **Implementação:** N6 de `docs/dynamic-notch-plan.md`. O ícone 📋 significa
-  decisão aceita com implementação ainda pendente; vira ✅ somente depois das
-  suítes completas, build Tauri e QA visual registrados.
+- **Implementação (31/08/2026):** N6 de `docs/dynamic-notch-plan.md`. O seletor
+  e o reducer puros cobrem prioridade, foco estável e reconciliação da parada;
+  compacto e expandido foram separados; a composição D usa a pista viva em
+  CSS e conserva os `TrayAction` existentes. As suítes completas, o build
+  Tauri e o QA visual do estado assentado no notch físico foram registrados.
+  Os demais estados visuais permanecem discriminados no plano entre prova de
+  render e observação no hardware.

@@ -1,13 +1,14 @@
 # Instrumento flutuante da Frota, plano de implementação
 
-> Status em 31/08/2026: **N1-N5 implementadas; homologação automatizada e QA
-> nativo do notch atualizados até o build #334**. Ilha, bordas e troca de monitor
-> permanecem cobertas por contrato/testes, sem alegação de inspeção visual.
+> Status em 31/08/2026: **N1-N6 implementadas; homologação automatizada e QA
+> nativo do notch atualizados até o build de teste #336**. Ilha, bordas e troca
+> de monitor permanecem cobertas por contrato/testes, sem alegação de nova
+> inspeção visual.
 > O mock histórico continua em `docs/mocks/dynamic-notch-hud.html`, mas não é
 > fonte de comportamento nem de tokens visuais.
-> Em 31/08/2026, a direção D, **Instrumento vivo**, foi aprovada para substituir
-> o conteúdo expandido atual. A implementação é a fase N6 abaixo; o mock é a
-> referência de hierarquia e interação, não uma fonte paralela de estado.
+> Em 31/08/2026, a direção D, **Instrumento vivo**, foi aprovada e implementada
+> no conteúdo expandido. O mock permanece referência histórica de hierarquia e
+> interação, não uma fonte paralela de estado.
 
 ## Correção que governa este plano
 
@@ -139,7 +140,34 @@ entrada real.
   fallback e recálculo estão cobertos por testes, mas não foram apresentados
   como prova visual nesta rodada.
 
-### N6, Instrumento vivo, planejado
+### N6, Instrumento vivo, implementado
+
+#### Resultado real em 31/08/2026
+
+- `DynamicHud` foi dividido em orquestrador, compacto e expandido antes da
+  mudança visual; nenhum teto de arquivo ou baseline foi elevado.
+- `hudPresentation.ts` concentra prioridade, foco estável, ciclo do snapshot e
+  reducer da confirmação. Carregamento e indisponibilidade não caem mais em
+  `Frota pronta`.
+- A composição D usa tempo em 30px, trilho vivo em CSS, linha silenciosa de
+  sistemas e até duas atividades secundárias. Não entrou progresso inferido,
+  gradiente, timer por tarefa ou regra por provider.
+- A parada exige dois gestos. O envio, a espera, a falha e o atraso de cinco
+  segundos têm estados explícitos; somente a remoção da atividade no snapshot
+  encerra a intenção local.
+- A revisão de texto retirou jargão de protocolo da interface e conferiu
+  acentuação e coerência da copy em pt-BR. Títulos vindos do estado real não são
+  reescritos pelo render.
+- Validação automatizada: 339 arquivos e 3.582 testes frontend, 684 testes Rust
+  aprovados e 7 provas manuais ignoradas, além de TypeScript, 13 guardas do
+  guia, lint sem erro e build Tauri de teste #336.
+- QA visual na build #336: casco preto, centro de 185px livre no notch físico,
+  estado assentado, cabeçalho, ação principal e `Escape` inspecionados. A
+  preferência de tela e posição usada antes do QA foi restaurada ao final.
+- Estados de voo, três tarefas, decisão e confirmação destrutiva foram
+  validados no componente de produção por matriz pura e render estático. Não
+  são registrados como observação física; hover estacionário e hotplug seguem
+  pendências manuais já declaradas.
 
 #### Objetivo e fronteira
 
@@ -291,21 +319,21 @@ descoberta volta para uma ADR antes de tocar no worker nativo.
 
 #### Critérios de aceite de N6
 
-- [ ] nunca mostra `Frota pronta` antes de carregar um snapshot válido;
-- [ ] decisão pendente sempre vence a visualização do tempo;
-- [ ] `Parar tarefa` não produz efeito antes de confirmação humana;
-- [ ] parada só aparece consumada depois de a atividade sumir do snapshot;
-- [ ] uma atividade principal não troca por atualização de detalhe ou tempo;
-- [ ] três atividades continuam alcançáveis sem rolagem no frame de 540 × 320;
-- [ ] notch físico mantém a faixa central sem texto sob o hardware;
-- [ ] ilha, esquerda, direita e base preservam casco preto e aresta acoplada;
-- [ ] hover sem interação recolhe; clique, teclado ou confirmação fixam até
+- [x] nunca mostra `Frota pronta` antes de carregar um snapshot válido;
+- [x] decisão pendente sempre vence a visualização do tempo;
+- [x] `Parar tarefa` não produz efeito antes de confirmação humana;
+- [x] parada só aparece consumada depois de a atividade sumir do snapshot;
+- [x] uma atividade principal não troca por atualização de detalhe ou tempo;
+- [x] três atividades continuam alcançáveis sem rolagem no frame de 540 × 320;
+- [x] notch físico mantém a faixa central sem texto sob o hardware;
+- [x] ilha, esquerda, direita e base preservam casco preto e aresta acoplada;
+- [x] hover sem interação recolhe; clique, teclado ou confirmação fixam até
   blur ou `Escape`;
-- [ ] todas as ações funcionam por teclado, o foco é visível somente em modo
+- [x] todas as ações funcionam por teclado, o foco é visível somente em modo
   teclado e a ordem começa pelo conteúdo prioritário;
-- [ ] movimento reduzido conserva estado sem deslocamento nem trilho animado;
-- [ ] nenhuma comparação de provider, intervalo periódico, migração ou preferência;
-- [ ] `bun run test`, `bunx tsc -b --force`, `cargo test`, `bun run check`,
+- [x] movimento reduzido conserva estado sem deslocamento nem trilho animado;
+- [x] nenhuma comparação de provider, intervalo periódico, migração ou preferência;
+- [x] `bun run test`, `bunx tsc -b --force`, `cargo test`, `bun run check`,
   build Tauri e `git diff --check` passam;
 - [ ] QA visual registra separadamente notch integrado, ilha externa, uma e
   três tarefas, decisão real, confirmação de parada, estado vazio e hotplug.

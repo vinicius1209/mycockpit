@@ -32,8 +32,8 @@ vi.mock("@tauri-apps/api/window", () => ({
   })),
 }))
 
-describe("DynamicHud Component", () => {
-  it("renderiza o instrumento compacto a partir do estado efetivo", () => {
+describe("DynamicHud", () => {
+  it("renderiza o compacto sem inventar estado antes do primeiro snapshot", () => {
     const html = renderToStaticMarkup(
       createElement(DynamicHud, {
         runtime: {
@@ -72,11 +72,12 @@ describe("DynamicHud Component", () => {
     expect(html).toContain("bg-hud-shell")
     expect(html).not.toContain("padding-top")
     expect(html).toContain("grid-template-columns:1fr 185px 1fr")
-    expect(html).toContain("Frota pronta")
+    expect(html).toContain("Lendo a frota")
+    expect(html).not.toContain("Frota pronta")
     expect(html).not.toContain("Journey Streak")
   })
 
-  it("o expandido integra o notch sem diagnóstico ou controle redundante", () => {
+  it("o expandido integra o notch e reserva o centro durante a leitura", () => {
     const html = renderToStaticMarkup(
       createElement(DynamicHud, {
         runtime: {
@@ -111,7 +112,8 @@ describe("DynamicHud Component", () => {
         },
       }),
     )
-    expect(html).toContain("Nenhuma automação agendada")
+    expect(html).toContain("Lendo o estado da frota")
+    expect(html).toContain("grid-template-columns:1fr 185px 1fr")
     expect(html).not.toContain("Built-in Retina Display")
     expect(html).not.toContain("Recolher")
     expect(html).toContain("rounded-b-[13px] border-x border-b")
@@ -164,7 +166,7 @@ describe("DynamicHud Component", () => {
     expect(html).toContain("dark h-full w-full overflow-hidden bg-hud-shell")
     expect(html).not.toContain("bg-popover")
     expect(html).toContain("viewBox=\"0 0 44 44\"")
-    expect(html).toContain("lucide-circle")
+    expect(html).toContain("lucide-loader-circle")
     expect(html).not.toContain("writing-mode")
   })
 })

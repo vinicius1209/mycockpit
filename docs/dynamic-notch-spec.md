@@ -1,9 +1,10 @@
 # Especificação técnica do instrumento flutuante
 
-> Status: contrato implementado. O QA nativo do notch foi atualizado até o
-> build #327 em 30/08/2026; posições sem recorte seguem validadas por contrato
-> e testes, sem alegação de inspeção visual nesta rodada.
-> Decisões: ADR-129, ADR-132, ADR-134 e ADR-135.
+> Status: contrato implementado. O presenter nativo foi validado no build #327
+> e a composição Instrumento vivo no build de teste #336, em 31/08/2026.
+> Posições sem recorte seguem validadas por contrato e testes, sem alegação de
+> nova inspeção visual nesta rodada.
+> Decisões: ADR-129, ADR-132, ADR-134, ADR-135 e ADR-141.
 
 ## 1. Invariantes
 
@@ -142,6 +143,27 @@ o instrumento retenha teclado com uma área compacta.
 - Animações usam os tokens da aplicação e `reducedMotion="user"`.
 - Não existem streak, matriz, progresso ou atividade sintetizados.
 
+### Apresentação expandida
+
+O recurso do snapshot começa em `loading`; falha explícita vira `unavailable`.
+Somente um snapshot recebido pode produzir `ready`. Depois disso, a função pura
+`deriveHudPresentation` escolhe exatamente um centro, nesta ordem:
+
+```text
+confirmação local > decisão real > atividade > último turno > pronto
+```
+
+A atividade focada conserva o `convId` enquanto continuar no snapshot. Até duas
+atividades secundárias permanecem alcançáveis sem competir com o foco. O trilho
+azul é presença da atividade, não porcentagem; seu movimento é CSS e vira um
+ponto estático quando o sistema pede movimento reduzido.
+
+`Parar tarefa` apenas fixa o instrumento e abre a confirmação. `Parar agora`
+emite o `TrayAction`; a UI mantém `Interrupção solicitada` até a atividade sair
+do snapshot. Rejeição e ausência de confirmação em cinco segundos permanecem
+visíveis e oferecem recuperação. A interface usa copy em pt-BR e não expõe
+nomes internos do protocolo.
+
 ## 7. Falhas
 
 - Falha de medição mantém estado observável e não inventa notch.
@@ -150,6 +172,7 @@ o instrumento retenha teclado com uma área compacta.
   mover a janela com geometria incompleta.
 - O snapshot vazio significa ausência de atividade observada, não sucesso de
   um run.
+- Falha ao ler o primeiro snapshot mostra indisponibilidade, nunca prontidão.
 
 ## 8. Critérios de aceite
 
