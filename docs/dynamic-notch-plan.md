@@ -5,9 +5,9 @@
 > permanecem cobertas por contrato/testes, sem alegação de inspeção visual.
 > O mock histórico continua em `docs/mocks/dynamic-notch-hud.html`, mas não é
 > fonte de comportamento nem de tokens visuais.
-> A comparação pós-#334 em `docs/mocks/hud-expandido-variacoes.html` propõe quatro
-> hierarquias para o estado expandido. É material de escolha, não contrato de
-> produção, até uma direção ser aprovada.
+> Em 31/08/2026, a direção D, **Instrumento vivo**, foi aprovada para substituir
+> o conteúdo expandido atual. A implementação é a fase N6 abaixo; o mock é a
+> referência de hierarquia e interação, não uma fonte paralela de estado.
 
 ## Correção que governa este plano
 
@@ -139,6 +139,177 @@ entrada real.
   fallback e recálculo estão cobertos por testes, mas não foram apresentados
   como prova visual nesta rodada.
 
+### N6, Instrumento vivo, planejado
+
+#### Objetivo e fronteira
+
+A direção D substitui somente o conteúdo **expandido** do `DynamicHud`. Casco,
+geometria, escolha de tela, estado compacto, `TrayPopover` clássico e ações
+nativas continuam como estão. Não entra preferência nova: quem já optou pelo
+instrumento recebe a composição nova; quem usa a barra de menus não muda.
+
+O centro do instrumento passa a responder à pergunta mais importante do
+momento. A prioridade é explícita e pura:
+
+| prioridade | modo | fonte real | centro do instrumento |
+|---:|---|---|---|
+| 0 | carregando ou indisponível | ciclo do `get_tray_snapshot` | estado de leitura, nunca “Frota pronta” inventado |
+| 1 | confirmação local | gesto `Parar tarefa` + atividade ainda presente | título da tarefa e confirmação; nenhum efeito antes de `Parar agora` |
+| 2 | decisão pendente | `decisions`, `blocking` e destino do snapshot | contagem, `decisionSubtitle` e `Revisar no Frota` |
+| 3 | em voo | `activities` | tempo, tarefa principal, detalhe e trilho vivo |
+| 4 | assentado | `lastTurn` | último turno e desfecho observado |
+| 5 | pronto | snapshot carregado e vazio | convite para uma nova tarefa |
+
+`deriveHudPresentation(snapshot, intent, focusedConvId)` será uma função pura.
+Estado desconhecido degrada para `indisponível`; nunca cai em `pronto`. Uma
+confirmação local perde validade assim que sua atividade sai do snapshot.
+
+#### Hierarquia visual aprovada
+
+- Casco `#000000`, Geist para texto e Geist Mono para tempo, em qualquer tema e
+  em qualquer posição flutuante.
+- O cabeçalho conserva marca, estado e `Abrir Frota`. No notch físico, a área
+  central medida continua livre para o hardware; as duas asas recebem conteúdo.
+- Em voo, `30px` pertence somente ao tempo. Título usa 14px; ações e metadados
+  usam 11, 12 ou 13px. Nomes cedem espaço e truncam antes do tempo.
+- O trilho é presença, não porcentagem. Um segmento curto se move por CSS
+  enquanto a atividade existe; não há preenchimento de 34%, ETA ou progresso
+  inferido. Com movimento reduzido, vira ponto estático ainda visível.
+- Azul aparece somente no estado vivo. Âmbar aparece somente quando algo
+  espera a pessoa. Vermelho aparece apenas na confirmação destrutiva.
+- Automações e terminal viram uma linha secundária sem cartão próprio. A ação
+  `open-schedules` continua alcançável e `pause-schedules` permanece no rodapé
+  quando houver automações ativas.
+- Não há cartões com borda dentro do casco. Hierarquia vem de espaço, peso,
+  divisor interno `border-border/40` e mudança de composição.
+
+#### Uma ou várias tarefas
+
+O snapshot já limita a três atividades. A primeira atividade permanece o foco
+enquanto existir; uma atualização de detalhe ou tempo não troca o centro. Se
+ela terminar, a próxima atividade na ordem autoritativa assume. As demais
+aparecem em um trilho secundário de uma linha, com nome, estado e atalho para
+abrir a conversa, sem novos cartões nem rotação automática.
+
+Não será criado algoritmo por fornecedor, modelo ou tipo de run. Missão,
+disputa e turno continuam chegando como `TrayActivity` e recebem a mesma
+composição.
+
+#### Decisões e ações
+
+- `Parar tarefa` abre a confirmação local do mock e chama
+  `setHudExpanded(true, true, false)`: a janela ganha foco e deixa de ser uma
+  expansão transitória. Mover o ponteiro para fora não fecha a confirmação;
+  blur ou `Escape` continuam sendo saídas.
+- O primeiro `Escape` durante a confirmação escolhe a saída segura, `Manter em
+  voo`; fora dela, `Escape` recolhe como hoje.
+- Somente `Parar agora` chama `runTrayAction("stop-activity", ...)`. Enquanto o
+  evento é entregue, a ação fica desabilitada e a copy diz
+  `Interrupção solicitada`, não `interrompida`.
+- A remoção da atividade no próximo snapshot é a confirmação real. Rejeição do
+  invoke volta à decisão com erro visível. Sem confirmação após cinco segundos,
+  o HUD diz `Interrupção ainda não confirmada` e oferece tentar de novo ou
+  abrir a Frota; nenhum `catch` cala a falha.
+- Uma decisão real de agent não é respondida dentro do HUD nesta fase. O
+  snapshot possui contagem e destino, mas não pergunta nem opções. A superfície
+  mostra somente o que sabe e usa `review-decision` para abrir a conversa certa.
+- `Nova tarefa`, `Abrir Frota`, `Abrir conversa`, automações e Configurações
+  continuam usando os `TrayAction` existentes.
+
+#### Transições
+
+O frame nativo continua em 540 × 320 e não redimensiona entre modos internos.
+Somente o conteúdo troca:
+
+```text
+em voo --Parar tarefa--> confirmar parada --Manter em voo--> em voo
+                                  |
+                              Parar agora
+                                  v
+                       interrupção solicitada
+                                  |
+                    snapshot remove a atividade
+                                  v
+                  outra tarefa | assentado | pronto
+
+em voo | assentado | pronto --decisão real chega--> decisão pendente
+decisão resolvida --snapshot novo--> em voo | assentado | pronto
+```
+
+Se uma decisão real chegar durante a confirmação local, sua contagem permanece
+no cabeçalho e ela assume o centro assim que a confirmação for resolvida.
+
+A troca usa um único fade com deslocamento de 4px em 200ms. Não há scale,
+gradiente ou animações concorrentes. `MotionConfig reducedMotion="user"`
+remove deslocamento e movimento do trilho. O cronômetro reaproveita o ticker de
+30 segundos já existente; N6 não cria interval, worker ou assinatura de store.
+
+#### Responsabilidades e arquivos
+
+`DynamicHud.tsx` já tem 515 linhas, portanto N6 começa dividindo, nunca subindo
+o teto da catraca:
+
+| arquivo | responsabilidade |
+|---|---|
+| `app/src/lib/hudPresentation.ts` | tipos, prioridade, atividade principal e reducer da intenção local |
+| `app/src/lib/hudPresentation.test.ts` | matriz pura de estados, invalidação e corridas |
+| `app/src/components/tray/DynamicHud.tsx` | snapshot, listeners, relógio e integração com o presenter |
+| `app/src/components/tray/DynamicHudCompact.tsx` | compacto atual, sem mudança visual |
+| `app/src/components/tray/DynamicHudExpanded.tsx` | shell expandido, foco adaptativo e ações |
+| `app/src/components/tray/DynamicHud.test.tsx` | contrato do presenter, notch seguro e degradação |
+| `app/src/components/tray/DynamicHudExpanded.test.tsx` | render dos modos e hierarquia de ações |
+
+Não se espera mudar `TraySnapshot`, SQLite, settings, `tray.rs`, `hud.rs` ou
+`notch.rs`. Se o QA provar que o foco existente não fixa a interação, essa
+descoberta volta para uma ADR antes de tocar no worker nativo.
+
+#### Sequência de implementação
+
+1. Criar o seletor/reducer puro e fixtures reais de snapshot: vazio, uma e três
+   tarefas, pedido bloqueante, disputa, última conclusão e snapshot ausente.
+2. Separar compacto e expandido sem mudança visual; rodar testes e catracas
+   antes de introduzir a D. Esse commit torna o diff visual revisável.
+3. Implementar os modos `flight`, `decision`, `settled`, `ready` e
+   `unavailable`, mantendo uma única atividade principal estável.
+4. Implementar confirmação, envio e reconciliação de `stop-activity`, com
+   timeout injetável e sem declarar parada antes do snapshot.
+5. Aplicar trilho vivo, responsividade e transições. Abaixo de 480 × 280, os
+   sistemas viram uma única linha e atividades secundárias cedem primeiro; as
+   ações principais nunca somem.
+6. Atualizar `dynamic-notch-spec.md` e esta fase com o resultado real do QA.
+
+#### Comparação com Orca e Paseo
+
+- Do Paseo, reaproveitamos a ideia de prioridade testável e determinística:
+  atenção bloqueante vence estados de revisão e atividade; identidade estável é
+  preservada enquanto o item não muda. Não copiamos sua taxonomia em inglês.
+- Do Orca, preservamos a publicação coalescida: um snapshot recebido produz uma
+  derivação e um render, sem novas assinaturas por linha nem relógios por tarefa.
+  O movimento do trilho fica no compositor, não num loop JavaScript.
+- Nenhum dos dois possui presenter equivalente de notch. Geometria, foco e
+  fallback continuam sendo decisões próprias da Frota.
+
+#### Critérios de aceite de N6
+
+- [ ] nunca mostra `Frota pronta` antes de carregar um snapshot válido;
+- [ ] decisão pendente sempre vence a visualização do tempo;
+- [ ] `Parar tarefa` não produz efeito antes de confirmação humana;
+- [ ] parada só aparece consumada depois de a atividade sumir do snapshot;
+- [ ] uma atividade principal não troca por atualização de detalhe ou tempo;
+- [ ] três atividades continuam alcançáveis sem rolagem no frame de 540 × 320;
+- [ ] notch físico mantém a faixa central sem texto sob o hardware;
+- [ ] ilha, esquerda, direita e base preservam casco preto e aresta acoplada;
+- [ ] hover sem interação recolhe; clique, teclado ou confirmação fixam até
+  blur ou `Escape`;
+- [ ] todas as ações funcionam por teclado, o foco é visível somente em modo
+  teclado e a ordem começa pelo conteúdo prioritário;
+- [ ] movimento reduzido conserva estado sem deslocamento nem trilho animado;
+- [ ] nenhuma comparação de provider, intervalo periódico, migração ou preferência;
+- [ ] `bun run test`, `bunx tsc -b --force`, `cargo test`, `bun run check`,
+  build Tauri e `git diff --check` passam;
+- [ ] QA visual registra separadamente notch integrado, ilha externa, uma e
+  três tarefas, decisão real, confirmação de parada, estado vazio e hotplug.
+
 ## Decisões preservadas
 
 - O nome de provider não participa de geometria, snapshot ou presenter.
@@ -147,5 +318,5 @@ entrada real.
 - Brass permanece cor de gesto/decisão humana. Estado de execução usa os tokens
   semânticos existentes; seleção de posição é neutra.
 - O notch físico é tratado como parte da forma: topo preto, reto e sem filete;
-  a curva pertence somente à saída inferior. A ilha sem notch não imita
-  hardware que não existe e conserva a superfície temática própria.
+  a curva pertence somente à saída inferior. Ilha e bordas preservam suas
+  formas próprias, mas todo presenter flutuante usa o mesmo casco preto.

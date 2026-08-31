@@ -69,8 +69,13 @@ inventada: a tarefa só para depois da confirmação humana.
 O custo é de implementação, porque a composição precisa derivar de uma
 prioridade explícita entre estados, não apenas esconder blocos com CSS.
 
-## O que o mock não decide
+## Direção aprovada
 
-Nenhuma variação está aprovada para produção. O HTML decide hierarquia,
-densidade, copy e orçamento de cor; a implementação escolhida ainda precisa
-usar o `TraySnapshot` real, ações existentes, teclado, hover e presenter nativo.
+A direção D foi aprovada em 31/08/2026. A, B e C permanecem como explorações
+comparáveis. O HTML decide hierarquia, densidade, copy e orçamento de cor; a
+implementação de produção deve seguir a fase N6 de `dynamic-notch-plan.md`, usar
+o `TraySnapshot` real, ações existentes, teclado, hover e presenter nativo.
+
+O trecho azul do trilho no mock é uma assinatura de presença, não percentual
+de conclusão. Em produção ele se move enquanto a tarefa está viva e vira um
+ponto estático quando a pessoa prefere movimento reduzido.

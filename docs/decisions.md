@@ -5186,3 +5186,25 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   A faixa ativa junto ao composer ficou neutra porque auto-resume não espera
   decisão humana; ela informa horário e próxima tentativa. Revezamentos são
   ações secundárias neutras, sem três pílulas brass competindo entre si.
+
+### ADR-141 - o centro do instrumento segue a próxima decisão humana 📋
+- **Direção aprovada (31/08/2026):** a variação D, Instrumento vivo, substitui
+  o conteúdo expandido do HUD. Ela combina o tempo e o trilho da Pista de voo
+  com a composição silenciosa do Foco adaptativo. Compacto, popover clássico,
+  presenter, geometria e escolha de tela não mudam.
+- **Prioridade:** leitura indisponível nunca vira prontidão; confirmação local
+  vence decisão pendente, que vence atividade, último turno e vazio. A regra é
+  função pura sobre `TraySnapshot` e intenção local, sem nome de provider.
+- **Decisão honesta:** o HUD confirma localmente `Parar`, mas não inventa o
+  conteúdo de pedidos dos agents. O snapshot atual só autoriza mostrar
+  contagem, natureza e destino; responder continua na conversa aberta por
+  gesto humano.
+- **Estado real:** `Parar tarefa` não produz efeito. `Parar agora` emite a ação,
+  e somente a ausência posterior da atividade confirma a interrupção. Falha ou
+  ausência de confirmação permanece visível.
+- **Assinatura visual:** o trilho comunica presença viva, nunca progresso. Seu
+  movimento pertence ao CSS e some em movimento reduzido; não nasce intervalo
+  periódico, store subscription, worker, migração ou limite operacional novo.
+- **Implementação:** N6 de `docs/dynamic-notch-plan.md`. O ícone 📋 significa
+  decisão aceita com implementação ainda pendente; vira ✅ somente depois das
+  suítes completas, build Tauri e QA visual registrados.
