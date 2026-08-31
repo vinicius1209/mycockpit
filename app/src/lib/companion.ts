@@ -90,14 +90,14 @@ export function buildCompanionSnapshot(
     chat.byId[convId]?.projectId ?? null
   const nameOf = (pid: string | null): string | null =>
     pid ? (projectName.get(pid) ?? null) : null
-  const titleOf = (convId: string): string => {
-    const pid = projectOf(convId)
-    return (
-      (pid
-        ? chat.conversationsByProject[pid]?.find((c) => c.id === convId)?.title
-        : null) ?? "Conversa"
-    )
-  }
+  const currentTitleOf = (convId: string, projectId?: string) =>
+    chat.conversationsByProject[projectId ?? projectOf(convId) ?? ""]?.find(
+      (c) => c.id === convId,
+    )?.title ??
+    Object.values(chat.conversationsByProject).flat().find((c) => c.id === convId)
+      ?.title ??
+    null
+  const titleOf = (convId: string): string => currentTitleOf(convId) ?? "Conversa"
 
   // ── atenção: gates das missões + fila única de interações ──
   const attention: CompanionAttention[] = []
@@ -338,7 +338,7 @@ export function buildCompanionSnapshot(
     attention,
     running,
     missions: missionList,
-    lastTurns: turnosRecentes(useNotifs.getState().items).map((t) => ({
+    lastTurns: turnosRecentes(useNotifs.getState().items, 5, currentTitleOf).map((t) => ({
       ...t,
       projectName: nameOf(t.projectId),
       frase: fraseDoTurno(t.receipt, t.ok),

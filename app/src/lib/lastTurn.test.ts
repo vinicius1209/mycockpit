@@ -26,6 +26,24 @@ describe("ultimoTurno", () => {
     expect(ultimoTurno(f)?.title).toBe("turno 300")
   })
 
+  it("o título vigente vence a cópia antiga do feed", () => {
+    const f = [
+      turno(300, {
+        title: "revisao de branches",
+        projectId: "p1",
+      }),
+    ]
+    const atual = ultimoTurno(f, (convId, projectId) =>
+      convId === "c1" && projectId === "p1" ? "revisão de branches" : null,
+    )
+    expect(atual?.title).toBe("revisão de branches")
+  })
+
+  it("mantém o título do feed quando a conversa não está carregada", () => {
+    const f = [turno(300, { title: "Título preservado", projectId: "p1" })]
+    expect(ultimoTurno(f, () => null)?.title).toBe("Título preservado")
+  })
+
   it("o recibo vem quando existe", () => {
     const f = [turno(1, { body: "Extraiu o parser pra lib/" })]
     expect(ultimoTurno(f)?.receipt).toBe("Extraiu o parser pra lib/")
@@ -70,6 +88,12 @@ describe("turnosRecentes", () => {
   it("do mais novo pro mais velho", () => {
     const f = [turno(100, { projectId: "p" }), turno(300, { projectId: "p" }), turno(200, { projectId: "p" })]
     expect(turnosRecentes(f).map((t) => t.at)).toEqual([300, 200, 100])
+  })
+
+  it("usa o mesmo título vigente no Companion", () => {
+    const f = [turno(100, { title: "nome antigo", projectId: "p" })]
+    const [recent] = turnosRecentes(f, 5, () => "nome atual")
+    expect(recent.title).toBe("nome atual")
   })
 
   it("corta no teto — o celular é resumo, não histórico", () => {

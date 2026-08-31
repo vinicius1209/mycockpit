@@ -6,7 +6,7 @@
 // minuto); o "o que a bandeja mostra" mora aqui.
 
 import { agentLabel } from "@/lib/agent"
-import { ultimoTurno } from "@/lib/lastTurn"
+import { ultimoEventoDeTurno, ultimoTurno } from "@/lib/lastTurn"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
 import { trayExternalSessions } from "@/lib/traySessions"
 import { updateTray, type TrayActivity } from "@/lib/tray"
@@ -17,6 +17,42 @@ import { currentOriginAnyKind, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
 import { useSchedules } from "@/store/schedules"
+
+type ConversationTitles = Record<
+  string,
+  readonly { id: string; title: string | null }[]
+>
+
+function conversationTitle(
+  conversationsByProject: ConversationTitles,
+  convId: string,
+  projectId?: string,
+) {
+  const direct = projectId
+    ? conversationsByProject[projectId]?.find((c) => c.id === convId)?.title
+    : null
+  if (direct) return direct
+  for (const conversations of Object.values(conversationsByProject)) {
+    const title = conversations.find((c) => c.id === convId)?.title
+    if (title) return title
+  }
+  return null
+}
+
+/** Assinatura reativa do cartão concluído: muda tanto com um novo desfecho
+ *  quanto quando a conversa é carregada ou renomeada depois do evento. */
+export function useLastTurnTrayKey(): string {
+  const event = useNotifs((s) => ultimoEventoDeTurno(s.items))
+  return useChat((s) => {
+    if (!event?.convId) return ""
+    const title = conversationTitle(
+      s.conversationsByProject,
+      event.convId,
+      event.projectId,
+    )
+    return `${event.ts}:${event.title}:${title ?? ""}`
+  })
+}
 
 /** Lê as stores e empurra pra bandeja. O `updateTray` dedupa por conteúdo, então
  *  chamar de mais não custa invoke. */
@@ -30,9 +66,10 @@ export function enviarSnapshotDaTray(
   const fusions = useFusion.getState()
   const scheduleState = useSchedules.getState()
   const projectName = new Map(app.projects.map((p) => [p.id, p.name]))
+  const currentTitleOf = (convId: string, projectId?: string) =>
+    conversationTitle(chat.conversationsByProject, convId, projectId)
   const titleOf = (convId: string, projectId: string) =>
-    chat.conversationsByProject[projectId]?.find((c) => c.id === convId)
-      ?.title ?? "Conversa"
+    currentTitleOf(convId, projectId) ?? "Conversa"
   const activities = new Map<string, TrayActivity>()
   const linearDetail = (convId: string): string => {
     const c = chat.byId[convId]
@@ -183,7 +220,7 @@ export function enviarSnapshotDaTray(
     // O último turno de CONVERSA vem do FEED do sino, que já guarda o
     // recibo como `body` — sem evento novo nem tabela. Não confundir com
     // `lastRun` acima, que é a última AUTOMAÇÃO.
-    lastTurn: ultimoTurno(useNotifs.getState().items),
+    lastTurn: ultimoTurno(useNotifs.getState().items, currentTitleOf),
     enabledSchedules: scheduleState.schedules.filter((s) => s.enabled)
       .length,
   })

@@ -37,6 +37,24 @@ export interface TurnoRecente extends UltimoTurno {
   projectId: string
 }
 
+/** Resolve o nome VIGENTE da conversa. O feed guarda o título observado no
+ *  instante do evento, mas superfícies de estado (HUD e Companion) precisam
+ *  acompanhar uma renomeação posterior sem reescrever o recibo histórico. */
+export type ResolveConversationTitle = (
+  convId: string,
+  projectId: string | undefined,
+) => string | null | undefined
+
+function currentTitle(
+  item: ItemDeFeed,
+  resolveTitle?: ResolveConversationTitle,
+): string {
+  const resolved = item.convId
+    ? resolveTitle?.(item.convId, item.projectId)?.trim()
+    : null
+  return resolved || item.title
+}
+
 /**
  * O turno de CONVERSA mais recente do feed, ou `null`.
  *
@@ -62,6 +80,7 @@ export interface TurnoRecente extends UltimoTurno {
 export function turnosRecentes(
   feed: readonly ItemDeFeed[],
   max = 5,
+  resolveTitle?: ResolveConversationTitle,
 ): TurnoRecente[] {
   return feed
     .filter(
@@ -75,25 +94,37 @@ export function turnosRecentes(
     .map((it) => ({
       convId: it.convId!,
       projectId: it.projectId!,
-      title: it.title,
+      title: currentTitle(it, resolveTitle),
       receipt: it.body?.trim() || null,
       ok: it.kind === "run_done",
       at: it.ts,
     }))
 }
 
-export function ultimoTurno(feed: readonly ItemDeFeed[]): UltimoTurno | null {
+export function ultimoTurno(
+  feed: readonly ItemDeFeed[],
+  resolveTitle?: ResolveConversationTitle,
+): UltimoTurno | null {
+  const melhor = ultimoEventoDeTurno(feed)
+  if (!melhor) return null
+  return {
+    title: currentTitle(melhor, resolveTitle),
+    receipt: melhor.body?.trim() || null,
+    ok: melhor.kind === "run_done",
+    at: melhor.ts,
+  }
+}
+
+/** O evento que sustenta o cartão de último turno. Mantém a referência do
+ *  store, para assinantes reagirem só quando o evento realmente muda. */
+export function ultimoEventoDeTurno(
+  feed: readonly ItemDeFeed[],
+): ItemDeFeed | null {
   let melhor: ItemDeFeed | null = null
   for (const it of feed) {
     if (it.kind !== "run_done" && it.kind !== "run_error") continue
     if (!it.convId) continue // missão/ferramenta não são turno de conversa
     if (!melhor || it.ts > melhor.ts) melhor = it
   }
-  if (!melhor) return null
-  return {
-    title: melhor.title,
-    receipt: melhor.body?.trim() || null,
-    ok: melhor.kind === "run_done",
-    at: melhor.ts,
-  }
+  return melhor
 }

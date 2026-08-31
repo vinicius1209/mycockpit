@@ -5212,3 +5212,17 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   Tauri e o QA visual do estado assentado no notch físico foram registrados.
   Os demais estados visuais permanecem discriminados no plano entre prova de
   render e observação no hardware.
+
+### ADR-142 - recibo é histórico, título de conversa é estado vigente ✅
+- **Incidente real (31/08/2026):** o título da conversa foi corrigido para
+  `revisão de branches` no SQLite, mas o HUD continuou mostrando a cópia antiga
+  `revisao de branches` guardada no feed de notificações. A build e o processo
+  instalados estavam corretos; duas fontes legítimas respondiam perguntas
+  diferentes com o mesmo campo.
+- **Decisão:** horário, desfecho e recibo continuam congelados no evento. HUD e
+  Companion resolvem o título atual pelo `convId` e `projectId`, com fallback
+  para a cópia do feed quando a conversa não está carregada. Nenhum histórico é
+  reescrito e nenhum texto escrito pela pessoa é autocorrigido.
+- **Reatividade:** a assinatura da tray observa tanto o último evento quanto a
+  meta vigente da conversa. Carregamento e renomeação atualizam o instrumento
+  imediatamente, sem criar ticker, worker ou consulta extra ao SQLite.
