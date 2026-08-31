@@ -11,6 +11,12 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[cfg(target_os = "macos")]
+use std::ptr::NonNull;
+
+#[cfg(target_os = "macos")]
+use objc2_core_foundation::{CFRetained, CFUUID};
+
+#[cfg(target_os = "macos")]
 static PRIMARY_TOP_BITS: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -182,8 +188,9 @@ fn native_samples() -> Result<Vec<NativeScreenSample>, String> {
                 primary: false,
                 active: false,
             };
+            let display_id = screen.CGDirectDisplayID();
             NativeScreenSample {
-                id: screen.CGDirectDisplayID().to_string(),
+                id: stable_display_id(display_id),
                 name: screen.localizedName().to_string(),
                 frame_x: frame.origin.x,
                 frame_y: frame.origin.y,
@@ -197,11 +204,31 @@ fn native_samples() -> Result<Vec<NativeScreenSample>, String> {
                 safe_top: safe.top,
                 aux_left_max_x: (left.size.width > 0.0).then_some(left.origin.x + left.size.width),
                 aux_right_min_x: (right.size.width > 0.0).then_some(right.origin.x),
-                primary: primary_id == screen.CGDirectDisplayID(),
+                primary: primary_id == display_id,
                 active: contains(&probe, cursor.x, cursor.y),
             }
         })
         .collect())
+}
+
+/// O `CGDirectDisplayID` é efêmero e pode mudar depois de reconectar a tela.
+/// O UUID do ColorSync identifica o hardware entre boots; o número fica apenas
+/// como degradação honesta se o framework não devolver um UUID.
+#[cfg(target_os = "macos")]
+fn stable_display_id(display_id: objc2_core_graphics::CGDirectDisplayID) -> String {
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C-unwind" {
+        fn CGDisplayCreateUUIDFromDisplayID(
+            display: objc2_core_graphics::CGDirectDisplayID,
+        ) -> Option<NonNull<CFUUID>>;
+    }
+
+    let uuid = unsafe { CGDisplayCreateUUIDFromDisplayID(display_id) }
+        .map(|pointer| unsafe { CFRetained::from_raw(pointer) });
+    uuid.as_deref()
+        .and_then(|uuid| CFUUID::new_string(None, Some(uuid)))
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| format!("display-{display_id}"))
 }
 
 #[cfg(target_os = "macos")]

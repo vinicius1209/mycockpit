@@ -16,5 +16,6 @@ describe("configurações do instrumento da bandeja", () => {
 
   it("inicia com perseguição de tela ativa em multi-monitores", () => {
     expect(DEFAULT_SETTINGS.hudFollowActiveScreen).toBe(true)
+    expect(DEFAULT_SETTINGS.hudScreenId).toBeNull()
   })
 })

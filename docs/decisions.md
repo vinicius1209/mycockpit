@@ -5139,3 +5139,24 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Escopo:** a regra vale para notch, ilha, laterais e base porque o worker usa
   o `layout_for` da posição efetiva. Estado da frota, ações, foco de teclado,
   agents, contexto, tools, desempenho e limites do motor não mudam.
+
+### ADR-139 - o destino do instrumento é uma escolha nominal e restaurável ✅
+- **Problema:** o booleano "Seguir a tela ativa" só permitia alternar entre a
+  tela sob o ponteiro e a primeira tela enumerada. Em setups com dois ou mais
+  monitores, não existia um gesto que dissesse em qual tela o instrumento deve
+  permanecer, e a ordem de enumeração não é uma identidade de produto.
+- **Decisão:** Configurações oferece uma única escolha `Tela do instrumento`:
+  modo automático ou cada tela medida pelo presenter nativo. A intenção fixa é
+  persistida em `hudScreenId`; no macOS, o valor vem do UUID do display, nunca
+  do `CGDirectDisplayID` efêmero. O runtime publica também a lista completa de
+  telas e continua sendo a fonte da tela e posição efetivas.
+- **Hotplug:** se o identificador escolhido não estiver disponível, o presenter
+  usa temporariamente a tela ativa (ou a primeira disponível), mostra o motivo
+  e não apaga a preferência. Quando o display volta, o mesmo recálculo por
+  mudança de configuração restaura a escolha sem novo gesto.
+- **Compatibilidade:** o booleano anterior continua no contrato durante a
+  transição para preservar quem já havia desligado o acompanhamento. Uma nova
+  escolha escreve os dois campos de forma coerente; não há migração de banco.
+- **Escopo:** muda somente a resolução de geometria do presenter. Snapshot,
+  hover, foco, tarefas, automações, agents, contexto, tools, desempenho e
+  limites continuam intactos.

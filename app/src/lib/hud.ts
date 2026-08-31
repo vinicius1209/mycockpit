@@ -35,8 +35,10 @@ export interface HudRuntimeView {
   effectivePosition: HudPosition
   hoverExpand: boolean
   followActiveScreen: boolean
+  screenId: string | null
   expanded: boolean
   screen: ScreenGeometry | null
+  availableScreens: ScreenGeometry[]
   fallbackReason: string | null
   supportedPositions: HudPosition[]
 }
@@ -46,6 +48,7 @@ export interface HudPreferences {
   position: HudPosition
   hoverExpand: boolean
   followActiveScreen: boolean
+  screenId: string | null
 }
 
 export async function hudStatus(): Promise<HudRuntimeView | null> {

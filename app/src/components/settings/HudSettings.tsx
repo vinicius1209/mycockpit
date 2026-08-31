@@ -15,6 +15,8 @@ import {
 } from "@/lib/hud"
 import { useApp } from "@/store/app"
 
+const ACTIVE_SCREEN = "__active-screen__"
+
 const POSITIONS: Array<{
   value: HudPosition
   label: string
@@ -82,6 +84,36 @@ export function HudSettings() {
   }, [])
 
   const measured = runtime?.screen
+  const availableScreens = runtime?.availableScreens ?? []
+  const selectedScreen =
+    settings.hudScreenId ??
+    (settings.hudFollowActiveScreen ? ACTIVE_SCREEN : measured?.id ?? ACTIVE_SCREEN)
+  const selectedScreenIsMissing =
+    settings.hudScreenId !== null &&
+    !availableScreens.some((screen) => screen.id === settings.hudScreenId)
+  const screenOptions = [
+    {
+      value: ACTIVE_SCREEN,
+      label: "Tela ativa",
+      description: "Usa a tela sob o ponteiro e reage a mudanças de monitores.",
+    },
+    ...availableScreens.map((screen) => ({
+      value: screen.id,
+      label: screen.name,
+      description: `${Math.round(screen.screenWidth)} × ${Math.round(screen.screenHeight)} · ${screen.hasNotch ? "notch físico" : "sem notch"}${screen.active ? " · ativa agora" : ""}`,
+    })),
+    ...(selectedScreenIsMissing
+      ? [
+          {
+            value: settings.hudScreenId!,
+            label: "Tela escolhida indisponível",
+            pill: "Indisponível",
+            description: "A preferência será restaurada quando a tela voltar.",
+            badge: "fora",
+          },
+        ]
+      : []),
+  ]
   const hardware = measured?.hasNotch
     ? `notch de ${Math.round(measured.notchWidth)} px`
     : "sem notch informado pelo sistema"
@@ -135,15 +167,19 @@ export function HudSettings() {
             />
           </Field>
           <Field
-            label="Seguir a tela ativa"
-            hint="Reposiciona quando a tela principal ou a configuração dos monitores muda."
+            label="Tela do instrumento"
+            hint="Escolha uma tela fixa ou deixe a Frota acompanhar a tela ativa."
           >
-            <Switch
-              checked={settings.hudFollowActiveScreen}
-              onCheckedChange={(hudFollowActiveScreen) =>
-                setSettings({ hudFollowActiveScreen })
+            <RichSelect
+              value={selectedScreen}
+              options={screenOptions}
+              onValueChange={(value) =>
+                setSettings({
+                  hudScreenId: value === ACTIVE_SCREEN ? null : value,
+                  hudFollowActiveScreen: value === ACTIVE_SCREEN,
+                })
               }
-              aria-label="Seguir a tela ativa"
+              aria-label="Tela do instrumento"
             />
           </Field>
 

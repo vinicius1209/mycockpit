@@ -45,6 +45,8 @@ pub struct HudPreferences {
     pub hover_expand: bool,
     #[serde(default = "default_true")]
     pub follow_active_screen: bool,
+    #[serde(default)]
+    pub screen_id: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -58,6 +60,7 @@ impl Default for HudPreferences {
             position: HudPosition::Notch,
             hover_expand: true,
             follow_active_screen: true,
+            screen_id: None,
         }
     }
 }
@@ -70,8 +73,10 @@ pub struct HudRuntimeView {
     pub effective_position: HudPosition,
     pub hover_expand: bool,
     pub follow_active_screen: bool,
+    pub screen_id: Option<String>,
     pub expanded: bool,
     pub screen: Option<ScreenGeometry>,
+    pub available_screens: Vec<ScreenGeometry>,
     pub fallback_reason: Option<String>,
     pub supported_positions: Vec<HudPosition>,
 }
@@ -84,8 +89,10 @@ impl Default for HudRuntimeView {
             effective_position: HudPosition::Menubar,
             hover_expand: true,
             follow_active_screen: true,
+            screen_id: None,
             expanded: false,
             screen: None,
+            available_screens: Vec::new(),
             fallback_reason: None,
             supported_positions: supported_positions(),
         }
@@ -260,15 +267,46 @@ fn supported_positions() -> Vec<HudPosition> {
     ]
 }
 
-fn pick_screen(screens: &[ScreenGeometry], follow_active_screen: bool) -> Option<ScreenGeometry> {
+fn automatic_screen(screens: &[ScreenGeometry]) -> Option<ScreenGeometry> {
+    screens
+        .iter()
+        .find(|screen| screen.active)
+        .or_else(|| screens.first())
+        .cloned()
+}
+
+fn pick_screen(
+    screens: &[ScreenGeometry],
+    screen_id: Option<&str>,
+    follow_active_screen: bool,
+) -> (Option<ScreenGeometry>, Option<String>) {
+    if let Some(screen_id) = screen_id {
+        if let Some(screen) = screens.iter().find(|screen| screen.id == screen_id) {
+            return (Some(screen.clone()), None);
+        }
+        let fallback = automatic_screen(screens);
+        let reason = fallback.as_ref().map(|screen| {
+            format!(
+                "A tela escolhida não está disponível; usando {} temporariamente.",
+                screen.name
+            )
+        });
+        return (fallback, reason);
+    }
     if follow_active_screen {
-        screens
-            .iter()
-            .find(|screen| screen.active)
-            .or_else(|| screens.first())
-            .cloned()
+        (automatic_screen(screens), None)
     } else {
-        screens.first().cloned()
+        // Compatibilidade com a preferência antiga: antes da escolha nominal,
+        // desligar "seguir" significava manter a primeira tela enumerada.
+        (screens.first().cloned(), None)
+    }
+}
+
+fn combine_reasons(first: Option<String>, second: Option<String>) -> Option<String> {
+    match (first, second) {
+        (Some(first), Some(second)) => Some(format!("{first} {second}")),
+        (Some(reason), None) | (None, Some(reason)) => Some(reason),
+        (None, None) => None,
     }
 }
 
@@ -500,8 +538,12 @@ async fn recompute(app: &AppHandle, expanded: Option<bool>) -> Result<HudRuntime
         .map_err(|_| "preferências do HUD indisponíveis".to_string())?
         .clone();
     let screens = crate::notch::screen_geometries(app).await?;
-    let screen = pick_screen(&screens, preferences.follow_active_screen);
-    let (effective_position, fallback_reason) = resolve_position(&preferences, screen.as_ref());
+    let (screen, screen_reason) = pick_screen(
+        &screens,
+        preferences.screen_id.as_deref(),
+        preferences.follow_active_screen,
+    );
+    let (effective_position, position_reason) = resolve_position(&preferences, screen.as_ref());
     let current_expanded = state
         .runtime
         .lock()
@@ -514,10 +556,12 @@ async fn recompute(app: &AppHandle, expanded: Option<bool>) -> Result<HudRuntime
         effective_position,
         hover_expand: preferences.hover_expand,
         follow_active_screen: preferences.follow_active_screen,
+        screen_id: preferences.screen_id,
         expanded: expanded.unwrap_or(current_expanded)
             && effective_position != HudPosition::Menubar,
         screen,
-        fallback_reason,
+        available_screens: screens,
+        fallback_reason: combine_reasons(screen_reason, position_reason),
         supported_positions: supported_positions(),
     };
     apply_window(app, &runtime)?;
@@ -909,6 +953,41 @@ mod tests {
             safe_top: 32.0,
             active: true,
         }
+    }
+
+    fn duas_telas() -> Vec<ScreenGeometry> {
+        let mut interna = tela_com_notch();
+        interna.active = false;
+        let mut externa = interna.clone();
+        externa.id = "display-externo".into();
+        externa.name = "DELL E2225HSM".into();
+        externa.has_notch = false;
+        externa.active = true;
+        vec![interna, externa]
+    }
+
+    #[test]
+    fn escolha_nominal_vence_a_tela_ativa() {
+        let screens = duas_telas();
+        let (screen, reason) = pick_screen(&screens, Some("1"), true);
+        assert_eq!(screen.unwrap().id, "1");
+        assert_eq!(reason, None);
+    }
+
+    #[test]
+    fn tela_escolhida_ausente_cai_na_ativa_sem_apagar_a_preferencia() {
+        let screens = duas_telas();
+        let (screen, reason) = pick_screen(&screens, Some("desconectada"), false);
+        assert_eq!(screen.unwrap().id, "display-externo");
+        assert!(reason.unwrap().contains("não está disponível"));
+    }
+
+    #[test]
+    fn modo_automatico_escolhe_a_tela_ativa() {
+        let screens = duas_telas();
+        let (screen, reason) = pick_screen(&screens, None, true);
+        assert_eq!(screen.unwrap().id, "display-externo");
+        assert_eq!(reason, None);
     }
 
     #[test]

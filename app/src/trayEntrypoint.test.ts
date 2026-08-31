@@ -26,7 +26,8 @@ describe("instrumento efetivo da bandeja", () => {
   it("só oferece preferências que chegam ao presenter nativo", () => {
     const settings = FRONT["./components/settings/HudSettings.tsx"]
     expect(settings).toContain('label="Posição recolhida"')
-    expect(settings).toContain('label="Seguir a tela ativa"')
+    expect(settings).toContain('label="Tela do instrumento"')
+    expect(settings).toContain("hudScreenId")
     expect(settings).toContain("setHudExpanded")
   })
 

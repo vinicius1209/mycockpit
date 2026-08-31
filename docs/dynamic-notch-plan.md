@@ -73,12 +73,17 @@ entrada real.
 
 ### N2, configuração efetiva, concluída
 
-- `GlobalSettings` persiste `hudEnabled`, `hudPosition`, `hudHoverExpand` e
-  `hudFollowActiveScreen` na fonte única de settings.
+- `GlobalSettings` persiste `hudEnabled`, `hudPosition`, `hudHoverExpand`,
+  `hudFollowActiveScreen` e `hudScreenId` na fonte única de settings. A pessoa
+  escolhe o modo automático ou qualquer tela enumerada pelo mesmo presenter.
+- No macOS, a escolha usa o UUID estável do display, não o número efêmero da
+  sessão. Se a tela escolhida sair, a Frota usa temporariamente a tela ativa,
+  publica o motivo e conserva a preferência para restaurá-la no hotplug.
 - O backend nasce desligado para não produzir flash nem surpresa antes da
   hidratação, depois recebe a intenção pelo comando `set_hud_preferences`.
-- Configurações mostra posição pedida, posição efetiva, tela medida, dimensões,
-  notch detectado e fallback. `Mostrar agora` testa o mesmo presenter nativo.
+- Configurações mostra posição pedida, posição efetiva, destino escolhido,
+  telas disponíveis, dimensões, notch detectado e fallback. `Mostrar agora`
+  testa o mesmo presenter nativo.
 
 ### N3, frontend sem telemetria inventada, concluída
 

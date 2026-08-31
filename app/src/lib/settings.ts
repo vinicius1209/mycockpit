@@ -69,6 +69,8 @@ export interface GlobalSettings {
   hudHoverExpand: boolean
   /** Segue a tela ativa com o cursor em setups multi-monitor. */
   hudFollowActiveScreen: boolean
+  /** UUID/identificador da tela escolhida. null mantém o modo automático. */
+  hudScreenId: string | null
   /** Dedupe persistido do aviso educativo exibido no primeiro hide. */
   trayCloseHintShown: boolean
   /** Último snapshot da detecção de agents (por id). Alimenta o seletor e o
@@ -159,6 +161,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   hudPosition: "notch",
   hudHoverExpand: true,
   hudFollowActiveScreen: true,
+  hudScreenId: null,
   trayCloseHintShown: false,
   detected: {},
   lastUpdateCheck: 0,

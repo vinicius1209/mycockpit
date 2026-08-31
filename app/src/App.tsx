@@ -100,6 +100,7 @@ export default function App() {
   const hudFollowActiveScreen = useApp(
     (s) => s.settings.hudFollowActiveScreen,
   )
+  const hudScreenId = useApp((s) => s.settings.hudScreenId)
   const activeProjectId = useApp((s) => s.activeProjectId)
 
   // Atalho de ditado (estilo Wispr): tap alterna, hold é push-to-talk. O combo
@@ -386,8 +387,15 @@ export default function App() {
       position: hudPosition,
       hoverExpand: hudHoverExpand,
       followActiveScreen: hudFollowActiveScreen,
+      screenId: hudScreenId,
     }).catch((cause) => console.error("Falha ao aplicar o instrumento:", cause))
-  }, [hudEnabled, hudPosition, hudHoverExpand, hudFollowActiveScreen])
+  }, [
+    hudEnabled,
+    hudPosition,
+    hudHoverExpand,
+    hudFollowActiveScreen,
+    hudScreenId,
+  ])
 
   // Ações do menu/popover chegam por um único canal e já abrem a janela. Cada
   // ação navega até o objeto, sem deixar o usuário procurar novamente.
