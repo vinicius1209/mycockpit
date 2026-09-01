@@ -248,7 +248,7 @@ export function parseResetHint(hint: string | undefined, now = Date.now()): numb
   return null
 }
 
-/** Texto final do turno = último item de assistant (text) OU cartão de limite.
+/** Texto final do turno = último item de assistant (text) OU evento de limite.
  *  A varredura para na fronteira do TURNO (o `user` que o abriu): sem isso, um
  *  turno que só rodou ferramentas — sem produzir texto — herdava a fala de um
  *  turno ANTERIOR e decidia por ela. O que aconteceu há dois turnos não pede

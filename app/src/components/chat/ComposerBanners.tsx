@@ -16,9 +16,9 @@ import { cn } from "@/lib/utils"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
 
 /** Faixa (acima do composer) quando um auto-resume está agendado: horário do
- *  próximo reenvio (relógio via fmtTime, não contagem — mesmo formato HH:MM
- *  do "Disponível novamente" do cartão de limite em MessageList, pra não
- *  parecer que os dois relógios se contradizem), próxima tentativa e saídas.
+ *  próximo reenvio (relógio via fmtTime, não contagem; o incidente mantém
+ *  separada a informação de retorno recebida do agente), próxima tentativa e
+ *  saídas.
  *  Não é decisão pendente: o sistema prossegue sem gesto humano, portanto a
  *  superfície é neutra e a única tinta fica na ação primária. */
 export function AutoResumeBanner({

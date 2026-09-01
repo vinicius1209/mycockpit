@@ -112,7 +112,7 @@ describe("wantsAutoResume", () => {
     expect(v.delayMs).toBe(62_000)
   })
 
-  it("usa o cartão de limite como texto final", () => {
+  it("usa o evento de limite como texto final", () => {
     const v = wantsAutoResume([limitItem("Limite de uso atingido, tente mais tarde")], undefined, 0, NOW)
     expect(v.resume).toBe(true)
   })
