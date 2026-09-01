@@ -650,7 +650,9 @@ pub fn run() {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     api.prevent_close();
                     if tray::should_keep_in_tray(window.app_handle()) {
-                        tray::hide_main_window(window);
+                        if let Err(error) = tray::hide_main_window(window) {
+                            log::warn!("não consegui manter a janela em background: {error}");
+                        }
                         tray::notify_window_hidden(window.app_handle());
                     } else {
                         // Mesma proteção do "Sair" da tray: com agents em voo,
@@ -875,6 +877,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // No macOS, o AppKit também considera o HUD auxiliar uma janela
+            // visível. Clicar no Dock sempre expressa a intenção de restaurar
+            // `main`, mesmo quando `has_visible_windows` vier verdadeiro.
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = &event
+            {
+                tray::handle_reopen(app_handle, *has_visible_windows);
+            }
             // Saída do app com run em voo: mata os CLIs de agent (senão ficam
             // órfãos rodando headless, editando repo e gastando, sem UI).
             if matches!(event, tauri::RunEvent::ExitRequested { .. }) {

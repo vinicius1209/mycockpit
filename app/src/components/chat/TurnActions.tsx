@@ -28,10 +28,30 @@ import {
 import { toast } from "sonner"
 import { TurnNoteComposer } from "@/components/chat/TurnNote"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
+import type { SaveLessonOutcome } from "@/lib/learning"
 import { SELECTED_FILL } from "@/lib/selection"
 import { cn } from "@/lib/utils"
 import { useChat, type ChatItem } from "@/store/chat"
-import type { FeedbackApi } from "@/components/chat/MessageList"
+
+/** Contrato de feedback do Linear (M2), threadado do ChatPanel. `null` fora do
+ *  Linear (Fusion/Mission não têm este loop). O gate humano vive no incidente:
+ *  distill propõe, o clique grava. */
+export interface FeedbackApi {
+  /** Persiste a reação no resultado terminal. Retorna true quando adicionou
+   *  (false = removeu), para o reforço só contar sinais positivos novos. */
+  onReact: (resultId: string, reaction: string) => Promise<boolean>
+  /** Destila um candidato de regra e o veredito de learnability. */
+  distill: (
+    agentTurn: string,
+    userNote: string,
+  ) => Promise<{ rule: string; learnable: boolean | null }>
+  /** Grava a regra após o gate humano e distingue duplicata de falha. */
+  save: (
+    rule: string,
+    scope: "global" | "project",
+    reaction?: string | null,
+  ) => Promise<SaveLessonOutcome>
+}
 
 const THUMB_UP = "👍"
 const THUMB_DOWN = "👎"

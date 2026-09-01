@@ -6,8 +6,8 @@ import type { ChatItem } from "@/store/chat"
 
 const LIMIT = "You've hit your session limit · resets 1:50pm (America/Sao_Paulo)"
 
-describe("cartão de incidente", () => {
-  it("apresenta limite histórico como um único instrumento âmbar e acionável", () => {
+describe("sequência de incidente", () => {
+  it("apresenta limite histórico como uma única sequência factual e acionável", () => {
     const items: ChatItem[] = [
       { kind: "user", id: "u1", text: "Continue o trabalho" },
       {
@@ -38,21 +38,19 @@ describe("cartão de incidente", () => {
       }),
     )
 
-    expect(html.match(/Limite desta sessão atingido/g)).toHaveLength(1)
-    expect(html).toContain("histórico, contexto e arquivos")
-    expect(html).toContain("Disponível novamente")
+    expect(html.match(/>Sessão em intervalo</g)).toHaveLength(1)
+    expect(html).toContain("Conversa preservada")
+    expect(html).toContain("Retorno informado")
     expect(html).toContain("13:50 · horário de São Paulo")
     expect(html).toContain("turno encerrado")
     expect(html).toContain("2min 01s")
     expect(html).toContain("US$ 35,16")
-    expect(html).toContain("Continuar no Codex")
-    expect(html).toContain("Continuar no Antigravity")
+    expect(html).toContain("Continuar com outro agente")
     expect(html).toContain("Detalhes técnicos")
-    expect(html).not.toContain("Não foi possível concluir esta execução")
+    expect(html).not.toContain("Execução interrompida")
     expect(html).not.toContain("text-st-error")
-    expect(html).toContain("border-st-warning/40 bg-st-warning/10")
-    expect(html).not.toContain("border-st-warning/30")
-    expect(html).not.toContain("bg-st-warning/[0.08]")
+    expect(html.match(/bg-st-warning/g)).toHaveLength(1)
+    expect(html).not.toContain("border-st-warning/40 bg-st-warning/10")
     expect(html).not.toContain("border-brass/40")
     expect(html).not.toContain("bg-brass/10")
   })
@@ -75,10 +73,51 @@ describe("cartão de incidente", () => {
       }),
     )
 
-    expect(html).toContain("Não foi possível concluir esta execução")
-    expect(html).toContain("text-st-error")
+    expect(html).toContain("Execução interrompida")
+    expect(html).toContain("Motivo registrado")
+    expect(html.match(/bg-st-error/g)).toHaveLength(1)
     expect(html).toContain("Detalhes técnicos")
-    expect(html).toContain("Continuar no Claude Code")
-    expect(html).not.toContain("Limite desta sessão atingido")
+    expect(html).toContain("Continuar com outro agente")
+    expect(html).not.toContain("Sessão em intervalo")
+  })
+
+  it("não oferece revezamento no histórico nem antes de o turno assentar", () => {
+    const historical = renderToStaticMarkup(
+      createElement(MessageList, {
+        items: [
+          { kind: "error", id: "e1", message: "invalid transport" },
+          { kind: "notice", id: "n1", message: "evento posterior" },
+        ],
+        running: false,
+        finalizing: false,
+        startedAt: null,
+        agent: "codex",
+        onContinueWith: vi.fn(),
+      }),
+    )
+    const running = renderToStaticMarkup(
+      createElement(MessageList, {
+        items: [{ kind: "error", id: "e1", message: "invalid transport" }],
+        running: true,
+        finalizing: false,
+        startedAt: Date.now(),
+        agent: "codex",
+        onContinueWith: vi.fn(),
+      }),
+    )
+    const finalizing = renderToStaticMarkup(
+      createElement(MessageList, {
+        items: [{ kind: "error", id: "e1", message: "invalid transport" }],
+        running: false,
+        finalizing: true,
+        startedAt: null,
+        agent: "codex",
+        onContinueWith: vi.fn(),
+      }),
+    )
+
+    expect(historical).not.toContain("Continuar com outro agente")
+    expect(running).not.toContain("Continuar com outro agente")
+    expect(finalizing).not.toContain("Continuar com outro agente")
   })
 })

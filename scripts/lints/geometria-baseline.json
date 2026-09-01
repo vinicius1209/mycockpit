@@ -8,7 +8,7 @@
   "components/chat/IdentityPicker.tsx": 2,
   "components/chat/InteractionHost.tsx": 11,
   "components/chat/Lightbox.tsx": 1,
-  "components/chat/MessageList.tsx": 7,
+  "components/chat/MessageList.tsx": 6,
   "components/chat/MicButton.tsx": 1,
   "components/chat/ModeSelect.tsx": 1,
   "components/chat/PlanGateCard.tsx": 2,

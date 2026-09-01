@@ -365,25 +365,90 @@ fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TraySnapshot) -> tauri::Result
     Menu::with_items(app, &refs)
 }
 
-pub fn show_main_window(app: &AppHandle) {
-    if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
-        let _ = popover.hide();
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum MainWindowRestoreStep {
+    PrepareInstrument,
+    ActivateApp,
+    Show,
+    Unminimize,
+    Focus,
+}
+
+fn run_main_window_restore(
+    mut apply: impl FnMut(MainWindowRestoreStep) -> Result<(), String>,
+) -> Result<(), String> {
+    for step in [
+        MainWindowRestoreStep::PrepareInstrument,
+        MainWindowRestoreStep::ActivateApp,
+        MainWindowRestoreStep::Show,
+        MainWindowRestoreStep::Unminimize,
+        MainWindowRestoreStep::Focus,
+    ] {
+        apply(step)?;
     }
-    #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    if let Some(win) = app.get_webview_window("main") {
-        let _ = win.show();
-        let _ = win.unminimize();
-        let _ = win.set_focus();
+    Ok(())
+}
+
+/// Caminho único para Dock, tray e `Abrir Frota`. A janela é resolvida antes
+/// de qualquer efeito; depois o HUD entrega o key loop e `main` é restaurada
+/// na ordem exigida pelo AppKit.
+fn restore_main_window_with<R: Runtime>(
+    app: &AppHandle<R>,
+    mut prepare_instrument: impl FnMut() -> Result<(), String>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "janela principal indisponível".to_string())?;
+    run_main_window_restore(|step| match step {
+        MainWindowRestoreStep::PrepareInstrument => prepare_instrument(),
+        MainWindowRestoreStep::ActivateApp => {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Regular)
+                .map_err(|error| format!("não consegui ativar o Frota: {error}"))?;
+            Ok(())
+        }
+        MainWindowRestoreStep::Show => window
+            .show()
+            .map_err(|error| format!("não consegui mostrar a janela principal: {error}")),
+        MainWindowRestoreStep::Unminimize => window
+            .unminimize()
+            .map_err(|error| format!("não consegui restaurar a janela minimizada: {error}")),
+        MainWindowRestoreStep::Focus => window
+            .set_focus()
+            .map_err(|error| format!("não consegui focar a janela principal: {error}")),
+    })
+}
+
+pub fn restore_main_window(app: &AppHandle) -> Result<(), String> {
+    restore_main_window_with(app, || crate::hud::prepare_for_main_window(app))
+}
+
+#[cfg(target_os = "macos")]
+fn should_restore_main_on_reopen(_has_visible_windows: bool) -> bool {
+    // O AppKit inclui o HUD auxiliar nesta contagem. Para o produto, HUD
+    // visível nunca satisfaz a intenção de abrir a janela principal.
+    true
+}
+
+#[cfg(target_os = "macos")]
+pub fn handle_reopen(app: &AppHandle, has_visible_windows: bool) {
+    if should_restore_main_on_reopen(has_visible_windows) {
+        if let Err(error) = restore_main_window(app) {
+            log::warn!("não consegui reabrir o Frota pelo Dock: {error}");
+        }
     }
 }
 
-pub fn hide_main_window(window: &tauri::Window) {
-    let _ = window.hide();
+pub fn hide_main_window(window: &tauri::Window) -> Result<(), String> {
+    window
+        .hide()
+        .map_err(|error| format!("não consegui esconder a janela principal: {error}"))?;
     #[cfg(target_os = "macos")]
-    let _ = window
+    window
         .app_handle()
-        .set_activation_policy(tauri::ActivationPolicy::Accessory);
+        .set_activation_policy(tauri::ActivationPolicy::Accessory)
+        .map_err(|error| format!("não consegui manter o Frota em background: {error}"))?;
+    Ok(())
 }
 
 pub fn should_keep_in_tray(app: &AppHandle) -> bool {
@@ -406,16 +471,22 @@ pub fn mark_popover_blur_hidden(app: &AppHandle) {
     }
 }
 
-fn emit_action(app: &AppHandle, action: &str, conv_id: Option<String>, project_id: Option<String>) {
-    show_main_window(app);
-    let _ = app.emit(
+fn emit_action(
+    app: &AppHandle,
+    action: &str,
+    conv_id: Option<String>,
+    project_id: Option<String>,
+) -> Result<(), String> {
+    restore_main_window(app)?;
+    app.emit(
         "tray://action",
         serde_json::json!({
             "action": action,
             "convId": conv_id,
             "projectId": project_id,
         }),
-    );
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn emit_background_action(
@@ -423,18 +494,19 @@ fn emit_background_action(
     action: &str,
     conv_id: Option<String>,
     project_id: Option<String>,
-) {
+) -> Result<(), String> {
     if let Some(popover) = app.get_webview_window(POPOVER_LABEL) {
-        let _ = popover.hide();
+        popover.hide().map_err(|error| error.to_string())?;
     }
-    let _ = app.emit(
+    app.emit(
         "tray://action",
         serde_json::json!({
             "action": action,
             "convId": conv_id,
             "projectId": project_id,
         }),
-    );
+    )
+    .map_err(|error| error.to_string())
 }
 
 pub fn request_quit(app: &AppHandle) {
@@ -464,8 +536,8 @@ pub fn request_quit(app: &AppHandle) {
 
 fn dispatch_native_action(app: &AppHandle, action: &str) {
     let s = snapshot(&app.state::<TrayState>());
-    match action {
-        "open" => show_main_window(app),
+    let result = match action {
+        "open" => restore_main_window(app),
         "new-task" => emit_action(app, "new-task", None, None),
         "review" => emit_action(
             app,
@@ -475,8 +547,14 @@ fn dispatch_native_action(app: &AppHandle, action: &str) {
         ),
         "running" => emit_action(app, "show-running", None, None),
         "schedules" => emit_action(app, "open-schedules", None, None),
-        "quit" => request_quit(app),
-        _ => {}
+        "quit" => {
+            request_quit(app);
+            Ok(())
+        }
+        _ => Ok(()),
+    };
+    if let Err(error) = result {
+        log::warn!("ação nativa {action} não foi concluída: {error}");
     }
 }
 
@@ -706,10 +784,13 @@ pub fn tray_action(
     action: String,
     conv_id: Option<String>,
     project_id: Option<String>,
-) {
+) -> Result<(), String> {
     match action.as_str() {
-        "quit" => request_quit(&app),
-        "open" => show_main_window(&app),
+        "quit" => {
+            request_quit(&app);
+            Ok(())
+        }
+        "open" => restore_main_window(&app),
         // Ações de fundo: não puxam a janela principal pra frente (o feedback
         // vira notificação nativa no frontend quando a janela está escondida).
         "stop-activity" | "pause-schedules" => {
@@ -727,6 +808,87 @@ pub fn force_quit(app: AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::test::mock_app;
+
+    #[test]
+    fn restauracao_da_janela_principal_respeita_a_ordem_nativa() {
+        let mut steps = Vec::new();
+        run_main_window_restore(|step| {
+            steps.push(step);
+            Ok(())
+        })
+        .expect("sequência válida");
+
+        assert_eq!(
+            steps,
+            vec![
+                MainWindowRestoreStep::PrepareInstrument,
+                MainWindowRestoreStep::ActivateApp,
+                MainWindowRestoreStep::Show,
+                MainWindowRestoreStep::Unminimize,
+                MainWindowRestoreStep::Focus,
+            ]
+        );
+    }
+
+    #[test]
+    fn restauracao_aborta_antes_do_foco_quando_uma_precondicao_falha() {
+        let mut steps = Vec::new();
+        let result = run_main_window_restore(|step| {
+            steps.push(step);
+            if step == MainWindowRestoreStep::Show {
+                Err("show falhou".into())
+            } else {
+                Ok(())
+            }
+        });
+
+        assert_eq!(result, Err("show falhou".to_string()));
+        assert_eq!(
+            steps,
+            vec![
+                MainWindowRestoreStep::PrepareInstrument,
+                MainWindowRestoreStep::ActivateApp,
+                MainWindowRestoreStep::Show,
+            ]
+        );
+    }
+
+    #[test]
+    fn restauracao_roda_no_runtime_tauri_com_main_escondida_minimizada_ou_visivel() {
+        for initial in ["escondida", "minimizada", "visível"] {
+            let app = mock_app();
+            let window = WebviewWindowBuilder::new(
+                &app,
+                "main",
+                WebviewUrl::default(),
+            )
+            .build()
+            .expect("janela principal de teste");
+            match initial {
+                "escondida" => window.hide().expect("esconder no preparo"),
+                "minimizada" => window.minimize().expect("minimizar no preparo"),
+                "visível" => window.show().expect("mostrar no preparo"),
+                _ => unreachable!(),
+            }
+
+            let mut prepared = 0;
+            restore_main_window_with(app.handle(), || {
+                prepared += 1;
+                Ok(())
+            })
+            .unwrap_or_else(|error| panic!("não restaurou a janela {initial}: {error}"));
+
+            assert_eq!(prepared, 1, "o instrumento é preparado uma vez");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn reopen_restaura_main_mesmo_quando_o_hud_conta_como_janela_visivel() {
+        assert!(should_restore_main_on_reopen(false));
+        assert!(should_restore_main_on_reopen(true));
+    }
 
     /// D1.4 (deferred-work-plan): sair com trabalho em background do provider
     /// vivo avisa que ele morre junto — nunca morte silenciosa.

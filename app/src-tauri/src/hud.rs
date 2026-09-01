@@ -6,7 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Mutex,
 };
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -33,6 +33,7 @@ const HOVER_POLL_MS: u64 = 50;
 const HOVER_IDLE_MS: u64 = 300;
 #[cfg(target_os = "macos")]
 const HOVER_LEAVE_MS: u64 = 260;
+const SUPERSEDED_INTENT: &str = "intenção do HUD substituída";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -106,6 +107,10 @@ pub struct HudState {
     screen_changes: Mutex<ScreenChangeQueue>,
     hover_worker_started: AtomicBool,
     auto_collapse: AtomicBool,
+    /// Invalida expansões/focos já enfileirados quando outro gesto nativo
+    /// assume a janela. Em especial, o Dock precisa vencer qualquer hover ou
+    /// clique do HUD iniciado antes de restaurar `main`.
+    presentation_epoch: AtomicU64,
 }
 
 #[derive(Default)]
@@ -540,7 +545,46 @@ fn apply_window(app: &AppHandle, runtime: &HudRuntimeView) -> Result<(), String>
     Ok(())
 }
 
-async fn recompute(app: &AppHandle, expanded: Option<bool>) -> Result<HudRuntimeView, String> {
+fn next_presentation_epoch(app: &AppHandle) -> u64 {
+    app.state::<HudState>()
+        .presentation_epoch
+        .fetch_add(1, Ordering::AcqRel)
+        .wrapping_add(1)
+}
+
+fn current_presentation_epoch(app: &AppHandle) -> u64 {
+    app.state::<HudState>()
+        .presentation_epoch
+        .load(Ordering::Acquire)
+}
+
+fn is_current_intent(current: u64, expected: Option<u64>) -> bool {
+    expected.is_none_or(|expected| current == expected)
+}
+
+fn ensure_current_intent(app: &AppHandle, expected_epoch: Option<u64>) -> Result<(), String> {
+    if !is_current_intent(current_presentation_epoch(app), expected_epoch) {
+        Err(SUPERSEDED_INTENT.into())
+    } else {
+        Ok(())
+    }
+}
+
+fn warn_recompute(context: &str, error: &str) {
+    if error != SUPERSEDED_INTENT {
+        log::warn!("{context}: {error}");
+    }
+}
+
+async fn recompute(
+    app: &AppHandle,
+    expanded: Option<bool>,
+    expected_epoch: Option<u64>,
+) -> Result<HudRuntimeView, String> {
+    // Reposicionamentos sem gesto próprio herdam a intenção vigente. Assim,
+    // uma medição de tela iniciada antes do Dock também é descartada se ele
+    // assumir a janela enquanto `screen_geometries` espera a main thread.
+    let expected_epoch = expected_epoch.or_else(|| Some(current_presentation_epoch(app)));
     let state = app.state::<HudState>();
     if expanded == Some(false) {
         state.auto_collapse.store(false, Ordering::Release);
@@ -577,6 +621,9 @@ async fn recompute(app: &AppHandle, expanded: Option<bool>) -> Result<HudRuntime
         fallback_reason: combine_reasons(screen_reason, position_reason),
         supported_positions: supported_positions(),
     };
+    // `screen_geometries` cruza a main thread. O Dock pode assumir o foco
+    // enquanto esperamos; uma expansão anterior não pode ganhar depois.
+    ensure_current_intent(app, expected_epoch)?;
     apply_window(app, &runtime)?;
     if let Ok(mut stored) = state.runtime.lock() {
         *stored = runtime.clone();
@@ -645,8 +692,8 @@ fn install_hover_observer(app: &AppHandle) {
                     });
             if moved_to_another_screen {
                 tracker.observe(HoverPhase::Inactive, false, 0);
-                if let Err(error) = recompute(&handle, None).await {
-                    log::warn!("não consegui acompanhar a tela sob o ponteiro: {error}");
+                if let Err(error) = recompute(&handle, None, None).await {
+                    warn_recompute("não consegui acompanhar a tela sob o ponteiro", &error);
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(HOVER_POLL_MS)).await;
                 continue;
@@ -671,16 +718,17 @@ fn install_hover_observer(app: &AppHandle) {
             let now_ms = started.elapsed().as_millis().min(u128::from(u64::MAX)) as u64;
             match tracker.observe(phase, inside, now_ms) {
                 HoverAction::Expand => {
+                    let epoch = next_presentation_epoch(&handle);
                     handle
                         .state::<HudState>()
                         .auto_collapse
                         .store(true, Ordering::Release);
-                    if let Err(error) = recompute(&handle, Some(true)).await {
+                    if let Err(error) = recompute(&handle, Some(true), Some(epoch)).await {
                         handle
                             .state::<HudState>()
                             .auto_collapse
                             .store(false, Ordering::Release);
-                        log::warn!("não consegui expandir o HUD ao apontar: {error}");
+                        warn_recompute("não consegui expandir o HUD ao apontar", &error);
                     }
                 }
                 HoverAction::BeginCollapse => {
@@ -703,7 +751,7 @@ pub fn initialize(app: &AppHandle) -> Result<(), String> {
     install_hover_observer(app);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(error) = recompute(&handle, Some(false)).await {
+        if let Err(error) = recompute(&handle, Some(false), None).await {
             log::warn!("HUD indisponível no boot: {error}");
         }
     });
@@ -731,7 +779,7 @@ pub fn screen_parameters_changed(app: AppHandle) {
                 .lock()
                 .map(|queue| queue.current_generation())
                 .unwrap_or_default();
-            if let Err(error) = recompute(&app, None).await {
+            if let Err(error) = recompute(&app, None, None).await {
                 log::warn!("não consegui reposicionar o HUD após mudança de tela: {error}");
             }
             let repeat = app
@@ -757,20 +805,51 @@ pub fn is_floating(app: &AppHandle) -> bool {
         })
 }
 
+/// Entrega o foco à janela principal sem desmontar o instrumento. O popover
+/// clássico fecha; o HUD flutuante volta ao frame compacto, permanece visível
+/// e deixa de participar do key loop. O incremento invalida qualquer expansão
+/// assíncrona iniciada antes do gesto do Dock ou de `Abrir Frota`.
+pub fn prepare_for_main_window(app: &AppHandle) -> Result<(), String> {
+    next_presentation_epoch(app);
+    let state = app.state::<HudState>();
+    state.auto_collapse.store(false, Ordering::Release);
+    let mut compact = state
+        .runtime
+        .lock()
+        .map_err(|_| "estado do HUD indisponível".to_string())?
+        .clone();
+    compact.expanded = false;
+    apply_window(app, &compact)?;
+    *state
+        .runtime
+        .lock()
+        .map_err(|_| "estado do HUD indisponível".to_string())? = compact.clone();
+    app.emit_to(crate::tray::POPOVER_LABEL, "hud://state", &compact)
+        .map_err(|error| error.to_string())?;
+    app.emit("hud://state", compact)
+        .map_err(|error| error.to_string())
+}
+
 pub fn collapse_after_blur(app: &AppHandle) {
     if !is_floating(app) {
         if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
-            let _ = window.hide();
+            if let Err(error) = window.hide() {
+                log::warn!("não consegui fechar o popover após perder foco: {error}");
+            }
         }
         return;
     }
+    let epoch = next_presentation_epoch(app);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = recompute(&handle, Some(false)).await;
+        if let Err(error) = recompute(&handle, Some(false), Some(epoch)).await {
+            warn_recompute("não consegui recolher o HUD após perder foco", &error);
+        }
     });
 }
 
 pub fn toggle_from_tray(app: &AppHandle) {
+    let epoch = next_presentation_epoch(app);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
         let current = handle
@@ -780,12 +859,16 @@ pub fn toggle_from_tray(app: &AppHandle) {
             .ok()
             .map(|runtime| runtime.expanded)
             .unwrap_or(false);
-        if let Ok(runtime) = recompute(&handle, Some(!current)).await {
-            if runtime.expanded {
+        match recompute(&handle, Some(!current), Some(epoch)).await {
+            Ok(runtime) if runtime.expanded && current_presentation_epoch(&handle) == epoch => {
                 if let Some(window) = handle.get_webview_window(crate::tray::POPOVER_LABEL) {
-                    let _ = window.set_focus();
+                    if let Err(error) = window.set_focus() {
+                        log::warn!("não consegui focar o HUD aberto pela tray: {error}");
+                    }
                 }
             }
+            Ok(_) => {}
+            Err(error) => warn_recompute("não consegui alternar o HUD pela tray", &error),
         }
     });
 }
@@ -804,11 +887,12 @@ pub async fn set_hud_preferences(
     app: AppHandle,
     preferences: HudPreferences,
 ) -> Result<HudRuntimeView, String> {
+    let epoch = next_presentation_epoch(&app);
     *app.state::<HudState>()
         .preferences
         .lock()
         .map_err(|_| "preferências do HUD indisponíveis".to_string())? = preferences;
-    recompute(&app, Some(false)).await
+    recompute(&app, Some(false), Some(epoch)).await
 }
 
 #[tauri::command]
@@ -818,11 +902,12 @@ pub async fn set_hud_expanded(
     focus: Option<bool>,
     auto_collapse: Option<bool>,
 ) -> Result<HudRuntimeView, String> {
+    let epoch = next_presentation_epoch(&app);
     let transient = expanded && auto_collapse.unwrap_or(false);
     app.state::<HudState>()
         .auto_collapse
         .store(transient, Ordering::Release);
-    let runtime = match recompute(&app, Some(expanded)).await {
+    let runtime = match recompute(&app, Some(expanded), Some(epoch)).await {
         Ok(runtime) => runtime,
         Err(error) => {
             if transient {
@@ -833,7 +918,10 @@ pub async fn set_hud_expanded(
             return Err(error);
         }
     };
-    if runtime.expanded && focus.unwrap_or(false) {
+    if runtime.expanded
+        && focus.unwrap_or(false)
+        && current_presentation_epoch(&app) == epoch
+    {
         if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
             window.set_focus().map_err(|error| error.to_string())?;
         }
@@ -844,6 +932,13 @@ pub async fn set_hud_expanded(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gesto_novo_invalida_recalculo_da_intencao_anterior() {
+        assert!(is_current_intent(7, Some(7)));
+        assert!(!is_current_intent(8, Some(7)));
+        assert!(is_current_intent(8, None));
+    }
 
     #[test]
     fn rajada_de_telas_cria_um_worker_e_uma_passada_final() {

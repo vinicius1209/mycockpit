@@ -16,7 +16,6 @@ import {
 } from "react"
 import {
   AlertCircle,
-  ArrowRightLeft,
   Ban,
   Bot,
   Check,
@@ -24,7 +23,6 @@ import {
   Copy,
   FilePen,
   FileText,
-  Gauge,
   Globe,
   ListChecks,
   MessageSquareQuote,
@@ -37,15 +35,12 @@ import {
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
-import { TurnoTokens } from "@/components/chat/turnoTokens"
 import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
-import { DESTINATIONS } from "@/lib/agents"
-import { fmtCost, fmtDuration, fmtTime } from "@/lib/format"
+import { fmtDuration, fmtTime } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { attachmentReadsByItem, type ReadLabels } from "@/lib/attachmentRead"
-import type { SaveLessonOutcome } from "@/lib/learning"
 import {
   cleanResultText,
   evidenceMeta,
@@ -69,17 +64,18 @@ import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { TurnNoteBlock } from "@/components/chat/TurnNote"
-import { TurnActions } from "@/components/chat/TurnActions"
+import {
+  TurnActions,
+  type FeedbackApi,
+} from "@/components/chat/TurnActions"
+import { TurnTelemetry } from "@/components/chat/TurnTelemetry"
+import { IncidentSequence } from "@/components/chat/IncidentSequence"
 import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { ActivityAge } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
-import {
-  type IncidentNode,
-  type Node,
-  type ToolItem,
-} from "@/components/chat/messageNodes"
+import { type Node, type ToolItem } from "@/components/chat/messageNodes"
 import {
   branchContains,
   branchHasFailure,
@@ -105,6 +101,8 @@ import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { splitMentions } from "@/components/chat/mentions"
 import { usePresets } from "@/store/presets"
 import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
+
+export type { FeedbackApi } from "@/components/chat/TurnActions"
 
 /** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
 const DIFF_MAX_LINES = 80
@@ -1226,103 +1224,6 @@ function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
   )
 }
 
-/** Contrato de feedback do Linear (M2), threadado do ChatPanel. `null` fora do
- *  Linear (Fusion/Mission não têm este loop). O gate humano vive no card:
- *  distill PROPÕE, o clique GRAVA. */
-export interface FeedbackApi {
-  /** Persiste a reação no RESULTADO terminal. Retorna true quando adicionou
-   *  (false = removeu), para o reforço só contar sinais positivos novos. */
-  onReact: (resultId: string, reaction: string) => Promise<boolean>
-  /** Destila um candidato de regra + o veredito de learnability (Haiku julga se
-   *  há algo durável). learnable:false → a UI avisa mas deixa salvar (gate humano). */
-  distill: (
-    agentTurn: string,
-    userNote: string,
-  ) => Promise<{ rule: string; learnable: boolean | null }>
-
-  /** Grava a regra após o gate humano (dedup interno). O desfecho distingue
-   *  duplicata de FALHA — antes os dois viravam `false` e a UI dizia "duplicata"
-   *  quando o banco tinha caído. */
-  save: (
-    rule: string,
-    scope: "global" | "project",
-    reaction?: string | null,
-  ) => Promise<SaveLessonOutcome>
-}
-
-
-/** Legenda de fim de turno: UMA linha discreta (tempo&status · tokens&cache ·
- *  modelo&custo). Custo em cinza, NÃO brass (§2: custo nunca é gesto — fica
- *  cinza até o usuário definir um teto em Config ▸ Uso e custo). As ações
- *  moram em `TurnActions`, lado a lado (mock B de `turno-resumo-README.md`). */
-function TurnTelemetry({
-  it,
-  incidentTone,
-}: {
-  it: Extract<ChatItem, { kind: "result" }>
-  incidentTone?: "limit"
-}) {
-  return (
-    <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
-      <span className="flex items-center gap-1.5">
-        <span
-          className={cn(
-            "flex items-center gap-1 font-medium",
-            it.ok
-              ? "text-st-success"
-              : incidentTone === "limit"
-                ? "text-muted-foreground"
-                : "text-st-error",
-          )}
-        >
-          {it.ok ? (
-            <Check className="size-3" />
-          ) : incidentTone === "limit" ? (
-            <Gauge className="size-3" />
-          ) : (
-            <AlertCircle className="size-3" />
-          )}
-          {it.ok ? "concluído" : incidentTone === "limit" ? "turno encerrado" : "erro"}
-        </span>
-        {it.durationMs != null && (
-          <>
-            <Sep />
-            <span className="tabular-nums">{fmtDuration(it.durationMs)}</span>
-          </>
-        )}
-      </span>
-
-      <TurnoTokens usage={it.usage} />
-
-      {(it.model || it.costUsd != null) && (
-        <span className="flex items-center gap-1.5">
-          {it.model && <span className="truncate">{it.model}</span>}
-          {it.costUsd != null && (
-            <>
-              {it.model && <Sep />}
-              <span
-                className="font-medium tabular-nums"
-                title={
-                  it.costSource === "estimated"
-                    ? "estimado: tokens × tabela de preço"
-                    : undefined
-                }
-              >
-                {fmtCost(it.costUsd, it.costSource)}
-              </span>
-            </>
-          )}
-        </span>
-      )}
-    </div>
-  )
-}
-
-/** Separador "·" da caption de telemetria. */
-function Sep() {
-  return <span className="text-muted-foreground/30">·</span>
-}
-
 /** Texto de bolha com CHIP de menção (Especialistas): `@nome` que casa com uma
  *  persona conhecida vira um destaque brass; o resto fica texto puro. Só a
  *  mensagem RENDERIZADA (não o composer ao vivo). Aditivo — não passa pelo
@@ -1349,136 +1250,6 @@ function MentionText({ text }: { text: string }) {
         ),
       )}
     </>
-  )
-}
-
-/** Reset vem em formatos de vários CLIs. A UI só humaniza os casos inequívocos
- * e mantém o texto original nos demais (sem inventar um relógio). */
-function formatIncidentReset(hint: string): string {
-  let formatted = hint
-    .trim()
-    .replace(/^reset(?:s|ting)?\s+(?:at\s+)?/i, "")
-  const time = formatted.match(/\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/i)
-  if (time) {
-    let hour = Number(time[1]) % 12
-    if (time[3].toLowerCase() === "p") hour += 12
-    formatted = formatted.replace(time[0], `${String(hour).padStart(2, "0")}:${time[2]}`)
-  }
-  return formatted
-    .replace(/\s*\(America\/Sao_Paulo\)/i, " · horário de São Paulo")
-    .replace(/America\/Sao_Paulo/i, "horário de São Paulo")
-}
-
-
-/** Um término vira UM instrumento acionável. Limite é estado operacional
- * esperado (âmbar); vermelho fica reservado para falha real. O texto cru do
- * provider existe para diagnóstico, mas não domina o fio. */
-function IncidentCard({
-  incident,
-  currentAgent,
-  onContinueWith,
-  feedback,
-  feedbackText,
-}: {
-  incident: IncidentNode
-  currentAgent: string
-  onContinueWith?: (agent: string) => void
-  feedback?: FeedbackApi | null
-  feedbackText?: string
-}) {
-  const limited = incident.severity === "limit"
-  const Icon = limited ? Gauge : AlertCircle
-  const title = limited
-    ? "Limite desta sessão atingido"
-    : "Não foi possível concluir esta execução"
-  const description = limited
-    ? "O agente precisa de uma pausa. O Frota preservou seu histórico, contexto e arquivos."
-    : "O Frota preservou a conversa e os arquivos para você tentar novamente ou continuar com outro agente."
-
-  return (
-    <div
-      className={cn(
-        "overflow-hidden rounded-lg border",
-        limited
-          ? "border-st-warning/40 bg-st-warning/10"
-          : "border-st-error/40 bg-st-error/[0.07]",
-      )}
-    >
-      <div className="px-3.5 py-3">
-        <div className="flex items-start gap-2.5">
-          <span
-            className={cn(
-              "mt-0.5 grid size-7 shrink-0 place-items-center rounded-md",
-              limited
-                ? "text-st-warning"
-                : "border border-st-error/30 bg-st-error/10 text-st-error",
-            )}
-          >
-            <Icon className="size-4" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <p
-              className={cn(
-                "text-[13px] font-medium",
-                limited ? "text-foreground" : "text-st-error",
-              )}
-            >
-              {title}
-            </p>
-            <p className="mt-0.5 text-[13px] leading-relaxed text-foreground/75">
-              {description}
-            </p>
-          </div>
-        </div>
-
-        {limited && incident.resetHint && (
-          <div className="mt-2.5 flex items-center gap-2 pl-9 text-[12px] text-muted-foreground">
-            <RotateCcw className="size-3.5 shrink-0" />
-            <span>Disponível novamente</span>
-            <strong className="font-mono font-medium text-foreground">
-              {formatIncidentReset(incident.resetHint)}
-            </strong>
-          </div>
-        )}
-
-        {incident.result && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/45 pt-2">
-            <TurnTelemetry
-              it={incident.result}
-              incidentTone={limited ? "limit" : undefined}
-            />
-            {feedback && (
-              <TurnActions it={incident.result} feedbackText={feedbackText} api={feedback} />
-            )}
-          </div>
-        )}
-
-        {onContinueWith && (
-          <div className="mt-2.5 border-t border-border/45 pt-2.5">
-            <ContinueRow
-              current={currentAgent}
-              onPick={onContinueWith}
-              subtle={!limited}
-            />
-          </div>
-        )}
-
-        {incident.details.length > 0 && (
-          <details className="group/details mt-2.5 border-t border-border/40 pt-2">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground [&::-webkit-details-marker]:hidden">
-              <ChevronRight className="size-3 transition-transform group-open/details:rotate-90" />
-              Detalhes técnicos
-            </summary>
-            <div
-              data-selectable
-              className="mt-2 max-h-40 overflow-y-auto rounded-md bg-background/45 px-2.5 py-2 font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground"
-            >
-              {incident.details.join("\n")}
-            </div>
-          </details>
-        )}
-      </div>
-    </div>
   )
 }
 
@@ -1570,7 +1341,7 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "error") {
     return (
-      <IncidentCard
+      <IncidentSequence
         incident={{
           type: "incident",
           key: it.id,
@@ -1585,7 +1356,7 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "limit") {
     return (
-      <IncidentCard
+      <IncidentSequence
         incident={{
           type: "incident",
           key: it.id,
@@ -1659,50 +1430,13 @@ const MessageItem = memo(function MessageItem({
   )
 })
 
-/** Revezamento: continuar a conversa em OUTRO agent (após limite ou erro).
- *  `subtle` = versão discreta pro cartão de erro comum. */
-function ContinueRow({
-  current,
-  onPick,
-  subtle,
-}: {
-  current: string
-  onPick: (agent: string) => void
-  subtle?: boolean
-}) {
-  const targets = DESTINATIONS.filter(
-    (d) => d.available && d.kind === "agent" && d.id !== current,
-  )
-  if (targets.length === 0) return null
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      {!subtle && (
-        <span className="text-[12px] text-muted-foreground">Revezamento:</span>
-      )}
-      {targets.map((d) => (
-        <button
-          key={d.id}
-          onClick={() => onPick(d.id)}
-          className={cn(
-            "flex items-center gap-1.5 rounded-full border px-3 py-1 text-[12px] transition-colors",
-            subtle
-              ? "text-muted-foreground hover:bg-accent hover:text-foreground"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
-        >
-          <ArrowRightLeft className="size-3.5" /> Continuar no {d.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 // Modelo de nós (buildNodes/continuesProse) mora em ./messageNodes — puro e
 // testável, sem estragar o fast-refresh deste arquivo de componentes.
 
 interface NodeCtx {
   isLast: boolean
   running: boolean
+  finalizing: boolean
   taskPlans: AgentPlan[]
   activePlanAnchor: string | null
   feedback?: FeedbackApi | null
@@ -1793,10 +1527,11 @@ function PlanMilestone({
  *  checklist e os cartões de item (user/result/erro/limite/advice…). */
 function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   if (n.type === "incident") {
-    const continuable = ctx.onContinueWith && !ctx.running && ctx.isLast
+    const continuable =
+      ctx.onContinueWith && !ctx.running && !ctx.finalizing && ctx.isLast
     const resultId = n.result?.id
     return (
-      <IncidentCard
+      <IncidentSequence
         incident={n}
         currentAgent={ctx.agent}
         onContinueWith={continuable ? ctx.onContinueWith : undefined}
@@ -1849,34 +1584,6 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
         onStop={ctx.onStop}
         onRetry={ctx.onRetry}
       />
-    )
-  }
-  // cartão de limite/erro ganha a fileira de revezamento (só fora do run; durante
-  // o run o Stop é o caminho).
-  const continuable =
-    ctx.onContinueWith &&
-    !ctx.running &&
-    (n.item.kind === "limit" || n.item.kind === "error") &&
-    ctx.isLast
-  if (continuable) {
-    return (
-      <div className="flex flex-col gap-2">
-        <MessageItem
-          item={n.item}
-          feedback={
-            ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null
-          }
-          feedbackText={ctx.feedbackByResult.get(n.item.id)}
-          reads={ctx.attReads.get(n.item.id)}
-          onApprovePlan={ctx.onApprovePlan}
-          onKeepPlanning={ctx.onKeepPlanning}
-        />
-        <ContinueRow
-          current={ctx.agent}
-          onPick={ctx.onContinueWith!}
-          subtle={n.item.kind === "error"}
-        />
-      </div>
     )
   }
   return (
@@ -2115,8 +1822,10 @@ export function MessageList({
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)
+  const stableContinue = useStableHandler(onContinueWith)
   const ctxBase: Omit<NodeCtx, "isLast"> = {
     running,
+    finalizing,
     taskPlans,
     activePlanAnchor,
     feedback,
@@ -2126,7 +1835,7 @@ export function MessageList({
     feedbackByResult,
     onStop: stableStop,
     onRetry: stableRetry,
-    onContinueWith,
+    onContinueWith: stableContinue,
     onApprovePlan,
     onKeepPlanning,
   }

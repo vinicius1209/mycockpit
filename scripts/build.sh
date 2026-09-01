@@ -42,7 +42,14 @@ case "${1:-test}" in
 
     (cd "$APP_DIR" && bun tauri build --bundles app --config "{\"version\": \"$VERSION\"}")
 
-    cp -R "$APP_DIR/src-tauri/target/release/bundle/macos/Frota.app" "$OUT/"
+    BUNDLE="$APP_DIR/src-tauri/target/release/bundle/macos/Frota.app"
+    # O linker assina apenas o Mach-O. Sem selar o bundle, `codesign --verify`
+    # acusa recursos ausentes mesmo com o app local abrindo. A assinatura ad
+    # hoc fecha também helper, Info.plist e ícone, sem identidade de distribuição.
+    codesign --force --deep --sign - "$BUNDLE"
+    codesign --verify --deep --strict "$BUNDLE"
+
+    cp -R "$BUNDLE" "$OUT/"
     cat > "$OUT/meta.json" <<EOF
 {"num": $((10#$NUM)), "sha": "$SHA", "dirty": $([[ -n "$DIRTY" ]] && echo true || echo false), "version": "$VERSION", "date": "$(date +%Y-%m-%dT%H:%M:%S)"}
 EOF

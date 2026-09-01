@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Comparador · Incidente de sessão</title>
+  <style>
+    *{box-sizing:border-box}
+    body{margin:0;background:#111317;color:#eef0f3;font:13px/1.5 -apple-system,BlinkMacSystemFont,"SF Pro Text",sans-serif;-webkit-font-smoothing:antialiased}
+    header{position:sticky;top:0;z-index:3;min-height:56px;padding:8px 18px;display:flex;align-items:center;gap:12px;background:#181b20;border-bottom:1px solid rgba(255,255,255,.08)}
+    h1{margin:0;font-size:14px;font-weight:600}
+    p{margin:0;color:#8f959f;font-size:12px}
+    .copy{min-width:240px}
+    .controls{margin-left:auto;display:flex;gap:4px}
+    button{height:28px;padding:0 10px;border:0;border-radius:7px;color:#a8adb5;background:transparent;font:inherit;cursor:pointer}
+    button:hover,button.on{color:#fff;background:rgba(255,255,255,.08)}
+    main{padding:18px;display:grid;grid-template-columns:repeat(3,minmax(620px,1fr));gap:14px;overflow-x:auto}
+    .pane{min-width:620px;overflow:hidden;border:1px solid rgba(255,255,255,.1);border-radius:12px;background:#181b20}
+    .pane-head{height:40px;padding:0 12px;display:flex;align-items:center;border-bottom:1px solid rgba(255,255,255,.08)}
+    .pane-head strong{font-size:12px}
+    .pane-head a{margin-left:auto;color:#a8adb5;text-decoration:none;font-size:12px}
+    .pane-head a:hover{color:#fff}
+    .frame-viewport{height:650px;overflow:hidden;background:#111317}
+    iframe{width:1040px;height:1100px;display:block;border:0;background:#111317;transform:scale(.595);transform-origin:top left}
+    @media(max-width:900px){header{align-items:flex-start;flex-wrap:wrap}.controls{margin-left:0}.copy{width:100%}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="copy"><h1>Incidente de sessão · três direções</h1><p>Mesmo estado, três ritmos. Alterne também para erro real.</p></div>
+    <div class="controls" aria-label="Estado"><button data-mode="limit" class="on">Limite</button><button data-mode="error">Erro real</button></div>
+    <div class="controls" aria-label="Tema"><button data-theme="light" class="on">Claro</button><button data-theme="dark">Escuro</button></div>
+  </header>
+  <main>
+    <section class="pane"><div class="pane-head"><strong>A · Corte seco</strong><a href="incidente-sessao-a-corte.html" target="_blank" rel="noopener">abrir ↗</a></div><div class="frame-viewport"><iframe title="Variação A" data-file="incidente-sessao-a-corte.html"></iframe></div></section>
+    <section class="pane"><div class="pane-head"><strong>B · Claquete operacional</strong><a href="incidente-sessao-b-claquete.html" target="_blank" rel="noopener">abrir ↗</a></div><div class="frame-viewport"><iframe title="Variação B" data-file="incidente-sessao-b-claquete.html"></iframe></div></section>
+    <section class="pane"><div class="pane-head"><strong>C · Sequência temporal</strong><a href="incidente-sessao-c-sequencia.html" target="_blank" rel="noopener">abrir ↗</a></div><div class="frame-viewport"><iframe title="Variação C" data-file="incidente-sessao-c-sequencia.html"></iframe></div></section>
+  </main>
+  <script>
+    let mode="limit",theme="light";
+    const refresh=()=>document.querySelectorAll("iframe").forEach(frame=>{frame.src=`${frame.dataset.file}?mode=${mode}&theme=${theme}`});
+    document.querySelectorAll("[data-mode]").forEach(button=>button.onclick=()=>{mode=button.dataset.mode;document.querySelectorAll("[data-mode]").forEach(item=>item.classList.toggle("on",item===button));refresh()});
+    document.querySelectorAll("[data-theme]").forEach(button=>button.onclick=()=>{theme=button.dataset.theme;document.querySelectorAll("[data-theme]").forEach(item=>item.classList.toggle("on",item===button));refresh()});
+    refresh();
+  </script>
+</body>
+</html>

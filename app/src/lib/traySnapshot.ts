@@ -23,6 +23,16 @@ type ConversationTitles = Record<
   readonly { id: string; title: string | null }[]
 >
 
+/** O processo ainda está em voo durante `finalizing`: o provider terminou de
+ * responder, mas o recibo e a persistência ainda não assentaram. A tray e o
+ * gate de build precisam contar os dois estados pela mesma régua. */
+export function isLinearInFlight(conversation: {
+  running: boolean
+  finalizing: boolean
+}): boolean {
+  return conversation.running || conversation.finalizing
+}
+
 function conversationTitle(
   conversationsByProject: ConversationTitles,
   convId: string,
@@ -116,7 +126,7 @@ export function enviarSnapshotDaTray(
     })
   }
   for (const [id, c] of Object.entries(chat.byId))
-    if (c.running)
+    if (isLinearInFlight(c))
       push(
         id,
         "turno",
@@ -124,7 +134,7 @@ export function enviarSnapshotDaTray(
         c.startedAt,
         agentLabel(c.agent),
         c.model ?? c.reqModel,
-        linearDetail(id),
+        c.finalizing ? "Finalizando o turno…" : linearDetail(id),
       )
   for (const [id, m] of Object.entries(missions.byConv)) {
     if (m.status !== "running") continue

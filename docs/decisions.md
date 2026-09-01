@@ -5226,3 +5226,47 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Reatividade:** a assinatura da tray observa tanto o último evento quanto a
   meta vigente da conversa. Carregamento e renomeação atualizam o instrumento
   imediatamente, sem criar ticker, worker ou consulta extra ao SQLite.
+
+### ADR-143 - incidente terminal é uma sequência factual no fio ✅
+- **Problema:** limite e erro terminal eram cartões tingidos que repetiam a
+  urgência em fundo, borda, ícone, título, telemetria e várias ações. A
+  superfície parecia um alerta genérico e escondia a causalidade que a pessoa
+  precisa ler: o turno encerrou, a conversa foi preservada e há ou não uma
+  informação de retorno.
+- **Decisão:** o incidente vira uma sequência E0 de três fatos, com trilho
+  neutro, estático e sem semântica de progresso. Somente o primeiro marcador
+  recebe a cor do estado, âmbar para limite esperado e vermelho para falha
+  real. O horário do grupo continua sendo o único carimbo do incidente;
+  retorno informado usa somente o `resetHint` recebido, nunca disponibilidade
+  inferida, contagem ou `agora`.
+- **Disclosure:** causa crua, telemetria e feedback permanecem auditáveis em
+  `Detalhes técnicos`. Os destinos de revezamento saem das pílulas simultâneas
+  e entram num único menu neutro, preservando os mesmos IDs e o mesmo gesto
+  humano que inicia o handoff transacional.
+- **Consequência:** eventos, `IncidentNode`, auto-resume, custo, limites,
+  contexto e liberdade de uso não mudam. A implementação divide
+  `MessageList.tsx`; a catraca de tamanho só pode descer.
+
+### ADR-144 - o Dock restaura a janela principal, não o instrumento ✅
+- **Incidente real (31/08/2026):** com o instrumento flutuante ativo, clicar no
+  ícone do Frota no Dock apenas focava o HUD. A janela principal só voltava
+  pelo controle `Abrir Frota` dentro do instrumento. O fechamento colocava o
+  processo em `ActivationPolicy::Accessory`, enquanto `App::run` não tratava
+  `RunEvent::Reopen`.
+- **Decisão:** Dock e `Abrir Frota` convergem para uma única restauração de
+  `main`: preparar o instrumento, restaurar `Regular`, mostrar, desminimizar e
+  focar a janela principal. No evento `Reopen`, `has_visible_windows` não
+  bloqueia o gesto, porque o AppKit também conta o HUD auxiliar como janela
+  visível.
+- **Ciclo de vida:** fechar com `Continuar ao fechar` mantém `hide + Accessory`;
+  minimizar continua sendo a minimização nativa e nunca vira fechamento;
+  sair continua passando por `ExitRequested` e pela limpeza dos processos. O
+  popover clássico fecha ao abrir `main`; o HUD flutuante apenas recolhe, fica
+  visível e deixa de ser focável.
+- **Consequência:** a correção é específica do ciclo nativo do macOS e não cria
+  listener React, plugin de instância, daemon ou regra por monitor. Atividade,
+  escolha de tela, snapshot, agents, limites e comportamento Linux não mudam.
+- **Correção do gate (01/09/2026):** o snapshot já tratava candidaturas de
+  disputa em `finalizing` como atividade, mas omitia esse mesmo estado no turno
+  linear. A tray passa a contar `running || finalizing`; assim, “Frota pronta”
+  e o gate de build só aparecem depois que recibo e persistência assentarem.

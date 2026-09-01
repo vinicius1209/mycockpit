@@ -64,6 +64,7 @@ objc2-core-foundation = { version = "0.3.2", default-features = false, features 
 objc2-core-graphics = { version = "0.3.2", default-features = false, features = ["CGDirectDisplay", "CGWindow"] }
 
 [dev-dependencies]
+tauri = { version = "2.11.3", features = ["test"] } # runtime simulado para contratos de janela nativa
 tower = { version = "0.5", features = ["util"] } # oneshot() nos testes do guard do companion
 
 # Resolver MSRV-aware (boa prática). Toolchain local: rustc 1.96 (Homebrew).

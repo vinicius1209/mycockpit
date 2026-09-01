@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light" data-mode="limit">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Incidente de sessão · C · Sequência temporal</title>
+  <link rel="stylesheet" href="incidente-sessao.css" />
+</head>
+<body>
+  <header class="review-bar">
+    <span class="review-kicker">mock de direção</span>
+    <strong>C · Sequência temporal</strong>
+    <nav class="review-nav" aria-label="Variações">
+      <a href="incidente-sessao-a-corte.html">A</a>
+      <a href="incidente-sessao-b-claquete.html">B</a>
+      <a class="is-active" href="incidente-sessao-c-sequencia.html">C</a>
+      <a href="incidente-sessao-comparador.html">Comparar</a>
+      <button data-set-mode="limit">Limite</button>
+      <button data-set-mode="error">Erro</button>
+      <button data-set-theme="light">Claro</button>
+      <button data-set-theme="dark">Escuro</button>
+    </nav>
+  </header>
+  <main class="stage">
+    <div class="stage-copy">
+      <div>
+        <h1>O incidente é lido como sequência, não como alarme.</h1>
+        <p>Três fatos no tempo substituem a caixa de aviso. A pessoa vê onde o turno parou, o que está preservado e quando há saída.</p>
+      </div>
+      <p class="rationale">É a opção mais operacional e calma. A linha representa ordem temporal, nunca percentual de progresso.</p>
+    </div>
+    <section class="app-window" aria-label="Frota com a variação Sequência temporal">
+      <div class="app-chrome">
+        <div class="traffic"><i></i><i></i><i></i><span class="app-title">projetos</span></div>
+        <div class="chrome-tabs"><span>Painel</span><span class="on">Trabalho</span><span>Features</span></div>
+        <div class="chrome-actions"><span>Buscar</span><span>Notas</span><span>⚙</span></div>
+      </div>
+      <div class="workspace">
+        <aside class="sidebar">
+          <p class="sidebar-label">Geral</p>
+          <div class="sidebar-row">◌ <span>Frota</span></div>
+          <div class="sidebar-row">◷ <span>Agendamentos</span></div>
+          <div class="sidebar-row">⌘ <span>Planos de voo</span></div>
+          <p class="sidebar-label" style="margin-top:22px">Projetos</p>
+          <div class="sidebar-row">□ <span>Maclan</span></div>
+          <div class="sidebar-row active"><span class="live-dot"></span><span>projetos</span></div>
+        </aside>
+        <div class="thread-shell">
+          <div class="thread-tab">▣&nbsp; Conversa</div>
+          <div class="thread">
+            <article class="message">
+              <div class="avatar">C</div>
+              <div>
+                <h2 class="message-author">Claude Code <time>20:54</time></h2>
+                <p>Vou confirmar o estado da issue antes de agir, para não tocar no alvo errado.</p>
+                <div class="tool-line"><span>✓</span><span>Buscar no projeto</span><span style="margin-left:auto">1 shell</span></div>
+              </div>
+            </article>
+
+            <div class="incident-wrap">
+              <section class="incident-sequence">
+                <div class="sequence-title">
+                  <span class="status-dot"></span>
+                  <strong class="only-limit">Sessão em intervalo</strong>
+                  <strong class="only-error">Execução interrompida</strong>
+                  <span class="only-limit">A conversa e os arquivos estão preservados.</span>
+                  <span class="only-error">Nenhuma resposta final foi recebida.</span>
+                </div>
+                <div class="sequence-rail only-limit">
+                  <div class="sequence-stop"><time>20:54</time><strong>Turno encerrado</strong><p>O limite desta sessão foi atingido.</p></div>
+                  <div class="sequence-stop current"><time>agora</time><strong>Contexto preservado</strong><p>A conversa e os arquivos continuam no Frota.</p></div>
+                  <div class="sequence-stop future"><time>00:30</time><strong>Agente disponível</strong><p>Horário informado para São Paulo.</p></div>
+                </div>
+                <div class="sequence-rail only-error grid">
+                  <div class="sequence-stop"><time>20:54</time><strong>Turno encerrado</strong><p>A execução terminou sem resposta final.</p></div>
+                  <div class="sequence-stop current"><time>agora</time><strong>Motivo disponível</strong><p>Os detalhes técnicos podem ser revisados.</p></div>
+                  <div class="sequence-stop future"><time>próximo gesto</time><strong>Você decide</strong><p>Tente novamente ou escolha outro agente.</p></div>
+                </div>
+                <div class="sequence-actions">
+                  <details class="technical">
+                    <summary>› detalhes técnicos</summary>
+                    <pre>37s · 2↓ · 1,5k↑ · cache 11k
+claude-opus-5 · US$ 2,96</pre>
+                  </details>
+                  <button class="primary-action only-limit">Continuar no Codex</button>
+                  <button class="primary-action only-error">Tentar novamente</button>
+                </div>
+              </section>
+            </div>
+
+            <div class="handoff only-limit"><span class="pulse"></span><span>Memória de revezamento pronta, preparando Codex</span></div>
+            <article class="message only-limit">
+              <div class="avatar">C</div>
+              <div><h2 class="message-author">Codex <time>20:55</time></h2><p>A issue #100 já está fechada. Não adicionei nenhum comentário.</p></div>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+  <script src="incidente-sessao.js"></script>
+</body>
+</html>
