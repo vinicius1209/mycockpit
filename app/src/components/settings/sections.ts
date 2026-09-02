@@ -32,10 +32,12 @@ import {
   Users,
   Sparkles,
   Waypoints,
+  User,
 } from "lucide-react"
 import { hooksAgents } from "@/lib/agentRoster"
 
 export type SectionId =
+  | "profile"
   | "appearance"
   | "tray"
   | "new-chats"
@@ -102,6 +104,15 @@ export const SETTINGS_GROUPS: { id: GroupId; label: string }[] = [
 ]
 
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  {
+    id: "profile",
+    label: "Perfil",
+    title: "Perfil e preferências",
+    question: "Seu nome, avatar e como você se identifica no app.",
+    icon: User,
+    group: "interface",
+    busca: ["perfil", "avatar", "foto", "imagem", "nome", "usuário", "identidade", "você", "atalho", "som"],
+  },
   {
     id: "appearance",
     label: "Aparência",

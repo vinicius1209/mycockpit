@@ -8,6 +8,7 @@ import { useNotifs } from "@/store/notifications"
 import { agentLabel } from "@/lib/agent"
 import { receiptBody, turnReceipt } from "@/lib/turnReceipt"
 import { clipTitle, nativeNotify } from "@/lib/notify/native"
+import { playTaskDoneChime } from "@/lib/userProfile"
 // A porta de entrada continua sendo `@/lib/notify`: quem já importava
 // `nativeNotify` daqui (App, onboarding, companion) não precisa saber que o
 // transporte mudou de arquivo. Extração não é motivo pra mexer em call site.
@@ -65,6 +66,10 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   // só incomoda com a nativa quando você NÃO estava olhando essa conversa.
   if (background) {
     void nativeNotify("Frota", receiptBody(clipTitle(title), errored, recibo))
+  }
+
+  if (useApp.getState().settings.userPreferences?.soundAlertsEnabled && !errored) {
+    void playTaskDoneChime()
   }
 }
 

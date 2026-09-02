@@ -530,9 +530,8 @@ export interface ChatState {
   dropNativeSession: (convId: string) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
-  /** Fork a partir de um turno: cópia CURADA (só até `uptoItemId`), sessão
-   *  nova, sem resume. No-op se o item não estiver no fio carregado. */
-  forkConversationAt: (id: string, uptoItemId: string) => Promise<void>
+  /** Fork CURADO até `uptoItemId`; false no no-op, sem anunciar gesto vazio. */
+  forkConversationAt: (id: string, uptoItemId: string) => Promise<boolean>
   persist: (convId: string) => Promise<void>
   /** Anexa itens PRONTOS ao fio da conversa e persiste (marcos da missão, M2).
    *  EXIGE a conversa carregada em byId (ensureConversationLoaded antes) —

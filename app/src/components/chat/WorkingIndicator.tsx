@@ -27,6 +27,7 @@ export function WorkingIndicator({
   startedAt,
   deferred = [],
   stalledSince,
+  inline = false,
 }: {
   agent: string
   presetId: string | null
@@ -42,6 +43,8 @@ export function WorkingIndicator({
    *  depois que o toast passou (achado real do usuário, 18/08/2026: 22min
    *  de silêncio sem sinal nenhum na linha). */
   stalledSince?: number
+  /** Quando true, renderiza apenas a linha viva (sem duplicar gutter, avatar e nome do autor anterior). */
+  inline?: boolean
 }) {
   // ADR-071: os dots voltam a pulsar quando a janela reaparece.
   const epoca = useEpocaDaJanela()
@@ -58,6 +61,46 @@ export function WorkingIndicator({
   // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
   // o cronômetro sumia); sem background, é o turno.
   const since = live ? live.since : running ? startedAt : null
+
+  const liveLine = (
+    <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
+      {stalled ? (
+        <ActivityAge at={stalledSince} stalled />
+      ) : (
+        <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
+          {label}
+        </span>
+      )}
+      <span className="flex shrink-0 items-center gap-1" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <span
+            key={`${epoca}:${i}`}
+            className={cn(
+              "size-1.5 rounded-full",
+              stalled
+                ? "bg-st-warning/70"
+                // §2.2: a linha "trabalhando" mora DENTRO do fio, então o
+                // vivo dela é o pulso, não a tinta. O âmbar do `stalled` fica:
+                // travado não é "vivo", é aviso, e isso é outro eixo.
+                : "animate-cockpit-pulse bg-foreground/45",
+            )}
+            style={stalled ? undefined : { animationDelay: `${i * 0.18}s` }}
+          />
+        ))}
+      </span>
+      {since != null && (
+        <Elapsed
+          since={since}
+          className="ml-1 min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
+        />
+      )}
+    </div>
+  )
+
+  if (inline) {
+    return liveLine
+  }
+
   return (
     <div className="flex gap-3">
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
@@ -70,38 +113,7 @@ export function WorkingIndicator({
             </span>
           )}
         </div>
-        <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
-          {stalled ? (
-            <ActivityAge at={stalledSince} stalled />
-          ) : (
-            <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
-              {label}
-            </span>
-          )}
-          <span className="flex shrink-0 items-center gap-1" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={`${epoca}:${i}`}
-                className={cn(
-                  "size-1.5 rounded-full",
-                  stalled
-                    ? "bg-st-warning/70"
-                    // §2.2: a linha "trabalhando" mora DENTRO do fio, então o
-                    // vivo dela é o pulso, não a tinta. O âmbar do `stalled` fica:
-                    // travado não é "vivo", é aviso, e isso é outro eixo.
-                    : "animate-cockpit-pulse bg-foreground/45",
-                )}
-                style={stalled ? undefined : { animationDelay: `${i * 0.18}s` }}
-              />
-            ))}
-          </span>
-          {since != null && (
-            <Elapsed
-              since={since}
-              className="ml-1 min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
-            />
-          )}
-        </div>
+        {liveLine}
       </div>
     </div>
   )

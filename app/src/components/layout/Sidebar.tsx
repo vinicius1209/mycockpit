@@ -30,6 +30,7 @@ import {
   ScheduledEntry,
 } from "@/components/layout/Sidebar/globalEntries"
 import { ProjectRow } from "@/components/layout/Sidebar/ProjectRow"
+import { UserAvatar } from "@/components/user/UserAvatar"
 import { useApp } from "@/store/app"
 import {
   COPY_DA_PASTA,
@@ -419,6 +420,8 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const viewMode = useApp((s) => s.viewMode)
   const theme = useApp((s) => s.theme)
   const toggleTheme = useApp((s) => s.toggleTheme)
+  const userProfile = useApp((s) => s.settings.userProfile)
+  const setSettingsOpen = useApp((s) => s.setSettingsOpen)
 
   // A pasta de cada projeto ainda existe? Confere no boot e quando a lista de
   // CAMINHOS muda (adicionar/arquivar) — não a cada render, e nunca em laço:
@@ -577,17 +580,19 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
           (ADR-043, Fase 3): o que separa é o espaço (o inset de 8px) e o peso.
           Duas linhas empilhadas a 24px foi o que o usuário leu como "cortado".
           O avatar saiu do brass junto: brass é gesto, avatar é identidade. */}
-      <footer className="flex h-12 shrink-0 items-center gap-2.5 px-3">
-        <div className="grid size-6 place-items-center rounded-full bg-foreground/10 text-[11px] font-semibold text-muted-foreground">
-          V
-        </div>
-        {/* A VERSÃO saiu daqui pra faixa de status (StatusBar): saber qual
-            build está rodando é ambiente e permanente, e no rodapé da sidebar
-            sumia junto com a sidebar fechada. O que fica é o que NÃO é
-            ambiente: quem está usando, e o gesto de trocar o tema. */}
-        <div className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
-          Vinícius
-        </div>
+      <footer className="flex h-12 shrink-0 items-center gap-1.5 px-3">
+        <button
+          type="button"
+          onClick={() => setSettingsOpen(true, "profile")}
+          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-md p-1 -ml-1 text-left transition-colors hover:bg-sel-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+          title="Abrir perfil e preferências"
+          aria-label="Perfil do usuário e preferências"
+        >
+          <UserAvatar size={24} profile={userProfile} alt="" />
+          <div className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
+            {userProfile?.name.trim() || "Você"}
+          </div>
+        </button>
         <Button
           variant="ghost"
           size="icone-padrao"

@@ -206,15 +206,15 @@ export async function forkConversationAtImpl(
   set: Set,
   id: string,
   uptoItemId: string,
-): Promise<void> {
+): Promise<boolean> {
   const before = get()
   const owner = projectOfConv(before.conversationsByProject, id) ?? before.projectId
-  if (!owner) return
+  if (!owner) return false
   const src = before.conversationsByProject[owner]?.find((c) => c.id === id)
   const conv = before.byId[id]
-  if (!conv) return
+  if (!conv) return false
   const cut = conv.items.findIndex((it) => it.id === uptoItemId)
-  if (cut === -1) return // turno não está no fio carregado → não força nada
+  if (cut === -1) return false // turno não está no fio carregado → não força nada
   const items = markOrphanedProcesses(conv.items.slice(0, cut + 1))
   const reqModel = normalizeModelValue(conv.agent, conv.reqModel)
   const siblings = (before.conversationsByProject[owner] ?? []).flatMap((c) => (c.title ? [c.title] : []))
@@ -234,4 +234,5 @@ export async function forkConversationAtImpl(
   // própria — fork é "quero seguir OUTRO caminho a partir daqui", e caminho
   // paralelo sem pasta paralela é dois agentes brigando pelo mesmo arquivo.
   await isolateFork(get, newId, owner)
+  return true
 }

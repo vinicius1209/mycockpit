@@ -31,6 +31,12 @@
 > abriu o UID `BuiltInMicrophoneDevice`, mostrou nome e nível reais, recebeu
 > parcial, finalizou, reabriu e cancelou por Esc. O protocolo foi também
 > contrastado com o `dictationId` e o aceite de finalização do Paseo.
+> **CORREÇÃO DE FALSO ALERTA (02/09/2026):** uma releitura de arquivo concluída
+> com sucesso não é degradação só porque retornou menos palavras que o
+> streaming. Os dois reconhecimentos podem redigir a mesma fala de maneiras
+> diferentes. `resolveFilePass` continua escolhendo o texto mais completo, mas
+> só produz aviso quando a releitura falha de verdade. Arquivo indisponível,
+> prazo esgotado, perda de captura e ausência de sinal continuam ruidosos.
 
 > **D1 ENTREGUE (06/08/2026).** O que mudou de fato:
 > - **D1.1** — `stopPipeline` no `main.swift`: drain de 300ms com o mic AINDA
@@ -64,8 +70,9 @@
 > - **D2.3** — fallback honesto: falha, prazo estourado ou arquivo indisponível
 >   entregam o melhor texto do streaming com `{"warn"}`, que sobe pelo canal do
 >   sidecar (`SttMsg::Warn`) até `stt_stop` (`{ text, warn }`) e vira toast no
->   MicButton. **A regra do D1.2 vale também aqui**: se a releitura vier mais
->   curta e divergente do que o streaming, o streaming ganha, com aviso.
+>   MicButton. **A regra do D1.2 vale também aqui**: se a releitura bem-sucedida
+>   vier mais curta e divergente do que o streaming, o streaming ganha sem
+>   falso alerta; diferença de redação não prova áudio truncado.
 > - **Custo**: o STOP agora leva ~1s típico (0,3s de drain + até 1,2s esperando o
 >   streaming fechar + a releitura). Por isso o D1.3 não é cosmético.
 > - **Buraco conhecido**: o office (DeskDock/MissionDock/missionPanel) consome

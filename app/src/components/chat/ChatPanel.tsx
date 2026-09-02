@@ -127,7 +127,7 @@ export function ChatPanel() {
   const conv = useActiveConv()
   const openProject = useChat((s) => s.openProject)
   const viewMode = useApp((s) => s.viewMode)
-  const detectados = useApp((s) => s.settings.detected)
+  const { detected: detectados, userProfile, userPreferences } = useApp((s) => s.settings)
   // `null` enquanto a detecção não rodou: aviso que depende de probe só
   // aparece depois da leitura terminar (§5 camada 3). A regra mora em
   // `avisoDeMotorAusente`, não aqui.
@@ -1064,7 +1064,7 @@ export function ChatPanel() {
             <div className="animate-cockpit-rise text-center">
               <Reticle className="mx-auto mb-6 size-8" />
               <h1 className="text-[38px] font-medium leading-[1.1] tracking-[-0.025em] text-foreground">
-                {greeting}, Vinícius.
+                {greeting}{userPreferences?.greetingWithName !== false && userProfile?.name.trim() ? `, ${userProfile.name.trim()}` : ""}.
               </h1>
               <p className="mx-auto mt-3 max-w-md text-[14px] leading-relaxed text-muted-foreground">
                 {project

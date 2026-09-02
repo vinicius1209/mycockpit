@@ -44,6 +44,7 @@ import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { ServicosSettings } from "@/components/settings/ServicosSettings"
 import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
 import { DictationSettings } from "@/components/settings/DictationSettings"
+import { ProfileSettings } from "@/components/settings/ProfileSettings"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
@@ -179,6 +180,8 @@ export function SettingsDialog() {
         {/* Conteúdo — o X padrão do dialog base flutua no canto sup-direito;
             o SectionHeader reserva pr-9 pra nada passar por baixo dele. */}
         <div className="relative flex-1 overflow-y-auto p-5">
+          {section === "profile" && <ProfileSettings />}
+
           {section === "appearance" && (
             <div>
               <Header id="appearance" />

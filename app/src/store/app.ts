@@ -198,6 +198,14 @@ export function migratePersistedApp(
   ) {
     p.viewMode = "linear"
   }
+  if (p.settings) {
+    if (!p.settings.userProfile) {
+      p.settings.userProfile = DEFAULT_SETTINGS.userProfile
+    }
+    if (!p.settings.userPreferences) {
+      p.settings.userPreferences = DEFAULT_SETTINGS.userPreferences
+    }
+  }
   return p as unknown as AppState
 }
 
@@ -412,6 +420,14 @@ export const useApp = create<AppState>()(
           settings: {
             ...current.settings,
             ...persistedSettings,
+            userProfile: {
+              ...current.settings.userProfile,
+              ...persistedSettings.userProfile,
+            },
+            userPreferences: {
+              ...current.settings.userPreferences,
+              ...persistedSettings.userPreferences,
+            },
             missionPresets: reconcileMissionPresets(
               persistedSettings.missionPresets,
             ),

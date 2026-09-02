@@ -107,6 +107,38 @@ func moreComplete(_ candidate: String, _ best: String) -> String {
     return wordCount(nc) >= wordCount(nb) ? c : b // divergiram: quem tem mais fala
 }
 
+/// Desfecho da passada de arquivo: texto ou motivo honesto da falha.
+enum FilePass {
+    case text(String)
+    case failed(String)
+}
+
+struct FinalTranscription {
+    let text: String
+    let warning: String?
+}
+
+/// Uma releitura que chegou a `.text` terminou com sucesso. O reconhecedor de
+/// arquivo e o de streaming podem redigir a mesma fala de maneiras diferentes;
+/// contagem de palavras não prova áudio truncado. Mantemos o texto mais completo
+/// sem alarmar. Só uma falha REAL da releitura produz aviso de fallback.
+func resolveFilePass(_ pass: FilePass, fallback: String) -> FinalTranscription {
+    switch pass {
+    case .text(let text):
+        return FinalTranscription(
+            text: moreComplete(text, fallback),
+            warning: nil
+        )
+    case .failed(let why):
+        return FinalTranscription(
+            text: fallback,
+            warning: fallback.isEmpty
+                ? nil
+                : "não deu pra reler o áudio (\(why)), texto do reconhecimento ao vivo aproveitado"
+        )
+    }
+}
+
 /// Converte RMS em um medidor perceptual: -60 dB é silêncio visual, 0 dB é o
 /// teto. O valor continua vindo do áudio real, sem animação inventada.
 func meterLevel(forRms rms: Float) -> Double {
@@ -251,9 +283,45 @@ func runSelfTest() -> Int32 {
             emit(["selftest": name, "want": "\(expected)", "got": got])
         }
     }
+
+    let filePassCases: [(String, FilePass, String, String, String?)] = [
+        ("releitura menor preserva o streaming sem falso alarme",
+         .text("abre as peças"),
+         "abre as peças e confere o teste final",
+         "abre as peças e confere o teste final",
+         nil),
+        ("releitura mais completa vence sem alarme",
+         .text("abre as peças e confere o teste final"),
+         "abre as peças",
+         "abre as peças e confere o teste final",
+         nil),
+        ("falha real da releitura explica o fallback",
+         .failed("prazo esgotado"),
+         "texto reconhecido ao vivo",
+         "texto reconhecido ao vivo",
+         "não deu pra reler o áudio (prazo esgotado), texto do reconhecimento ao vivo aproveitado"),
+        ("falha sem texto não inventa aviso de fallback",
+         .failed("arquivo vazio"),
+         "",
+         "",
+         nil),
+    ]
+    for (name, pass, fallback, expectedText, expectedWarning) in filePassCases {
+        let got = resolveFilePass(pass, fallback: fallback)
+        if got.text != expectedText || got.warning != expectedWarning {
+            failures += 1
+            emit([
+                "selftest": name,
+                "wantText": expectedText,
+                "gotText": got.text,
+                "wantWarning": expectedWarning ?? "<sem aviso>",
+                "gotWarning": got.warning ?? "<sem aviso>",
+            ])
+        }
+    }
     emit([
-        "selftest": "moreComplete+meterLevel",
-        "cases": cases.count + levelCases.count,
+        "selftest": "moreComplete+meterLevel+filePass",
+        "cases": cases.count + levelCases.count + filePassCases.count,
         "failures": failures,
     ])
     return failures == 0 ? 0 : 1
@@ -795,12 +863,6 @@ captureObservers.append(center.addObserver(
 
 // ---- REGRA 2 (parte 2): a passada sobre o ARQUIVO INTEIRO ──────────────────
 
-/// Desfecho da passada de arquivo: texto ou motivo honesto da falha.
-enum FilePass {
-    case text(String)
-    case failed(String)
-}
-
 /// Transcreve o arquivo da sessão INTEIRO (on-device, mesma stack do streaming).
 /// Bloqueia até o resultado ou até `deadline` segundos.
 @Sendable func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
@@ -894,22 +956,11 @@ enum FilePass {
         finish(fallback, warn: warningForOutcome(warning))
         return
     }
-    switch transcribeFile(audioURL, deadline: 5.0) {
-    case .text(let t):
-        let best = moreComplete(t, fallback)
-        // a passada de arquivo é a verdade, MAS nunca entrega menos fala que o
-        // streaming (regra 1 vale também aqui): se ela veio mais curta e
-        // divergente, o streaming ganha — com aviso.
-        let warn = normalizedForCompare(best) == normalizedForCompare(t)
-            ? nil
-            : "a leitura do áudio veio incompleta, texto do reconhecimento ao vivo aproveitado"
-        finish(best, warn: warningForOutcome(warn))
-    case .failed(let why):
-        let warning = fallback.isEmpty
-            ? nil
-            : "não deu pra reler o áudio (\(why)), texto do reconhecimento ao vivo aproveitado"
-        finish(fallback, warn: warningForOutcome(warning))
-    }
+    let resolved = resolveFilePass(
+        transcribeFile(audioURL, deadline: 5.0),
+        fallback: fallback
+    )
+    finish(resolved.text, warn: warningForOutcome(resolved.warning))
 }
 
 // ---- controle via stdin (a mesma linha de vida dos agents).

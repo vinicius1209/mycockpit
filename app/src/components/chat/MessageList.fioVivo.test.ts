@@ -228,4 +228,45 @@ describe("feedback terminal do turno", () => {
     // Fork: sempre visível (não depende de it.ok), mesmo padrão título+sr-only.
     expect(html.match(/Fork: nova conversa a partir daqui/g)).toHaveLength(2)
   })
+
+  describe("coalescimento de autor durante a execução (Defeito B4, ADR-150)", () => {
+    it("com ações do executor, o nome do agente aparece apenas UMA vez no HTML (sem duplicar avatar)", () => {
+      const html = renderToStaticMarkup(
+        createElement(MessageList, {
+          items: [
+            { kind: "user", id: "u1", text: "proceed" },
+            tool("view-1", "view_file"),
+            tool("grep-1", "grep_search"),
+          ],
+          running: true,
+          finalizing: false,
+          startedAt: Date.now() - 3000,
+          agent: "agy",
+        }),
+      )
+      // O nome do agente ("Antigravity") deve aparecer exatamente uma vez no cabeçalho do grupo,
+      // e a linha viva ("está trabalhando…") mora dentro do mesmo grupo sem duplicar avatar/cabeçalho.
+      const ocorrencias = html.match(/Antigravity/g) ?? []
+      expect(ocorrencias).toHaveLength(1)
+      expect(html).toContain("está trabalhando…")
+      expect(html).toContain("view_file")
+      expect(html).toContain("grep_search")
+    })
+
+    it("quando o turno começou apenas com pedido do usuário, o WorkingIndicator standalone é renderizado", () => {
+      const html = renderToStaticMarkup(
+        createElement(MessageList, {
+          items: [{ kind: "user", id: "u1", text: "proceed" }],
+          running: true,
+          finalizing: false,
+          startedAt: Date.now(),
+          agent: "agy",
+        }),
+      )
+      // Como ainda não há nós do executor no transcript, o indicador standalone introduz o agente
+      const ocorrencias = html.match(/Antigravity/g) ?? []
+      expect(ocorrencias).toHaveLength(1)
+      expect(html).toContain("está trabalhando…")
+    })
+  })
 })

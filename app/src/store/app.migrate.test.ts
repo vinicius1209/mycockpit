@@ -48,4 +48,17 @@ describe("migratePersistedApp — viewMode órfão nunca vira modo de boot", () 
     // e a normalização v4 pega o office antigo no MESMO passo
     expect(out.viewMode).toBe("linear")
   })
+
+  it("preenche userProfile e userPreferences com defaults quando ausentes", () => {
+    const out = migratePersistedApp({ settings: { conversationScale: 1.2 } }, 3) as unknown as {
+      settings: {
+        userProfile?: { name: string }
+        userPreferences?: { chatAuthorDisplay: string }
+        conversationScale: number
+      }
+    }
+    expect(out.settings.userProfile?.name).toBe("")
+    expect(out.settings.userPreferences?.chatAuthorDisplay).toBe("you")
+    expect(out.settings.conversationScale).toBe(1.2)
+  })
 })

@@ -30,14 +30,13 @@ import {
   Search,
   Square,
   Terminal,
-  User,
   Wrench,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
-import { fmtDuration, fmtTime } from "@/lib/format"
+import { fmtDuration } from "@/lib/format"
 import type { Attachment } from "@/lib/attachments"
 import { attachmentUrl } from "@/lib/attachments"
 import { attachmentReadsByItem, type ReadLabels } from "@/lib/attachmentRead"
@@ -70,11 +69,10 @@ import {
 } from "@/components/chat/TurnActions"
 import { TurnTelemetry } from "@/components/chat/TurnTelemetry"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
-import { Markdown } from "@/components/common/Markdown"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { ActivityAge } from "@/components/chat/LiveTime"
-import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
+import { GroupRow } from "@/components/chat/GroupRow"
 import { type Node, type ToolItem } from "@/components/chat/messageNodes"
 import {
   branchContains,
@@ -87,7 +85,7 @@ import {
   type ToolTreeNode,
 } from "@/components/chat/toolTree"
 import { hiddenNodeCount, useJanelaProgressiva, useStableNodes } from "@/components/chat/useStableNodes"
-import { groupByAuthor, groupTs, type MessageGroup } from "@/components/chat/messageGroups"
+import { groupByAuthor, groupTs } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
   turnStartIndex,
@@ -95,11 +93,10 @@ import {
   visibleThreadItems,
   windowStartIndex,
 } from "@/components/chat/threadWindow"
-import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
 import { PlanGateCard } from "@/components/chat/PlanGateCard"
-import { splitMentions } from "@/components/chat/mentions"
-import { usePresets } from "@/store/presets"
+import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
+import { AgentMessageCard } from "@/components/chat/AgentMessageCard"
 import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
 
 export type { FeedbackApi } from "@/components/chat/TurnActions"
@@ -1224,35 +1221,6 @@ function ReadBadge({ read }: { read: { text: string; warn: boolean } | null }) {
   )
 }
 
-/** Texto de bolha com CHIP de menção (Especialistas): `@nome` que casa com uma
- *  persona conhecida vira um destaque brass; o resto fica texto puro. Só a
- *  mensagem RENDERIZADA (não o composer ao vivo). Aditivo — não passa pelo
- *  Markdown/messageNodes, então a costura da prosa do agente segue intocada. */
-function MentionText({ text }: { text: string }) {
-  const list = usePresets((s) => s.list)
-  const segs = useMemo(
-    () => splitMentions(text, list.map((p) => p.name)),
-    [text, list],
-  )
-  if (segs.length === 1 && segs[0].type === "text") return <>{text}</>
-  return (
-    <>
-      {segs.map((seg, i) =>
-        seg.type === "mention" ? (
-          <span
-            key={i}
-            className="rounded bg-brass/[0.12] px-1 font-medium text-brass"
-          >
-            {seg.text}
-          </span>
-        ) : (
-          <span key={i}>{seg.text}</span>
-        ),
-      )}
-    </>
-  )
-}
-
 /** Um item NÃO-tool da conversa. `memo`: só re-renderiza quando a REFERÊNCIA do
  *  item muda (itens não-streaming têm ref estável), não re-pinta a cada delta (F12). */
 const MessageItem = memo(function MessageItem({
@@ -1320,20 +1288,13 @@ const MessageItem = memo(function MessageItem({
             ))}
           </div>
         )}
-        {it.text && (
-          <div
-            data-selectable
-            className="max-w-full rounded-2xl rounded-tl-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
-          >
-            <MentionText text={it.text} />
-          </div>
-        )}
+        {it.text && <UserMessageBubble itemId={it.id} text={it.text} />}
       </div>
     )
   }
 
   if (it.kind === "text") {
-    return <Markdown text={it.text} />
+    return <AgentMessageCard text={it.text} />
   }
 
   // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
@@ -1559,7 +1520,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     const hasText = n.text.trim().length > 0
     return (
       <div className="group/msg flex flex-col gap-1.5">
-        {hasText && <Markdown text={n.text} />}
+        {hasText && <AgentMessageCard text={n.text} />}
         {n.tools.length > 0 && (
           <ToolGroup
             tools={n.tools}
@@ -1598,97 +1559,6 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   )
 }
 
-
-/** Uma linha de grupo estilo Slack: avatar no gutter + cabeçalho (nome) UMA vez,
- *  e os corpos dos nós contíguos daquele autor indentados sob o mesmo gutter
- *  (largura fixa 28px, o fio fica coeso pra todos os tipos). O autor sistema
- *  (interrupção/aviso) é voz sem dono: sem gutter nem cabeçalho. */
-function GroupRow({
-  group,
-  agent,
-  presetId,
-  ts,
-  lastKey,
-  ctxBase,
-}: {
-  group: MessageGroup
-  agent: string
-  presetId: string | null
-  /** Hora (epoch ms) do 1º item do grupo — vira "HH:MM" ao lado do nome, estilo
-   *  Slack. undefined (itens antigos sem carimbo) omite a hora. */
-  ts?: number
-  lastKey: string | null
-  ctxBase: Omit<NodeCtx, "isLast">
-}) {
-  const presets = usePresets((s) => s.list)
-  const author = group.author
-  const time = fmtTime(ts)
-
-  const bodies = group.nodes.map((n) => (
-    <div key={n.key} className="min-w-0">
-      {renderNode(n, { ...ctxBase, isLast: n.key === lastKey })}
-    </div>
-  ))
-
-  if (author.kind === "system") {
-    return <div className="flex flex-col gap-1.5">{bodies}</div>
-  }
-
-  let gutter: React.ReactNode
-  let name: string
-  let nameClass = "text-foreground"
-  // Selo do motor no CABEÇALHO (B2.3): só no grupo do executor, e só quando o
-  // nome exibido é de uma persona (senão o nome já é o motor).
-  let engine: string | null = null
-  if (author.kind === "you") {
-    gutter = (
-      <span className="grid size-7 place-items-center rounded-full bg-secondary text-muted-foreground">
-        <User className="size-4" />
-      </span>
-    )
-    name = "Você"
-  } else if (author.kind === "especialista") {
-    const persona = presets.find((p) => p.id === author.personaId)
-    gutter = (
-      <AgentAvatar
-        def={persona}
-        seed={persona ? undefined : author.personaId || author.personaName}
-        size={28}
-        rounded
-      />
-    )
-    name = author.personaName
-    nameClass = "text-brass"
-  } else {
-    // executor: identidade compartilhada com o indicador de "trabalhando…".
-    const id = resolveExecutorIdentity(presets, agent, presetId)
-    gutter = id.gutter
-    name = id.name
-    engine = id.engine
-  }
-
-  return (
-    <div id={`msg-group-${group.key}`} data-turn-key={group.key} className="flex scroll-mt-6 gap-3">
-      <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
-          {engine && (
-            <span className="rounded border px-1 py-px text-[11px] text-muted-foreground">
-              {engine}
-            </span>
-          )}
-          {time && (
-            <span className="text-[11px] tabular-nums text-muted-foreground/60">
-              {time}
-            </span>
-          )}
-        </div>
-        <div className="flex min-w-0 flex-col gap-2">{bodies}</div>
-      </div>
-    </div>
-  )
-}
 
 
 /** Selos de leitura por item, com identidade preservada (ver
@@ -1849,37 +1719,60 @@ export function MessageList({
           Mostrar {hiddenCount} itens anteriores
         </button>
       )}
-      {groups.map((g) => (
-        <Fragment key={g.key}>
-          {/* S1.1 — divisor "novas mensagens" na fronteira do não-visto. A key
-              do 1º nó de um grupo é o id do item que o abriu (buildNodes), e a
-              fronteira vem logo após uma mensagem SUA — troca de autor abre
-              grupo novo, então o divisor cai sempre ENTRE grupos. */}
-          {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && (
-            <div
-              role="separator"
-              aria-label="novas mensagens"
-              className="flex items-center gap-3"
+      {groups.map((g, idx) => {
+        const canCoalesceWorking = (running || finalizing) && !advising && idx === groups.length - 1 && g.author.kind === "executor"
+        return (
+          <Fragment key={g.key}>
+            {/* Divisor "novas mensagens" (unseen-divider-plan D1): a key do 1º nó
+                de um grupo é o id do item que o abriu (buildNodes), e a fronteira
+                vem logo após uma mensagem SUA — troca de autor abre grupo novo,
+                então o divisor cai sempre ENTRE grupos. */}
+            {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && (
+              <div
+                role="separator"
+                aria-label="novas mensagens"
+                className="flex items-center gap-3"
+              >
+                <span className="h-px flex-1 bg-st-warning/40" />
+                <span className="text-[11px] font-medium tracking-wide text-st-warning/90 uppercase">
+                  novas mensagens
+                </span>
+                <span className="h-px flex-1 bg-st-warning/40" />
+              </div>
+            )}
+            <GroupRow
+              groupKey={g.key}
+              author={g.author}
+              agent={agent}
+              presetId={presetId ?? null}
+              ts={groupTs(g, tsById)}
+              workingTail={
+                canCoalesceWorking ? (
+                  <WorkingIndicator
+                    agent={agent}
+                    presetId={presetId ?? null}
+                    finalizing={finalizing}
+                    running={running}
+                    startedAt={startedAt}
+                    deferred={liveDeferred}
+                    stalledSince={stalledSince}
+                    inline
+                  />
+                ) : undefined
+              }
             >
-              <span className="h-px flex-1 bg-st-warning/40" />
-              <span className="text-[11px] font-medium tracking-wide text-st-warning/90 uppercase">
-                novas mensagens
-              </span>
-              <span className="h-px flex-1 bg-st-warning/40" />
-            </div>
-          )}
-          <GroupRow
-            group={g}
-            agent={agent}
-            presetId={presetId ?? null}
-            ts={groupTs(g, tsById)}
-            lastKey={lastKey}
-            ctxBase={ctxBase}
-          />
-        </Fragment>
-      ))}
+              {g.nodes.map((n) => (
+                <div key={n.key} className="min-w-0">
+                  {renderNode(n, { ...ctxBase, isLast: n.key === lastKey })}
+                </div>
+              ))}
+            </GroupRow>
+          </Fragment>
+        )
+      })}
       {advising && <AdviceArrivalRow advising={advising} />}
-      {(running || finalizing) && (
+      {(running || finalizing) &&
+        (advising || groups[groups.length - 1]?.author.kind !== "executor") && (
         <WorkingIndicator
           agent={agent}
           presetId={presetId ?? null}

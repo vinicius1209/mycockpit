@@ -575,7 +575,7 @@ mod tests {
     }
 
     #[test]
-    fn selftest_do_sidecar_prova_que_o_final_nunca_encurta() {
+    fn selftest_do_sidecar_prova_texto_completo_e_avisos_honestos() {
         if !cfg!(target_os = "macos") {
             return;
         }
@@ -608,7 +608,7 @@ mod tests {
             "--selftest falhou:\n{stdout}{}",
             String::from_utf8_lossy(&out.stderr)
         );
-        // a última linha resume: {"selftest":"moreComplete","cases":N,"failures":0}
+        // a última linha resume as regras de completude, nível e fallback.
         let resumo: serde_json::Value = stdout
             .lines()
             .filter_map(|l| serde_json::from_str(l).ok())
@@ -616,7 +616,7 @@ mod tests {
             .expect("resumo do --selftest em JSON");
         assert_eq!(resumo["failures"], 0, "casos falharam:\n{stdout}");
         assert!(
-            resumo["cases"].as_u64().unwrap_or(0) >= 8,
+            resumo["cases"].as_u64().unwrap_or(0) >= 18,
             "a suíte da regra encolheu: {resumo}"
         );
     }

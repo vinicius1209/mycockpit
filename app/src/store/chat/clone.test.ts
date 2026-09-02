@@ -104,7 +104,7 @@ describe("duplicateConversation", () => {
 
 describe("forkConversationAt", () => {
   it("copia só até o turno escolhido (histórico CURADO, não inteiro)", async () => {
-    await useChat.getState().forkConversationAt(CONV, "r1")
+    expect(await useChat.getState().forkConversationAt(CONV, "r1")).toBe(true)
     const s = useChat.getState()
     const newId = s.activeId
     expect(newId).not.toBe(CONV)
@@ -120,12 +120,16 @@ describe("forkConversationAt", () => {
   })
 
   it("item fora do fio carregado: no-op (não força um fork quebrado)", async () => {
-    await useChat.getState().forkConversationAt(CONV, "item-que-nao-existe")
+    expect(
+      await useChat.getState().forkConversationAt(CONV, "item-que-nao-existe"),
+    ).toBe(false)
     expect(useChat.getState().activeId).toBe(CONV)
   })
 
   it("conversa não carregada em byId: no-op", async () => {
-    await useChat.getState().forkConversationAt("conv-fantasma", "r1")
+    expect(
+      await useChat.getState().forkConversationAt("conv-fantasma", "r1"),
+    ).toBe(false)
     expect(useChat.getState().activeId).toBe(CONV)
   })
 })

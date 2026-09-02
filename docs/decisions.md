@@ -678,9 +678,12 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
 - **Decisão 4 — degradação sempre com fala e com aviso:** se a releitura falhar,
   estourar o prazo (5s) ou o arquivo não existir, entrega-se o melhor texto do
   streaming com `{"warn"}` (canal → `stt_stop` → toast). Nenhum caminho perde
-  fala; o usuário sabe quando o texto veio do plano B. O áudio é apagado em todo
-  desfecho (inclusive `atexit`) e sobras de `kill -9` são varridas no boot: fala
-  gravada não sobrevive à sessão que a gerou.
+  fala; o usuário sabe quando o texto veio do plano B. Uma releitura concluída
+  com sucesso que divirja do streaming não dispara aviso: contagem de palavras
+  não prova áudio truncado. `moreComplete` ainda preserva a versão mais completa,
+  silenciosamente. O áudio é apagado em todo desfecho (inclusive `atexit`) e
+  sobras de `kill -9` são varridas no boot: fala gravada não sobrevive à sessão
+  que a gerou.
 - **Prova, e o limite dela:** não há harness de teste Swift no repo (o sidecar é
   UM arquivo compilado pelo `build.rs` com `swiftc`, sem SwiftPM/XCTest). A
   suíte da regra vive dentro do binário (`--selftest`, sem mic nem permissão) e
@@ -5369,3 +5372,81 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   A interface oferece no máximo uma ação primária e não habilita navegador,
   reduz permissão ou ignora requisito sem gesto explícito. O mecanismo não muda
   modelos, contexto, limites, custo ou liberdade operacional.
+
+### ADR-148 - identidade do usuário, avatar local-first e preferências de interação ✅
+- **Contexto:** o rodapé da barra lateral e o cabeçalho de boas-vindas do chat
+  mantinham o nome "Vinícius" e a inicial "V" fixados no código. O gutter de
+  mensagens do usuário no chat exibia um ícone estático genérico e o rótulo "Você",
+  sem mecanismo de personalização visual ou preferências de interação no composer.
+- **Decisão:** introduzir a seção canônica "Perfil" (`profile`) nas Configurações
+  do app, sob o grupo Interface. A identidade suporta quatro modalidades
+  estritamente locais e sem chamadas externas de rede: (1) foto do usuário
+  recortada e otimizada via canvas para Data URI compacta (~20 KB), (2) avatares
+  procedurais DiceBear offline com estilos e sementes personalizáveis,
+  (3) iniciais com paleta do app e (4) ícone minimalista. O rodapé da barra lateral
+  torna-se um ponto de acesso acessível por clique e teclado, abrindo diretamente a
+  seção de perfil. O composer ganha suporte à alternância de atalho de envio
+  (Enter envia vs ⌘+Enter envia) e opção de alerta sonoro sutil sintetizado via Web
+  Audio API ao concluir turnos.
+- **Correção de auditoria (02/09/2026):** instalação nova não recebe nome ou
+  inicial de uma pessoa específica; começa com ícone neutro. Foto persistida só
+  chega ao WebView quando é uma Data URI raster permitida, nunca uma URL ou SVG;
+  estado legado adulterado degrada para o avatar local. Os seletores expõem o
+  estado pressionado, a foto é decorativa quando o nome já está ao lado e a
+  demonstração do alerta informa quando o áudio não pôde ser reproduzido.
+- **Consequência:** identidade local-first e sincronizada no store persistido;
+  retrocompatibilidade garantida por merge profundo dos campos do perfil e das
+  preferências; zero dependência de rede ou serviços externos; conformidade com
+  as escalas de controle e tipografia do STYLEGUIDE.
+
+### ADR-149 - superfícies de mensagem no chat: cartão neutro E1 do agent e ações de hover no prompt do usuário ✅
+- **Contexto:** a resposta do agent no fio da conversa era renderizada como prosa solta
+  diretamente no canvas da página, gerando assimetria visual em relação ao balão do
+  usuário e sensação de "texto solto na parede". Paralelamente, o balão de prompt do
+  usuário não possuía ações de turno no hover, exigindo redigitar comandos ou buscar
+  itens na árvore para reenvios e bifurcações rápidas. Uma exploração inicial com
+  filete colorido no canto esquerdo foi analisada e descartada por violar as guardas de
+  barra de acento (§2, §4 e ADR-043), que proíbem tinta decorativa no conteúdo do fio.
+- **Decisão:** (1) Padronizar a resposta do agent no cartão de superfície neutra E1
+  (`AgentMessageCard`), utilizando fundo de cartão (`bg-card`), aresta estrutural
+  canônica de hairline neutro (`border border-border/40`), cantos orgânicos espelhados
+  (`rounded-2xl rounded-tl-md`) e zero filetes coloridos. (2) Implementar ações rápidas
+  no hover da mensagem do usuário (`UserMessageBubble`): botão de editar e reenviar
+  (carrega o texto no composer via `useComposerDrafts.setText` com foco imediato), botão
+  de bifurcar conversa (via `useChat.forkConversationAt`) e botão de cópia de texto com
+  feedback de confirmação. (3) Extrair `UserMessageBubble` e `AgentMessageCard` de
+  `MessageList.tsx`, reduzindo 36 linhas do arquivo principal e apertando a catraca da
+  baseline de tamanho de arquivo (`check-file-size-ratchet`).
+- **Consequência:** coerência visual total entre emissor e receptor no chat; aumento da
+  ergonomia de refinamento e edição de prompts; respeito absoluto à austeridade do
+  cockpit e ao vocabulário de cores funcionais (cinza para o caso comum saudável, tinta
+  apenas em decisões pendentes ou falhas).
+- **Correção de auditoria (02/09/2026):** `forkConversationAt` devolve se a
+  bifurcação realmente foi criada. A ação no balão aguarda essa aceitação e só
+  acusa falha real; nunca anuncia sucesso antes da gravação no banco.
+
+### ADR-150 · coalescimento do cabeçalho de autor no turno vivo e correção do defeito B4 ✅
+- **Contexto:** quando o executor (Antigravity/AGY, Claude Code, Codex) iniciava um turno
+  executando diretamente ferramentas antes de emitir prosa, o nó de ferramentas (`type: "tools"`)
+  era agrupado com o cabeçalho completo do executor (avatar e nome). Simultaneamente,
+  `WorkingIndicator` no rodapé desenhava seu próprio gutter, avatar e nome, gerando dois
+  avatares empilhados a ~40px de distância para o mesmo agente no mesmo turno (defeito B4
+  de `fio-poluicao-2.md`). No CLI do AGY, que opera por chamadas silenciosas de ferramentas sem
+  `text_delta` prévio nem thinking no chat, esse sintoma era sistemático e gerava a ilusão de
+  uma "mensagem falada vazia contendo apenas ferramentas".
+- **Decisão:** (1) As ferramentas pertencem legitimamente ao agente executor e não devem ser
+  desatribuídas; o erro era a fragmentação em dois blocos de identidade concorrentes. (2) Dotar
+  o `WorkingIndicator` de modo `inline`, renderizando apenas a linha viva (rótulo, pulso de
+  pontos e cronômetro de tempo decorrido) sem duplicar gutter, avatar nem nome. (3) No
+  `MessageList`, quando o turno estiver ativo (`running || finalizing`) e o último grupo da lista
+  pertencer ao executor, a linha viva de `WorkingIndicator` é coalescida como cauda dos corpos
+  do grupo (`workingTail`), morando sob o mesmo recuo e sob o mesmo e único avatar do executor.
+  (4) Quando o último grupo não for do executor (ex.: início imediato após mensagem do usuário),
+  o `WorkingIndicator` preserva a renderização standalone, apresentando o agente que iniciou o
+  trabalho. (5) Extrair o componente `GroupRow` de `MessageList.tsx` para `GroupRow.tsx`,
+  encolhendo `MessageList.tsx` em 67 linhas e apertando a catraca da baseline de tamanho.
+- **Consequência:** eliminação completa da duplicação de avatares no fio vivo; representação
+  fiel da hierarquia de execução (ferramentas e indicador de progresso sob a mesma identidade
+  de turno); conformidade estrita com o STYLEGUIDE §6 ("dono único do agora") e §10 (divisão de
+  arquivos). Quando a chegada de um conselheiro também está viva, ela interrompe o
+  coalescimento e o indicador do executor permanece no fim cronológico do fio.

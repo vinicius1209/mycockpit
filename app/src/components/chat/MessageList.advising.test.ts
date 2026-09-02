@@ -33,11 +33,12 @@ function persona(id: string, name: string): AgentDef {
 function render(
   advising: { id: string; name: string } | null,
   items: ChatItem[] = [],
+  running = false,
 ): string {
   return renderToStaticMarkup(
     createElement(MessageList, {
       items,
-      running: false,
+      running,
       finalizing: false,
       startedAt: null,
       agent: "claude-code",
@@ -71,5 +72,20 @@ describe("MessageList · linha de chegada do conselheiro (advising)", () => {
     const html = render({ id: "sumida", name: "Aline" }, [user])
     expect(html).toContain("Aline")
     expect(html).toContain("está lendo o contexto")
+  })
+
+  it("mantém o trabalho do executor no fim do fio enquanto o conselheiro chega", () => {
+    const action: Extract<ChatItem, { kind: "tool" }> = {
+      kind: "tool",
+      id: "tool-item",
+      name: "Bash",
+      input: { command: "bun run test" },
+      toolId: "tool-1",
+    }
+    const html = render({ id: "aline", name: "Aline" }, [user, action], true)
+
+    expect(html.indexOf("está lendo o contexto")).toBeLessThan(
+      html.indexOf("está trabalhando…"),
+    )
   })
 })

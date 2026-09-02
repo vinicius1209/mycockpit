@@ -1,0 +1,1115 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frota · Mock — Superfície Neutra E1 vs E0 no Fio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+    /* Light Theme (como no screenshot) */
+    --background: #fbfbfa;
+    --rail: #f6f6f4;
+    --card: #ffffff;
+    --card-hover: #fafafa;
+    --foreground: #16181b;
+    --foreground-muted: #5c6166;
+    --foreground-faint: #8a9099;
+    --secondary: #f4f4f2;
+    --secondary-hover: #ecece9;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --border-subtle: rgba(0, 0, 0, 0.04);
+    --brass: #a9742b;
+    --brass-soft: rgba(169, 116, 43, 0.12);
+    --brass-border: rgba(169, 116, 43, 0.3);
+
+    --st-warning-bg: #fef3c7;
+    --st-warning-fg: #92400e;
+    --st-warning-border: #fcd34d;
+    --st-error: #ef4444;
+    --st-success: #1f9d6b;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06);
+    --shadow-pop: 0 12px 32px -4px rgba(0, 0, 0, 0.12);
+  }
+
+  [data-theme="dark"] {
+    --background: #0a0b0d;
+    --rail: #121316;
+    --card: #15171a;
+    --card-hover: #1a1c21;
+    --foreground: #eceef2;
+    --foreground-muted: #8a9099;
+    --foreground-faint: #5c6166;
+    --secondary: #1a1c22;
+    --secondary-hover: #22252c;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --brass: #e4a862;
+    --brass-soft: rgba(228, 168, 98, 0.15);
+    --brass-border: rgba(228, 168, 98, 0.35);
+
+    --st-warning-bg: #2d2006;
+    --st-warning-fg: #fde68a;
+    --st-warning-border: #78350f;
+    --st-error: #ef4444;
+    --st-success: #22c55e;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-pop: 0 12px 32px -4px rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: #000;
+    color: var(--foreground);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Toolbar de Teste Superior (Controles do Mock) */
+  .mock-controls {
+    width: 100%;
+    max-width: 1320px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #1e2025;
+    color: #e2e8f0;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+  }
+  .mock-controls .title {
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mock-controls .badge {
+    background: var(--brass-soft);
+    color: var(--brass);
+    padding: 2px 7px;
+    border-radius: 4px;
+    font-size: 11px;
+    border: 1px solid var(--brass-border);
+  }
+  .mock-controls .controls-group {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .btn-switch {
+    background: #2b2e35;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: #e2e8f0;
+    padding: 5px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .btn-switch:hover {
+    background: #383c45;
+  }
+  .btn-switch.active {
+    background: #3b82f6;
+    border-color: #60a5fa;
+    color: #fff;
+  }
+
+  /* Janela Principal do Cockpit */
+  .window-shell {
+    width: 100%;
+    max-width: 1320px;
+    height: 880px;
+    background: var(--background);
+    border-radius: 12px;
+    border: 1px solid var(--border-strong);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--shadow-pop);
+    position: relative;
+  }
+
+  /* Titlebar macOS */
+  .titlebar {
+    height: 42px;
+    border-bottom: 1px solid var(--border);
+    background: var(--rail);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    user-select: none;
+  }
+  .traffic-lights {
+    display: flex;
+    gap: 8px;
+    margin-right: 18px;
+  }
+  .traffic-light {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  .traffic-light.red { background: #ff5f56; }
+  .traffic-light.yellow { background: #ffbd2e; }
+  .traffic-light.green { background: #27c93f; }
+  .project-crumb {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+    margin-right: auto;
+  }
+  .surface-tabs {
+    display: flex;
+    background: var(--secondary);
+    padding: 2px;
+    border-radius: 7px;
+    gap: 2px;
+  }
+  .surface-tab {
+    padding: 4px 12px;
+    font-size: 12px;
+    border-radius: 5px;
+    color: var(--foreground-muted);
+    cursor: pointer;
+  }
+  .surface-tab.active {
+    background: var(--card);
+    color: var(--foreground);
+    font-weight: 500;
+    box-shadow: var(--shadow-sm);
+  }
+  .titlebar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .search-box {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    border-radius: 6px;
+    font-size: 11px;
+    color: var(--foreground-muted);
+  }
+  .search-box kbd {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  /* Layout Body */
+  .window-body {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 210px;
+    background: var(--rail);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 12px 8px;
+  }
+  .sidebar-section-title {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--foreground-faint);
+    font-weight: 600;
+    padding: 6px 8px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--foreground-muted);
+    cursor: pointer;
+  }
+  .sidebar-nav-item:hover {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+  .sidebar-nav-item.active {
+    background: var(--secondary);
+    color: var(--foreground);
+    font-weight: 500;
+  }
+  .sidebar-nav-item .count {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--foreground-faint);
+  }
+  .sidebar-footer {
+    margin-top: auto;
+    border-top: 1px solid var(--border);
+    padding-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .user-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .user-badge:hover {
+    background: var(--secondary);
+  }
+  .user-avatar-img {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #e2e8f0;
+  }
+  .user-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  /* Centro / Chat View */
+  .chat-view {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    position: relative;
+    background: var(--background);
+  }
+
+  /* Abas do Chat */
+  .chat-header-tabs {
+    height: 38px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 16px;
+    gap: 6px;
+  }
+  .chat-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-bottom: none;
+    padding: 6px 12px;
+    border-radius: 6px 6px 0 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--foreground);
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* Thread Container */
+  .thread-container {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    position: relative;
+    padding-bottom: 180px;
+  }
+
+  /* TurnScrubber / Minimapa */
+  .turn-scrubber {
+    width: 32px;
+    padding: 16px 0 0 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    user-select: none;
+  }
+  .scrub-pip {
+    width: 10px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border-strong);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .scrub-pip:hover {
+    width: 16px;
+    background: var(--foreground-muted);
+  }
+  .scrub-pip.active {
+    width: 18px;
+    background: var(--brass);
+    box-shadow: 0 0 6px var(--brass-soft);
+  }
+
+  /* Coluna Central de Leitura */
+  .conversation-column {
+    flex: 1;
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 20px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* Linha de Grupo de Mensagem (Slack-style) */
+  .msg-group {
+    display: flex;
+    gap: 12px;
+    position: relative;
+  }
+  .msg-gutter {
+    width: 28px;
+    flex-shrink: 0;
+    padding-top: 2px;
+  }
+  .avatar-circle {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-size: 11px;
+    font-weight: 600;
+    overflow: hidden;
+  }
+  .avatar-codex {
+    background: #1e293b;
+    color: #e2e8f0;
+    border: 1px solid var(--border);
+  }
+  .msg-content {
+    flex: 1;
+    min-width: 0;
+  }
+  .msg-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .author-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .msg-time {
+    font-size: 11px;
+    color: var(--foreground-faint);
+  }
+
+  /* Balão do Usuário (Original) */
+  .user-bubble-wrapper {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+  }
+  .user-bubble {
+    background: var(--secondary);
+    color: var(--foreground);
+    padding: 10px 16px;
+    border-radius: 16px;
+    border-top-left-radius: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    word-break: break-word;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* AÇÕES NO HOVER DA MENSAGEM DO USUÁRIO */
+  .user-hover-actions {
+    position: absolute;
+    top: -14px;
+    right: 8px;
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    gap: 2px;
+    box-shadow: var(--shadow-md);
+    opacity: 0;
+    transform: translateY(3px);
+    transition: all 0.15s ease;
+    pointer-events: none;
+    z-index: 10;
+  }
+  .user-bubble-wrapper:hover .user-hover-actions {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+  .user-hover-btn {
+    background: transparent;
+    border: none;
+    color: var(--foreground-muted);
+    font-size: 11px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .user-hover-btn:hover {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+
+  /* ═══════════════════════════════════════════════════════════════════
+     RESPOSTA DO AGENT: MODALIDADE 1 (CARD DE SUPERFÍCIE NEUTRA E1)
+     ═══════════════════════════════════════════════════════════════════ */
+  .agent-bubble-container {
+    transition: all 0.15s ease;
+  }
+
+  /* Modo E1: Superfície de cartão com borda canônica neutra */
+  .mode-e1-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    border-top-left-radius: 4px;
+    padding: 14px 18px;
+    box-shadow: var(--shadow-sm);
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--foreground);
+  }
+
+  /* Modo E0: Texto livre no canvas (padrão atual do app) */
+  .mode-e0-flat {
+    background: transparent;
+    border: none;
+    padding: 0;
+    box-shadow: none;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--foreground);
+  }
+
+  .agent-bubble-container p {
+    margin-bottom: 10px;
+  }
+  .agent-bubble-container ol {
+    margin-left: 20px;
+    margin-bottom: 6px;
+  }
+  .agent-bubble-container li {
+    margin-bottom: 6px;
+    color: var(--foreground);
+  }
+
+  /* Metadados e Rodapé de Turno */
+  .turn-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 8px;
+    margin-top: 4px;
+    font-size: 11.5px;
+    color: var(--foreground-faint);
+  }
+  .turn-status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--st-success);
+    font-weight: 500;
+  }
+  .turn-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .turn-action-icon {
+    padding: 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--foreground-muted);
+  }
+  .turn-action-icon:hover {
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+
+  /* Disclosure Bars de Execução e Ferramentas */
+  .disclosure-bar {
+    border: 1px solid var(--border);
+    background: var(--card);
+    border-radius: 8px;
+    padding: 8px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    color: var(--foreground);
+    margin-top: 8px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+  }
+  .disclosure-bar:hover {
+    background: var(--card-hover);
+  }
+  .disclosure-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .disclosure-count {
+    color: var(--foreground-muted);
+    font-size: 11px;
+    font-family: var(--font-mono);
+  }
+
+  /* Botão Flutuante Rolar pro Fim */
+  .scroll-to-end-pill {
+    position: absolute;
+    bottom: 154px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    color: var(--foreground);
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 11.5px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    z-index: 20;
+    transition: transform 0.15s;
+  }
+  .scroll-to-end-pill:hover {
+    transform: translateX(-50%) translateY(-2px);
+  }
+
+  /* Composer (Console de Comando) */
+  .composer-wrapper {
+    position: absolute;
+    bottom: 24px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+  }
+  .composer-card {
+    pointer-events: auto;
+    width: 100%;
+    max-width: 760px;
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .composer-banner {
+    background: var(--secondary);
+    border-bottom: 1px solid var(--border);
+    padding: 5px 12px;
+    font-size: 11px;
+    color: var(--foreground-muted);
+  }
+  .composer-input-area {
+    padding: 12px 14px 6px;
+    min-height: 48px;
+    font-size: 13.5px;
+    color: var(--foreground);
+    outline: none;
+  }
+  .composer-input-area:empty::before {
+    content: attr(data-placeholder);
+    color: var(--foreground-faint);
+  }
+  .composer-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px 10px;
+  }
+  .composer-left-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .chip-control {
+    height: 26px;
+    padding: 0 8px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    font-size: 11.5px;
+    color: var(--foreground);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    cursor: pointer;
+  }
+  .chip-control.amber {
+    background: var(--st-warning-bg);
+    color: var(--st-warning-fg);
+    border-color: var(--st-warning-border);
+    font-weight: 500;
+  }
+  .composer-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn-stop-run {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: var(--st-error);
+    border: none;
+    color: white;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+  }
+  .spinner-dot {
+    width: 14px;
+    height: 14px;
+    border: 2px solid var(--border-strong);
+    border-top-color: var(--foreground);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .quick-chips-row {
+    pointer-events: auto;
+    width: 100%;
+    max-width: 760px;
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+  }
+  .quick-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--foreground-muted);
+    font-size: 11px;
+    padding: 3px 10px;
+    border-radius: 12px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+  }
+  .quick-chip:hover {
+    color: var(--foreground);
+    border-color: var(--border-strong);
+  }
+
+  /* Status Bar Inferior */
+  .status-bar {
+    height: 24px;
+    border-top: 1px solid var(--border);
+    background: var(--rail);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 12px;
+    font-size: 11px;
+    color: var(--foreground-muted);
+    font-family: var(--font-mono);
+  }
+  .status-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-bar-pill {
+    width: 16px;
+    height: 6px;
+    border-radius: 2px;
+    background: var(--brass);
+  }
+</style>
+</head>
+<body>
+
+<!-- CONTROLES DO MOCK (INTERATIVOS) -->
+<div class="mock-controls">
+  <div class="title">
+    <span>Frota UI · Comparação Canônica</span>
+    <span class="badge">100% STYLEGUIDE (§2, §4 e ADR-043)</span>
+  </div>
+  <div class="controls-group">
+    <span style="color: #94a3b8;">Formato da Resposta do Agent:</span>
+    <button class="btn-switch active" id="btnModeCard" onclick="setMode('card')">
+      ◻️ Superfície Neutra E1 (Cartão Delimitado)
+    </button>
+    <button class="btn-switch" id="btnModeFlat" onclick="setMode('flat')">
+      📄 Texto Livre E0 (Padrão Atual)
+    </button>
+    <button class="btn-switch" id="btnToggleTheme" onclick="toggleTheme()" style="margin-left: 8px;">
+      🌓 Alternar Tema (Claro / Escuro)
+    </button>
+  </div>
+</div>
+
+<!-- JANELA DO APLICATIVO -->
+<div class="window-shell">
+  <!-- TITLEBAR -->
+  <header class="titlebar">
+    <div class="traffic-lights">
+      <div class="traffic-light red"></div>
+      <div class="traffic-light yellow"></div>
+      <div class="traffic-light green"></div>
+    </div>
+    <div class="project-crumb">
+      <span>Maclan</span>
+    </div>
+    <div class="surface-tabs">
+      <div class="surface-tab">Painel</div>
+      <div class="surface-tab active">Trabalho</div>
+      <div class="surface-tab">Features</div>
+    </div>
+    <div class="titlebar-actions">
+      <div class="search-box">
+        <span>Buscar</span>
+        <kbd>⌘K</kbd>
+      </div>
+      <div class="search-box">
+        <span>Notas</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="window-body">
+    <!-- SIDEBAR -->
+    <aside class="sidebar">
+      <div class="sidebar-section-title">
+        <span>Geral</span>
+      </div>
+      <div class="sidebar-nav-item">
+        <span>Frota</span>
+        <span class="count">1</span>
+      </div>
+      <div class="sidebar-nav-item">
+        <span>Agendamentos</span>
+      </div>
+      <div class="sidebar-nav-item">
+        <span>Planos de voo</span>
+        <span class="count">3</span>
+      </div>
+
+      <div class="sidebar-section-title" style="margin-top: 14px;">
+        <span>Projetos</span>
+        <span>+</span>
+      </div>
+      <div class="sidebar-nav-item">motrip</div>
+      <div class="sidebar-nav-item">meuingresso3.0</div>
+      <div class="sidebar-nav-item">mycockpit</div>
+      <div class="sidebar-nav-item">sicredi</div>
+      <div class="sidebar-nav-item">projetos</div>
+      <div class="sidebar-nav-item active">
+        <span>Maclan</span>
+        <span style="font-size: 10px; margin-left: auto;">⌵</span>
+      </div>
+      <div style="padding-left: 12px;">
+        <div class="sidebar-nav-item" style="font-size: 11.5px;">
+          <span>mcp</span>
+          <span class="count">5h</span>
+        </div>
+        <div class="sidebar-nav-item active" style="font-size: 11.5px;">
+          <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 140px;">Olha só recentemente a gente fe...</span>
+          <div class="spinner-dot" style="margin-left: auto; width: 11px; height: 11px;"></div>
+        </div>
+      </div>
+
+      <!-- RODAPÉ DA SIDEBAR COM AVATAR DO VINÍCIUS -->
+      <div class="sidebar-footer">
+        <div class="user-badge" title="Clique para abrir Perfil e Configurações">
+          <img
+            src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'><rect width='48' height='48' fill='%23e4a862'/><circle cx='24' cy='18' r='9' fill='%23ffffff'/><path d='M10 40c0-7.7 6.3-14 14-14s14 6.3 14 14' fill='%23ffffff'/></svg>"
+            class="user-avatar-img"
+            alt="Vinícius"
+          />
+          <span class="user-name">Vinicius</span>
+        </div>
+        <div style="color: var(--foreground-muted); cursor: pointer; padding: 4px;" title="Alternar tema">
+          🌙
+        </div>
+      </div>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL DO CHAT -->
+    <main class="chat-view">
+      <div class="chat-header-tabs">
+        <div class="chat-tab">
+          <span>💬 Conversa</span>
+        </div>
+        <div style="font-size: 14px; color: var(--foreground-faint); cursor: pointer; padding: 0 4px;">+</div>
+      </div>
+
+      <div class="thread-container">
+        <!-- TurnScrubber / Minimapa -->
+        <div class="turn-scrubber">
+          <div class="scrub-pip"></div>
+          <div class="scrub-pip"></div>
+          <div class="scrub-pip"></div>
+          <div class="scrub-pip"></div>
+          <div class="scrub-pip"></div>
+          <div class="scrub-pip active" title="Turno atual"></div>
+        </div>
+
+        <!-- Coluna de Mensagens -->
+        <div class="conversation-column">
+
+          <!-- TURNO 1 DO CODEX (ANTERIOR) -->
+          <div class="msg-group">
+            <div class="msg-gutter">
+              <div class="avatar-circle avatar-codex">⬡</div>
+            </div>
+            <div class="msg-content">
+              <div class="msg-header">
+                <span class="author-name">Codex</span>
+                <span class="msg-time">15:50</span>
+              </div>
+              <p style="font-size: 14px; line-height: 1.55; margin-bottom: 8px;">
+                Consigo executar tudo autonomamente: mergear em <code>develop</code>, acompanhar o workflow, validar migrations, testar staging e, se tudo passar, abrir a PR de release.
+              </p>
+              <p style="font-size: 14px; line-height: 1.55; margin-bottom: 12px;">
+                Só preciso desta confirmação antes de iniciar: <strong>o Allan aprovou as regras de visibilidade/RLS e as decisões Q1–Q4 registradas no PRD?</strong> Esse é um gate obrigatório do projeto. Se sim, responda apenas “Allan aprovou” e eu sigo até a PR de release sem novas pausas, exceto se surgir falha real.
+              </p>
+              <div class="turn-footer">
+                <div class="turn-status-badge">
+                  <span>✓ concluído</span>
+                  <span style="color: var(--foreground-faint);">· 21s · gpt-5.6-sol · ~US$ 0,000</span>
+                </div>
+                <div class="turn-actions">
+                  <span class="turn-action-icon" title="Editar prompt">✏️</span>
+                  <span class="turn-action-icon" title="Bifurcar">🔀</span>
+                  <span class="turn-action-icon" title="Copiar">📋</span>
+                  <span class="turn-action-icon" title="Útil">👍</span>
+                  <span class="turn-action-icon" title="Não útil">👎</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MENSAGEM DO USUÁRIO (COM HOVER INTERATIVO DE AÇÕES) -->
+          <div class="msg-group">
+            <div class="msg-gutter">
+              <img
+                src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='48' height='48' viewBox='0 0 48 48'><rect width='48' height='48' fill='%23e4a862'/><circle cx='24' cy='18' r='9' fill='%23ffffff'/><path d='M10 40c0-7.7 6.3-14 14-14s14 6.3 14 14' fill='%23ffffff'/></svg>"
+                class="avatar-circle"
+                alt="Você"
+              />
+            </div>
+            <div class="msg-content">
+              <div class="msg-header">
+                <span class="author-name">Você</span>
+                <span class="msg-time">15:53</span>
+              </div>
+
+              <!-- WRAPPER COM HOVER ACTIONS -->
+              <div class="user-bubble-wrapper">
+                <div class="user-bubble">
+                  gere uma mensagem simpels para eu enviar para o allan sobre essas decisões
+                </div>
+
+                <!-- MENU QUE APARECE NO HOVER DO MOUSE -->
+                <div class="user-hover-actions">
+                  <button class="user-hover-btn" onclick="alert('Texto jogado de volta para o composer para edição rápida!')">
+                    ✏️ Editar e reenviar
+                  </button>
+                  <button class="user-hover-btn" onclick="alert('Criando branch a partir desta mensagem!')">
+                    🔀 Bifurcar
+                  </button>
+                  <button class="user-hover-btn" onclick="alert('Copiado!')">
+                    📋 Copiar
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ═══════════════════════════════════════════════════════════════════
+               TURNO ATIVO DO AGENT (SEM FILETE COLORIDO — 100% CANÔNICO)
+               ═══════════════════════════════════════════════════════════════════ -->
+          <div class="msg-group">
+            <div class="msg-gutter">
+              <div class="avatar-circle avatar-codex">⬡</div>
+            </div>
+            <div class="msg-content">
+              <div class="msg-header">
+                <span class="author-name">Codex</span>
+                <span class="msg-time">15:53</span>
+              </div>
+
+              <!-- RECIPIENTE DA RESPOSTA (ALTERNÁVEL ENTRE CARD E FLAT) -->
+              <div class="agent-bubble-container mode-e1-card" id="agentBubbleTarget">
+                <p>
+                  Oi, Allan! Estamos finalizando a melhoria do histórico após transferências de carteira e preciso do seu aval nestas regras:
+                </p>
+                <ol>
+                  <li>O novo responsável vê todo o histórico comercial do cliente, incluindo valores.</li>
+                  <li>O antigo responsável mantém acesso apenas ao trabalho que criou.</li>
+                  <li>O crédito comercial do histórico não é transferido, salvo exceções aprovadas por você.</li>
+                  <li>Trabalhos em aberto passam para o novo responsável; os finalizados permanecem vinculados ao autor e somente para consulta.</li>
+                  <li>Nas listas, o histórico fica desativado por padrão, mas a busca avisa quando encontrou resultados.</li>
+                </ol>
+              </div>
+
+              <!-- FERRAMENTAS / STRIPS -->
+              <div class="disclosure-bar" onclick="alert('Auditoria detalhada de comandos')">
+                <div class="disclosure-left">
+                  <div class="spinner-dot" style="width: 12px; height: 12px;"></div>
+                  <span style="font-weight: 500;">Auditar PRs e branches</span>
+                  <span class="disclosure-count">0/6</span>
+                </div>
+                <span>⌵</span>
+              </div>
+
+              <div class="disclosure-bar" style="font-size: 11.5px; color: var(--foreground-muted);">
+                <div class="disclosure-left">
+                  <span>{ }</span>
+                  <span>Capacidades deste run: 4 fontes · 8 tools confirmadas · recursos do provider não observados...</span>
+                </div>
+                <span>⌵</span>
+              </div>
+
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- BOTÃO FLUTUANTE ROLAR PRO FIM -->
+      <div class="scroll-to-end-pill">
+        <span>↓</span>
+        <span>Rolar pro fim</span>
+      </div>
+
+      <!-- COMPOSER FLUTUANTE -->
+      <div class="composer-wrapper">
+        <div class="composer-card">
+          <div class="composer-banner">
+            Turno em andamento: a permissão vale a partir do próximo envio.
+          </div>
+          <div class="composer-input-area" contenteditable="true" data-placeholder="Enfileirar próxima mensagem..."></div>
+          <div class="composer-actions-row">
+            <div class="composer-left-actions">
+              <div class="chip-control" title="Anexar arquivo">📎</div>
+              <div class="chip-control">
+                <span>Codex</span>
+                <span>🔒</span>
+                <span style="font-size: 9px;">⌵</span>
+              </div>
+              <div class="chip-control amber">
+                <span>🛡️</span>
+                <span>Liberado</span>
+              </div>
+              <div class="chip-control">✨</div>
+              <div class="chip-control">🎤</div>
+            </div>
+            <div class="composer-right-actions">
+              <div class="spinner-dot"></div>
+              <button class="btn-stop-run" title="Parar turno">■</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="quick-chips-row">
+          <button class="quick-chip">Explicar o projeto</button>
+          <button class="quick-chip">Rodar os testes</button>
+          <button class="quick-chip">Criar uma branch</button>
+        </div>
+      </div>
+
+      <!-- STATUS BAR INFERIOR -->
+      <footer class="status-bar">
+        <div class="status-left">
+          <div class="status-bar-pill"></div>
+          <span>Codex</span>
+          <span>60% sessão</span>
+          <span>~US$ 53,32</span>
+        </div>
+        <div>
+          <span>local · v0.1.0-t346</span>
+        </div>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+  function setMode(mode) {
+    const bubble = document.getElementById("agentBubbleTarget");
+    document.querySelectorAll(".btn-switch").forEach(b => {
+      if (b.id !== "btnToggleTheme") b.classList.remove("active");
+    });
+
+    if (mode === "card") {
+      bubble.className = "agent-bubble-container mode-e1-card";
+      document.getElementById("btnModeCard").classList.add("active");
+    } else if (mode === "flat") {
+      bubble.className = "agent-bubble-container mode-e0-flat";
+      document.getElementById("btnModeFlat").classList.add("active");
+    }
+  }
+
+  function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute("data-theme");
+    const next = current === "dark" ? "light" : "dark";
+    html.setAttribute("data-theme", next);
+  }
+</script>
+
+</body>
+</html>

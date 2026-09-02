@@ -78,6 +78,7 @@ import { collectPaste } from "@/hooks/useAttachments"
 import { buildLexicalAtItems } from "@/hooks/useAtMentions"
 import { useMentionSearch } from "@/hooks/useMentionSearch"
 import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
+import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
 // Tema da menção: chip brass no tema do app. As chaves casam o trigger (`@`);
@@ -113,13 +114,18 @@ function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void })
   const [editor] = useLexicalComposerContext()
   const onSubmitRef = useRef(onSubmit)
   onSubmitRef.current = onSubmit
+  const shortcut = useApp((s) => s.settings.userPreferences?.composerSendShortcut ?? "enter")
   useEffect(() => {
     return editor.registerCommand(
       KEY_ENTER_COMMAND,
       (event: KeyboardEvent | null): boolean => {
         if (event?.isComposing) return false
         if (document.querySelector("[data-beautiful-mention-menu]")) return false
-        if (event?.shiftKey) return false
+        if (shortcut === "cmd-enter") {
+          if (!event?.metaKey && !event?.ctrlKey) return false
+        } else if (event?.shiftKey) {
+          return false
+        }
         event?.preventDefault()
         const text = editor.getEditorState().read($serializeDraft)
         onSubmitRef.current(text.trim())
@@ -127,7 +133,7 @@ function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void })
       },
       COMMAND_PRIORITY_HIGH,
     )
-  }, [editor])
+  }, [editor, shortcut])
   return null
 }
 

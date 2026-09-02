@@ -3,6 +3,12 @@ import { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"
 import { snapshotMissionPlan } from "@/lib/missionPlans"
 import type { AgentProbe } from "@/lib/detect"
 import { DEFAULT_DICTATION_HOTKEY } from "@/lib/dictationHotkey"
+import {
+  DEFAULT_USER_PREFERENCES,
+  DEFAULT_USER_PROFILE,
+  type UserPreferences,
+  type UserProfile,
+} from "@/lib/userProfile"
 
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
@@ -136,6 +142,10 @@ export interface GlobalSettings {
     string,
     Record<string, { resolved: string; at: number }>
   >
+  /** Perfil do usuário (nome, avatar, cor). */
+  userProfile: UserProfile
+  /** Preferências de interação do usuário (autor no chat, saudações, atalhos). */
+  userPreferences: UserPreferences
 }
 
 export const DEFAULT_SETTINGS: GlobalSettings = {
@@ -179,6 +189,8 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   sessionCostLimit: null,
   usageMeterCtaDismissed: false,
   observedResolutions: {},
+  userProfile: DEFAULT_USER_PROFILE,
+  userPreferences: DEFAULT_USER_PREFERENCES,
 }
 
 /** Atualiza somente planos de fábrica intactos. `factoryRevision` registra a
