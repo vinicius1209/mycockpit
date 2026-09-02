@@ -4,11 +4,12 @@
 > pela Frota, nasce em segundo plano somente após gesto explícito, aparece num
 > painel próprio e tem arbitragem de um piloto por projeto.
 
-> **Correção de policy (29/08/2026):** marcar um binding como `browser` agora
-> significa exigir a instância possuída pela Frota. Se ela não estiver viva, o
-> run bloqueia antes do spawn. Não existe mais queda silenciosa para um browser
-> aberto pelo MCP. Um endpoint da origem também sai do plano efêmero: a decisão
-> específica do projeto vence, com notice explícito.
+> **Correção de policy (01/09/2026):** marcar um binding como `browser` escolhe
+> a instância possuída pela Frota, mas só `required` torna essa capability
+> obrigatória. Sem navegador vivo, binding opcional fica fora do turno;
+> binding exigido cria um gate antes do spawn. Em nenhum caso há queda para um
+> navegador aberto pelo MCP. A decisão específica do projeto continua vencendo
+> endpoints e flags conflitantes da origem.
 
 ## A pergunta e o veredito
 
@@ -96,9 +97,10 @@ tem visibilidade de primeira classe.
   preflight (`probe_stdio`) roda com os args de origem; a policy de recurso é
   aplicada depois e antes do spawn. `--cdp-endpoint`, `--browser` e
   `--headless` da origem saem da cópia efêmera quando o endpoint do projeto
-  entra, com notice. Sem navegador vivo, o plano bloqueia e orienta ligar o
-  navegador ou desmarcar o binding. Assim uma configuração que promete o
-  browser do projeto nunca abre outro Chrome ou Firefox por conta própria.
+  entra, com registro no manifesto. Sem navegador vivo, o servidor opcional é
+  omitido; o exigido pede decisão no composer. Assim uma configuração que
+  promete o navegador do projeto nunca abre outro Chrome ou Firefox por conta
+  própria.
   Fingerprint do plano só hasheia nomes → sem re-anúncio espúrio (com teste).
 - [x] **B2.3** — painel "Navegador" na UI: inventário sanitizado de páginas,
   screencast CDP (`Page.startScreencast`) da mesma aba e takeover humano por

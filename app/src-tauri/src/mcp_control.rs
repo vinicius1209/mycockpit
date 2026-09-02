@@ -430,9 +430,122 @@ pub struct McpRunPlan {
     /// Compatibilidade transitória com construtores antigos. O plano real usa
     /// `disabled_codex_servers`; nomes soltos não bastam para MCPs de plugin.
     pub disabled_codex_names: Vec<String>,
+    /// Mudanças de transporte e limitações auditáveis do plano aceito. Não são
+    /// incidentes de conversa: entram no manifesto efetivo, nunca no fio.
     pub notices: Vec<String>,
-    pub prompt_policy: Option<String>,
-    pub blocked: Option<String>,
+    /// Capabilities opcionais que não puderam ser materializadas neste envio.
+    pub omissions: Vec<McpPlanIssue>,
+    /// Exigência de policy ainda não satisfeita. Um plano com gate nunca chega
+    /// ao manifesto nem ao spawn do provider.
+    pub gate: Option<McpPreflightGate>,
+    /// Consentimento efêmero para executar este envio em modo somente leitura.
+    /// Nunca nasce da configuração sozinha, apenas de `RetryReadonly` válido.
+    pub force_readonly: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpPlanDisposition {
+    Omitted,
+    NeedsDecision,
+    BlockedByPolicy,
+    NeedsReadonlyConsent,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpPlanIssueCode {
+    SourceMissing,
+    Incompatible,
+    HealthUnavailable,
+    BrowserOffline,
+    BrowserUnavailable,
+    BrowserBusy,
+    ProxyUnavailable,
+    InventoryUnavailable,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPlanIssue {
+    pub source_id: String,
+    pub source_label: String,
+    pub code: McpPlanIssueCode,
+    pub disposition: McpPlanDisposition,
+    pub detail: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpRecoveryKind {
+    StartProjectBrowser,
+    OpenMcpSettings,
+    OmitForThisRun,
+    RetryReadonly,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpRecovery {
+    pub kind: McpRecoveryKind,
+    pub source_id: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpRunOverride {
+    pub gate_fingerprint: String,
+    pub source_id: String,
+    pub kind: McpRecoveryKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpPreflightGate {
+    pub fingerprint: String,
+    pub issues: Vec<McpPlanIssue>,
+    pub allowed_recoveries: Vec<McpRecovery>,
+}
+
+impl McpPreflightGate {
+    pub fn control_plane(detail: String) -> Self {
+        Self::new(
+            vec![McpPlanIssue {
+                source_id: "mcp-control-plane".into(),
+                source_label: "Integrações MCP".into(),
+                code: McpPlanIssueCode::InventoryUnavailable,
+                disposition: McpPlanDisposition::BlockedByPolicy,
+                detail: Some(detail),
+            }],
+            vec![McpRecovery {
+                kind: McpRecoveryKind::OpenMcpSettings,
+                source_id: None,
+            }],
+        )
+    }
+
+    fn new(issues: Vec<McpPlanIssue>, allowed_recoveries: Vec<McpRecovery>) -> Self {
+        let mut evidence: Vec<String> = issues
+            .iter()
+            .map(|issue| {
+                format!(
+                    "{}\t{:?}\t{:?}",
+                    issue.source_id, issue.code, issue.disposition
+                )
+            })
+            .collect();
+        evidence.sort();
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        for byte in evidence.join("\n").bytes() {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        Self {
+            fingerprint: format!("{hash:016x}"),
+            issues,
+            allowed_recoveries,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -2210,8 +2323,90 @@ fn cached_health(
     .flatten()
 }
 
-fn binding_blocks_without_server(binding: &Binding) -> bool {
-    binding.fallback == "ask" || (binding.required && binding.fallback != "allow-readonly")
+fn unavailable_disposition(binding: &Binding) -> McpPlanDisposition {
+    if !binding.required {
+        return McpPlanDisposition::Omitted;
+    }
+    match binding.fallback.as_str() {
+        "ask" => McpPlanDisposition::NeedsDecision,
+        "allow-readonly" => McpPlanDisposition::NeedsReadonlyConsent,
+        _ => McpPlanDisposition::BlockedByPolicy,
+    }
+}
+
+fn record_unavailable(
+    plan: &mut McpRunPlan,
+    binding: &Binding,
+    source_label: &str,
+    code: McpPlanIssueCode,
+    detail: Option<String>,
+    overrides: &[McpRunOverride],
+) -> bool {
+    let disposition = unavailable_disposition(binding);
+    let issue = McpPlanIssue {
+        source_id: binding.server_id.clone(),
+        source_label: source_label.to_string(),
+        code,
+        disposition,
+        detail,
+    };
+    if disposition == McpPlanDisposition::Omitted {
+        plan.omissions.push(issue);
+        return false;
+    }
+
+    let mut allowed_recoveries = Vec::new();
+    if binding.browser {
+        allowed_recoveries.push(McpRecovery {
+            kind: McpRecoveryKind::StartProjectBrowser,
+            source_id: Some(binding.server_id.clone()),
+        });
+    }
+    allowed_recoveries.push(McpRecovery {
+        kind: McpRecoveryKind::OpenMcpSettings,
+        source_id: Some(binding.server_id.clone()),
+    });
+    match disposition {
+        McpPlanDisposition::NeedsDecision => allowed_recoveries.push(McpRecovery {
+            kind: McpRecoveryKind::OmitForThisRun,
+            source_id: Some(binding.server_id.clone()),
+        }),
+        McpPlanDisposition::NeedsReadonlyConsent => allowed_recoveries.push(McpRecovery {
+            kind: McpRecoveryKind::RetryReadonly,
+            source_id: Some(binding.server_id.clone()),
+        }),
+        McpPlanDisposition::Omitted | McpPlanDisposition::BlockedByPolicy => {}
+    }
+    let gate = McpPreflightGate::new(vec![issue.clone()], allowed_recoveries);
+    let requested = overrides.iter().find(|request| {
+        request.gate_fingerprint == gate.fingerprint
+            && request.source_id == binding.server_id
+    });
+    if let Some(request) = requested {
+        match (disposition, request.kind) {
+            (McpPlanDisposition::NeedsDecision, McpRecoveryKind::OmitForThisRun) => {
+                plan.omissions.push(McpPlanIssue {
+                    disposition: McpPlanDisposition::Omitted,
+                    ..issue
+                });
+                return false;
+            }
+            (
+                McpPlanDisposition::NeedsReadonlyConsent,
+                McpRecoveryKind::RetryReadonly,
+            ) => {
+                plan.omissions.push(McpPlanIssue {
+                    disposition: McpPlanDisposition::Omitted,
+                    ..issue
+                });
+                plan.force_readonly = true;
+                return false;
+            }
+            _ => {}
+        }
+    }
+    plan.gate = Some(gate);
+    true
 }
 
 /// Resolve somente bindings explícitos. Sem binding, preserva o comportamento
@@ -2223,6 +2418,7 @@ pub async fn plan_for_run(
     run_id: &str,
     agent: &str,
     cwd: &str,
+    overrides: &[McpRunOverride],
 ) -> Result<McpRunPlan, String> {
     let agent = crate::adapters::canonical_agent(agent);
     if !crate::adapters::is_registered(agent) {
@@ -2235,12 +2431,17 @@ pub async fn plan_for_run(
         return Ok(McpRunPlan::default());
     }
     let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
-    // Inventário nativo do PRÓPRIO agent indisponível → bloqueia o run
-    // gerenciado (genérico: a fonte que falhou se identifica no mapa).
+    // Inventário nativo do próprio agent indisponível impede provar a policy
+    // efetiva. É gate de preflight, não falha de uma execução inexistente.
     if let Some(error) = inventory_errors.get(agent) {
-        return Err(format!(
-            "inventário MCP do {agent} indisponível; run gerenciado bloqueado: {error}"
-        ));
+        let mut plan = McpRunPlan {
+            managed: true,
+            ..Default::default()
+        };
+        plan.gate = Some(McpPreflightGate::control_plane(format!(
+            "inventário MCP do {agent} indisponível: {error}"
+        )));
+        return Ok(plan);
     }
     persist_registry(&conn, &servers)?;
     let by_id: HashMap<&str, &DiscoveredServer> = servers
@@ -2263,31 +2464,35 @@ pub async fn plan_for_run(
             .collect(),
         ..Default::default()
     };
-    let mut policy_lines = Vec::new();
     let mut browser_pilot_acquired = false;
     for binding in bindings {
         let Some(server) = by_id.get(binding.server_id.as_str()).copied() else {
-            let message = format!(
-                "MCP {} não existe mais na configuração de origem",
-                binding.server_id
-            );
-            if binding_blocks_without_server(&binding) {
-                plan.blocked = Some(message);
+            if record_unavailable(
+                &mut plan,
+                &binding,
+                &binding.server_id,
+                McpPlanIssueCode::SourceMissing,
+                Some("não existe mais na configuração de origem".into()),
+                overrides,
+            ) {
                 break;
             }
-            plan.notices.push(message);
             continue;
         };
         // Com login do MyCockpit, um servidor OAuth deixa de ser nativo-apenas:
         // ele passa a ser roteável pelos dois motores através do proxy local.
         let via_proxy = roteavel_por_proxy(server, agent);
         if !via_proxy && !server.compatible(agent) {
-            let message = format!("MCP {} não é portável/compatível com {agent}", server.name);
-            if binding_blocks_without_server(&binding) {
-                plan.blocked = Some(message);
+            if record_unavailable(
+                &mut plan,
+                &binding,
+                &server.name,
+                McpPlanIssueCode::Incompatible,
+                Some(format!("não é portável ou compatível com {agent}")),
+                overrides,
+            ) {
                 break;
             }
-            plan.notices.push(message);
             continue;
         }
         let outcome = if let Some(cached) = cached_health(&conn, &project_id, &server.id, agent) {
@@ -2305,16 +2510,28 @@ pub async fn plan_for_run(
         if aceitavel {
             let mut launch = server.launch.clone().expect("compatible exige launch");
             let mut resolved_resource = None;
-            // B2.2 — o roteamento pro navegador do app entra AQUI, no plano
-            // efêmero, depois do probe com os args de origem. A marca browser é
-            // uma exigência explícita: sem a instância do projeto, bloqueia em
-            // vez de deixar o MCP abrir outra janela silenciosamente.
+            // B2.2: o roteamento pro navegador do app entra aqui, no plano
+            // efêmero, depois do probe com os args de origem. `browser` define
+            // o transporte; somente `required` define se a ausência bloqueia.
             if binding.browser {
                 let endpoint = crate::browser::live_endpoint(app, &project_id).await;
-                let mut resource = crate::resource_broker::project_browser(
+                let resource = crate::resource_broker::project_browser(
                     &server.name,
                     endpoint.is_some(),
                 );
+                if endpoint.is_none() {
+                    if record_unavailable(
+                        &mut plan,
+                        &binding,
+                        &server.name,
+                        McpPlanIssueCode::BrowserOffline,
+                        Some("o navegador deste projeto está desligado".into()),
+                        overrides,
+                    ) {
+                        break;
+                    }
+                    continue;
+                }
                 if endpoint.is_some() && !browser_pilot_acquired {
                     let broker = app
                         .state::<Arc<crate::experience_broker::ExperienceBroker>>()
@@ -2326,10 +2543,17 @@ pub async fn plan_for_run(
                             browser_pilot_acquired = true;
                         }
                         Err(message) => {
-                            resource.state = crate::resource_broker::ResourceState::Blocked;
-                            plan.resources.push(resource);
-                            plan.blocked = Some(message);
-                            break;
+                            if record_unavailable(
+                                &mut plan,
+                                &binding,
+                                &server.name,
+                                McpPlanIssueCode::BrowserBusy,
+                                Some(message),
+                                overrides,
+                            ) {
+                                break;
+                            }
+                            continue;
                         }
                     }
                 }
@@ -2343,9 +2567,17 @@ pub async fn plan_for_run(
                         plan.notices.extend(notices);
                     }
                     Err(message) => {
-                        plan.resources.push(resource);
-                        plan.blocked = Some(message);
-                        break;
+                        if record_unavailable(
+                            &mut plan,
+                            &binding,
+                            &server.name,
+                            McpPlanIssueCode::BrowserUnavailable,
+                            Some(message),
+                            overrides,
+                        ) {
+                            break;
+                        }
+                        continue;
                     }
                 }
             }
@@ -2362,15 +2594,16 @@ pub async fn plan_for_run(
                         // Fail-closed: sem proxy não se entrega o servidor cru
                         // (isso vazaria a exigência de auth pro agent, que
                         // falharia no meio da tarefa).
-                        let message = format!(
-                            "MCP {} não pôde ser roteado: falha ao abrir o proxy autenticado",
-                            server.name
-                        );
-                        if binding_blocks_without_server(&binding) {
-                            plan.blocked = Some(message);
+                        if record_unavailable(
+                            &mut plan,
+                            &binding,
+                            &server.name,
+                            McpPlanIssueCode::ProxyUnavailable,
+                            Some("falha ao abrir o proxy autenticado".into()),
+                            overrides,
+                        ) {
                             break;
                         }
-                        plan.notices.push(message);
                         continue;
                     }
                 }
@@ -2390,34 +2623,16 @@ pub async fn plan_for_run(
             .detail
             .clone()
             .unwrap_or_else(|| outcome.status.clone());
-        let message = format!("MCP {} indisponível: {detail}", server.name);
-        if binding.fallback == "allow-readonly" {
-            plan.notices
-                .push(format!("{message}; fallback somente leitura autorizado"));
-            policy_lines.push(format!(
-                "- {} indisponível. Você pode usar um caminho alternativo SOMENTE LEITURA; não faça alterações externas.",
-                server.name
-            ));
-        } else if binding.fallback == "ask" {
-            plan.blocked = Some(format!(
-                "{message}. A política pede decisão humana; teste novamente ou altere o binding em Integrações MCP."
-            ));
+        if record_unavailable(
+            &mut plan,
+            &binding,
+            &server.name,
+            McpPlanIssueCode::HealthUnavailable,
+            Some(detail),
+            overrides,
+        ) {
             break;
-        } else if binding.required {
-            plan.blocked = Some(format!(
-                "{message}. O projeto exige este MCP e a política `{}` não autoriza improviso.",
-                binding.fallback
-            ));
-            break;
-        } else {
-            plan.notices.push(message);
         }
-    }
-    if !policy_lines.is_empty() {
-        plan.prompt_policy = Some(format!(
-            "## Política MCP da Frota\n\n{}",
-            policy_lines.join("\n")
-        ));
     }
     apply_friendly_runtime_names(&mut plan);
     Ok(plan)
@@ -3310,20 +3525,132 @@ mod tests {
     }
 
     #[test]
-    fn fallback_ask_pausa_e_readonly_permanece_fail_soft() {
+    fn binding_opcional_nunca_bloqueia_e_exigido_respeita_o_fallback() {
         let binding = |required, fallback: &str| Binding {
             server_id: "server".into(),
             required,
             fallback: fallback.into(),
             browser: false,
         };
-        assert!(binding_blocks_without_server(&binding(false, "ask")));
-        assert!(binding_blocks_without_server(&binding(true, "deny")));
-        assert!(!binding_blocks_without_server(&binding(false, "deny")));
-        assert!(!binding_blocks_without_server(&binding(
-            true,
-            "allow-readonly"
-        )));
+        // Fixture fiel ao incidente: required=0, fallback=ask, browser=1.
+        let incidente = Binding {
+            browser: true,
+            ..binding(false, "ask")
+        };
+        assert_eq!(
+            unavailable_disposition(&incidente),
+            McpPlanDisposition::Omitted
+        );
+        assert_eq!(
+            unavailable_disposition(&binding(false, "deny")),
+            McpPlanDisposition::Omitted
+        );
+        assert_eq!(
+            unavailable_disposition(&binding(false, "allow-readonly")),
+            McpPlanDisposition::Omitted
+        );
+        assert_eq!(
+            unavailable_disposition(&binding(true, "ask")),
+            McpPlanDisposition::NeedsDecision
+        );
+        assert_eq!(
+            unavailable_disposition(&binding(true, "deny")),
+            McpPlanDisposition::BlockedByPolicy
+        );
+        assert_eq!(
+            unavailable_disposition(&binding(true, "allow-readonly")),
+            McpPlanDisposition::NeedsReadonlyConsent
+        );
+    }
+
+    #[test]
+    fn omissao_opcional_e_gate_exigido_usam_a_mesma_matriz() {
+        let optional = Binding {
+            server_id: "playwright".into(),
+            required: false,
+            fallback: "ask".into(),
+            browser: true,
+        };
+        let mut plan = McpRunPlan::default();
+        assert!(!record_unavailable(
+            &mut plan,
+            &optional,
+            "Playwright",
+            McpPlanIssueCode::BrowserOffline,
+            Some("navegador desligado".into()),
+            &[],
+        ));
+        assert_eq!(plan.omissions.len(), 1);
+        assert!(plan.gate.is_none());
+
+        let required = Binding {
+            required: true,
+            ..optional
+        };
+        assert!(record_unavailable(
+            &mut plan,
+            &required,
+            "Playwright",
+            McpPlanIssueCode::BrowserOffline,
+            Some("navegador desligado".into()),
+            &[],
+        ));
+        let gate = plan.gate.expect("binding exigido cria gate");
+        assert_eq!(gate.issues.len(), 1);
+        assert!(gate
+            .allowed_recoveries
+            .iter()
+            .any(|recovery| recovery.kind == McpRecoveryKind::OmitForThisRun));
+        assert!(gate.allowed_recoveries.iter().any(|recovery| {
+            recovery.kind == McpRecoveryKind::StartProjectBrowser
+        }));
+
+        let override_once = McpRunOverride {
+            gate_fingerprint: gate.fingerprint,
+            source_id: "playwright".into(),
+            kind: McpRecoveryKind::OmitForThisRun,
+        };
+        let mut retried = McpRunPlan::default();
+        assert!(!record_unavailable(
+            &mut retried,
+            &required,
+            "Playwright",
+            McpPlanIssueCode::BrowserOffline,
+            Some("navegador desligado".into()),
+            &[override_once],
+        ));
+        assert!(retried.gate.is_none());
+        assert_eq!(retried.omissions.len(), 1);
+
+        let readonly = Binding {
+            fallback: "allow-readonly".into(),
+            ..required
+        };
+        let mut consent = McpRunPlan::default();
+        assert!(record_unavailable(
+            &mut consent,
+            &readonly,
+            "Playwright",
+            McpPlanIssueCode::BrowserOffline,
+            Some("navegador desligado".into()),
+            &[],
+        ));
+        let readonly_gate = consent.gate.expect("somente leitura exige gesto");
+        let readonly_override = McpRunOverride {
+            gate_fingerprint: readonly_gate.fingerprint,
+            source_id: "playwright".into(),
+            kind: McpRecoveryKind::RetryReadonly,
+        };
+        let mut readonly_run = McpRunPlan::default();
+        assert!(!record_unavailable(
+            &mut readonly_run,
+            &readonly,
+            "Playwright",
+            McpPlanIssueCode::BrowserOffline,
+            Some("navegador desligado".into()),
+            &[readonly_override],
+        ));
+        assert!(readonly_run.force_readonly);
     }
 
     // ---- B2.2: roteamento pro navegador do projeto -------------------------

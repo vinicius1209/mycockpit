@@ -45,7 +45,7 @@ import {
   missionHostsInline,
 } from "@/components/mission/MissionTimeline"
 import { InlineInteractions } from "@/components/chat/InteractionHost"
-import { runAgent, agentLabel } from "@/lib/agent"
+import { runAgent } from "@/lib/agent"
 import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import { avisoDeMotorAusente } from "@/lib/detect"
@@ -66,11 +66,9 @@ import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
 import { useAttachmentGc } from "@/hooks/useAttachmentGc"
 import type { AgentRunConfig } from "@/lib/types"
+import type { McpRecoveryKind, McpRunOverride } from "@/lib/tooling"
 import { isTauri } from "@/lib/db"
-import {
-  buildLearningBlocks,
-  markLessonsUsed,
-} from "@/lib/learning"
+import { buildLearningBlocks } from "@/lib/learning"
 import { presentTool } from "@/lib/toolview"
 import {
   listenWorkEvents,
@@ -87,19 +85,26 @@ import {
 import {
   buildDoctrineBlock,
   decideDoctrine,
-  doctrineFingerprint,
   readDoctrine,
 } from "@/lib/doctrine"
-import {
-  expandPendingForTarget,
-  findAppCommand,
-} from "@/lib/slashCommands"
+import { findAppCommand } from "@/lib/slashCommands"
 import {
   expandDraftWithSources,
   expandEmbeddedDraft,
   finalizeSlashExpansion,
 } from "@/lib/slashDispatch"
 import { runCompactTurn } from "@/lib/compact"
+import {
+  acceptChatTurn,
+  createRunAcceptance,
+  recordDispatchError,
+} from "@/lib/chatRunAcceptance"
+import {
+  recoveryForConversation,
+  startBrowserAndResumePreflight,
+  type PreflightRetryRequest,
+} from "@/lib/mcpPreflightRetry"
+import { continueConversationWith } from "@/lib/chatHandoff"
 import { serializeContext } from "@/lib/fusion"
 import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
 import {
@@ -115,19 +120,6 @@ function greetingFor(date: Date): string {
   if (h < 12) return "Bom dia"
   if (h < 18) return "Boa tarde"
   return "Boa noite"
-}
-
-/** Erro que escapou do Channel (invoke/spawn/preflight) também entra no fio.
- * Sem isso o toast desaparece e não há cartão para revezar. Deduplica quando o
- * backend já conseguiu emitir o mesmo erro antes de rejeitar. */
-function recordDispatchError(convId: string, error: unknown, fallback: string) {
-  const message = typeof error === "string" ? error : fallback
-  const conv = useChat.getState().byId[convId]
-  const last = conv?.items[conv.items.length - 1]
-  if (!last || last.kind !== "error" || last.message !== message) {
-    useChat.getState().handleEvent(convId, { type: "error", message })
-  }
-  toast.error(message)
 }
 
 export function ChatPanel() {
@@ -146,6 +138,7 @@ export function ChatPanel() {
   // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
+  const preflightRetryRef = useRef<Record<string, PreflightRetryRequest>>({})
   useEffect(() => {
     if (!isTauri()) return
     let disposed = false
@@ -251,6 +244,55 @@ export function ChatPanel() {
     })
   }
 
+  async function handleStartRequiredBrowser() {
+    if (!activeId) return
+    const retry = preflightRetryRef.current[activeId]
+    try {
+      const result = await startBrowserAndResumePreflight(
+        activeId,
+        retry,
+        resendPreflight,
+      )
+      if (result === "missing-project") return
+      toast.success(
+        result === "sent"
+          ? "Navegador ligado. Enviando seu pedido."
+          : "Navegador ligado. Seu pedido continua pronto para enviar.",
+      )
+    } catch (error) {
+      toast.error(
+        typeof error === "string"
+          ? error
+          : "Não consegui ligar o navegador deste projeto.",
+      )
+    }
+  }
+
+  function handlePreflightRecovery(
+    kind: Extract<McpRecoveryKind, "omit-for-this-run" | "retry-readonly">,
+  ) {
+    if (!activeId) return
+    const retry = preflightRetryRef.current[activeId]
+    const override = recoveryForConversation(activeId, kind)
+    if (!retry || !override) return
+    resendPreflight(retry, [override])
+  }
+
+  function resendPreflight(
+    retry: PreflightRetryRequest,
+    recoveries: McpRunOverride[] = [],
+  ) {
+    void handleSend(
+      retry.text,
+      retry.cfg,
+      retry.attachments,
+      HUMANO,
+      activeId ?? undefined,
+      retry.onAccepted,
+      recoveries,
+    )
+  }
+
   async function handleSend(
     text: string,
     cfg: AgentRunConfig | undefined,
@@ -265,6 +307,9 @@ export function ChatPanel() {
      *  o foco, a fila digitada no projeto X ia parar na conversa aberta do
      *  projeto Y. Sem alvo = envio manual, vale a conversa em foco AGORA. */
     originConvId?: string,
+    /** O composer só limpa texto e anexos quando o backend aceita o envio. */
+    onAccepted?: () => void,
+    mcpRecoveries: McpRunOverride[] = [],
   ) {
     if (origem.autor === "humano") followLatest()
     if (!isTauri()) {
@@ -286,6 +331,10 @@ export function ChatPanel() {
     }
     if (target.status !== "ok") return
     const { convId, conv, project } = target
+    if (conv.preparing) {
+      toast("As capacidades deste envio ainda estão sendo verificadas.")
+      return
+    }
     // Missão rodando nesta conversa: as fases compartilham o worktree; um envio
     // manual em paralelo embolaria o diff/handoff. Bloqueia (M2).
     if (useMission.getState().byConv[convId]?.status === "running") {
@@ -328,6 +377,7 @@ export function ChatPanel() {
           text,
           attachments,
         })
+        onAccepted?.()
         return
       }
     }
@@ -335,7 +385,10 @@ export function ChatPanel() {
     // antes do próximo run; ao terminar, o finally junta as pendentes num envio
     // só). Retomada de SISTEMA não entra na fila do humano — a decisão e o porquê
     // moram em `lib/sendGate` (ADR-046).
-    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) return
+    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
+      onAccepted?.()
+      return
+    }
     // Um envio MANUAL (digitado/⌘K/fila) supersede um auto-resume agendado: cancela
     // o timer pra não disparar um resume redundante em cima do run que começa agora.
     // Se ESTE send É o próprio resume, não cancela (o loop já limpou/regravou o estado).
@@ -354,6 +407,7 @@ export function ChatPanel() {
         projectId: project.id,
         projectPath: project.path,
         commandText: text,
+        onStarted: onAccepted,
         drainQueue: () => {
           void drainQueued(convId, conv.agent, project.path, handleSend)
         },
@@ -371,12 +425,9 @@ export function ChatPanel() {
     // Trocar de modelo no meio é permitido (a sessão do CLI sobrevive), mas não
     // pode ser MUDO: sem esta linha o histórico passa a dizer que a conversa
     // rodou inteira num modelo só, e o custo por token muda sem aviso.
-    if (locked) {
-      const nota = notaDeTrocaDeModelo(conv.reqModel, model)
-      if (nota) {
-        useChat.getState().handleEvent(convId, { type: "notice", message: nota })
-      }
-    }
+    const modelChangeNotice = locked
+      ? notaDeTrocaDeModelo(conv.reqModel, model)
+      : null
     let effort = locked ? conv.effort : (cfg?.effort ?? null)
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
@@ -451,7 +502,10 @@ export function ChatPanel() {
     // e iniciado um run enquanto o preflight rodava. Re-checa com estado
     // FRESCO pelo MESMO gate da guarda lá em cima (era código gêmeo, e o gêmeo
     // enfileirava retomada de sistema), nunca um segundo run concorrente.
-    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) return
+    if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
+      onAccepted?.()
+      return
+    }
     // M3: modo é da CONVERSA (persistido); o `cfg` do composer vence quando
     // existe. Auto-resume nunca planeja (é continuação de execução).
     const planFirst =
@@ -469,35 +523,8 @@ export function ChatPanel() {
     const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
     const cwd = conv.worktreePath ?? project.path
-    // Sprint 4, o run escreve em byId[convId] mesmo se o usuário trocar de aba.
-    // A troca de piloto entre backends usa o MESMO commit em duas fases do
-    // revezamento explícito: registra o pedido, mas conserva agent/sessão/modelo
-    // da origem até o target provar vida com `session`.
-    if (wheelSwitch) {
-      useChat.getState().beginTransplant(convId, runId, agent, {
-        model,
-        effort,
-        user: { text, attachments },
-      })
-    } else {
-      useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
-    }
-    // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
-    // exata (a base do drift do S3.4). AWAIT (D4): falha do write avisa, não
-    // some em silêncio.
-    if (personaStamp) {
-      await useChat
-        .getState()
-        .stampPreset(
-          convId,
-          personaStamp.presetId,
-          personaStamp.digest,
-          personaStamp.name,
-        )
-    }
-    // ao enviar, pula pro fim (ver a própria mensagem) — só se o fio ALVO é o
-    // que está na tela (envio em background não mexe na rolagem de quem olha).
-    if (convId === useChat.getState().activeId) setAtBottom(true)
+    // A mensagem ainda não pertence ao fio. Ela só entra quando o backend
+    // emitir run_manifest, a fronteira de aceite deste envio.
     // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
     // bolha visível. Best-effort: qualquer falha envia sem o bloco.
     //
@@ -513,24 +540,20 @@ export function ChatPanel() {
     const slashExpansion = await expandDraftWithSources(text, project.path, agent)
     const sendText = slashExpansion.text
     let lessonsBlock: string | null = null
+    let acceptedLessonIds: string[] = []
     {
       try {
         const blocks = await buildLearningBlocks(project.id, sendText, false)
         if (blocks.lessons) {
           lessonsBlock = blocks.lessons
-          injectedLessonsRef.current[convId] = blocks.lessonIds
-          void markLessonsUsed(blocks.lessonIds)
-        } else {
-          injectedLessonsRef.current[convId] = []
+          acceptedLessonIds = blocks.lessonIds
         }
-      } catch {
-        injectedLessonsRef.current[convId] = []
-      }
+      } catch {}
     }
     // Especialistas E1 — "Trazer pro Executor": o parecer que você trouxe entra
     // como CONTEXTO deste turno (bloco no prompt, não bolha), acima do pedido.
-    // Consumido uma vez (takePendingAdvice limpa).
-    const broughtAdvice = useChat.getState().takePendingAdvice(convId)
+    // Só é consumido quando o envio é aceito; gate de preflight preserva tudo.
+    const broughtAdvice = conv.pendingAdvice ?? null
     // H1 (prompt-hygiene-plan) — canal por capability: motor com `systemChannel`
     // recebe persona+doutrina pelo canal SYSTEM do CLI, re-enviadas a cada
     // spawn (frescor de graça, zero inchaço de histórico); motor sem canal
@@ -552,11 +575,6 @@ export function ChatPanel() {
       lastFingerprint: useChat.getState().byId[convId]?.injected?.doctrine,
     })
     const doctrineBlock = doctrine.body
-    if (doctrine.fingerprint) {
-      useChat
-        .getState()
-        .recordInjectedFingerprint(convId, "doctrine", doctrine.fingerprint)
-    }
     // Persona pro canal system: a resolvida do 1º turno/reinjeção quando há;
     // nos turnos seguintes de conversa carimbada, re-deriva do preset (best-
     // effort — o aviso de drift do S3.4 continua cobrindo divergência).
@@ -684,6 +702,43 @@ export function ChatPanel() {
         memoryFallback = null
       }
     }
+    const acceptance = createRunAcceptance({
+      onAccept: () => {
+        delete preflightRetryRef.current[convId]
+        acceptChatTurn({
+          convId,
+          runId,
+          agent,
+          model,
+          effort,
+          text,
+          attachments,
+          wheelSwitch,
+          modelChangeNotice,
+          broughtAdvice,
+          lessonIds: acceptedLessonIds,
+          recordLessons: (ids) => {
+            injectedLessonsRef.current[convId] = ids
+          },
+          doctrineFingerprint: doctrine.fingerprint,
+          personaStamp,
+          onAccepted,
+        })
+        if (convId === useChat.getState().activeId) setAtBottom(true)
+      },
+      onBlocked: (gate) => {
+        preflightRetryRef.current[convId] = {
+          text,
+          cfg,
+          attachments,
+          onAccepted,
+        }
+        useChat.getState().blockPreparation(convId, runId, gate)
+      },
+      onEvent: (event) => useChat.getState().handleEvent(convId, event),
+    })
+
+    useChat.getState().beginPreparation(convId, runId)
     try {
       await runAgent(
         runId,
@@ -696,23 +751,34 @@ export function ChatPanel() {
         sessionId,
         permissaoDoTurno,
         attachments,
-        (e) => useChat.getState().handleEvent(convId, e),
+        acceptance.handler,
         planFirst,
         memoryFallback,
         systemPrompt,
         // H2: último plano de MCPs anunciado nesta conversa (ledger efêmero).
         useChat.getState().byId[convId]?.injected?.mcp ?? null,
         instructionSources,
+        mcpRecoveries,
       )
+      if (!acceptance.accepted() && !useChat.getState().byId[convId]?.preflightGate) {
+        toast.error("O turno não começou. O pedido continua no composer.")
+      }
     } catch (e) {
-      recordDispatchError(convId, e, "Falha ao executar o agent")
+      if (acceptance.accepted()) {
+        recordDispatchError(convId, e, "Falha ao executar o agent")
+      }
+      else toast.error("Não consegui verificar as capacidades deste envio.")
     } finally {
-      useChat.getState().finish(convId)
-      void useChat.getState().persist(convId)
+      if (!acceptance.accepted()) {
+        useChat.getState().clearPreparation(convId, runId)
+      } else {
+        useChat.getState().finish(convId)
+        void useChat.getState().persist(convId)
+      }
       // Gate de plano: o turno plan_first terminou BEM → captura o texto final
       // do assistente (o plano) e arma o card "Aprovar e executar / Descartar".
       // Um envio manual posterior limpa o estado (start zera pendingPlan).
-      if (planFirst) {
+      if (acceptance.accepted() && planFirst) {
         const after = useChat.getState().byId[convId]
         const planText =
           after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
@@ -724,7 +790,10 @@ export function ChatPanel() {
       // sugestões. `convId` explícito: a fila é DESTA conversa e o turno pode
       // terminar com o usuário já noutro projeto — sem o alvo, o envio caía no
       // fio em foco.
-      if (await drainQueued(convId, agent, project.path, handleSend)) {
+      if (!acceptance.accepted()) {
+        // Nenhum turno nasceu: não drena fila, não agenda retomada, não
+        // notifica conclusão e não fabrica sugestões.
+      } else if (await drainQueued(convId, agent, project.path, handleSend)) {
         // fila drenada: o próximo lote já está em voo (ou de volta na fila).
       } else if (maybeScheduleAutoResume(convId, agent, handleSend)) {
         // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
@@ -826,150 +895,17 @@ export function ChatPanel() {
     if (!project || !isTauri()) return
     const convId = useChat.getState().activeId
     if (!convId) return
-    const conv = useChat.getState().byId[convId]
-    if (!conv || conv.running || conv.finalizing || conv.corrupt) return
-    // F-A — mesma guarda de availability do handleSend: revezar pra CLI
-    // ausente/deslogada só transplanta a conversa pra um erro cru.
-    const dispatchBlock = dispatchBlockReason(
-      target,
-      useApp.getState().settings.detected ?? {},
-    )
-    if (dispatchBlock) {
-      toast.error(dispatchBlock)
-      return
-    }
-    let lastUserIdx = -1
-    for (let i = conv.items.length - 1; i >= 0; i--) {
-      if (conv.items[i].kind === "user") {
-        lastUserIdx = i
-        break
-      }
-    }
-    const lastUser = lastUserIdx >= 0 ? conv.items[lastUserIdx] : null
-    const pending = lastUser && lastUser.kind === "user" ? lastUser.text : ""
-    if (!pending) return
-    // A intenção manual vence qualquer revive agendado antes dos awaits do
-    // handoff; assim o timer não disputa corrida com o novo backend.
-    useChat.getState().cancelAutoResume(convId)
-    // G2.3 — `/comando` pendente expande pro motor de DESTINO (o pedido viaja
-    // EMBUTIDO no preâmbulo do handoff, barra crua seria texto morto lá). Sem
-    // match no inventário do destino, a nota honesta entra junto do pedido em
-    // vez da barra crua; sem invocação, nada muda (fail-open).
-    const pendingForTarget = await expandPendingForTarget(
-      pending,
-      project.path,
-      target,
-    )
-    const pendingText = pendingForTarget.note
-      ? `${pendingForTarget.text}\n\n(${pendingForTarget.note})`
-      : pendingForTarget.text
-    const handoffItems =
-      pendingText === pending
-        ? conv.items
-        : conv.items.map((it, i) =>
-            i === lastUserIdx && it.kind === "user"
-              ? { ...it, text: pendingText }
-              : it,
-          )
-    // D3 — conversa carimbada: a doutrina viaja no transplant (sessão fresca
-    // no novo agent = a persona do 1º turno NÃO está lá; sem isso o agent
-    // assume "pelado" com a mesa ainda dizendo "como X").
-    let personaBlock = await personaHandoffBlock(
-      conv.presetId,
-      conv.presetDigest,
-      project.path,
-    )
-    // A doutrina do projeto também viaja: o transplante é uma sessão FRESCA,
-    // muitas vezes numa CLI diferente da que começou a conversa — sem o bloco,
-    // o agent que assume seria o único do fio a trabalhar sem as regras.
-    const doctrineRaw = buildDoctrineBlock(
-      (await readDoctrine(project.path)).content,
-    )
-    let doctrine = doctrineRaw
-    // H1 — destino com canal system: persona+doutrina vão pelo canal do CLI
-    // (re-enviadas a cada spawn), fora do preâmbulo de handoff.
-    let systemPrompt: string | null = null
-    if (engineDef(target)?.systemChannel) {
-      systemPrompt = [personaBlock, doctrine].filter(Boolean).join("\n\n") || null
-      personaBlock = null
-      doctrine = null
-    }
-    // Lições ativas também viajam. Antes o transplant pulava esta camada da
-    // cascata normal e o novo provider assumia com menos memória que um turno
-    // comum da mesma conversa.
-    let lessonsBlock: string | null = null
-    try {
-      const blocks = await buildLearningBlocks(project.id, pending, false)
-      lessonsBlock = blocks.lessons
-      injectedLessonsRef.current[convId] = blocks.lessonIds
-      void markLessonsUsed(blocks.lessonIds)
-    } catch {
-      injectedLessonsRef.current[convId] = []
-    }
-    const cwd = conv.worktreePath ?? project.path
-    const prepared = await prepareHybridHandoff({
-      projectId: project.id,
-      cwd,
+    await continueConversationWith({
       convId,
-      sourceAgent: conv.agent,
-      targetAgent: target,
-      items: handoffItems,
-      pendingUserIndex: lastUserIdx,
-      personaBlock,
-      doctrineBlock: doctrine,
-      lessonsBlock,
+      projectId: project.id,
+      projectPath: project.path,
+      permissionMode: project.permissionMode,
+      target,
+      recordLessons: (ids) => {
+        injectedLessonsRef.current[convId] = ids
+      },
+      onPrepared: () => setAtBottom(true),
     })
-    // corrida do await (mesma classe do D2): re-checa antes de transplantar.
-    const fresh = useChat.getState().byId[convId]
-    if (!fresh || fresh.running || fresh.finalizing) return
-    const runId = crypto.randomUUID()
-    useChat.getState().invalidateSuggestions(convId)
-    useChat.getState().handleEvent(convId, {
-      type: "notice",
-      message: prepared.paths
-        ? `revezamento: memória híbrida pronta · preparando ${agentLabel(target)}`
-        : `revezamento: contexto compacto · preparando ${agentLabel(target)} (export indisponível)`,
-    })
-    useChat.getState().beginTransplant(convId, runId, target)
-    setAtBottom(true)
-    // H4 — a doutrina chegou fresca ao destino (corpo ou canal): carimba o
-    // fingerprint pro frescor mid-conversa valer também pós-transplante.
-    if (doctrineRaw) {
-      useChat
-        .getState()
-        .recordInjectedFingerprint(convId, "doctrine", doctrineFingerprint(doctrineRaw))
-    }
-    try {
-      await runAgent(
-        runId,
-        convId,
-        target,
-        null,
-        null,
-        prepared.prompt,
-        cwd,
-        null, // sessão fresca no novo agent
-        // Mesmo último metro do envio normal: trocar de motor no meio da
-        // conversa não pode rebaixar o modo que a conversa escolheu.
-        permissaoDoSpawn(
-          modoEfetivoDoSpawn(fresh?.sessionMode, project.permissionMode),
-        ),
-        [],
-        (e) => useChat.getState().handleEvent(convId, e),
-        false,
-        null,
-        systemPrompt,
-        useChat.getState().byId[convId]?.injected?.mcp ?? null,
-        pendingForTarget.instructionSources,
-      )
-    } catch (e) {
-      recordDispatchError(convId, e, "Falha no revezamento")
-    } finally {
-      useChat.getState().finish(convId)
-      void useChat.getState().persist(convId)
-      void notifyTurnEnd(convId, target)
-      useChat.getState().scheduleSuggestions(convId)
-    }
   }
 
   // "Planejar primeiro": plano aprovado → dispara o turno de EXECUÇÃO (turno
@@ -1171,20 +1107,45 @@ export function ChatPanel() {
             conv={conv}
             activeId={activeId}
             temProjeto={!!project}
-            busy={running || finalizing}
+            busy={running || finalizing || !!conv?.preparing}
             motorAusente={motorAusente}
             onReenviar={(prompt) =>
               void handleSend(prompt, undefined, [], AUTO_RESUME, activeId ?? undefined)
             }
             onLiberarPasta={handleAllowBlockedDir}
+            onLigarNavegador={() => void handleStartRequiredBrowser()}
+            ligarNavegadorEnvia={
+              !!activeId && !!preflightRetryRef.current[activeId]
+            }
+            onRevisarMcp={() =>
+              useApp.getState().setSettingsOpen(true, "integrations")
+            }
+            onContinuarSemMcp={
+              activeId && preflightRetryRef.current[activeId]
+                ? () => handlePreflightRecovery("omit-for-this-run")
+                : undefined
+            }
+            onContinuarSoLendo={
+              activeId && preflightRetryRef.current[activeId]
+                ? () => handlePreflightRecovery("retry-readonly")
+                : undefined
+            }
           />
           <CommandConsole
-            onSend={(text, cfg, attachments) =>
-              void handleSend(text, cfg, attachments, HUMANO)
+            onSend={(text, cfg, attachments, onAccepted) =>
+              void handleSend(
+                text,
+                cfg,
+                attachments,
+                HUMANO,
+                undefined,
+                onAccepted,
+              )
             }
             disabled={!project}
             running={running}
             finalizing={finalizing}
+            preparing={!!conv?.preparing}
             missionRunning={missionRunning}
             onStop={handleStop}
             onOpenEspecialistas={() => setEspecialistasOpen(true)}

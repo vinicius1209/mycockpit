@@ -7,6 +7,8 @@ import { nextBaseline, type CumulativeUsage } from "@/lib/usage"
 import type {
   EffectiveRunManifest,
   InstructionSourceClaim,
+  McpPreflightGate,
+  McpRunOverride,
 } from "@/lib/tooling"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
@@ -15,6 +17,9 @@ export type CostSource = "reported" | "estimated" | "unknown"
 /** Eventos normalizados emitidos pelo backend (espelha AgentEvent no Rust). */
 export type AgentEvent =
   | { type: "run_manifest"; manifest: EffectiveRunManifest }
+  | { type: "preflight_blocked"; gate: McpPreflightGate }
+  | { type: "started" }
+  | { type: "startup_failed"; message: string }
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }
   | { type: "subagent_text"; parent_tool_id: string; text: string }
@@ -89,6 +94,7 @@ export interface RunAgentOptions {
   systemPrompt?: string | null
   mcpFingerprint?: string | null
   instructionSources?: InstructionSourceClaim[]
+  mcpRecoveries?: McpRunOverride[]
 }
 
 /** Dispara um agent de código (`agent` = claude-code | codex | opencode) na pasta
@@ -123,6 +129,8 @@ export async function runAgent(
   /** Skills de plugin realmente expandidas neste prompt. O Rust revalida o
    * fingerprint antes do spawn; esta lista não é aceita como autoridade. */
   legacyInstructionSources: InstructionSourceClaim[] = [],
+  /** Decisão efêmera para um gate anterior, revalidada no backend. */
+  legacyMcpRecoveries: McpRunOverride[] = [],
 ): Promise<void> {
   const options: RunAgentOptions =
     typeof planFirstOrOptions === "boolean"
@@ -132,6 +140,7 @@ export async function runAgent(
           systemPrompt: legacySystemPrompt,
           mcpFingerprint: legacyMcpFingerprint,
           instructionSources: legacyInstructionSources,
+          mcpRecoveries: legacyMcpRecoveries,
         }
       : planFirstOrOptions
   // ADR-033 — usage acumulado por thread: ÚNICO ponto do app em que o baseline
@@ -175,6 +184,7 @@ export async function runAgent(
     systemPrompt: options.systemPrompt ?? null,
     mcpFingerprint: options.mcpFingerprint ?? null,
     instructionSources: options.instructionSources ?? [],
+    mcpRecoveries: options.mcpRecoveries ?? [],
     usageBaseline: baseline,
     onEvent: channel,
   })

@@ -86,6 +86,7 @@ export function CommandConsole({
   disabled,
   running,
   finalizing,
+  preparing,
   missionRunning,
   onStop,
   onOpenEspecialistas,
@@ -94,10 +95,12 @@ export function CommandConsole({
     text: string,
     cfg: AgentRunConfig,
     attachments: Attachment[],
+    onAccepted: () => void,
   ) => void
   disabled?: boolean
   running?: boolean
   finalizing?: boolean
+  preparing?: boolean
   /** Missão rodando nesta conversa → composer travado (envio manual bloqueado). */
   missionRunning?: boolean
   onStop?: () => void
@@ -338,7 +341,7 @@ export function CommandConsole({
     texto: text,
     anexos: attachments.length,
     anexosSuportados: allSupported,
-    disabled: !!disabled,
+    disabled: !!disabled || !!preparing,
     running: !!running,
     finalizing: !!finalizing,
     missionRunning: !!missionRunning,
@@ -396,17 +399,21 @@ export function CommandConsole({
     // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo
     // e empilha na fila. Eram dois ramos gêmeos aqui — e ramo gêmeo é como o
     // anexo ficava pra trás, órfão no composer depois de a mensagem "sair".
-    onSend(text, effCfg, attachments)
-    if (activeId) useComposerDrafts.getState().clear(activeId)
-    resetHistory()
-    focusComposer()
+    const submittedId = activeId
+    onSend(text, effCfg, attachments, () => {
+      if (submittedId) useComposerDrafts.getState().clear(submittedId)
+      resetHistory()
+      if (submittedId === useChat.getState().activeId) focusComposer()
+    })
   }
 
   // Placeholder por estado. A dica de "/" sai só quando o projeto tem comandos
   // de fato (senão seria teatro).
   const placeholder = missionRunning
     ? "Missão em andamento; pare a missão para enviar manualmente…"
-    : running || finalizing
+    : preparing
+      ? "Verificando capacidades…"
+      : running || finalizing
       ? "Enfileirar próxima mensagem…"
       : commands.length > 0
         ? "Peça algo…  ou / para comandos"
@@ -543,7 +550,7 @@ export function CommandConsole({
             stopTitle={deferredStopWarning(pendingDeferred(conv.items))}
             onFusion={() => setFusionOpen(true)}
             fusionDisabled={
-              !activeId || disabled || running || finalizing || missionRunning
+              !activeId || disabled || preparing || running || finalizing || missionRunning
             }
             fusionTitle={
               activeId
@@ -551,7 +558,7 @@ export function CommandConsole({
                 : "Sem conversa ativa; a disputa precisa de uma conversa de destino"
             }
             onMission={() => setMissionOpen(true)}
-            missionDisabled={disabled || running || finalizing || missionRunning}
+            missionDisabled={disabled || preparing || running || finalizing || missionRunning}
             onAttach={attach}
             onEspecialistas={onOpenEspecialistas}
             running={running}

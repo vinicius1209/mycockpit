@@ -15,10 +15,9 @@ import { comporCascata } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
 import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
-import { buildDoctrineBlock, decideDoctrine, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
+import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import {
   buildLearningBlocks,
-  markLessonsUsed,
   recordInjectedLessons,
 } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
@@ -32,7 +31,6 @@ import {
   warnPresetDrift,
 } from "@/lib/presets"
 import {
-  expandPendingForTarget,
   expandQueuedForJoin,
   findAppCommand,
   parseSlashInvocation,
@@ -58,6 +56,11 @@ import {
 } from "@/store/chat"
 import { useMission } from "@/store/mission"
 import type { OfficeAgentId } from "@/lib/fleet/types"
+import {
+  acceptChatTurn,
+  createRunAcceptance,
+} from "@/lib/chatRunAcceptance"
+import { continueConversationWith } from "@/lib/chatHandoff"
 
 export { cancelDeskTurn } from "@/lib/fleet/cancel"
 
@@ -194,6 +197,10 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     toast("Conversa ainda carregando. Tenta de novo.")
     return
   }
+  if (conv.preparing) {
+    toast("As capacidades deste envio ainda estão sendo verificadas.")
+    return
+  }
   if (conv.corrupt) {
     toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
     return
@@ -321,32 +328,8 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   const permission =
     useApp.getState().projects.find((p) => p.id === projectId)
       ?.permissionMode ?? "padrao"
-  // Troca de piloto entre backends também é um transplante em duas fases: o
-  // pedido entra no fio, mas agent/sessão/modelo da origem só mudam em
-  // `session`. Falha de startup deixa a origem retomável.
-  if (wheelSwitch) {
-    useChat.getState().beginTransplant(convId, runId, agent, {
-      model,
-      effort,
-      user: { text, attachments },
-    })
-  } else {
-    useChat.getState().start(convId, text, runId, agent, model, effort, attachments)
-  }
-  // S3.3 — persona injetada NESTE run: carimba preset_id + digest da versão
-  // exata (base do drift do S3.4). AWAIT (D4): falha do write avisa, não some
-  // em silêncio.
-  if (personaStamp) {
-    await useChat
-      .getState()
-      .stampPreset(
-        convId,
-        personaStamp.presetId,
-        personaStamp.digest,
-        personaStamp.name,
-      )
-  }
-  args.onAccepted?.("started")
+  // A mensagem permanece no rascunho da mesa até o run_manifest aceitar o
+  // envio. Gate de preflight não cria turno nem transplante.
   // M2: lições no PROMPT, não na bolha (mesma injeção do handleSend).
   // Best-effort; os ids vão pro registro por conversa (recordInjectedLessons),
   // e o 👍 do dock/companion reforça pelo MESMO caminho do ChatPanel.
@@ -356,17 +339,15 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   const slashExpansion = await expandDraftWithSources(text, projectPath, agent)
   const sendText = slashExpansion.text
   let lessonsBlock: string | null = null
+  let acceptedLessonIds: string[] = []
   try {
     const blocks = await buildLearningBlocks(projectId, sendText, false)
     if (blocks.lessons) {
       lessonsBlock = blocks.lessons
-      void markLessonsUsed(blocks.lessonIds)
     }
-    recordInjectedLessons(convId, blocks.lessonIds)
+    acceptedLessonIds = blocks.lessonIds
   } catch {
-    // sem lições — o envio segue normal (e zera o registro: 👍 deste turno
-    // não pode reforçar ids de um turno anterior)
-    recordInjectedLessons(convId, [])
+    acceptedLessonIds = []
   }
   // H1 (prompt-hygiene-plan) — canal por capability, paridade com o handleSend
   // do ChatPanel: motor com `systemChannel` recebe persona+doutrina pelo canal
@@ -386,11 +367,6 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     lastFingerprint: useChat.getState().byId[convId]?.injected?.doctrine,
   })
   const doctrineBlock = doctrine.body
-  if (doctrine.fingerprint) {
-    useChat
-      .getState()
-      .recordInjectedFingerprint(convId, "doctrine", doctrine.fingerprint)
-  }
   // Persona pro canal system (mesma regra do ChatPanel): a resolvida do 1º
   // turno quando há; nos turnos seguintes de conversa carimbada, re-deriva do
   // preset (best-effort — o drift do S3.4 segue cobrindo divergência).
@@ -493,6 +469,29 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       memoryFallback = null
     }
   }
+  const acceptance = createRunAcceptance({
+    onAccept: () =>
+      acceptChatTurn({
+        convId,
+        runId,
+        agent,
+        model,
+        effort,
+        text,
+        attachments,
+        wheelSwitch,
+        lessonIds: acceptedLessonIds,
+        recordLessons: (ids) => recordInjectedLessons(convId, ids),
+        doctrineFingerprint: doctrine.fingerprint,
+        personaStamp,
+        onAccepted: () => args.onAccepted?.("started"),
+      }),
+    onBlocked: (gate) =>
+      useChat.getState().blockPreparation(convId, runId, gate),
+    onEvent: (event) => useChat.getState().handleEvent(convId, event),
+  })
+
+  useChat.getState().beginPreparation(convId, runId)
   try {
     await runAgent(
       runId,
@@ -505,7 +504,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       sessionId,
       permission,
       attachments,
-      (e) => useChat.getState().handleEvent(convId, e),
+      acceptance.handler,
       planFirst,
       memoryFallback,
       systemPrompt,
@@ -513,15 +512,25 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
       useChat.getState().byId[convId]?.injected?.mcp ?? null,
       instructionSources,
     )
+    if (!acceptance.accepted() && !useChat.getState().byId[convId]?.preflightGate) {
+      toast.error("O turno não começou. O pedido continua no rascunho.")
+    }
   } catch (e) {
-    recordDispatchError(convId, e, "Falha ao executar o agent")
+    if (acceptance.accepted()) {
+      recordDispatchError(convId, e, "Falha ao executar o agent")
+    }
+    else toast.error("Não consegui verificar as capacidades deste envio.")
   } finally {
-    useChat.getState().finish(convId)
-    void useChat.getState().persist(convId)
+    if (!acceptance.accepted()) {
+      useChat.getState().clearPreparation(convId, runId)
+    } else {
+      useChat.getState().finish(convId)
+      void useChat.getState().persist(convId)
+    }
     // Gate de plano: turno plan_first terminou BEM → grava o plano NO FIO
     // esperando decisão (mesma captura do ChatPanel; o cartão renderiza em
     // qualquer superfície que desenhe o fio, e agora sobrevive ao restart).
-    if (planFirst) {
+    if (acceptance.accepted() && planFirst) {
       const after = useChat.getState().byId[convId]
       const planText =
         after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
@@ -531,7 +540,9 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     // em LOTES (drainDeskQueued): um builtin do app no meio quebra o
     // coalescimento. Se há fila, o próximo turno já começa; senão, auto-resume
     // em rate limit; senão notifica + agenda as sugestões.
-    if (await drainDeskQueued(args, agent)) {
+    if (!acceptance.accepted()) {
+      // Nenhum turno nasceu, portanto não há conclusão para encadear.
+    } else if (await drainDeskQueued(args, agent)) {
       // fila drenada: o próximo lote já está em voo (ou de volta na fila).
     } else if (maybeScheduleDeskAutoResume(args, agent)) {
       // turno bateu num rate limit / "vou tentar depois" e o auto-resume está
@@ -631,149 +642,18 @@ export async function continueInAgent(
     toast("Turno em andamento. Espere terminar para revezar.")
     return
   }
-  // F-A — mesma guarda de availability do sendFromDesk: revezar pra CLI
-  // ausente/deslogada só transplanta a conversa pra um erro cru.
-  const dispatchBlock = dispatchBlockReason(
-    targetAgent,
-    useApp.getState().settings.detected ?? {},
-  )
-  if (dispatchBlock) {
-    toast.error(dispatchBlock)
-    return
-  }
-  // último pedido do usuário → volta destacado no fim do prompt (o handoff
-  // exclui ele: entra separado como "pedido pendente").
-  let lastUserIdx = -1
-  for (let i = conv.items.length - 1; i >= 0; i--) {
-    if (conv.items[i].kind === "user") {
-      lastUserIdx = i
-      break
-    }
-  }
-  const lastUser = lastUserIdx >= 0 ? conv.items[lastUserIdx] : null
-  const pending = lastUser && lastUser.kind === "user" ? lastUser.text : ""
-  if (!pending) {
-    toast("Nada pendente para revezar nesta conversa.")
-    return
-  }
-  // A ação manual vence o revive agendado antes de preparar o handoff; o timer
-  // não pode iniciar outro turno enquanto o destino está sendo montado.
-  useChat.getState().cancelAutoResume(convId)
-  // G2.3 — mesma disciplina do ChatPanel: `/comando` pendente expande pro
-  // motor de DESTINO (embutido no preâmbulo do handoff); sem match no
-  // inventário do destino, nota honesta em vez de barra crua morta.
-  const pendingForTarget = await expandPendingForTarget(
-    pending,
-    projectPath,
-    targetAgent,
-  )
-  const pendingText = pendingForTarget.note
-    ? `${pendingForTarget.text}\n\n(${pendingForTarget.note})`
-    : pendingForTarget.text
-  const handoffItems =
-    pendingText === pending
-      ? conv.items
-      : conv.items.map((it, i) =>
-          i === lastUserIdx && it.kind === "user"
-            ? { ...it, text: pendingText }
-            : it,
-        )
-  // D3 — conversa carimbada: a doutrina viaja no transplant (sessão fresca no
-  // novo agent), paridade com o handleContinueWith do ChatPanel.
-  let personaBlock = await personaHandoffBlock(
-    conv.presetId,
-    conv.presetDigest,
-    projectPath,
-  )
-  // A doutrina do projeto também viaja: o transplante é uma sessão FRESCA,
-  // muitas vezes numa CLI diferente da que começou a conversa — sem o bloco,
-  // o agent que assume seria o único do fio a trabalhar sem as regras.
-  const doctrineRaw = buildDoctrineBlock((await readDoctrine(projectPath)).content)
-  let doctrine = doctrineRaw
-  // H1 — destino com canal system: persona+doutrina vão pelo canal do CLI
-  // (re-enviadas a cada spawn), fora do preâmbulo de handoff.
-  let systemPrompt: string | null = null
-  if (engineDef(targetAgent)?.systemChannel) {
-    systemPrompt = [personaBlock, doctrine].filter(Boolean).join("\n\n") || null
-    personaBlock = null
-    doctrine = null
-  }
-  let lessonsBlock: string | null = null
-  try {
-    const blocks = await buildLearningBlocks(projectId, pending, false)
-    lessonsBlock = blocks.lessons
-    recordInjectedLessons(convId, blocks.lessonIds)
-    void markLessonsUsed(blocks.lessonIds)
-  } catch {
-    recordInjectedLessons(convId, [])
-  }
-  const cwd = conv.worktreePath ?? projectPath
-  const prepared = await prepareHybridHandoff({
-    projectId,
-    cwd,
-    convId,
-    sourceAgent: conv.agent,
-    targetAgent,
-    items: handoffItems,
-    pendingUserIndex: lastUserIdx,
-    personaBlock,
-    doctrineBlock: doctrine,
-    lessonsBlock,
-  })
-  // corrida do await (mesma classe do D2): re-checa antes de transplantar.
-  const fresh = useChat.getState().byId[convId]
-  if (!fresh || fresh.running || fresh.finalizing) {
-    toast("Turno em andamento. Espere terminar para revezar.")
-    return
-  }
-  const runId = crypto.randomUUID()
-  // revezamento é intenção explícita: auto-resume já foi derrubado antes dos
-  // awaits; agora invalida sugestões pendentes.
-  useChat.getState().invalidateSuggestions(convId)
-  useChat.getState().handleEvent(convId, {
-    type: "notice",
-    message: prepared.paths
-      ? `revezamento: memória híbrida pronta · preparando ${agentLabel(targetAgent)}`
-      : `revezamento: contexto compacto · preparando ${agentLabel(targetAgent)} (export indisponível)`,
-  })
-  useChat.getState().beginTransplant(convId, runId, targetAgent)
-  // H4 — a doutrina chegou fresca ao destino (corpo ou canal): carimba o
-  // fingerprint pro frescor mid-conversa valer também pós-transplante.
-  if (doctrineRaw) {
-    useChat
-      .getState()
-      .recordInjectedFingerprint(convId, "doctrine", doctrineFingerprint(doctrineRaw))
-  }
   const permission =
     useApp.getState().projects.find((p) => p.id === projectId)
       ?.permissionMode ?? "padrao"
-  try {
-    await runAgent(
-      runId,
-      convId,
-      targetAgent,
-      null, // modelo default do novo agent (transplante zera o lock)
-      null,
-      prepared.prompt,
-      cwd,
-      null, // sessão FRESCA: a do agent anterior não serve pro novo
-      permission,
-      [],
-      (e) => useChat.getState().handleEvent(convId, e),
-      false,
-      null,
-      systemPrompt,
-      useChat.getState().byId[convId]?.injected?.mcp ?? null,
-      pendingForTarget.instructionSources,
-    )
-  } catch (e) {
-    recordDispatchError(convId, e, "Falha no revezamento")
-  } finally {
-    useChat.getState().finish(convId)
-    void useChat.getState().persist(convId)
-    void notifyTurnEnd(convId, targetAgent)
-    useChat.getState().scheduleSuggestions(convId)
-  }
+  await continueConversationWith({
+    convId,
+    projectId,
+    projectPath,
+    permissionMode: permission,
+    target: targetAgent,
+    recordLessons: (ids) => recordInjectedLessons(convId, ids),
+    onPrepared: () => {},
+  })
 }
 
 /** Auto-revive da mesa — MESMA política do maybeScheduleAutoResume do

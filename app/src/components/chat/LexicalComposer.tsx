@@ -123,9 +123,6 @@ function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void })
         event?.preventDefault()
         const text = editor.getEditorState().read($serializeDraft)
         onSubmitRef.current(text.trim())
-        editor.update(() => {
-          $getRoot().clear()
-        })
         return true
       },
       COMMAND_PRIORITY_HIGH,

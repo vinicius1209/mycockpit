@@ -10,7 +10,7 @@ use crate::adapters::{
     Capabilities, CapabilityScope, PolicyEnforceability, ToolInventoryEvidence,
     ToolMaterializerDef, ToolMaterializerKind, ToolTransport,
 };
-use crate::mcp_control::McpRunPlan;
+use crate::mcp_control::{McpPlanIssueCode, McpRunPlan};
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +27,18 @@ pub struct EffectiveRunManifest {
     /// evita que uma lista vazia de recursos pareça uma garantia de isolamento.
     pub unobserved_resources: bool,
     pub notices: Vec<String>,
-    pub blocked: Option<String>,
+    pub omissions: Vec<EffectiveCapabilityOmission>,
+    /// Redução de permissão aceita explicitamente só para este envio.
+    pub permission_override: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EffectiveCapabilityOmission {
+    pub source_id: String,
+    pub source_label: String,
+    pub code: McpPlanIssueCode,
+    pub detail: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
@@ -258,7 +269,7 @@ pub fn build(
     }
 
     EffectiveRunManifest {
-        schema_version: 4,
+        schema_version: 5,
         agent_id: agent_id.to_string(),
         managed_external_mcp: mcp_plan.managed,
         sources,
@@ -279,7 +290,17 @@ pub fn build(
             .chain(tool_catalog.notices.iter())
             .cloned()
             .collect(),
-        blocked: mcp_plan.blocked.clone(),
+        omissions: mcp_plan
+            .omissions
+            .iter()
+            .map(|issue| EffectiveCapabilityOmission {
+                source_id: issue.source_id.clone(),
+                source_label: issue.source_label.clone(),
+                code: issue.code,
+                detail: issue.detail.clone(),
+            })
+            .collect(),
+        permission_override: mcp_plan.force_readonly.then(|| "leitura".into()),
     }
 }
 
@@ -368,14 +389,18 @@ mod tests {
     }
 
     #[test]
-    fn recurso_do_browser_fica_no_manifesto_mesmo_quando_bloqueia() {
-        let mut plan = McpRunPlan {
+    fn omissao_opcional_fica_no_manifesto_sem_recurso_falso() {
+        let plan = McpRunPlan {
             managed: true,
-            blocked: Some("navegador desligado".into()),
+            omissions: vec![crate::mcp_control::McpPlanIssue {
+                source_id: "playwright".into(),
+                source_label: "Playwright".into(),
+                code: crate::mcp_control::McpPlanIssueCode::BrowserOffline,
+                disposition: crate::mcp_control::McpPlanDisposition::Omitted,
+                detail: Some("o navegador deste projeto está desligado".into()),
+            }],
             ..Default::default()
         };
-        plan.resources
-            .push(crate::resource_broker::project_browser("Playwright", false));
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
@@ -387,11 +412,30 @@ mod tests {
             &plan,
             Vec::new(),
         );
-        assert_eq!(manifest.resources.len(), 1);
-        assert_eq!(
-            manifest.resources[0].state,
-            crate::resource_broker::ResourceState::Blocked
+        assert!(manifest.resources.is_empty());
+        assert_eq!(manifest.omissions.len(), 1);
+        assert_eq!(manifest.omissions[0].source_label, "Playwright");
+    }
+
+    #[test]
+    fn consentimento_somente_leitura_fica_explicito_no_manifesto() {
+        let plan = McpRunPlan {
+            managed: true,
+            force_readonly: true,
+            ..Default::default()
+        };
+        let manifest = build(
+            "engine",
+            &CLAUDE_CAPS,
+            false,
+            false,
+            false,
+            false,
+            &crate::tool_gateway::ToolCatalogSnapshot::default(),
+            &plan,
+            Vec::new(),
         );
+        assert_eq!(manifest.permission_override.as_deref(), Some("leitura"));
     }
 
     #[test]

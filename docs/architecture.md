@@ -85,10 +85,10 @@ ADR-122.
 - `app/src-tauri/src/adapters.rs`: trait, capabilities e tradução dos streams.
 - `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`: espelho usado pela UI,
   separado por domínio e coberto por testes-gêmeos de contrato.
-- `app/src-tauri/src/mcp_control.rs`: registry, bindings, health e transporte
-  MCP efetivo por projeto e agente.
+- `app/src-tauri/src/mcp_control.rs`: registry, bindings, health, policy tipada
+  de preflight e transporte MCP efetivo por projeto e agente.
 - `app/src-tauri/src/run_manifest.rs`: snapshot sanitizado das instruções,
-  fontes de tools e recursos realmente materializados antes do spawn.
+  fontes, omissões opcionais e recursos realmente materializados antes do spawn.
 - `app/src-tauri/src/resource_broker.rs`: recursos operados por tools, dono,
   evidência e resolução fail-closed do navegador do projeto.
 - `app/src-tauri/src/experience_broker.rs`: uma lease de piloto por navegador

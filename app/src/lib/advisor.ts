@@ -193,6 +193,9 @@ export async function runAdvisor(opts: {
         resultText = e.text ?? ""
       } else if (e.type === "error") {
         error = e.message
+      } else if (e.type === "preflight_blocked") {
+        const source = e.gate.issues[0]?.sourceLabel ?? "Uma capacidade exigida"
+        error = `${source} está indisponível; o parecer não foi iniciado.`
       }
     },
   )

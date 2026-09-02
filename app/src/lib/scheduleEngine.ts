@@ -230,7 +230,6 @@ export async function dispatchSchedule(
     // clear no `finally` é o cancelamento: run que termina antes do prazo não
     // deixa nada pendurado.
     markUnattendedRun(runId, convId)
-    useChat.getState().start(convId, s.prompt, runId, s.agent, model, null, [])
     // DOUTRINA do projeto: cada execução é uma sessão FRESCA, e aqui não há
     // ninguém na frente pra corrigir o rumo — as regras do projeto importam
     // mais numa automação das 18:30, não menos. O fio guarda `s.prompt` (o que
@@ -239,6 +238,8 @@ export async function dispatchSchedule(
       (await readDoctrine(project.path)).content,
     )
     let invokeFailed = false
+    let accepted = false
+    let preflightBlocked = false
     try {
       await runAgent(
         runId,
@@ -251,7 +252,19 @@ export async function dispatchSchedule(
         null, // sessão fresca — cada execução é um turno independente
         permission,
         [],
-        (e) => useChat.getState().handleEvent(convId, e),
+        (e) => {
+          if (e.type === "preflight_blocked") {
+            preflightBlocked = true
+            return
+          }
+          if (e.type === "run_manifest" && !accepted) {
+            accepted = true
+            useChat
+              .getState()
+              .start(convId, s.prompt, runId, s.agent, model, null, [])
+          }
+          if (accepted) useChat.getState().handleEvent(convId, e)
+        },
       )
     } catch {
       invokeFailed = true
@@ -259,23 +272,34 @@ export async function dispatchSchedule(
       // antes do finish/persist: o turno acabou, nada mais pode expirar por
       // este run (e o notice que o vigia tenha injetado entra no persist final).
       clearUnattendedRun(runId)
-      useChat.getState().finish(convId)
-      void useChat.getState().persist(convId)
+      if (accepted) {
+        useChat.getState().finish(convId)
+        void useChat.getState().persist(convId)
+      }
     }
 
     const items = useChat.getState().byId[convId]?.items ?? []
     const outcome = turnOutcome(items)
     const ok = !invokeFailed && outcome.ok
+    const status = preflightBlocked ? "blocked" : ok ? "ok" : "failed"
     await insertScheduleRun({
       id: crypto.randomUUID(),
       scheduleId: s.id,
       startedAt,
-      status: ok ? "ok" : "failed",
+      status,
       cost: outcome.cost,
       convId,
     })
-    await markScheduleRun(s.id, startedAt, ok ? "ok" : "failed")
-    if (!ok) {
+    await markScheduleRun(s.id, startedAt, status)
+    if (preflightBlocked) {
+      useNotifs.getState().push({
+        kind: "run_error",
+        title: `Automação aguardando configuração: ${s.name}`,
+        subtitle: "Uma capacidade exigida não está disponível. Revise os MCPs do projeto.",
+        projectId: s.projectId,
+        convId,
+      })
+    } else if (!ok) {
       useNotifs.getState().push({
         kind: "run_error",
         title: `Automação falhou: ${s.name}`,

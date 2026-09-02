@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { AlertCircle, Check, Loader2, Maximize2, Swords } from "lucide-react"
+import { AlertCircle, Check, CircleSlash2, Loader2, Maximize2, Swords } from "lucide-react"
 import {
   useFusion,
   isFailed,
@@ -61,12 +61,15 @@ export function CandidateLane({
   const text = candidateText(c)
   const running = isRunning(c.status)
   const failed = isFailed(c.status)
+  const blocked = c.status === "blocked"
   const [expanded, setExpanded] = useState(false)
 
   const statusIcon = running ? (
     <Loader2 className="size-3.5 shrink-0 animate-spin text-st-running" />
   ) : failed ? (
     <AlertCircle className="size-3.5 shrink-0 text-st-error" />
+  ) : blocked ? (
+    <CircleSlash2 className="size-3.5 shrink-0 text-muted-foreground" />
   ) : (
     <Check className="size-3.5 shrink-0 text-st-success" />
   )
@@ -79,10 +82,16 @@ export function CandidateLane({
     <Markdown text={text} />
   ) : (
     <span className="text-[12px] text-muted-foreground">
-      {running ? "pensando…" : failed ? "falhou" : "sem resposta"}
+      {running
+        ? "pensando…"
+        : failed
+          ? "falhou"
+          : blocked
+            ? "não iniciado, capacidade exigida indisponível"
+            : "sem resposta"}
     </span>
   )
-  const chooseBtn = deciding && !failed && (
+  const chooseBtn = deciding && !failed && !blocked && (
     <button
       onClick={onChoose}
       className={cn(

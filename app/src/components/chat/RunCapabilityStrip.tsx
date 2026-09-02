@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Braces, ChevronDown, TriangleAlert } from "lucide-react"
+import { Braces, ChevronDown } from "lucide-react"
 import {
   runManifestStats,
   toolEnforceabilityLabel,
@@ -28,6 +28,17 @@ function inventoryLabel(source: EffectiveToolSource): string {
   return "inventário não observado"
 }
 
+const OMISSION_LABEL = {
+  "source-missing": "não está mais configurado",
+  incompatible: "não é compatível com este motor",
+  "health-unavailable": "não respondeu ao teste de disponibilidade",
+  "browser-offline": "navegador deste projeto desligado",
+  "browser-unavailable": "navegador deste projeto indisponível",
+  "browser-busy": "navegador deste projeto em uso",
+  "proxy-unavailable": "rota autenticada indisponível",
+  "inventory-unavailable": "inventário indisponível",
+} as const
+
 export function RunCapabilityStrip({
   manifest,
   defaultOpen = false,
@@ -40,6 +51,7 @@ export function RunCapabilityStrip({
 
   const stats = runManifestStats(manifest)
   const instructions = manifest.instructions ?? []
+  const omissions = manifest.omissions ?? []
   const summary = [
     `${stats.sourceCount} ${stats.sourceCount === 1 ? "fonte" : "fontes"}`,
     stats.instructionCount > 0
@@ -50,6 +62,10 @@ export function RunCapabilityStrip({
       ? `${stats.resourceCount} ${stats.resourceCount === 1 ? "recurso" : "recursos"}`
       : null,
     manifest.unobservedResources ? "recursos do provider não observados" : null,
+    omissions.length > 0
+      ? `${omissions.length} ${omissions.length === 1 ? "capacidade não entrou" : "capacidades não entraram"}`
+      : null,
+    manifest.permissionOverride === "leitura" ? "Só lê neste turno" : null,
     stats.advisorySources > 0
       ? `${stats.advisorySources} ${stats.advisorySources === 1 ? "depende" : "dependem"} do provider`
       : "controle integral da Frota",
@@ -59,12 +75,7 @@ export function RunCapabilityStrip({
 
   return (
     <div className="mx-auto mb-2 max-w-[760px] px-8">
-      <div
-        className={cn(
-          "overflow-hidden rounded-lg border bg-card",
-          manifest.blocked ? "border-st-warning/40" : "border-border/40",
-        )}
-      >
+      <div className="overflow-hidden rounded-lg border border-border/40 bg-card">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
@@ -72,13 +83,9 @@ export function RunCapabilityStrip({
           aria-label="Detalhar capacidades deste run"
           className="flex min-h-7 w-full items-center gap-2 px-2.5 text-left"
         >
-          {manifest.blocked ? (
-            <TriangleAlert className="size-3.5 shrink-0 text-st-warning" />
-          ) : (
-            <Braces className="size-3.5 shrink-0 text-brass" />
-          )}
+          <Braces className="size-3.5 shrink-0 text-brass" />
           <span className="shrink-0 text-[12px] font-medium text-foreground">
-            {manifest.blocked ? "Run bloqueado" : "Capacidades deste run"}
+            Capacidades deste run
           </span>
           <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
             {summary}
@@ -93,11 +100,6 @@ export function RunCapabilityStrip({
 
         {open && (
           <div className="border-t border-border/40 px-2.5 py-1.5">
-            {manifest.blocked && (
-              <p className="mb-1.5 text-[11px] leading-snug text-st-warning">
-                {manifest.blocked}
-              </p>
-            )}
             <div className="divide-y divide-border/40">
               {manifest.sources.map((source) => (
                 <div key={source.id} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-1.5">
@@ -122,6 +124,24 @@ export function RunCapabilityStrip({
                 </div>
               ))}
             </div>
+            {omissions.length > 0 && (
+              <div className="mt-1.5 border-t border-border/40 pt-1.5">
+                <div className="label-mono mb-0.5">Fora deste turno</div>
+                {omissions.map((omission) => (
+                  <div
+                    key={`${omission.sourceId}:${omission.code}`}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 py-1"
+                  >
+                    <span className="min-w-0 truncate text-[12px] text-foreground">
+                      {omission.sourceLabel}
+                    </span>
+                    <span className="text-right font-mono text-[11px] text-muted-foreground">
+                      {OMISSION_LABEL[omission.code]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {instructions.length > 0 && (
               <div className="mt-1.5 border-t border-border/40 pt-1.5">
                 <div className="label-mono mb-0.5">Instruções</div>

@@ -21,6 +21,7 @@ import {
   AutoResumeBanner,
   BlockedDirBanner,
   MotorAusenteBanner,
+  PreflightGateBanner,
 } from "@/components/chat/ComposerBanners"
 import { agentDef } from "@/lib/agents"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
@@ -39,6 +40,11 @@ export function BannersDoComposer({
   motorAusente,
   onReenviar,
   onLiberarPasta,
+  onLigarNavegador,
+  ligarNavegadorEnvia,
+  onRevisarMcp,
+  onContinuarSemMcp,
+  onContinuarSoLendo,
 }: {
   conv: ConvState | undefined
   activeId: string | null | undefined
@@ -49,6 +55,11 @@ export function BannersDoComposer({
   motorAusente: AvisoDeMotorAusente | null
   onReenviar: (prompt: string) => void
   onLiberarPasta: (dir: string) => void
+  onLigarNavegador: () => void
+  ligarNavegadorEnvia?: boolean
+  onRevisarMcp: () => void
+  onContinuarSemMcp?: () => void
+  onContinuarSoLendo?: () => void
 }) {
   return (
     <>
@@ -73,6 +84,17 @@ export function BannersDoComposer({
             })
             onReenviar(PROMPT_DE_RETOMADA)
           }}
+        />
+      )}
+
+      {conv?.preflightGate && (
+        <PreflightGateBanner
+          gate={conv.preflightGate.gate}
+          onStartBrowser={onLigarNavegador}
+          startBrowserSends={ligarNavegadorEnvia}
+          onOpenSettings={onRevisarMcp}
+          onContinueWithout={onContinuarSemMcp}
+          onRetryReadonly={onContinuarSoLendo}
         />
       )}
 

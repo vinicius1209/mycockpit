@@ -30,24 +30,8 @@ import {
 import type { AgentRunConfig } from "@/lib/types"
 import { LEAGUE_AGENTS } from "@/lib/agents"
 import { expandPrefixedDraft } from "@/lib/slashDispatch"
-
-export type CandStatus =
-  | "queued"
-  | "running"
-  | "finalizing"
-  | "done"
-  | "error"
-  | "cancelled"
-  | "killed"
-
-/** Candidato ainda em voo (na fila ou rodando). */
-export function isRunning(s: CandStatus): boolean {
-  return s === "running" || s === "queued"
-}
-/** Candidato que terminou mal (erro / cancelado / morto por orçamento). */
-export function isFailed(s: CandStatus): boolean {
-  return s === "error" || s === "cancelled" || s === "killed"
-}
+import { isFailed, isRunning, type CandStatus } from "@/store/fusionStatus"
+export { isFailed, isRunning, type CandStatus } from "@/store/fusionStatus"
 
 export interface FusionCandidate {
   id: string // slot estável (UI)
@@ -301,6 +285,7 @@ export const useFusion = create<FusionState>((set, get) => {
           merged.status = "cancelled"
         } else if (c.status === "queued") {
           merged.status = "running" // 1º evento de conteúdo → rodando
+          merged.startedAt = Date.now()
         }
         return merged
       })
@@ -316,7 +301,8 @@ export const useFusion = create<FusionState>((set, get) => {
       const order = fusion.candidates.filter((c) => c.finishOrder != null).length
       const next = patchCand(fusion, candId, (c) => ({
         ...c,
-        status: isFailed(c.status) ? c.status : "done",
+        status:
+          c.status === "blocked" || isFailed(c.status) ? c.status : "done",
         finishOrder: c.finishOrder ?? order,
       }))
       return { byConv: { ...s.byConv, [convId]: next } }
@@ -389,20 +375,6 @@ export const useFusion = create<FusionState>((set, get) => {
     const perm = cfg.scope === "read-only" ? "fusion-ro" : permission
 
     await runWithConcurrency(run.candidates, 3, async (c) => {
-      set((s) => {
-        const f = s.byConv[convId]
-        if (!f) return {}
-        return {
-          byConv: {
-            ...s.byConv,
-            [convId]: patchCand(f, c.id, (x) => ({
-              ...x,
-              status: "running" as CandStatus,
-              startedAt: Date.now(),
-            })),
-          },
-        }
-      })
       try {
         const expanded = await promptFor(c.agent)
         await runAgent(
@@ -416,7 +388,26 @@ export const useFusion = create<FusionState>((set, get) => {
           null, // resume=null: candidato é sessão fresca
           perm,
           attachments,
-          (e) => get().handleCandidateEvent(convId, c.id, e),
+          (e) => {
+            if (e.type === "preflight_blocked") {
+              set((s) => {
+                const f = s.byConv[convId]
+                if (!f) return {}
+                return {
+                  byConv: {
+                    ...s.byConv,
+                    [convId]: patchCand(f, c.id, (candidate) => ({
+                      ...candidate,
+                      status: "blocked" as CandStatus,
+                      startedAt: null,
+                    })),
+                  },
+                }
+              })
+              return
+            }
+            get().handleCandidateEvent(convId, c.id, e)
+          },
           { instructionSources: expanded.instructionSources },
         )
       } catch {

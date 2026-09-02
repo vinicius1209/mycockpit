@@ -5270,3 +5270,27 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   disputa em `finalizing` como atividade, mas omitia esse mesmo estado no turno
   linear. A tray passa a contar `running || finalizing`; assim, “Frota pronta”
   e o gate de build só aparecem depois que recibo e persistência assentarem.
+
+### ADR-147 - preflight de capability não é execução do agent ✅
+- **Incidente real (01/09/2026):** um binding Playwright opcional, configurado
+  para usar o navegador da Frota, impediu uma conversa que não exigia browser.
+  Nenhum processo do provider nasceu, mas `Error + Done` fabricou “Execução
+  interrompida” e encerrou um turno inexistente.
+- **Policy:** `browser` escolhe o transporte possuído pela Frota; somente
+  `required` torna a capability pré-condição. Ausência opcional omite o MCP do
+  run, nunca abre o navegador original e fica auditável no manifesto. Ausência
+  exigida vira gate tipado antes do turno; `ask`, `deny` e consentimento de
+  leitura mantêm consequências distintas e qualquer override vale por um envio,
+  revalidado por fingerprint e origem.
+- **Aceite:** `run_manifest` é a fronteira transacional. Antes dele, o pedido e
+  anexos continuam no composer e não há mensagem, transplante, sessão, custo,
+  conclusão, sugestão, notificação ou auto-resume. Chat, mesa, agenda, Fusion,
+  SDD, compactação e conselheiro obedecem à mesma fronteira.
+- **Evidência de início:** `started` prova que o transporte recebeu o pedido.
+  Falha entre manifesto e spawn vira `startup_failed` e o fio mostra o marco
+  neutro “Turno não iniciado”, nunca incidente terminal. `Error` e
+  `LimitReached` permanecem reservados à execução que nasceu.
+- **Decisão humana:** recuperações são uma união fechada publicada pelo backend.
+  A interface oferece no máximo uma ação primária e não habilita navegador,
+  reduz permissão ou ignora requisito sem gesto explícito. O mecanismo não muda
+  modelos, contexto, limites, custo ou liberdade operacional.

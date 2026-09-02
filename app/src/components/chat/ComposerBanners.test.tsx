@@ -20,9 +20,11 @@ import {
   AutoResumeBanner,
   BlockedDirBanner,
   MotorAusenteBanner,
+  PreflightGateBanner,
 } from "@/components/chat/ComposerBanners"
 import { RESUME_REASON_LIMIT } from "@/lib/autoResume"
 import { PENDING_DECISION } from "@/lib/attention"
+import type { McpPreflightGate } from "@/lib/tooling"
 
 const PASTA = "/Users/viniciusmachado/.gemini/antigravity-cli"
 
@@ -147,5 +149,44 @@ describe("AutoResumeBanner", () => {
   it("preserva o gesto imediato e a saída", () => {
     expect(html).toContain("Retomar agora")
     expect(html).toContain('aria-label="Cancelar auto-resume"')
+  })
+})
+
+describe("PreflightGateBanner", () => {
+  const gate: McpPreflightGate = {
+    fingerprint: "gate-playwright",
+    issues: [
+      {
+        sourceId: "playwright",
+        sourceLabel: "Playwright",
+        code: "browser-offline",
+        disposition: "needs-readonly-consent",
+        detail: "navegador desligado",
+      },
+    ],
+    allowedRecoveries: [
+      { kind: "start-project-browser", sourceId: "playwright" },
+      { kind: "retry-readonly", sourceId: "playwright" },
+      { kind: "open-mcp-settings", sourceId: "playwright" },
+    ],
+  }
+  const html = renderToStaticMarkup(
+    <PreflightGateBanner
+      gate={gate}
+      onStartBrowser={() => {}}
+      startBrowserSends
+      onOpenSettings={() => {}}
+      onRetryReadonly={() => {}}
+    />,
+  )
+
+  it("explica que o turno ainda não começou", () => {
+    expect(html).toContain("O turno ainda não começou")
+    expect(html).toContain("Ligar e enviar")
+  })
+
+  it("mantém uma única ação primária quando há alternativas", () => {
+    expect(html.match(/data-variant="default"/g)).toHaveLength(1)
+    expect(html.match(/data-variant="ghost"/g)).toHaveLength(2)
   })
 })

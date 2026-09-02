@@ -56,7 +56,7 @@
   "components/panel/CostAudit.tsx": 1,
   "components/panel/MissionControl.tsx": 2,
   "components/scheduled/ScheduledView.tsx": 6,
-  "components/sdd/SddView.tsx": 13,
+  "components/sdd/SddView.tsx": 12,
   "components/settings/Especialistas.tsx": 2,
   "components/settings/HooksSettings.tsx": 2,
   "components/settings/MachineAgents.tsx": 2,

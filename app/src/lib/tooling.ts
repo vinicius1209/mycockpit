@@ -13,6 +13,60 @@ export type ToolMaterializerKind =
   | "external-mcp"
 export type AgentMcpScope = ToolScope | "none"
 
+export type McpPlanIssueCode =
+  | "source-missing"
+  | "incompatible"
+  | "health-unavailable"
+  | "browser-offline"
+  | "browser-unavailable"
+  | "browser-busy"
+  | "proxy-unavailable"
+  | "inventory-unavailable"
+
+export type McpPlanDisposition =
+  | "omitted"
+  | "needs-decision"
+  | "blocked-by-policy"
+  | "needs-readonly-consent"
+
+export interface McpPlanIssue {
+  sourceId: string
+  sourceLabel: string
+  code: McpPlanIssueCode
+  disposition: McpPlanDisposition
+  detail: string | null
+}
+
+export type McpRecoveryKind =
+  | "start-project-browser"
+  | "open-mcp-settings"
+  | "omit-for-this-run"
+  | "retry-readonly"
+
+export interface McpRecovery {
+  kind: McpRecoveryKind
+  sourceId: string | null
+}
+
+export interface McpRunOverride {
+  gateFingerprint: string
+  sourceId: string
+  kind: "omit-for-this-run" | "retry-readonly"
+}
+
+export interface McpPreflightGate {
+  fingerprint: string
+  issues: McpPlanIssue[]
+  allowedRecoveries: McpRecovery[]
+}
+
+export interface EffectiveCapabilityOmission {
+  sourceId: string
+  sourceLabel: string
+  code: McpPlanIssueCode
+  detail: string | null
+}
+
 export type InstructionSourceKind = "plugin-skill"
 
 /** Claim interno enviado de volta ao runner. O backend reabre o pacote e
@@ -68,7 +122,12 @@ export interface EffectiveRunManifest {
   resources: import("@/lib/resources").EffectiveResourceAccess[]
   unobservedResources: boolean
   notices: string[]
-  blocked: string | null
+  /** Ausente em manifests anteriores ao preflight tipado. */
+  omissions?: EffectiveCapabilityOmission[]
+  /** Redução de permissão aceita explicitamente só para este turno. */
+  permissionOverride?: "leitura" | null
+  /** Compatibilidade de leitura com manifests v4. Manifests novos não bloqueiam. */
+  blocked?: string | null
 }
 
 /** O manifesto nasce antes do processo; providers que publicam a contagem no

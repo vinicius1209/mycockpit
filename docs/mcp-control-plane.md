@@ -57,13 +57,14 @@ o segredo.
 project_id + server_id + agent
 ```
 
-com três decisões:
+com quatro decisões independentes:
 
 - `enabled`: disponibilizar a capability naquele agent;
-- `required`: impedir o run se não houver servidor e não existir fallback;
+- `browser`: entregar o navegador possuído pela Frota, sem torná-lo obrigatório;
+- `required`: impedir o envio se a capability não puder ser materializada;
 - `fallback`: `ask`, `deny` ou `allow-readonly`.
 
-Sem nenhum binding explícito para o agent, o MyCockpit preserva o comportamento
+Sem nenhum binding explícito para o agent, a Frota preserva o comportamento
 nativo do CLI. A partir do primeiro binding, o run entra em modo gerenciado:
 
 - Claude recebe `--strict-mcp-config` e um JSON efêmero com apenas os MCPs
@@ -84,11 +85,17 @@ O control plane não autoaprova tools externas. Estar habilitado significa
 
 ### Política quando o MCP falha
 
-| Fallback | Comportamento |
+`fallback` só produz efeito quando `required = true`. Binding opcional
+indisponível é omitido do plano, qualquer que seja o valor salvo:
+
+| Binding exigido | Comportamento |
 |---|---|
-| `ask` | Pausa o run antes de gastar o turno e pede correção/decisão nas Integrações MCP. |
-| `deny` | Não improvisa. Se o binding for obrigatório, bloqueia; se opcional, pula o MCP e avisa. |
-| `allow-readonly` | Permite caminho alternativo somente leitura e injeta essa restrição no prompt. |
+| `ask` | Gate antes do turno; a pessoa pode corrigir ou omitir somente neste envio. |
+| `deny` | Gate antes do turno, sem bypass. Só corrigir a configuração libera. |
+| `allow-readonly` | Gate antes do turno; a pessoa pode autorizar um caminho alternativo somente leitura neste envio. |
+
+O override leva fingerprint, fonte e recovery tipada. O Rust revalida os três
+contra a policy atual e nunca altera o binding persistido.
 
 ## Health e preflight
 
@@ -106,8 +113,9 @@ minutos:
 
 Uma mudança no fingerprint do command/endpoint invalida imediatamente o health
 cache anterior. Antes de um run gerenciado, um resultado ausente ou vencido é
-testado novamente. Um binding obrigatório indisponível bloqueia o run antes da
-chamada paga.
+testado novamente. Um binding opcional indisponível aparece como omissão no
+manifesto efetivo. Um binding obrigatório gera `preflight_blocked` antes do
+manifesto, do processo e da chamada paga.
 
 ## Uso na interface
 

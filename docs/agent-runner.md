@@ -45,6 +45,25 @@ enum AgentEvent {
 Regra de ouro (a mesma do spike M0): **evento desconhecido vira `Unknown`, nunca um
 crash.** Isso mantém o app vivo quando o CLI muda de formato.
 
+### Fronteira de aceite e preflight
+
+`run_manifest` é o primeiro evento de um envio aceito. Antes dele, o pedido
+permanece em `preparing`, com texto e anexos no composer. Se uma capability
+exigida não puder ser materializada, o runner emite `preflight_blocked` e
+retorna sem `Error`, `Done`, sessão, custo ou conclusão. O frontend apresenta o
+gate fora do transcript e só reenvia um override efêmero após gesto humano.
+
+Omissões opcionais entram em `EffectiveRunManifest` v5. Elas não viram
+`Notice`, incidente terminal nem estado de erro. Todos os consumidores de
+`runAgent` tratam `run_manifest` como aceite, inclusive chat, mesa, revezamento,
+agenda, Fusion, SDD, compactação e pareceres.
+
+Aceite ainda não é evidência de execução. `started` só nasce quando o
+transporte recebeu o pedido. Se modelo, comando ou spawn falhar depois do
+manifesto e antes dessa evidência, o runner emite `startup_failed`; a interface
+registra “Turno não iniciado” em tom neutro. `Error` e `LimitReached` ficam
+reservados ao processo que efetivamente nasceu.
+
 ## 2. A trait conceitual
 
 O código abaixo é o desenho que originou a trait. A assinatura vigente é

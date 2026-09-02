@@ -22,6 +22,12 @@ import {
   ensureDeskConversation,
   sendFromDesk,
 } from "./send"
+import {
+  acceptedRunEvent,
+  assistantItem as assistant,
+  conversationFixture as makeConv,
+  userItem as user,
+} from "@/test/chatRunFixtures"
 
 // Estado compartilhado com as factories dos mocks (vi.hoisted roda antes).
 const h = vi.hoisted(() => ({
@@ -45,7 +51,10 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }))
 vi.mock("@/lib/agent", () => ({
-  runAgent: vi.fn(async () => {}),
+  runAgent: vi.fn(async (...args: unknown[]) => {
+    const onEvent = args[10] as (event: typeof acceptedRunEvent) => void
+    onEvent(acceptedRunEvent)
+  }),
   cancelAgent: vi.fn(async () => true),
   agentLabel: (id: string) =>
     ({ "claude-code": "Claude Code", codex: "Codex", agy: "Antigravity" })[
@@ -151,16 +160,6 @@ vi.mock("@/store/fusion", () => ({ useFusion: { getState: () => h.fusion } }))
 
 // ---------------------------------------------------------------- factories
 
-function user(text: string): ChatItem {
-  return { kind: "user", id: "u", text }
-}
-
-/** Resposta do assistant — o sinal de "o 1º prompt CHEGOU no CLI"
- *  (hasAssistantReply), que é o que fecha a porta da doutrina/persona. */
-function assistant(text: string): ChatItem {
-  return { kind: "text", id: "t", text } as ChatItem
-}
-
 /** Arma o disco com uma doutrina para ESTE teste (o default é sem doutrina). */
 function comDoutrina(content: string) {
   vi.mocked(readDoctrine).mockResolvedValue({
@@ -179,27 +178,6 @@ function semDoutrina() {
   })
 }
 
-function makeConv(partial: Partial<ConvState> = {}): ConvState {
-  return {
-    projectId: "p1",
-    agent: "claude-code",
-    reqModel: null,
-    effort: null,
-    worktreePath: null,
-    items: [],
-    sessionId: null,
-    model: null,
-    streamingTextId: null,
-    running: false,
-    finalizing: false,
-    runId: null,
-    startedAt: null,
-    suggestions: [],
-    suggesting: false,
-    ...partial,
-  }
-}
-
 function makeChat(conv: ConvState) {
   return {
     byId: { c1: conv } as Record<string, ConvState>,
@@ -212,6 +190,9 @@ function makeChat(conv: ConvState) {
     cancelAutoResume: vi.fn(),
     setAutoResume: vi.fn(),
     invalidateSuggestions: vi.fn(),
+    beginPreparation: vi.fn(),
+    blockPreparation: vi.fn(),
+    clearPreparation: vi.fn(),
     start: vi.fn(),
     stampPreset: vi.fn(async () => {}),
     dropNativeSession: vi.fn(),
@@ -783,18 +764,19 @@ describe("sendFromDesk — persona do preset (S3)", () => {
 })
 
 describe("sendFromDesk — finally", () => {
-  it("finish + persist rodam mesmo quando o run falha", async () => {
+  it("falha antes do manifesto não fabrica turno nem conclusão", async () => {
     vi.mocked(runAgent).mockRejectedValueOnce("boom")
     await sendFromDesk(args)
-    expect(chat.finish).toHaveBeenCalledWith("c1")
-    expect(chat.persist).toHaveBeenCalledWith("c1")
-    expect(toast.error).toHaveBeenCalledWith("boom")
-    expect(chat.handleEvent).toHaveBeenCalledWith("c1", {
-      type: "error",
-      message: "boom",
-    })
-    expect(notifyTurnEnd).toHaveBeenCalledWith("c1", "claude-code")
-    expect(chat.scheduleSuggestions).toHaveBeenCalledWith("c1")
+    expect(chat.start).not.toHaveBeenCalled()
+    expect(chat.finish).not.toHaveBeenCalled()
+    expect(chat.persist).not.toHaveBeenCalled()
+    expect(chat.handleEvent).not.toHaveBeenCalled()
+    expect(chat.clearPreparation).toHaveBeenCalled()
+    expect(toast.error).toHaveBeenCalledWith(
+      "Não consegui verificar as capacidades deste envio.",
+    )
+    expect(notifyTurnEnd).not.toHaveBeenCalled()
+    expect(chat.scheduleSuggestions).not.toHaveBeenCalled()
   })
 
   it("fila enfileirada durante o turno drena coalescida num único reenvio", async () => {

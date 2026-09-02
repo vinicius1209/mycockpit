@@ -16,6 +16,7 @@ import { readProjectCommands, type SlashCommand } from "@/lib/sources"
 import { exportConvContext } from "@/lib/transcript"
 import { HISTORY_OPEN } from "@/lib/trust"
 import type { ChatItem, ConvState, QueuedMsg } from "@/store/chat"
+import { acceptedRunEvent } from "@/test/chatRunFixtures"
 import { sendFromDesk } from "./send"
 
 const h = vi.hoisted(() => ({
@@ -36,7 +37,10 @@ vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
 }))
 vi.mock("@/lib/agent", () => ({
-  runAgent: vi.fn(async () => {}),
+  runAgent: vi.fn(async (...args: unknown[]) => {
+    const onEvent = args[10] as (event: typeof acceptedRunEvent) => void
+    onEvent(acceptedRunEvent)
+  }),
   cancelAgent: vi.fn(async () => true),
   agentLabel: (id: string) => id,
 }))
@@ -142,6 +146,9 @@ function arm(conv: ConvState) {
     cancelAutoResume: vi.fn(),
     setAutoResume: vi.fn(),
     invalidateSuggestions: vi.fn(),
+    beginPreparation: vi.fn(),
+    blockPreparation: vi.fn(),
+    clearPreparation: vi.fn(),
     start: vi.fn(),
     beginTransplant: vi.fn(),
     stampPreset: vi.fn(async () => {}),

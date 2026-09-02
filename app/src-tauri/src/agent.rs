@@ -147,6 +147,20 @@ pub enum AgentEvent {
     RunManifest {
         manifest: crate::run_manifest::EffectiveRunManifest,
     },
+    /// A policy recusou o envio antes do manifesto e antes do spawn. Não é um
+    /// erro de execução: o frontend mantém o pedido no composer e apresenta a
+    /// decisão humana permitida pelo backend.
+    PreflightBlocked {
+        gate: crate::mcp_control::McpPreflightGate,
+    },
+    /// Evidência de que o transporte do provider foi criado e recebeu o pedido.
+    /// É a fronteira que autoriza a UI a chamar uma falha posterior de execução.
+    Started,
+    /// O manifesto aceitou o pedido, mas nenhum processo de execução nasceu.
+    /// Não é incidente terminal e não pode virar `Error` no transcript.
+    StartupFailed {
+        message: String,
+    },
     Session {
         session_id: String,
         model: Option<String>,
@@ -324,6 +338,9 @@ pub async fn run_agent(
     // reabre o pacote e confirma grant, fingerprint e contribution id antes
     // de registrar a origem no manifesto ou iniciar o provider.
     instruction_sources: Option<Vec<crate::run_manifest::InstructionSourceClaim>>,
+    // Decisão efêmera sobre um gate anterior. O backend revalida fingerprint,
+    // source e policy; não altera o binding salvo.
+    mcp_recoveries: Option<Vec<crate::mcp_control::McpRunOverride>>,
     // ADR-033: acumulado de tokens que a THREAD retomada já tinha (`usageBaseline`
     // no invoke; o front persiste por thread o `cumulative_usage` devolvido no
     // Result anterior). Option = invoke antigo/thread nova → None (o turno vale
@@ -404,7 +421,38 @@ pub async fn run_agent(
     };
     // Permissão parseada UMA vez na fronteira: valor desconhecido é ERRO aqui,
     // nunca fail-open dentro de um adapter (typo ganhava escrita antes).
-    let permission = adapters::Permission::parse(&permission)?;
+    let mut permission = adapters::Permission::parse(&permission)?;
+    // O control plane roda antes de qualquer gateway. Assim, o consentimento
+    // "Só lê" configura o run inteiro em vez de existir apenas como frase.
+    let mut mcp_plan = if matches!(permission, adapters::Permission::FusionRo) {
+        crate::mcp_control::McpRunPlan::default()
+    } else {
+        match crate::mcp_control::plan_for_run(
+            &app,
+            &conv_id,
+            &run_id,
+            &agent,
+            &cwd,
+            mcp_recoveries.as_deref().unwrap_or(&[]),
+        )
+        .await
+        {
+            Ok(plan) => plan,
+            Err(error) => {
+                let _ = on_event.send(AgentEvent::PreflightBlocked {
+                    gate: crate::mcp_control::McpPreflightGate::control_plane(error),
+                });
+                return Ok(());
+            }
+        }
+    };
+    if let Some(gate) = mcp_plan.gate.clone() {
+        let _ = on_event.send(AgentEvent::PreflightBlocked { gate });
+        return Ok(());
+    }
+    if mcp_plan.force_readonly {
+        permission = adapters::Permission::Leitura;
+    }
     // pastas extras liberadas: lidas do .mycockpit/config.toml do projeto que
     // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
     let extra_dirs = crate::mycockpit::resolve_extra_dirs(&cwd);
@@ -551,26 +599,6 @@ pub async fn run_agent(
         };
         tool_catalog.mark_unmaterialized(reason);
     }
-    // Control plane de MCPs externos. Sem binding explícito ele devolve o plano
-    // default e preserva integralmente o comportamento legado dos CLIs. Com
-    // bindings, faz preflight/circuito de fallback antes de gastar um turno.
-    let mut mcp_plan = if matches!(permission, adapters::Permission::FusionRo) {
-        crate::mcp_control::McpRunPlan::default()
-    } else {
-        match crate::mcp_control::plan_for_run(&app, &conv_id, &run_id, &agent, &cwd).await {
-            Ok(plan) => plan,
-            Err(error) => {
-                // Um erro na fronteira de policy não pode cair para os MCPs
-                // globais: isso reintroduziria capabilities que o profile
-                // gerenciado tentou remover. Falha antes do turno pago.
-                let _ = on_event.send(AgentEvent::Error {
-                    message: format!("control plane MCP indisponível: {error}"),
-                });
-                let _ = on_event.send(AgentEvent::Done { code: None });
-                return Ok(());
-            }
-        }
-    };
     if !matches!(permission, adapters::Permission::FusionRo) {
         if caps.mcp_escopo.por_run() {
             match crate::plugin_mcp::materialize_for_run(&app, &cwd).await {
@@ -615,27 +643,6 @@ pub async fn run_agent(
             instruction_sources,
         ),
     });
-    for message in &mcp_plan.notices {
-        let _ = on_event.send(AgentEvent::Notice {
-            message: message.clone(),
-        });
-    }
-    for message in &tool_catalog.notices {
-        let _ = on_event.send(AgentEvent::Notice {
-            message: message.clone(),
-        });
-    }
-    if let Some(message) = &mcp_plan.blocked {
-        let _ = on_event.send(AgentEvent::Error {
-            message: format!("run bloqueado pelo control plane MCP: {message}"),
-        });
-        let _ = on_event.send(AgentEvent::Done { code: None });
-        return Ok(());
-    }
-    let prompt = match &mcp_plan.prompt_policy {
-        Some(policy) => format!("{policy}\n\n---\n\n{prompt}"),
-        None => prompt,
-    };
     // H2 — cadência do preâmbulo por capability: canal system → corpo limpo
     // (o adapter re-envia anúncio+telemetria no canal a cada spawn); motor
     // 1º-turno-só → sem resume leva tudo, com resume só re-anuncia MCP quando
@@ -662,7 +669,7 @@ pub async fn run_agent(
     // parse mal feito e o CLI recusa com erro cru; recusamos ANTES, com a frase
     // que diz o que fazer. Fail-closed no efeito (nada é spawnado).
     if let Err(message) = adapters::validate_model_slug(model.as_deref()) {
-        let _ = on_event.send(AgentEvent::Error { message });
+        let _ = on_event.send(AgentEvent::StartupFailed { message });
         let _ = on_event.send(AgentEvent::Done { code: None });
         return Ok(());
     }
@@ -782,7 +789,14 @@ pub async fn run_agent(
     }
 
     let resume_was = req.resume.is_some();
-    let cmd = adapter.build_validated_command(&req)?;
+    let cmd = match adapter.build_validated_command(&req) {
+        Ok(command) => command,
+        Err(message) => {
+            let _ = on_event.send(AgentEvent::StartupFailed { message });
+            let _ = on_event.send(AgentEvent::Done { code: None });
+            return Ok(());
+        }
+    };
     let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);
     let confinou = perfil_sb.is_some();
     let _limpa = perfil_sb.map(LimpaPerfil);
@@ -798,12 +812,10 @@ pub async fn run_agent(
     .await
     {
         Ok(outcome) => outcome,
-        // Falha antes de existir stream (binário/PATH/spawn/pipe) também precisa
-        // virar item persistido e acionável: só um toast não oferece revezamento.
-        // Nota H2: aqui o run NÃO nasceu → o `mcp://announced` não é emitido, o
-        // ledger fica intacto e o próximo turno re-anuncia (item 2 do review).
+        // O pedido foi aceito, mas o processo não nasceu. Preservamos o marco
+        // factual sem transformar startup em incidente de execução.
         Err(message) => {
-            let _ = on_event.send(AgentEvent::Error { message });
+            let _ = on_event.send(AgentEvent::StartupFailed { message });
             let _ = on_event.send(AgentEvent::Done { code: None });
             return Ok(());
         }
@@ -1237,6 +1249,7 @@ async fn run_once(
         }
     });
     let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
+    let _ = on_event.send(AgentEvent::Started);
 
     // H1, o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.

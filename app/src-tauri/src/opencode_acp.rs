@@ -313,7 +313,12 @@ pub async fn run(
                                     if let Err(e) = write(&stdin, &request(MODEL, "session/set_config_option", json!({"sessionId":sid,"configId":"model","value":model}))).await { return Outcome::startup(e); }
                                 } else {
                                     match continue_after_model(&stdin, req, &sid).await {
-                                        Ok(started) => prompt_started = started,
+                                        Ok(started) => {
+                                            prompt_started = started;
+                                            if started {
+                                                let _ = on_event.send(AgentEvent::Started);
+                                            }
+                                        }
                                         Err(e) => return Outcome::startup(e),
                                     }
                                 }
@@ -321,20 +326,31 @@ pub async fn run(
                             MODEL => {
                                 let sid = session_id.as_deref().unwrap_or_default();
                                 match continue_after_model(&stdin, req, sid).await {
-                                    Ok(started) => prompt_started = started,
+                                    Ok(started) => {
+                                        prompt_started = started;
+                                        if started {
+                                            let _ = on_event.send(AgentEvent::Started);
+                                        }
+                                    }
                                     Err(e) => return Outcome::startup(e),
                                 }
                             }
                             EFFORT => {
                                 let sid = session_id.as_deref().unwrap_or_default();
                                 match continue_after_effort(&stdin, req, sid).await {
-                                    Ok(started) => prompt_started = started,
+                                    Ok(started) => {
+                                        prompt_started = started;
+                                        if started {
+                                            let _ = on_event.send(AgentEvent::Started);
+                                        }
+                                    }
                                     Err(e) => return Outcome::startup(e),
                                 }
                             }
                             MODE => {
                                 let sid = session_id.as_deref().unwrap_or_default();
                                 prompt_started = true;
+                                let _ = on_event.send(AgentEvent::Started);
                                 if let Err(e) = write(&stdin, &request(PROMPT, "session/prompt", prompt_params(sid, &req.prompt))).await { return Outcome::startup(e); }
                             }
                             PROMPT => {

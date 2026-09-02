@@ -19,11 +19,12 @@ import {
 } from "@/lib/mcp"
 import { browserRowNotice, type BrowserStatus } from "@/lib/browser"
 import { agentDef } from "@/lib/agents"
+import { cn } from "@/lib/utils"
 
 const FALLBACKS: { value: McpFallback; label: string }[] = [
-  { value: "ask", label: "Pausar e avisar" },
-  { value: "deny", label: "Sem fallback" },
-  { value: "allow-readonly", label: "Fallback leitura" },
+  { value: "ask", label: "Pedir decisão" },
+  { value: "deny", label: "Não permitir" },
+  { value: "allow-readonly", label: "Pedir só leitura" },
 ]
 
 function statusIcon(status: McpHealthStatus) {
@@ -136,7 +137,7 @@ export function McpAgentRows({
                   </label>
                   <label
                     className="flex items-center gap-1 text-[11px] text-muted-foreground"
-                    title="Este MCP pilota o navegador do projeto (o run recebe --cdp-endpoint)"
+                    title="Usar somente o navegador deste projeto neste MCP"
                   >
                     <input
                       type="checkbox"
@@ -149,25 +150,27 @@ export function McpAgentRows({
                       disabled={writeBusy}
                       className="accent-[var(--brass)]"
                     />
-                    navegador
+                    usar navegador
                   </label>
-                  <select
-                    value={state.fallback}
-                    onChange={(event) =>
-                      onUpdate(server, state, {
-                        fallback: event.target.value as McpFallback,
-                      })
-                    }
-                    disabled={writeBusy}
-                    className="h-6 rounded border border-border/60 bg-background px-1 text-[11px] text-foreground"
-                    aria-label={`Fallback de ${server.name} no ${label}`}
-                  >
-                    {FALLBACKS.map((item) => (
-                      <option key={item.value} value={item.value}>
-                        {item.label}
-                      </option>
-                    ))}
-                  </select>
+                  {state.required && (
+                    <select
+                      value={state.fallback}
+                      onChange={(event) =>
+                        onUpdate(server, state, {
+                          fallback: event.target.value as McpFallback,
+                        })
+                      }
+                      disabled={writeBusy}
+                      className="h-6 rounded border border-border/60 bg-background px-1 text-[11px] text-foreground"
+                      aria-label={`Se faltar ${server.name} no ${label}`}
+                    >
+                      {FALLBACKS.map((item) => (
+                        <option key={item.value} value={item.value}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </>
               )}
               {acao && (
@@ -206,9 +209,18 @@ export function McpAgentRows({
               </div>
             )}
             {browserNotice && (
-              <div className="flex items-start gap-1.5 pb-1 pl-[3.25rem] text-[11px] leading-snug text-st-warning">
-                <AlertTriangle className="mt-px size-3.5 shrink-0" />
-                <span>{browserNotice}</span>
+              <div
+                className={cn(
+                  "flex items-start gap-1.5 pb-1 pl-[3.25rem] text-[11px] leading-snug",
+                  browserNotice.tone === "warning"
+                    ? "text-st-warning"
+                    : "text-muted-foreground",
+                )}
+              >
+                {browserNotice.tone === "warning" && (
+                  <AlertTriangle className="mt-px size-3.5 shrink-0" />
+                )}
+                <span>{browserNotice.text}</span>
               </div>
             )}
           </div>

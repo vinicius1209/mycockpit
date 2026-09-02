@@ -199,9 +199,8 @@ export function browserBoundServers(servers: McpServer[]): string[] {
     .map((server) => server.name)
 }
 
-/** Aviso honesto quando algum binding EXIGE o navegador do projeto e ele não
- *  está ligado. O backend bloqueia antes do spawn para nenhum MCP abrir outra
- *  janela silenciosamente. `null` quando não há o que avisar. */
+/** Consequência honesta dos bindings de navegador quando ele está desligado.
+ *  A marca `browser` escolhe o transporte; só `required` impede o turno. */
 export function browserBindingWarning(
   servers: McpServer[],
   status: BrowserStatus | null,
@@ -209,7 +208,17 @@ export function browserBindingWarning(
   if (status?.session) return null
   const names = browserBoundServers(servers)
   if (names.length === 0) return null
-  return `${names.join(", ")} ${names.length > 1 ? "pedem" : "pede"} o navegador do projeto, que está desligado. O run será bloqueado antes que o MCP abra outro navegador.`
+  const required = servers
+    .filter((server) =>
+      server.agentStates.some(
+        (state) => state.enabled && state.browser && state.required,
+      ),
+    )
+    .map((server) => server.name)
+  if (required.length > 0) {
+    return `${required.join(", ")} ${required.length > 1 ? "exigem" : "exige"} o navegador deste projeto, que está desligado. O próximo turno não inicia até você decidir.`
+  }
+  return `${names.join(", ")} ${names.length > 1 ? "usam" : "usa"} o navegador deste projeto, que está desligado. ${names.length > 1 ? "Esses MCPs ficam" : "Esse MCP fica"} fora do próximo turno.`
 }
 
 // ---- o encadeamento honesto (ligar o navegador NÃO basta) ------------------
@@ -279,7 +288,12 @@ export function browserChainLine(
   const entregas = browserDeliveries(servers)
   if (!status?.session) {
     const aviso = browserBindingWarning(servers, status)
-    return aviso ? { tom: "aviso", texto: aviso } : null
+    const exigido = servers.some((server) =>
+      server.agentStates.some(
+        (state) => state.enabled && state.browser && state.required,
+      ),
+    )
+    return aviso ? { tom: exigido ? "aviso" : "ok", texto: aviso } : null
   }
   if (entregas.length > 0) {
     return {
@@ -316,18 +330,26 @@ export function shouldShowBrowserCard(
 /** O que falta na LINHA de um agent que pediu o navegador do projeto, para o
  *  usuário não ter que cruzar duas telas de cabeça. `null` quando o elo desta
  *  linha está inteiro (ou quando ela não pediu nada). */
+export interface BrowserRowNotice {
+  tone: "neutral" | "warning"
+  text: string
+}
+
 export function browserRowNotice(
-  state: Pick<McpAgentState, "enabled" | "browser">,
+  state: Pick<McpAgentState, "enabled" | "browser" | "required">,
   status: BrowserStatus | null,
-): string | null {
+): BrowserRowNotice | null {
   if (!state.enabled || !state.browser) return null
   if (status?.session) return null
   // `null` cobre fora do app E falha de leitura (que já foi ao toast): não
   // escolhe uma das causas, só para de prometer o que não sabe.
-  if (!status)
-    return "estado indisponível; confira Navegador e desktop antes do run"
+  const tone = state.required ? "warning" : "neutral"
+  const consequence = state.required
+    ? "o próximo turno não inicia até você decidir"
+    : "este MCP fica fora do próximo turno"
+  if (!status) return { tone, text: `estado indisponível; ${consequence}` }
   if (!status.binary) {
-    return "não há Chromium nesta máquina; o run será bloqueado até instalar ou desmarcar"
+    return { tone, text: `não há Chromium nesta máquina; ${consequence}` }
   }
-  return "navegador desligado; ligue em Navegador e desktop ou desmarque antes do run"
+  return { tone, text: `navegador desligado; ${consequence}` }
 }

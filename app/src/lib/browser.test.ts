@@ -149,12 +149,23 @@ describe("browserBindingWarning", () => {
     detail: null,
   })
 
-  it("avisa que o run bloqueia antes de abrir outro navegador", () => {
+  it("binding opcional fica fora do turno sem bloquear a conversa", () => {
     const servers = [server("playwright", [{ enabled: true, browser: true }])]
     const warning = browserBindingWarning(servers, status(false))
-    expect(warning).toContain("playwright pede o navegador do projeto")
-    expect(warning).toContain("run será bloqueado")
-    expect(warning).toContain("antes que o MCP abra outro navegador")
+    expect(warning).toContain("playwright usa o navegador deste projeto")
+    expect(warning).toContain("fica fora do próximo turno")
+    expect(warning).not.toContain("não inicia")
+  })
+
+  it("só binding exigido segura o próximo turno", () => {
+    const servers = [
+      server("playwright", [
+        { enabled: true, browser: true, required: true },
+      ]),
+    ]
+    const warning = browserBindingWarning(servers, status(false))
+    expect(warning).toContain("playwright exige o navegador deste projeto")
+    expect(warning).toContain("próximo turno não inicia")
   })
 
   it("concorda no plural com mais de um MCP marcado", () => {
@@ -163,7 +174,7 @@ describe("browserBindingWarning", () => {
       server("chrome-devtools", [{ enabled: true, browser: true }]),
     ]
     expect(browserBindingWarning(servers, status(false))).toContain(
-      "playwright, chrome-devtools pedem o navegador do projeto",
+      "playwright, chrome-devtools usam o navegador deste projeto",
     )
   })
 
@@ -296,14 +307,14 @@ describe("browserChainLine", () => {
     expect(linha?.texto).toContain("ligue a integração")
   })
 
-  it("desligado com alguém pedindo repete o bloqueio preventivo", () => {
+  it("desligado com binding opcional informa a omissão em cinza", () => {
     const servers = [
       server("playwright", [{ agent: "claude-code", enabled: true, browser: true }]),
     ]
     const linha = browserChainLine(servers, statusDoIncidente(false))
-    expect(linha?.tom).toBe("aviso")
-    expect(linha?.texto).toContain("playwright pede o navegador do projeto")
-    expect(linha?.texto).toContain("run será bloqueado")
+    expect(linha?.tom).toBe("ok")
+    expect(linha?.texto).toContain("playwright usa o navegador deste projeto")
+    expect(linha?.texto).toContain("fica fora do próximo turno")
   })
 
   it("desligado e sem ninguém pedindo não inventa pendência", () => {
@@ -359,37 +370,46 @@ describe("browserRowNotice", () => {
   it("linha que pediu o navegador com ele desligado avisa ali mesmo", () => {
     expect(
       browserRowNotice(
-        { enabled: true, browser: true },
+        { enabled: true, browser: true, required: false },
         statusDoIncidente(false),
       ),
-    ).toBe("navegador desligado; ligue em Navegador e desktop ou desmarque antes do run")
+    ).toEqual({
+      tone: "neutral",
+      text: "navegador desligado; este MCP fica fora do próximo turno",
+    })
   })
 
   it("sem Chromium na máquina, o motivo é outro e é dito", () => {
     expect(
       browserRowNotice(
-        { enabled: true, browser: true },
+        { enabled: true, browser: true, required: true },
         { projectId: "proj-1", session: null, binary: null, version: null, detail: null },
       ),
-    ).toBe("não há Chromium nesta máquina; o run será bloqueado até instalar ou desmarcar")
+    ).toEqual({
+      tone: "warning",
+      text: "não há Chromium nesta máquina; o próximo turno não inicia até você decidir",
+    })
   })
 
   it("elo inteiro (ligado e marcado) não vira ruído na linha", () => {
     expect(
-      browserRowNotice({ enabled: true, browser: true }, statusDoIncidente(true)),
+      browserRowNotice(
+        { enabled: true, browser: true, required: false },
+        statusDoIncidente(true),
+      ),
     ).toBeNull()
   })
 
   it("linha que não pediu navegador nunca é cobrada por ele", () => {
     expect(
       browserRowNotice(
-        { enabled: true, browser: false },
+        { enabled: true, browser: false, required: false },
         statusDoIncidente(false),
       ),
     ).toBeNull()
     expect(
       browserRowNotice(
-        { enabled: false, browser: true },
+        { enabled: false, browser: true, required: false },
         statusDoIncidente(false),
       ),
     ).toBeNull()
@@ -397,8 +417,14 @@ describe("browserRowNotice", () => {
 
   it("sem leitura de estado não escolhe uma causa nem finge saber", () => {
     // `null` é fora do app OU falha de leitura: a linha não chuta qual.
-    expect(browserRowNotice({ enabled: true, browser: true }, null)).toBe(
-      "estado indisponível; confira Navegador e desktop antes do run",
-    )
+    expect(
+      browserRowNotice(
+        { enabled: true, browser: true, required: false },
+        null,
+      ),
+    ).toEqual({
+      tone: "neutral",
+      text: "estado indisponível; este MCP fica fora do próximo turno",
+    })
   })
 })

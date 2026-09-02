@@ -5,7 +5,7 @@ import { RunCapabilityStrip } from "@/components/chat/RunCapabilityStrip"
 import type { EffectiveRunManifest } from "@/lib/tooling"
 
 const manifest: EffectiveRunManifest = {
-  schemaVersion: 4,
+  schemaVersion: 5,
   agentId: "engine",
   managedExternalMcp: true,
   instructions: [
@@ -19,7 +19,7 @@ const manifest: EffectiveRunManifest = {
     },
   ],
   notices: [],
-  blocked: null,
+  omissions: [],
   sources: [
     {
       id: "provider-native",
@@ -92,5 +92,37 @@ describe("RunCapabilityStrip", () => {
     )
     expect(html).toContain("recursos do provider não observados")
     expect(html).toContain("não os enumerou nem filtrou neste run")
+  })
+
+  it("registra omissão opcional em tom neutro e fora do fio", () => {
+    const html = renderToStaticMarkup(
+      createElement(RunCapabilityStrip, {
+        manifest: {
+          ...manifest,
+          omissions: [
+            {
+              sourceId: "playwright",
+              sourceLabel: "Playwright",
+              code: "browser-offline",
+              detail: "o navegador deste projeto está desligado",
+            },
+          ],
+        },
+        defaultOpen: true,
+      }),
+    )
+    expect(html).toContain("1 capacidade não entrou")
+    expect(html).toContain("Fora deste turno")
+    expect(html).toContain("navegador deste projeto desligado")
+    expect(html).not.toContain("Run bloqueado")
+  })
+
+  it("expõe o modo somente leitura aceito para este turno", () => {
+    const html = renderToStaticMarkup(
+      createElement(RunCapabilityStrip, {
+        manifest: { ...manifest, permissionOverride: "leitura" },
+      }),
+    )
+    expect(html).toContain("Só lê neste turno")
   })
 })

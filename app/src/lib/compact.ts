@@ -282,12 +282,8 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     // Turno TÉCNICO: a bolha mostra o que você digitou; o prompt é o literal
     // "/compact" via resume — sem doutrina/persona/lições/fallback (qualquer
     // prefixo mataria a invocação, e recap num turno de compactação é ruído).
-    chat.start(args.convId, args.commandText, runId, agent, conv.reqModel, conv.effort, [])
-    args.onStarted?.()
-    useChat.getState().handleEvent(args.convId, {
-      type: "notice",
-      message: `compactar: comando ${plan.prompt} enviado ao ${label} (turno técnico)`,
-    })
+    let accepted = false
+    chat.beginPreparation(args.convId, runId)
     try {
       await runAgent(
         runId,
@@ -300,7 +296,30 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
         conv.sessionId,
         permission,
         [],
-        (e) => useChat.getState().handleEvent(args.convId, e),
+        (e) => {
+          if (e.type === "preflight_blocked") {
+            chat.blockPreparation(args.convId, runId, e.gate)
+            return
+          }
+          if (e.type === "run_manifest" && !accepted) {
+            accepted = true
+            chat.start(
+              args.convId,
+              args.commandText,
+              runId,
+              agent,
+              conv.reqModel,
+              conv.effort,
+              [],
+            )
+            args.onStarted?.()
+            chat.handleEvent(args.convId, {
+              type: "notice",
+              message: `compactar: comando ${plan.prompt} enviado ao ${label} (turno técnico)`,
+            })
+          }
+          if (accepted) chat.handleEvent(args.convId, e)
+        },
         false,
         null, // sem memoryFallback: prefixo de recap mataria a invocação
         null, // sem system prompt: turno técnico, nada de doutrina/persona
@@ -317,11 +336,16 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
         })
       }
     } catch (e) {
-      recordCompactError(args.convId, e, "Falha ao compactar o contexto")
+      if (accepted) recordCompactError(args.convId, e, "Falha ao compactar o contexto")
+      else toast.error("Não consegui verificar as capacidades da compactação.")
     } finally {
-      useChat.getState().finish(args.convId)
-      void useChat.getState().persist(args.convId)
-      args.drainQueue?.()
+      if (accepted) {
+        chat.finish(args.convId)
+        void chat.persist(args.convId)
+        args.drainQueue?.()
+      } else {
+        chat.clearPreparation(args.convId, runId)
+      }
     }
     return
   }
@@ -339,16 +363,8 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     contextWindow: conv.contextWindow,
     model: conv.model,
   }
-  chat.beginTransplant(args.convId, runId, agent, {
-    model: conv.reqModel,
-    effort: conv.effort,
-    user: { text: args.commandText, attachments: [] },
-  })
-  args.onStarted?.()
-  useChat.getState().handleEvent(args.convId, {
-    type: "notice",
-    message: `compactar: preparando memória e renovando a sessão do ${label} (este motor não compacta em modo headless)`,
-  })
+  let accepted = false
+  chat.beginPreparation(args.convId, runId)
   try {
     // Fail-closed: sem memória plena recuperável, não abrimos mão da sessão de
     // origem. O erro ocorre antes do `runAgent`, então o transplante pendente é
@@ -377,11 +393,6 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
       freshSession: true,
       lastFingerprint: useChat.getState().byId[args.convId]?.injected?.doctrine,
     })
-    if (doctrine.fingerprint) {
-      useChat
-        .getState()
-        .recordInjectedFingerprint(args.convId, "doctrine", doctrine.fingerprint)
-    }
     let personaBlock = await personaHandoffBlock(
       conv.presetId,
       conv.presetDigest,
@@ -409,7 +420,33 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
       null, // sessão FRESCA: renovar É abrir mão da sessão cheia
       permission,
       [],
-      (e) => useChat.getState().handleEvent(args.convId, e),
+      (e) => {
+        if (e.type === "preflight_blocked") {
+          chat.blockPreparation(args.convId, runId, e.gate)
+          return
+        }
+        if (e.type === "run_manifest" && !accepted) {
+          accepted = true
+          chat.beginTransplant(args.convId, runId, agent, {
+            model: conv.reqModel,
+            effort: conv.effort,
+            user: { text: args.commandText, attachments: [] },
+          })
+          args.onStarted?.()
+          chat.handleEvent(args.convId, {
+            type: "notice",
+            message: `compactar: preparando memória e renovando a sessão do ${label} (este motor não compacta em modo headless)`,
+          })
+          if (doctrine.fingerprint) {
+            chat.recordInjectedFingerprint(
+              args.convId,
+              "doctrine",
+              doctrine.fingerprint,
+            )
+          }
+        }
+        if (accepted) chat.handleEvent(args.convId, e)
+      },
       false,
       null,
       systemPrompt,
@@ -425,10 +462,15 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
       })
     }
   } catch (e) {
-    recordCompactError(args.convId, e, "Falha ao renovar a sessão")
+    if (accepted) recordCompactError(args.convId, e, "Falha ao renovar a sessão")
+    else toast.error(typeof e === "string" ? e : "A renovação não foi iniciada.")
   } finally {
-    useChat.getState().finish(args.convId)
-    void useChat.getState().persist(args.convId)
-    args.drainQueue?.()
+    if (accepted) {
+      chat.finish(args.convId)
+      void chat.persist(args.convId)
+      args.drainQueue?.()
+    } else {
+      chat.clearPreparation(args.convId, runId)
+    }
   }
 }

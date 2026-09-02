@@ -68,6 +68,10 @@ import {
 } from "@/lib/sdd"
 import { fmtDateTime, gateSummary, prLabel } from "@/components/sdd/sddFormat"
 import { Pipeline } from "@/components/sdd/StagePipeline"
+import {
+  StageRunOverlay,
+  type StageRun,
+} from "@/components/sdd/StageRunOverlay"
 import { cn } from "@/lib/utils"
 
 /** Marca a adoção do plano (ADR-032) e AVISA quando não conseguiu gravar: sem
@@ -838,16 +842,6 @@ function PlanDetail({ plan, onReload }: { plan: SddPlan; onReload: () => void })
   )
 }
 
-interface StageRun {
-  skill: string
-  items: ChatItem[]
-  streamingTextId: string | null
-  model: string | null
-  sessionId: string | null
-  startedAt: number | null
-  running: boolean
-}
-
 /** Roda uma skill via o AgentRunner, acumulando o stream num estado de StageRun.
  *  Reusado pelo run de etapa (PlanDetail) e pela criação de feature nova (/prd). */
 async function runSkillInto(
@@ -866,8 +860,9 @@ async function runSkillInto(
     streamingTextId: null,
     model: null,
     sessionId: null,
-    startedAt: Date.now(),
-    running: true,
+    startedAt: null,
+    running: false,
+    preparing: true,
   }
   setRun(cur)
   // DOUTRINA do projeto: a etapa do SDD é uma sessão fresca que ESCREVE spec e
@@ -887,6 +882,19 @@ async function runSkillInto(
       permission,
       [],
       (e) => {
+        if (e.type === "preflight_blocked") {
+          cur = { ...cur, preparing: false, preflightBlocked: true }
+          setRun((prev) => (prev ? cur : prev))
+          return
+        }
+        if (e.type === "run_manifest" && cur.preparing) {
+          cur = {
+            ...cur,
+            preparing: false,
+            running: true,
+            startedAt: Date.now(),
+          }
+        }
         cur = { ...cur, ...reduceItems(cur, e) }
         // update FUNCIONAL: overlay fechado (null) fica fechado; o setter direto
         // ressuscitava o modal a cada evento do stream (achado do aval).
@@ -915,6 +923,7 @@ async function runSkillInto(
   const result = [...cur.items]
     .reverse()
     .find((it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result")
+  if (cur.preflightBlocked) return false
   void insertStageRun({
     projectId,
     slug,
@@ -928,62 +937,6 @@ async function runSkillInto(
   })
   // ok = chegou um result bem-sucedido (não bumpa o stage num run que falhou).
   return result?.ok === true
-}
-
-function runText(items: ChatItem[]): string {
-  const texts = items.filter(
-    (it): it is Extract<ChatItem, { kind: "text" }> => it.kind === "text",
-  )
-  if (texts.length) return texts.map((t) => t.text).join("\n\n")
-  const result = items.find(
-    (it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result",
-  )
-  return result?.text ?? ""
-}
-
-/** Overlay do run de uma etapa (streaming ao vivo), fechar re-lê o manifest. */
-function StageRunOverlay({ run, onClose }: { run: StageRun; onClose: () => void }) {
-  const text = runText(run.items)
-  const result = run.items.find(
-    (it): it is Extract<ChatItem, { kind: "result" }> => it.kind === "result",
-  )
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-8">
-      <div className="flex max-h-[80vh] w-full max-w-[760px] flex-col rounded-xl border bg-card shadow-[var(--shadow-pop)]">
-        <div className="flex shrink-0 items-center gap-2 border-b px-5 py-3">
-          {run.running ? (
-            <Loader2 className="size-4 animate-spin text-muted-foreground" />
-          ) : (
-            <Check className="size-4 text-st-success" />
-          )}
-          <span className="font-mono text-[13px] text-foreground">/{run.skill}</span>
-          <span className="text-[12px] text-muted-foreground">
-            {run.running ? "rodando…" : "concluído"}
-          </span>
-          {result?.costUsd != null && (
-            <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground">
-              ~US${result.costUsd.toFixed(3)}
-            </span>
-          )}
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto px-5 py-4 text-[13px]">
-          {text ? (
-            <Markdown text={text} />
-          ) : (
-            <span className="text-muted-foreground">iniciando…</span>
-          )}
-        </div>
-        <div className="flex shrink-0 justify-end border-t px-5 py-3">
-          <button
-            onClick={onClose}
-            className="rounded-md border px-3 py-1.5 text-[12px] text-foreground hover:bg-accent"
-          >
-            {run.running ? "Fechar (continua em background)" : "Fechar e atualizar"}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
 }
 
 /** Atividade (#10): timeline dos passos `[x]` + LOG cru colapsável. */

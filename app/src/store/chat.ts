@@ -1,6 +1,12 @@
 import { create } from "zustand"
 import { toast } from "sonner"
 import type { AgentEvent, CostSource } from "@/lib/agent"
+import {
+  beginPreparationState,
+  blockPreparationState,
+  clearPreparationState,
+  turnControl,
+} from "@/store/chat/runLifecycle"
 import type { Attachment } from "@/lib/attachments"
 import { deleteAttachment, revokeAttachmentUrl } from "@/lib/attachments"
 import { deriveTitle } from "@/lib/convTitle"
@@ -281,51 +287,15 @@ export function hasExecutorTurn(items: ChatItem[]): boolean {
   return executorItems(items).length > 0
 }
 
-/** Presença de uma conversa (Especialistas E3, S3.1). DERIVADA, sem estado novo:
- *  o PILOTO é o preset-executor já carimbado (`presetId`) e os CONVIDADOS são as
- *  personas distintas que já opinaram (itens `advice`), dedupe por id, o piloto
- *  fora da lista (ele pilota, não é convidado). Puro e testável. */
-export interface ConversationPresence {
-  pilotId: string | null
-  guests: { id: string; name: string }[]
-}
-
-export function conversationPresence(
-  conv: Pick<ConvState, "presetId" | "items">,
-): ConversationPresence {
-  const pilotId = conv.presetId ?? null
-  const guests = new Map<string, string>()
-  for (const it of conv.items) {
-    if (it.kind !== "advice") continue
-    if (it.personaId === pilotId) continue // o piloto não é convidado de si mesmo
-    if (!guests.has(it.personaId)) guests.set(it.personaId, it.personaName)
-  }
-  return {
-    pilotId,
-    guests: [...guests].map(([id, name]) => ({ id, name })),
-  }
-}
+export {
+  conversationPresence,
+  needsPersonaReinject,
+  type ConversationPresence,
+} from "@/store/chat/presence"
 
 /** Custo da sessão: mudou de casa (lib/sessionCost), re-exportado aqui porque
  *  a fonte única do strip de custo sempre foi importada do store. */
 export { sessionCost } from "@/lib/sessionCost"
-
-/** Especialistas E3 (S3.2) — o próximo turno precisa RE-INJETAR a persona?
- *  DERIVADO de estado PERSISTIDO (sobrevive a restart), não de flag efêmera:
- *  há persona carimbada (`presetId`), o digest foi ZERADO (o gesto de passar o
- *  volante limpa) e a conversa JÁ tem turno de executor (distingue do 1º turno
- *  real, onde o digest também é null mas ainda não há executor → o turno-1
- *  injeta pelo caminho `!locked`). `presetId`/`presetDigest`/`items` são todos
- *  persistidos, então A→B + reload + próximo envio ainda re-injeta B. Puro. */
-export function needsPersonaReinject(
-  conv: Pick<ConvState, "presetId" | "presetDigest" | "items">,
-): boolean {
-  return (
-    conv.presetId != null &&
-    (conv.presetDigest == null || conv.presetDigest === "") &&
-    hasExecutorTurn(conv.items)
-  )
-}
 
 /** Mensagem enfileirada durante o turno: texto + anexos do momento do Enter. */
 export interface QueuedMsg {
@@ -367,6 +337,13 @@ export interface ConvState extends ContextSnapshotState {
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
   runManifest?: import("@/lib/tooling").EffectiveRunManifest
+  /** Pedido ainda no composer enquanto o backend calcula as capabilities. */
+  preparing?: { runId: string; startedAt: number }
+  /** Exigência não atendida antes do turno. Não pertence ao transcript. */
+  preflightGate?: {
+    runId: string
+    gate: import("@/lib/tooling").McpPreflightGate
+  }
   /** Revezamento em duas fases: o target está iniciando, mas ainda NÃO assumiu
    *  a conversa. O agent/sessão de origem só são trocados quando o novo CLI
    *  emite `session`; falha antes disso deixa a origem integralmente retomável.
@@ -563,6 +540,14 @@ export interface ChatState {
    *  (UPSERT de linha inteira) gravaria por cima do histórico real. NUNCA
    *  mexe em running/runId — é só conteúdo, não controle de turno. */
   appendItems: (convId: string, items: ChatItem[]) => Promise<void>
+  beginPreparation: (convId: string, runId: string) => void
+  blockPreparation: (
+    convId: string,
+    runId: string,
+    gate: import("@/lib/tooling").McpPreflightGate,
+  ) => void
+  clearPreparation: (convId: string, runId: string) => void
+  clearPreflightGate: (convId: string) => void
   start: (
     convId: string,
     text: string,
@@ -769,6 +754,21 @@ export function reduceItems(
   const contextSnapshot = reduceContextSnapshot(e)
   if (contextSnapshot) return contextSnapshot
   switch (e.type) {
+    case "started":
+      return {}
+    case "startup_failed":
+      return {
+        items: [
+          ...c.items,
+          {
+            kind: "notice",
+            id: uid(),
+            message: `Turno não iniciado. ${e.message}`,
+            ts: now,
+          },
+        ],
+        streamingTextId: null,
+      }
     case "session": {
       // Divergência DURA pedido×resolvido → notice no fio (não bloqueia; a
       // verdade do CLI manda). Dedup por mensagem: cada retomada re-emite
@@ -1066,28 +1066,11 @@ export function reduceItems(
   }
 }
 
-/** Controle do turno Linear (running/finalizing/runId/startedAt). Só o Linear usa
- * , a lane do Fusion deriva o status dela explicitamente (handleCandidateEvent). */
-function controlFlow(_c: ConvState, e: AgentEvent): Partial<ConvState> {
-  switch (e.type) {
-    case "result":
-      // turno acabou, mas o processo ainda finaliza (flush) → segura até o Done.
-      return { running: false, finalizing: true, runId: null, startedAt: null }
-    case "error":
-    case "cancelled":
-      return { running: false, runId: null, startedAt: null }
-    case "done":
-      return { running: false, finalizing: false, runId: null, startedAt: null }
-    default:
-      return {}
-  }
-}
-
 /** Reduz um evento do agent sobre o estado de UMA conversa (Linear). */
 function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
   return {
     ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }),
-    ...controlFlow(c, e),
+    ...turnControl(e),
     ...reduceRunManifest(c.runManifest, e),
   }
 }
@@ -1647,6 +1630,17 @@ export const useChat = create<ChatState>((set, get) => {
       await get().persist(convId)
     },
 
+    beginPreparation: (convId, runId) =>
+      set((state) => beginPreparationState(state, convId, runId)),
+
+    blockPreparation: (convId, runId, gate) =>
+      set((state) => blockPreparationState(state, convId, runId, gate)),
+
+    clearPreparation: (convId, runId) =>
+      set((state) => clearPreparationState(state, convId, runId)),
+
+    clearPreflightGate: (convId) => patch(convId, { preflightGate: undefined }),
+
     start: (convId, text, runId, agent, model, effort, attachments) => {
       // E1 (S1.4): o turno resolve o agent da conversa → espelha no card
       // ligado (assignee_agent). Import dinâmico: cards importa este módulo.
@@ -1690,6 +1684,8 @@ export const useChat = create<ChatState>((set, get) => {
               finalizing: false,
               runId,
               runManifest: undefined,
+              preparing: undefined,
+              preflightGate: undefined,
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
@@ -2150,6 +2146,8 @@ export const useChat = create<ChatState>((set, get) => {
               running: true,
               finalizing: false,
               runId,
+              preparing: undefined,
+              preflightGate: undefined,
               startedAt: Date.now(),
               suggestions: [],
               suggesting: false,
@@ -2183,6 +2181,7 @@ export const useChat = create<ChatState>((set, get) => {
         // Startup falhou/cancelou antes de `session`: descarta apenas a intenção;
         // agent, sessionId, model e contextTokens do source nunca foram tocados.
         pendingTransplant: undefined,
+        preparing: undefined,
         finishedUnseen: unseen,
       })
     },

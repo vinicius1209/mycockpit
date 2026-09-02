@@ -1103,6 +1103,7 @@ pub async fn run(
                                         let p = turn_params(&t, req, &prompt);
                                         thread_id = Some(t);
                                         turn_started = true;
+                                        let _ = on_event.send(AgentEvent::Started);
                                         let _ = write_msg(&stdin, &request(ID_TURN, "turn/start", p)).await;
                                     }
                                     None => {

@@ -6,7 +6,7 @@
 // Gate de diretório e motor ausente pedem decisão em âmbar. Auto-resume é
 // estado automático e fica neutro: compartilhar posição não iguala semântica.
 
-import { Copy, FolderGit2, PackageX, Timer, X } from "lucide-react"
+import { Copy, FolderGit2, Monitor, PackageX, Timer, X } from "lucide-react"
 import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
 import { fmtTime } from "@/lib/format"
@@ -14,6 +14,102 @@ import { controle } from "@/components/ui/controle"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
+import type { McpPreflightGate } from "@/lib/tooling"
+
+function gateCopy(gate: McpPreflightGate): { title: string; detail: string } {
+  const issue = gate.issues[0]
+  if (!issue) {
+    return {
+      title: "Capacidade necessária indisponível",
+      detail: "O turno ainda não começou. Revise as integrações deste projeto.",
+    }
+  }
+  if (
+    issue.code === "browser-offline" ||
+    issue.code === "browser-unavailable" ||
+    issue.code === "browser-busy"
+  ) {
+    return {
+      title: "Navegador necessário",
+      detail: `${issue.sourceLabel} usa o navegador deste projeto, que não está disponível. O turno ainda não começou.`,
+    }
+  }
+  return {
+    title: `${issue.sourceLabel} é necessário`,
+    detail: "Esta capacidade não está disponível. O turno ainda não começou.",
+  }
+}
+
+export function PreflightGateBanner({
+  gate,
+  onStartBrowser,
+  startBrowserSends = false,
+  onOpenSettings,
+  onContinueWithout,
+  onRetryReadonly,
+}: {
+  gate: McpPreflightGate
+  onStartBrowser?: () => void
+  startBrowserSends?: boolean
+  onOpenSettings: () => void
+  onContinueWithout?: () => void
+  onRetryReadonly?: () => void
+}) {
+  const copy = gateCopy(gate)
+  const canStartBrowser = gate.allowedRecoveries.some(
+    (recovery) => recovery.kind === "start-project-browser",
+  )
+  const canOmit = gate.allowedRecoveries.some(
+    (recovery) => recovery.kind === "omit-for-this-run",
+  )
+  const canRetryReadonly = gate.allowedRecoveries.some(
+    (recovery) => recovery.kind === "retry-readonly",
+  )
+  return (
+    <div className={cn("mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2", PENDING_DECISION)}>
+      <Monitor className="size-4 shrink-0 text-st-warning" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-foreground">{copy.title}</p>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {copy.detail}
+        </p>
+      </div>
+      {canStartBrowser && onStartBrowser && (
+        <Button type="button" size="compacto" onClick={onStartBrowser}>
+          {startBrowserSends ? "Ligar e enviar" : "Ligar navegador"}
+        </Button>
+      )}
+      {canRetryReadonly && onRetryReadonly && (
+        <Button
+          type="button"
+          size="compacto"
+          variant={canStartBrowser ? "ghost" : "default"}
+          onClick={onRetryReadonly}
+        >
+          Continuar só lendo
+        </Button>
+      )}
+      {canOmit && onContinueWithout && (
+        <Button
+          type="button"
+          size="compacto"
+          variant={canStartBrowser ? "ghost" : "default"}
+          onClick={onContinueWithout}
+        >
+          Continuar sem {gate.issues[0]?.sourceLabel ?? "esta capacidade"}
+        </Button>
+      )}
+      <Button
+        type="button"
+        size="compacto"
+        variant={canStartBrowser || canOmit || canRetryReadonly ? "ghost" : "default"}
+        onClick={onOpenSettings}
+      >
+        Revisar vínculo
+      </Button>
+    </div>
+  )
+}
 
 /** Faixa (acima do composer) quando um auto-resume está agendado: horário do
  *  próximo reenvio (relógio via fmtTime, não contagem; o incidente mantém
