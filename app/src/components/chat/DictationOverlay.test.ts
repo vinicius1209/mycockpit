@@ -1,11 +1,16 @@
 // Truncamento PELO COMEÇO do parcial (clipPartialStart): as últimas palavras
 // ditas ficam sempre visíveis — o excesso some pelo início, com "…".
 // E a fase do pill (dictationPillView): soltar o botão não é o fim.
+import { createElement } from "react"
+import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import {
+  DictationPill,
   PARTIAL_CLIP_CHARS,
   clipPartialStart,
   dictationPillView,
+  inputSignalBars,
+  inputSignalLabel,
 } from "./DictationOverlay"
 
 describe("clipPartialStart", () => {
@@ -75,5 +80,38 @@ describe("dictationPillView", () => {
       },
     )
     expect(textos.some((t) => t.includes("—"))).toBe(false)
+  })
+})
+
+describe("medidor de entrada", () => {
+  it("silêncio mantém as três barras no piso", () => {
+    expect(inputSignalBars(0)).toEqual([3, 3, 3])
+    expect(inputSignalLabel(0)).toBe("Sem sinal do microfone")
+  })
+
+  it("sinal real aumenta as barras sem passar do teto", () => {
+    expect(inputSignalBars(0.5)).toEqual([6, 8, 7])
+    expect(inputSignalBars(10)).toEqual([8, 12, 10])
+    expect(inputSignalLabel(0.5)).toBe("Sinal presente no microfone")
+  })
+
+  it("valor inválido degrada para ausência de sinal", () => {
+    expect(inputSignalBars(Number.NaN)).toEqual([3, 3, 3])
+    expect(inputSignalLabel(Number.NaN)).toBe("Sem sinal do microfone")
+  })
+
+  it("publica no pill o device efetivo e o nível acessível", () => {
+    const html = renderToStaticMarkup(
+      createElement(DictationPill, {
+        partial: null,
+        since: Date.now(),
+        deviceName: "Microfone (MacBook Pro)",
+        level: 0.42,
+      }),
+    )
+    expect(html).toContain("Microfone (MacBook Pro)")
+    expect(html).toContain('role="meter"')
+    expect(html).toContain('aria-valuenow="42"')
+    expect(html).toContain('aria-label="Sinal presente no microfone"')
   })
 })

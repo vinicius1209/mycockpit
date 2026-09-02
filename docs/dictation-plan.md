@@ -5,6 +5,33 @@
 > frase dita no final". Referência de qualidade citada: Wispr Flow (e a
 > família superwhisper / MacWhisper / VoiceInk).
 
+> **CORREÇÃO DE CAPTURA (01/09/2026):** D1/D2 continuam sendo o contrato, mas o
+> produtor dos buffers deixou de ser o tap do `AVAudioEngine`. Com saída em fone
+> Bluetooth, o engine podia manter a captura presa ao aggregate device do macOS
+> mesmo quando a configuração mostrava o microfone interno. ADR-145 substitui
+> esse mecanismo por `AVCaptureSession` com `AVCaptureDevice` explícito; streaming
+> e CAF recebem o mesmo sample buffer, sem qualquer rota de saída.
+
+> **CONFIABILIDADE P0 ENTREGUE (01/09/2026):** ADR-146 fecha os contratos que
+> ainda faltavam depois da troca de captura. `stt_start` devolve o microfone
+> realmente aberto e o pill exibe esse nome com um medidor RMS neutro. O botão e
+> o Esc cancelam também durante permissões/abertura; sessões usam tentativa
+> identificada para uma resposta antiga não atingir a próxima. Desconexão,
+> interrupção e erro da captura finalizam uma vez, preservam a fala e avisam na
+> hora. Reconhecimento sem suporte on-device agora falha fechado, coerente com
+> a promessa "100% local". Sessão sem sinal devolve diagnóstico sobre a entrada
+> do macOS, em vez de terminar vazia e sem explicação.
+> **FECHAMENTO CONCORRENTE (02/09/2026):** a tentativa agora acompanha todos os
+> eventos Tauri, não apenas a fase interna. Cada superfície ignora áudio alheio,
+> `Stopping` reserva a sessão até o sidecar realmente sair, inclusive no
+> cancelamento, e a conversa de destino fica congelada no início do ditado.
+> Navegar durante a fala não move o
+> texto para outro rascunho nem faz o `keyup` parar outro botão.
+> **PROVA DE PONTA (02/09/2026):** bundle Tauri isolado, com banco próprio,
+> abriu o UID `BuiltInMicrophoneDevice`, mostrou nome e nível reais, recebeu
+> parcial, finalizou, reabriu e cancelou por Esc. O protocolo foi também
+> contrastado com o `dictationId` e o aceite de finalização do Paseo.
+
 > **D1 ENTREGUE (06/08/2026).** O que mudou de fato:
 > - **D1.1** — `stopPipeline` no `main.swift`: drain de 300ms com o mic AINDA
 >   aberto (é onde o fim da frase se salva) → `endAudio()` → `engine.stop()` +
@@ -26,7 +53,7 @@
 
 > **D2 ENTREGUE (06/08/2026).** Streaming virou preview; a verdade vem do arquivo
 > (ADR-034).
-> - **D2.1** — o mesmo tap que alimenta o reconhecedor grava um CAF temporário
+> - **D2.1** — o mesmo callback que alimenta o reconhecedor grava um CAF temporário
 >   (`AVAudioFile(forWriting:settings: format.settings)`). Apagado em TODO
 >   desfecho (sucesso, erro, CANCEL, `atexit`), e o boot varre sobras de
 >   `kill -9` com mais de 1h. Falha de escrita derruba a passada de arquivo

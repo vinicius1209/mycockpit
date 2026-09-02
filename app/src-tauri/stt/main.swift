@@ -4,8 +4,10 @@
 //   stdin:  "STOP"   → encerra o áudio e devolve o texto final
 //           "CANCEL" → descarta e sai
 //           EOF      → app morreu, sai (não vira órfão)
-//   stdout: {"ready":true} → gravando
+//   stdout: {"ready":true,"deviceUid":"…","deviceName":"…"} → gravando
 //           {"partial":"…"} → transcrição parcial (ao vivo, texto COMPLETO)
+//           {"level":0.0}   → nível real da entrada, normalizado em 0...1
+//           {"captureLost":"…"} → captura interrompida; o áudio será finalizado
 //           {"warn":"…"}    → aviso honesto antes do final (ex.: caiu no streaming)
 //           {"text":"…"}    → texto final
 //           {"error":"…"}   → falha (permissão, mic, locale)
@@ -34,7 +36,7 @@
 //    formatado. Nenhuma heurística de "metade do tamanho" decide o final.
 //
 // 2) A VERDADE VEM DO ARQUIVO, o streaming é PREVIEW.
-//    Toda a sessão é gravada num CAF temporário (mesmo tap do reconhecedor) e o
+//    Toda a sessão é gravada num CAF temporário (mesmo callback da captura) e o
 //    STOP roda uma passada `SFSpeechURLRecognitionRequest` sobre o arquivo
 //    INTEIRO (on-device, mesma stack). É impossível o arquivo perder o fim: ele
 //    tem o áudio todo. Se essa passada falhar ou estourar o prazo, cai no texto
@@ -42,13 +44,13 @@
 //    apagado em TODO desfecho (sucesso, erro, cancel, atexit) e sobras antigas
 //    de um kill -9 são varridas no boot.
 //
-// Ordem do STOP (o que fazia o fim sumir): o código antigo parava o engine e
-// removia o tap ANTES do endAudio — o áudio em voo morria no caminho. Agora:
+// Ordem do STOP (o que fazia o fim sumir): o código antigo parava a captura
+// ANTES do endAudio — o áudio em voo morria no caminho. Agora:
 // drain curto com o mic AINDA aberto (os últimos buffers chegam ao request) →
-// endAudio() → engine.stop()/removeTap → passada de arquivo.
+// endAudio() → captureSession.stopRunning() → passada de arquivo.
 
-import CoreAudio
 import AVFoundation
+import CoreMedia
 import Foundation
 import Speech
 
@@ -103,6 +105,61 @@ func moreComplete(_ candidate: String, _ best: String) -> String {
     if containsWords(nc, nb) { return c } // o novo ESTENDE/contém o melhor
     if containsWords(nb, nc) { return b } // o novo é um PEDAÇO do melhor
     return wordCount(nc) >= wordCount(nb) ? c : b // divergiram: quem tem mais fala
+}
+
+/// Converte RMS em um medidor perceptual: -60 dB é silêncio visual, 0 dB é o
+/// teto. O valor continua vindo do áudio real, sem animação inventada.
+func meterLevel(forRms rms: Float) -> Double {
+    guard rms.isFinite, rms > 0 else { return 0 }
+    let decibels = 20 * log10(Double(rms))
+    return min(1, max(0, (decibels + 60) / 60))
+}
+
+/// RMS normalizado do buffer, independente de Float32/Int16 e de interleaving.
+/// Bluetooth HFP costuma chegar em Int16; o microfone interno, em Float32.
+func rmsAmplitude(_ buffer: AVAudioPCMBuffer) -> Float {
+    var squareSum = 0.0
+    var sampleCount = 0
+    for audioBuffer in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+        guard let raw = audioBuffer.mData else { continue }
+        switch buffer.format.commonFormat {
+        case .pcmFormatFloat32:
+            let count = Int(audioBuffer.mDataByteSize) / MemoryLayout<Float>.size
+            let samples = raw.bindMemory(to: Float.self, capacity: count)
+            for i in 0..<count {
+                let sample = Double(samples[i])
+                squareSum += sample * sample
+            }
+            sampleCount += count
+        case .pcmFormatFloat64:
+            let count = Int(audioBuffer.mDataByteSize) / MemoryLayout<Double>.size
+            let samples = raw.bindMemory(to: Double.self, capacity: count)
+            for i in 0..<count {
+                squareSum += samples[i] * samples[i]
+            }
+            sampleCount += count
+        case .pcmFormatInt16:
+            let count = Int(audioBuffer.mDataByteSize) / MemoryLayout<Int16>.size
+            let samples = raw.bindMemory(to: Int16.self, capacity: count)
+            for i in 0..<count {
+                let sample = Double(samples[i]) / Double(Int16.max)
+                squareSum += sample * sample
+            }
+            sampleCount += count
+        case .pcmFormatInt32:
+            let count = Int(audioBuffer.mDataByteSize) / MemoryLayout<Int32>.size
+            let samples = raw.bindMemory(to: Int32.self, capacity: count)
+            for i in 0..<count {
+                let sample = Double(samples[i]) / Double(Int32.max)
+                squareSum += sample * sample
+            }
+            sampleCount += count
+        default:
+            continue
+        }
+    }
+    guard sampleCount > 0 else { return 0 }
+    return Float(sqrt(squareSum / Double(sampleCount)))
 }
 
 // ---- args: --vocab "termo1,termo2" · --selfcheck (diagnóstico sem gravar)
@@ -181,77 +238,46 @@ func runSelfTest() -> Int32 {
             emit(["selftest": name, "want": want, "got": got])
         }
     }
-    emit(["selftest": "moreComplete", "cases": cases.count, "failures": failures])
+    let levelCases: [(String, Float, ClosedRange<Double>)] = [
+        ("silêncio fica no zero", 0, 0...0),
+        ("-30 dB ocupa o meio do medidor", 0.031_622_78, 0.49...0.51),
+        ("amplitude máxima chega ao teto", 1, 1...1),
+        ("amplitude acima do teto é limitada", 2, 1...1),
+    ]
+    for (name, rms, expected) in levelCases {
+        let got = meterLevel(forRms: rms)
+        if !expected.contains(got) {
+            failures += 1
+            emit(["selftest": name, "want": "\(expected)", "got": got])
+        }
+    }
+    emit([
+        "selftest": "moreComplete+meterLevel",
+        "cases": cases.count + levelCases.count,
+        "failures": failures,
+    ])
     return failures == 0 ? 0 : 1
 }
 
-// ---- CoreAudio: enumerar e ESCOLHER o microfone ───────────────────────────
+// ---- AVFoundation: enumerar e ESCOLHER o microfone ────────────────────────
 //
-// O AVAudioEngine sempre abre o device de ENTRADA PADRÃO DO SISTEMA. Quem usa
-// headset e tem a webcam como padrão do SO ditava com o microfone errado e não
-// tinha onde consertar dentro do app. Escolher exige descer pro CoreAudio: a
-// lista vem do HAL e a escolha é uma propriedade da audio unit do inputNode.
+// A descoberta retorna só devices de ÁUDIO/ENTRADA e preserva o mesmo uniqueID
+// estável do CoreAudio já salvo pela preferência. A captura por AVCaptureDevice
+// é o que isola essa escolha da rota de saída Bluetooth do macOS.
 
 struct MicDevice {
-    let id: AudioDeviceID
     let uid: String
     let name: String
 }
 
-private func propertyString(_ id: AudioDeviceID, _ selector: AudioObjectPropertySelector) -> String? {
-    var addr = AudioObjectPropertyAddress(
-        mSelector: selector,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain)
-    var size = UInt32(MemoryLayout<CFString?>.size)
-    var value: CFString? = nil
-    let status = withUnsafeMutablePointer(to: &value) {
-        AudioObjectGetPropertyData(id, &addr, 0, nil, &size, $0)
-    }
-    guard status == noErr, let v = value else { return nil }
-    return v as String
-}
-
-/// Um device conta como microfone quando tem ao menos UM canal de ENTRADA.
-/// Sem esse filtro a lista viria cheia de saídas de áudio, e escolher uma delas
-/// daria um ditado que não grava nada.
-private func hasInputChannels(_ id: AudioDeviceID) -> Bool {
-    var addr = AudioObjectPropertyAddress(
-        mSelector: kAudioDevicePropertyStreamConfiguration,
-        mScope: kAudioObjectPropertyScopeInput,
-        mElement: kAudioObjectPropertyElementMain)
-    var size: UInt32 = 0
-    guard AudioObjectGetPropertyDataSize(id, &addr, 0, nil, &size) == noErr, size > 0 else {
-        return false
-    }
-    let raw = UnsafeMutableRawPointer.allocate(byteCount: Int(size), alignment: MemoryLayout<AudioBufferList>.alignment)
-    defer { raw.deallocate() }
-    guard AudioObjectGetPropertyData(id, &addr, 0, nil, &size, raw) == noErr else { return false }
-    let list = UnsafeMutableAudioBufferListPointer(raw.assumingMemoryBound(to: AudioBufferList.self))
-    for buffer in list where buffer.mNumberChannels > 0 { return true }
-    return false
-}
-
 func inputDevices() -> [MicDevice] {
-    var addr = AudioObjectPropertyAddress(
-        mSelector: kAudioHardwarePropertyDevices,
-        mScope: kAudioObjectPropertyScopeGlobal,
-        mElement: kAudioObjectPropertyElementMain)
-    var size: UInt32 = 0
-    guard AudioObjectGetPropertyDataSize(
-        AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr, size > 0
-    else { return [] }
-    let count = Int(size) / MemoryLayout<AudioDeviceID>.size
-    var ids = [AudioDeviceID](repeating: 0, count: count)
-    guard AudioObjectGetPropertyData(
-        AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids) == noErr
-    else { return [] }
-    return ids.compactMap { id in
-        guard hasInputChannels(id),
-              let uid = propertyString(id, kAudioDevicePropertyDeviceUID),
-              let name = propertyString(id, kAudioObjectPropertyName)
-        else { return nil }
-        return MicDevice(id: id, uid: uid, name: name)
+    AVCaptureDevice.DiscoverySession(
+        deviceTypes: [.microphone],
+        mediaType: .audio,
+        position: .unspecified
+    ).devices.compactMap { device in
+        guard device.isConnected else { return nil }
+        return MicDevice(uid: device.uniqueID, name: device.localizedName)
     }
 }
 
@@ -276,6 +302,13 @@ if selfcheck {
         "onDevice": recognizer.supportsOnDeviceRecognition,
     ])
     exit(0)
+}
+
+// A promessa da interface é 100% local. Se este Mac/locale não suportar o
+// reconhecedor on-device, aborta em vez de permitir fallback de rede.
+guard recognizer.supportsOnDeviceRecognition else {
+    emit(["error": "o reconhecimento local em Português (Brasil) não está disponível neste Mac. Ative o Ditado e baixe o idioma em Ajustes do Sistema → Teclado → Ditado."])
+    exit(1)
 }
 
 // ---- REGRA 2 (parte 1): arquivo temporário da sessão ───────────────────────
@@ -367,7 +400,7 @@ func signalStreamingDone() { // chamar com o stateLock TRAVADO
     streamingDone.signal()
 }
 
-func joined(_ a: String, _ b: String) -> String {
+@Sendable func joined(_ a: String, _ b: String) -> String {
     if a.isEmpty { return b }
     if b.isEmpty { return a }
     return a + " " + b
@@ -396,9 +429,7 @@ func finish(_ text: String, warn: String? = nil) {
 func makeRequest() -> SFSpeechAudioBufferRecognitionRequest {
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
-    if recognizer.supportsOnDeviceRecognition {
-        request.requiresOnDeviceRecognition = true
-    }
+    request.requiresOnDeviceRecognition = true
     if #available(macOS 13.0, *) {
         request.addsPunctuation = true
     }
@@ -494,80 +525,273 @@ func startUtterance() {
 
 // ---- microfone → buffers → reconhecedor CORRENTE (o request troca no restart)
 // E → arquivo da sessão (regra 2: a verdade vem do arquivo).
-let engine = AVAudioEngine()
-let input = engine.inputNode
-
-// A ESCOLHA DO MICROFONE VEM ANTES DE LER O FORMATO — e a ordem é o detalhe
-// que faz isto funcionar. `outputFormat(forBus:)` descreve o device que está
-// aberto AGORA; trocar o device depois deixaria tap, arquivo e reconhecedor
-// configurados com a taxa/canais do microfone errado.
 //
-// Device salvo que sumiu (headset desconectado) NÃO é erro fatal: cai no padrão
-// do sistema e AVISA, pelo mesmo canal `warn` que a passada de arquivo usa —
-// "nunca substitui o texto, só explica de onde ele veio". Ficar mudo aqui seria
-// a versão áudio da compactação silenciosa: você ditaria pelo mic errado sem
-// nunca saber por quê.
-if let alvo = deviceUID {
-    let disponiveis = inputDevices()
-    if let achado = disponiveis.first(where: { $0.uid == alvo }) {
-        var id = achado.id
-        let status = AudioUnitSetProperty(
-            input.audioUnit!,
-            kAudioOutputUnitProperty_CurrentDevice,
-            kAudioUnitScope_Global,
-            0,
-            &id,
-            UInt32(MemoryLayout<AudioDeviceID>.size))
-        if status != noErr {
-            emit(["warn": "não consegui abrir o microfone “\(achado.name)”; usando o padrão do sistema"])
-        }
-    } else {
-        emit(["warn": "o microfone escolhido não está conectado; usando o padrão do sistema"])
+// `AVAudioEngine.inputNode` nasce sobre `CADefaultDeviceAggregate`: no macOS 26,
+// a captura pode continuar presa à SAÍDA Bluetooth mesmo depois de a audio unit
+// aceitar outro `CurrentDevice`. A UI então mostra o microfone interno enquanto
+// o tap entrega silêncio. `AVCaptureSession` abre um AVCaptureDevice de entrada
+// explícito e não possui rota de saída, portanto o fone deixa de participar da
+// decisão. O uniqueID é o mesmo UID estável já persistido pela configuração.
+final class MicrophoneSink: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate {
+    let receive: (CMSampleBuffer) -> Void
+
+    init(receive: @escaping (CMSampleBuffer) -> Void) {
+        self.receive = receive
+    }
+
+    func captureOutput(
+        _ output: AVCaptureOutput,
+        didOutput sampleBuffer: CMSampleBuffer,
+        from connection: AVCaptureConnection
+    ) {
+        receive(sampleBuffer)
     }
 }
 
-let format = input.outputFormat(forBus: 0)
-
-let audioFileLock = NSLock()
-var audioFile: AVAudioFile?
-var audioUsable = false
-do {
-    audioFile = try AVAudioFile(forWriting: audioURL, settings: format.settings)
-    audioUsable = true
-} catch {
-    // sem arquivo o ditado continua (streaming), só perde a passada de qualidade.
-    audioUsable = false
+func pcmBuffer(from sampleBuffer: CMSampleBuffer) -> AVAudioPCMBuffer? {
+    guard let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return nil }
+    let format = AVAudioFormat(cmAudioFormatDescription: description)
+    let frames = AVAudioFrameCount(CMSampleBufferGetNumSamples(sampleBuffer))
+    guard frames > 0,
+          let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)
+    else { return nil }
+    buffer.frameLength = frames
+    let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
+        sampleBuffer,
+        at: 0,
+        frameCount: Int32(frames),
+        into: buffer.mutableAudioBufferList
+    )
+    return status == noErr ? buffer : nil
 }
 
-input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-    stateLock.lock()
-    let req = activeRequest
-    stateLock.unlock()
-    req?.append(buffer)
-    audioFileLock.lock()
-    if let f = audioFile {
-        do {
-            try f.write(from: buffer)
-        } catch {
-            // gravação furada = arquivo NÃO confiável: derruba a passada de
-            // arquivo (o STOP cai no streaming, com aviso) em vez de transcrever
-            // um áudio truncado achando que é a verdade.
-            audioFile = nil
-            audioUsable = false
-        }
+/// Abre o UID pedido. Device sumido ou que falhou ao abrir cai no padrão e
+/// AVISA; a preferência não é apagada. O retorno contém a entrada REAL que será
+/// publicada no `ready`, para não confiar apenas no seletor nem num status.
+func makeCaptureInput(preferredUID: String?) throws -> (AVCaptureDeviceInput, String?) {
+    guard let fallback = AVCaptureDevice.default(for: .audio) else {
+        throw NSError(
+            domain: "Frota.STT",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "nenhum microfone disponível"]
+        )
     }
-    audioFileLock.unlock()
+    guard let uid = preferredUID else {
+        return (try AVCaptureDeviceInput(device: fallback), nil)
+    }
+    guard let preferred = AVCaptureDevice(uniqueID: uid), preferred.isConnected else {
+        return (
+            try AVCaptureDeviceInput(device: fallback),
+            "o microfone escolhido não está conectado; usando o padrão do sistema"
+        )
+    }
+    do {
+        return (try AVCaptureDeviceInput(device: preferred), nil)
+    } catch {
+        guard preferred.uniqueID != fallback.uniqueID else { throw error }
+        return (
+            try AVCaptureDeviceInput(device: fallback),
+            "não consegui abrir o microfone “\(preferred.localizedName)”; usando o padrão do sistema"
+        )
+    }
 }
-engine.prepare()
-startUtterance() // task pronto ANTES do engine ligar: nenhum buffer se perde
+
+let captureInput: AVCaptureDeviceInput
+let inputWarn: String?
 do {
-    try engine.start()
+    (captureInput, inputWarn) = try makeCaptureInput(preferredUID: deviceUID)
 } catch {
     emit(["error": "não consegui abrir o microfone: \(error.localizedDescription)"])
     removeAudioFile()
     exit(1)
 }
-emit(["ready": true])
+if let inputWarn { emit(["warn": inputWarn]) }
+
+let captureSession = AVCaptureSession()
+let captureOutput = AVCaptureAudioDataOutput()
+let captureQueue = DispatchQueue(label: "frota.stt.capture")
+let firstBuffer = DispatchSemaphore(value: 0)
+var firstBufferArrived = false // tocado só na captureQueue
+var captureObservers: [NSObjectProtocol] = []
+let audioFileLock = NSLock()
+var audioFile: AVAudioFile?
+var audioConverter: AVAudioConverter?
+var audioFileFormat: AVAudioFormat?
+var audioUsable = true
+var peakRms: Float = 0 // tocado só na captureQueue; lido depois de sync {}
+var lastLevelEmitAt: TimeInterval = 0
+
+func signalFirstBuffer() { // chamar só na captureQueue
+    if firstBufferArrived { return }
+    firstBufferArrived = true
+    firstBuffer.signal()
+}
+
+@Sendable func removeCaptureObservers() {
+    let center = NotificationCenter.default
+    captureObservers.forEach { center.removeObserver($0) }
+    captureObservers.removeAll()
+}
+
+/// Desconexão/interrupção fecha a sessão pelo MESMO pipeline do STOP: preserva
+/// tudo que já foi dito e avisa a UI, em vez de deixar um falso "ouvindo".
+func captureWasLost(_ message: String) {
+    stateLock.lock()
+    if stopped || finished {
+        stateLock.unlock()
+        return
+    }
+    stopped = true
+    stateLock.unlock()
+    emit(["captureLost": message])
+    DispatchQueue.global().async { stopPipeline() }
+    DispatchQueue.global().asyncAfter(deadline: .now() + 8) {
+        stateLock.lock()
+        let full = streamedText()
+        stateLock.unlock()
+        finish(full, warn: full.isEmpty
+            ? message
+            : "\(message) O texto capturado até aqui foi aproveitado.")
+    }
+}
+
+let microphoneSink = MicrophoneSink { sampleBuffer in
+    stateLock.lock()
+    let req = activeRequest
+    stateLock.unlock()
+    req?.appendAudioSampleBuffer(sampleBuffer)
+
+    guard let buffer = pcmBuffer(from: sampleBuffer) else {
+        audioFileLock.lock()
+        audioUsable = false
+        audioFile = nil
+        audioFileLock.unlock()
+        signalFirstBuffer()
+        return
+    }
+
+    let rms = rmsAmplitude(buffer)
+    peakRms = max(peakRms, rms)
+    let now = ProcessInfo.processInfo.systemUptime
+    if now - lastLevelEmitAt >= 0.1 {
+        lastLevelEmitAt = now
+        emit(["level": meterLevel(forRms: rms)])
+    }
+
+    audioFileLock.lock()
+    if audioUsable {
+        do {
+            if audioFile == nil {
+                guard let canonical = AVAudioFormat(
+                    commonFormat: .pcmFormatFloat32,
+                    sampleRate: buffer.format.sampleRate,
+                    channels: buffer.format.channelCount,
+                    interleaved: false
+                ),
+                let converter = AVAudioConverter(from: buffer.format, to: canonical)
+                else {
+                    throw NSError(
+                        domain: "Frota.STT",
+                        code: 2,
+                        userInfo: [NSLocalizedDescriptionKey: "formato do microfone incompatível"]
+                    )
+                }
+                audioFileFormat = canonical
+                audioConverter = converter
+                audioFile = try AVAudioFile(
+                    forWriting: audioURL,
+                    settings: canonical.settings
+                )
+            }
+            guard let canonical = audioFileFormat,
+                  let converter = audioConverter,
+                  let converted = AVAudioPCMBuffer(
+                      pcmFormat: canonical,
+                      frameCapacity: buffer.frameLength
+                  )
+            else {
+                throw NSError(
+                    domain: "Frota.STT",
+                    code: 3,
+                    userInfo: [NSLocalizedDescriptionKey: "conversor do microfone indisponível"]
+                )
+            }
+            // Bluetooth HFP entrega Int16/16 kHz; o microfone interno, Float32.
+            // Normalizar o CAF evita o abort do ExtAudioFile ao receber Int16
+            // interleaved, sem mudar sample rate nem canais do device escolhido.
+            try converter.convert(to: converted, from: buffer)
+            try audioFile?.write(from: converted)
+        } catch {
+            // gravação furada = arquivo NÃO confiável: derruba a passada de
+            // arquivo (o STOP cai no streaming, com aviso) em vez de transcrever
+            // um áudio truncado achando que é a verdade.
+            audioFile = nil
+            audioConverter = nil
+            audioFileFormat = nil
+            audioUsable = false
+        }
+    }
+    audioFileLock.unlock()
+    signalFirstBuffer()
+}
+
+captureSession.beginConfiguration()
+guard captureSession.canAddInput(captureInput) else {
+    emit(["error": "não consegui conectar o microfone escolhido à captura"])
+    removeAudioFile()
+    exit(1)
+}
+captureSession.addInput(captureInput)
+captureOutput.setSampleBufferDelegate(microphoneSink, queue: captureQueue)
+guard captureSession.canAddOutput(captureOutput) else {
+    emit(["error": "não consegui preparar a captura do microfone"])
+    removeAudioFile()
+    exit(1)
+}
+captureSession.addOutput(captureOutput)
+captureSession.commitConfiguration()
+
+startUtterance() // task pronto ANTES da captura ligar: nenhum buffer se perde
+captureSession.startRunning()
+guard captureSession.isRunning else {
+    emit(["error": "não consegui iniciar a captura do microfone"])
+    removeAudioFile()
+    exit(1)
+}
+guard firstBuffer.wait(timeout: .now() + 2) == .success else {
+    captureSession.stopRunning()
+    emit(["error": "o microfone abriu, mas não entregou áudio"])
+    removeAudioFile()
+    exit(1)
+}
+emit([
+    "ready": true,
+    "deviceUid": captureInput.device.uniqueID,
+    "deviceName": captureInput.device.localizedName,
+])
+
+let center = NotificationCenter.default
+captureObservers.append(center.addObserver(
+    forName: AVCaptureDevice.wasDisconnectedNotification,
+    object: captureInput.device,
+    queue: nil
+) { _ in
+    captureWasLost("O microfone “\(captureInput.device.localizedName)” foi desconectado.")
+})
+captureObservers.append(center.addObserver(
+    forName: AVCaptureSession.wasInterruptedNotification,
+    object: captureSession,
+    queue: nil
+) { _ in
+    captureWasLost("A captura do microfone “\(captureInput.device.localizedName)” foi interrompida.")
+})
+captureObservers.append(center.addObserver(
+    forName: AVCaptureSession.runtimeErrorNotification,
+    object: captureSession,
+    queue: nil
+) { _ in
+    captureWasLost("A captura do microfone “\(captureInput.device.localizedName)” falhou.")
+})
 
 // ---- REGRA 2 (parte 2): a passada sobre o ARQUIVO INTEIRO ──────────────────
 
@@ -579,7 +803,7 @@ enum FilePass {
 
 /// Transcreve o arquivo da sessão INTEIRO (on-device, mesma stack do streaming).
 /// Bloqueia até o resultado ou até `deadline` segundos.
-func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
+@Sendable func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
     let fm = FileManager.default
     let attrs = try? fm.attributesOfItem(atPath: url.path)
     let size = (attrs?[.size] as? NSNumber)?.intValue ?? 0
@@ -588,9 +812,7 @@ func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
     }
     let request = SFSpeechURLRecognitionRequest(url: url)
     request.shouldReportPartialResults = false
-    if recognizer.supportsOnDeviceRecognition {
-        request.requiresOnDeviceRecognition = true
-    }
+    request.requiresOnDeviceRecognition = true
     if #available(macOS 13.0, *) {
         request.addsPunctuation = true
     }
@@ -628,17 +850,27 @@ func transcribeFile(_ url: URL, deadline: TimeInterval) -> FilePass {
 
 /// Pipeline do STOP: drena o mic, encerra o áudio, roda a passada de arquivo e
 /// conclui. Roda fora da thread do stdin (bloqueia de propósito).
-func stopPipeline(request: SFSpeechAudioBufferRecognitionRequest?) {
-    // 1) DRAIN com o mic AINDA aberto: os últimos buffers do tap chegam ao
+@Sendable func stopPipeline() {
+    removeCaptureObservers()
+    stateLock.lock()
+    let request = activeRequest
+    stateLock.unlock()
+    // 1) DRAIN com o mic AINDA aberto: os últimos buffers da captura chegam ao
     //    request (depois do endAudio, append é ignorado — por isso o drain vem
     //    ANTES dele). É o fim da frase que sumia.
     Thread.sleep(forTimeInterval: 0.3)
-    // 2) fecha a entrada de áudio do reconhecedor e SÓ ENTÃO para o engine.
+    // 2) fecha a entrada de áudio do reconhecedor e SÓ ENTÃO para a captura.
     request?.endAudio()
-    engine.stop()
-    input.removeTap(onBus: 0)
+    captureSession.stopRunning()
+    captureOutput.setSampleBufferDelegate(nil, queue: nil)
+    captureQueue.sync {} // nenhum write do callback segue em voo
+    let noSignalWarning = peakRms < 0.0005
+        ? "Não detectei sinal no microfone “\(captureInput.device.localizedName)”. Confira a entrada de som do macOS."
+        : nil
     audioFileLock.lock()
     audioFile = nil // fecha o arquivo (flush) — o ExtAudioFile solta no deinit
+    audioConverter = nil
+    audioFileFormat = nil
     let fileOK = audioUsable
     audioFileLock.unlock()
     // 3) dá um tempo curto pro streaming fechar (melhora o texto de fallback).
@@ -650,11 +882,16 @@ func stopPipeline(request: SFSpeechAudioBufferRecognitionRequest?) {
     stateLock.unlock()
     streamingTask?.cancel() // fora do lock: o cancel pode chamar o handler
 
+    func warningForOutcome(_ warning: String?) -> String? {
+        warning ?? (fallback.isEmpty ? noSignalWarning : nil)
+    }
+
     // 4) a verdade: passada sobre o arquivo inteiro.
     guard fileOK else {
-        finish(fallback, warn: fallback.isEmpty
+        let warning = fallback.isEmpty
             ? nil
-            : "o áudio da sessão não pôde ser gravado, texto veio do reconhecimento ao vivo")
+            : "o áudio da sessão não pôde ser gravado, texto veio do reconhecimento ao vivo"
+        finish(fallback, warn: warningForOutcome(warning))
         return
     }
     switch transcribeFile(audioURL, deadline: 5.0) {
@@ -666,11 +903,12 @@ func stopPipeline(request: SFSpeechAudioBufferRecognitionRequest?) {
         let warn = normalizedForCompare(best) == normalizedForCompare(t)
             ? nil
             : "a leitura do áudio veio incompleta, texto do reconhecimento ao vivo aproveitado"
-        finish(best, warn: warn)
+        finish(best, warn: warningForOutcome(warn))
     case .failed(let why):
-        finish(fallback, warn: fallback.isEmpty
+        let warning = fallback.isEmpty
             ? nil
-            : "não deu pra reler o áudio (\(why)), texto do reconhecimento ao vivo aproveitado")
+            : "não deu pra reler o áudio (\(why)), texto do reconhecimento ao vivo aproveitado"
+        finish(fallback, warn: warningForOutcome(warning))
     }
 }
 
@@ -679,10 +917,13 @@ DispatchQueue.global().async {
     while let line = readLine(strippingNewline: true) {
         if line == "STOP" {
             stateLock.lock()
+            if stopped {
+                stateLock.unlock()
+                return
+            }
             stopped = true
-            let req = activeRequest
             stateLock.unlock()
-            DispatchQueue.global().async { stopPipeline(request: req) }
+            DispatchQueue.global().async { stopPipeline() }
             // rede: se a passada de arquivo travar, devolve o acumulado do
             // streaming (a UI nunca fica pendurada).
             DispatchQueue.global().asyncAfter(deadline: .now() + 8) {

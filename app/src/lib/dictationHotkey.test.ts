@@ -267,6 +267,31 @@ describe("createDictationHotkey — tap × hold", () => {
     expect(order).toEqual(["start", "stop"])
   })
 
+  it("navegação durante o hold encerra o mesmo alvo que iniciou", async () => {
+    const original = makeTarget()
+    const seguinte = makeTarget()
+    let atual = original
+    let now = 0
+    const h = createDictationHotkey({
+      target: () => atual,
+      combo: () => DEFAULT_DICTATION_HOTKEY,
+      enabled: () => true,
+      blocked: () => false,
+      onNoTarget: vi.fn(),
+      now: () => now,
+    })
+
+    h.onKeyDown(ev())
+    atual = seguinte
+    now = HOLD_MS
+    h.onKeyUp(ev())
+    await flush()
+
+    expect(original.start).toHaveBeenCalledTimes(1)
+    expect(original.stop).toHaveBeenCalledTimes(1)
+    expect(seguinte.stop).not.toHaveBeenCalled()
+  })
+
   it("keyup sem os modificadores (⌥ solto antes do espaço) ainda fecha o hold", async () => {
     const h = makeHotkey()
     h.onKeyDown(ev())

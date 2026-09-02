@@ -7,6 +7,34 @@ import { isTauri } from "@/lib/db"
  *  de áudio falhou e o texto veio do reconhecimento ao vivo. */
 export type SttOutcome = { text: string; warn: string | null }
 
+/** Prova do dispositivo que abriu, não uma repetição da preferência salva. */
+export type SttStartOutcome = {
+  attemptId: string
+  deviceUid: string
+  deviceName: string
+  warn: string | null
+}
+
+/** Todos os eventos carregam o dono da tentativa. Há vários MicButton montados
+ * ao mesmo tempo, mas a sessão nativa é global; sem esta identidade, uma
+ * superfície que perdeu a corrida de abertura poderia consumir fala alheia. */
+export type SttPartialEvent = { attemptId: string; text: string }
+export type SttLevelEvent = { attemptId: string; level: number }
+export type SttCaptureLostEvent = { attemptId: string; message: string }
+export type SttEndedEvent = {
+  attemptId: string
+  text?: string
+  error?: string
+  warn?: string | null
+}
+
+export function sttEventBelongsTo(
+  attemptId: string | null,
+  event: { attemptId: string },
+): boolean {
+  return attemptId !== null && event.attemptId === attemptId
+}
+
 /** Um microfone de entrada. `uid` é o id ESTÁVEL do CoreAudio — é ele que a
  *  preferência guarda. O `name` muda com o idioma do sistema e se repete entre
  *  dois headsets iguais, então guardar nome apontaria pro device errado. */
@@ -29,8 +57,9 @@ export async function sttDevices(): Promise<MicDevice[]> {
 export async function sttStart(
   vocab: string[],
   device: string | null,
-): Promise<void> {
-  return invoke("stt_start", { vocab, device })
+  attemptId: string,
+): Promise<SttStartOutcome> {
+  return invoke<SttStartOutcome>("stt_start", { vocab, device, attemptId })
 }
 
 export async function sttStop(): Promise<SttOutcome> {

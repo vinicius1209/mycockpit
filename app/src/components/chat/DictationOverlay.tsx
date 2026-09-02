@@ -45,6 +45,22 @@ export function dictationPillView(phase: DictationPhase): {
 /** Teto de caracteres do parcial exibido (≈2 linhas do pill). */
 export const PARTIAL_CLIP_CHARS = 160
 
+/** Alturas do medidor neutro, derivadas somente do nível real recebido. */
+export function inputSignalBars(level: number): [number, number, number] {
+  const safe = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
+  return [
+    Math.round(3 + safe * 5),
+    Math.round(3 + safe * 9),
+    Math.round(3 + safe * 7),
+  ]
+}
+
+export function inputSignalLabel(level: number): string {
+  if (!Number.isFinite(level) || level < 0.08) return "Sem sinal do microfone"
+  if (level < 0.28) return "Sinal baixo do microfone"
+  return "Sinal presente no microfone"
+}
+
 /** Trunca PELO COMEÇO: mantém a cauda (últimas palavras) e prefixa "…".
  *  Tenta cortar em fronteira de palavra sem perder mais que ~20 chars. */
 export function clipPartialStart(
@@ -86,20 +102,30 @@ export function DictationPill({
   partial,
   since,
   hint,
+  deviceName,
+  level = 0,
   finalizing = false,
   placeholder = "Ouvindo…",
 }: {
   partial: string | null
   since: number
   hint?: string
+  deviceName?: string | null
+  level?: number
   finalizing?: boolean
   placeholder?: string
 }) {
   const combo = useApp((s) => s.settings.dictationHotkey)
-  const resolvedHint =
-    hint ?? (combo ? `Esc cancela · ${formatHotkey(combo)} para` : "Esc cancela")
+  const actionHint =
+    hint ??
+    (combo ? `Esc cancela · ${formatHotkey(combo)} para` : "Esc cancela")
+  const resolvedHint = [deviceName?.trim(), actionHint]
+    .filter(Boolean)
+    .join(" · ")
   const clock = useClock(since)
   const text = partial?.trim() ? clipPartialStart(partial) : ""
+  const safeLevel = Number.isFinite(level) ? Math.min(1, Math.max(0, level)) : 0
+  const bars = inputSignalBars(safeLevel)
   return (
     <div
       className={cn(
@@ -111,6 +137,25 @@ export function DictationPill({
         <Loader2 className="size-2.5 shrink-0 animate-spin text-muted-foreground motion-reduce:animate-none" />
       ) : (
         <span className="size-2 shrink-0 rounded-full bg-st-error motion-safe:animate-pulse" />
+      )}
+      {!finalizing && (
+        <span
+          role="meter"
+          aria-label={inputSignalLabel(level)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={Math.round(safeLevel * 100)}
+          className="flex h-3 w-4 shrink-0 items-end justify-center gap-px"
+        >
+          {bars.map((height, index) => (
+            <span
+              // Os índices são posições fixas do medidor, não itens mutáveis.
+              key={index}
+              className="w-1 rounded-full bg-muted-foreground/70 transition-[height] duration-75 motion-reduce:transition-none"
+              style={{ height }}
+            />
+          ))}
+        </span>
       )}
       {/* relógio fora do live region — senão o leitor de tela anuncia a cada
           segundo; o parcial (abaixo) é quem fala. */}
@@ -153,6 +198,8 @@ export function DictationOverlay({
   partial,
   since,
   hint,
+  deviceName,
+  level,
   finalizing = false,
   placeholder,
   className,
@@ -161,6 +208,8 @@ export function DictationOverlay({
   partial: string | null
   since: number
   hint?: string
+  deviceName?: string | null
+  level?: number
   finalizing?: boolean
   placeholder?: string
   className?: string
@@ -190,6 +239,8 @@ export function DictationOverlay({
         partial={partial}
         since={since}
         hint={hint}
+        deviceName={deviceName}
+        level={level}
         finalizing={finalizing}
         placeholder={placeholder}
       />

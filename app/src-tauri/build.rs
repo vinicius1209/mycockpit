@@ -10,12 +10,14 @@ fn build_stt_sidecar() {
     println!("cargo:rerun-if-changed=stt/main.swift");
     println!("cargo:rerun-if-changed=stt/Info.plist");
     let src = Path::new("stt/main.swift");
+    let plist = Path::new("stt/Info.plist");
     let out = Path::new("bin/mycockpit-stt-aarch64-apple-darwin");
     let needs = match (
         src.metadata().and_then(|m| m.modified()),
+        plist.metadata().and_then(|m| m.modified()),
         out.metadata().and_then(|m| m.modified()),
     ) {
-        (Ok(s), Ok(o)) => s > o,
+        (Ok(s), Ok(p), Ok(o)) => s > o || p > o,
         _ => true,
     };
     if !needs {

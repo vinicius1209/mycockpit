@@ -3048,6 +3048,9 @@ Decisões tomadas na entrevista de discovery (junho/2026). Formato curto:
   dois arquivos; refiz com casamento de parênteses.
 - **Verificado:** `swiftc` limpo + `--selftest` 10/10, `cargo` 510, `tsc` 0,
   `vitest` 3132, 8 guardas, e2e 25/25.
+- **Correção (01/09/2026):** a seleção e o UID permanecem, mas o mecanismo de
+  captura deste ADR foi substituído pela ADR-145. O `CurrentDevice` aceito pela
+  audio unit não isolava de forma confiável a entrada da saída Bluetooth.
 
 ### ADR-081 — F4: segurar o sono, e a trava com relógio de morte próprio ✅
 - **Contexto (24/08/2026):** missão de 4 fases às 3h da manhã que morre porque o
@@ -5270,6 +5273,78 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   disputa em `finalizing` como atividade, mas omitia esse mesmo estado no turno
   linear. A tray passa a contar `running || finalizing`; assim, “Frota pronta”
   e o gate de build só aparecem depois que recibo e persistência assentarem.
+
+### ADR-145 - a captura do ditado pertence ao microfone, não à saída de som ✅
+- **Incidente real (01/09/2026):** com `Microfone (MacBook Pro)` selecionado na
+  Frota e um fone Bluetooth na saída do macOS, o ditado não recebia voz. Ele só
+  voltou depois que a pessoa trocou a saída para `Alto-falantes (MacBook Pro)`.
+  A segunda imagem era o seletor de **saída**, prova de que uma decisão externa
+  ainda alterava uma entrada que a UI mostrava como explícita.
+- **Causa:** `AVAudioEngine.inputNode` nasce sobre o
+  `CADefaultDeviceAggregate`, que combina a rota padrão de entrada e saída. O
+  `AudioUnitSetProperty(CurrentDevice)` retornava `noErr`, mas isso só provava a
+  propriedade aceita, não que os buffers seguintes estavam isolados da rota
+  Bluetooth. A entrega de 24/08 validou enumeração, compilação e suítes, não um
+  buffer real com entrada e saída divergentes.
+- **Decisão:** o sidecar usa `AVCaptureSession` + `AVCaptureDeviceInput` para
+  capturar. Essa sessão só tem entrada: o `uniqueID` escolhido abre o device
+  nominal diretamente e a saída do macOS não participa do grafo. O discovery
+  do AVFoundation expõe nesta máquina os mesmos UIDs estáveis já persistidos,
+  portanto não há migração nem perda da preferência.
+- **Prova antes de prontidão:** `ready` só sai depois do primeiro
+  `CMSampleBuffer`, e carrega `deviceUid` e `deviceName` do input realmente
+  adicionado. O Rust continua compatível ao ler `ready`, mas o protocolo passa
+  a ter evidência suficiente para diagnóstico sem confiar na tela ou em
+  `noErr`. Device ausente ou impossível de abrir continua caindo no padrão com
+  `warn`, sem apagar a escolha. Aviso emitido antes do primeiro buffer é
+  preservado pelo Rust até o `stop`, em vez de sumir durante a espera do ready.
+- **D1/D2 preservados:** cada sample buffer alimenta o streaming e é copiado
+  para o mesmo CAF temporário, normalizado em Float32 porque Bluetooth HFP
+  entrega Int16/16 kHz e o `ExtAudioFile` abortou ao receber esse formato
+  diretamente. No STOP, o drain ainda ocorre com o microfone aberto; depois vêm
+  `endAudio`, parada da sessão, flush do arquivo e releitura completa. A mudança
+  é a fonte dos buffers, não o contrato de texto.
+
+### ADR-146 - prontidão do ditado exige identidade, sinal e linha de vida ✅
+- **Problema:** depois de isolar entrada e saída, `ready` já carregava o device
+  real, mas o Rust descartava essa evidência. A interface repetia apenas a
+  intenção das Configurações, não mostrava nível de entrada, não reagia à perda
+  do device durante a sessão e não permitia cancelar os até 90 segundos de
+  abertura. Além disso, a promessa "100% local" ainda aceitava criar requests
+  sem `requiresOnDeviceRecognition` quando o locale não declarava suporte.
+- **Contrato de início:** a sessão Rust passa por `Starting(id)` antes de esperar
+  permissões e primeiro buffer. `stt_cancel` alcança tanto essa fase quanto
+  `Active`; o identificador impede que a conclusão atrasada de uma tentativa
+  cancelada mate uma nova. O resultado de `stt_start` contém `deviceUid`,
+  `deviceName` e eventual fallback, todos produzidos pelo sidecar que abriu a
+  entrada. `ready` sem identidade não conta como sucesso.
+- **Correção concorrente (02/09/2026):** a identidade da tentativa passa da
+  superfície ao Rust e volta em todo evento (`level`, `partial`, perda e fim).
+  Assim, os vários botões montados não consomem eventos da sessão global que
+  pertence a outro. `Stopping(id)` mantém essa sessão reservada durante drain,
+  releitura e cancelamento. O rascunho de destino é fixado no início para uma
+  navegação não deslocar a transcrição para outra conversa. O atalho também
+  conserva o botão escolhido no `keydown`; o `keyup` nunca para uma superfície
+  que apareceu depois.
+- **Sinal real:** o sidecar calcula RMS dos buffers Float32, Float64, Int16 ou
+  Int32, converte a escala de -60 dB a 0 dB em `0...1` e publica no máximo dez
+  amostras por segundo. O pill mostra medidor neutro e nome efetivo; não há
+  movimento inventado no medidor sem áudio. Sessão vazia com pico abaixo de -66 dB
+  devolve aviso acionável sobre a entrada do macOS.
+- **Perda de captura:** desconexão do device, interrupção ou erro do
+  `AVCaptureSession` iniciam uma única finalização pelo mesmo pipeline do STOP.
+  A UI avisa imediatamente, aproveita o texto acumulado e sai do falso estado
+  de escuta quando o sidecar encerra.
+- **Privacidade fail-closed:** streaming e releitura de arquivo sempre exigem
+  reconhecimento on-device. Se Português (Brasil) não o suportar, o início
+  falha com o caminho de Ajustes em vez de permitir fallback de rede. A
+  enumeração, a preferência estável e D1/D2 não mudam.
+- **Prova de ponta (02/09/2026):** um bundle isolado da Frota enumerou cinco
+  entradas reais, abriu `BuiltInMicrophoneDevice`, publicou o nome
+  `Microfone (MacBook Pro)`, RMS e parcial reais, concluiu por STOP, reabriu e
+  cancelou por Esc. O app principal e seu banco permaneceram intocados. A
+  comparação com Paseo confirmou a mesma fronteira: identidade por ditado em
+  todo evento e finalização aceita antes de liberar a próxima captura.
 
 ### ADR-147 - preflight de capability não é execução do agent ✅
 - **Incidente real (01/09/2026):** um binding Playwright opcional, configurado

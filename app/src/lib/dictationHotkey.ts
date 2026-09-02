@@ -262,6 +262,9 @@ export function createDictationHotkey(deps: DictationHotkeyDeps): {
   let sessionCode: string | null = null
   /** o keydown INICIOU a gravação (false = já gravava: tap-para-parar). */
   let startedOnDown = false
+  /** O keyup encerra o mesmo dono escolhido no keydown. Reconsultar o alvo
+   * depois de uma navegação poderia parar outra superfície. */
+  let sessionTarget: DictationTarget | null = null
   /** promessa do start em voo — o stop do hold espera ela assentar. */
   let pendingStart: Promise<void> | null = null
 
@@ -292,6 +295,7 @@ export function createDictationHotkey(deps: DictationHotkeyDeps): {
     }
     downAt = now()
     sessionCode = p.code
+    sessionTarget = t
     if (t.isRecording()) {
       // já gravando: o tap alterna pra PARAR — quem para é o keyup.
       startedOnDown = false
@@ -317,7 +321,8 @@ export function createDictationHotkey(deps: DictationHotkeyDeps): {
     sessionCode = null
     const started = pendingStart
     pendingStart = null
-    const t = deps.target()
+    const t = sessionTarget
+    sessionTarget = null
     if (!t) return
     if (!startedOnDown) {
       // tap com gravação em andamento ⇒ para e insere.

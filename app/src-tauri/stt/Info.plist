@@ -7,7 +7,7 @@
   <key>CFBundleName</key>
   <string>mycockpit-stt</string>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Ditado de prompts no MyCockpit (o áudio não sai do seu Mac).</string>
+  <string>Ditado de prompts na Frota (o áudio não sai do seu Mac).</string>
   <key>NSSpeechRecognitionUsageDescription</key>
   <string>Transcrição local (on-device) dos seus prompts em pt-BR.</string>
 </dict>

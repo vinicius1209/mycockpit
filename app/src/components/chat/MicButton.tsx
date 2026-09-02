@@ -9,7 +9,16 @@ import {
   type DictationPhase,
 } from "@/components/chat/DictationOverlay"
 import { formatHotkey, registerDictationTarget } from "@/lib/dictationHotkey"
-import { sttStart, sttStop, sttCancel } from "@/lib/stt"
+import {
+  sttStart,
+  sttStop,
+  sttCancel,
+  sttEventBelongsTo,
+  type SttCaptureLostEvent,
+  type SttEndedEvent,
+  type SttLevelEvent,
+  type SttPartialEvent,
+} from "@/lib/stt"
 import { useChat } from "@/store/chat"
 import { useApp, useActiveProject } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
@@ -70,6 +79,12 @@ export function MicButton({
   const [state, setState] = useState<MicState>("idle")
   const [since, setSince] = useState(0)
   const [partial, setPartial] = useState("")
+  const [level, setLevel] = useState(0)
+  const [activeDeviceName, setActiveDeviceName] = useState<string | null>(null)
+  const startAttemptRef = useRef(0)
+  const activeAttemptIdRef = useRef<string | null>(null)
+  const targetConvIdRef = useRef<string | null>(null)
+  const captureLostRef = useRef<string | null>(null)
   // Espelho SÍNCRONO do estado: o atalho de ditado decide (isRecording) e age
   // (start→stop encadeado no hold) em microtasks, antes do re-render — closures
   // presas no state do último render errariam a decisão.
@@ -85,7 +100,7 @@ export function MicButton({
       onText(text)
       return
     }
-    const convId = useChat.getState().activeId
+    const convId = targetConvIdRef.current
     if (!convId) return
     const cur = useComposerDrafts.getState().byConv[convId]?.text ?? ""
     useComposerDrafts
@@ -99,13 +114,43 @@ export function MicButton({
       toast("Ditado disponível no app (tauri dev)")
       return
     }
+    const attempt = ++startAttemptRef.current
+    const attemptId = crypto.randomUUID()
+    const wasCancelled = () =>
+      stateRef.current !== "starting" || attempt !== startAttemptRef.current
+    activeAttemptIdRef.current = attemptId
+    targetConvIdRef.current = onText ? null : useChat.getState().activeId
+    captureLostRef.current = null
+    setLevel(0)
+    setActiveDeviceName(null)
     go("starting")
     try {
-      await sttStart(buildVocab(project?.name, vocab), device)
+      const opened = await sttStart(
+        buildVocab(project?.name, vocab),
+        device,
+        attemptId,
+      )
+      // O usuário pode cancelar enquanto o comando ainda espera permissão ou o
+      // primeiro buffer. Uma resposta atrasada não ressuscita a gravação.
+      if (wasCancelled()) {
+        await sttCancel().catch(() => {})
+        return
+      }
+      if (opened.attemptId !== attemptId) {
+        await sttCancel().catch(() => {})
+        throw new Error("o microfone respondeu para outra tentativa")
+      }
+      setActiveDeviceName(opened.deviceName)
+      if (opened.warn) toast.warning(opened.warn)
       setSince(Date.now())
       go("rec")
     } catch (e) {
+      if (wasCancelled()) {
+        return
+      }
       toast.error(typeof e === "string" ? e : "Falha ao iniciar o ditado")
+      activeAttemptIdRef.current = null
+      targetConvIdRef.current = null
       go("idle")
     }
   }
@@ -124,19 +169,32 @@ export function MicButton({
     } catch (e) {
       toast.error(typeof e === "string" ? e : "Falha na transcrição")
     } finally {
+      activeAttemptIdRef.current = null
+      targetConvIdRef.current = null
+      setLevel(0)
+      setActiveDeviceName(null)
+      captureLostRef.current = null
       go("idle")
     }
   }
 
   function cancel() {
-    if (stateRef.current !== "rec") return
-    void sttCancel()
+    if (stateRef.current !== "starting" && stateRef.current !== "rec") return
+    startAttemptRef.current += 1
+    activeAttemptIdRef.current = null
+    targetConvIdRef.current = null
     go("idle")
+    setLevel(0)
+    setActiveDeviceName(null)
+    captureLostRef.current = null
+    void sttCancel().catch((e) => {
+      toast.error(typeof e === "string" ? e : "Falha ao cancelar o ditado")
+    })
   }
 
-  // Esc descarta a gravação
+  // Esc descarta tanto a gravação quanto a abertura ainda em andamento.
   useEffect(() => {
-    if (state !== "rec") return
+    if (state !== "starting" && state !== "rec") return
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") cancel()
     }
@@ -162,18 +220,18 @@ export function MicButton({
     })
   }, [enabled])
 
-  // Durante a gravação: parcial ao vivo (feedback de que o mic CAPTOU — perda
-  // de palavras fica visível na hora) + morte inesperada do sidecar (sem isso
-  // a UI ficava em "rec" com o mic morto). No stop normal o estado já é "busy"
-  // e estes listeners nem existem.
+  // Durante abertura/gravação: nível e parcial vêm do áudio REAL. Desconexão
+  // fecha pelo sidecar e preserva o texto capturado; a UI não fica num falso
+  // "ouvindo". No stop normal o estado já é "busy" e os listeners saem.
   useEffect(() => {
-    if (state !== "rec") {
+    if (state !== "starting" && state !== "rec") {
       // o parcial SOBREVIVE ao "busy": é o que o pill de "finalizando" mostra
       // enquanto o texto não chega. Só some quando a gravação sai de cena.
       if (state !== "busy") setPartial("")
       return
     }
     let disposed = false
+    let listenerFailureShown = false
     const uns: UnlistenFn[] = []
     const track = (p: Promise<UnlistenFn>) =>
       void p
@@ -181,15 +239,53 @@ export function MicButton({
           if (disposed) u()
           else uns.push(u)
         })
-        .catch(() => {})
-    track(listen<string>("stt://partial", (e) => setPartial(e.payload)))
+        .catch(() => {
+          if (disposed || listenerFailureShown) return
+          listenerFailureShown = true
+          toast.error("Não consegui acompanhar o microfone. O ditado foi cancelado.")
+          cancel()
+        })
     track(
-      listen<{ text?: string; error?: string }>("stt://ended", (e) => {
-        void sttCancel() // limpa a sessão do sidecar morto
+      listen<SttPartialEvent>("stt://partial", (e) => {
+        if (sttEventBelongsTo(activeAttemptIdRef.current, e.payload)) {
+          setPartial(e.payload.text)
+        }
+      }),
+    )
+    track(
+      listen<SttLevelEvent>("stt://level", (e) => {
+        if (sttEventBelongsTo(activeAttemptIdRef.current, e.payload)) {
+          setLevel(e.payload.level)
+        }
+      }),
+    )
+    track(
+      listen<SttCaptureLostEvent>("stt://capture-lost", (e) => {
+        if (!sttEventBelongsTo(activeAttemptIdRef.current, e.payload)) return
+        captureLostRef.current = e.payload.message
+        toast.warning(e.payload.message)
+      }),
+    )
+    track(
+      listen<SttEndedEvent>("stt://ended", (e) => {
+        if (!sttEventBelongsTo(activeAttemptIdRef.current, e.payload)) return
+        // O stop normal entrega o mesmo texto pelo retorno do comando. O
+        // evento é apenas a linha de vida para encerramento inesperado.
+        if (stateRef.current === "busy") return
+        void sttCancel().catch(() => {}) // limpa a sessão do sidecar morto
+        const captureLost = captureLostRef.current
+        const warning = e.payload?.warn
         const t = e.payload?.text?.trim()
         if (t) deliver(t)
+        if (warning && warning !== captureLost) toast.warning(warning)
         if (e.payload?.error) toast.error(e.payload.error)
-        else toast("O ditado encerrou sozinho, texto aproveitado no rascunho")
+        else if (!captureLost)
+          toast("O ditado encerrou sozinho, texto aproveitado no rascunho")
+        setLevel(0)
+        setActiveDeviceName(null)
+        captureLostRef.current = null
+        activeAttemptIdRef.current = null
+        targetConvIdRef.current = null
         go("idle")
       }),
     )
@@ -213,6 +309,8 @@ export function MicButton({
       finalizing={view.finalizing}
       placeholder={view.placeholder}
       hint={view.hint}
+      deviceName={activeDeviceName}
+      level={level}
       partial={partial}
       since={since}
       className={
@@ -241,14 +339,26 @@ export function MicButton({
         ref={btnRef}
         variant="ghost"
         size="icone-padrao"
-        onClick={() => void (state === "idle" ? start() : null)}
+        onClick={() =>
+          void (state === "idle"
+            ? start()
+            : state === "starting"
+              ? cancel()
+              : null)
+        }
         className="rounded-full text-muted-foreground hover:text-foreground"
         title={
-          hotkey
-            ? `Ditar (${formatHotkey(hotkey)} · pt-BR, 100% local)`
-            : "Ditar (pt-BR, 100% local)"
+          state === "starting"
+            ? "Cancelar abertura do microfone"
+            : state === "busy"
+              ? "Finalizando o ditado"
+              : hotkey
+                ? `Ditar (${formatHotkey(hotkey)} · pt-BR, 100% local)`
+                : "Ditar (pt-BR, 100% local)"
         }
-        aria-label="Ditar"
+        aria-label={
+          state === "starting" ? "Cancelar abertura do microfone" : "Ditar"
+        }
       >
         {state === "idle" ? (
           <Mic className="size-4" />
