@@ -74,8 +74,6 @@ describe("a faixa mostra o modo do projeto que VAI RODAR", () => {
 
 describe("o aviso de que a troca só vale no próximo envio", () => {
   it("com turno em andamento, o composer diz isso na cara", async () => {
-    // O `--permission-mode` é fixo no spawn: trocar com turno em voo não muda o
-    // turno em voo. É a promessa que a copy faz — e ela precisa ser verdade.
     expect(await montar({ running: true })).toContain(
       "Turno em andamento: a permissão vale a partir do próximo envio.",
     )

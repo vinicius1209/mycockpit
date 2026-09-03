@@ -9,14 +9,16 @@
 // agente" — nunca enviados sozinhos (composeDiffComments monta, não envia).
 
 import { useState } from "react"
-import { Check, MessageSquarePlus, X } from "lucide-react"
+import { Check, Copy, MessageSquarePlus, X } from "lucide-react"
 import type { DiffLine } from "@/lib/git"
+import { copyText } from "@/lib/clipboard"
 import {
   diffLineKey,
   sideOfLine,
   type DiffComment,
   type DiffSide,
 } from "@/lib/deliveryDiff"
+import { highlightDiffLine } from "@/lib/syntaxHighlight"
 import { cn } from "@/lib/utils"
 
 /** Âncora da linha: chave de identidade + o lado/número que ela representa.
@@ -78,10 +80,12 @@ export type DiffCommentApi = ReturnType<typeof useDiffComments>
 export function DiffLineRow({
   ln,
   path,
+  lang,
   api,
 }: {
   ln: DiffLine
   path: string
+  lang?: string | null
   api: DiffCommentApi
 }) {
   const { key, lineNo } = anchorOf(path, ln)
@@ -91,6 +95,7 @@ export function DiffLineRow({
   // era o bug. Quem não casa vira órfão na tira do rodapé (ver DiffPanel).
   const existing = candidato?.codeText === ln.text ? candidato : undefined
   const active = api.activeKey === key
+  const html = highlightDiffLine(ln.text, lang ?? null)
 
   return (
     <div>
@@ -119,12 +124,25 @@ export function DiffLineRow({
         >
           {ln.type === "add" ? "+" : ln.type === "del" ? "−" : " "}
         </span>
-        <span className="flex-1 pr-1 pl-1 text-foreground/85">{ln.text || " "}</span>
+        <span
+          data-selectable
+          className="flex-1 pr-1 pl-1 text-foreground/85 select-text hljs"
+          dangerouslySetInnerHTML={{ __html: html || " " }}
+        />
+        <button
+          type="button"
+          onClick={() => void copyText(ln.text, "Linha copiada")}
+          title="Copiar linha"
+          className="mr-0.5 shrink-0 select-none rounded p-0.5 text-transparent transition-colors group-hover:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
+        >
+          <Copy className="size-3" />
+          <span className="sr-only">Copiar linha</span>
+        </button>
         <button
           type="button"
           onClick={() => api.open(key, existing?.note)}
           title="Comentar esta linha"
-          className="mr-1 shrink-0 rounded p-0.5 text-transparent transition-colors group-hover:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
+          className="mr-1 shrink-0 select-none rounded p-0.5 text-transparent transition-colors group-hover:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
         >
           <MessageSquarePlus className="size-3" />
           <span className="sr-only">

@@ -27,8 +27,9 @@ export function ExecutionRow({
       onClick={(e) => e.stopPropagation()}
       className="flex flex-col gap-1 px-3 pt-2 text-[11px]"
     >
-      {/* Aviso honesto: o gate é fixo no spawn. Trocar com turno em voo vale só
-          no próximo — sem esta linha o painel pareceria agir agora. */}
+      {/* O processo já nasceu com a permissão anterior. Manter a escolha
+          editável preserva a preparação do próximo envio; esta frase impede
+          que o controle pareça alterar retroativamente o turno em voo. */}
       {running && (
         <p className="leading-snug text-muted-foreground">
           Turno em andamento: a permissão vale a partir do próximo envio.

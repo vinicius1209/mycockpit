@@ -55,7 +55,9 @@
 //! e nunca é persistido por nós (lemos a credencial do CLI, não guardamos
 //! cópia).
 
-use crate::usage_window::{now_ms, parse_iso8601_secs, UsageFetchError, UsageSnapshot, UsageWindow};
+use crate::usage_window::{
+    now_ms, parse_iso8601_secs, UsageFetchError, UsageSnapshot, UsageWindow,
+};
 use serde_json::Value;
 use std::fmt;
 use std::process::Stdio;
@@ -229,7 +231,10 @@ pub fn parse_oauth_usage(v: &Value) -> Vec<UsageWindow> {
             let Some(pct) = l.get("percent").and_then(|x| x.as_f64()) else {
                 continue; // limite sem percentual não vira medidor
             };
-            let kind = l.get("kind").and_then(|x| x.as_str()).unwrap_or("desconhecido");
+            let kind = l
+                .get("kind")
+                .and_then(|x| x.as_str())
+                .unwrap_or("desconhecido");
             let (mut id, mut label, minutes) = limit_meta(kind);
             // escopo por modelo entra no id E no rótulo: dois "7 dias" no
             // popover sem dizer de quem é seria pior que não mostrar.
@@ -550,7 +555,10 @@ mod tests {
             Some(1_786_996_800)
         );
         // "Z" e offset não-UTC também
-        assert_eq!(parse_iso8601_secs("2026-08-17T20:00:00Z"), Some(1_786_996_800));
+        assert_eq!(
+            parse_iso8601_secs("2026-08-17T20:00:00Z"),
+            Some(1_786_996_800)
+        );
         assert_eq!(
             parse_iso8601_secs("2026-08-17T17:00:00-03:00"),
             Some(1_786_996_800)

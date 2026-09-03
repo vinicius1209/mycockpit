@@ -599,7 +599,11 @@ pub async fn companion_status(state: State<'_, CompanionState>) -> Result<Compan
         } else {
             None
         },
-        connected_count: if running { state.tx.receiver_count() } else { 0 },
+        connected_count: if running {
+            state.tx.receiver_count()
+        } else {
+            0
+        },
     })
 }
 
@@ -943,16 +947,13 @@ async fn guard(
     // aparelho); o principal viaja nas extensions (dedupe por-aparelho) e o
     // "visto por último" do aparelho é carimbado em memória de carona.
     let principal = presented.and_then(|t| {
-        g.auth
-            .lock()
-            .ok()
-            .and_then(|mut a| {
-                let id = a.match_token(&t)?;
-                if let Some(d) = a.devices.iter_mut().find(|d| d.id == id) {
-                    d.last_seen_at = Some(now_epoch_ms());
-                }
-                Some(id)
-            })
+        g.auth.lock().ok().and_then(|mut a| {
+            let id = a.match_token(&t)?;
+            if let Some(d) = a.devices.iter_mut().find(|d| d.id == id) {
+                d.last_seen_at = Some(now_epoch_ms());
+            }
+            Some(id)
+        })
     });
     match principal {
         Some(id) => {
@@ -984,10 +985,7 @@ async fn pair_claim(AxState(ctx): AxState<Ctx>, Json(body): Json<Value>) -> Resp
     let Some(presented) = body.get("pairToken").and_then(Value::as_str) else {
         return (StatusCode::BAD_REQUEST, "pairToken ausente").into_response();
     };
-    let name = body
-        .get("deviceName")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let name = body.get("deviceName").and_then(Value::as_str).unwrap_or("");
     let st = ctx.app.state::<CompanionState>();
     let res = st
         .pairing
@@ -1129,7 +1127,11 @@ const CONV_WINDOW_MAX: usize = 200;
 /// C3 — recorte puro da janela: devolve (itens, start, total) onde `start` é o
 /// índice do PRIMEIRO item devolvido no fio completo. `before` = fim exclusivo
 /// (paginação: a página anterior termina onde a atual começa).
-fn window_items(items: &[Value], limit: usize, before: Option<usize>) -> (Vec<Value>, usize, usize) {
+fn window_items(
+    items: &[Value],
+    limit: usize,
+    before: Option<usize>,
+) -> (Vec<Value>, usize, usize) {
     let total = items.len();
     let end = before.unwrap_or(total).min(total);
     let start = end.saturating_sub(limit.clamp(1, CONV_WINDOW_MAX));
@@ -1298,14 +1300,12 @@ async fn ws_loop(ctx: Ctx, sock: WebSocket) {
     let mut rx = {
         let st = ctx.app.state::<CompanionState>();
         // snapshot de boas-vindas: o celular pinta a tela sem esperar mudança.
-        let hello = st
-            .snapshot
-            .lock()
-            .map(|g| g.clone())
-            .unwrap_or(Value::Null);
+        let hello = st.snapshot.lock().map(|g| g.clone()).unwrap_or(Value::Null);
         if out
             .send(Message::Text(
-                json!({"type": "snapshot", "data": hello}).to_string().into(),
+                json!({"type": "snapshot", "data": hello})
+                    .to_string()
+                    .into(),
             ))
             .await
             .is_err()
@@ -1809,7 +1809,10 @@ mod tests {
         // corpo do handler = até a próxima declaração de função
         let body = &COMPANION_PAGE[start..];
         let body = &body[..body.find("\nfunction ").expect("handler sem fim")];
-        assert!(body.contains("removeItem(LS_TOKEN)"), "401 não apaga o token");
+        assert!(
+            body.contains("removeItem(LS_TOKEN)"),
+            "401 não apaga o token"
+        );
         assert!(
             body.contains("removeItem(LS_SNAP)"),
             "401 não apaga o snapshot cacheado"
@@ -1852,7 +1855,10 @@ mod tests {
             "application/manifest+json"
         );
         for resp in [icon_192().await, icon_512().await, icon_touch().await] {
-            assert_eq!(resp.headers().get(header::CONTENT_TYPE).unwrap(), "image/png");
+            assert_eq!(
+                resp.headers().get(header::CONTENT_TYPE).unwrap(),
+                "image/png"
+            );
             let b = body_of(resp).await;
             assert_eq!(&b[..4], b"\x89PNG", "bytes embutidos não são PNG");
         }
@@ -1870,7 +1876,10 @@ mod tests {
     #[test]
     fn query_token_extrai_da_query() {
         assert_eq!(query_token(Some(&format!("token={TOK}"))), Some(TOK.into()));
-        assert_eq!(query_token(Some(&format!("a=1&token={TOK}"))), Some(TOK.into()));
+        assert_eq!(
+            query_token(Some(&format!("a=1&token={TOK}"))),
+            Some(TOK.into())
+        );
         assert_eq!(query_token(Some("a=1&b=2")), None);
         assert_eq!(query_token(None), None);
     }
@@ -1972,8 +1981,11 @@ mod tests {
         assert!(sanitize_action(&up, &json!({"kind": "stop_mission"})).is_err()); // sem convId
         assert!(sanitize_action(&up, &json!({"kind": "answer_gate", "convId": "c1"})).is_err()); // sem answers
         assert!(
-            sanitize_action(&up, &json!({"kind": "send_message", "projectId": "p1", "agent": "codex"}))
-                .is_err() // sem text
+            sanitize_action(
+                &up,
+                &json!({"kind": "send_message", "projectId": "p1", "agent": "codex"})
+            )
+            .is_err() // sem text
         );
     }
 
@@ -2070,9 +2082,7 @@ mod tests {
             &json!({"kind": "feedback_lesson", "convId": "c1", "verdict": "meh"}),
         )
         .is_err());
-        assert!(
-            sanitize_action(&up, &json!({"kind": "feedback_lesson", "convId": "c1"})).is_err()
-        );
+        assert!(sanitize_action(&up, &json!({"kind": "feedback_lesson", "convId": "c1"})).is_err());
         assert!(
             sanitize_action(&up, &json!({"kind": "feedback_lesson", "verdict": "up"})).is_err()
         );
@@ -2084,9 +2094,7 @@ mod tests {
         // do celular, então as duas ações caem no default da whitelist — nada
         // atravessa pro executor, nem de um cliente velho ainda aberto.
         let up = HashMap::new();
-        assert!(
-            sanitize_action(&up, &json!({"kind": "dispatch_card", "cardId": "k1"})).is_err()
-        );
+        assert!(sanitize_action(&up, &json!({"kind": "dispatch_card", "cardId": "k1"})).is_err());
         assert!(sanitize_action(
             &up,
             &json!({"kind": "close_card", "cardId": "k1", "state": "done"}),
@@ -2191,10 +2199,18 @@ mod tests {
         .unwrap();
         assert_eq!(out["actionId"], "abc-123-def");
         // malformado (curto, tipo errado, char fora do alfabeto) → 400
-        for bad in [json!("curto"), json!(42), json!("a b c d e f g h"), json!("x".repeat(65))] {
+        for bad in [
+            json!("curto"),
+            json!(42),
+            json!("a b c d e f g h"),
+            json!("x".repeat(65)),
+        ] {
             assert!(
-                sanitize_action(&up, &json!({"kind": "stop_turn", "convId": "c1", "actionId": bad}))
-                    .is_err(),
+                sanitize_action(
+                    &up,
+                    &json!({"kind": "stop_turn", "convId": "c1", "actionId": bad})
+                )
+                .is_err(),
                 "actionId inválido aceito: {bad:?}"
             );
         }
@@ -2207,7 +2223,7 @@ mod tests {
         assert!(remember_action(&mut seen, "a1", t0)); // primeira vez
         assert!(!remember_action(&mut seen, "a1", t0)); // repetição: dedupe
         assert!(remember_action(&mut seen, "a2", t0)); // id diferente passa
-        // fora da janela: o mesmo id volta a valer (retry legítimo tardio)
+                                                       // fora da janela: o mesmo id volta a valer (retry legítimo tardio)
         let depois = t0 + ACTION_DEDUPE_TTL + Duration::from_secs(1);
         assert!(remember_action(&mut seen, "a1", depois));
         // teto: nunca cresce sem limite (o mais antigo cai)
@@ -2240,7 +2256,9 @@ mod tests {
         assert!(COMPANION_PAGE.contains("launch_task"));
         assert!(COMPANION_PAGE.contains("action-result"));
         // parar turno respeita o caso não-interrompível (copy honesta)
-        assert!(COMPANION_PAGE.contains("stopDisposition") || COMPANION_PAGE.contains("finalizando"));
+        assert!(
+            COMPANION_PAGE.contains("stopDisposition") || COMPANION_PAGE.contains("finalizando")
+        );
     }
 
     // ── C3: janela do fio no servidor + blob de imagem do fio ──
@@ -2307,7 +2325,10 @@ mod tests {
             "toolu_01Wwmz5Hn1KbU1wrm35LrjvT-0.jpg",
         );
         assert_eq!(ok.unwrap().3, "image/jpeg");
-        assert_eq!(blob_path_parts("attachments", "abc", "x.pdf").unwrap().3, "application/pdf");
+        assert_eq!(
+            blob_path_parts("attachments", "abc", "x.pdf").unwrap().3,
+            "application/pdf"
+        );
         // raiz fora das duas conhecidas nunca passa
         assert!(blob_path_parts("secrets", "abc", "x.png").is_none());
         assert!(blob_path_parts("", "abc", "x.png").is_none());
@@ -2428,7 +2449,10 @@ mod tests {
         let novo = current_qr_token(&mut b, velho, || "novohex".into());
         assert_eq!(novo, "novohex");
         // e REUSA enquanto fresco (o QR fica estável na tela)
-        assert_eq!(current_qr_token(&mut b, velho, || "outro".into()), "novohex");
+        assert_eq!(
+            current_qr_token(&mut b, velho, || "outro".into()),
+            "novohex"
+        );
     }
 
     #[test]
@@ -2437,10 +2461,16 @@ mod tests {
         let mut b = board_with_qr(t0);
         claim_pairing(&mut b, PAIR_TOK, "iPhone", t0, 0, "pid-1".into()).unwrap();
         // dentro da janela: pending
-        assert!(matches!(poll_pairing(&mut b, "pid-1", t0), PairPoll::Pending));
+        assert!(matches!(
+            poll_pairing(&mut b, "pid-1", t0),
+            PairPoll::Pending
+        ));
         // passou a janela SEM gesto humano: o pareamento morre (fail-closed)
         let tarde = t0 + PAIR_DECIDE_TTL + Duration::from_secs(1);
-        assert!(matches!(poll_pairing(&mut b, "pid-1", tarde), PairPoll::Gone));
+        assert!(matches!(
+            poll_pairing(&mut b, "pid-1", tarde),
+            PairPoll::Gone
+        ));
         // e o aceite tardio não ressuscita nada
         assert!(decide_pairing(&mut b, "pid-1", true, "tok".into(), tarde).is_none());
     }
@@ -2451,8 +2481,12 @@ mod tests {
         let mut b = board_with_qr(t0);
         claim_pairing(&mut b, PAIR_TOK, "iPhone · Safari", t0, 0, "pid-1".into()).unwrap();
         // antes do aceite, NENHUM poll vê token
-        assert!(matches!(poll_pairing(&mut b, "pid-1", t0), PairPoll::Pending));
-        let (name, tok) = decide_pairing(&mut b, "pid-1", true, "tok-definitivo".into(), t0).unwrap();
+        assert!(matches!(
+            poll_pairing(&mut b, "pid-1", t0),
+            PairPoll::Pending
+        ));
+        let (name, tok) =
+            decide_pairing(&mut b, "pid-1", true, "tok-definitivo".into(), t0).unwrap();
         assert_eq!(name, "iPhone · Safari");
         assert_eq!(tok.as_deref(), Some("tok-definitivo"));
         match poll_pairing(&mut b, "pid-1", t0) {
@@ -2463,7 +2497,10 @@ mod tests {
         assert!(decide_pairing(&mut b, "pid-1", false, "x".into(), t0).is_none());
         // o registro decidido some depois do TTL de resultado
         let depois = t0 + PAIR_RESULT_TTL + Duration::from_secs(1);
-        assert!(matches!(poll_pairing(&mut b, "pid-1", depois), PairPoll::Gone));
+        assert!(matches!(
+            poll_pairing(&mut b, "pid-1", depois),
+            PairPoll::Gone
+        ));
     }
 
     #[test]
@@ -2473,9 +2510,15 @@ mod tests {
         claim_pairing(&mut b, PAIR_TOK, "Android", t0, 0, "pid-1".into()).unwrap();
         let (_, tok) = decide_pairing(&mut b, "pid-1", false, "nunca-usado".into(), t0).unwrap();
         assert!(tok.is_none(), "recusa nunca entrega token");
-        assert!(matches!(poll_pairing(&mut b, "pid-1", t0), PairPoll::Denied));
+        assert!(matches!(
+            poll_pairing(&mut b, "pid-1", t0),
+            PairPoll::Denied
+        ));
         // poll de id desconhecido nunca vaza estado alheio
-        assert!(matches!(poll_pairing(&mut b, "fantasma", t0), PairPoll::Gone));
+        assert!(matches!(
+            poll_pairing(&mut b, "fantasma", t0),
+            PairPoll::Gone
+        ));
     }
 
     #[test]
@@ -2553,12 +2596,20 @@ mod tests {
         // inundando o próprio registro não derruba o id pendente do aparelho B.
         let mut m: HashMap<String, Vec<(String, Instant)>> = HashMap::new();
         let t0 = Instant::now();
-        assert!(remember_action(m.entry("b".into()).or_default(), "id-do-b", t0));
+        assert!(remember_action(
+            m.entry("b".into()).or_default(),
+            "id-do-b",
+            t0
+        ));
         for i in 0..(ACTION_DEDUPE_CAP + 50) {
             remember_action(m.entry("a".into()).or_default(), &format!("flood-{i}"), t0);
         }
         // o registro do B está intacto: o mesmo id continua deduplicado
-        assert!(!remember_action(m.entry("b".into()).or_default(), "id-do-b", t0));
+        assert!(!remember_action(
+            m.entry("b".into()).or_default(),
+            "id-do-b",
+            t0
+        ));
         // e o teto do A vale só pro A
         assert!(m.get("a").unwrap().len() <= ACTION_DEDUPE_CAP);
     }

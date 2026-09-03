@@ -385,10 +385,10 @@ export function StickyNotesDockView({
         // E2 e só E2 (§4): nada lá dentro tem sombra própria. `max-h` com teto
         // de viewport + altura do CONTEÚDO: painel de 1 nota tem tamanho de 1
         // nota.
-        "flex max-h-[min(32rem,var(--radix-popover-content-available-height,32rem))] overflow-hidden",
+        "flex max-h-[min(40rem,var(--radix-popover-content-available-height,40rem))] overflow-hidden",
         comLista
-          ? "w-[min(640px,calc(100vw-24px))]"
-          : "w-[min(440px,calc(100vw-24px))]",
+          ? "w-[min(760px,calc(100vw-32px))]"
+          : "w-[min(480px,calc(100vw-32px))]",
         // Por último: a superfície do `PopoverContent` vence o que for igual.
         className,
       )}

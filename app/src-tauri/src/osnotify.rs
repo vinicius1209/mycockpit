@@ -93,7 +93,10 @@ mod tests {
         assert_eq!(script[2], "end run");
         // nenhum fragmento de código contém o payload
         for s in &script {
-            assert!(!s.contains("do shell script"), "payload vazou pro script: {s}");
+            assert!(
+                !s.contains("do shell script"),
+                "payload vazou pro script: {s}"
+            );
         }
         // e o payload está depois do `--`, como dado
         let sep = args.iter().position(|a| a == "--").expect("faltou --");

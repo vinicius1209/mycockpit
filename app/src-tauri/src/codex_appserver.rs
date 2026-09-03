@@ -1252,7 +1252,10 @@ mod tests {
     fn primeira_linha_util_pula_o_rodape_inutil() {
         // "For more information" sozinho não explica nada; promovê-lo a motivo
         // seria trocar um erro mudo por um erro que finge falar.
-        assert_eq!(primeira_linha_util("\n\nFor more information, try '--help'.\n"), "");
+        assert_eq!(
+            primeira_linha_util("\n\nFor more information, try '--help'.\n"),
+            ""
+        );
         assert_eq!(primeira_linha_util(""), "");
     }
 
@@ -1519,10 +1522,8 @@ mod tests {
     #[test]
     fn mcp_tool_call_com_imagem_vira_evidencia_em_disco() {
         const PNG_1X1_B64: &str = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
-        let dir = std::env::temp_dir().join(format!(
-            "mc-appserver-evidence-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("mc-appserver-evidence-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut st = StreamState::new(None);
         st.evidence = Some(crate::evidence::EvidenceSink::new(
@@ -1543,13 +1544,12 @@ mod tests {
             &mut st,
         );
         match &evs[1] {
-            AgentEvent::ToolResult { ok, text, images, .. } => {
+            AgentEvent::ToolResult {
+                ok, text, images, ..
+            } => {
                 assert!(ok);
                 assert_eq!(text, "Screenshot saved");
-                assert_eq!(
-                    images,
-                    &vec!["evidence/conv-x/call_shot-0.png".to_string()]
-                );
+                assert_eq!(images, &vec!["evidence/conv-x/call_shot-0.png".to_string()]);
             }
             _ => panic!("esperava ToolResult"),
         }

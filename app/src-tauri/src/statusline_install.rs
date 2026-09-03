@@ -215,7 +215,10 @@ fn read_settings(path: &PathBuf) -> Result<Value, String> {
     match std::fs::read_to_string(path) {
         Ok(s) => {
             let v: Value = serde_json::from_str(&s).map_err(|e| {
-                format!("{} não parseia como JSON ({e}); nada foi alterado", path.display())
+                format!(
+                    "{} não parseia como JSON ({e}); nada foi alterado",
+                    path.display()
+                )
             })?;
             if !v.is_object() {
                 return Err(format!(
@@ -415,9 +418,8 @@ pub fn usage_statusline_uninstall(
         // restaurar; remover o statusLine inteiro apagaria a statusline
         // encadeada (Xirp) em silêncio. Aborta apontando o backup.
         let content = std::fs::read_to_string(&script).ok();
-        let original =
-            resolve_original(Some(script_str.clone()), &script_str, content.as_deref())
-                .map_err(|e| with_backup_hint(e, &spath))?;
+        let original = resolve_original(Some(script_str.clone()), &script_str, content.as_deref())
+            .map_err(|e| with_backup_hint(e, &spath))?;
         backup_settings(&spath)?;
         write_settings(&spath, &without_script(&settings, original.as_deref()))?;
     }
@@ -442,8 +444,7 @@ mod tests {
     const XIRP_WRAPPER: &str = "/Users/viniciusmachado/.claude/xirp-statusline-wrapper.sh";
     const SCRIPT: &str =
         "/Users/x/Library/Application Support/mycockpit/statusline/mycockpit-statusline.sh";
-    const ENDPOINT: &str =
-        "/Users/x/Library/Application Support/mycockpit/hook-endpoint.json";
+    const ENDPOINT: &str = "/Users/x/Library/Application Support/mycockpit/hook-endpoint.json";
 
     /// Shape REAL do settings.json desta máquina (recortado): statusLine +
     /// vizinhos que NÃO podem ser perdidos no merge.
@@ -663,7 +664,11 @@ mod tests_shell {
         let ep = dir.join("hook-endpoint.json");
         std::fs::write(&ep, r#"{"port":1,"token":"abc123","startedAt":0}"#).unwrap();
         let original = dir.join("original.sh");
-        std::fs::write(&original, "#!/bin/bash\ncat >/dev/null\necho 'statusline original'\n").unwrap();
+        std::fs::write(
+            &original,
+            "#!/bin/bash\ncat >/dev/null\necho 'statusline original'\n",
+        )
+        .unwrap();
         std::fs::set_permissions(&original, std::fs::Permissions::from_mode(0o755)).unwrap();
         // curl fake: anota args + corpo (stdin) no log e sai 0 — é a evidência
         // de que o script decidiu postar. Monta o registro INTEIRO num arquivo
@@ -701,7 +706,11 @@ mod tests_shell {
             .arg(&script)
             .output()
             .unwrap();
-        assert!(syn.status.success(), "bash -n falhou: {}", String::from_utf8_lossy(&syn.stderr));
+        assert!(
+            syn.status.success(),
+            "bash -n falhou: {}",
+            String::from_utf8_lossy(&syn.stderr)
+        );
 
         // PATH do FILHO (nunca `set_var`: variável de ambiente é global do
         // processo e vazaria pras outras threads de teste). Fixo e mínimo — o
@@ -730,7 +739,10 @@ mod tests_shell {
         // guarda — a statusline do usuário nunca some).
         let out = run(b"{\"model\":{\"id\":\"claude-opus-5\"},\"cost\":{\"total_lines_added\":3}}");
         assert!(out.status.success(), "script saiu com erro");
-        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "statusline original"
+        );
         std::thread::sleep(std::time::Duration::from_millis(300));
         // nem o log publicado nem o parcial: o curl fake toca os dois, então
         // pegamos o spawn indevido mesmo se ele não tiver chegado no `mv`.
@@ -744,7 +756,10 @@ mod tests_shell {
         // background — espera com timeout, sem flake).
         let out = run(b"{\"rate_limits\":{\"primary_used_pct\":23}}");
         assert!(out.status.success(), "script saiu com erro");
-        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "statusline original");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout).trim(),
+            "statusline original"
+        );
         // Espera o registro COMPLETO (terminador presente), não "log não
         // vazio": ler no meio da gravação era o flake. Orçamento generoso
         // porque a máquina pode estar carregada; sai no primeiro sucesso.

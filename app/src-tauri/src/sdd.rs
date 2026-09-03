@@ -106,7 +106,13 @@ fn artifact_exists(plan_dir: &Path, project: &Path, rel: &str) -> bool {
 fn detect_default_branch(project_path: &str) -> Option<String> {
     if let Some(out) = crate::proc::run_ok(
         "git",
-        &["-C", project_path, "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        &[
+            "-C",
+            project_path,
+            "symbolic-ref",
+            "--short",
+            "refs/remotes/origin/HEAD",
+        ],
         None,
     ) {
         let t = out.trim();
@@ -139,7 +145,15 @@ fn branch_ahead_of_default(project_path: &str, branch: &str, default: &str) -> b
     let resolve = |r: String| {
         crate::proc::run_ok(
             "git",
-            &["-C", project_path, "rev-parse", "--verify", "--quiet", "--end-of-options", &r],
+            &[
+                "-C",
+                project_path,
+                "rev-parse",
+                "--verify",
+                "--quiet",
+                "--end-of-options",
+                &r,
+            ],
             None,
         )
     };
@@ -155,7 +169,14 @@ fn branch_ahead_of_default(project_path: &str, branch: &str, default: &str) -> b
     let range = format!("{default}..{sha}");
     crate::proc::run_ok(
         "git",
-        &["-C", project_path, "rev-list", "--count", "--end-of-options", &range],
+        &[
+            "-C",
+            project_path,
+            "rev-list",
+            "--count",
+            "--end-of-options",
+            &range,
+        ],
         None,
     )
     .and_then(|s| s.trim().parse::<u64>().ok())
@@ -211,8 +232,7 @@ fn extract_events(log: &str) -> Vec<String> {
             }
             let rest = t.trim_start_matches("- [x]").trim();
             // título em negrito **...**, senão o texto antes do travessão.
-            if let Some(after) = rest.strip_prefix("**").and_then(|r| r.split("**").next())
-            {
+            if let Some(after) = rest.strip_prefix("**").and_then(|r| r.split("**").next()) {
                 Some(after.trim().to_string())
             } else {
                 let s = rest.split('—').next().unwrap_or(rest).trim();
@@ -237,7 +257,10 @@ fn read_sdd_plans_sync(project_path: &str, with_evidence: bool) -> Result<Vec<Sd
     // manifest realmente PRECISA da evidência de branch — projeto com todas as
     // features concluídas não spawna git nenhum).
     let mut default_branch: Option<Option<String>> = None;
-    for entry in fs::read_dir(&plans_dir).map_err(|e| e.to_string())?.flatten() {
+    for entry in fs::read_dir(&plans_dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
         let path = entry.path();
         if !path.is_dir() {
             continue;
@@ -316,7 +339,11 @@ fn parse_pr_url(url: &str) -> Option<(String, String)> {
     if num.is_empty() {
         return None;
     }
-    let repo = prefix.rsplit("github.com/").next()?.trim_matches('/').to_string();
+    let repo = prefix
+        .rsplit("github.com/")
+        .next()?
+        .trim_matches('/')
+        .to_string();
     if repo.matches('/').count() != 1 || repo.is_empty() {
         return None;
     }
@@ -452,8 +479,7 @@ pub struct SeedSummary {
 #[tauri::command]
 pub fn sdd_ready(project_path: String) -> bool {
     let skills = Path::new(&project_path).join(".claude").join("skills");
-    skills.join("prd").join("SKILL.md").exists()
-        || skills.join("spec").join("SKILL.md").exists()
+    skills.join("prd").join("SKILL.md").exists() || skills.join("spec").join("SKILL.md").exists()
 }
 
 /// Copia uma árvore NON-DESTRUCTIVE (pula o que já existe), coletando rel paths.
@@ -475,7 +501,11 @@ fn copy_tree(
             copy_tree(&s, &d, base, copied, skipped)?;
             continue;
         }
-        let rel = d.strip_prefix(base).unwrap_or(&d).to_string_lossy().to_string();
+        let rel = d
+            .strip_prefix(base)
+            .unwrap_or(&d)
+            .to_string_lossy()
+            .to_string();
         if d.exists() {
             skipped.push(rel);
             continue;
@@ -515,8 +545,21 @@ fn seed_sdd_sync(project_path: String) -> Result<SeedSummary, String> {
     let claude = Path::new(&project_path).join(".claude");
     let mut copied = Vec::new();
     let mut skipped = Vec::new();
-    for sub in ["skills", "agents", "hooks", "references", "schemas", "plans"] {
-        copy_tree(&seeds.join(sub), &claude.join(sub), &claude, &mut copied, &mut skipped)?;
+    for sub in [
+        "skills",
+        "agents",
+        "hooks",
+        "references",
+        "schemas",
+        "plans",
+    ] {
+        copy_tree(
+            &seeds.join(sub),
+            &claude.join(sub),
+            &claude,
+            &mut copied,
+            &mut skipped,
+        )?;
     }
     // settings.json (wiring dos hooks), só se não existir (não clobberar config).
     let src_set = seeds.join("settings.json");
@@ -545,11 +588,7 @@ pub async fn seed_sdd(project_path: String) -> Result<SeedSummary, String> {
 /// O cockpit ESCREVE a aprovação do PRD no manifest (único gate humano). `approved_at`
 /// vem do front (ISO) p/ evitar dep de chrono no Rust. Anexa ao LOG (best-effort).
 #[tauri::command]
-pub fn approve_prd(
-    project_path: String,
-    slug: String,
-    approved_at: String,
-) -> Result<(), String> {
+pub fn approve_prd(project_path: String, slug: String, approved_at: String) -> Result<(), String> {
     let dir = Path::new(&project_path)
         .join(".claude")
         .join("plans")
@@ -657,7 +696,13 @@ pub fn create_plan(
         return Err(format!("já existe um plano '{slug}'"));
     }
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let title: String = desc.lines().next().unwrap_or(desc).chars().take(80).collect();
+    let title: String = desc
+        .lines()
+        .next()
+        .unwrap_or(desc)
+        .chars()
+        .take(80)
+        .collect();
     let branch = format!("feature/{slug}");
 
     // manifest do template (fallback p/ um mínimo se o template sumir do repo).
@@ -792,9 +837,8 @@ mod tests {
             let db = detect_default_branch(pp);
             let mut spawns_forcados = 0;
             for p in plans.iter().filter(|p| p.manifest.is_some()) {
-                let mut v: serde_json::Value =
-                    serde_json::from_str(p.manifest.as_deref().unwrap())
-                        .unwrap_or(serde_json::Value::Null);
+                let mut v: serde_json::Value = serde_json::from_str(p.manifest.as_deref().unwrap())
+                    .unwrap_or(serde_json::Value::Null);
                 v["stage"] = serde_json::Value::String("spec".into());
                 let raw = v.to_string();
                 let dir = Path::new(pp).join(".claude").join("plans").join(&p.slug);
@@ -894,18 +938,31 @@ mod tests {
         assert_eq!(m["branch"], "feature/recurso-de-teste");
         assert_eq!(m["created_at"], "2026-06-30T00:00:00Z");
         assert_eq!(m["track"], "full", "track ausente cai no pipeline completo");
-        assert!(m["sponsor"].is_null(), "placeholder do sponsor deve virar null");
+        assert!(
+            m["sponsor"].is_null(),
+            "placeholder do sponsor deve virar null"
+        );
 
         // track explícito: "quick" persiste; inválido normaliza pra "full".
-        let q = create_plan(pp.clone(), "Ajuste rápido".into(), "x".into(), Some("quick".into()))
-            .unwrap();
+        let q = create_plan(
+            pp.clone(),
+            "Ajuste rápido".into(),
+            "x".into(),
+            Some("quick".into()),
+        )
+        .unwrap();
         let mq: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(plans.join(&q.slug).join("manifest.json")).unwrap(),
         )
         .unwrap();
         assert_eq!(mq["track"], "quick");
-        let w = create_plan(pp.clone(), "Outra coisa".into(), "x".into(), Some("warp".into()))
-            .unwrap();
+        let w = create_plan(
+            pp.clone(),
+            "Outra coisa".into(),
+            "x".into(),
+            Some("warp".into()),
+        )
+        .unwrap();
         let mw: serde_json::Value = serde_json::from_str(
             &fs::read_to_string(plans.join(&w.slug).join("manifest.json")).unwrap(),
         )
@@ -981,8 +1038,16 @@ mod tests {
         // git não muda decisão nenhuma → pula. Inclui os aliases REAIS de drift
         // e a caixa driftada ("DONE"), como aparecem nos manifests do disco.
         for s in [
-            "done", "DONE", "pr", "release", "review", "code-review", "test",
-            "test-suite", "implementation", "developer",
+            "done",
+            "DONE",
+            "pr",
+            "release",
+            "review",
+            "code-review",
+            "test",
+            "test-suite",
+            "implementation",
+            "developer",
         ] {
             assert!(!branch_evidence_decides(Some(s)), "{s} devia pular o git");
         }
@@ -1037,7 +1102,11 @@ mod tests {
         assert!(ev.prd_file && ev.spec_file);
         assert!(!ev.branch_checked, "done não dispara verificação de branch");
         assert!(!ev.branch_commits);
-        assert_eq!(ev.evidence_stage.as_deref(), Some("spec"), "evidência de arquivo fica");
+        assert_eq!(
+            ev.evidence_stage.as_deref(),
+            Some("spec"),
+            "evidência de arquivo fica"
+        );
 
         // fim-a-fim: pasta sem repo git NENHUM — se algum spawn de git decidisse
         // algo, o resultado mudaria; a lista sai íntegra e sem branch checado.
@@ -1058,8 +1127,14 @@ mod tests {
         let pp = tmp.to_string_lossy().to_string();
         let git = |args: &[&str]| {
             let mut full = vec![
-                "-C", &pp, "-c", "user.email=t@t", "-c", "user.name=T",
-                "-c", "commit.gpgsign=false",
+                "-C",
+                &pp,
+                "-c",
+                "user.email=t@t",
+                "-c",
+                "user.name=T",
+                "-c",
+                "commit.gpgsign=false",
             ];
             full.extend_from_slice(args);
             crate::proc::run("git", &full, None).unwrap();
@@ -1124,7 +1199,11 @@ mod tests {
         // branch É o default / não existe / não passa na sanitização → false.
         assert!(!branch_ahead_of_default(&pp, "main", "main"));
         assert!(!branch_ahead_of_default(&pp, "feature/nope", "main"));
-        assert!(!branch_ahead_of_default(&pp, "--upload-pack=/bin/sh", "main"));
+        assert!(!branch_ahead_of_default(
+            &pp,
+            "--upload-pack=/bin/sh",
+            "main"
+        ));
 
         // fim-a-fim do compute_evidence: manifest com branch + PRD na pasta.
         let plan = tmp.join(".claude").join("plans").join("p");

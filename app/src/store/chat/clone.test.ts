@@ -229,4 +229,13 @@ describe("fork isolado em worktree (F2 — paralelo de verdade)", () => {
     await useChat.getState().forkConversationAt(CONV, "r1")
     expect(createWorktree).not.toHaveBeenCalled()
   })
+
+  it("registra parentId na conversa forkada e na meta do projeto", async () => {
+    await useChat.getState().forkConversationAt(CONV, "r1")
+    const s = useChat.getState()
+    const newId = s.activeId!
+    expect(newId).not.toBe(CONV)
+    const forkMeta = s.conversationsByProject[PROJECT]?.find((c) => c.id === newId)
+    expect(forkMeta?.parentId).toBe(CONV)
+  })
 })

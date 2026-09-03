@@ -4,11 +4,13 @@ import {
   FileText,
   Image as ImageIcon,
   Paperclip,
+  Pencil,
   Rocket,
   Sparkles,
   Square,
   Swords,
   X,
+  Zap,
 } from "lucide-react"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
@@ -149,27 +151,37 @@ export function AttachmentChips({
 }
 
 /** Fila de mensagens digitadas durante o turno (acima do textarea). Enviadas
- *  juntas, num único envio, quando o turno atual termina. */
+ *  juntas, num único envio, quando o turno atual termina, com ações de envio
+ *  forçado e edição. */
 export function QueuedChips({
   queued,
   onRemove,
+  onEdit,
+  onForceSend,
 }: {
   queued: QueuedMsg[]
   onRemove: (index: number) => void
+  onEdit?: (index: number) => void
+  onForceSend?: (index: number) => void
 }) {
   if (queued.length === 0) return null
   return (
-    <div className="flex flex-col gap-1 px-1 pb-1">
-      <span className="px-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
-        Na fila · enviam juntas ao terminar
-      </span>
+    <div className="mb-1 flex flex-col gap-1.5 rounded-xl border border-st-queued/40 bg-st-queued/10 p-2">
+      <div className="flex items-center justify-between px-0.5">
+        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-st-queued uppercase">
+          <span className="rounded-full bg-st-queued/25 px-1.5 py-px font-mono text-[11px] font-bold text-st-queued">
+            {queued.length}
+          </span>
+          Na fila · enviam juntas ao terminar
+        </span>
+      </div>
       {queued.map((msg, i) => (
         <span
           key={i}
           title={msg.text}
-          className="flex items-center gap-1.5 rounded-md border border-brass/30 bg-brass/5 px-2 py-1 text-[12px] text-foreground/80"
+          className="flex items-center gap-2 rounded-md border border-st-queued/30 bg-card/85 px-2.5 py-1 text-[12px] text-foreground/90 shadow-xs"
         >
-          <span className="text-muted-foreground/60">{i + 1}.</span>
+          <span className="font-mono text-[11px] font-medium text-st-queued/80">{i + 1}.</span>
           <span className="min-w-0 flex-1 truncate">{msg.text}</span>
           {/* anexos viajam com a mensagem enfileirada — mostra que foram junto */}
           {msg.attachments.map((a) => {
@@ -185,13 +197,43 @@ export function QueuedChips({
               </span>
             )
           })}
-          <button
-            onClick={() => onRemove(i)}
-            className="shrink-0 text-muted-foreground hover:text-foreground"
-            aria-label="Remover da fila"
-          >
-            <X className="size-3" />
-          </button>
+          <span className="flex shrink-0 items-center gap-1">
+            {onForceSend && (
+              <Button
+                variant="ghost"
+                size="chip"
+                onClick={() => onForceSend(i)}
+                className="text-st-queued hover:bg-st-queued/20 hover:text-st-queued"
+                title="Priorizar esta mensagem, interromper o turno e enviar a fila"
+                aria-label="Priorizar e enviar a fila agora"
+              >
+                <Zap className="size-2.5 fill-current" />
+                <span>Enviar agora</span>
+              </Button>
+            )}
+            {onEdit && (
+              <Button
+                variant="ghost"
+                size="icone-chip"
+                onClick={() => onEdit(i)}
+                className="text-muted-foreground hover:bg-secondary hover:text-foreground"
+                title="Devolver ao composer para editar"
+                aria-label="Editar mensagem"
+              >
+                <Pencil className="size-2.5" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icone-chip"
+              onClick={() => onRemove(i)}
+              className="text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
+              title="Remover da fila"
+              aria-label="Remover da fila"
+            >
+              <X className="size-3" />
+            </Button>
+          </span>
         </span>
       ))}
     </div>
@@ -344,6 +386,8 @@ export function ComposerActions({
   stopTitle,
   onSubmit,
   canSend,
+  canEnqueue,
+  onForceSendDraft,
   identityControls,
   permissionControls,
   planFirstControls,
@@ -364,6 +408,8 @@ export function ComposerActions({
   stopTitle?: string
   onSubmit: () => void
   canSend: boolean
+  canEnqueue?: boolean
+  onForceSendDraft?: () => void
   identityControls?: React.ReactNode
   permissionControls?: React.ReactNode
   planFirstControls?: React.ReactNode
@@ -407,6 +453,8 @@ export function ComposerActions({
         <SendSplit
           running={running}
           canSend={canSend}
+          canEnqueue={canEnqueue}
+          onForceSendDraft={onForceSendDraft}
           onSubmit={onSubmit}
           onStop={onStop}
           stopTitle={stopTitle}
@@ -428,12 +476,14 @@ export function ComposerActions({
  * destinos, não três ferramentas. Como dois ícones soltos no meio da barra, esse
  * parentesco era invisível: ninguém adivinhava que ⚔/🚀 usam o texto digitado.
  *
- * Com turno rodando o primário vira Parar e o chevron desabilita (não há
- * rascunho para despachar enquanto o turno corrente não termina).
+ * Com turno rodando o primário vira Parar, com atalho de enfileirar ou envio
+ * forçado imediato quando há texto no editor.
  */
 function SendSplit({
   running,
   canSend,
+  canEnqueue,
+  onForceSendDraft,
   onSubmit,
   onStop,
   stopTitle,
@@ -445,6 +495,8 @@ function SendSplit({
 }: {
   running?: boolean
   canSend: boolean
+  canEnqueue?: boolean
+  onForceSendDraft?: () => void
   onSubmit: () => void
   onStop?: () => void
   stopTitle?: string
@@ -454,21 +506,48 @@ function SendSplit({
   onMission?: () => void
   missionDisabled?: boolean
 }) {
-  // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria). Antes
-  // era o `default` bg-primary, o que dava duas tintas pra mesma família de
-  // ação: o stop do fio já era vermelho.
+  // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria).
   if (running) {
     return (
-      <Button
-        variant="destructive"
-        size="icone-padrao"
-        onClick={onStop}
-        className="rounded-full"
-        aria-label="Parar"
-        title={stopTitle ?? "Parar"}
-      >
-        <Square className="size-3 fill-current" />
-      </Button>
+      <div className="flex items-center gap-1.5">
+        {canEnqueue && (
+          <Button
+            variant="secondary"
+            size="compacto"
+            onClick={onSubmit}
+            className="rounded-full"
+            title="Enfileirar próxima mensagem (Enter)"
+            aria-label="Enfileirar"
+          >
+            <span>Enfileirar</span>
+            <span className="font-mono text-[11px] text-muted-foreground">↵</span>
+          </Button>
+        )}
+        {canEnqueue && onForceSendDraft && (
+          <Button
+            variant="ghost"
+            size="compacto"
+            onClick={onForceSendDraft}
+            className="rounded-full bg-st-queued/15 text-st-queued hover:bg-st-queued/25 hover:text-st-queued"
+            title="Interromper turno e enviar agora (⌘Enter)"
+            aria-label="Interromper e enviar agora"
+          >
+            <Zap className="size-3 fill-current" />
+            <span>Enviar agora</span>
+            <span className="font-mono text-[11px] opacity-75">⌘↵</span>
+          </Button>
+        )}
+        <Button
+          variant="destructive"
+          size="icone-padrao"
+          onClick={onStop}
+          className="rounded-full"
+          aria-label="Parar"
+          title={stopTitle ?? "Parar"}
+        >
+          <Square className="size-3 fill-current" />
+        </Button>
+      </div>
     )
   }
   // O chevron é GHOST ao lado do enviar, não fundido nele: fundir dobrava a área

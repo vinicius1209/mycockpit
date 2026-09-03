@@ -112,10 +112,7 @@ fn pick_highest_version(names: &[String]) -> Option<String> {
             .map(|seg| seg.parse::<u64>().unwrap_or(0))
             .collect()
     }
-    names
-        .iter()
-        .max_by(|a, b| key(a).cmp(&key(b)))
-        .cloned()
+    names.iter().max_by(|a, b| key(a).cmp(&key(b))).cloned()
 }
 
 #[cfg(not(unix))]

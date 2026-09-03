@@ -184,7 +184,10 @@ pub(crate) fn parse_codex_model_list(result: &Value) -> Vec<ModelListEntry> {
                 .filter(|s| !s.is_empty())
                 .map(|s| s.to_string()),
             hidden: m.get("hidden").and_then(|v| v.as_bool()).unwrap_or(false),
-            is_default: m.get("isDefault").and_then(|v| v.as_bool()).unwrap_or(false),
+            is_default: m
+                .get("isDefault")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
             superseded_by: m
                 .get("upgrade")
                 .and_then(|v| v.as_str())
@@ -262,9 +265,18 @@ pub(crate) fn parse_opencode_models_verbose(stdout: &str) -> Vec<ModelListEntry>
     let mut out = Vec::new();
     while let Some(raw_id) = lines.next() {
         let id = raw_id.trim();
-        if id.is_empty() || !id.contains('/') { continue; }
-        while lines.peek().is_some_and(|line| line.trim().is_empty()) { lines.next(); }
-        if !lines.peek().is_some_and(|line| line.trim_start().starts_with('{')) { continue; }
+        if id.is_empty() || !id.contains('/') {
+            continue;
+        }
+        while lines.peek().is_some_and(|line| line.trim().is_empty()) {
+            lines.next();
+        }
+        if !lines
+            .peek()
+            .is_some_and(|line| line.trim_start().starts_with('{'))
+        {
+            continue;
+        }
         let mut json_text = String::new();
         let mut depth: i64 = 0;
         let mut started = false;
@@ -276,39 +288,77 @@ pub(crate) fn parse_opencode_models_verbose(stdout: &str) -> Vec<ModelListEntry>
             depth += line.chars().filter(|c| *c == '{').count() as i64;
             depth -= line.chars().filter(|c| *c == '}').count() as i64;
             started = true;
-            if depth == 0 { break; }
+            if depth == 0 {
+                break;
+            }
         }
-        if !started { continue; }
+        if !started {
+            continue;
+        }
         let Ok(meta) = serde_json::from_str::<Value>(&json_text) else {
             log::warn!("model_list: metadata verbose inválida para {id}");
             continue;
         };
-        let active = meta.get("status").and_then(Value::as_str).unwrap_or("active") == "active";
-        let tools = meta.pointer("/capabilities/toolcall").and_then(Value::as_bool).unwrap_or(false);
-        let text_out = meta.pointer("/capabilities/output/text").and_then(Value::as_bool).unwrap_or(false);
-        if !active || !tools || !text_out { continue; }
+        let active = meta
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("active")
+            == "active";
+        let tools = meta
+            .pointer("/capabilities/toolcall")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let text_out = meta
+            .pointer("/capabilities/output/text")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !active || !tools || !text_out {
+            continue;
+        }
 
-        let provider = meta.get("providerID").and_then(Value::as_str)
-            .or_else(|| id.split_once('/').map(|x| x.0)).unwrap_or("opencode");
-        let name = meta.get("name").and_then(Value::as_str)
-            .or_else(|| id.split_once('/').map(|x| x.1)).unwrap_or(id);
+        let provider = meta
+            .get("providerID")
+            .and_then(Value::as_str)
+            .or_else(|| id.split_once('/').map(|x| x.0))
+            .unwrap_or("opencode");
+        let name = meta
+            .get("name")
+            .and_then(Value::as_str)
+            .or_else(|| id.split_once('/').map(|x| x.1))
+            .unwrap_or(id);
         let mut facts = vec![format!("via {provider}"), "ferramentas".into()];
-        if meta.pointer("/capabilities/reasoning").and_then(Value::as_bool) == Some(true) {
+        if meta
+            .pointer("/capabilities/reasoning")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
             facts.push("raciocínio".into());
         }
-        if meta.pointer("/capabilities/input/image").and_then(Value::as_bool) == Some(true) {
+        if meta
+            .pointer("/capabilities/input/image")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
             facts.push("imagem".into());
         }
         if let Some(context) = meta.pointer("/limit/context").and_then(Value::as_u64) {
-            let display = if context >= 1_000_000 { format!("{}M", context / 1_000_000) }
-                else if context >= 1_000 { format!("{}k", context / 1_000) }
-                else { context.to_string() };
+            let display = if context >= 1_000_000 {
+                format!("{}M", context / 1_000_000)
+            } else if context >= 1_000 {
+                format!("{}k", context / 1_000)
+            } else {
+                context.to_string()
+            };
             facts.push(format!("contexto {display}"));
         }
         out.push(ModelListEntry {
-            id: id.to_string(), label: name.to_string(),
-            description: Some(facts.join(" · ")), hidden: false,
-            is_default: false, superseded_by: None, retirement_note: None,
+            id: id.to_string(),
+            label: name.to_string(),
+            description: Some(facts.join(" · ")),
+            hidden: false,
+            is_default: false,
+            superseded_by: None,
+            retirement_note: None,
         });
     }
     out
@@ -330,7 +380,10 @@ async fn probe_opencode() -> Result<Vec<ModelListEntry>, ModelListError> {
             )
         })?
         .map_err(|e| {
-            ModelListError::new("spawn", format!("não consegui rodar `opencode models`: {e}"))
+            ModelListError::new(
+                "spawn",
+                format!("não consegui rodar `opencode models`: {e}"),
+            )
         })?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
@@ -369,7 +422,9 @@ async fn probe_agy() -> Result<Vec<ModelListEntry>, ModelListError> {
                 format!("`agy models` não respondeu em {PROBE_TIMEOUT_SECS}s"),
             )
         })?
-        .map_err(|e| ModelListError::new("spawn", format!("não consegui rodar `agy models`: {e}")))?;
+        .map_err(|e| {
+            ModelListError::new("spawn", format!("não consegui rodar `agy models`: {e}"))
+        })?;
     if !out.status.success() {
         let err = String::from_utf8_lossy(&out.stderr).trim().to_string();
         return Err(ModelListError::new(
@@ -396,10 +451,9 @@ async fn probe_codex() -> Result<Vec<ModelListEntry>, ModelListError> {
             Some(c) => json!({ "includeHidden": true, "cursor": c }),
             None => json!({ "includeHidden": true }),
         };
-        let result =
-            crate::codex_appserver::probe_once("model/list", params, PROBE_TIMEOUT_SECS)
-                .await
-                .map_err(|e| ModelListError::new(e.kind, e.message))?;
+        let result = crate::codex_appserver::probe_once("model/list", params, PROBE_TIMEOUT_SECS)
+            .await
+            .map_err(|e| ModelListError::new(e.kind, e.message))?;
         all.extend(parse_codex_model_list(&result));
         cursor = next_cursor(&result);
         if cursor.is_none() {
@@ -553,7 +607,11 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
                 "slug com espaço/TAB vazaria pro --model: {:?}",
                 m.id
             );
-            assert!(!m.label.is_empty(), "rótulo do CLI não se perde: {:?}", m.id);
+            assert!(
+                !m.label.is_empty(),
+                "rótulo do CLI não se perde: {:?}",
+                m.id
+            );
             // o rótulo saiu do id, não ficou colado nele.
             assert!(!m.id.contains(&m.label));
         }
@@ -594,7 +652,10 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
         // recomendação, nunca do conhecimento).
         let escondido = &models[2];
         assert!(escondido.hidden);
-        assert_eq!(escondido.description, None, "descrição vazia não vira texto");
+        assert_eq!(
+            escondido.description, None,
+            "descrição vazia não vira texto"
+        );
     }
 
     #[test]
@@ -692,13 +753,22 @@ nvidia/black-forest-labs/flux
         assert_eq!(models.len(), 1);
         assert_eq!(models[0].id, "nvidia/moonshotai/kimi-k3");
         assert_eq!(models[0].label, "Kimi K3");
-        assert_eq!(models[0].description.as_deref(), Some("via nvidia · ferramentas · raciocínio · imagem · contexto 1M"));
+        assert_eq!(
+            models[0].description.as_deref(),
+            Some("via nvidia · ferramentas · raciocínio · imagem · contexto 1M")
+        );
     }
 
     #[test]
     fn id_do_dialeto_e_o_mesmo_do_espelho_ts() {
         // Mexeu aqui, mexa em lib/agents.ts (campo `listsModels`).
-        assert_eq!(source_id(ModelListSource::AgyModelsSubcommand), "agy-models");
-        assert_eq!(source_id(ModelListSource::CodexAppServer), "codex-app-server");
+        assert_eq!(
+            source_id(ModelListSource::AgyModelsSubcommand),
+            "agy-models"
+        );
+        assert_eq!(
+            source_id(ModelListSource::CodexAppServer),
+            "codex-app-server"
+        );
     }
 }

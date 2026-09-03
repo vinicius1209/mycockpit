@@ -23,10 +23,9 @@ mod codex_resume_guard;
 mod companion;
 mod context;
 mod context_gateway;
-mod despertador;
-mod processos;
-mod detect;
 mod desktop;
+mod despertador;
+mod detect;
 mod editor;
 mod evidence;
 mod experience_broker;
@@ -46,12 +45,12 @@ mod model_smoke;
 mod modes;
 mod mycockpit;
 mod notch;
-mod osnotify;
-mod opencode_auth;
 mod opencode_acp;
+mod opencode_auth;
+mod osnotify;
 mod path;
-mod plugin_control;
 mod plugin_contributions;
+mod plugin_control;
 mod plugin_grants;
 mod plugin_manifest;
 mod plugin_mcp;
@@ -59,12 +58,14 @@ mod plugin_protocol;
 mod plugin_runtime;
 mod pricing;
 mod proc;
+mod processos;
 mod provider_mcp_inventory;
+mod resource_broker;
+mod run_manifest;
 mod run_processes;
 mod run_resources;
-mod run_manifest;
-mod resource_broker;
 mod sandbox;
+pub mod scope_guidance;
 mod sdd;
 mod skills;
 mod sources;
@@ -572,6 +573,14 @@ pub fn run() {
                     fingerprint TEXT, \
                     created_at INTEGER NOT NULL \
                   );",
+            kind: MigrationKind::Up,
+        },
+        // Linhagem e agrupamento de forks na sidebar/mesa (forks-e-linhagem-agrupada-plan.md).
+        // Registra a conversa de origem quando uma conversa nasce de um fork ou duplicata.
+        Migration {
+            version: 43,
+            description: "add_parent_id_to_conversations",
+            sql: "ALTER TABLE conversations ADD COLUMN parent_id TEXT REFERENCES conversations(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
     ];

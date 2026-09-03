@@ -1,27 +1,6 @@
-// Composer Lexical da conversa — desde o cutover, o ÚNICO composer do console
-// (o textarea e o toggle de Settings foram aposentados). Entra pelo slot
-// `input` do ComposerShell. O que ele entrega:
-//   - texto com Enter=envia / Shift+Enter=quebra linha (semântica do console);
-//   - `@` menção ATÔMICA (pill via lexical-beautiful-mentions) com o nosso
-//     menu (AgentAvatar + nome, seção "Especialistas");
-//   - draft por conversa: a fonte da verdade segue useComposerDrafts —
-//     o editor serializa a cada mudança e reconstrói quando o valor muda por
-//     fora (troca de conversa, sugestão, limpeza pós-envio);
-//   - serialização = a MESMA string que o handleSend espera (menção → `@nome`),
-//     via lexicalDraft.ts;
-//   - alvo de foco `data-composer="console"` (tray://new-task e afins);
-//   - comandos "/" (o SlashPopover/useSlashCommands do console — aqui só
-//     chegam os gestos do teclado, via SlashMenuKeysPlugin), paste → anexo
-//     (PASTE_COMMAND → useAttachments.addFiles) e histórico ↑/↓ estilo shell
-//     nas bordas (usePromptHistory + historyRecallIntent). O "/comando"
-//     escolhido no popover (ou digitado + espaço, com match exato) vira pill
-//     ATÔMICO no INÍCIO do editor — mesmo mecanismo do pill de menção
-//     (trigger "/"), serializando pro MESMO `/nome` literal (slashPill.ts).
-//   - "@" de arquivos do projeto: os caminhos chegam por prop (`mentionFiles`,
-//     a listagem do useAtMentions), viram pill atômico que serializa pra
-//     `@caminho` e o menu agrupa Especialistas antes de Arquivos. Este arquivo
-//     é carregado LAZY pelo console (React.lazy) — o grafo do Lexical fica
-//     fora do chunk main.
+// Composer Lexical da conversa — desde o cutover, o ÚNICO composer do console.
+// Entrega Enter=envia / Shift+Enter=quebra linha, menções "@", comandos "/",
+// histórico ↑/↓ e envio forçado imediato com ⌘Enter durante turnos em voo.
 
 import { useEffect, useMemo, useRef } from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
@@ -110,10 +89,18 @@ function $hasLeadingSlashPill(): boolean {
  *  - menu de menção aberto (o nosso MentionsMenu carrega
  *    `data-beautiful-mention-menu`) → o Enter escolhe o item, não envia;
  *  - IME compondo (acento/CJK) → o Enter confirma a composição, não envia. */
-function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void }) {
+function EnterToSubmitPlugin({
+  onSubmit,
+  onForceSubmit,
+}: {
+  onSubmit: (text: string) => void
+  onForceSubmit?: (text: string) => void
+}) {
   const [editor] = useLexicalComposerContext()
   const onSubmitRef = useRef(onSubmit)
   onSubmitRef.current = onSubmit
+  const onForceSubmitRef = useRef(onForceSubmit)
+  onForceSubmitRef.current = onForceSubmit
   const shortcut = useApp((s) => s.settings.userPreferences?.composerSendShortcut ?? "enter")
   useEffect(() => {
     return editor.registerCommand(
@@ -121,6 +108,14 @@ function EnterToSubmitPlugin({ onSubmit }: { onSubmit: (text: string) => void })
       (event: KeyboardEvent | null): boolean => {
         if (event?.isComposing) return false
         if (document.querySelector("[data-beautiful-mention-menu]")) return false
+        if (event?.metaKey || event?.ctrlKey) {
+          if (onForceSubmitRef.current) {
+            event?.preventDefault()
+            const text = editor.getEditorState().read($serializeDraft)
+            onForceSubmitRef.current(text.trim())
+            return true
+          }
+        }
         if (shortcut === "cmd-enter") {
           if (!event?.metaKey && !event?.ctrlKey) return false
         } else if (event?.shiftKey) {
@@ -547,6 +542,7 @@ export function LexicalComposer({
   value,
   onChangeText,
   onSubmit,
+  onForceSubmit,
   placeholder,
   mentionNames,
   mentionFiles,
@@ -566,6 +562,8 @@ export function LexicalComposer({
   onChangeText: (text: string) => void
   /** Enter sem shift: recebe o texto serializado (menção → `@nome`). */
   onSubmit: (text: string) => void
+  /** ⌘Enter com turno em voo: envio forçado imediato. */
+  onForceSubmit?: (text: string) => void
   placeholder: string
   /** Personas conhecidas (mesma fonte do marketplace) → itens do menu `@`. */
   mentionNames: string[]
@@ -678,7 +676,7 @@ export function LexicalComposer({
             onChangeText(text)
           }}
         />
-        <EnterToSubmitPlugin onSubmit={onSubmit} />
+        <EnterToSubmitPlugin onSubmit={onSubmit} onForceSubmit={onForceSubmit} />
         <SlashMenuKeysPlugin slash={slash} />
         <HistoryRecallPlugin history={history} />
         <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />

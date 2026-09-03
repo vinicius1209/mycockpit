@@ -906,10 +906,7 @@ pub(crate) fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     Ok(conn)
 }
 
-pub(crate) fn project_id_for_path(
-    conn: &Connection,
-    project_path: &str,
-) -> Result<String, String> {
+pub(crate) fn project_id_for_path(conn: &Connection, project_path: &str) -> Result<String, String> {
     conn.query_row(
         "SELECT id FROM projects WHERE path = ?1 AND deleted_at IS NULL",
         [project_path],
@@ -1054,12 +1051,14 @@ fn parse_launch(raw: &Value) -> Option<McpLaunchConfig> {
 fn subir_proxy(
     launch: &McpLaunchConfig,
     server_id: &str,
-) -> Option<(crate::mcp_proxy::ProxyConfig, crate::mcp_proxy::ProxyListener)> {
+) -> Option<(
+    crate::mcp_proxy::ProxyConfig,
+    crate::mcp_proxy::ProxyListener,
+)> {
     let endpoint = launch.url.clone()?;
     let oauth = launch.oauth.clone()?;
     let server_bin = std::env::current_exe().ok()?;
-    let listener =
-        crate::mcp_proxy::ProxyListener::spawn(server_id.to_string(), endpoint, oauth)?;
+    let listener = crate::mcp_proxy::ProxyListener::spawn(server_id.to_string(), endpoint, oauth)?;
     let config = crate::mcp_proxy::ProxyConfig {
         server_bin: server_bin.to_string_lossy().to_string(),
         socket: listener.path().to_string_lossy().to_string(),
@@ -1262,11 +1261,7 @@ fn normalize_codex_launch(server_name: &str, launch: &mut McpLaunchConfig) {
 /// sem mexer em variável de ambiente: teste que faz `set_var` corre em paralelo
 /// com os outros na mesma thread pool e vira flake por construção (a casa já
 /// tem esse padrão no adapters.rs, com salvar/restaurar — aqui dá pra evitar).
-fn normalize_codex_launch_in(
-    codex_home: &Path,
-    server_name: &str,
-    launch: &mut McpLaunchConfig,
-) {
+fn normalize_codex_launch_in(codex_home: &Path, server_name: &str, launch: &mut McpLaunchConfig) {
     if let Some(cmd) = &launch.command {
         let path = Path::new(cmd);
         if !path.is_absolute() {
@@ -1542,10 +1537,8 @@ pub async fn discover_mcp_servers(
     let project_id = project_id_for_path(&validation, &project_path)?;
     drop(validation);
     let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
-    let mut canonical: HashMap<
-        String,
-        Vec<crate::provider_mcp_inventory::ProviderMcpServer>,
-    > = HashMap::new();
+    let mut canonical: HashMap<String, Vec<crate::provider_mcp_inventory::ProviderMcpServer>> =
+        HashMap::new();
     for server in &servers {
         // Internos e `.mcp.json` compartilhado não são estado nativo de um
         // provider. Só configurações com origem identificada entram aqui.
@@ -1558,10 +1551,8 @@ pub async fn discover_mcp_servers(
             "user" => crate::adapters::CapabilityScope::User,
             _ => crate::adapters::CapabilityScope::Global,
         };
-        canonical
-            .entry(agent.clone())
-            .or_default()
-            .push(crate::provider_mcp_inventory::ProviderMcpServer {
+        canonical.entry(agent.clone()).or_default().push(
+            crate::provider_mcp_inventory::ProviderMcpServer {
                 resource_kinds: crate::resource_broker::integration_resources(&server.name),
                 resource_owner: crate::resource_broker::ResourceOwner::Provider,
                 resource_evidence: crate::resource_broker::ResourceEvidence::IntegrationRegistry,
@@ -1569,14 +1560,11 @@ pub async fn discover_mcp_servers(
                 enabled: server.enabled,
                 transport: Some(launch.transport.clone()),
                 scope,
-            });
+            },
+        );
     }
-    let provider_inventories = crate::provider_mcp_inventory::inspect(
-        &project_path,
-        canonical,
-        &inventory_errors,
-    )
-    .await;
+    let provider_inventories =
+        crate::provider_mcp_inventory::inspect(&project_path, canonical, &inventory_errors).await;
     let conn = db(&app)?;
     persist_registry(&conn, &servers)?;
     let mut views: Vec<McpServerView> = servers
@@ -1777,12 +1765,15 @@ pub async fn install_mcp_in_agent(
                 .launch
                 .as_ref()
                 .ok_or_else(|| "este MCP não tem config de launch para instalar".to_string())?;
-            Some(crate::mcp_instalacao::spec_de(&agent, &server.name, launch)?)
+            Some(crate::mcp_instalacao::spec_de(
+                &agent,
+                &server.name,
+                launch,
+            )?)
         } else {
             None
         };
-        let novo =
-            crate::mcp_instalacao::merge_opencode_json(&atual, &server.name, spec.as_ref())?;
+        let novo = crate::mcp_instalacao::merge_opencode_json(&atual, &server.name, spec.as_ref())?;
         std::fs::write(&destino, novo)
             .map_err(|e| format!("não consegui gravar {}: {e}", destino.display()))?;
         return Ok(format!(
@@ -2196,10 +2187,7 @@ async fn probe(server: &DiscoveredServer, project_path: &str) -> ProbeOutcome {
     probe_launch(config, project_path).await
 }
 
-pub(crate) async fn probe_launch(
-    config: &McpLaunchConfig,
-    project_path: &str,
-) -> ProbeOutcome {
+pub(crate) async fn probe_launch(config: &McpLaunchConfig, project_path: &str) -> ProbeOutcome {
     if config.transport == "stdio" {
         probe_stdio(config, project_path).await
     } else {
@@ -2379,8 +2367,7 @@ fn record_unavailable(
     }
     let gate = McpPreflightGate::new(vec![issue.clone()], allowed_recoveries);
     let requested = overrides.iter().find(|request| {
-        request.gate_fingerprint == gate.fingerprint
-            && request.source_id == binding.server_id
+        request.gate_fingerprint == gate.fingerprint && request.source_id == binding.server_id
     });
     if let Some(request) = requested {
         match (disposition, request.kind) {
@@ -2391,10 +2378,7 @@ fn record_unavailable(
                 });
                 return false;
             }
-            (
-                McpPlanDisposition::NeedsReadonlyConsent,
-                McpRecoveryKind::RetryReadonly,
-            ) => {
+            (McpPlanDisposition::NeedsReadonlyConsent, McpRecoveryKind::RetryReadonly) => {
                 plan.omissions.push(McpPlanIssue {
                     disposition: McpPlanDisposition::Omitted,
                     ..issue
@@ -2515,10 +2499,8 @@ pub async fn plan_for_run(
             // o transporte; somente `required` define se a ausência bloqueia.
             if binding.browser {
                 let endpoint = crate::browser::live_endpoint(app, &project_id).await;
-                let resource = crate::resource_broker::project_browser(
-                    &server.name,
-                    endpoint.is_some(),
-                );
+                let resource =
+                    crate::resource_broker::project_browser(&server.name, endpoint.is_some());
                 if endpoint.is_none() {
                     if record_unavailable(
                         &mut plan,
@@ -2557,11 +2539,7 @@ pub async fn plan_for_run(
                         }
                     }
                 }
-                match apply_cdp_endpoint(
-                    &mut launch,
-                    endpoint.as_deref(),
-                    &server.name,
-                ) {
+                match apply_cdp_endpoint(&mut launch, endpoint.as_deref(), &server.name) {
                     Ok(notices) => {
                         resolved_resource = Some(resource);
                         plan.notices.extend(notices);
@@ -2852,7 +2830,11 @@ mod tests {
             launch: parse_launch(&json!({ "type": "http", "url": "https://x/mcp" })),
             ..stdio.clone()
         };
-        assert!(!roteavel_por_proxy_com(&http_sem_oauth, "claude-code", || true));
+        assert!(!roteavel_por_proxy_com(
+            &http_sem_oauth,
+            "claude-code",
+            || true
+        ));
     }
 
     #[test]
@@ -2874,7 +2856,9 @@ mod tests {
                 "oauth": { "clientId": "c", "callbackPort": 1234 }
             })),
         };
-        assert!(!roteavel_por_proxy_com(&com_literal, "claude-code", || true));
+        assert!(!roteavel_por_proxy_com(&com_literal, "claude-code", || {
+            true
+        }));
     }
 
     #[test]
@@ -3262,9 +3246,9 @@ mod tests {
         assert!(args
             .iter()
             .any(|arg| arg == "mcp_servers.playwright.enabled=false"));
-        assert!(args.iter().any(|arg| {
-            arg.contains("mcp_servers.mcx-codex-user-playwright-1a2b3c4d.command")
-        }));
+        assert!(args
+            .iter()
+            .any(|arg| { arg.contains("mcp_servers.mcx-codex-user-playwright-1a2b3c4d.command") }));
     }
 
     #[test]
@@ -3601,9 +3585,10 @@ mod tests {
             .allowed_recoveries
             .iter()
             .any(|recovery| recovery.kind == McpRecoveryKind::OmitForThisRun));
-        assert!(gate.allowed_recoveries.iter().any(|recovery| {
-            recovery.kind == McpRecoveryKind::StartProjectBrowser
-        }));
+        assert!(gate
+            .allowed_recoveries
+            .iter()
+            .any(|recovery| { recovery.kind == McpRecoveryKind::StartProjectBrowser }));
 
         let override_once = McpRunOverride {
             gate_fingerprint: gate.fingerprint,
@@ -3671,12 +3656,8 @@ mod tests {
     #[test]
     fn binding_de_navegador_injeta_o_cdp_endpoint_no_plano_efemero() {
         let mut launch = browser_mcp_launch(&[]);
-        let notices = apply_cdp_endpoint(
-            &mut launch,
-            Some("http://127.0.0.1:62934"),
-            "playwright",
-        )
-        .unwrap();
+        let notices =
+            apply_cdp_endpoint(&mut launch, Some("http://127.0.0.1:62934"), "playwright").unwrap();
         assert_eq!(
             launch.args,
             vec![
@@ -3714,12 +3695,8 @@ mod tests {
     #[test]
     fn binding_do_projeto_substitui_endpoint_da_origem_e_avisa() {
         let mut launch = browser_mcp_launch(&["--cdp-endpoint", "http://127.0.0.1:9222"]);
-        let notices = apply_cdp_endpoint(
-            &mut launch,
-            Some("http://127.0.0.1:62934"),
-            "playwright",
-        )
-        .unwrap();
+        let notices =
+            apply_cdp_endpoint(&mut launch, Some("http://127.0.0.1:62934"), "playwright").unwrap();
         // A marca do binding é a decisão mais específica deste projeto.
         assert_eq!(
             launch.args,
@@ -3733,12 +3710,8 @@ mod tests {
         assert!(notices[0].contains("--cdp-endpoint"));
         // A forma `--cdp-endpoint=<url>` é reconhecida do mesmo jeito.
         let mut colado = browser_mcp_launch(&["--cdp-endpoint=http://127.0.0.1:9222"]);
-        let notices = apply_cdp_endpoint(
-            &mut colado,
-            Some("http://127.0.0.1:62934"),
-            "playwright",
-        )
-        .unwrap();
+        let notices =
+            apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright").unwrap();
         assert_eq!(colado.args.len(), 3);
         assert_eq!(colado.args[2], "http://127.0.0.1:62934");
         assert_eq!(notices.len(), 1);
@@ -3747,12 +3720,8 @@ mod tests {
     #[test]
     fn browser_e_headless_da_origem_saem_do_run_com_aviso() {
         let mut launch = browser_mcp_launch(&["--browser", "chrome", "--headless", "--isolated"]);
-        let notices = apply_cdp_endpoint(
-            &mut launch,
-            Some("http://127.0.0.1:62934"),
-            "playwright",
-        )
-        .unwrap();
+        let notices =
+            apply_cdp_endpoint(&mut launch, Some("http://127.0.0.1:62934"), "playwright").unwrap();
         assert_eq!(
             launch.args,
             vec![
@@ -3766,12 +3735,7 @@ mod tests {
         assert!(notices[0].contains("--browser e --headless"));
         // Forma colada (`--browser=chrome`) também sai.
         let mut colado = browser_mcp_launch(&["--browser=chrome"]);
-        apply_cdp_endpoint(
-            &mut colado,
-            Some("http://127.0.0.1:62934"),
-            "playwright",
-        )
-        .unwrap();
+        apply_cdp_endpoint(&mut colado, Some("http://127.0.0.1:62934"), "playwright").unwrap();
         assert!(!colado.args.iter().any(|arg| arg.starts_with("--browser")));
     }
 
@@ -3780,7 +3744,10 @@ mod tests {
         let mut launch = browser_mcp_launch(&["--browser", "chrome"]);
         let error = apply_cdp_endpoint(&mut launch, None, "playwright").unwrap_err();
         // O plano aborta antes de materializar o MCP; a cópia da origem fica intacta.
-        assert_eq!(launch.args, vec!["@playwright/mcp@latest", "--browser", "chrome"]);
+        assert_eq!(
+            launch.args,
+            vec!["@playwright/mcp@latest", "--browser", "chrome"]
+        );
         assert!(error.contains("não está ligado"));
         assert!(error.contains("Ligue o navegador ou desmarque o binding"));
     }
@@ -3828,7 +3795,10 @@ done
 
         // O comando vira absoluto E o cwd passa a ser a pasta do servidor: sem
         // isso o probe rodaria com o cwd do projeto e não acharia o binário.
-        assert_eq!(launch.command, Some(dir.join("run.sh").to_string_lossy().to_string()));
+        assert_eq!(
+            launch.command,
+            Some(dir.join("run.sh").to_string_lossy().to_string())
+        );
         assert_eq!(launch.cwd, Some(dir.to_string_lossy().to_string()));
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -3872,14 +3842,21 @@ done
     fn expande_home_path_corretamente() {
         let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/fake".into());
         assert_eq!(expand_home_path("~/bin/tool"), format!("{home}/bin/tool"));
-        assert_eq!(expand_home_path("${HOME}/bin/tool"), format!("{home}/bin/tool"));
-        assert_eq!(expand_home_path("$HOME/bin/tool"), format!("{home}/bin/tool"));
+        assert_eq!(
+            expand_home_path("${HOME}/bin/tool"),
+            format!("{home}/bin/tool")
+        );
+        assert_eq!(
+            expand_home_path("$HOME/bin/tool"),
+            format!("{home}/bin/tool")
+        );
         assert_eq!(expand_home_path("/opt/bin/tool"), "/opt/bin/tool");
     }
 
     #[test]
     fn normaliza_launch_relativo_do_codex() {
-        let temp = std::env::temp_dir().join(format!("mc-codex-launch-test-{}", std::process::id()));
+        let temp =
+            std::env::temp_dir().join(format!("mc-codex-launch-test-{}", std::process::id()));
         let codex_dir = temp.join(".codex");
         let server_dir = codex_dir.join("computer-use");
         std::fs::create_dir_all(&server_dir).unwrap();

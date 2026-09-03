@@ -62,6 +62,12 @@ jobs:
         run: bunx tsc -b --force
       - name: lint
         run: bun run lint
+      # Guarda de FLUIDEZ antes da suíte inteira: falha aqui é regressão de
+      # custo por token (identidade de prop quebrada, derivação desescopada), e
+      # ela precisa ser legível como tal, não enterrada em 3.656 testes. Mesma
+      # razão pela qual as guardas de estilo têm job próprio.
+      - name: guarda de fluidez (custo por token)
+        run: bun run check:fluidez
       - name: testes
         run: bun run test
       # Smoke-test de BOOT: sobe o app buildado num chromium headless e checa que

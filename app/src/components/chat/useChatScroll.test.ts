@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { PERTO_DO_FIM_PX, ehGestoDeLeitura, pertoDoFim } from "./useChatScroll"
+import { PERTO_DO_FIM_PX, ehGestoDeLeitura, ehGestoDeSubida, pertoDoFim } from "./useChatScroll"
 
 const source = Object.values(
   import.meta.glob("./useChatScroll.ts", {
@@ -64,6 +64,18 @@ describe("ehGestoDeLeitura", () => {
   })
 })
 
+describe("ehGestoDeSubida", () => {
+  it("deltaY negativo significa rolar para cima (subir/ler histórico)", () => {
+    expect(ehGestoDeSubida(-10)).toBe(true)
+    expect(ehGestoDeSubida(-1)).toBe(true)
+  })
+
+  it("deltaY positivo ou zero significa rolar para baixo ou horizontal", () => {
+    expect(ehGestoDeSubida(0)).toBe(false)
+    expect(ehGestoDeSubida(10)).toBe(false)
+  })
+})
+
 describe("a política de seguir", () => {
   it("chegar ao fim é o gesto que RELIGA o seguir", () => {
     // O par do gesto de leitura. Sem ele, quem subisse pra ler uma vez teria
@@ -81,6 +93,11 @@ describe("a política de seguir", () => {
       pertoDoFim({ scrollHeight: 5000, scrollTop: 100, clientHeight: 800 }),
     ).toBe(false)
   })
+
+  it("gesto de roda para cima desliga seguir, mas roda para baixo perto do fim recupera", () => {
+    expect(source).toContain("ehGestoDeSubida(e.deltaY)")
+    expect(source).toContain("if (pertoDoFim(el))")
+  })
 })
 
 describe("o alvo do observador de crescimento", () => {
@@ -88,6 +105,13 @@ describe("o alvo do observador de crescimento", () => {
     expect(source).toContain("ro.observe(contentEl)")
     expect(source).toContain("contentRef: setContentEl")
     expect(source).not.toContain("ro.observe(el.firstElementChild)")
+  })
+})
+
+describe("troca de conversa aterrissa imediatamente", () => {
+  it("usa useLayoutEffect para zerar e ancorar no fim antes do primeiro paint", () => {
+    expect(source).toContain("useLayoutEffect")
+    expect(source).toContain("el.scrollTop = el.scrollHeight")
   })
 })
 

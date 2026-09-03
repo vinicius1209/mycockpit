@@ -157,10 +157,8 @@ fn status_events(dialect: HookDialect) -> &'static [EventSpec] {
 /// `CONFIG_TIMEOUT_S` (35s), a camada de fora das três: maior que o teto do
 /// curl (32s), que por sua vez é maior que o teto humano do gateway (30s) — o
 /// CLI nunca mata o hook antes de o app responder `ask`.
-const CLAUDE_PERMISSION_EVENTS: &[EventSpec] =
-    &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
-const CODEX_PERMISSION_EVENTS: &[EventSpec] =
-    &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
+const CLAUDE_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
+const CODEX_PERMISSION_EVENTS: &[EventSpec] = &[ev("PermissionRequest", true, CONFIG_TIMEOUT_S)];
 /// agy: o gate É o PreToolUse (não há evento separado). Matcher ESCOPADO a
 /// `run_command` de propósito — o hook é síncrono e segura o loop; escopar à
 /// tool que exige a permissão "command" evita atrasar tool call inofensiva
@@ -576,11 +574,7 @@ fn installed_events_agy(cfg: &Value) -> Vec<String> {
     let Some(group) = cfg.get(AGY_GROUP).and_then(|v| v.as_object()) else {
         return Vec::new();
     };
-    let mut out: Vec<String> = group
-        .keys()
-        .filter(|k| *k != "enabled")
-        .cloned()
-        .collect();
+    let mut out: Vec<String> = group.keys().filter(|k| *k != "enabled").cloned().collect();
     out.sort();
     out
 }
@@ -614,7 +608,9 @@ pub fn agy_version_ok(version: &str) -> bool {
 fn require_hooks(agent: &str) -> Result<HookDialect, String> {
     match capabilities_of(agent).and_then(|c| c.hook_dialect) {
         Some(d) if capabilities_of(agent).is_some_and(|c| c.hooks_status) => Ok(d),
-        _ => Err(format!("{agent} não tem hooks de status (capability ausente)")),
+        _ => Err(format!(
+            "{agent} não tem hooks de status (capability ausente)"
+        )),
     }
 }
 
@@ -855,9 +851,7 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
         _ => installed_events_claude_family(&cfg, &script_str),
     };
     let installed = !events.is_empty();
-    let permission_installed = events
-        .iter()
-        .any(|e| e == permission_event_name(dialect));
+    let permission_installed = events.iter().any(|e| e == permission_event_name(dialect));
     let script_exists = script.exists();
     let mut warning = None;
     if installed && !script_exists {
@@ -892,11 +886,7 @@ fn status_of(app: &AppHandle, agent: &str) -> Result<HooksStatus, String> {
         config_path: cpath.to_string_lossy().to_string(),
         script_path: script_str.clone(),
         preview: preview_fragment(dialect, &script_str, status_events(dialect))?,
-        preview_permission: preview_fragment(
-            dialect,
-            &script_str,
-            permission_events(dialect),
-        )?,
+        preview_permission: preview_fragment(dialect, &script_str, permission_events(dialect))?,
         events,
         warning,
         outdated,
@@ -1117,11 +1107,8 @@ mod tests {
     #[test]
     fn desinstalar_devolve_o_conteudo_como_estava() {
         let antes = settings_reais_claude();
-        let instalado = with_hooks_claude_family(
-            &antes,
-            SCRIPT,
-            status_events(HookDialect::ClaudeSettings),
-        );
+        let instalado =
+            with_hooks_claude_family(&antes, SCRIPT, status_events(HookDialect::ClaudeSettings));
         // garantia HONESTA: o CONTEÚDO volta (igualdade de Value); formatação/
         // ordem de chaves do arquivo podem mudar (mesmo claim do statusline).
         assert_eq!(without_hooks_claude_family(&instalado, SCRIPT), antes);
@@ -1146,7 +1133,8 @@ mod tests {
             SCRIPT,
             status_events(HookDialect::CodexHooksJson),
         );
-        let duas = with_hooks_claude_family(&uma, SCRIPT, status_events(HookDialect::CodexHooksJson));
+        let duas =
+            with_hooks_claude_family(&uma, SCRIPT, status_events(HookDialect::CodexHooksJson));
         assert_eq!(uma, duas);
         let stop = duas["hooks"]["Stop"].as_array().unwrap();
         assert_eq!(
@@ -1220,7 +1208,12 @@ mod tests {
 
     #[test]
     fn script_fail_open_por_construcao() {
-        let s = render_script("claude-code", HookDialect::ClaudeSettings, ENDPOINT, BREAKER);
+        let s = render_script(
+            "claude-code",
+            HookDialect::ClaudeSettings,
+            ENDPOINT,
+            BREAKER,
+        );
         // fire-and-forget: timeout de 1s, background, erro engolido, exit 0.
         assert!(s.contains("--connect-timeout 1"));
         assert!(s.contains(">/dev/null 2>&1 &"));
@@ -1336,7 +1329,10 @@ mod tests {
         // e o gateway ia responder aos 30 — a corrida exata que as três
         // camadas existem pra impedir.
         assert_eq!(evs[0].timeout, CONFIG_TIMEOUT_S);
-        assert_eq!(permission_event_name(HookDialect::AgyConfigHooks), "PreToolUse");
+        assert_eq!(
+            permission_event_name(HookDialect::AgyConfigHooks),
+            "PreToolUse"
+        );
     }
 
     /// As TRÊS camadas, nos TRÊS dialetos, no mesmo lugar: gateway (30s) <
@@ -1369,7 +1365,10 @@ mod tests {
                 HookDialect::AgyConfigHooks => "agy",
             };
             let s = render_script(engine, d, ENDPOINT, BREAKER);
-            assert!(s.contains(&format!("--max-time {SYNC_MAX_TIME}")), "{engine}");
+            assert!(
+                s.contains(&format!("--max-time {SYNC_MAX_TIME}")),
+                "{engine}"
+            );
         }
     }
 
@@ -1451,15 +1450,26 @@ mod tests {
             assert!(sync.contains("! brk_open"), "{engine}: sem guarda");
             assert!(sync.contains("brk_hit"), "{engine}: não conta timeout");
             assert!(sync.contains("brk_ok"), "{engine}: não zera na resposta");
-            assert!(!resto.contains("brk_"), "{engine}: disjuntor fora do síncrono");
+            assert!(
+                !resto.contains("brk_"),
+                "{engine}: disjuntor fora do síncrono"
+            );
             // só o timeout do curl (28) conta; conexão recusada não.
-            assert!(s.contains("elif [ \"$rc\" = 28 ]") || s.contains("[ \"$rc\" = 28 ] && brk_hit"));
+            assert!(
+                s.contains("elif [ \"$rc\" = 28 ]") || s.contains("[ \"$rc\" = 28 ] && brk_hit")
+            );
         }
         // e o disjuntor NUNCA fabrica autoridade: nada de allow no script.
-        assert!(!render_script("claude-code", HookDialect::ClaudeSettings, ENDPOINT, BREAKER)
-            .contains("allow"));
-        assert!(!render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER)
-            .contains("allow"));
+        assert!(!render_script(
+            "claude-code",
+            HookDialect::ClaudeSettings,
+            ENDPOINT,
+            BREAKER
+        )
+        .contains("allow"));
+        assert!(
+            !render_script("agy", HookDialect::AgyConfigHooks, ENDPOINT, BREAKER).contains("allow")
+        );
     }
 
     #[test]
@@ -1509,9 +1519,11 @@ mod tests {
     async fn gate_so_existe_no_dialeto_do_agy() {
         // claude/codex não têm mínimo declarado: o gate passa reto (e nem
         // chega a perguntar versão a binário nenhum).
-        assert!(dialect_install_gate("claude-code", HookDialect::ClaudeSettings)
-            .await
-            .is_ok());
+        assert!(
+            dialect_install_gate("claude-code", HookDialect::ClaudeSettings)
+                .await
+                .is_ok()
+        );
         assert!(dialect_install_gate("codex", HookDialect::CodexHooksJson)
             .await
             .is_ok());
@@ -1693,7 +1705,10 @@ mod tests_shell {
                     c.wait_with_output()
                 })
                 .unwrap();
-            assert!(out.status.success(), "script saiu com erro (porta morta tem que ser engolida)");
+            assert!(
+                out.status.success(),
+                "script saiu com erro (porta morta tem que ser engolida)"
+            );
             assert_eq!(
                 String::from_utf8_lossy(&out.stdout).trim(),
                 expected_stdout,

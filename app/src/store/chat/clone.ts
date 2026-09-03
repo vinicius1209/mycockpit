@@ -22,6 +22,7 @@ import {
   loadConversation as dbLoad,
   saveConversation as dbSave,
   setConversationColor as dbSetColor,
+  setConversationParent as dbSetParent,
   type ConversationMeta,
 } from "@/lib/db/conversations"
 import { normalizeModelValue } from "@/lib/agents"
@@ -60,11 +61,18 @@ export function cloneTitle(
   siblings: readonly string[],
 ): string {
   const base = baseTitle(srcTitle)
-  const usados = new Set(siblings)
-  for (let n = 1; ; n++) {
-    const candidato = n === 1 ? `${base} (${marker})` : `${base} (${marker} ${n})`
-    if (!usados.has(candidato)) return candidato
+  const padrao = new RegExp(
+    `^${base.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*\\(${marker}(?:\\s+(\\d+))?\\)$`,
+  )
+  const usados = new Set<number>()
+  for (const s of siblings) {
+    const m = s.match(padrao)
+    if (!m) continue
+    usados.add(m[1] ? parseInt(m[1], 10) : 1)
   }
+  let livre = 1
+  while (usados.has(livre)) livre++
+  return livre === 1 ? `${base} (${marker})` : `${base} (${marker} ${livre})`
 }
 
 /** Núcleo comum: grava uma cópia nova no DB e a torna ativa. Sessão/model e
@@ -79,6 +87,7 @@ async function commitClonedConversation(
   effort: string | null,
   title: string,
   srcColor: string | null,
+  parentId: string | null,
 ): Promise<string> {
   const newId = uid()
   // Modo NÃO viaja na cópia: a nova conversa nasce herdando o projeto. Clonar
@@ -100,6 +109,7 @@ async function commitClonedConversation(
     null,
     null,
   )
+  if (parentId != null) await dbSetParent(newId, parentId)
   if (srcColor != null) await dbSetColor(newId, srcColor)
   set((s) => {
     const meta: ConversationMeta = {
@@ -109,6 +119,7 @@ async function commitClonedConversation(
       color: srcColor,
       worktreePath: null,
       agent,
+      parentId: parentId ?? null,
     }
     const nextList = [...(s.conversationsByProject[owner] ?? []), meta]
     return {
@@ -189,6 +200,7 @@ export async function duplicateConversationImpl(
   const effort = loaded?.effort ?? get().byId[id]?.effort ?? null
   // Irmãos lidos DEPOIS do await (a lista pode ter mudado durante o dbLoad).
   const siblings = (get().conversationsByProject[owner] ?? []).flatMap((c) => (c.title ? [c.title] : []))
+  const parentId = src?.parentId ?? id
   await commitClonedConversation(
     set,
     owner,
@@ -198,6 +210,7 @@ export async function duplicateConversationImpl(
     effort,
     cloneTitle(src?.title ?? loaded?.title ?? "Conversa", "cópia", siblings),
     src?.color ?? null,
+    parentId,
   )
 }
 
@@ -218,6 +231,7 @@ export async function forkConversationAtImpl(
   const items = markOrphanedProcesses(conv.items.slice(0, cut + 1))
   const reqModel = normalizeModelValue(conv.agent, conv.reqModel)
   const siblings = (before.conversationsByProject[owner] ?? []).flatMap((c) => (c.title ? [c.title] : []))
+  const parentId = src?.parentId ?? id
   const newId = await commitClonedConversation(
     set,
     owner,
@@ -227,6 +241,7 @@ export async function forkConversationAtImpl(
     conv.effort,
     cloneTitle(src?.title ?? "Conversa", "fork", siblings),
     src?.color ?? null,
+    parentId,
   )
   // Worktree DEPOIS de commitar a conversa, de propósito: o fork já apareceu e
   // já é a ativa; o isolamento chega em seguida e nunca segura a UI. Diferente

@@ -10,10 +10,8 @@ import {
 } from "react"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { ContextRing } from "@/components/chat/ContextRing"
-import {
-  IdentityDoor,
-} from "@/components/chat/ComposerExecutionControls"
-import { resumoDaIdentidade } from "@/components/chat/composerIdentity"
+import { IdentityDoor } from "@/components/chat/ComposerExecutionControls"
+import { resumoDaIdentidade, identidadeEfetiva } from "@/components/chat/composerIdentity"
 import {
   SlashPopover,
   AttachmentChips,
@@ -25,12 +23,7 @@ import {
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
 import { resolvePermission, setProjectPermissionEverywhere } from "@/lib/permission"
-import {
-  despachoDoEnter,
-  podeEnviar,
-  type EstadoDoComposer,
-} from "@/components/chat/composerSend"
-import { identidadeEfetiva } from "@/components/chat/composerIdentity"
+import { despachoDoEnter, podeEnviar, type EstadoDoComposer } from "@/components/chat/composerSend"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
@@ -53,18 +46,14 @@ import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
 import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
-import {
-  DESTINATIONS,
-  defaultModelFor,
-  agentCaps,
-  normalizeModelValue,
-} from "@/lib/agents"
+import { DESTINATIONS, defaultModelFor, agentCaps, normalizeModelValue } from "@/lib/agents"
 import { FusionLauncher } from "@/components/fusion/FusionLauncher"
 import { MissionLauncher } from "@/components/mission/MissionLauncher"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { forceSendDraft, forceSendQueued, pullQueued } from "@/components/chat/filaComposer"
 
 // O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
 // mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
@@ -283,7 +272,7 @@ export function CommandConsole({
   const { files: projectFiles } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
-  const { attachments, removeAttachment, addFiles, attach } = att
+  const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
 
   // S3.6 — presets (personas): a seleção mora na CONVERSA (conv.presetId), não
   // em estado local — o handleSend e a mesa leem de lá. Escolher um preset
@@ -407,6 +396,40 @@ export function CommandConsole({
     })
   }
 
+  function handleEditQueued(index: number) {
+    if (!activeId) return
+    const item = pullQueued(activeId, index)
+    if (!item) return
+    setValue(item.text)
+    if (item.attachments.length > 0) {
+      setAttachments((prev) => [...prev, ...item.attachments])
+    }
+    focusComposer()
+  }
+
+  function handleForceSendQueued(index: number) {
+    if (!activeId) return
+    forceSendQueued(activeId, index, onStop)
+  }
+
+  function handleForceSendDraft(overrideText?: unknown) {
+    if (!activeId) return
+    const text = textoDoEnvio(overrideText, value)
+    forceSendDraft(
+      activeId,
+      text,
+      attachments,
+      () => {
+        useComposerDrafts.getState().clear(activeId)
+        resetHistory()
+        if (activeId === useChat.getState().activeId) focusComposer()
+      },
+      onStop,
+    )
+  }
+
+  const canEnqueue = (running || finalizing) && (value.trim().length > 0 || attachments.length > 0)
+
   // Placeholder por estado. A dica de "/" sai só quando o projeto tem comandos
   // de fato (senão seria teatro).
   const placeholder = missionRunning
@@ -475,6 +498,7 @@ export function CommandConsole({
           setHistIdx(null)
         }}
         onSubmit={(text) => submit(text)}
+        onForceSubmit={canEnqueue ? (text) => handleForceSendDraft(text) : undefined}
         placeholder={placeholder}
         mentionNames={presets.map((p) => p.name)}
         mentionFiles={projectFiles}
@@ -523,6 +547,8 @@ export function CommandConsole({
         <QueuedChips
           queued={conv.queued ?? []}
           onRemove={(i) => useChat.getState().removeQueued(activeId, i)}
+          onEdit={handleEditQueued}
+          onForceSend={handleForceSendQueued}
         />
       )}
       <ComposerShell
@@ -565,6 +591,8 @@ export function CommandConsole({
             onStop={onStop}
             onSubmit={submit}
             canSend={canSend}
+            canEnqueue={canEnqueue}
+            onForceSendDraft={canEnqueue ? () => handleForceSendDraft() : undefined}
             contextRing={<ContextRing />}
             // M3: escolher o modo mexe NESTA conversa. O projeto virou o
             // DEFAULT de quem nasce, e definir esse default é um gesto próprio

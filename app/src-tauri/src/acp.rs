@@ -34,9 +34,17 @@ use serde_json::Value;
 #[derive(Debug, PartialEq)]
 pub enum MensagemAcp {
     /// Pedido do AGENTE para o cliente (tem `id` e `method`). Precisa resposta.
-    Pedido { id: Value, metodo: String, params: Value },
+    Pedido {
+        id: Value,
+        metodo: String,
+        params: Value,
+    },
     /// Resposta a algo que NÓS pedimos (tem `id`, não tem `method`).
-    Resposta { id: Value, result: Option<Value>, erro: Option<Value> },
+    Resposta {
+        id: Value,
+        result: Option<Value>,
+        erro: Option<Value>,
+    },
     /// Aviso sem resposta (tem `method`, não tem `id`).
     Notificacao { metodo: String, params: Value },
     /// Linha que não é JSON-RPC. Não é erro fatal: alguns CLIs escrevem banner
@@ -103,8 +111,16 @@ pub fn ler_pedido_de_permissao(id: &Value, params: &Value) -> Option<PedidoDePer
         .filter_map(|o| {
             Some(OpcaoDePermissao {
                 id: o.get("optionId")?.as_str()?.to_string(),
-                tipo: o.get("kind").and_then(|k| k.as_str()).unwrap_or("").to_string(),
-                rotulo: o.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string(),
+                tipo: o
+                    .get("kind")
+                    .and_then(|k| k.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                rotulo: o
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("")
+                    .to_string(),
             })
         })
         .collect();
@@ -114,8 +130,16 @@ pub fn ler_pedido_de_permissao(id: &Value, params: &Value) -> Option<PedidoDePer
     Some(PedidoDePermissao {
         id: id.clone(),
         tool_call_id: tc.get("toolCallId")?.as_str()?.to_string(),
-        titulo: tc.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
-        tipo: tc.get("kind").and_then(|k| k.as_str()).unwrap_or("").to_string(),
+        titulo: tc
+            .get("title")
+            .and_then(|t| t.as_str())
+            .unwrap_or("")
+            .to_string(),
+        tipo: tc
+            .get("kind")
+            .and_then(|k| k.as_str())
+            .unwrap_or("")
+            .to_string(),
         opcoes,
     })
 }
@@ -154,7 +178,10 @@ pub fn resposta_de_cancelamento(id: &Value) -> Value {
 /// Quando nada corresponde, o desfecho é `cancelled`, não um "allow" qualquer:
 /// escolher por conta própria seria decidir no lugar de quem foi perguntado.
 pub fn escolher_opcao(answer: &Value, opcoes: &[OpcaoDePermissao]) -> Value {
-    let allow = answer.get("allow").and_then(|x| x.as_bool()).unwrap_or(false);
+    let allow = answer
+        .get("allow")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     // Preferência EXATA primeiro, e só depois a família. `allow_once` é o
     // default deliberado do "sim": conceder para sempre é decisão maior, e
     // ninguém pediu isso ao clicar em permitir uma vez.
@@ -177,7 +204,10 @@ pub fn mapear_update(params: &Value) -> Vec<AgentEvent> {
     let Some(u) = params.get("update") else {
         return Vec::new();
     };
-    let tipo = u.get("sessionUpdate").and_then(|t| t.as_str()).unwrap_or("");
+    let tipo = u
+        .get("sessionUpdate")
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
     match tipo {
         "agent_message_chunk" => texto_do_chunk(u)
             .map(|text| vec![AgentEvent::TextDelta { text }])
@@ -250,7 +280,11 @@ fn texto_do_conteudo(c: Option<&Value>) -> String {
 /// ADR-095: por isso soma, em vez de confiar no `totalTokens`.
 pub fn ler_usage(result: &Value) -> (u64, u64, u64) {
     let u = result.get("usage");
-    let n = |k: &str| u.and_then(|x| x.get(k)).and_then(|x| x.as_u64()).unwrap_or(0);
+    let n = |k: &str| {
+        u.and_then(|x| x.get(k))
+            .and_then(|x| x.as_u64())
+            .unwrap_or(0)
+    };
     let cache = n("cachedReadTokens");
     (n("inputTokens") + cache, n("outputTokens"), cache)
 }
@@ -296,7 +330,9 @@ mod tests {
         // a ferramenta executou e o desfecho veio `stopReason: end_turn`.
         assert_eq!(
             resposta_de_permissao(&json!(0), "once"),
-            v(r#"{"jsonrpc":"2.0","id":0,"result":{"outcome":{"outcome":"selected","optionId":"once"}}}"#)
+            v(
+                r#"{"jsonrpc":"2.0","id":0,"result":{"outcome":{"outcome":"selected","optionId":"once"}}}"#
+            )
         );
     }
 
@@ -355,7 +391,10 @@ mod tests {
         // E negar, sem nenhuma opção de negar, não vira "allow" por descuido.
         let e = escolher_opcao(&json!({"allow": false}), &so_sempre);
         assert_eq!(e["outcome"], "cancelled");
-        assert!(e["optionId"].is_null(), "não escolhe por conta própria: {e}");
+        assert!(
+            e["optionId"].is_null(),
+            "não escolhe por conta própria: {e}"
+        );
     }
 
     #[test]
@@ -374,11 +413,15 @@ mod tests {
     #[test]
     fn classifica_as_tres_formas_do_cano() {
         assert!(matches!(
-            classificar(&v(r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}"#)),
+            classificar(&v(
+                r#"{"jsonrpc":"2.0","id":3,"result":{"stopReason":"end_turn"}}"#
+            )),
             MensagemAcp::Resposta { .. }
         ));
         assert!(matches!(
-            classificar(&v(r#"{"jsonrpc":"2.0","method":"session/update","params":{}}"#)),
+            classificar(&v(
+                r#"{"jsonrpc":"2.0","method":"session/update","params":{}}"#
+            )),
             MensagemAcp::Notificacao { .. }
         ));
         // Banner no mesmo cano não derruba o turno.
@@ -409,7 +452,14 @@ mod tests {
 
         let pronto = json!({"update":{"sessionUpdate":"tool_call_update","toolCallId":"t1",
             "status":"completed","content":[{"type":"content","content":{"type":"text","text":"oi-frota\n"}}]}});
-        let AgentEvent::ToolResult { id, ok, text, lines, .. } = &mapear_update(&pronto)[0] else {
+        let AgentEvent::ToolResult {
+            id,
+            ok,
+            text,
+            lines,
+            ..
+        } = &mapear_update(&pronto)[0]
+        else {
             panic!("esperava ToolResult")
         };
         assert_eq!(id, "t1");
@@ -466,7 +516,9 @@ mod tests {
         // Valores REAIS do turno medido. O `inputTokens` do ACP exclui o cache,
         // e o nosso contrato inclui: por isso soma, em vez de acreditar no
         // `totalTokens` (que aqui nem fecha com a soma das partes).
-        let r = v(r#"{"stopReason":"end_turn","usage":{"inputTokens":5365,"outputTokens":10,"totalTokens":9497,"thoughtTokens":37,"cachedReadTokens":4085}}"#);
+        let r = v(
+            r#"{"stopReason":"end_turn","usage":{"inputTokens":5365,"outputTokens":10,"totalTokens":9497,"thoughtTokens":37,"cachedReadTokens":4085}}"#,
+        );
         assert_eq!(ler_usage(&r), (5365 + 4085, 10, 4085));
         // Sem usage não inventa número.
         assert_eq!(ler_usage(&json!({})), (0, 0, 0));

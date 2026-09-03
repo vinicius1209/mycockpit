@@ -177,15 +177,26 @@ pub fn spec_de(
             args: launch.args.clone(),
         },
         "http" => McpAlvo::Http {
-            url: launch.url.clone().ok_or("config http sem url: nada a instalar")?,
+            url: launch
+                .url
+                .clone()
+                .ok_or("config http sem url: nada a instalar")?,
         },
         outro => return Err(format!("transporte {outro} não tem receita de instalação")),
     };
     Ok(McpSpec {
         nome: nome.to_string(),
         alvo,
-        headers: launch.http_headers.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
-        env: launch.env.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+        headers: launch
+            .http_headers
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
+        env: launch
+            .env
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect(),
     })
 }
 
@@ -300,7 +311,10 @@ pub fn merge_opencode_json(
     }
     // Chave `mcp` que ficou vazia por remoção sai junto: não deixamos lixo
     // nosso no arquivo de quem nos hospedou.
-    if obj.get("mcp").is_some_and(|m| m.as_object().is_some_and(|o| o.is_empty())) {
+    if obj
+        .get("mcp")
+        .is_some_and(|m| m.as_object().is_some_and(|o| o.is_empty()))
+    {
         obj.remove("mcp");
     }
     let saida = serde_json::to_string_pretty(&raiz).map_err(|e| e.to_string())? + "\n";
@@ -318,10 +332,9 @@ fn conferir_preservacao(antes: &serde_json::Value, saida: &str, nosso: &str) -> 
     };
     for (k, v) in a {
         if k == "mcp" {
-            let (Some(ma), Some(md)) = (
-                v.as_object(),
-                depois.get("mcp").and_then(|x| x.as_object()),
-            ) else {
+            let (Some(ma), Some(md)) =
+                (v.as_object(), depois.get("mcp").and_then(|x| x.as_object()))
+            else {
                 // A chave `mcp` só pode sumir se ela era SÓ nossa e foi removida.
                 if v.as_object().is_some_and(|o| o.keys().all(|k| k == nosso)) {
                     continue;
@@ -438,7 +451,9 @@ mod tests {
     fn http_leva_header_no_dialeto_do_agy_e_sem_type() {
         let spec = McpSpec {
             nome: "api-teste".into(),
-            alvo: McpAlvo::Http { url: "https://example.com/mcp".into() },
+            alvo: McpAlvo::Http {
+                url: "https://example.com/mcp".into(),
+            },
             headers: vec![("Authorization".into(), "Bearer XYZ".into())],
             env: vec![],
         };
@@ -531,7 +546,10 @@ mod tests {
         h.url = Some("https://x/mcp".into());
         h.http_headers.insert("X-Cliente".into(), "frota".into());
         let s = spec_de("agy", "api", &h).unwrap();
-        assert_eq!(s.headers, vec![("X-Cliente".to_string(), "frota".to_string())]);
+        assert_eq!(
+            s.headers,
+            vec![("X-Cliente".to_string(), "frota".to_string())]
+        );
     }
 
     #[test]
@@ -544,7 +562,10 @@ mod tests {
         l.env_vars = vec!["GITHUB_TOKEN".into()];
         let erro = spec_de("agy", "gh", &l).unwrap_err();
         assert!(erro.contains("GITHUB_TOKEN"), "nomeia o que falta: {erro}");
-        assert!(erro.contains("não guarda"), "diz de quem é o limite: {erro}");
+        assert!(
+            erro.contains("não guarda"),
+            "diz de quem é o limite: {erro}"
+        );
 
         let mut h = launch("http");
         h.url = Some("https://x/mcp".into());
@@ -558,7 +579,9 @@ mod tests {
         // erro aqui que um argv truncado chegando no CLI.
         assert!(spec_de("agy", "x", &launch("stdio")).is_err());
         assert!(spec_de("agy", "x", &launch("http")).is_err());
-        assert!(spec_de("agy", "x", &launch("sse")).unwrap_err().contains("sse"));
+        assert!(spec_de("agy", "x", &launch("sse"))
+            .unwrap_err()
+            .contains("sse"));
     }
 
     fn http(nome: &str, url: &str) -> McpSpec {
@@ -574,13 +597,15 @@ mod tests {
     fn escreve_a_entrada_na_forma_exata_do_schema_deles() {
         // `McpLocalConfig` e `McpRemoteConfig` são `additionalProperties:
         // false`: campo a mais é config INVÁLIDA, não campo ignorado.
-        let saida = merge_opencode_json("", "mcx-a", Some(&stdio("mcx-a", "npx", &["srv"]))).unwrap();
+        let saida =
+            merge_opencode_json("", "mcx-a", Some(&stdio("mcx-a", "npx", &["srv"]))).unwrap();
         let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
         assert_eq!(v["mcp"]["mcx-a"]["type"], "local");
         assert_eq!(v["mcp"]["mcx-a"]["command"][0], "npx");
         assert_eq!(v["mcp"]["mcx-a"]["command"][1], "srv");
 
-        let saida = merge_opencode_json("", "mcx-b", Some(&http("mcx-b", "https://x/mcp"))).unwrap();
+        let saida =
+            merge_opencode_json("", "mcx-b", Some(&http("mcx-b", "https://x/mcp"))).unwrap();
         let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
         assert_eq!(v["mcp"]["mcx-b"]["type"], "remote");
         assert_eq!(v["mcp"]["mcx-b"]["url"], "https://x/mcp");
@@ -594,7 +619,8 @@ mod tests {
   "mcp": { "meu-servidor": { "type": "local", "command": ["meu"] } }
 }"#;
         let saida =
-            merge_opencode_json(antes, "mcx-novo", Some(&http("mcx-novo", "https://x/mcp"))).unwrap();
+            merge_opencode_json(antes, "mcx-novo", Some(&http("mcx-novo", "https://x/mcp")))
+                .unwrap();
         let v: serde_json::Value = serde_json::from_str(&saida).unwrap();
         // Chaves vizinhas intactas.
         assert_eq!(v["$schema"], "https://opencode.ai/config.json");
@@ -628,7 +654,8 @@ mod tests {
         // preserva comentário, e este arquivo é do repositório do usuário:
         // gravar apagaria texto que ela escreveu e talvez versionou.
         let com = "{\n  // o servidor da equipe\n  \"mcp\": {}\n}";
-        let erro = merge_opencode_json(com, "mcx-a", Some(&http("mcx-a", "https://x"))).unwrap_err();
+        let erro =
+            merge_opencode_json(com, "mcx-a", Some(&http("mcx-a", "https://x"))).unwrap_err();
         assert!(erro.contains("comentários"), "diz o motivo: {erro}");
         assert!(erro.contains("à mão"), "diz o que fazer: {erro}");
         assert!(merge_opencode_json("{\n  /* bloco */\n}", "mcx-a", None).is_err());
@@ -674,7 +701,10 @@ mod tests {
         // que falha na primeira chamada, com a tela dizendo "instalado".
         let erro = spec_de("agy", "prime", &l).unwrap_err();
         assert!(erro.contains("OAuth"), "diz a causa: {erro}");
-        assert!(erro.contains("não viaja"), "diz por que o login não cobre: {erro}");
+        assert!(
+            erro.contains("não viaja"),
+            "diz por que o login não cobre: {erro}"
+        );
 
         // opencode: tem `mcp auth|logout|debug` e campo `oauth` no schema.
         // Ali instalar é ajuda, não armadilha.

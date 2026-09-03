@@ -90,9 +90,7 @@ pub(crate) fn extract_version(s: &str) -> Option<String> {
     s.lines().next().and_then(|line| {
         line.split_whitespace()
             .map(|t| t.trim_start_matches('v'))
-            .find(|t| {
-                t.contains('.') && t.chars().next().is_some_and(|c| c.is_ascii_digit())
-            })
+            .find(|t| t.contains('.') && t.chars().next().is_some_and(|c| c.is_ascii_digit()))
             .map(str::to_string)
     })
 }
@@ -221,7 +219,9 @@ async fn latest_brew(name: &str) -> Option<String> {
     {
         return Some(v);
     }
-    parse_formula_stable(&fetch_json(&format!("https://formulae.brew.sh/api/formula/{name}.json")).await?)
+    parse_formula_stable(
+        &fetch_json(&format!("https://formulae.brew.sh/api/formula/{name}.json")).await?,
+    )
 }
 
 /// Quem vence no PATH e quem mais está lá. Mora na DETECÇÃO, não no updater:
@@ -309,10 +309,7 @@ async fn probe_codex() -> DetectedTool {
     // auth: `codex login status` → exit 0 + "Logged in using ChatGPT"; sem JSON,
     // decide pelo exit code.
     let (auth, detail) = match run("codex", &["login", "status"]).await {
-        Some((true, line)) => (
-            "ok".to_string(),
-            line.lines().next().map(str::to_string),
-        ),
+        Some((true, line)) => ("ok".to_string(), line.lines().next().map(str::to_string)),
         Some((false, _)) => ("missing".to_string(), None),
         None => ("unknown".to_string(), None),
     };
@@ -359,7 +356,13 @@ async fn probe_opencode() -> DetectedTool {
     match crate::opencode_auth::list().await {
         Ok(creds) => {
             if creds.is_empty() {
-                return tool("opencode", true, version, "missing", Some("nenhum provedor conectado".into()));
+                return tool(
+                    "opencode",
+                    true,
+                    version,
+                    "missing",
+                    Some("nenhum provedor conectado".into()),
+                );
             }
             let nomes: Vec<&str> = creds.iter().map(|c| c.provider.as_str()).collect();
             tool("opencode", true, version, "ok", Some(nomes.join(", ")))
@@ -396,7 +399,10 @@ pub async fn detect_agents() -> Vec<DetectedTool> {
     // checker não deixa a mesma ferramenta ser emprestada mut duas vezes no
     // mesmo join. agy entra só no segundo: não tem `latest` (sem fonte pública
     // conhecida), mas as cópias no PATH são fato local e valem pra ele igual.
-    tokio::join!(fill_latest(&mut claude, "claude"), fill_latest(&mut codex, "codex"));
+    tokio::join!(
+        fill_latest(&mut claude, "claude"),
+        fill_latest(&mut codex, "codex")
+    );
     tokio::join!(
         fill_paths(&mut claude, "claude"),
         fill_paths(&mut codex, "codex"),
@@ -426,14 +432,21 @@ mod tests {
     #[test]
     fn le_as_credenciais_da_saida_real() {
         let creds = crate::opencode_auth::parse_credentials(PROVIDERS_REAL);
-        assert_eq!(creds.iter().map(|c| c.provider.as_str()).collect::<Vec<_>>(), vec!["OpenAI", "Google", "OpenCode Go"]);
+        assert_eq!(
+            creds
+                .iter()
+                .map(|c| c.provider.as_str())
+                .collect::<Vec<_>>(),
+            vec!["OpenAI", "Google", "OpenCode Go"]
+        );
     }
 
     #[test]
     fn sem_credencial_nenhuma_devolve_vazio() {
         // Instalado e sem provedor é um estado real: o motor existe e não serve
         // pra nada. Vazio aqui vira `auth: missing`, nunca `ok`.
-        let vazio = "\u{250c}  Credentials ~/.local/share/opencode/auth.json\n\u{2514}  0 credentials\n";
+        let vazio =
+            "\u{250c}  Credentials ~/.local/share/opencode/auth.json\n\u{2514}  0 credentials\n";
         assert!(crate::opencode_auth::parse_credentials(vazio).is_empty());
     }
 
@@ -466,7 +479,10 @@ mod tests {
         });
         assert_eq!(parse_npm_version(&fixture), Some("2.1.220".to_string()));
         assert_eq!(parse_npm_version(&serde_json::json!({})), None);
-        assert_eq!(parse_npm_version(&serde_json::json!({ "version": "" })), None);
+        assert_eq!(
+            parse_npm_version(&serde_json::json!({ "version": "" })),
+            None
+        );
     }
 
     #[test]
@@ -545,5 +561,4 @@ mod tests {
         // fail-closed com mensagem honesta, nunca um palpite).
         assert_eq!(detected_version("motor-inventado").await, None);
     }
-
 }

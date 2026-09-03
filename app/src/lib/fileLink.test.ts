@@ -101,6 +101,31 @@ describe("parseFileTarget", () => {
   it("sem projeto ativo não há como situar um caminho absoluto", () => {
     expect(parseFileTarget("/Users/vinicius/proj/src/a.ts")).toBeNull()
   })
+
+  it("permite arquivo markdown absoluto externo preservando caminho e nome base", () => {
+    const alvo = parseFileTarget(
+      "file:///Users/vinicius/.gemini/antigravity-cli/brain/123/plano.md",
+      PROJETO,
+    )
+    expect(alvo).toEqual({
+      rel: "plano.md",
+      abs: "/Users/vinicius/.gemini/antigravity-cli/brain/123/plano.md",
+      line: null,
+    })
+  })
+
+  it("recusa arquivo markdown em pastas de sistema", () => {
+    expect(parseFileTarget("file:///etc/doc.md", PROJETO)).toBeNull()
+  })
+
+  it("recusa markdown externo fora das raízes autorizadas", () => {
+    expect(
+      parseFileTarget("file:///Users/vinicius/.ssh/anotacoes.md", PROJETO),
+    ).toBeNull()
+    expect(
+      parseFileTarget("file:///Users/vinicius/outro/projeto.md", PROJETO),
+    ).toBeNull()
+  })
 })
 
 describe("isFileMention", () => {

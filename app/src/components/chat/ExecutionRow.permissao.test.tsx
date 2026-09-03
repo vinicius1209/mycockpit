@@ -16,7 +16,7 @@ function render(
   )
 }
 
-describe("a faixa não mente sobre QUANDO a troca passa a valer", () => {
+describe("a faixa não mente sobre quando a troca passa a valer", () => {
   it("com turno em andamento, diz que a permissão vale no próximo envio", () => {
     expect(render({ running: true })).toContain(
       "Turno em andamento: a permissão vale a partir do próximo envio.",

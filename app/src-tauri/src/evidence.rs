@@ -46,7 +46,13 @@ impl EvidenceSink {
     /// evento sobrescreve o mesmo arquivo (idempotente). Retorna o path
     /// relativo ao app_data_dir, ou None (tipo desconhecido/erro de disco,
     /// com rastro no log — nunca pânico no meio do stream).
-    pub fn write(&self, tool_id: &str, idx: usize, media_type: &str, bytes: &[u8]) -> Option<String> {
+    pub fn write(
+        &self,
+        tool_id: &str,
+        idx: usize,
+        media_type: &str,
+        bytes: &[u8],
+    ) -> Option<String> {
         let ext = ext_for_media_type(media_type)?;
         if let Err(e) = std::fs::create_dir_all(&self.dir) {
             log::warn!("evidência: não criei {:?}: {e}", self.dir);
@@ -148,7 +154,11 @@ fn sanitize_tool_id(id: &str) -> String {
             }
         })
         .collect();
-    if s.is_empty() { "tool".to_string() } else { s }
+    if s.is_empty() {
+        "tool".to_string()
+    } else {
+        s
+    }
 }
 
 /// Decodifica base64 padrão (tolerante a whitespace/quebras de linha, que
@@ -312,7 +322,9 @@ mod tests {
         assert!(collect_images(None, "t", &content).is_empty());
         let (sink, dir) = tmp_sink("texto");
         assert!(collect_images(Some(&sink), "t", &json!("string pura")).is_empty());
-        assert!(collect_images(Some(&sink), "t", &json!([{ "type": "text", "text": "x" }])).is_empty());
+        assert!(
+            collect_images(Some(&sink), "t", &json!([{ "type": "text", "text": "x" }])).is_empty()
+        );
         // nada foi criado no disco
         assert!(!dir.exists());
     }
@@ -344,15 +356,8 @@ mod tests {
 
     #[test]
     fn decode_base64_tolera_quebras_de_linha_e_padding() {
-        let com_quebras = format!(
-            "{}\n{}",
-            &PNG_1X1_B64[..40],
-            &PNG_1X1_B64[40..]
-        );
-        assert_eq!(
-            decode_base64(&com_quebras),
-            decode_base64(PNG_1X1_B64)
-        );
+        let com_quebras = format!("{}\n{}", &PNG_1X1_B64[..40], &PNG_1X1_B64[40..]);
+        assert_eq!(decode_base64(&com_quebras), decode_base64(PNG_1X1_B64));
         assert!(decode_base64("abc!").is_none());
     }
 }

@@ -102,6 +102,19 @@ function normalizarSeparadores(p: string): string {
   return isAbs && !limpo.startsWith("/") ? `/${limpo}` : limpo
 }
 
+/** Raízes externas que o backend também autoriza para leitura. Manter esta
+ * lista estreita evita transformar qualquer `.md` citado por um agent em uma
+ * promessa de abertura que a fronteira Rust recusará depois. */
+function markdownExternoAutorizado(path: string): boolean {
+  return (
+    /\/\.claude(?:\/|$)/.test(path) ||
+    /\/\.gemini\/antigravity-cli\/brain(?:\/|$)/.test(path) ||
+    /\/(?:Library\/Application Support|\.local\/share)\/dev\.vinicius\.mycockpit\/attachments(?:\/|$)/.test(
+      path,
+    )
+  )
+}
+
 /**
  * Faz o parse de uma URI `file://`, caminho relativo ou texto com sufixo de linha.
  * Se o caminho for absoluto e estiver dentro de `projectPath`, converte para relativo.
@@ -154,11 +167,20 @@ export function parseFileTarget(
       : ""
     // A fronteira precisa da barra: projeto `/Users/v/proj` NÃO contém
     // `/Users/v/proj-old/a.ts` (sem isto o `rel` saía como `-old/a.ts`).
-    if (!projNorm || !(limpo === projNorm || limpo.startsWith(`${projNorm}/`))) {
+    if (projNorm && (limpo === projNorm || limpo.startsWith(`${projNorm}/`))) {
+      abs = limpo
+      limpo = limpo.slice(projNorm.length)
+    } else if (
+      limpo.toLowerCase().endsWith(".md") &&
+      markdownExternoAutorizado(limpo)
+    ) {
+      // Markdown externo com raiz autorizada também no backend.
+      abs = limpo
+      const lastSlash = limpo.lastIndexOf("/")
+      limpo = lastSlash >= 0 ? limpo.slice(lastSlash + 1) : limpo
+    } else {
       return null
     }
-    abs = limpo
-    limpo = limpo.slice(projNorm.length)
   }
 
   // Limpa barras iniciais e ./

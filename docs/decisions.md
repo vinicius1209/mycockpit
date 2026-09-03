@@ -5468,3 +5468,70 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Consequência:** retorno à sobriedade visual e à fluidez editorial do chat da Frota;
   eliminação do ruído de caixas repetitivas durante execuções com ferramentas; respeito ao
   STYLEGUIDE §3 e §4.
+
+### ADR-152 · seleção nativa, realce de sintaxe e ações no visualizador de diff (DiffPanel) ✅
+- **Contexto:** ao inspecionar arquivos alterados na aba "Alterações" (`DiffTab` / `DiffPanel`),
+  três fricções graves limitavam a usabilidade do código: (1) O texto do diff era inelegível
+  para seleção com o mouse devido ao `body { user-select: none; }` do `index.html`, impedindo
+  copiar trechos de código com `⌘C`. (2) A renderização das linhas era monocromática e sem
+  realce de sintaxe, prejudicando a leitura rápida de código em TypeScript, Rust, Python, HTML
+  e CSS. (3) O cabeçalho dos arquivos não oferecia ações rápidas para copiar o caminho nem para
+  citar o arquivo no composer do chat.
+- **Decisão:** (1) Habilitar seleção nativa de texto no contêiner do diff (`DiffPanel`) e em cada
+  linha (`DiffLineRow`) com `data-selectable` e `select-text`, enquanto números de linha e sinais
+  `+`/`−` permanecem estritamente com `select-none` para garantir que a seleção copie apenas código
+  limpo. (2) Implementar módulo utilitário `src/lib/syntaxHighlight.ts` apoiado no `highlight.js`
+  já existente no bundle do frontend, com detecção automática de linguagem por extensão de arquivo
+  e cache LRU, aplicando as classes canônicas `.hljs-*` já estilizadas no `index.css` sem interferir
+  no fundo colorido do Git (`bg-st-success` / `bg-st-error`). (3) Adicionar botões de ação rápida no
+  hover de cada arquivo no cabeçalho de `FileBlock` (copiar caminho do arquivo e citar arquivo no
+  chat para instruir o modelo) e botão de copiar linha no hover de cada linha do diff.
+- **Consequência:** ergonomia completa no visualizador de alterações: seleção de texto rápida e
+  limpa com `⌘C`, realce de sintaxe fiel ao tema nos modos claro e escuro, e ações contextuais
+  diretas para citação e cópia sem sair do fluxo da conversa.
+
+### ADR-153 · diretrizes de escopo (Tiered Discovery) e visualizador nativo de markdown (.md) ✅
+- **Contexto:** (1) Em turnos onde projetos ou dependências locais foram citados nominalmente pelo
+  usuário, o agente invocou `find_by_name` apontando para a raiz da home (`SearchDirectory: "/Users/<user>"`).
+  A varredura desceu para pastas privadas do macOS (`Desktop`, `Documents`, `Downloads`), acionando o
+  subsistema TCC do kernel e interrompendo o turno com diálogos de autorização do sistema. (2) Ao
+  gerar links de artefatos markdown no chat (`file:///Users/.../.gemini/antigravity-cli/brain/.../plano.md`),
+  `parseFileTarget` rejeitava qualquer caminho fora de `projectPath`, resultando em links inertes sem ação;
+  além disso, arquivos `.md` do projeto forçavam abertura em editores externos em vez de permitirem
+  leitura imediata no cockpit.
+- **Decisão:** (1) Implementar módulo puro `scope_guidance.rs` no backend Rust injetando diretrizes de
+  escopo e higiene de navegação (Tiered Discovery) durante a preparação do run em `agent.rs`: instrui
+  o modelo a priorizar `cwd` e `extra_dirs`, proíbe varreduras abertas a partir da raiz da Home no macOS
+  e orienta o uso da ferramenta `ask_user` quando a localização de um recurso for incerta. O bloco é
+  roteado pelo `system_channel` quando suportado ou dobrado no corpo de forma transparente (H1). (2) Expandir
+  caminhos autorizados em `read_text_file` no Rust (`sources.rs`) para cobrir `extra_dirs`, artefatos do
+  brain de agentes e anexos do app. (3) Atualizar `fileLink.ts` para resolver caminhos absolutos de
+  arquivos markdown externos seguros. (4) Implementar o componente canônico `MarkdownViewerDialog`
+  (`AppDialog size="xl"`) e a store `useMarkdownViewer`, interceptando cliques em links `.md` no
+  `MarkdownLink` e `MarkdownInlineCode` para abrir visualização in-app com renderização markdown completa,
+  syntax highlighting, cópia de texto e botão secundário para abrir no editor.
+- **Consequência:** redução dos pop-ups do TCC no macOS causados por varredura cega, sem bloquear acesso
+  a caminhos específicos conhecidos; experiência fluida de leitura de planos, especificações e documentação dentro da Frota sem
+  troca de janela e com conformidade estrita ao STYLEGUIDE.
+
+### ADR-154 · forks agrupados na sidebar, abas de ramos no palco e split view opcional ✅
+- **Contexto:** na arquitetura anterior, bifurcar uma conversa ("Fork do último turno") ou duplicá-la
+  gerava uma conversa solta inserida no fim da lista plana do projeto na sidebar. Além disso, a barra
+  de abas do palco exibia um solitário e estático rótulo "Conversa", desconectado da ramificação. O parentesco
+  não era registrado no SQLite, dificultando rastrear ramos concorrentes e incentivando o acúmulo de
+  git worktrees órfãos no disco.
+- **Decisão:** (1) Persistência de parentesco via Migration 43 no Tauri (`src-tauri/src/lib.rs`) e espelho
+  fail-safe em `src/lib/db/schema.ts`, adicionando a coluna `parent_id REFERENCES conversations(id)` na tabela
+  `conversations`. `forkConversationAtImpl` e `duplicateConversationImpl` passam a persistir o vínculo da linhagem
+  familiar. (2) Na Sidebar, `ConversationList` utiliza o helper puro `groupConversationTree` para renderizar
+  conversas raiz com seus forks aninhados (`ConversationRow`) com recuo sutil, conector visual `↳`, contagem de
+  ramos (`N ramos`) e suporte a colapso sanfonado. (3) No Palco, `MainTabs` comuta dinamicamente as abas da família
+  ativa (`Original`, `Fork 1`, etc.), permitindo alternância instantânea entre hipóteses de trabalho sem remount
+  de componentes. (4) Disponibilizar a comparação sob demanda através do botão `Comparar ramos`, renderizando
+  `BranchSplitView` lado a lado com histórico comparativo, troca explícita do ramo ativo e descarte com limpeza
+  do worktree isolado no Git. Uma ação de promoção só poderá entrar quando houver integração real com o Git;
+  trocar a conversa ativa não recebe esse nome. O `ChatPanel` permanece montado no DOM
+  (ocultado via CSS) para garantir zero perda de rolagem e rascunhos de composer.
+- **Consequência:** eliminação da dissonância espacial na navegação de tarefas; preservação do foco linear
+  no estilo ChatGPT com poder de cockpit agêntico quando bifurcado; gestão limpa e explícita do ciclo de vida
+  de git worktrees; conformidade com as catracas e o STYLEGUIDE.

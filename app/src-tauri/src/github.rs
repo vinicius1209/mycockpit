@@ -110,7 +110,10 @@ fn parse_gh_status(status: &str) -> Vec<GhAccount> {
 
 /// Só os nomes, na ordem do output — é o que `run_gh_any_account` consome.
 fn parse_gh_accounts(status: &str) -> Vec<String> {
-    parse_gh_status(status).into_iter().map(|a| a.user).collect()
+    parse_gh_status(status)
+        .into_iter()
+        .map(|a| a.user)
+        .collect()
 }
 
 /// Output do `gh auth status` como TEXTO, tolerando exit code != 0.
@@ -165,9 +168,7 @@ pub async fn gh_status() -> GhStatus {
     )
     .await
     {
-        Ok(Ok(o)) if o.status.success() => {
-            parse_gh_version(&String::from_utf8_lossy(&o.stdout))
-        }
+        Ok(Ok(o)) if o.status.success() => parse_gh_version(&String::from_utf8_lossy(&o.stdout)),
         // ENOENT (não instalado) e timeout caem aqui igual; a distinção vem do
         // `installed` abaixo, que só é true quando houve versão reconhecida.
         _ => None,
@@ -252,8 +253,12 @@ async fn run_gh_any_account(args: &[&str], dur: Duration) -> Result<String, Stri
         return Err(first_err);
     };
     for user in parse_gh_accounts(&status) {
-        let Ok(token) =
-            run_gh(&["auth", "token", "--user", &user], Duration::from_secs(4), None).await
+        let Ok(token) = run_gh(
+            &["auth", "token", "--user", &user],
+            Duration::from_secs(4),
+            None,
+        )
+        .await
         else {
             continue;
         };

@@ -13,8 +13,8 @@ use std::time::{Duration, Instant};
 use tauri::{
     menu::{IsMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    AppHandle, Emitter, LogicalPosition, Manager, PhysicalPosition, Runtime, State,
-    WebviewUrl, WebviewWindowBuilder,
+    AppHandle, Emitter, LogicalPosition, Manager, PhysicalPosition, Runtime, State, WebviewUrl,
+    WebviewWindowBuilder,
 };
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
@@ -203,7 +203,9 @@ fn load_tray_preferences(app: &AppHandle) {
         return;
     };
     let state = app.state::<TrayState>();
-    state.keep_in_tray.store(prefs.keep_in_tray, Ordering::Relaxed);
+    state
+        .keep_in_tray
+        .store(prefs.keep_in_tray, Ordering::Relaxed);
     state
         .close_hint_shown
         .store(prefs.close_hint_shown, Ordering::Relaxed);
@@ -575,8 +577,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
     // Escondido por blur há um instante = ESTE clique era pra fechar (o
     // mousedown já fechou); reabrir aqui faria o ícone nunca fechar o popover.
     if let Ok(mut t) = app.state::<TrayState>().popover_blur_hidden_at.lock() {
-        if t
-            .take()
+        if t.take()
             .is_some_and(|at| at.elapsed() < Duration::from_millis(400))
         {
             return;
@@ -633,8 +634,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
                     .max(mp.y as f64 + 4.0)
                     .min(mp.y as f64 + ms.height as f64 - size.height as f64 - 8.0);
             }
-            let _ =
-                win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+            let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
         }
     }
     let s = snapshot(&app.state::<TrayState>());
@@ -735,8 +735,7 @@ pub fn set_tray_snapshot(
                 if let Ok(menu) = build_menu(&handle, &snapshot) {
                     let _ = tray.set_menu(Some(menu));
                 }
-                let _ = tray
-                    .set_tooltip(Some(fleet_status(&snapshot)));
+                let _ = tray.set_tooltip(Some(fleet_status(&snapshot)));
             }
         }
         // Popover escondido (estado comum) não recebe delta: toggle_popover
@@ -858,13 +857,9 @@ mod tests {
     fn restauracao_roda_no_runtime_tauri_com_main_escondida_minimizada_ou_visivel() {
         for initial in ["escondida", "minimizada", "visível"] {
             let app = mock_app();
-            let window = WebviewWindowBuilder::new(
-                &app,
-                "main",
-                WebviewUrl::default(),
-            )
-            .build()
-            .expect("janela principal de teste");
+            let window = WebviewWindowBuilder::new(&app, "main", WebviewUrl::default())
+                .build()
+                .expect("janela principal de teste");
             match initial {
                 "escondida" => window.hide().expect("esconder no preparo"),
                 "minimizada" => window.minimize().expect("minimizar no preparo"),

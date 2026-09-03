@@ -227,10 +227,7 @@ pub(crate) fn save_to_disk(
     active: &ActiveConvs,
 ) -> Result<Attachment, String> {
     if bytes.len() as u64 > MAX_BYTES {
-        return Err(format!(
-            "\"{name}\" excede {} MB",
-            MAX_BYTES / 1024 / 1024
-        ));
+        return Err(format!("\"{name}\" excede {} MB", MAX_BYTES / 1024 / 1024));
     }
     // sniff dos magic bytes manda; o declared_mime do clipboard é só fallback.
     let mime = sniff(bytes)
@@ -492,12 +489,7 @@ fn sweep_tmp(dir: &Path) {
 
 /// LRU por `updatedAt` da CONVERSA (não mtime do arquivo, F3/F5): evicta as menos
 /// recentes até LOW_WATER. Pula conversas com run ativo (F23).
-fn lru_evict(
-    root: &Path,
-    updated: &HashMap<String, i64>,
-    active: &ActiveConvs,
-    s: &mut GcSummary,
-) {
+fn lru_evict(root: &Path, updated: &HashMap<String, i64>, active: &ActiveConvs, s: &mut GcSummary) {
     let mut total = 0u64;
     let mut dirs: Vec<(String, PathBuf, u64, i64)> = Vec::new();
     if let Ok(entries) = std::fs::read_dir(root) {
@@ -636,7 +628,10 @@ pub async fn gc_attachments(
         });
     }
 
-    let valid: HashSet<String> = valid_convs.iter().map(|c| sanitize_conv_id(&c.id)).collect();
+    let valid: HashSet<String> = valid_convs
+        .iter()
+        .map(|c| sanitize_conv_id(&c.id))
+        .collect();
     let updated: HashMap<String, i64> = valid_convs
         .iter()
         .map(|c| (sanitize_conv_id(&c.id), c.updated_at))
@@ -702,10 +697,19 @@ mod tests {
         let mut s = GcSummary::default();
         gc_root(&root, &valid, &updated, &active, now, &mut s);
 
-        assert!(root.join(CONV_VIVA).exists(), "conversa viva referenciada fica");
+        assert!(
+            root.join(CONV_VIVA).exists(),
+            "conversa viva referenciada fica"
+        );
         assert!(!root.join(CONV_EXPIRADA).exists(), "TTL vencido cai");
-        assert!(!root.join(CONV_ORFA).exists(), "órfã (conversa deletada) cai");
-        assert!(root.join(".gc-meta").exists(), "dotfile não é pasta de conversa");
+        assert!(
+            !root.join(CONV_ORFA).exists(),
+            "órfã (conversa deletada) cai"
+        );
+        assert!(
+            root.join(".gc-meta").exists(),
+            "dotfile não é pasta de conversa"
+        );
         assert_eq!(s.removed_dirs, 2);
         assert!(s.freed_bytes > 0);
         let _ = std::fs::remove_dir_all(&root);
@@ -724,7 +728,10 @@ mod tests {
         let mut s = GcSummary::default();
         gc_root(&root, &valid, &updated, &active, now, &mut s);
 
-        assert!(root.join(CONV_EXPIRADA).exists(), "run ativo segura a expirada");
+        assert!(
+            root.join(CONV_EXPIRADA).exists(),
+            "run ativo segura a expirada"
+        );
         assert!(root.join(CONV_ORFA).exists(), "run ativo segura a órfã");
         assert_eq!(s.removed_dirs, 0);
         let _ = std::fs::remove_dir_all(&root);
@@ -739,7 +746,14 @@ mod tests {
         let now = now_ms();
         let active = ActiveConvs::default();
         let mut s = GcSummary::default();
-        gc_root(&root, &HashSet::new(), &HashMap::new(), &active, now, &mut s);
+        gc_root(
+            &root,
+            &HashSet::new(),
+            &HashMap::new(),
+            &active,
+            now,
+            &mut s,
+        );
 
         for conv in [CONV_VIVA, CONV_EXPIRADA, CONV_ORFA] {
             assert!(root.join(conv).exists(), "sem refs, {conv} fica");
@@ -747,7 +761,6 @@ mod tests {
         assert_eq!(s.removed_dirs, 0);
         let _ = std::fs::remove_dir_all(&root);
     }
-
 
     const NOTA_VIVA: &str = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
     const NOTA_MORTA: &str = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -770,7 +783,10 @@ mod tests {
         let mut s = GcSummary::default();
         gc_notas(&root, &[NOTA_VIVA.to_string()], &mut s);
         assert!(root.join(NOTA_VIVA).exists(), "nota viva perdeu o anexo");
-        assert!(!root.join(NOTA_MORTA).exists(), "nota morta ficou com blob órfão");
+        assert!(
+            !root.join(NOTA_MORTA).exists(),
+            "nota morta ficou com blob órfão"
+        );
         assert_eq!(s.removed_dirs, 1);
         let _ = std::fs::remove_dir_all(&root);
     }
@@ -847,5 +863,4 @@ pub async fn wipe_conv_attachments(app: AppHandle, conv_id: String) -> Result<()
         let _ = std::fs::remove_dir_all(&ev);
     }
     Ok(())
-
 }

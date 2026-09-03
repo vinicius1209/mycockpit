@@ -1132,11 +1132,16 @@ impl AgentAdapter for OpenCodeAdapter {
                 if let Some(p) = part {
                     let tk = p.get("tokens");
                     let n = |k: &str| {
-                        tk.and_then(|t| t.get(k)).and_then(|x| x.as_u64()).unwrap_or(0)
+                        tk.and_then(|t| t.get(k))
+                            .and_then(|x| x.as_u64())
+                            .unwrap_or(0)
                     };
                     let cache = tk.and_then(|t| t.get("cache"));
                     let c = |k: &str| {
-                        cache.and_then(|x| x.get(k)).and_then(|x| x.as_u64()).unwrap_or(0)
+                        cache
+                            .and_then(|x| x.get(k))
+                            .and_then(|x| x.as_u64())
+                            .unwrap_or(0)
                     };
                     self.ultimo_step = Some((
                         // input + cache.read: o `input` do opencode EXCLUI o
@@ -1156,10 +1161,14 @@ impl AgentAdapter for OpenCodeAdapter {
             // sobre um turno onde toda ferramenta foi barrada. Sucesso falso.
             "tool_use" => {
                 let st = part.and_then(|p| p.get("state"));
-                let status =
-                    st.and_then(|s| s.get("status")).and_then(|s| s.as_str()).unwrap_or("");
-                let err =
-                    st.and_then(|s| s.get("error")).and_then(|s| s.as_str()).unwrap_or("");
+                let status = st
+                    .and_then(|s| s.get("status"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("");
+                let err = st
+                    .and_then(|s| s.get("error"))
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("");
                 if !rejeicao_sem_pergunta(self.bypass, status, err) {
                     return Vec::new();
                 }
@@ -2977,15 +2986,13 @@ impl AgyAdapter {
             Some(m) => crate::pricing::estimate(m, &nu),
             None => (None, CostSource::Unknown),
         };
-        let provider_failed =
-            result.get("status").and_then(|x| x.as_str()) == Some("ERROR");
+        let provider_failed = result.get("status").and_then(|x| x.as_str()) == Some("ERROR");
         // `ERROR` + resposta final utilizável posterior à última ferramenta
         // significa "concluído com aviso". O contrato normalizado ainda é
         // booleano, então ele sai `ok: true`; a falha local NÃO some: já foi
         // emitida como ToolResult(false) no Fio Vivo. Isso também neutraliza o
         // ERROR antigo que o agy repete nos próximos `--conversation`.
-        let recovered_with_answer =
-            provider_failed && self.completed_answer_after_last_tool();
+        let recovered_with_answer = provider_failed && self.completed_answer_after_last_tool();
         let ok = !provider_failed || recovered_with_answer;
         let mut out = Vec::new();
         if self.text_open {
@@ -3486,7 +3493,10 @@ mod tests {
         assert_eq!(codex_cost_model(None), Some("gpt-5.6".to_string()));
 
         // 3. Requisitado vence o config, mesmo com os dois presentes.
-        assert_eq!(codex_cost_model(Some("gpt-5.4")), Some("gpt-5.4".to_string()));
+        assert_eq!(
+            codex_cost_model(Some("gpt-5.4")),
+            Some("gpt-5.4".to_string())
+        );
 
         // 4. config.toml existe mas SEM a chave `model`: ainda None, não chuta.
         std::fs::write(dir.join("config.toml"), "outra_chave = 1\n").unwrap();
@@ -3692,9 +3702,7 @@ mod tests {
         assert!(nudge.contains("Ferramentas MCP desta sessão:"));
         // O nome de RUNTIME (não só o display) precisa chegar ao modelo: é
         // ele que aparece no prefixo mcp__<nome>__<tool> das chamadas.
-        assert!(nudge.contains(
-            "- mcx-claude-hostinger: Hostinger (MCP roteado pela Frota)"
-        ));
+        assert!(nudge.contains("- mcx-claude-hostinger: Hostinger (MCP roteado pela Frota)"));
     }
 
     #[test]
@@ -3972,10 +3980,7 @@ mod tests {
                 assert!(summary.as_deref().unwrap().contains("completed"));
                 // resultado em DISCO é primeira classe: o caminho não pode
                 // se perder no progress cru (lição do incidente)
-                assert_eq!(
-                    output_file.as_deref(),
-                    Some("/tmp/tasks/wnz619fti.output")
-                );
+                assert_eq!(output_file.as_deref(), Some("/tmp/tasks/wnz619fti.output"));
             }
             _ => panic!("esperava DeferredWork"),
         }
@@ -4019,7 +4024,10 @@ mod tests {
         assert_eq!(evs.len(), 1);
         assert!(matches!(
             &evs[0],
-            AgentEvent::DeferredWork { status: DeferredStatus::Stopped, .. }
+            AgentEvent::DeferredWork {
+                status: DeferredStatus::Stopped,
+                ..
+            }
         ));
         // prompt comum do usuário NÃO vira evento (nem com "<" no meio)
         assert!(a
@@ -4047,10 +4055,7 @@ mod tests {
     /// evento; o base64 NUNCA aparece no evento serializado.
     #[test]
     fn claude_tool_result_com_imagem_grava_arquivo_e_emite_path() {
-        let dir = std::env::temp_dir().join(format!(
-            "mc-adapter-evidence-{}",
-            std::process::id()
-        ));
+        let dir = std::env::temp_dir().join(format!("mc-adapter-evidence-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let mut a = ClaudeAdapter::default();
         a.set_evidence_sink(crate::evidence::EvidenceSink::new(
@@ -4074,7 +4079,13 @@ mod tests {
         }));
         assert_eq!(evs.len(), 1);
         match &evs[0] {
-            AgentEvent::ToolResult { id, ok, text, images, .. } => {
+            AgentEvent::ToolResult {
+                id,
+                ok,
+                text,
+                images,
+                ..
+            } => {
                 assert_eq!(id, "toolu_01Screenshot");
                 assert!(*ok);
                 assert_eq!(text, "Took the full page screenshot");
@@ -4424,7 +4435,10 @@ mod tests {
             "o 2º turno tem que reportar o DELTA (35005-17494), não o acumulado"
         );
         // o acumulado cru volta intacto pro front persistir.
-        assert_eq!(cum2.map(|c| (c.input, c.cached_input, c.output)), Some(TURNO_2));
+        assert_eq!(
+            cum2.map(|c| (c.input, c.cached_input, c.output)),
+            Some(TURNO_2)
+        );
         // custo do delta ≈ US$0,0106 (gpt-5.5); pelo acumulado seriam ~US$0,053.
         assert!(
             usd2 < 0.02,
@@ -4433,8 +4447,12 @@ mod tests {
         assert!(usd1 > 0.0 && usd2 > 0.0);
         // O delta é gasto DO TURNO e pode somar várias chamadas. Não vira
         // ContextUsage: o runner lê o footprint da última chamada no rollout.
-        assert!(!evs1.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
-        assert!(!evs2.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
+        assert!(!evs1
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
+        assert!(!evs2
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
     }
 
     #[test]
@@ -4457,7 +4475,11 @@ mod tests {
         a.map_line(&serde_json::json!({ "type": "thread.started", "thread_id": "t-nova" }));
         let evs = a.map_line(&turn_completed(TURNO_1));
         let (i, o, c, usd, _) = result_of(&evs);
-        assert_eq!((i, c, o), (17494, 9984, 6), "1º turno da thread nova vale inteiro");
+        assert_eq!(
+            (i, c, o),
+            (17494, 9984, 6),
+            "1º turno da thread nova vale inteiro"
+        );
         assert!(usd > 0.0);
     }
 
@@ -4480,7 +4502,9 @@ mod tests {
         assert_eq!(usd, 0.0);
         // e o acumulado cru continua indo pro front (a verdade do provider).
         assert_eq!(cum.map(|c| c.input), Some(TURNO_1.0));
-        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
+        assert!(!evs
+            .iter()
+            .any(|e| matches!(e, AgentEvent::ContextUsage { .. })));
     }
 
     /// O Claude reporta usage E custo POR TURNO: dois results idênticos
@@ -4511,7 +4535,10 @@ mod tests {
                     cumulative_usage,
                     ..
                 } => {
-                    assert_eq!((*input_tokens, *output_tokens, *cache_read), (1200, 300, 900));
+                    assert_eq!(
+                        (*input_tokens, *output_tokens, *cache_read),
+                        (1200, 300, 900)
+                    );
                     assert_eq!(*cost_usd, Some(0.42));
                     assert!(cumulative_usage.is_none());
                 }
@@ -4875,8 +4902,14 @@ mod tests {
         // O `compaction_info` acompanha os steps SEGUINTES: sem dedupe, o fio
         // ganharia uma linha idêntica por step até o fim do turno.
         let mut a = AgyAdapter::default();
-        let n1 = agy_linha(&mut a, AGY_STEP_COMPACTADO).iter().filter(|e| matches!(e, AgentEvent::Notice { .. })).count();
-        let n2 = agy_linha(&mut a, AGY_STEP_COMPACTADO).iter().filter(|e| matches!(e, AgentEvent::Notice { .. })).count();
+        let n1 = agy_linha(&mut a, AGY_STEP_COMPACTADO)
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Notice { .. }))
+            .count();
+        let n2 = agy_linha(&mut a, AGY_STEP_COMPACTADO)
+            .iter()
+            .filter(|e| matches!(e, AgentEvent::Notice { .. }))
+            .count();
         assert_eq!((n1, n2), (1, 0), "o aviso repetiu");
     }
 
@@ -4920,11 +4953,11 @@ mod tests {
             forma,
             vec![
                 "session",
-                "texto",         // a narração
-                "fim-do-bloco",  // …fecha ANTES da ferramenta
+                "texto",        // a narração
+                "fim-do-bloco", // …fecha ANTES da ferramenta
                 "ferramenta",
                 "resultado",
-                "texto",         // a resposta, em bloco PRÓPRIO
+                "texto", // a resposta, em bloco PRÓPRIO
                 "texto",
                 "fim-do-bloco",
             ],
@@ -5013,7 +5046,9 @@ mod tests {
         agy_linha(&mut a, FINAL_DONE);
         let result = agy_linha(&mut a, STICKY_RESULT);
         assert!(matches!(
-            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            result
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Result { .. })),
             Some(AgentEvent::Result {
                 ok: true,
                 text: None,
@@ -5034,7 +5069,9 @@ mod tests {
         agy_linha(&mut a, FINAL_DONE);
         let result = agy_linha(&mut a, STICKY_RESULT);
         assert!(matches!(
-            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            result
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Result { .. })),
             Some(AgentEvent::Result { ok: true, .. })
         ));
     }
@@ -5055,7 +5092,9 @@ mod tests {
         agy_linha(&mut a, RESP_ERROR);
         let result = agy_linha(&mut a, RESULT);
         assert!(matches!(
-            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            result
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Result { .. })),
             Some(AgentEvent::Result { ok: false, .. })
         ));
     }
@@ -5071,7 +5110,9 @@ mod tests {
         agy_linha(&mut a, AGY_STEP_TOOL_ERROR);
         let result = agy_linha(&mut a, RESULT);
         assert!(matches!(
-            result.iter().find(|e| matches!(e, AgentEvent::Result { .. })),
+            result
+                .iter()
+                .find(|e| matches!(e, AgentEvent::Result { .. })),
             Some(AgentEvent::Result {
                 ok: false,
                 text: Some(_),
@@ -5134,7 +5175,9 @@ mod tests {
         agy_linha(&mut a, AGY_INIT);
         let abre = agy_linha(&mut a, AGY_STEP_TOOL_ACTIVE);
         match &abre[0] {
-            AgentEvent::Tool { id, name, input, .. } => {
+            AgentEvent::Tool {
+                id, name, input, ..
+            } => {
                 assert_eq!(name, "list_dir");
                 assert_eq!(id, "agy-step-3");
                 assert_eq!(
@@ -5146,7 +5189,13 @@ mod tests {
         }
         let fecha = agy_linha(&mut a, AGY_STEP_TOOL_DONE);
         match &fecha[0] {
-            AgentEvent::ToolResult { id, ok, text, lines, .. } => {
+            AgentEvent::ToolResult {
+                id,
+                ok,
+                text,
+                lines,
+                ..
+            } => {
                 // MESMO id do abre: é o step_index que casa os dois (o agy não
                 // dá id de tool call nenhum).
                 assert_eq!(id, "agy-step-3");
@@ -5262,7 +5311,11 @@ mod tests {
         agy_linha(&mut a, AGY_INIT);
         let evs = agy_linha(&mut a, AGY_RESULT);
         match evs.iter().find(|e| matches!(e, AgentEvent::Result { .. })) {
-            Some(AgentEvent::Result { cost_usd, cost_source, .. }) => {
+            Some(AgentEvent::Result {
+                cost_usd,
+                cost_source,
+                ..
+            }) => {
                 assert_eq!(*cost_usd, None);
                 assert!(matches!(cost_source, CostSource::Unknown));
             }
@@ -5282,20 +5335,30 @@ mod tests {
         let mut r = req(Permission::Padrao, false);
         r.resume = Some("00000000-0000-0000-0000-000000000000".to_string());
         let args = argv(&a.build_command(&r).unwrap());
-        assert!(has_pair(&args, "--conversation", "00000000-0000-0000-0000-000000000000"));
+        assert!(has_pair(
+            &args,
+            "--conversation",
+            "00000000-0000-0000-0000-000000000000"
+        ));
 
         // o `init` volta com OUTRO id: o agy trocou de conversa por conta.
         let evs = agy_linha(&mut a, AGY_INIT);
         match &evs[..] {
             [AgentEvent::SessionNotFound { message }] => {
-                assert!(message.contains("00000000-0000-0000-0000-000000000000"), "{message}");
+                assert!(
+                    message.contains("00000000-0000-0000-0000-000000000000"),
+                    "{message}"
+                );
             }
             _ => panic!("esperava SÓ SessionNotFound"),
         }
         // …e NADA do turno abandonado chega ao fio (seria resposta sem o
         // contexto pedido, o oposto de estado real).
         for linha in [AGY_STEP_NARRACAO, AGY_STEP_RESP_DONE, AGY_RESULT] {
-            assert!(agy_linha(&mut a, linha).is_empty(), "run abandonado é silencioso");
+            assert!(
+                agy_linha(&mut a, linha).is_empty(),
+                "run abandonado é silencioso"
+            );
         }
         // rede de segurança: a frase literal do stderr também classifica.
         assert!(a.is_session_not_found(
@@ -5311,7 +5374,9 @@ mod tests {
         r.resume = Some("a165239c-dde9-493c-a60c-ccf5ac0ccffb".to_string());
         a.build_command(&r).unwrap();
         match &agy_linha(&mut a, AGY_INIT)[..] {
-            [AgentEvent::Session { session_id, tools, .. }] => {
+            [AgentEvent::Session {
+                session_id, tools, ..
+            }] => {
                 assert_eq!(session_id, "a165239c-dde9-493c-a60c-ccf5ac0ccffb");
                 assert_eq!(*tools, 56, "as 56 tools do init");
             }
@@ -5423,7 +5488,10 @@ mod tests {
     #[test]
     fn matriz_native_slash_e_fontes_por_agent() {
         let claude = capabilities_of("claude-code").unwrap();
-        assert!(claude.native_slash, "claude-code interpreta /comando nativo");
+        assert!(
+            claude.native_slash,
+            "claude-code interpreta /comando nativo"
+        );
         assert_eq!(claude.command_sources, &[CommandSource::ClaudeDirs]);
 
         let codex = capabilities_of("codex").unwrap();
@@ -5709,7 +5777,10 @@ mod tests {
             erro.contains("gemini-3.7-flash-high"),
             "a mensagem aponta o id limpo: {erro}"
         );
-        assert!(erro.contains("seletor"), "a mensagem diz o que fazer: {erro}");
+        assert!(
+            erro.contains("seletor"),
+            "a mensagem diz o que fazer: {erro}"
+        );
     }
 
     #[test]
@@ -5942,7 +6013,12 @@ mod tests {
         a.map_line(&oc_linha(OC_STEP_FINISH));
         let ev = a.on_close();
         match &ev[0] {
-            AgentEvent::Result { input_tokens, cache_read, output_tokens, .. } => {
+            AgentEvent::Result {
+                input_tokens,
+                cache_read,
+                output_tokens,
+                ..
+            } => {
                 assert_eq!(*input_tokens, 5499 + 36220);
                 assert_eq!(*cache_read, 36220);
                 assert_eq!(*output_tokens, 1);
@@ -5956,7 +6032,12 @@ mod tests {
         let mut a = OpenCodeAdapter::default();
         a.map_line(&oc_linha(OC_STEP_FINISH));
         match &a.on_close()[0] {
-            AgentEvent::Result { cost_usd, cost_source, cache_creation, .. } => {
+            AgentEvent::Result {
+                cost_usd,
+                cost_source,
+                cache_creation,
+                ..
+            } => {
                 assert_eq!(*cost_usd, Some(0.0009973));
                 assert!(matches!(cost_source, CostSource::Reported));
                 // `cache.write` existe e é 0 aqui; nenhum outro motor entrega
@@ -5975,7 +6056,9 @@ mod tests {
         let mut a = OpenCodeAdapter::default();
         a.map_line(&oc_linha(OC_STEP_FINISH));
         match &a.on_close()[0] {
-            AgentEvent::Result { cumulative_usage, .. } => assert!(cumulative_usage.is_none()),
+            AgentEvent::Result {
+                cumulative_usage, ..
+            } => assert!(cumulative_usage.is_none()),
             _ => panic!("esperava Result"),
         }
     }
@@ -6041,7 +6124,9 @@ mod tests {
         let erro = r#"{"type":"error","timestamp":1,"sessionID":"ses_x","error":{"name":"APIError","data":{"message":"Insufficient balance.","statusCode":401,"isRetryable":false}}}"#;
         let mut a = OpenCodeAdapter::default();
         let evs = a.map_line(&oc_linha(erro));
-        assert!(matches!(&evs[0], AgentEvent::Error { message } if message.contains("Insufficient")));
+        assert!(
+            matches!(&evs[0], AgentEvent::Error { message } if message.contains("Insufficient"))
+        );
         match &a.on_close()[0] {
             AgentEvent::Result { ok, .. } => assert!(!ok),
             _ => panic!("esperava Result"),
@@ -6051,10 +6136,13 @@ mod tests {
     #[test]
     fn opencode_429_vira_limite_acionavel() {
         // Resposta REAL do NVIDIA NIM no teste do Kimi K3 (28/08/2026).
-        let erro = r#"{"type":"error","error":{"data":{"message":"AI_APICallError: Too Many Requests"}}}"#;
+        let erro =
+            r#"{"type":"error","error":{"data":{"message":"AI_APICallError: Too Many Requests"}}}"#;
         let mut adapter = OpenCodeAdapter::default();
         let events = adapter.map_line(&oc_linha(erro));
-        assert!(matches!(&events[0], AgentEvent::LimitReached { message, .. } if message.contains("Too Many Requests")));
+        assert!(
+            matches!(&events[0], AgentEvent::LimitReached { message, .. } if message.contains("Too Many Requests"))
+        );
     }
 
     #[test]
@@ -6078,7 +6166,12 @@ mod tests {
         // fica Unknown em vez de US$ 0,00 (que seria "de graça").
         let mut a = OpenCodeAdapter::default();
         match &a.on_close()[0] {
-            AgentEvent::Result { cost_usd, cost_source, input_tokens, .. } => {
+            AgentEvent::Result {
+                cost_usd,
+                cost_source,
+                input_tokens,
+                ..
+            } => {
                 assert_eq!(*cost_usd, None);
                 assert!(matches!(cost_source, CostSource::Unknown));
                 assert_eq!(*input_tokens, 0);

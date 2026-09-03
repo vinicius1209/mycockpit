@@ -1,0 +1,1640 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frota ADE · Mock Interativo — Do Chat Serial ao Cockpit Agêntico Equilibrado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, monospace;
+
+    /* Light Theme (Canônico Frota) */
+    --bg-desktop: #ecece9;
+    --bg-app: #f4f4f0;
+    --bg-window: #fbfbf9;
+    --bg-panel: #ffffff;
+    --bg-card: #ffffff;
+    --bg-subtle: #f0f0eb;
+    --bg-hover: #e8e8e2;
+    --bg-active: #dfdfd7;
+    --bg-sel: #e5e5dc;
+
+    --fg-primary: #121316;
+    --fg-secondary: #565a61;
+    --fg-muted: #848992;
+    --fg-faint: #b0b4bc;
+
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --border-subtle: rgba(0, 0, 0, 0.04);
+    --border-card: rgba(0, 0, 0, 0.07);
+
+    --accent-blue: #2563eb;
+    --accent-blue-soft: rgba(37, 99, 235, 0.09);
+    --accent-green: #16a34a;
+    --accent-green-soft: rgba(22, 163, 74, 0.09);
+    --accent-amber: #d97706;
+    --accent-amber-soft: rgba(217, 119, 6, 0.12);
+    --accent-red: #dc2626;
+    --accent-red-soft: rgba(220, 38, 38, 0.09);
+
+    --brass: #b45309;
+    --brass-soft: rgba(180, 83, 9, 0.1);
+    --brass-border: rgba(180, 83, 9, 0.25);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.03);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 12px -2px rgba(0, 0, 0, 0.03);
+    --shadow-pop: 0 12px 32px -4px rgba(0, 0, 0, 0.1);
+  }
+
+  [data-theme="dark"] {
+    /* Dark Theme */
+    --bg-desktop: #0a0b0d;
+    --bg-app: #0f1115;
+    --bg-window: #13151b;
+    --bg-panel: #181b22;
+    --bg-card: #1c1f28;
+    --bg-subtle: #202430;
+    --bg-hover: #262b39;
+    --bg-active: #2e3445;
+    --bg-sel: #2a3040;
+
+    --fg-primary: #f2f4f8;
+    --fg-secondary: #9da3af;
+    --fg-muted: #6b7280;
+    --fg-faint: #434955;
+
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-card: rgba(255, 255, 255, 0.09);
+
+    --accent-blue: #3b82f6;
+    --accent-blue-soft: rgba(59, 130, 246, 0.15);
+    --accent-green: #22c55e;
+    --accent-green-soft: rgba(34, 197, 94, 0.15);
+    --accent-amber: #f59e0b;
+    --accent-amber-soft: rgba(245, 158, 11, 0.15);
+    --accent-red: #ef4444;
+    --accent-red-soft: rgba(239, 68, 68, 0.15);
+
+    --brass: #e4a862;
+    --brass-soft: rgba(228, 168, 98, 0.14);
+    --brass-border: rgba(228, 168, 98, 0.32);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 16px 40px -6px rgba(0, 0, 0, 0.7);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-desktop);
+    color: var(--fg-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* BARRA DE CONTROLE SUPERIOR DO MOCK */
+  .demo-dock {
+    width: 100%;
+    max-width: 1480px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 12px 18px;
+    margin-bottom: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    box-shadow: var(--shadow-card);
+  }
+  .demo-intro {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .demo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--brass);
+    background: var(--brass-soft);
+    padding: 2px 8px;
+    border-radius: 6px;
+    width: fit-content;
+  }
+  .demo-title {
+    font-size: 14.5px;
+    font-weight: 600;
+    color: var(--fg-primary);
+  }
+  .demo-desc {
+    font-size: 12px;
+    color: var(--fg-secondary);
+  }
+
+  .demo-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .variant-selector {
+    display: flex;
+    background: var(--bg-subtle);
+    padding: 3px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    gap: 3px;
+  }
+  .variant-btn {
+    border: none;
+    background: transparent;
+    color: var(--fg-secondary);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .variant-btn:hover {
+    color: var(--fg-primary);
+    background: var(--bg-hover);
+  }
+  .variant-btn.active {
+    background: var(--bg-card);
+    color: var(--fg-primary);
+    box-shadow: var(--shadow-sm);
+    font-weight: 600;
+  }
+  .theme-toggle-btn {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    color: var(--fg-secondary);
+    padding: 5px 11px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s ease;
+  }
+  .theme-toggle-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+
+  /* JANELA DA FROTA */
+  .frota-window {
+    width: 100%;
+    max-width: 1480px;
+    height: 860px;
+    background: var(--bg-window);
+    border-radius: 14px;
+    border: 1px solid var(--border-strong);
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* TOP TITLEBAR */
+  .titlebar {
+    height: 42px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    user-select: none;
+    flex-shrink: 0;
+  }
+  .traffic-lights {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 190px;
+  }
+  .tl-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+  }
+  .tl-red { background: #ff5f56; border: 1px solid #e0443e; }
+  .tl-yellow { background: #ffbd2e; border: 1px solid #dea123; }
+  .tl-green { background: #27c93f; border: 1px solid #1aab29; }
+  .app-name-tag {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-secondary);
+    margin-left: 6px;
+  }
+
+  /* Switcher Central */
+  .mode-switcher {
+    display: flex;
+    align-items: center;
+    background: var(--bg-subtle);
+    padding: 2px;
+    border-radius: 7px;
+    border: 1px solid var(--border);
+  }
+  .mode-pill {
+    font-size: 12px;
+    padding: 3px 12px;
+    border-radius: 5px;
+    color: var(--fg-secondary);
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+  }
+  .mode-pill.active {
+    background: var(--bg-card);
+    color: var(--fg-primary);
+    box-shadow: var(--shadow-sm);
+    font-weight: 600;
+  }
+
+  /* Ações da Direita */
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 220px;
+    justify-content: flex-end;
+  }
+  .search-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    cursor: pointer;
+  }
+  .shortcut-kbd {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 1px 4px;
+    border-radius: 4px;
+  }
+  .btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .btn-icon:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+
+  /* CORPO DO COCKPIT */
+  .cockpit-body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    overflow: hidden;
+    background: var(--bg-app);
+    padding: 0 8px 8px 8px;
+    gap: 8px;
+  }
+
+  /* SIDEBAR ESQUERDA (BIBLIOTECA & PROJETOS) */
+  .sidebar {
+    width: 230px;
+    background: transparent;
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    padding-top: 8px;
+    min-height: 0;
+    overflow-y: auto;
+  }
+  .sidebar-section {
+    margin-bottom: 14px;
+  }
+  .sidebar-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--fg-muted);
+    letter-spacing: 0.05em;
+    padding: 4px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+  }
+  .sidebar-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+  .sidebar-item:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .sidebar-item.active {
+    background: var(--bg-sel);
+    color: var(--fg-primary);
+    font-weight: 500;
+  }
+  .sidebar-item-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sidebar-badge {
+    font-size: 11px;
+    color: var(--fg-muted);
+    font-family: var(--font-mono);
+  }
+  .project-folder {
+    display: flex;
+    flex-direction: column;
+    margin-bottom: 6px;
+  }
+  .project-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-primary);
+    cursor: pointer;
+  }
+  .project-tasks {
+    padding-left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    border-left: 1px solid var(--border);
+    margin-left: 12px;
+    margin-top: 2px;
+  }
+  .task-subitem {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .task-subitem:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .task-subitem.active {
+    background: var(--bg-sel);
+    color: var(--fg-primary);
+    font-weight: 500;
+  }
+  .task-status-running {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    box-shadow: 0 0 0 2px var(--accent-blue-soft);
+    animation: pulse-dot 1.5s infinite;
+    flex-shrink: 0;
+  }
+  .task-status-alert {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent-amber);
+    box-shadow: 0 0 0 2px var(--accent-amber-soft);
+    flex-shrink: 0;
+  }
+  @keyframes pulse-dot {
+    0% { transform: scale(0.95); opacity: 0.7; }
+    50% { transform: scale(1.2); opacity: 1; }
+    100% { transform: scale(0.95); opacity: 0.7; }
+  }
+
+  /* RODAPÉ DA SIDEBAR */
+  .sidebar-footer {
+    margin-top: auto;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .user-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+  .avatar {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  /* PALCO PRINCIPAL (STAGE CARD) */
+  .main-stage {
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--shadow-card);
+    position: relative;
+  }
+
+  /* TIRA DE ABAS: O "WORKING SET" CORRIGIDO */
+  .stage-tabstrip {
+    height: 38px;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+    user-select: none;
+    flex-shrink: 0;
+    overflow-x: auto;
+  }
+  .stage-tab {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.12s ease;
+    white-space: nowrap;
+  }
+  .stage-tab:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .stage-tab.active {
+    background: var(--bg-card);
+    color: var(--fg-primary);
+    border-color: var(--border);
+    box-shadow: var(--shadow-sm);
+  }
+  .stage-tab-close {
+    opacity: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    line-height: 1;
+    margin-left: 2px;
+  }
+  .stage-tab:hover .stage-tab-close {
+    opacity: 0.6;
+  }
+  .stage-tab-close:hover {
+    opacity: 1 !important;
+    background: var(--bg-hover);
+  }
+  .stage-tab-add {
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    background: transparent;
+    border: none;
+    color: var(--fg-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .stage-tab-add:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+
+  /* CONTEÚDO DO CHAT (ESTILO CHATGPT EQUILIBRADO) */
+  .chat-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 20px 0 12px;
+    position: relative;
+  }
+  .chat-viewport {
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 0 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* BOLHA DO USUÁRIO */
+  .user-message-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .user-bubble {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 18px 18px 4px 18px;
+    padding: 12px 18px;
+    max-width: 78%;
+    font-size: 13.5px;
+    line-height: 1.55;
+    color: var(--fg-primary);
+  }
+
+  /* MENSAGEM DO AGENTE (PROSA CONTÍNUA ADR-151) */
+  .agent-message-row {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .agent-meta-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--fg-primary);
+  }
+  .agent-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 4px;
+    background: var(--fg-primary);
+    color: var(--bg-window);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .agent-time {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--fg-muted);
+  }
+
+  /* DISCLOSURE DE FERRAMENTAS */
+  .tools-disclosure {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    width: fit-content;
+    gap: 12px;
+  }
+  .tools-disclosure:hover {
+    background: var(--bg-hover);
+  }
+  .tools-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+  }
+  .tools-time {
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+
+  /* PROSA DO ASSISTENTE */
+  .agent-prose {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--fg-primary);
+  }
+  .agent-prose p {
+    margin-bottom: 10px;
+  }
+  .agent-prose code {
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 2px 5px;
+    border-radius: 4px;
+  }
+
+  /* RADAR DE FROTA (FLEET RADAR / DOCK) */
+  .fleet-radar {
+    background: var(--bg-subtle);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 7px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .radar-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    overflow-x: auto;
+  }
+  .radar-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--fg-muted);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .radar-chip {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 16px;
+    font-size: 11.5px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+  }
+  .radar-chip:hover {
+    border-color: var(--border-strong);
+    color: var(--fg-primary);
+  }
+  .radar-chip.urgent {
+    border-color: var(--accent-amber);
+    background: var(--accent-amber-soft);
+    color: var(--fg-primary);
+    font-weight: 500;
+  }
+  .radar-chip-action {
+    background: var(--accent-amber);
+    color: #ffffff;
+    border: none;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin-left: 2px;
+  }
+
+  /* COMPOSER ELEGANTE (CHATGPT FEEL) */
+  .composer-wrapper {
+    padding: 10px 24px 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: var(--bg-panel);
+    flex-shrink: 0;
+  }
+  .composer-box {
+    width: 100%;
+    max-width: 860px;
+    background: var(--bg-window);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 10px 12px 8px;
+    box-shadow: var(--shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    transition: border-color 0.15s ease;
+  }
+  .composer-box:focus-within {
+    border-color: var(--fg-secondary);
+  }
+  .composer-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: 13.5px;
+    color: var(--fg-primary);
+    outline: none;
+    resize: none;
+  }
+  .composer-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 2px;
+  }
+  .composer-pills-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .model-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  .model-pill:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .status-badge-gold {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--brass);
+    background: var(--brass-soft);
+    border: 1px solid var(--brass-border);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .composer-pills-right {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .send-btn {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: var(--fg-primary);
+    color: var(--bg-window);
+    border: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .quick-suggestions-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .suggestion-chip {
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 12px;
+    cursor: pointer;
+  }
+  .suggestion-chip:hover {
+    color: var(--fg-primary);
+    background: var(--bg-hover);
+  }
+
+  /* ==========================================================================
+     VARIAÇÃO B: SPLIT DE CONFRONTO (RACE MODE / FORK PARALELO)
+     ========================================================================== */
+  .race-stage-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .race-header-banner {
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    padding: 9px 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .race-title-group {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .race-badge {
+    background: var(--accent-blue-soft);
+    color: var(--accent-blue);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+  .race-columns {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    overflow: hidden;
+    position: relative;
+  }
+  .race-column-divider {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 1px;
+    background: var(--border-strong);
+    z-index: 10;
+  }
+  .race-lane {
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 16px;
+    background: var(--bg-panel);
+    min-height: 0;
+  }
+  .race-lane:first-child {
+    background: var(--bg-window);
+  }
+  .race-lane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 14px;
+    flex-shrink: 0;
+  }
+  .agent-lane-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .promote-winner-btn {
+    background: var(--accent-green);
+    color: #ffffff;
+    border: none;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.15s ease;
+  }
+  .promote-winner-btn:hover {
+    opacity: 0.9;
+  }
+
+  /* ==========================================================================
+     VARIAÇÃO C: INSPECTOR SPLIT (CHAT + LIVE DIFF)
+     ========================================================================== */
+  .inspector-split {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 56% 44%;
+    overflow: hidden;
+  }
+  .inspector-chat-pane {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--border-strong);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .inspector-diff-pane {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-window);
+    overflow: hidden;
+    min-height: 0;
+  }
+  .diff-header {
+    height: 38px;
+    background: var(--bg-subtle);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 14px;
+    font-size: 12px;
+    font-weight: 500;
+    flex-shrink: 0;
+  }
+  .diff-file-path {
+    font-family: var(--font-mono);
+    color: var(--fg-primary);
+  }
+  .diff-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+  .diff-plus { color: var(--accent-green); }
+  .diff-minus { color: var(--accent-red); }
+  .diff-code-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.5;
+    padding: 12px 0;
+  }
+  .diff-line {
+    display: flex;
+    padding: 1px 12px;
+    cursor: pointer;
+  }
+  .diff-line:hover {
+    filter: brightness(0.97);
+  }
+  .diff-line.added { background: rgba(34, 197, 94, 0.1); color: var(--accent-green); }
+  .diff-line.removed { background: rgba(239, 68, 68, 0.1); color: var(--accent-red); }
+  .diff-num { width: 34px; color: var(--fg-faint); user-select: none; flex-shrink: 0; }
+
+  /* POPOVER DE DECISÃO RÁPIDA (MODAL SUTIL NO RADAR) */
+  .quick-approval-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+  }
+  .quick-approval-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    width: 440px;
+    padding: 18px;
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* STATUS BAR INFERIOR */
+  .status-bar {
+    height: 24px;
+    background: var(--bg-window);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--fg-muted);
+    user-select: none;
+    flex-shrink: 0;
+  }
+
+  .icon-svg {
+    width: 14px;
+    height: 14px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<!-- BARRA DE CONTROLE SUPERIOR DO MOCK -->
+<div class="demo-dock">
+  <div class="demo-intro">
+    <div class="demo-badge">Design Arquitetural · Frota ADE</div>
+    <div class="demo-title">Evolução da Hierarquia: Working Set + Telemetria de Frota</div>
+    <div class="demo-desc">
+      Elimina a falsa aba única de conversa, organiza tarefas ativas na mesa e traz supervisão paralela sem perder a serenidade do estilo chatgpt.
+    </div>
+  </div>
+
+  <div class="demo-actions">
+    <div class="variant-selector">
+      <button class="variant-btn active" id="btn-var-a" onclick="switchVariant('a')">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        V1 · Palco Sóbrio + Radar
+      </button>
+      <button class="variant-btn" id="btn-var-b" onclick="switchVariant('b')">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5"/></svg>
+        V2 · Split de Confronto (Race)
+      </button>
+      <button class="variant-btn" id="btn-var-c" onclick="switchVariant('c')">
+        <svg class="icon-svg" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M13 3v18"/></svg>
+        V3 · Chat + Live Diff
+      </button>
+    </div>
+
+    <button class="theme-toggle-btn" onclick="toggleTheme()">
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+      Tema
+    </button>
+  </div>
+</div>
+
+<!-- JANELA PRINCIPAL DA FROTA -->
+<div class="frota-window">
+
+  <!-- TOP TITLEBAR -->
+  <div class="titlebar">
+    <div class="traffic-lights">
+      <div class="tl-dot tl-red"></div>
+      <div class="tl-dot tl-yellow"></div>
+      <div class="tl-dot tl-green"></div>
+      <span class="app-name-tag">Frota</span>
+    </div>
+
+    <div class="mode-switcher">
+      <button class="mode-pill">Painel</button>
+      <button class="mode-pill active">Trabalho</button>
+      <button class="mode-pill">Features</button>
+    </div>
+
+    <div class="top-actions">
+      <div class="search-pill">
+        <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Buscar <span class="shortcut-kbd">⌘K</span>
+      </div>
+      <button class="btn-icon" title="Notas">
+        <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+      </button>
+      <button class="btn-icon" title="Configurações">
+        <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- CORPO PRINCIPAL -->
+  <div class="cockpit-body">
+
+    <!-- SIDEBAR ESQUERDA: A BIBLIOTECA -->
+    <div class="sidebar">
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">GERAL</div>
+        <div class="sidebar-item">
+          <div class="sidebar-item-content">
+            <svg class="icon-svg" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>
+            Frota
+          </div>
+          <span class="sidebar-badge">1</span>
+        </div>
+        <div class="sidebar-item">
+          <div class="sidebar-item-content">
+            <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Agendamentos
+          </div>
+        </div>
+        <div class="sidebar-item">
+          <div class="sidebar-item-content">
+            <svg class="icon-svg" viewBox="0 0 24 24"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+            Planos de voo
+          </div>
+          <span class="sidebar-badge">3</span>
+        </div>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title">
+          <span>PROJETOS</span>
+          <svg class="icon-svg" style="cursor:pointer;" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </div>
+
+        <div class="project-folder">
+          <div class="project-header">
+            <div class="sidebar-item-content">
+              <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>mycockpit</span>
+            </div>
+            <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+
+          <div class="project-tasks">
+            <div class="task-subitem active" onclick="activateTab('auth-fix')">
+              <div class="sidebar-item-content">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>refatoracao-ui</span>
+              </div>
+              <div class="task-status-running" title="Rodando em segundo plano"></div>
+            </div>
+
+            <div class="task-subitem" onclick="activateTab('race-mode')">
+              <div class="sidebar-item-content">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5"/></svg>
+                <span>benchmark-gemini-claude</span>
+              </div>
+              <span class="sidebar-badge">1d</span>
+            </div>
+
+            <div class="task-subitem" onclick="showApprovalModal()">
+              <div class="sidebar-item-content">
+                <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                <span>migracao-db</span>
+              </div>
+              <div class="task-status-alert" title="Decisão pendente"></div>
+            </div>
+
+            <div class="task-subitem" style="color: var(--fg-muted);" onclick="addNewTabFromSidebar()">
+              <div class="sidebar-item-content">
+                <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                <span>Nova tarefa</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="project-folder">
+          <div class="project-header" style="color: var(--fg-secondary); font-weight: 500;">
+            <div class="sidebar-item-content">
+              <svg class="icon-svg" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+              <span>Maclan</span>
+            </div>
+            <svg class="icon-svg" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-badge">
+          <div class="avatar">V</div>
+          <span>Vinícius</span>
+        </div>
+        <button class="btn-icon">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- PALCO PRINCIPAL (STAGE) -->
+    <div class="main-stage">
+
+      <!-- TIRA DE ABAS DA MESA ATIVA (WORKING SET) -->
+      <div class="stage-tabstrip" id="stage-tabs">
+        <div class="stage-tab active" id="tab-auth-fix" onclick="activateTab('auth-fix')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          <span>#refatoracao-ui</span>
+          <span class="stage-tab-close" onclick="closeTab(event, 'auth-fix')">×</span>
+        </div>
+
+        <div class="stage-tab" id="tab-race-mode" onclick="activateTab('race-mode')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M16 3h5v5M4 20L21 3M21 16v5h-5"/></svg>
+          <span>#benchmark-gemini-claude</span>
+          <span class="stage-tab-close" onclick="closeTab(event, 'race-mode')">×</span>
+        </div>
+
+        <div class="stage-tab" id="tab-diff-store" onclick="activateTab('diff-store')">
+          <svg class="icon-svg" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          <span>Diff: MainTabs.tsx</span>
+          <span class="stage-tab-close" onclick="closeTab(event, 'diff-store')">×</span>
+        </div>
+
+        <button class="stage-tab-add" title="Abrir nova aba de tarefa na mesa" onclick="addNewTabPrompt()">
+          <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+
+      <!-- ================================================================
+           CONTEÚDO DA VARIAÇÃO A: PALCO SÓBRIO (CHATGPT FEEL) + RADAR
+           ================================================================ -->
+      <div id="view-variant-a" style="display: flex; flex-direction: column; flex: 1; min-height: 0; overflow: hidden;">
+        <div class="chat-container">
+          <div class="chat-viewport">
+
+            <!-- Mensagem do Usuário -->
+            <div class="user-message-row">
+              <div class="user-bubble">
+                quando eu clico atualmente em um arquivo na aba atual de "Alterações" vejo que abre essa janela ao lado da conversa. Porém nao consigo fazer nada com o arquivo/conteudo, nao consigo selecionar um trecho, nao vejo highlited etc. Qual a complexidade de implementar isso?
+              </div>
+            </div>
+
+            <!-- Resposta do Agente (Sóbria, fluida, estilo ChatGPT com ferramentas colapsadas) -->
+            <div class="agent-message-row">
+              <div class="agent-meta-header">
+                <div class="agent-avatar">▲</div>
+                <span>Antigravity</span>
+                <span class="agent-time">11:20</span>
+              </div>
+
+              <div class="tools-disclosure">
+                <div class="tools-summary">
+                  <svg class="icon-svg" style="color: var(--accent-green);" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span>8 ações concluídas (view_file, grep_search em AppShell.tsx)</span>
+                </div>
+                <span class="tools-time">atividade há 29s</span>
+              </div>
+
+              <div class="agent-prose">
+                <p>
+                  A complexidade é moderada, mas a chave é separar o leitor de diffs da casca da janela. Hoje o <code>DiffPanel</code> é apenas um container de leitura rápida, mas podemos torná-lo um visualizador com seleção de trecho e atalhos de citação.
+                </p>
+                <p>
+                  Para habilitar a seleção de trechos com highlight e envio direto para o composer (estilo <em>"Citar no chat"</em>), precisamos de três coisas estruturais:
+                </p>
+                <p>
+                  1. <strong>Captura de Range de Linhas:</strong> Mapear o evento <code>onMouseUp</code> nas linhas do diff para emitir o payload com o caminho do arquivo e intervalo (ex: <code>[MainTabs.tsx#L42-L65]</code>).<br>
+                  2. <strong>Injeção no Composer:</strong> Conectar ao <code>useComposerDrafts.setText</code> com a referência anexada pronta para o próximo envio.<br>
+                  3. <strong>Largura Dedicada:</strong> Como observamos no Orca e no Paseo, um diff só respira se tiver piso mínimo de 420px.
+                </p>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- RADAR DE FROTA (FLEET RADAR / TELEMETRIA AMBIENTE) -->
+        <div class="fleet-radar">
+          <div class="radar-left">
+            <span class="radar-label">
+              <svg class="icon-svg" viewBox="0 0 24 24"><circle cx="12" cy="12" r="2"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"/></svg>
+              Frota:
+            </span>
+
+            <div class="radar-chip" onclick="activateTab('race-mode')" title="Clique para ver o trabalho deste agente">
+              <span class="task-status-running"></span>
+              <span>Claude Code (#benchmark): gerando patch B (38s)</span>
+            </div>
+
+            <div class="radar-chip urgent" onclick="showApprovalModal()" title="Clique para autorizar ou recusar">
+              <span class="task-status-alert"></span>
+              <span>#migracao-db: requer aprovação de comando</span>
+              <button class="radar-chip-action">Decidir</button>
+            </div>
+          </div>
+
+          <div style="font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono); white-space: nowrap;">
+            2 agentes ativos
+          </div>
+        </div>
+
+        <!-- COMPOSER CLÁSSICO CHATGPT -->
+        <div class="composer-wrapper">
+          <div class="composer-box">
+            <textarea class="composer-input" rows="2" placeholder="Enfileirar próxima mensagem ou instrução..."></textarea>
+            <div class="composer-toolbar">
+              <div class="composer-pills-left">
+                <div class="model-pill">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                  <span>Antigravity · Gemini 3.8 Flash (High)</span>
+                  <svg class="icon-svg" style="width: 10px; height: 10px;" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></svg>
+                </div>
+                <span class="status-badge-gold">Liberado</span>
+              </div>
+              <div class="composer-pills-right">
+                <button class="btn-icon" title="Anexar arquivo">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <button class="send-btn" title="Enviar mensagem">
+                  <svg class="icon-svg" viewBox="0 0 24 24"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="quick-suggestions-row">
+            <button class="suggestion-chip">Explicar o projeto</button>
+            <button class="suggestion-chip">Rodar os testes</button>
+            <button class="suggestion-chip">Criar uma branch</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================
+           CONTEÚDO DA VARIAÇÃO B: SPLIT DE CONFRONTO (RACE MODE / FORK)
+           ================================================================ -->
+      <div id="view-variant-b" class="race-stage-container" style="display: none;">
+        <div class="race-header-banner">
+          <div class="race-title-group">
+            <span class="race-badge">Split de Decisão</span>
+            <strong style="font-size: 13px;">Fork Paralelo: Otimização da Store Zustand</strong>
+            <span style="font-size: 12px; color: var(--fg-muted);">Dois agentes em worktrees isolados (Orca pattern)</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="stage-tab" style="background: var(--bg-hover);" onclick="switchVariant('a')">Voltar ao Palco</button>
+          </div>
+        </div>
+
+        <div class="race-columns">
+          <div class="race-column-divider"></div>
+
+          <!-- LADO A: ANTIGRAVITY (GEMINI) -->
+          <div class="race-lane">
+            <div class="race-lane-header">
+              <div class="agent-lane-title">
+                <div class="agent-avatar">▲</div>
+                <div>
+                  <div>Abordagem A · Antigravity (Gemini)</div>
+                  <div style="font-size: 11px; color: var(--fg-muted); font-weight: 400;">branch: wt-gemini-store · concluído em 42s</div>
+                </div>
+              </div>
+              <button class="promote-winner-btn" onclick="promoteWinner('A')">Promover A → Merge</button>
+            </div>
+
+            <div class="agent-prose" style="font-size: 13.5px;">
+              <p><strong>Estratégia:</strong> Migração para slices atômicos sem re-render desnecessário.</p>
+              <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-family: var(--font-mono); font-size: 11.5px; margin-bottom: 12px;">
+                <span class="diff-plus">+ 48 linhas</span> · <span class="diff-minus">- 82 linhas</span><br>
+                ✓ Todos os 14 testes de unidade passaram.<br>
+                ✓ Zero violações na catraca de file-size.
+              </div>
+              <p>O refactor removeu o selector coalescido e isolou os tickers do watchdog em listeners finos.</p>
+            </div>
+          </div>
+
+          <!-- LADO B: CLAUDE CODE -->
+          <div class="race-lane">
+            <div class="race-lane-header">
+              <div class="agent-lane-title">
+                <div class="agent-avatar" style="background: #b45309;">C</div>
+                <div>
+                  <div>Abordagem B · Claude Code</div>
+                  <div style="font-size: 11px; color: var(--fg-muted); font-weight: 400;">branch: wt-claude-store · concluído em 58s</div>
+                </div>
+              </div>
+              <button class="promote-winner-btn" onclick="promoteWinner('B')">Promover B → Merge</button>
+            </div>
+
+            <div class="agent-prose" style="font-size: 13.5px;">
+              <p><strong>Estratégia:</strong> Introdução de middleware de memoização na store.</p>
+              <div style="background: var(--bg-subtle); border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-family: var(--font-mono); font-size: 11.5px; margin-bottom: 12px;">
+                <span class="diff-plus">+ 112 linhas</span> · <span class="diff-minus">- 34 linhas</span><br>
+                ✓ Todos os 14 testes passaram.<br>
+                ⚠️ Adicionou 1 dependência utilitária em `src/lib/`.
+              </div>
+              <p>A abordagem preservou a API pública idêntica, mas aumentou a quantidade de código utilitário.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================================================================
+           CONTEÚDO DA VARIAÇÃO C: INSPECTOR SPLIT (CHAT + LIVE DIFF)
+           ================================================================ -->
+      <div id="view-variant-c" class="inspector-split" style="display: none;">
+        <!-- Painel de Chat à Esquerda (56%) -->
+        <div class="inspector-chat-pane">
+          <div class="chat-container">
+            <div class="chat-viewport" style="padding: 0 16px;">
+              <div class="user-message-row">
+                <div class="user-bubble" style="font-size: 13px;">
+                  Como ficou a alteração em <code>MainTabs.tsx</code> para suportar abas reais de tarefas?
+                </div>
+              </div>
+
+              <div class="agent-message-row">
+                <div class="agent-meta-header">
+                  <div class="agent-avatar">▲</div>
+                  <span>Antigravity</span>
+                </div>
+                <div class="agent-prose" style="font-size: 13.5px;">
+                  <p>Abri o arquivo ao lado. Veja na linha 42 que substituímos o tipo rígido por um vetor dinâmico de abas ativas do projeto.</p>
+                  <p>Você pode selecionar qualquer trecho do código à direita para comentar diretamente no próximo turno.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="composer-wrapper" style="padding: 8px 16px 12px;">
+            <div class="composer-box" style="padding: 8px 12px;">
+              <textarea class="composer-input" rows="1" placeholder="Pergunte sobre as linhas selecionadas..."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- Painel de Diff à Direita (44%) -->
+        <div class="inspector-diff-pane">
+          <div class="diff-header">
+            <span class="diff-file-path">src/components/layout/MainTabs.tsx</span>
+            <span class="diff-stats"><span class="diff-plus">+18</span> <span class="diff-minus">-6</span></span>
+          </div>
+
+          <div class="diff-code-body">
+            <div class="diff-line"><span class="diff-num">40</span><span>// O modelo do Working Set ativo na mesa</span></div>
+            <div class="diff-line removed"><span class="diff-num">41</span><span>- export type MainTab = { kind: "conversa" } | { kind: "diff" }</span></div>
+            <div class="diff-line added"><span class="diff-num">41</span><span>+ export interface WorkingTab {</span></div>
+            <div class="diff-line added"><span class="diff-num">42</span><span>+   id: string;</span></div>
+            <div class="diff-line added"><span class="diff-num">43</span><span>+   taskId: string;</span></div>
+            <div class="diff-line added"><span class="diff-num">44</span><span>+   label: string;</span></div>
+            <div class="diff-line added"><span class="diff-num">45</span><span>+   kind: "task" | "diff" | "race";</span></div>
+            <div class="diff-line added"><span class="diff-num">46</span><span>+ }</span></div>
+            <div class="diff-line"><span class="diff-num">47</span><span></span></div>
+            <div class="diff-line"><span class="diff-num">48</span><span>export function MainTabs({ activeTabId, tabs, onSelectTab }: Props) {</span></div>
+            <div class="diff-line"><span class="diff-num">49</span><span>  return (</span></div>
+            <div class="diff-line added"><span class="diff-num">50</span><span>+   &lt;div role="tablist" className="flex items-center gap-1"&gt;</span></div>
+            <div class="diff-line added"><span class="diff-num">51</span><span>+     {tabs.map((tab) =&gt; (</span></div>
+            <div class="diff-line added"><span class="diff-num">52</span><span>+       &lt;TabItem key={tab.id} tab={tab} active={tab.id === activeTabId} /&gt;</span></div>
+            <div class="diff-line added"><span class="diff-num">53</span><span>+     ))}</span></div>
+            <div class="diff-line"><span class="diff-num">54</span><span>    &lt;/div&gt;</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MODAL DE APROVAÇÃO RÁPIDA (DECISÃO HUMANA DO COCKPIT) -->
+      <div class="quick-approval-overlay" id="approval-modal" onclick="closeApprovalModal(event)">
+        <div class="quick-approval-card" onclick="event.stopPropagation()">
+          <div style="display: flex; align-items: center; justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="task-status-alert"></span>
+              <strong style="font-size: 13.5px;">Confirmação de Ação Requerida</strong>
+            </div>
+            <span style="cursor: pointer; color: var(--fg-muted);" onclick="closeApprovalModal()">×</span>
+          </div>
+
+          <div style="font-size: 12.5px; color: var(--fg-secondary); line-height: 1.5;">
+            O agente de <strong>#migracao-db</strong> em segundo plano está solicitando execução de um comando sensível:
+            <div style="margin-top: 8px; background: var(--bg-subtle); border: 1px solid var(--border); padding: 8px; border-radius: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--accent-red);">
+              npx prisma migrate dev --name drop_legacy_sessions
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+            <button class="stage-tab" style="background: var(--bg-hover);" onclick="closeApprovalModal()">Rejeitar</button>
+            <button class="promote-winner-btn" style="background: var(--accent-blue);" onclick="approveAction()">Autorizar Execução</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- STATUS BAR INFERIOR -->
+  <div class="status-bar">
+    <div>agy • 16% sessão ~US$ 4,48</div>
+    <div>2 worktrees isolados · local-first · v0.2.0-cockpit</div>
+  </div>
+
+</div>
+
+<script>
+  function switchVariant(variant) {
+    document.querySelectorAll('.variant-btn').forEach(btn => btn.classList.remove('active'));
+    const targetBtn = document.getElementById('btn-var-' + variant);
+    if (targetBtn) targetBtn.classList.add('active');
+
+    const viewA = document.getElementById('view-variant-a');
+    const viewB = document.getElementById('view-variant-b');
+    const viewC = document.getElementById('view-variant-c');
+
+    if (viewA) viewA.style.display = variant === 'a' ? 'flex' : 'none';
+    if (viewB) viewB.style.display = variant === 'b' ? 'flex' : 'none';
+    if (viewC) viewC.style.display = variant === 'c' ? 'grid' : 'none';
+
+    // Atualiza a aba ativa correspondente sem recursão
+    document.querySelectorAll('.stage-tab').forEach(t => t.classList.remove('active'));
+    let activeTabId = 'tab-auth-fix';
+    if (variant === 'b') activeTabId = 'tab-race-mode';
+    if (variant === 'c') activeTabId = 'tab-diff-store';
+    const tabEl = document.getElementById(activeTabId);
+    if (tabEl) tabEl.classList.add('active');
+  }
+
+  function activateTab(tabKey) {
+    if (tabKey === 'race-mode') {
+      switchVariant('b');
+    } else if (tabKey === 'diff-store') {
+      switchVariant('c');
+    } else {
+      switchVariant('a');
+    }
+  }
+
+  function closeTab(event, tabKey) {
+    event.stopPropagation();
+    const tab = document.getElementById('tab-' + tabKey);
+    if (tab) {
+      tab.style.display = 'none';
+      switchVariant('a');
+    }
+  }
+
+  function addNewTabPrompt() {
+    const title = prompt("Nome da nova tarefa ativa na mesa:", "investigacao-performance");
+    if (!title) return;
+
+    const strip = document.getElementById('stage-tabs');
+    const addBtn = document.querySelector('.stage-tab-add');
+
+    const newTab = document.createElement('div');
+    newTab.className = 'stage-tab active';
+    const idKey = 'tab-custom-' + Date.now();
+    newTab.id = idKey;
+    newTab.innerHTML = `
+      <svg class="icon-svg" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      <span>#${title}</span>
+      <span class="stage-tab-close" onclick="this.parentElement.remove(); switchVariant('a');">×</span>
+    `;
+
+    document.querySelectorAll('.stage-tab').forEach(t => t.classList.remove('active'));
+    strip.insertBefore(newTab, addBtn);
+    switchVariant('a');
+  }
+
+  function addNewTabFromSidebar() {
+    addNewTabPrompt();
+  }
+
+  function toggleTheme() {
+    const html = document.documentElement;
+    const current = html.getAttribute('data-theme');
+    const next = current === 'light' ? 'dark' : 'light';
+    html.setAttribute('data-theme', next);
+  }
+
+  function showApprovalModal() {
+    document.getElementById('approval-modal').style.display = 'flex';
+  }
+
+  function closeApprovalModal() {
+    document.getElementById('approval-modal').style.display = 'none';
+  }
+
+  function approveAction() {
+    alert("Ação autorizada com sucesso! O agente de #migracao-db continuou a execução.");
+    closeApprovalModal();
+  }
+
+  function promoteWinner(choice) {
+    alert(`Abordagem ${choice} promovida! O patch foi aplicado na branch principal e o worktree perdedor foi limpo.`);
+    switchVariant('a');
+  }
+</script>
+
+</body>
+</html>

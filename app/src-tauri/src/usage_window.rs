@@ -169,7 +169,11 @@ fn window_meta_from_minutes(mins: i64) -> (String, String) {
         let d = mins / 1440;
         (
             format!("{d}d"),
-            if d == 1 { "1 dia".into() } else { format!("{d} dias") },
+            if d == 1 {
+                "1 dia".into()
+            } else {
+                format!("{d} dias")
+            },
         )
     } else if mins > 0 && mins % 60 == 0 {
         let h = mins / 60;
@@ -548,7 +552,10 @@ async fn fetch_codex_app_server(agent: &str) -> Result<UsageSnapshot, UsageFetch
     })?;
     let (windows, plan_type) = parse_codex_rate_limits(&result);
     if windows.is_empty() {
-        return Err(UsageFetchError::new("protocol", "resposta sem janelas de uso"));
+        return Err(UsageFetchError::new(
+            "protocol",
+            "resposta sem janelas de uso",
+        ));
     }
     Ok(UsageSnapshot {
         agent: agent.to_string(),
@@ -592,7 +599,10 @@ async fn fetch_agy_print(agent: &str) -> Result<UsageSnapshot, UsageFetchError> 
             )
         })?
         .map_err(|e| {
-            UsageFetchError::new("spawn", format!("não consegui rodar `agy -p \"/usage\"`: {e}"))
+            UsageFetchError::new(
+                "spawn",
+                format!("não consegui rodar `agy -p \"/usage\"`: {e}"),
+            )
         })?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     // Exit != 0 do print mode: o `agy` costuma calar no stderr (incidente
@@ -608,7 +618,10 @@ async fn fetch_agy_print(agent: &str) -> Result<UsageSnapshot, UsageFetchError> 
                 (!e.is_empty()).then_some(e)
             })
             .unwrap_or_else(|| {
-                format!("`agy -p \"/usage\"` saiu com código {:?}", out.status.code())
+                format!(
+                    "`agy -p \"/usage\"` saiu com código {:?}",
+                    out.status.code()
+                )
             });
         return Err(UsageFetchError::new(classify_failure(&motivo), motivo));
     }
@@ -982,7 +995,10 @@ mod tests {
 
     #[test]
     fn classificacao_de_falha_429() {
-        assert_eq!(classify_failure("HTTP 429 Too Many Requests"), "rate-limited");
+        assert_eq!(
+            classify_failure("HTTP 429 Too Many Requests"),
+            "rate-limited"
+        );
         assert_eq!(classify_failure("Rate limit exceeded"), "rate-limited");
         assert_eq!(classify_failure("connection refused"), "protocol");
     }

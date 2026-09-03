@@ -9,7 +9,9 @@
 // gramática ("qual superfície estou vendo"), e inventar um segundo desenho pra
 // ela seria dois idiomas pro mesmo gesto.
 
+import { useMemo } from "react"
 import {
+  Columns2,
   Command,
   Copy,
   FileDiff,
@@ -29,15 +31,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { commandMenuShortcut, currentPlatform, openCommandMenu } from "@/lib/commandMenu"
-import { latestCompletedTurnId, mainTabEntries, type MainTab } from "@/lib/mainTabs"
+import { latestCompletedTurnId, type MainTab } from "@/lib/mainTabs"
+import { getConversationFamily } from "@/components/layout/conversationTree"
+import { controle } from "@/components/ui/controle"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
-
-const ICONE = {
-  conversa: MessageSquare,
-  diff: FileDiff,
-} as const
 
 export function MainTabs({
   tab,
@@ -50,16 +49,27 @@ export function MainTabs({
 }) {
   const activeProjectId = useApp((s) => s.activeProjectId)
   const activeId = useChat((s) => s.activeId)
+  const switchConversation = useChat((s) => s.switchConversation)
   const newConversation = useChat((s) => s.newConversation)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
   const forkConversationAt = useChat((s) => s.forkConversationAt)
+  const conversations = useChat((s) =>
+    activeProjectId ? s.conversationsByProject[activeProjectId] ?? [] : [],
+  )
+  const branchSplitOpen = useApp((s) => s.branchSplitOpen)
+  const toggleBranchSplit = useApp((s) => s.toggleBranchSplit)
+
   const forkTargetId = useChat((s) => {
     const conv = s.activeId ? s.byId[s.activeId] : null
     if (!conv || conv.running || conv.finalizing) return null
     return latestCompletedTurnId(conv.items)
   })
 
-  const entries = mainTabEntries(tab)
+  const family = useMemo(
+    () => getConversationFamily(conversations, activeId),
+    [conversations, activeId],
+  )
+  const hasBranches = Boolean(family && family.branches.length > 1)
   const commandShortcut = commandMenuShortcut(currentPlatform())
 
   return (
@@ -67,48 +77,84 @@ export function MainTabs({
       className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1"
     >
       <div role="tablist" aria-label="Abas do painel" className="flex items-center gap-1">
-        {entries.map((e) => {
-          const Icone = ICONE[e.kind]
-          const ativa = e.kind === tab.kind
-          return (
-            <div
-              key={e.kind}
-              className={cn(
-                "group/aba flex h-[26px] items-center rounded-md transition-colors",
-                ativa ? "bg-sel" : "hover:bg-sel-hover",
-              )}
-            >
-              <button
-                role="tab"
-                aria-selected={ativa}
-                onClick={() => onSelect(e.kind)}
+        {hasBranches && family ? (
+          family.branches.map((branch, idx) => {
+            const isBranchActive = branch.id === activeId && tab.kind === "conversa"
+            const label = idx === 0 ? "Original" : (branch.title ?? `Fork ${idx}`)
+            return (
+              <div
+                key={branch.id}
                 className={cn(
-                  "flex h-full items-center gap-1.5 rounded-md pl-2 text-[11px] font-medium transition-colors",
-                  e.closable ? "pr-1" : "pr-2",
-                  ativa
-                    ? "text-foreground"
-                    : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
+                  "group/aba flex h-[26px] items-center rounded-md transition-colors",
+                  isBranchActive ? "bg-sel" : "hover:bg-sel-hover",
                 )}
               >
-                <Icone className="size-3.5 shrink-0" />
-                {e.label}
-              </button>
-              {e.closable && (
-                // O × só aparece no hover ou com foco: fechar é gesto ocasional, e
-                // um × permanente numa tira de 26px compete com o rótulo, que é o
-                // que você lê pra escolher.
                 <button
-                  onClick={() => onClose(e.kind)}
-                  title={`Fechar ${e.label}`}
-                  aria-label={`Fechar ${e.label}`}
-                  className="mr-1 rounded p-0.5 text-transparent transition-colors group-hover/aba:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
+                  role="tab"
+                  aria-selected={isBranchActive}
+                  onClick={() => {
+                    if (tab.kind !== "conversa") onSelect("conversa")
+                    void switchConversation(branch.id)
+                  }}
+                  className={cn(
+                    "flex h-full items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
+                    isBranchActive
+                      ? "text-foreground"
+                      : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
+                  )}
                 >
-                  <X className="size-3" />
+                  <MessageSquare className="size-3.5 shrink-0" />
+                  <span className="max-w-[120px] truncate">{label}</span>
                 </button>
+              </div>
+            )
+          })
+        ) : (
+          <div
+            className={cn(
+              "group/aba flex h-[26px] items-center rounded-md transition-colors",
+              tab.kind === "conversa" ? "bg-sel" : "hover:bg-sel-hover",
+            )}
+          >
+            <button
+              role="tab"
+              aria-selected={tab.kind === "conversa"}
+              onClick={() => onSelect("conversa")}
+              className={cn(
+                "flex h-full items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
+                tab.kind === "conversa"
+                  ? "text-foreground"
+                  : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
               )}
-            </div>
-          )
-        })}
+            >
+              <MessageSquare className="size-3.5 shrink-0" />
+              Conversa
+            </button>
+          </div>
+        )}
+        {tab.kind === "diff" && (
+          <div
+            className="group/aba flex h-[26px] items-center rounded-md bg-sel transition-colors"
+          >
+            <button
+              role="tab"
+              aria-selected
+              onClick={() => onSelect("diff")}
+              className="flex h-full items-center gap-1.5 rounded-md pl-2 pr-1 text-[11px] font-medium text-foreground transition-colors"
+            >
+              <FileDiff className="size-3.5 shrink-0" />
+              Alterações
+            </button>
+            <button
+              onClick={() => onClose("diff")}
+              title="Fechar Alterações"
+              aria-label="Fechar Alterações"
+              className="mr-1 rounded p-0.5 text-transparent transition-colors group-hover/aba:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
+            >
+              <X className="size-3" />
+            </button>
+          </div>
+        )}
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -161,7 +207,7 @@ export function MainTabs({
             className="text-[12px]"
           >
             <GitFork />
-            Fork do último turno
+            Bifurcar do último turno
           </DropdownMenuItem>
           <DropdownMenuSeparator className="bg-border/60" />
           <DropdownMenuItem onSelect={openCommandMenu} className="text-[12px]">
@@ -173,6 +219,27 @@ export function MainTabs({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      {hasBranches && (
+        <button
+          type="button"
+          onClick={toggleBranchSplit}
+          title={
+            branchSplitOpen
+              ? "Fechar visualização dividida de ramos"
+              : "Dividir tela para comparar ramos"
+          }
+          className={cn(
+            controle("chip"),
+            "ml-auto font-normal transition-colors",
+            branchSplitOpen
+              ? "bg-sel text-foreground"
+              : "text-muted-foreground/70 hover:bg-sel-hover hover:text-foreground",
+          )}
+        >
+          <Columns2 className="size-3.5 shrink-0" />
+          <span>Comparar ramos</span>
+        </button>
+      )}
     </div>
   )
 }

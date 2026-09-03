@@ -4,7 +4,7 @@
 // ledger, presets, cards...) fica em db.ts.
 
 import { getDb, ensureBoardTables } from "@/lib/db"
-import { ensureComposerDraftTables } from "@/lib/db/schema"
+import { ensureComposerDraftTables, ensureConversationHierarchySchema } from "@/lib/db/schema"
 import type { ChatItem } from "@/store/chat"
 import type { ContextBasis } from "@/lib/contextSnapshot"
 
@@ -34,6 +34,8 @@ export interface ConversationMeta {
    *  Permite achar "a conversa da mesa" de cada agent (ensureDeskConversation,
    *  lib/fleet/send — o Companion usa) sem carregar cada linha. */
   agent: string | null
+  /** Id da conversa de origem quando esta conversa é um fork/duplicata (null se raiz). */
+  parentId?: string | null
   /** Há texto ou anexo não enviado, sem carregar o histórico inteiro. */
   hasDraft?: boolean
 }
@@ -45,6 +47,7 @@ interface ConvListRow {
   color: string | null
   worktree_path: string | null
   agent: string | null
+  parent_id: string | null
   has_draft: number
 }
 
@@ -56,8 +59,9 @@ export async function listConversations(
   const db = await getDb()
   if (!db) return null
   await ensureComposerDraftTables(db)
+  await ensureConversationHierarchySchema(db)
   const rows = await db.select<ConvListRow[]>(
-    `SELECT c.id, c.title, c.updated_at, c.color, c.worktree_path, c.agent,
+    `SELECT c.id, c.title, c.updated_at, c.color, c.worktree_path, c.agent, c.parent_id,
             EXISTS(SELECT 1 FROM conversation_drafts d WHERE d.conversation_id = c.id) AS has_draft
        FROM conversations c
       WHERE c.project_id = $1
@@ -71,6 +75,7 @@ export async function listConversations(
     color: r.color ?? null,
     worktreePath: r.worktree_path ?? null,
     agent: r.agent ?? null,
+    parentId: r.parent_id ?? null,
     hasDraft: r.has_draft === 1,
   }))
 }
@@ -144,6 +149,19 @@ export async function setConversationWorktree(
   if (!db) return
   await db.execute("UPDATE conversations SET worktree_path = $1 WHERE id = $2", [
     path,
+    id,
+  ])
+}
+
+/** Define/limpa a conversa pai de um fork/duplicata (NULL = raiz/independente). */
+export async function setConversationParent(
+  id: string,
+  parentId: string | null,
+): Promise<void> {
+  const db = await getDb()
+  if (!db) return
+  await db.execute("UPDATE conversations SET parent_id = $1 WHERE id = $2", [
+    parentId,
     id,
   ])
 }

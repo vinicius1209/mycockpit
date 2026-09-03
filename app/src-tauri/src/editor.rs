@@ -195,7 +195,11 @@ pub async fn open_in_editor(
         let alvo = if rel.is_empty() {
             None
         } else {
-            Some(contained(&project_path, &rel)?.to_string_lossy().to_string())
+            Some(
+                contained(&project_path, &rel)?
+                    .to_string_lossy()
+                    .to_string(),
+            )
         };
 
         let mut args: Vec<String> = vec![raiz];

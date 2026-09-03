@@ -47,11 +47,15 @@ pub fn init(app: &AppHandle) {
 }
 
 fn read_lock() -> std::sync::RwLockReadGuard<'static, Option<Vec<CatalogModel>>> {
-    CATALOG.read().unwrap_or_else(std::sync::PoisonError::into_inner)
+    CATALOG
+        .read()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn write_lock() -> std::sync::RwLockWriteGuard<'static, Option<Vec<CatalogModel>>> {
-    CATALOG.write().unwrap_or_else(std::sync::PoisonError::into_inner)
+    CATALOG
+        .write()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 /// Garante que a memória reflete o arquivo (lazy, 1ª consulta). Sem CACHE_PATH
@@ -169,7 +173,11 @@ fn lookup_in(list: &[CatalogModel], model: &str) -> Option<CatalogModel> {
     let divergem = cands.any(|c| {
         c.input != first.input || c.output != first.output || c.cache_read != first.cache_read
     });
-    if divergem { None } else { Some(first.clone()) }
+    if divergem {
+        None
+    } else {
+        Some(first.clone())
+    }
 }
 
 /// Baixa e reprocessa o catálogo (best-effort; o front chama de vez em quando).

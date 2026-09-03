@@ -75,10 +75,14 @@ pub(crate) fn validate_project_path(project_path: &str) -> Result<PathBuf, Strin
     let canon = std::fs::canonicalize(trimmed)
         .map_err(|_| format!("project_path inválido: '{trimmed}' não existe"))?;
     if !canon.is_dir() {
-        return Err(format!("project_path inválido: '{trimmed}' não é um diretório"));
+        return Err(format!(
+            "project_path inválido: '{trimmed}' não é um diretório"
+        ));
     }
     if canon == Path::new("/") {
-        return Err("project_path inválido: '/' é largo demais — aponte pro diretório do projeto".into());
+        return Err(
+            "project_path inválido: '/' é largo demais — aponte pro diretório do projeto".into(),
+        );
     }
     if let Some(home) = std::env::var_os("HOME") {
         let home_canon = std::fs::canonicalize(&home).unwrap_or_else(|_| PathBuf::from(&home));
@@ -197,7 +201,10 @@ mod tests {
         assert!(tmp.join(".mycockpit/commands/minha-skill.md").exists());
         // a casa nasce com o .gitignore que VERSIONA commands/ (a skill viaja no clone)
         let gi = std::fs::read_to_string(tmp.join(".mycockpit/.gitignore")).unwrap();
-        assert!(gi.contains("!commands/"), "gitignore sem exceção de commands/: {gi}");
+        assert!(
+            gi.contains("!commands/"),
+            "gitignore sem exceção de commands/: {gi}"
+        );
 
         // segunda gravação sem overwrite → erro claro.
         let err = write_skill(pp.clone(), "Minha Skill".into(), "outro".into(), None).unwrap_err();

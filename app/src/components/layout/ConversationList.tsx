@@ -1,31 +1,9 @@
-import { useEffect, useRef, useState } from "react"
-import {
-  ArrowDown,
-  ArrowUp,
-  Copy,
-  GitBranch,
-  Pencil,
-  Plus,
-  Rocket,
-  Swords,
-  Timer,
-  Trash2,
-} from "lucide-react"
+import { useMemo, useState } from "react"
+import { Plus } from "lucide-react"
 import { toast } from "sonner"
-import { AgentMark } from "@/components/common/AgentMark"
-import { ColorSubmenu } from "@/components/layout/ColorSubmenu"
-import { ConversationSlot } from "@/components/layout/ConversationSlot"
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu"
 import { confirm } from "@/lib/confirm"
 import { createWorktree, removeWorktree, worktreeRemovalNote } from "@/lib/git"
 import { useWorktrees } from "@/store/worktrees"
-import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -33,6 +11,8 @@ import { useAwaiting } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import type { ConversationMeta } from "@/lib/db/conversations"
 import { hasComposerDraft, useComposerDrafts } from "@/store/composerDrafts"
+import { ConversationRow } from "@/components/layout/ConversationRow"
+import { groupConversationTree } from "@/components/layout/conversationTree"
 
 /** Ids das conversas rodando, como string estável (só muda em transição de run
  * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
@@ -179,21 +159,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
   // Pedido pendente (permissão ou pergunta do ask_user): o turno DESTA conversa
   // está parado esperando você.
   const awaiting = useAwaiting()
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState("")
-  const editInputRef = useRef<HTMLInputElement>(null)
-
-  // O ContextMenu desmonta e restaura foco depois do onSelect. `autoFocus` no
-  // input acontece cedo demais e pode perder essa disputa. Focamos no próximo
-  // frame, já com o menu fechado, e selecionamos o título para renomear direto.
-  useEffect(() => {
-    if (!editingId) return
-    const frame = requestAnimationFrame(() => {
-      editInputRef.current?.focus()
-      editInputRef.current?.select()
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [editingId])
 
   // Clicar numa conversa: torna o projeto DELA o ativo (abre no painel) e troca
   // a conversa. Funciona pra projeto não-ativo (setActive + switch pelo id único).
@@ -202,17 +167,12 @@ export function ConversationList({ projectId }: { projectId: string }) {
     // navegar pra uma conversa fecha a view global "Agendado" (se aberta) —
     // mesmo quando o projeto já é o ativo (setActiveProject não roda).
     useApp.getState().setScheduledOpen(false)
+    useApp.getState().setBranchSplitOpen(false)
     // Clicar numa conversa NAVEGA até ela: estando no Painel/Features, troca pro
     // Trabalho (senão o clique só muda o store e a tela não reage = cara de bug).
     // Mesmo contrato dos outros caminhos (MissionControl, InboxBell, Agendado).
     useApp.getState().setViewMode("linear")
     void switchConversation(id)
-  }
-
-  function commitRename(id: string) {
-    const v = editValue.trim()
-    setEditingId(null)
-    if (v) void renameConversation(id, v)
   }
 
   // conversa é HARD-DELETE (sem desfazer) → sempre confirma antes.
@@ -264,279 +224,82 @@ export function ConversationList({ projectId }: { projectId: string }) {
     releitura()
   }
 
+  const tree = useMemo(() => groupConversationTree(conversations), [conversations])
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
   return (
     // Sem border-l nem indentação de container: a hierarquia é só alinhamento.
     // Cada filho recebe ~40px de recuo → texto sob o texto do projeto. Na linha
     // de conversa, parte desse recuo é a marca do agent (esquerda), então o
     // padding cai para 18px e a soma continua batendo.
     <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
-      {conversations.map((c, idx) => {
-        const isActive = c.id === activeId
-        // F1 — destaque PLENO (--sel + peso + pip) só quando o Linear é a
-        // superfície ativa; no SDD a ativa fica DIM (preenchimento pela metade,
-        // sem pip): memória preservada, sem mentir que ela dirige o detalhe.
-        const isFull = isActive && viewMode === "linear"
-        const isDimmed = isActive && viewMode !== "linear"
-        const isRunning = running.has(c.id)
-        const doneUnseen = finished.get(c.id)
-        const isDeciding = deciding.has(c.id)
-        const hasFusion = fusionAlive.has(c.id)
-        const hasMission = missionRunning.has(c.id)
-        const isAwaiting = awaiting.convIds.has(c.id)
-        const limitStatus = limitState.get(c.id)
-        const hasDraft = draftPresence.has(c.id)
-          ? draftPresence.get(c.id)!
-          : !!c.hasDraft
-        const isEditing = editingId === c.id
-        // À DIREITA do título, ANTES do slot: missão e disputa são TIPOS de
-        // execução, não estado do turno. O estado do turno mora no slot, que
-        // tem dono único (§6).
-        const statusEl =
-          hasMission || hasFusion || limitStatus ? (
-            <>
-              {limitStatus && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title={
-                    limitStatus === "stuck"
-                      ? "Parou num limite de uso, precisa de você"
-                      : "Aguardando reset do limite, retomando automaticamente"
-                  }
-                >
-                  <Timer
-                    className={cn(
-                      "size-3",
-                      limitStatus === "stuck"
-                        ? "text-st-warning"
-                        : "text-muted-foreground/70",
-                    )}
-                    aria-label={
-                      limitStatus === "stuck"
-                        ? "limite atingido, precisa de você"
-                        : "aguardando reset do limite"
-                    }
-                  />
-                </span>
-              )}
-              {hasMission && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title="Missão rodando"
-                >
-                  {/* S3.2 — pulso só no "esperando você"; missão rodando é
-                      presença calma. Brass sai (fica pra gesto e marca). */}
-                  <Rocket
-                    className="size-3 text-muted-foreground"
-                    aria-label="missão rodando"
-                  />
-                </span>
-              )}
-              {hasFusion && (
-                <span
-                  className="grid size-3 shrink-0 place-items-center"
-                  title={
-                    isDeciding
-                      ? "Disputa esperando sua decisão"
-                      : "Disputa em andamento nesta conversa"
-                  }
-                >
-                  <Swords
-                    className={cn(
-                      "size-3",
-                      isDeciding
-                        ? "text-st-warning"
-                        : "text-muted-foreground/70",
-                    )}
-                    aria-label={
-                      isDeciding ? "decisão pendente" : "disputa em curso"
-                    }
-                  />
-                </span>
-              )}
-            </>
-          ) : null
+      {tree.map((node, rootIdx) => {
+        const hasChildren = node.children.length > 0
+        const isChildActive = node.children.some((child) => child.id === activeId)
+        const isRootActive = node.item.id === activeId
+        const isGroupActive = isRootActive || isChildActive
+        const isCollapsed = !!collapsed[node.item.id] && !isGroupActive
+
+        const renderRow = (
+          c: ConversationMeta,
+          idx: number,
+          isChild: boolean,
+          branchCount?: number,
+        ) => (
+          <ConversationRow
+            key={c.id}
+            c={c}
+            isChild={isChild}
+            branchCount={branchCount}
+            isCollapsed={isCollapsed}
+            onToggleCollapse={
+              hasChildren
+                ? () =>
+                    setCollapsed((prev) => ({
+                      ...prev,
+                      [node.item.id]: !prev[node.item.id],
+                    }))
+                : undefined
+            }
+            idx={idx}
+            totalCount={conversations.length}
+            projectId={projectId}
+            convDnd={convDnd}
+            activeId={activeId}
+            viewMode={viewMode}
+            defaultAgent={defaultAgent}
+            isRunning={running.has(c.id)}
+            doneUnseen={finished.get(c.id)}
+            isDeciding={deciding.has(c.id)}
+            hasFusion={fusionAlive.has(c.id)}
+            hasMission={missionRunning.has(c.id)}
+            isAwaiting={awaiting.convIds.has(c.id)}
+            limitStatus={limitState.get(c.id)}
+            hasDraft={
+              draftPresence.has(c.id)
+                ? draftPresence.get(c.id)!
+                : !!c.hasDraft
+            }
+            openConv={openConv}
+            reorderConversations={reorderConversations}
+            moveConversation={moveConversation}
+            duplicateConversation={duplicateConversation}
+            toggleWorktree={toggleWorktree}
+            askDeleteConv={askDeleteConv}
+            renameConversation={(id, t) => void renameConversation(id, t)}
+            setConversationColor={(id, col) => void setConversationColor(id, col)}
+          />
+        )
+
         return (
-          <ContextMenu key={c.id}>
-            <ContextMenuTrigger asChild>
-              <div
-                // S1.2 — drag reordena DENTRO do projeto (tipo escopado acima).
-                draggable={!isEditing}
-                onDragStart={(e) => {
-                  e.dataTransfer.setData(convDnd, c.id)
-                  e.dataTransfer.effectAllowed = "move"
-                }}
-                onDragOver={(e) => {
-                  if (e.dataTransfer.types.includes(convDnd)) e.preventDefault()
-                }}
-                onDrop={(e) => {
-                  const dragId = e.dataTransfer.getData(convDnd)
-                  if (!dragId || dragId === c.id) return
-                  e.preventDefault()
-                  reorderConversations(projectId, dragId, c.id)
-                }}
-                className={cn(
-                  "group/c relative flex items-center rounded-md transition-colors",
-                  // SELEÇÃO NÃO É COR (§2): preenchimento neutro, nada de tinta.
-                  isFull
-                    ? "bg-sel"
-                    : isDimmed
-                      ? "bg-sel-hover"
-                      : "hover:bg-sel-hover",
-                )}
-                // Cor-rótulo tinge a LINHA INTEIRA, SEMPRE (pedido do usuário,
-                // 04/08: a versão anterior degradava pra bolinha na linha ativa
-                // e a cor "sumia" justo na conversa aberta, duplicando sinal).
-                // Na ativa/dim a cor MISTURA com o preenchimento de seleção;
-                // quem diz "você está aqui" é o preenchimento + o peso, que a
-                // lavagem não apaga. Fora delas, lavagem sobre transparente.
-                style={
-                  c.color
-                    ? {
-                        background: `color-mix(in srgb, ${c.color} 12%, ${
-                          isFull
-                            ? "var(--sel)"
-                            : isDimmed
-                              ? "var(--sel-hover)"
-                              : "transparent"
-                        })`,
-                      }
-                    : undefined
-                }
-              >
-                                {isEditing ? (
-                  <div className="flex min-w-0 flex-1 items-center py-2 pr-2 pl-10">
-                    <input
-                      ref={editInputRef}
-                      aria-label="Renomear conversa"
-                      value={editValue}
-                      onChange={(e) => setEditValue(e.target.value)}
-                      onBlur={() => commitRename(c.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") commitRename(c.id)
-                        if (e.key === "Escape") setEditingId(null)
-                      }}
-                      className="min-w-0 flex-1 rounded border border-brass/40 bg-background px-1 py-0.5 text-[12px] text-foreground outline-none"
-                    />
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => openConv(c.id)}
-                    title={isDimmed ? "ativa no Linear" : undefined}
-                    className={cn(
-                      // pl-[18px] + marca (16px) + gap-2 (8px) = 42px ≈ o pl-10
-                      // (40px) de antes: o TEXTO cai praticamente no mesmo x, então
-                      // a hierarquia "texto sob o texto do projeto" se mantém. O
-                      // modo edição segue em pl-10 (input não tem marca).
-                      "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-[18px] text-left text-[12px]",
-                      // S3.6 — texto ativo em foreground: brass 12px sobre a
-                      // superfície de hover no tema claro media 3.56:1 (< 4.5:1,
-                      // reprova AA). Peso 500 é o segundo canal da receita de
-                      // seleção; dim = ativa noutra superfície (muted, sem
-                      // peso); inativo = cinza médio, clareia no hover.
-                      isFull
-                        ? "font-medium text-foreground"
-                        : isDimmed
-                          ? "font-normal text-muted-foreground"
-                          : "font-normal text-muted-foreground group-hover/c:text-foreground",
-                    )}
-                  >
-                    {/* Marca do motor: IDENTIDADE, e só. Permanente nos quatro
-                        estados, monocromática, sem selo grudado (o selo se mudou
-                        pro slot direito, ADR-043). É o único lugar da árvore
-                        onde o motor aparece num app agnóstico de propósito. */}
-                    <AgentMark
-                      // sem carimbo ainda (conversa nova, nada enviado) → mostra
-                      // o SEU default, não "claude-code" fixo: a linha não pode
-                      // afirmar um agent que você não escolheu.
-                      agent={c.agent ?? defaultAgent}
-                    />
-                    <span className="min-w-0 flex-1 truncate">
-                      {c.title ?? "Nova conversa"}
-                    </span>
-                    {hasDraft && (
-                      <span
-                        className="shrink-0 text-[11px] text-faint"
-                        title="Há texto ou anexos não enviados nesta conversa"
-                      >
-                        Rascunho
-                      </span>
-                    )}
-                    {/* S3.2 — worktree é CONTEXTO, não seleção nem marca: sai
-                        do brass (que fica pra gesto e marca) e vira muted. */}
-                    {c.worktreePath && (
-                      <GitBranch
-                        className="size-3 shrink-0 text-muted-foreground"
-                        aria-label="isolado em worktree"
-                      />
-                    )}
-                    {statusEl && (
-                      <span className="flex shrink-0 items-center gap-1">
-                        {statusEl}
-                      </span>
-                    )}
-                    {/* Slot: dono único do "quando?", ordem fechada
-                        pede > rodando > falhou > tempo relativo. */}
-                    <ConversationSlot
-                      pede={isAwaiting}
-                      rodando={isRunning}
-                      falhou={doneUnseen === "error"}
-                      updatedAt={c.updatedAt}
-                    />
-                  </button>
-                )}
-                {/* S1.4 — o excluir saiu da linha (mora SÓ no context menu):
-                    o X no hover ficava no caminho do cursor e um clique
-                    impreciso abria um confirm destrutivo. */}
-              </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-              <ContextMenuItem
-                onSelect={() => {
-                  setEditValue(c.title ?? "")
-                  setEditingId(c.id)
-                }}
-              >
-                <Pencil /> Renomear
-              </ContextMenuItem>
-              <ColorSubmenu
-                current={c.color}
-                onPick={(col) => void setConversationColor(c.id, col)}
-              />
-              <ContextMenuItem onSelect={() => void duplicateConversation(c.id)}>
-                <Copy /> Duplicar
-              </ContextMenuItem>
-              <ContextMenuItem
-                onSelect={() => void toggleWorktree(c.id, c.worktreePath)}
-              >
-                <GitBranch />{" "}
-                {c.worktreePath ? "Remover isolamento" : "Isolar em worktree"}
-              </ContextMenuItem>
-              {/* S1.2 — reordenação por teclado (o drag não cobre a11y). */}
-              <ContextMenuSeparator />
-              <ContextMenuItem
-                disabled={idx === 0}
-                onSelect={() => moveConversation(projectId, c.id, -1)}
-              >
-                <ArrowUp /> Mover para cima
-              </ContextMenuItem>
-              <ContextMenuItem
-                disabled={idx === conversations.length - 1}
-                onSelect={() => moveConversation(projectId, c.id, 1)}
-              >
-                <ArrowDown /> Mover para baixo
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              {/* S1.4 — ícone honesto: excluir é LIXEIRA (o X dizia "fechar"). */}
-              <ContextMenuItem
-                variant="destructive"
-                disabled={isRunning}
-                onSelect={() => void askDeleteConv(c.id, c.title, c.worktreePath)}
-              >
-                <Trash2 /> Excluir
-              </ContextMenuItem>
-            </ContextMenuContent>
-          </ContextMenu>
+          <div key={node.item.id} className="flex flex-col gap-px">
+            {renderRow(node.item, rootIdx, false, hasChildren ? node.children.length + 1 : 0)}
+            {hasChildren &&
+              !isCollapsed &&
+              node.children.map((child, childIdx) =>
+                renderRow(child, rootIdx + childIdx + 1, true),
+              )}
+          </div>
         )
       })}
       <button

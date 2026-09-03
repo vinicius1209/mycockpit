@@ -50,3 +50,29 @@ export async function ensureComposerDraftTables(db: Database): Promise<void> {
 export function _resetComposerDraftTablesForTests(): void {
   composerDraftsReady = null
 }
+
+let conversationHierarchyReady: Promise<void> | null = null
+
+/**
+ * Espelho fail-safe da Migration 43. O runtime Tauri cria a coluna no boot;
+ * este ensure cobre banco de teste/dev e upgrade interrompido.
+ */
+export async function ensureConversationHierarchySchema(db: Database): Promise<void> {
+  if (!conversationHierarchyReady) {
+    const run = (async () => {
+      await addColumn(
+        db,
+        "ALTER TABLE conversations ADD COLUMN parent_id TEXT REFERENCES conversations(id) ON DELETE SET NULL",
+      )
+    })()
+    conversationHierarchyReady = run.catch((e) => {
+      conversationHierarchyReady = null
+      throw e
+    })
+  }
+  return conversationHierarchyReady
+}
+
+export function _resetConversationHierarchyForTests(): void {
+  conversationHierarchyReady = null
+}

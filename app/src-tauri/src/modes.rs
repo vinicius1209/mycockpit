@@ -57,7 +57,11 @@ fn trecho_apos<'a>(help: &'a str, ancora: &str, abre: &str, fecha: char) -> Opti
 fn ids_da_lista(lista: &str) -> Vec<String> {
     lista
         .split(',')
-        .map(|s| s.trim().trim_matches(['"', '\'', ' ', '\n', '\t']).to_string())
+        .map(|s| {
+            s.trim()
+                .trim_matches(['"', '\'', ' ', '\n', '\t'])
+                .to_string()
+        })
         .filter(|s| !s.is_empty() && !s.contains(' '))
         .collect()
 }

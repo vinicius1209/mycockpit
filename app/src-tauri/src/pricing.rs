@@ -52,29 +52,73 @@ fn price_for(model: &str) -> Option<Price> {
     // casaria com "gpt-5"). Modelo custom digitado no picker cai aqui também.
     let p = if m.contains("gpt-5.6-sol") {
         // família 5.6 (Sol/Terra/Luna), GA 2026-07-09, oficial
-        Price { input: 5.0, cached: 0.5, output: 30.0 }
+        Price {
+            input: 5.0,
+            cached: 0.5,
+            output: 30.0,
+        }
     } else if m.contains("gpt-5.6-terra") {
-        Price { input: 2.5, cached: 0.25, output: 15.0 }
+        Price {
+            input: 2.5,
+            cached: 0.25,
+            output: 15.0,
+        }
     } else if m.contains("gpt-5.6-luna") {
-        Price { input: 1.0, cached: 0.1, output: 6.0 }
+        Price {
+            input: 1.0,
+            cached: 0.1,
+            output: 6.0,
+        }
     } else if m.contains("gpt-5.5-pro") || m.contains("gpt-5.4-pro") {
         // pro: sem preço de cache publicado → cache cobrado como input cheio
-        Price { input: 30.0, cached: 30.0, output: 180.0 }
+        Price {
+            input: 30.0,
+            cached: 30.0,
+            output: 180.0,
+        }
     } else if m.contains("gpt-5.5") {
-        Price { input: 5.0, cached: 0.5, output: 30.0 }
+        Price {
+            input: 5.0,
+            cached: 0.5,
+            output: 30.0,
+        }
     } else if m.contains("gpt-5.4-mini") {
-        Price { input: 0.75, cached: 0.075, output: 4.5 }
+        Price {
+            input: 0.75,
+            cached: 0.075,
+            output: 4.5,
+        }
     } else if m.contains("gpt-5.4-nano") {
-        Price { input: 0.2, cached: 0.02, output: 1.25 }
+        Price {
+            input: 0.2,
+            cached: 0.02,
+            output: 1.25,
+        }
     } else if m.contains("gpt-5.4") {
-        Price { input: 2.5, cached: 0.25, output: 15.0 }
+        Price {
+            input: 2.5,
+            cached: 0.25,
+            output: 15.0,
+        }
     } else if m.contains("gpt-5.3-codex") {
-        Price { input: 1.75, cached: 0.175, output: 14.0 }
+        Price {
+            input: 1.75,
+            cached: 0.175,
+            output: 14.0,
+        }
     } else if m.contains("gpt-5") {
         // gpt-5 / gpt-5.1 (legado), $/1M
-        Price { input: 1.25, cached: 0.125, output: 10.0 }
+        Price {
+            input: 1.25,
+            cached: 0.125,
+            output: 10.0,
+        }
     } else if m.contains("o3") {
-        Price { input: 2.0, cached: 0.5, output: 8.0 }
+        Price {
+            input: 2.0,
+            cached: 0.5,
+            output: 8.0,
+        }
     // Família Gemini (o motor `agy` fala com ela). O slug do agy carrega o
     // ESFORÇO no fim do id ("gemini-3.7-flash-high"), então o contains casa a
     // família e o sufixo é ignorado — nenhum código genérico precisa saber
@@ -87,31 +131,75 @@ fn price_for(model: &str) -> Option<Price> {
     // contexto o preço DOBRA); como o catálogo, o SEED ignora tiers — a
     // estimativa erra pra BAIXO em turno de contexto longo, nunca pra cima.
     } else if m.contains("gemini-3.7-flash") {
-        Price { input: 0.75, cached: 0.075, output: 3.75 }
+        Price {
+            input: 0.75,
+            cached: 0.075,
+            output: 3.75,
+        }
     } else if m.contains("gemini-3.6-flash") {
-        Price { input: 1.5, cached: 0.15, output: 7.5 }
+        Price {
+            input: 1.5,
+            cached: 0.15,
+            output: 7.5,
+        }
     } else if m.contains("gemini-3.5-flash-lite") {
-        Price { input: 0.3, cached: 0.03, output: 2.5 }
+        Price {
+            input: 0.3,
+            cached: 0.03,
+            output: 2.5,
+        }
     } else if m.contains("gemini-3.5-flash") {
-        Price { input: 1.5, cached: 0.15, output: 9.0 }
+        Price {
+            input: 1.5,
+            cached: 0.15,
+            output: 9.0,
+        }
     } else if m.contains("gemini-3.1-flash-lite") {
-        Price { input: 0.25, cached: 0.025, output: 1.5 }
+        Price {
+            input: 0.25,
+            cached: 0.025,
+            output: 1.5,
+        }
     } else if m.contains("gemini-3.1-pro") {
         // models.dev só publica o id `gemini-3.1-pro-preview`; o slug que o
         // `agy models` lista é `gemini-3.1-pro-{high,low}`. Mesmo modelo,
         // mesmo preço publicado — o preview é o único id com preço.
-        Price { input: 2.0, cached: 0.2, output: 12.0 }
+        Price {
+            input: 2.0,
+            cached: 0.2,
+            output: 12.0,
+        }
     } else if m.contains("gemini-3-flash") {
-        Price { input: 0.5, cached: 0.05, output: 3.0 }
+        Price {
+            input: 0.5,
+            cached: 0.05,
+            output: 3.0,
+        }
     } else if m.contains("fable") || m.contains("mythos") {
         // Claude Fable/Mythos 5 (cache 90% off, como o resto da família)
-        Price { input: 10.0, cached: 1.0, output: 50.0 }
+        Price {
+            input: 10.0,
+            cached: 1.0,
+            output: 50.0,
+        }
     } else if m.contains("opus") {
-        Price { input: 5.0, cached: 0.5, output: 25.0 }
+        Price {
+            input: 5.0,
+            cached: 0.5,
+            output: 25.0,
+        }
     } else if m.contains("sonnet") {
-        Price { input: 3.0, cached: 0.3, output: 15.0 }
+        Price {
+            input: 3.0,
+            cached: 0.3,
+            output: 15.0,
+        }
     } else if m.contains("haiku") {
-        Price { input: 1.0, cached: 0.1, output: 5.0 }
+        Price {
+            input: 1.0,
+            cached: 0.1,
+            output: 5.0,
+        }
     } else {
         return None;
     };
@@ -170,7 +258,9 @@ mod tests {
     use super::*;
 
     fn out_rate(model: &str) -> f64 {
-        price_for(model).expect("modelo devia estar na tabela").output
+        price_for(model)
+            .expect("modelo devia estar na tabela")
+            .output
     }
 
     /// ADR-050 — modelo VAZIO (Codex sem `self.model`, depois que o adapter
@@ -180,7 +270,14 @@ mod tests {
     #[test]
     fn modelo_vazio_nao_casa_preco_nenhum() {
         assert!(price_for("").is_none());
-        let (usd, src) = estimate("", &NormalizedUsage { input: 100, cached_input: 0, output: 50 });
+        let (usd, src) = estimate(
+            "",
+            &NormalizedUsage {
+                input: 100,
+                cached_input: 0,
+                output: 50,
+            },
+        );
         assert_eq!(usd, None);
         assert!(matches!(src, CostSource::Unknown));
     }
@@ -285,7 +382,11 @@ mod tests {
         // O que o estimador cobra é o que a promoção enxerga (uma verdade só).
         let (usd, _) = estimate(
             "modelo-que-nunca-existiu-9-9",
-            &NormalizedUsage { input: 1000, cached_input: 0, output: 1000 },
+            &NormalizedUsage {
+                input: 1000,
+                cached_input: 0,
+                output: 1000,
+            },
         );
         assert!(usd.is_none());
     }

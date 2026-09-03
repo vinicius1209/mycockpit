@@ -348,7 +348,9 @@ pub fn init(app: &AppHandle) {
 }
 
 fn history_lock() -> std::sync::MutexGuard<'static, Option<Vec<SmokeResult>>> {
-    HISTORY.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    HISTORY
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
 fn ensure_loaded() {
@@ -424,7 +426,10 @@ async fn run_capture(mut cmd: tokio::process::Command) -> Result<String, SmokeRe
             )
         })?
         .map_err(|e| {
-            SmokeReading::new(SmokeOutcome::Unreachable, format!("não consegui rodar: {e}"))
+            SmokeReading::new(
+                SmokeOutcome::Unreachable,
+                format!("não consegui rodar: {e}"),
+            )
         })?;
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     if stdout.trim().is_empty() {
@@ -568,7 +573,10 @@ async fn smoke_opencode(model: &str) -> SmokeReading {
     {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => {
-            return SmokeReading::new(SmokeOutcome::Unreachable, format!("não consegui rodar: {e}"))
+            return SmokeReading::new(
+                SmokeOutcome::Unreachable,
+                format!("não consegui rodar: {e}"),
+            )
         }
         Err(_) => {
             return SmokeReading::new(
@@ -762,9 +770,8 @@ mod tests {
 
     #[test]
     fn claude_401_e_403_falam_de_autenticacao_e_status_estranho_e_nao_sei() {
-        let com_status = |s: &str| {
-            format!(r#"{{"is_error":true,"api_error_status":{s},"result":"recusado"}}"#)
-        };
+        let com_status =
+            |s: &str| format!(r#"{{"is_error":true,"api_error_status":{s},"result":"recusado"}}"#);
         assert_eq!(
             read_claude(&com_status("401")).outcome,
             SmokeOutcome::AuthRejected
@@ -832,7 +839,10 @@ mod tests {
     #[test]
     fn saida_que_nao_e_json_nunca_vira_veredito() {
         // Fail-open na leitura: CLI que cuspiu lixo não condena slug nenhum.
-        for r in [read_claude("Segmentation fault"), read_agy("<html>502</html>")] {
+        for r in [
+            read_claude("Segmentation fault"),
+            read_agy("<html>502</html>"),
+        ] {
             assert_eq!(r.outcome, SmokeOutcome::Unreachable);
             assert!(!r.outcome.is_verdict());
         }
@@ -865,19 +875,32 @@ mod tests {
     #[test]
     fn unreachable_nao_promove_nem_rebaixa_um_veredito_gravado() {
         let mut rows = vec![result("codex", "gpt-5.4", SmokeOutcome::Ok)];
-        record_result(&mut rows, result("codex", "gpt-5.4", SmokeOutcome::Unreachable));
+        record_result(
+            &mut rows,
+            result("codex", "gpt-5.4", SmokeOutcome::Unreachable),
+        );
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].outcome, SmokeOutcome::Ok, "\"não sei\" não apaga o que se sabia");
+        assert_eq!(
+            rows[0].outcome,
+            SmokeOutcome::Ok,
+            "\"não sei\" não apaga o que se sabia"
+        );
 
         // …mas um veredito NOVO substitui o antigo (o slug foi aposentado).
-        record_result(&mut rows, result("codex", "gpt-5.4", SmokeOutcome::UnknownSlug));
+        record_result(
+            &mut rows,
+            result("codex", "gpt-5.4", SmokeOutcome::UnknownSlug),
+        );
         assert_eq!(rows[0].outcome, SmokeOutcome::UnknownSlug);
     }
 
     #[test]
     fn tentativa_sem_veredito_anterior_e_gravada_em_vez_de_sumir() {
         let mut rows: Vec<SmokeResult> = Vec::new();
-        record_result(&mut rows, result("agy", "gemini-9", SmokeOutcome::Unreachable));
+        record_result(
+            &mut rows,
+            result("agy", "gemini-9", SmokeOutcome::Unreachable),
+        );
         assert_eq!(rows.len(), 1, "\"tentamos e não deu\" também é estado");
         assert!(!rows[0].outcome.is_verdict());
     }
@@ -887,14 +910,21 @@ mod tests {
         let mut rows = vec![result("agy", "claude-sonnet-4-6", SmokeOutcome::Ok)];
         record_result(
             &mut rows,
-            result("claude-code", "claude-sonnet-4-6", SmokeOutcome::UnknownSlug),
+            result(
+                "claude-code",
+                "claude-sonnet-4-6",
+                SmokeOutcome::UnknownSlug,
+            ),
         );
         assert_eq!(rows.len(), 2, "o veredito é do par (motor, slug)");
     }
 
     #[test]
     fn rodada_seguida_e_barrada_pelo_freio_anti_laco() {
-        assert!(round_allowed(None, 10_000), "a primeira rodada sempre passa");
+        assert!(
+            round_allowed(None, 10_000),
+            "a primeira rodada sempre passa"
+        );
         assert!(!round_allowed(Some(10_000), 10_000 + ROUND_COOLDOWN_MS - 1));
         assert!(round_allowed(Some(10_000), 10_000 + ROUND_COOLDOWN_MS));
     }

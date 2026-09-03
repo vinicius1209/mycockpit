@@ -23,9 +23,8 @@ const UNTRACKED_MAX_BYTES: u64 = 1_000_000;
 /// /dev/null, SEM spawnar um git por arquivo, era N+1 e congelava a UI).
 fn untracked_patch(cwd: &str, rel: &str) -> String {
     let full = Path::new(cwd).join(rel);
-    let mut out = format!(
-        "diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n"
-    );
+    let mut out =
+        format!("diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n");
     let too_big = fs::metadata(&full)
         .map(|m| m.len() > UNTRACKED_MAX_BYTES)
         .unwrap_or(true);
@@ -141,7 +140,11 @@ fn create_worktree_sync(project_path: String, conv_id: String) -> Result<Worktre
         .filter(|c| c.is_ascii_alphanumeric())
         .take(8)
         .collect();
-    let slug = if slug.is_empty() { "conv".to_string() } else { slug };
+    let slug = if slug.is_empty() {
+        "conv".to_string()
+    } else {
+        slug
+    };
     let branch = format!("mycockpit/{slug}");
     let path = Path::new(&project_path)
         .join(".mycockpit")
@@ -158,7 +161,10 @@ fn create_worktree_sync(project_path: String, conv_id: String) -> Result<Worktre
     }
 
     if path.exists() {
-        return Ok(WorktreeInfo { path: path_str, branch }); // reusa (re-toggle)
+        return Ok(WorktreeInfo {
+            path: path_str,
+            branch,
+        }); // reusa (re-toggle)
     }
     let branch_exists = git(
         &project_path,
@@ -171,7 +177,10 @@ fn create_worktree_sync(project_path: String, conv_id: String) -> Result<Worktre
         vec!["worktree", "add", &path_str, "-b", &branch]
     };
     run_git(&project_path, &args)?;
-    Ok(WorktreeInfo { path: path_str, branch })
+    Ok(WorktreeInfo {
+        path: path_str,
+        branch,
+    })
 }
 
 #[tauri::command]
@@ -248,9 +257,12 @@ pub async fn list_worktrees(project_path: String) -> Vec<WorktreeEntry> {
             .map(str::trim)
             .filter(|b| !b.is_empty())
             .map(|branch| {
-                let own_commits = git(&project_path, &["rev-list", "--count", &format!("HEAD..{branch}")])
-                    .and_then(|s| s.trim().parse::<u32>().ok())
-                    .unwrap_or(0);
+                let own_commits = git(
+                    &project_path,
+                    &["rev-list", "--count", &format!("HEAD..{branch}")],
+                )
+                .and_then(|s| s.trim().parse::<u32>().ok())
+                .unwrap_or(0);
                 WorktreeEntry {
                     branch: branch.to_string(),
                     path: pasta.get(branch).cloned(),
@@ -468,7 +480,11 @@ fn read_templates(cwd: &str) -> Vec<PrTemplate> {
                 if !p.extension().map(|x| x == "md").unwrap_or(false) {
                     continue;
                 }
-                let n = p.file_name().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                let n = p
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("")
+                    .to_string();
                 let low = n.to_lowercase();
                 if low.contains("readme")
                     || low.contains("contributing")
@@ -600,7 +616,9 @@ fn create_pr_sync(
         args.push(base_t);
     }
     // gh pr create imprime a URL do PR no stdout.
-    let url = crate::proc::run("gh", &args, Some(&cwd))?.trim().to_string();
+    let url = crate::proc::run("gh", &args, Some(&cwd))?
+        .trim()
+        .to_string();
     Ok(PrResult { url })
 }
 
@@ -719,7 +737,10 @@ branch refs/heads/mycockpit/aaa11111
     #[test]
     fn liga_cada_branch_a_pasta_do_proprio_bloco() {
         let m = parse_worktree_paths(PORCELAIN);
-        assert_eq!(m.get("main").map(String::as_str), Some("/Users/v/projetos/mycockpit"));
+        assert_eq!(
+            m.get("main").map(String::as_str),
+            Some("/Users/v/projetos/mycockpit")
+        );
         assert_eq!(
             m.get("mycockpit/aaa11111").map(String::as_str),
             Some("/Users/v/projetos/mycockpit/.mycockpit/worktrees/aaa11111")

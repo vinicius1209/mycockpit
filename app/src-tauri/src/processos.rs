@@ -165,7 +165,10 @@ mod tests {
     fn pasta_que_existe_e_ok_e_o_resto_nao() {
         let dir = std::env::temp_dir();
         assert_eq!(estado_de(dir.to_str().unwrap()), EstadoDaPasta::Ok);
-        assert_eq!(estado_de("/caminho/que/nao/existe/aqui"), EstadoDaPasta::Sumiu);
+        assert_eq!(
+            estado_de("/caminho/que/nao/existe/aqui"),
+            EstadoDaPasta::Sumiu
+        );
 
         // Arquivo no lugar de pasta: o projeto aponta pra algo que EXISTE e
         // ainda assim não serve de `cwd`. Dizer "sumiu" seria mentira, e o
@@ -187,7 +190,10 @@ mod tests {
     #[test]
     fn motor_e_o_executavel_nao_uma_palavra_na_linha() {
         // Sem isto, a própria varredura entraria na lista que ela produz.
-        assert_eq!(motor_de("/usr/local/bin/claude --resume x"), Some("claude".into()));
+        assert_eq!(
+            motor_de("/usr/local/bin/claude --resume x"),
+            Some("claude".into())
+        );
         assert_eq!(motor_de("claude"), Some("claude".into()));
         assert_eq!(motor_de("grep claude"), None);
         assert_eq!(motor_de("node /Applications/Xirp.app/x.js claude"), None);

@@ -48,7 +48,7 @@
   "components/mission/PhaseRow.tsx": 1,
   "components/mission/RecoveryCard.tsx": 2,
   "components/mission/RepeatWarning.tsx": 1,
-  "components/notes/NotesList.tsx": 2,
+  "components/notes/NotesList.tsx": 1,
   "components/notes/StickyNoteCard.tsx": 6,
   "components/onboarding/AgentStep.tsx": 1,
   "components/onboarding/StepDots.tsx": 1,

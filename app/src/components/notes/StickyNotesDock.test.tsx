@@ -89,7 +89,7 @@ describe("StickyNotesDockView", () => {
     const html = render({ notes: duasNotas })
     expect(html).not.toContain("fixed")
     expect(html).not.toContain("bottom-16")
-    expect(html).toContain("max-h-[min(32rem")
+    expect(html).toContain("max-h-[min(40rem")
   })
 
   describe(`com menos de ${LIMIAR_DA_LISTA} notas (desenho B)`, () => {

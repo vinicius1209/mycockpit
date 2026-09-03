@@ -97,8 +97,7 @@ pub fn canonical_resource(url: &str) -> String {
 /// base64url SEM padding (RFC 7636 §A). Implementado à mão: a única outra
 /// dependência de base64 do grafo é transitiva e não queremos fixá-la aqui.
 fn base64url(bytes: &[u8]) -> String {
-    const ALFABETO: &[u8; 64] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    const ALFABETO: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
     for bloco in bytes.chunks(3) {
         let b0 = bloco[0] as u32;
@@ -197,8 +196,7 @@ fn sha256(entrada: &[u8]) -> [u8; 32] {
 
 /// Verifier aleatório de 64 chars do alfabeto unreserved (RFC 7636 §4.1).
 fn novo_verifier() -> String {
-    const ALFABETO: &[u8] =
-        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+    const ALFABETO: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
     let mut out = String::with_capacity(64);
     for _ in 0..64 {
         let n: usize = rand::random_range(0..ALFABETO.len());
@@ -303,7 +301,9 @@ pub fn parse_as_metadata(json: &Value, issuer_esperado: &str) -> Result<AsMetada
     let issuer = texto("issuer").ok_or("metadata do servidor de autorização sem `issuer`")?;
     // Comparação literal: a spec proíbe normalizar caixa, porta ou barra final
     // antes de comparar (é a defesa contra mix-up de AS).
-    if issuer != issuer_esperado.trim_end_matches('/') && issuer.trim_end_matches('/') != issuer_esperado.trim_end_matches('/') {
+    if issuer != issuer_esperado.trim_end_matches('/')
+        && issuer.trim_end_matches('/') != issuer_esperado.trim_end_matches('/')
+    {
         return Err(format!(
             "o servidor de autorização respondeu com issuer `{issuer}`, diferente de `{issuer_esperado}`; login cancelado"
         ));
@@ -314,7 +314,8 @@ pub fn parse_as_metadata(json: &Value, issuer_esperado: &str) -> Result<AsMetada
     let code_challenge_methods_supported = lista("code_challenge_methods_supported");
     if code_challenge_methods_supported.is_empty() {
         return Err(
-            "o servidor de autorização não declara suporte a PKCE; a Frota não faz login sem PKCE".into(),
+            "o servidor de autorização não declara suporte a PKCE; a Frota não faz login sem PKCE"
+                .into(),
         );
     }
     if !code_challenge_methods_supported
@@ -449,7 +450,9 @@ pub fn validate_callback(
             .get("error_description")
             .map(String::as_str)
             .unwrap_or(erro.as_str());
-        return Err(format!("o servidor de autorização recusou o login: {descricao}"));
+        return Err(format!(
+            "o servidor de autorização recusou o login: {descricao}"
+        ));
     }
     params
         .get("code")
@@ -604,9 +607,9 @@ fn entry(server_id: &str) -> Result<keyring::Entry, String> {
 
 pub fn load_tokens(server_id: &str) -> Result<Option<StoredTokens>, String> {
     match entry(server_id)?.get_password() {
-        Ok(blob) => serde_json::from_str(&blob).map(Some).map_err(|e| {
-            format!("credencial guardada ilegível (faça login de novo): {e}")
-        }),
+        Ok(blob) => serde_json::from_str(&blob)
+            .map(Some)
+            .map_err(|e| format!("credencial guardada ilegível (faça login de novo): {e}")),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(format!("falha ao ler o Keychain: {e}")),
     }
@@ -663,7 +666,10 @@ pub async fn curl_form(
         aspas("Content-Type: application/x-www-form-urlencoded")
     ));
     for (nome, valor) in headers_extra {
-        config.push_str(&format!("header = {}\n", aspas(&format!("{nome}: {valor}"))));
+        config.push_str(&format!(
+            "header = {}\n",
+            aspas(&format!("{nome}: {valor}"))
+        ));
     }
     config.push_str(&format!("data = {}\n", aspas(&corpo)));
     config.push_str("silent\nshow-error\ndump-header = \"/dev/stderr\"\n");
@@ -687,7 +693,10 @@ pub async fn curl_json(
         aspas("Content-Type: application/json")
     ));
     for (nome, valor) in headers_extra {
-        config.push_str(&format!("header = {}\n", aspas(&format!("{nome}: {valor}"))));
+        config.push_str(&format!(
+            "header = {}\n",
+            aspas(&format!("{nome}: {valor}"))
+        ));
     }
     config.push_str(&format!("data = {}\n", aspas(corpo)));
     config.push_str("silent\nshow-error\ndump-header = \"/dev/stderr\"\n");
@@ -836,7 +845,8 @@ async fn esperar_callback(porta: u16) -> Result<BTreeMap<String, String>, String
     }
 }
 
-const RESPOSTA_404: &str = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+const RESPOSTA_404: &str =
+    "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
 fn pagina(titulo: &str, detalhe: &str) -> String {
     let html = format!(
@@ -1049,7 +1059,9 @@ pub async fn refresh(
         // (houve login, e ele caiu). Apagar aqui viraria "sem login" e faria o
         // usuário achar que nunca entrou.
         let motivo = token_error_message(resposta.status, &resposta.corpo);
-        return Err(format!("a sessão expirou e não pôde ser renovada: {motivo}"));
+        return Err(format!(
+            "a sessão expirou e não pôde ser renovada: {motivo}"
+        ));
     }
     let json: Value = serde_json::from_str(&resposta.corpo)
         .map_err(|e| format!("resposta do token endpoint ilegível: {e}"))?;
@@ -1137,10 +1149,7 @@ pub async fn mcp_oauth_status(
 /// aconteceu, sem prometer revogação que não houve (o AS real do `prime-mcp`
 /// não expõe `revocation_endpoint`).
 #[tauri::command]
-pub async fn mcp_oauth_logout(
-    project_path: String,
-    server_id: String,
-) -> Result<String, String> {
+pub async fn mcp_oauth_logout(project_path: String, server_id: String) -> Result<String, String> {
     let tokens = load_tokens(&server_id)?;
     let mut revogado = false;
     let mut aviso: Option<String> = None;
@@ -1312,7 +1321,10 @@ mod tests {
         );
         // O AS real do prime NÃO expõe revogação: "Sair" precisa dizer a verdade.
         assert_eq!(metadata.revocation_endpoint, None);
-        assert!(metadata.scopes_supported.iter().any(|s| s == "offline_access"));
+        assert!(metadata
+            .scopes_supported
+            .iter()
+            .any(|s| s == "offline_access"));
     }
 
     #[test]
@@ -1329,20 +1341,29 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("code_challenge_methods_supported");
-        let erro = parse_as_metadata(&sem_pkce, "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1")
-            .expect_err("sem PKCE deve recusar");
+        let erro = parse_as_metadata(
+            &sem_pkce,
+            "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1",
+        )
+        .expect_err("sem PKCE deve recusar");
         assert!(erro.contains("PKCE"), "motivo legível: {erro}");
 
         let mut so_plain = as_metadata_prime();
         so_plain["code_challenge_methods_supported"] = json!(["plain"]);
-        let erro = parse_as_metadata(&so_plain, "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1")
-            .expect_err("só plain deve recusar");
+        let erro = parse_as_metadata(
+            &so_plain,
+            "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1",
+        )
+        .expect_err("só plain deve recusar");
         assert!(erro.contains("S256"), "motivo legível: {erro}");
     }
 
     #[test]
     fn offline_access_so_entra_quando_o_servidor_declara() {
-        let com = escopos_do_login(&["openid".into()], &["openid".into(), "offline_access".into()]);
+        let com = escopos_do_login(
+            &["openid".into()],
+            &["openid".into(), "offline_access".into()],
+        );
         assert_eq!(com, vec!["openid", "offline_access"]);
         let sem = escopos_do_login(&["openid".into()], &["openid".into()]);
         assert_eq!(sem, vec!["openid"]);
@@ -1356,12 +1377,20 @@ mod tests {
         )
         .unwrap();
         let config = config_prime();
-        let url = build_authorize_url(&metadata, &config, "estado-1", "desafio-1", &["openid".into()]);
+        let url = build_authorize_url(
+            &metadata,
+            &config,
+            "estado-1",
+            "desafio-1",
+            &["openid".into()],
+        );
         assert!(url.contains("code_challenge=desafio-1"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("state=estado-1"));
         // `resource` é MUST da spec, mesmo quando o AS não anuncia suporte.
-        assert!(url.contains("resource=https%3A%2F%2Ftsxtyuyjmouuyzkzwdtz.supabase.co%2Ffunctions%2Fv1%2Fmcp"));
+        assert!(url.contains(
+            "resource=https%3A%2F%2Ftsxtyuyjmouuyzkzwdtz.supabase.co%2Ffunctions%2Fv1%2Fmcp"
+        ));
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A8976%2Fcallback"));
         // O verifier NUNCA vai na URL de autorização.
         assert!(!url.contains("code_verifier"));
@@ -1400,10 +1429,21 @@ mod tests {
 
     #[test]
     fn callback_sem_iss_quando_o_servidor_promete_enviar_e_recusado() {
-        assert!(validate_callback(&params(&[("state", "s"), ("code", "abc")]), "s", "https://as", true).is_err());
+        assert!(validate_callback(
+            &params(&[("state", "s"), ("code", "abc")]),
+            "s",
+            "https://as",
+            true
+        )
+        .is_err());
         // Sem promessa de `iss`, a ausência é aceitável.
         assert_eq!(
-            validate_callback(&params(&[("state", "s"), ("code", "abc")]), "s", "https://as", false),
+            validate_callback(
+                &params(&[("state", "s"), ("code", "abc")]),
+                "s",
+                "https://as",
+                false
+            ),
             Ok("abc".to_string())
         );
     }

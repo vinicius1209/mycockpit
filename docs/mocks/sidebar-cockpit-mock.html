@@ -1,0 +1,1392 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frota ADE · Mock V2 — Sidebar Direito Refinado (File Explorer + Meta da Conversa + Alterações Real)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", ui-monospace, monospace;
+
+    /* Light Theme (Canônico Frota) */
+    --bg-app: #f7f7f5;
+    --bg-window: #ffffff;
+    --bg-panel: #ffffff;
+    --bg-card: #ffffff;
+    --bg-subtle: #f4f4f2;
+    --bg-hover: #ecece9;
+    --bg-active: #e5e5e0;
+
+    --fg-primary: #121316;
+    --fg-secondary: #5a5f66;
+    --fg-muted: #8b9098;
+    --fg-faint: #b4b8bf;
+
+    --border: rgba(0, 0, 0, 0.08);
+    --border-subtle: rgba(0, 0, 0, 0.04);
+    --border-focus: rgba(0, 0, 0, 0.2);
+
+    --brass: #a9742b;
+    --brass-soft: rgba(169, 116, 43, 0.1);
+    --brass-border: rgba(169, 116, 43, 0.28);
+
+    --accent-blue: #2563eb;
+    --accent-blue-soft: rgba(37, 99, 235, 0.08);
+    --accent-green: #16a34a;
+    --accent-green-soft: rgba(22, 163, 74, 0.08);
+    --accent-amber: #d97706;
+    --accent-amber-soft: rgba(217, 119, 6, 0.1);
+    --accent-red: #dc2626;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 6px 16px -4px rgba(0, 0, 0, 0.03);
+    --shadow-pop: 0 12px 32px -4px rgba(0, 0, 0, 0.12);
+  }
+
+  [data-theme="dark"] {
+    /* Dark Theme (Canônico Frota & Orca) */
+    --bg-app: #090a0c;
+    --bg-window: #0f1013;
+    --bg-panel: #14161a;
+    --bg-card: #181a1f;
+    --bg-subtle: #1c1f24;
+    --bg-hover: #23272e;
+    --bg-active: #2a2e37;
+
+    --fg-primary: #f0f2f5;
+    --fg-secondary: #9aa0a6;
+    --fg-muted: #666c75;
+    --fg-faint: #444950;
+
+    --border: rgba(255, 255, 255, 0.08);
+    --border-subtle: rgba(255, 255, 255, 0.04);
+    --border-focus: rgba(255, 255, 255, 0.22);
+
+    --brass: #e4a862;
+    --brass-soft: rgba(228, 168, 98, 0.14);
+    --brass-border: rgba(228, 168, 98, 0.32);
+
+    --accent-blue: #3b82f6;
+    --accent-blue-soft: rgba(59, 130, 246, 0.12);
+    --accent-green: #22c55e;
+    --accent-green-soft: rgba(34, 197, 94, 0.12);
+    --accent-amber: #f59e0b;
+    --accent-amber-soft: rgba(245, 158, 11, 0.14);
+    --accent-red: #ef4444;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 2px 6px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 14px 36px -4px rgba(0, 0, 0, 0.6);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--font-sans);
+    background: #050507;
+    color: var(--fg-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* BARRA DE CONTROLE SUPERIOR DO MOCK */
+  .mock-header {
+    width: 100%;
+    max-width: 1440px;
+    background: #14161b;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  }
+  .mock-title-area {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #e4a862;
+    background: rgba(228, 168, 98, 0.12);
+    padding: 2px 8px;
+    border-radius: 20px;
+    width: fit-content;
+  }
+  .mock-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #f3f4f6;
+  }
+  .mock-subtitle {
+    font-size: 12px;
+    color: #9ca3af;
+  }
+  .mock-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .mock-btn {
+    background: #1f232b;
+    color: #d1d5db;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mock-btn:hover {
+    background: #2a2f3a;
+    color: #fff;
+    border-color: rgba(255,255,255,0.2);
+  }
+  .mock-btn.active {
+    background: #e4a862;
+    color: #0b0c0e;
+    border-color: #e4a862;
+    font-weight: 600;
+  }
+
+  /* JANELA PRINCIPAL DA ADE */
+  .ade-window {
+    width: 100%;
+    max-width: 1440px;
+    height: 820px;
+    background: var(--bg-window);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-pop);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  /* TOP BAR DA JANELA (TRAFFIC LIGHTS + TABS GERAIS) */
+  .ade-topbar {
+    height: 44px;
+    background: var(--bg-app);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    user-select: none;
+  }
+  .ade-traffic-lights {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 120px;
+  }
+  .tl-dot {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+  }
+  .tl-close { background: #ff5f56; border: 1px solid #e0443e; }
+  .tl-min { background: #ffbd2e; border: 1px solid #dea123; }
+  .tl-max { background: #27c93f; border: 1px solid #1aab29; }
+
+  .ade-center-tabs {
+    display: flex;
+    align-items: center;
+    background: var(--bg-subtle);
+    border-radius: 8px;
+    padding: 2px;
+    border: 1px solid var(--border-subtle);
+  }
+  .center-tab-btn {
+    padding: 4px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+  }
+  .center-tab-btn.active {
+    background: var(--bg-window);
+    color: var(--fg-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .ade-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 12px;
+    color: var(--fg-muted);
+  }
+  .top-search-pill {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+  }
+
+  /* CORPO DE 3 COLUNAS: ESQUERDA (TREE/PROJETOS), CENTRO (CHAT), DIREITA (SIDEBAR REESTRUTURADO) */
+  .ade-body {
+    flex: 1;
+    display: flex;
+    min-height: 0;
+    background: var(--bg-app);
+  }
+
+  /* 1. SIDEBAR ESQUERDO (MINIMALISTA) */
+  .ade-left-sidebar {
+    width: 220px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-app);
+    display: flex;
+    flex-direction: column;
+    padding: 12px 10px;
+    gap: 16px;
+  }
+  .left-sec-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-muted);
+    padding: 0 8px 4px 8px;
+  }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .nav-item:hover { background: var(--bg-hover); color: var(--fg-primary); }
+  .nav-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
+  .project-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-primary);
+  }
+  .thread-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 8px 5px 22px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .thread-item.active { background: var(--bg-active); color: var(--fg-primary); font-weight: 500; }
+
+  /* 2. CHAT CENTRAL */
+  .ade-chat-col {
+    flex: 1;
+    background: var(--bg-window);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    border-right: 1px solid var(--border);
+  }
+  .chat-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 32px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .msg-row {
+    display: flex;
+    gap: 12px;
+    max-width: 760px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  .msg-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    shrink-0: 0;
+  }
+  .msg-content-area {
+    flex: 1;
+    min-width: 0;
+  }
+  .msg-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .msg-name { font-size: 13px; font-weight: 600; }
+  .msg-time { font-size: 11px; color: var(--fg-muted); }
+  .user-bubble {
+    background: var(--bg-subtle);
+    padding: 10px 14px;
+    border-radius: 14px;
+    border-top-left-radius: 4px;
+    font-size: 14px;
+    line-height: 1.5;
+    display: inline-block;
+  }
+  .agent-prose {
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--fg-primary);
+  }
+  .agent-prose p { margin-bottom: 10px; }
+  .tool-disclosure {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    color: var(--fg-secondary);
+    margin: 8px 0;
+  }
+
+  /* BARRA DE CAPACIDADES EXISTENTE SOBRE O COMPOSER */
+  .capabilities-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 12px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    font-size: 11px;
+    color: var(--fg-secondary);
+    cursor: pointer;
+  }
+  .capabilities-strip:hover {
+    background: var(--bg-hover);
+  }
+
+  /* COMPOSER */
+  .chat-composer-box {
+    padding: 12px 32px 18px 32px;
+    background: var(--bg-window);
+    border-top: 1px solid var(--border-subtle);
+  }
+  .composer-frame {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg-card);
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    box-shadow: var(--shadow-sm);
+  }
+  .composer-input {
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: 14px;
+    background: transparent;
+    color: var(--fg-primary);
+    resize: none;
+  }
+  .composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 4px;
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .composer-context-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    color: var(--fg-secondary);
+  }
+
+  /* 3. NOVO SIDEBAR DIREITO REESTRUTURADO */
+  .ade-right-sidebar {
+    width: 360px;
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    transition: width 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+  }
+
+  /* HEADER DAS 4 ABAS */
+  .sidebar-header-tabs {
+    height: 44px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 8px;
+    gap: 4px;
+    background: var(--bg-panel);
+    user-select: none;
+  }
+  .side-tab-btn {
+    height: 28px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .side-tab-btn:hover {
+    background: var(--bg-hover);
+    color: var(--fg-secondary);
+  }
+  .side-tab-btn.active {
+    background: var(--bg-subtle);
+    color: var(--fg-primary);
+    font-weight: 600;
+  }
+  .side-tab-badge {
+    font-size: 10px;
+    font-weight: 600;
+    background: var(--bg-hover);
+    color: var(--fg-secondary);
+    padding: 1px 5px;
+    border-radius: 10px;
+  }
+  .side-tab-btn.active .side-tab-badge {
+    background: var(--border);
+    color: var(--fg-primary);
+  }
+
+  /* ÁREA DE CONTEÚDO DAS ABAS */
+  .tab-pane-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .tab-pane {
+    display: none;
+    flex-direction: column;
+    min-height: 100%;
+  }
+  .tab-pane.active {
+    display: flex;
+  }
+
+  /* COMUM ENTRE AS ABAS: SEÇÕES SÓBRIAS */
+  .side-section {
+    padding: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .side-section:last-child {
+    border-bottom: none;
+  }
+  .side-section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--fg-muted);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  /* ====================================================
+     ABA 1: ARQUIVOS (FILE EXPLORER COM QUICK PEEK)
+     ==================================================== */
+  .explorer-search-bar {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border-subtle);
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    background: var(--bg-panel);
+  }
+  .explorer-input {
+    flex: 1;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 12px;
+    color: var(--fg-primary);
+    outline: none;
+    font-family: inherit;
+  }
+  .explorer-input:focus {
+    border-color: var(--border-focus);
+  }
+
+  .file-tree {
+    padding: 8px 6px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+  }
+  .tree-node {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border-radius: 5px;
+    cursor: pointer;
+    user-select: none;
+    color: var(--fg-secondary);
+    transition: background 0.1s;
+  }
+  .tree-node:hover {
+    background: var(--bg-hover);
+    color: var(--fg-primary);
+  }
+  .tree-node.selected {
+    background: var(--bg-active);
+    color: var(--fg-primary);
+    font-weight: 500;
+  }
+  .tree-node.modified {
+    color: var(--accent-amber);
+  }
+  .tree-node.added {
+    color: var(--accent-green);
+  }
+  .tree-indent-1 { padding-left: 18px; }
+  .tree-indent-2 { padding-left: 32px; }
+  .tree-indent-3 { padding-left: 46px; }
+  .tree-chevron {
+    width: 12px;
+    height: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--fg-muted);
+    font-size: 9px;
+  }
+  .tree-git-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+  .badge-mod { background: var(--accent-amber-soft); color: var(--accent-amber); }
+  .badge-add { background: var(--accent-green-soft); color: var(--accent-green); }
+
+  /* GAVETA DE PREVIEW RÁPIDO DO ARQUIVO (QUICK PEEK) */
+  .quick-peek-box {
+    margin: 10px 14px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .peek-header {
+    background: var(--bg-hover);
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .peek-code {
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--fg-secondary);
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  /* ====================================================
+     ABA 2: PLANO (META DA CONVERSA + ETAPAS + GATES)
+     ==================================================== */
+  .goal-card {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .goal-label {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--brass);
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .goal-text {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg-primary);
+    line-height: 1.4;
+  }
+
+  /* CHECKLIST VIVA */
+  .plan-checklist {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .plan-step-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--bg-subtle);
+    border: 1px solid var(--border-subtle);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .plan-step-item.active {
+    background: var(--bg-card);
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 1px var(--accent-blue-soft), var(--shadow-sm);
+  }
+  .step-icon {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    margin-top: 1px;
+    shrink-0: 0;
+  }
+  .step-done { background: var(--accent-green-soft); color: var(--accent-green); }
+  .step-running {
+    background: var(--accent-blue-soft);
+    color: var(--accent-blue);
+    animation: pulse 1.5s infinite;
+  }
+  .step-pending { background: var(--border); color: var(--fg-muted); }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.92); }
+  }
+
+  /* CARTÃO DE DECISÃO PENDENTE (GATE ÂMBAR) */
+  .gate-pending-card {
+    background: var(--accent-amber-soft);
+    border: 1px solid var(--accent-amber);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .gate-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-amber);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .gate-desc {
+    font-size: 12px;
+    color: var(--fg-primary);
+    margin-bottom: 10px;
+    line-height: 1.4;
+  }
+  .gate-actions {
+    display: flex;
+    gap: 8px;
+  }
+  .gate-btn-primary {
+    background: var(--accent-amber);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .gate-btn-secondary {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--fg-primary);
+    border-radius: 5px;
+    padding: 4px 10px;
+    font-size: 11px;
+    cursor: pointer;
+  }
+
+  /* ====================================================
+     ABA 3: ALTERAÇÕES (NOSSO DIFFINDEX REAL ATUAL)
+     ==================================================== */
+  .diff-index-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .diff-branch-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--fg-primary);
+  }
+  .diff-index-file-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .diff-index-file-row:hover {
+    background: var(--bg-hover);
+  }
+  .diff-file-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .diff-file-path {
+    truncate: true;
+    color: var(--fg-primary);
+  }
+  .diff-stat-add { color: var(--accent-green); font-size: 11px; }
+  .diff-stat-del { color: var(--accent-red); font-size: 11px; margin-left: 4px; }
+
+  .shipbar-real {
+    margin-top: auto;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-panel);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .shipbar-main-btn {
+    background: var(--brass);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .shipbar-sub-btn {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    color: var(--fg-secondary);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+  }
+
+  /* ====================================================
+     ABA 4: CONTEXTO (DOUTRINA, MEMÓRIA E REGRAS DO PROJETO)
+     ==================================================== */
+  .doctrine-box {
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  .doctrine-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .doctrine-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg-primary);
+  }
+  .doctrine-text {
+    font-size: 12px;
+    color: var(--fg-secondary);
+    line-height: 1.4;
+  }
+
+  /* NOTA DE RODAPÉ / CRÉDITOS */
+  .mock-doc-note {
+    width: 100%;
+    max-width: 1440px;
+    margin-top: 16px;
+    padding: 16px 20px;
+    background: #121317;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 10px;
+    font-size: 12px;
+    color: #9ca3af;
+    line-height: 1.6;
+  }
+  .mock-doc-note strong { color: #f3f4f6; }
+</style>
+</head>
+<body>
+
+  <!-- BARRA DE CONTROLES DO MOCK -->
+  <header class="mock-header">
+    <div class="mock-title-area">
+      <div class="mock-badge">Design POC V2 · Frota ADE</div>
+      <div class="mock-title">Sidebar Direito Refinado: File Explorer + Meta da Conversa + Alterações Atual</div>
+      <div class="mock-subtitle">Ajustado após feedback: sem duplicar Janela de Tokens nem Capacidades (que já moram no Composer)</div>
+    </div>
+    <div class="mock-controls">
+      <button class="mock-btn" id="themeToggle" onclick="toggleTheme()">
+        <span id="themeIcon">☀️</span> Tema Claro / Escuro
+      </button>
+      <div style="display:flex; gap: 4px; background: #0c0d10; padding: 3px; border-radius: 6px;">
+        <button class="mock-btn active" id="btnWNormal" onclick="setSidebarWidth('360px', this)">360px (Padrão)</button>
+        <button class="mock-btn" id="btnWWide" onclick="setSidebarWidth('440px', this)">440px (Amplo)</button>
+        <button class="mock-btn" id="btnWNarrow" onclick="setSidebarWidth('260px', this)">260px (Compacto)</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- JANELA PRINCIPAL DA ADE -->
+  <main class="ade-window">
+
+    <!-- TOPBAR -->
+    <div class="ade-topbar">
+      <div class="ade-traffic-lights">
+        <div class="tl-dot tl-close"></div>
+        <div class="tl-dot tl-min"></div>
+        <div class="tl-dot tl-max"></div>
+      </div>
+      <div class="ade-center-tabs">
+        <button class="center-tab-btn">Painel</button>
+        <button class="center-tab-btn active">Trabalho</button>
+        <button class="center-tab-btn">Features</button>
+      </div>
+      <div class="ade-topbar-right">
+        <div class="top-search-pill">Buscar ⌘K</div>
+        <span>Notas <strong>1</strong></span>
+        <span>⚙️</span>
+      </div>
+    </div>
+
+    <!-- CORPO DA ADE -->
+    <div class="ade-body">
+
+      <!-- 1. SIDEBAR ESQUERDO -->
+      <aside class="ade-left-sidebar">
+        <div class="left-sec-title">Geral</div>
+        <div class="nav-item">Frota</div>
+        <div class="nav-item">Agendamentos</div>
+        <div class="nav-item">Planos de voo <span style="margin-left:auto; font-size:10px; opacity:0.6;">3</span></div>
+
+        <div class="left-sec-title" style="margin-top: 8px;">Projetos</div>
+        <div class="project-item">📁 mycockpit</div>
+        <div class="thread-item">estudo sobre arquitetura</div>
+        <div class="thread-item">mic e ditado local</div>
+        <div class="thread-item active">reestruturação sidebar direito</div>
+      </aside>
+
+      <!-- 2. CHAT CENTRAL (COM TEXTO LIMPO E O COMPOSER REAL) -->
+      <section class="ade-chat-col">
+        <div class="chat-scroll">
+
+          <!-- Prompt do Usuário -->
+          <div class="msg-row">
+            <div class="msg-avatar" style="background:#e5e7eb; color:#374151;">VM</div>
+            <div class="msg-content-area">
+              <div class="msg-header">
+                <span class="msg-name">Você</span>
+                <span class="msg-time">11:06</span>
+              </div>
+              <div class="user-bubble">
+                na aba proposta de contexto você colocou JANELA DE CONTEXTO mas acho que não precisa pois isso temos aqui no composer. Nós também temos o "Capacidades deste run" acima do composer, será que faz sentido alterar? A aba de alterações atual pra mim já supre. E gostei muito da ideia de "meta da conversa".
+              </div>
+            </div>
+          </div>
+
+          <!-- Resposta do Agente -->
+          <div class="msg-row">
+            <div class="msg-avatar" style="background:#dbeafe; color:#1e40af;">AG</div>
+            <div class="msg-content-area">
+              <div class="msg-header">
+                <span class="msg-name">Antigravity</span>
+                <span class="msg-time">11:07</span>
+              </div>
+              <div class="agent-prose">
+                <p>Excelente leitura! Seu feedback foi cirúrgico: tanto a <strong>Janela de Contexto</strong> (que abre no popover do composer) quanto o <strong>Capacidades deste run</strong> (com as 57 tools e MCPs) já pertencem ao composer e estão exatamente onde precisam estar.</p>
+                <p>Removi a duplicação no mock ao lado: mantivemos a aba <strong>Alterações</strong> idêntica à nossa atual (que já supre com maestria), destacamos a <strong>Meta da Conversa</strong> no Plano, e adicionamos o <strong>File Explorer</strong> para você navegar e checar arquivos com rapidez!</p>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- COMPOSER COM AS CAPACIDADES REAIS -->
+        <div class="chat-composer-box">
+          <!-- BARRINHA DE CAPACIDADES DO RUN (CONFORME SUA CAPTURA) -->
+          <div class="capabilities-strip" onclick="alert('Popover de Capacidades: 57 tools confirmadas · MCPs nativos')">
+            <div style="display:flex; align-items:center; gap:6px;">
+              <span style="font-family:var(--font-mono); font-weight:600;">{ }</span>
+              <span style="font-weight:500;">Capacidades deste run</span>
+              <span style="color:var(--fg-muted);">2 fontes · 57 tools confirmadas · MCPs configurados</span>
+            </div>
+            <span>⌃</span>
+          </div>
+
+          <div class="composer-frame">
+            <textarea class="composer-input" rows="2" placeholder="Peça algo... ou / para comandos"></textarea>
+            <div class="composer-footer">
+              <div style="display:flex; align-items:center; gap:8px;">
+                <span>Antigravity · Gemini 3.8 Flash (High)</span>
+                <!-- PILL DE CONTEXTO REAL DA SUA CAPTURA -->
+                <span class="composer-context-pill" onclick="alert('Popover de Contexto: 20% usado · 195.572 / 1.000.000 tokens')">
+                  Contexto 20%
+                </span>
+              </div>
+              <span>Liberado ⚡</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. NOVO SIDEBAR DIREITO REFINADO -->
+      <aside class="ade-right-sidebar" id="rightSidebar">
+
+        <!-- HEADER DAS 4 ABAS COM INDICADORES -->
+        <div class="sidebar-header-tabs">
+          <button class="side-tab-btn active" id="tabBtn-arquivos" onclick="switchTab('arquivos')">
+            <span>📁</span> Arquivos
+          </button>
+          <button class="side-tab-btn" id="tabBtn-plano" onclick="switchTab('plano')">
+            <span>📋</span> Plano
+          </button>
+          <button class="side-tab-btn" id="tabBtn-alteracoes" onclick="switchTab('alteracoes')">
+            <span>⚡</span> Alterações <span class="side-tab-badge">2</span>
+          </button>
+          <button class="side-tab-btn" id="tabBtn-contexto" onclick="switchTab('contexto')">
+            <span>📖</span> Doutrina
+          </button>
+        </div>
+
+        <!-- CONTEÚDO DAS ABAS -->
+        <div class="tab-pane-container">
+
+          <!-- ==============================================
+               ABA 1: ARQUIVOS (FILE EXPLORER COM QUICK PEEK)
+               ============================================== -->
+          <div class="tab-pane active" id="pane-arquivos">
+
+            <!-- Barra de Busca Rápida no Projeto -->
+            <div class="explorer-search-bar">
+              <input type="text" class="explorer-input" placeholder="Filtrar arquivos por nome..." oninput="filterFiles(this.value)" />
+              <span style="font-size:11px; color:var(--fg-muted); padding-right:4px;">⌘P</span>
+            </div>
+
+            <!-- Árvore de Diretórios Navegável -->
+            <div class="file-tree" id="fileTree">
+
+              <div class="tree-node" onclick="toggleFolder('folder-app')">
+                <span class="tree-chevron" id="chev-app">▼</span>
+                <span>📁 app/</span>
+              </div>
+              <div id="folder-app">
+                <div class="tree-node tree-indent-1" onclick="toggleFolder('folder-src')">
+                  <span class="tree-chevron" id="chev-src">▼</span>
+                  <span>📁 src/</span>
+                </div>
+                <div id="folder-src">
+                  <div class="tree-node tree-indent-2" onclick="toggleFolder('folder-components')">
+                    <span class="tree-chevron" id="chev-comp">▼</span>
+                    <span>📁 components/</span>
+                  </div>
+                  <div id="folder-components">
+                    <div class="tree-node tree-indent-3 modified" onclick="selectFile('MessageList.tsx', 'M')">
+                      <span>📄 MessageList.tsx</span>
+                      <span class="tree-git-badge badge-mod">M</span>
+                    </div>
+                    <div class="tree-node tree-indent-3 added" onclick="selectFile('GroupRow.tsx', 'A')">
+                      <span>📄 GroupRow.tsx</span>
+                      <span class="tree-git-badge badge-add">A</span>
+                    </div>
+                    <div class="tree-node tree-indent-3" onclick="selectFile('ChatPanel.tsx')">
+                      <span>📄 ChatPanel.tsx</span>
+                    </div>
+                    <div class="tree-node tree-indent-3" onclick="selectFile('ContextPanel.tsx')">
+                      <span>📄 ContextPanel.tsx</span>
+                    </div>
+                  </div>
+                  <div class="tree-node tree-indent-2" onclick="selectFile('App.tsx')">
+                    <span>📄 App.tsx</span>
+                  </div>
+                  <div class="tree-node tree-indent-2" onclick="selectFile('index.css')">
+                    <span>📄 index.css</span>
+                  </div>
+                </div>
+                <div class="tree-node tree-indent-1" onclick="selectFile('package.json')">
+                  <span>📄 package.json</span>
+                </div>
+              </div>
+
+              <div class="tree-node" onclick="toggleFolder('folder-docs')">
+                <span class="tree-chevron" id="chev-docs">▼</span>
+                <span>📁 docs/</span>
+              </div>
+              <div id="folder-docs">
+                <div class="tree-node tree-indent-1 modified" onclick="selectFile('decisions.md', 'M')">
+                  <span>📄 decisions.md</span>
+                  <span class="tree-git-badge badge-mod">M</span>
+                </div>
+                <div class="tree-node tree-indent-1" onclick="selectFile('STYLEGUIDE.md')">
+                  <span>📄 STYLEGUIDE.md</span>
+                </div>
+                <div class="tree-node tree-indent-1" onclick="selectFile('architecture.md')">
+                  <span>📄 architecture.md</span>
+                </div>
+              </div>
+
+              <div class="tree-node" onclick="selectFile('AGENTS.md')">
+                <span>📄 AGENTS.md</span>
+              </div>
+              <div class="tree-node" onclick="selectFile('README.md')">
+                <span>📄 README.md</span>
+              </div>
+
+            </div>
+
+            <!-- Quick Peek / Visualizador Rápido de Arquivo Selecionado -->
+            <div class="quick-peek-box" id="quickPeek" style="display:none;">
+              <div class="peek-header">
+                <span id="peekFileName">MessageList.tsx</span>
+                <span style="cursor:pointer; opacity:0.6;" onclick="closePeek()">✕</span>
+              </div>
+              <div class="peek-code" id="peekCodeContent">
+// Preview rápido do arquivo selecionado sem abrir janela externa...
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ==============================================
+               ABA 2: PLANO (META DA CONVERSA + CHECKLIST VIVA)
+               ============================================== -->
+          <div class="tab-pane" id="pane-plano">
+
+            <div class="side-section">
+              <!-- META DA CONVERSA (EM DESTAQUE) -->
+              <div class="goal-card">
+                <div class="goal-label">
+                  <span>🎯</span> Meta da Conversa
+                </div>
+                <div class="goal-text">Reestruturar o sidebar direito da ADE incorporando File Explorer e foco no cockpit de decisão.</div>
+              </div>
+
+              <!-- Checklist Viva -->
+              <div class="side-section-title">
+                <span>Checklist de Etapas</span>
+                <span style="font-family:var(--font-mono); font-size:11px;">2/4</span>
+              </div>
+
+              <div class="plan-checklist">
+                <div class="plan-step-item">
+                  <div class="step-icon step-done">✓</div>
+                  <div style="flex:1;">
+                    <div style="font-weight:500; text-decoration:line-through; opacity:0.7;">Diagnóstico e identificação de redundâncias com o composer</div>
+                    <div style="font-size:11px; color:var(--fg-muted);">Concluído · 2m 14s</div>
+                  </div>
+                </div>
+
+                <div class="plan-step-item active">
+                  <div class="step-icon step-running">▶</div>
+                  <div style="flex:1;">
+                    <div style="font-weight:600; color:var(--accent-blue);">Refinar Mock V2 mantendo Alterações atual e adicionando File Explorer</div>
+                    <div style="font-size:11px; color:var(--accent-blue);">Em andamento · 1m 48s</div>
+                  </div>
+                </div>
+
+                <div class="plan-step-item">
+                  <div class="step-icon step-pending">•</div>
+                  <div style="flex:1;">
+                    <div style="color:var(--fg-secondary);">Validação final do design com o usuário</div>
+                    <div style="font-size:11px; color:var(--fg-muted);">Aguardando aprovação</div>
+                  </div>
+                </div>
+
+                <div class="plan-step-item">
+                  <div class="step-icon step-pending">•</div>
+                  <div style="flex:1;">
+                    <div style="color:var(--fg-secondary);">Implementação modular de FileTree e GoalCard no app</div>
+                    <div style="font-size:11px; color:var(--fg-muted);">Próximo passo</div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+            <!-- Background Tasks Vivas -->
+            <div class="side-section">
+              <div class="side-section-title">Tarefas em Background</div>
+              <div style="display:flex; justify-content:space-between; align-items:center; font-size:12px; font-family:var(--font-mono); padding:4px 0;">
+                <span>task-331: build.sh test</span>
+                <span style="color:var(--accent-green);">concluído</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- ==============================================
+               ABA 3: ALTERAÇÕES (NOSSA ABA ATUAL QUE VOCÊ GOSTA)
+               ============================================== -->
+          <div class="tab-pane" id="pane-alteracoes">
+
+            <!-- HEADER DA NOSSA ABA ATUAL -->
+            <div class="diff-index-header">
+              <div class="diff-branch-badge">
+                <span>⎇</span> main · <strong>2 arquivos</strong>
+              </div>
+              <div style="display:flex; gap:10px; font-size:11px;">
+                <span class="diff-stat-add">+36</span>
+                <span class="diff-stat-del">-67</span>
+              </div>
+            </div>
+
+            <!-- LISTA DE ARQUIVOS REAL DA NOSSA ABA ATUAL -->
+            <div style="flex:1;">
+              <div class="diff-index-file-row" onclick="alert('Abre a aba de Diff completa de MessageList.tsx!')">
+                <div class="diff-file-meta">
+                  <span class="tree-git-badge badge-mod">M</span>
+                  <span class="diff-file-path">MessageList.tsx</span>
+                </div>
+                <div>
+                  <span class="diff-stat-add">+12</span>
+                  <span class="diff-stat-del">-67</span>
+                </div>
+              </div>
+
+              <div class="diff-index-file-row" onclick="alert('Abre a aba de Diff completa de decisions.md!')">
+                <div class="diff-file-meta">
+                  <span class="tree-git-badge badge-mod">M</span>
+                  <span class="diff-file-path">decisions.md</span>
+                </div>
+                <div>
+                  <span class="diff-stat-add">+24</span>
+                  <span class="diff-stat-del">-0</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- NOSSA SHIPBAR CANÔNICA -->
+            <div class="shipbar-real">
+              <button class="shipbar-main-btn" onclick="alert('Abrindo diálogo de commit da Frota...')">
+                <span>✓</span> Commitar Alterações
+              </button>
+              <button class="shipbar-sub-btn" onclick="alert('Abrindo Pull Request no GitHub...')">
+                Abrir Pull Request
+              </button>
+            </div>
+
+          </div>
+
+          <!-- ==============================================
+               ABA 4: DOUTRINA & MEMÓRIA (REGRAS PURAS DO PROJETO)
+               ============================================== -->
+          <div class="tab-pane" id="pane-contexto">
+
+            <div class="side-section">
+              <div class="side-section-title">
+                <span>Doutrina do Projeto</span>
+                <button style="background:none; border:none; font-size:11px; color:var(--brass); cursor:pointer;">Escrever</button>
+              </div>
+              <div class="doctrine-box">
+                <div class="doctrine-header">
+                  <span class="doctrine-title">AGENTS.md & instructions.md</span>
+                  <span style="font-size:10px; color:var(--accent-green); font-weight:600;">ATIVO</span>
+                </div>
+                <div class="doctrine-text">
+                  Regras únicas da Frota: austeridade no cockpit, fail-open no render, tolerância zero a regresso em testes, copy em pt-BR sem travessão.
+                </div>
+              </div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-title">
+                <span>Aprendizado & Memórias</span>
+                <span style="font-family:var(--font-mono); font-size:11px;">6 no recall</span>
+              </div>
+              <div style="font-size:12px; color:var(--fg-secondary); line-height:1.4; background:var(--bg-subtle); padding:10px; border-radius:6px; border:1px solid var(--border-subtle);">
+                "Nunca deixe identificadores reais do ambiente (hashes, paths, IDs de sessão) em demos ou mocks."
+                <div style="margin-top:6px; font-size:10px; color:var(--fg-muted);">CANDIDATA · PROJETO · reviewer</div>
+              </div>
+            </div>
+
+            <div class="side-section">
+              <div class="side-section-title">Pastas Permitidas (--add-dir)</div>
+              <div style="font-family:var(--font-mono); font-size:11px; color:var(--fg-secondary); display:flex; flex-direction:column; gap:4px;">
+                <div style="background:var(--bg-subtle); padding:4px 8px; border-radius:4px;">📁 ~/projetos</div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </aside>
+
+    </div>
+
+  </main>
+
+  <!-- NOTAS DE AUDITORIA DO MOCK -->
+  <footer class="mock-doc-note">
+    <strong>Ajustes realizados com base nos seus feedbacks:</strong><br />
+    1. <strong>Sem redundância com o Composer:</strong> A barra de contexto de tokens e as 57 capacidades do run continuam exatamente onde pertencem (acima e abaixo do input do chat, como nas suas capturas).<br />
+    2. <strong>Aba Alterações preservada:</strong> Mantivemos o nosso <code>DiffIndex</code> canônico atual com visualização limpa de arquivos git e a barra de commit/PR.<br />
+    3. <strong>Meta da Conversa em evidência:</strong> O objetivo central da tarefa fica fixado no topo da aba Plano, dando clareza imediata do rumo da conversa.<br />
+    4. <strong>File Explorer integrado:</strong> Aba própria com busca rápida por <code>⌘P</code> e visualizador rápido de código (Quick Peek).
+  </footer>
+
+  <script>
+    function switchTab(tabId) {
+      document.querySelectorAll('.side-tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-pane').forEach(pane => pane.classList.remove('active'));
+
+      const activeBtn = document.getElementById('tabBtn-' + tabId);
+      const activePane = document.getElementById('pane-' + tabId);
+      if (activeBtn) activeBtn.classList.add('active');
+      if (activePane) activePane.classList.add('active');
+    }
+
+    function toggleFolder(folderId) {
+      const el = document.getElementById(folderId);
+      if (!el) return;
+      const isHidden = el.style.display === 'none';
+      el.style.display = isHidden ? 'block' : 'none';
+    }
+
+    function selectFile(fileName, status) {
+      document.querySelectorAll('.tree-node').forEach(node => node.classList.remove('selected'));
+      event.currentTarget.classList.add('selected');
+
+      const peek = document.getElementById('quickPeek');
+      const peekName = document.getElementById('peekFileName');
+      const peekCode = document.getElementById('peekCodeContent');
+
+      peek.style.display = 'block';
+      peekName.innerText = fileName + (status ? ' [' + status + ']' : '');
+
+      if (fileName === 'MessageList.tsx') {
+        peekCode.innerText = `// MessageList.tsx\nexport function MessageList({ items, running, agent }: MessageListProps) {\n  return (\n    <div className="flex flex-col gap-4">\n      {groups.map((g) => <GroupRow key={g.key} {...g} />)}\n    </div>\n  )\n}`;
+      } else if (fileName === 'decisions.md') {
+        peekCode.innerText = `# ADR-151 · restauração da prosa sóbria do agent\n- Contexto: remoção de contêineres pesados de cartão.\n- Decisão: retornar diretamente ao Markdown no fio.`;
+      } else {
+        peekCode.innerText = `// Conteúdo rápido de ${fileName}...\n// Visualização sob demanda sem travar o chat.`;
+      }
+    }
+
+    function closePeek() {
+      document.getElementById('quickPeek').style.display = 'none';
+    }
+
+    function filterFiles(query) {
+      const q = query.toLowerCase().trim();
+      document.querySelectorAll('.file-tree .tree-node').forEach(node => {
+        if (!q) {
+          node.style.display = 'flex';
+        } else {
+          const text = node.innerText.toLowerCase();
+          node.style.display = text.includes(q) ? 'flex' : 'none';
+        }
+      });
+    }
+
+    function toggleTheme() {
+      const html = document.documentElement;
+      const cur = html.getAttribute('data-theme');
+      const next = cur === 'dark' ? 'light' : 'dark';
+      html.setAttribute('data-theme', next);
+      document.getElementById('themeIcon').innerText = next === 'dark' ? '🌙' : '☀️';
+    }
+
+    function setSidebarWidth(w, btn) {
+      document.getElementById('rightSidebar').style.width = w;
+      document.querySelectorAll('.mock-controls .mock-btn').forEach(b => {
+        if (b.id.startsWith('btnW')) b.classList.remove('active');
+      });
+      btn.classList.add('active');
+    }
+  </script>
+</body>
+</html>

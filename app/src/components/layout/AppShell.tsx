@@ -13,6 +13,7 @@ import { MissionControl } from "@/components/panel/MissionControl"
 import { SddView } from "@/components/sdd/SddView"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { FleetView } from "@/components/fleet/FleetView"
+import { BranchSplitView } from "@/components/layout/BranchSplitView"
 import {
   ResizableHandle,
   ResizablePanel,
@@ -55,6 +56,7 @@ export function AppShell() {
   const contextOpen = useApp((s) => s.contextOpen)
   const viewMode = useApp((s) => s.viewMode)
   const mainTab = useApp((s) => s.mainTab)
+  const branchSplitOpen = useApp((s) => s.branchSplitOpen)
   const openDiffTab = useApp((s) => s.openDiffTab)
   const closeDiffTab = useApp((s) => s.closeDiffTab)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
@@ -175,12 +177,21 @@ export function AppShell() {
                     HOST_SUPERFICIE,
                     (coberto ||
                       viewMode !== "linear" ||
-                      mainTab.kind !== "conversa") &&
+                      mainTab.kind !== "conversa" ||
+                      branchSplitOpen) &&
                       "hidden",
                   )}
                 >
                   <ChatPanel />
                 </div>
+                {viewMode === "linear" &&
+                  !coberto &&
+                  mainTab.kind === "conversa" &&
+                  branchSplitOpen && (
+                    <div className={HOST_SUPERFICIE}>
+                      <BranchSplitView />
+                    </div>
+                  )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "diff" && (
                   <div className={HOST_SUPERFICIE}>
                     <DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} />

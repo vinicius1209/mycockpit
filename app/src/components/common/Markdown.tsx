@@ -17,6 +17,7 @@ import {
 } from "@/lib/fileLink"
 import { useEditors } from "@/store/editors"
 import { useActiveProject, useApp } from "@/store/app"
+import { useMarkdownViewer } from "@/store/markdownViewer"
 
 /** Botão de copiar no canto, aparece no hover. `group` = classe do grupo pai
  *  (group/code, group/table…) pra só aparecer no hover DAQUELE bloco. */
@@ -170,6 +171,16 @@ function MarkdownLink({
 
     if (target) {
       e.preventDefault()
+      const isMd =
+        target.rel.toLowerCase().endsWith(".md") ||
+        (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
+      if (isMd) {
+        useMarkdownViewer
+          .getState()
+          .openViewer(target.abs || target.rel, target.rel, project?.path)
+        return
+      }
+
       if (!editor) {
         toast.error("Nenhum editor de código detectado nesta máquina")
         return
@@ -186,8 +197,14 @@ function MarkdownLink({
     }
   }
 
+  const isMd =
+    target?.rel.toLowerCase().endsWith(".md") ||
+    (target?.abs ? target.abs.toLowerCase().endsWith(".md") : false)
+
   const title = target
-    ? formatFileTooltip(target.rel, target.line, editor?.label)
+    ? isMd
+      ? `Visualizar ${target.rel} no app`
+      : formatFileTooltip(target.rel, target.line, editor?.label)
     : isWeb
       ? `Abrir ${href} no navegador`
       : undefined
@@ -235,6 +252,16 @@ function MarkdownInlineCode({
       const sel = window.getSelection()?.toString()
       if (sel && sel.trim().length > 0) return
       e.preventDefault()
+      const isMd =
+        target.rel.toLowerCase().endsWith(".md") ||
+        (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
+      if (isMd) {
+        useMarkdownViewer
+          .getState()
+          .openViewer(target.abs || target.rel, target.rel, project?.path)
+        return
+      }
+
       if (!editor) {
         toast.error("Nenhum editor de código detectado nesta máquina")
         return
@@ -250,7 +277,13 @@ function MarkdownInlineCode({
       })
     }
 
-    const title = formatFileTooltip(target.rel, target.line, editor?.label)
+    const isMd =
+      target.rel.toLowerCase().endsWith(".md") ||
+      (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
+
+    const title = isMd
+      ? `Visualizar ${target.rel} no app`
+      : formatFileTooltip(target.rel, target.line, editor?.label)
 
     return (
       <code

@@ -215,7 +215,14 @@ impl ApprovalListener {
                 }
             })
         };
-        Some(Self { path, task, pending, ids, shutdown, app })
+        Some(Self {
+            path,
+            task,
+            pending,
+            ids,
+            shutdown,
+            app,
+        })
     }
 
     /// Path REAL do socket bindado (pode ser um alternativo -1/-2 se o base
@@ -229,7 +236,8 @@ impl Drop for ApprovalListener {
     fn drop(&mut self) {
         // shutdown ANTES de resolver: handle_conn em voo (aceita mas ainda não
         // registrada) vê a flag e responde fail-closed sozinha — sem vazamento.
-        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         self.task.abort();
         let _ = std::fs::remove_file(&self.path);
         // resolve qualquer pedido pendente com o fail-closed por kind: o claude está
@@ -292,11 +300,7 @@ async fn handle_conn(
     let data = req.get("data").cloned().unwrap_or(serde_json::Value::Null);
 
     // helper: responde fail-closed direto na conexão (sem registrar/emitir).
-    async fn reply_closed(
-        wr: &mut (impl tokio::io::AsyncWrite + Unpin),
-        kind: &str,
-        why: &str,
-    ) {
+    async fn reply_closed(wr: &mut (impl tokio::io::AsyncWrite + Unpin), kind: &str, why: &str) {
         let out = serde_json::json!({ "answer": fail_closed_answer(kind, why) });
         let mut buf = out.to_string();
         buf.push('\n');
@@ -316,7 +320,13 @@ async fn handle_conn(
     let (tx, rx) = oneshot::channel::<Answer>();
     {
         if let Ok(mut map) = pending.0.lock() {
-            map.insert(id.clone(), Pending { kind: kind.clone(), tx });
+            map.insert(
+                id.clone(),
+                Pending {
+                    kind: kind.clone(),
+                    tx,
+                },
+            );
         }
         if let Ok(mut v) = ids.lock() {
             v.push(id.clone());
@@ -390,7 +400,13 @@ impl DirectInteractions {
     /// Levanta UM pedido e ESPERA a resposta do usuário (sem timeout: o turno do
     /// agent está parado esperando). `id` é do chamador porque ele precisa
     /// correlacionar com o pedido do protocolo dele.
-    pub async fn request(&self, run_id: &str, id: &str, kind: &str, data: serde_json::Value) -> Answer {
+    pub async fn request(
+        &self,
+        run_id: &str,
+        id: &str,
+        kind: &str,
+        data: serde_json::Value,
+    ) -> Answer {
         // run já encerrando → nega na hora, sem registrar nem piscar card.
         if self.shutdown.load(std::sync::atomic::Ordering::SeqCst) {
             return fail_closed_answer(kind, "run encerrado");
@@ -398,7 +414,13 @@ impl DirectInteractions {
         // registra ANTES de emitir (não perde um answer_interaction instantâneo).
         let (tx, rx) = oneshot::channel::<Answer>();
         if let Ok(mut map) = self.pending.0.lock() {
-            map.insert(id.to_string(), Pending { kind: kind.to_string(), tx });
+            map.insert(
+                id.to_string(),
+                Pending {
+                    kind: kind.to_string(),
+                    tx,
+                },
+            );
         }
         if let Ok(mut v) = self.ids.lock() {
             v.push(id.to_string());
@@ -432,7 +454,8 @@ impl DirectInteractions {
     /// Fecha o gate: resolve fail-closed o que sobrou e limpa os cards. Idempotente
     /// (o Drop chama de novo sem efeito).
     pub fn shutdown(&self) {
-        self.shutdown.store(true, std::sync::atomic::Ordering::SeqCst);
+        self.shutdown
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         let drained: Vec<String> = self
             .ids
             .lock()
@@ -441,7 +464,10 @@ impl DirectInteractions {
         for id in drained {
             let p = self.pending.0.lock().ok().and_then(|mut m| m.remove(&id));
             if let Some(p) = p {
-                let _ = p.tx.send(fail_closed_answer(&p.kind, "run encerrado antes da resposta"));
+                let _ = p.tx.send(fail_closed_answer(
+                    &p.kind,
+                    "run encerrado antes da resposta",
+                ));
                 let _ = self
                     .app
                     .emit("interaction://resolved", serde_json::json!({ "id": id }));
@@ -694,7 +720,10 @@ async fn ask_app_approval(args: &serde_json::Value) -> serde_json::Value {
         .get("tool_name")
         .and_then(|x| x.as_str())
         .unwrap_or("tool");
-    let input = args.get("input").cloned().unwrap_or(serde_json::Value::Null);
+    let input = args
+        .get("input")
+        .cloned()
+        .unwrap_or(serde_json::Value::Null);
     // conveniência p/ a UI: extrai o comando p/ Bash (mostrado em destaque).
     let command = input
         .get("command")
@@ -736,7 +765,10 @@ async fn ask_app_approval(args: &serde_json::Value) -> serde_json::Value {
 /// modelo recebe que o usuário não respondeu, melhor que pendurar.
 async fn ask_app_question(args: &serde_json::Value) -> serde_json::Value {
     // data = o input do ask_user ({questions:[...]}) — repassado ao app pro card.
-    let questions = args.get("questions").cloned().unwrap_or(serde_json::json!([]));
+    let questions = args
+        .get("questions")
+        .cloned()
+        .unwrap_or(serde_json::json!([]));
     let data = serde_json::json!({ "questions": questions });
     match request_over_socket("question", &data).await {
         // o app já devolve {answers:[...]}; repassa como o resultado da tool.

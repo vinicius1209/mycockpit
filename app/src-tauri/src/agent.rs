@@ -499,28 +499,26 @@ pub async fn run_agent(
     // MCP read-only. Sem a capability (agy), degrada pros ponteiros no próprio
     // prompt. FusionRo mantém todo MCP desligado pelo contrato de candidatos
     // especulativos.
-    let context_gateway = if !caps.context_mcp
-        || matches!(permission, adapters::Permission::FusionRo)
-    {
-        None
-    } else {
-        server_bin
-            .as_ref()
-            .map(|bin| crate::context_gateway::GatewayConfig {
-                server_bin: bin.to_string_lossy().to_string(),
-                root: cwd.clone(),
-                conv_id: conv_id.clone(),
-                db_path: app
-                    .path()
-                    .app_data_dir()
-                    .ok()
-                    .map(|p| p.join("mycockpit.db").to_string_lossy().to_string()),
-            })
-    };
+    let context_gateway =
+        if !caps.context_mcp || matches!(permission, adapters::Permission::FusionRo) {
+            None
+        } else {
+            server_bin
+                .as_ref()
+                .map(|bin| crate::context_gateway::GatewayConfig {
+                    server_bin: bin.to_string_lossy().to_string(),
+                    root: cwd.clone(),
+                    conv_id: conv_id.clone(),
+                    db_path: app
+                        .path()
+                        .app_data_dir()
+                        .ok()
+                        .map(|p| p.join("mycockpit.db").to_string_lossy().to_string()),
+                })
+        };
     // Substrato uniforme de trabalho/processos. O listener vive pelo run inteiro;
     // processos iniciados por ele continuam no registry do app após o turno.
-    let supports_work_mcp =
-        caps.work_mcp && !matches!(permission, adapters::Permission::FusionRo);
+    let supports_work_mcp = caps.work_mcp && !matches!(permission, adapters::Permission::FusionRo);
     let mut _work_listener = None;
     let work_gateway = if supports_work_mcp {
         server_bin.as_ref().and_then(|bin| {
@@ -607,9 +605,9 @@ pub async fn run_agent(
                     mcp_plan.plugin_leases.extend(snapshot.leases);
                     mcp_plan.notices.extend(snapshot.notices);
                 }
-                Err(error) => mcp_plan.notices.push(format!(
-                    "MCPs de plugins indisponíveis neste run: {error}"
-                )),
+                Err(error) => mcp_plan
+                    .notices
+                    .push(format!("MCPs de plugins indisponíveis neste run: {error}")),
             }
         } else {
             match crate::plugin_contributions::enabled_packages(&app) {
@@ -659,10 +657,23 @@ pub async fn run_agent(
     // só depois do run NASCER (item 2 do review gate) — spawn que falha não
     // pode carimbar um anúncio que o modelo nunca viu (senão o próximo turno
     // silenciava um plano jamais entregue). Ver emit_mcp_announced abaixo.
+    // Diretrizes de escopo e higiene de navegação (evita varreduras amplas em ~ no macOS)
+    let scope_block = crate::scope_guidance::format_scope_guidance(
+        &cwd,
+        &extra_dirs,
+        interaction_on || approval.is_some(),
+    );
+    let combined_system_prompt = match system_prompt {
+        Some(existing) if !existing.trim().is_empty() => {
+            Some(format!("{existing}\n\n{scope_block}"))
+        }
+        _ => Some(scope_block),
+    };
     // H1 — roteia o conteúdo de sistema pelo canal declarado (fail-open: sem
     // canal, dobra no corpo AQUI, antes de qualquer transporte — cobre também
     // o app-server do codex, que não passa pelo build_command).
-    let (system_prompt, prompt) = adapters::route_system_prompt(caps, system_prompt, prompt);
+    let (system_prompt, prompt) =
+        adapters::route_system_prompt(caps, combined_system_prompt, prompt);
     // Fronteira do slug de modelo: a partir daqui o valor vira `--model <slug>`
     // (claude/agy), `-c model=` (codex exec) ou campo JSON (app-server) — três
     // transportes, uma regra só. Slug com espaço/TAB/quebra de linha é resto de
@@ -767,13 +778,21 @@ pub async fn run_agent(
         && req.attachments.is_empty()
     {
         let out = crate::opencode_acp::run(
-            &app, &run_id, &req, &on_event, &notify, registry.inner(),
+            &app,
+            &run_id,
+            &req,
+            &on_event,
+            &notify,
+            registry.inner(),
             pending_approvals.inner().clone(),
-        ).await;
+        )
+        .await;
         match out.startup_error {
             None => {
                 emit_mcp_announced(&app, &conv_id, &announced_fp);
-                if out.cancelled { let _ = on_event.send(AgentEvent::Cancelled); }
+                if out.cancelled {
+                    let _ = on_event.send(AgentEvent::Cancelled);
+                }
                 let _ = on_event.send(AgentEvent::Done {
                     code: (!out.failed).then_some(0),
                 });
@@ -1626,7 +1645,10 @@ mod tests {
             true,
             last.as_deref(),
         );
-        assert_eq!(out, "continua", "corpo limpo: o resume já carrega o preâmbulo");
+        assert_eq!(
+            out, "continua",
+            "corpo limpo: o resume já carrega o preâmbulo"
+        );
         assert_eq!(fp, None, "nada anunciado, nada a carimbar");
     }
 
@@ -1680,7 +1702,11 @@ mod tests {
         );
         assert!(out.contains("Ferramentas MCP desta sessão: nenhuma"));
         assert!(out.contains("não chame mais as tools deles"));
-        assert_eq!(fp, vazio.fingerprint(), "anunciou o vazio → carimbo do vazio");
+        assert_eq!(
+            fp,
+            vazio.fingerprint(),
+            "anunciou o vazio → carimbo do vazio"
+        );
         // 0→0: o carimbo já é o do vazio → silêncio
         let last_vazio = vazio.fingerprint();
         let (out2, fp2) = compose_mcp_preamble(

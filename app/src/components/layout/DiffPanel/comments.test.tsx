@@ -128,4 +128,41 @@ describe("DiffLineRow — as 3 fases do slot", () => {
     expect(html).toContain("editando…")
     expect(html).not.toContain("Remover comentário")
   })
+
+  it("código da linha possui data-selectable e select-text para seleção nativa", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiffLineRow, { ln: ADD, path: "a.ts", api: api() }),
+    )
+    expect(html).toContain("data-selectable")
+    expect(html).toContain("select-text")
+    expect(html).toContain("const x = 1")
+  })
+
+  it("números de linha e marcadores possuem select-none para não poluir a cópia", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiffLineRow, { ln: ADD, path: "a.ts", api: api() }),
+    )
+    expect(html).toContain("select-none")
+  })
+
+  it("aplica classes de highlight hljs quando lang é fornecido", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiffLineRow, {
+        ln: ADD,
+        path: "a.ts",
+        lang: "typescript",
+        api: api(),
+      }),
+    )
+    expect(html).toContain("hljs-keyword")
+    expect(html).toContain("const")
+    expect(html).toContain("hljs-number")
+  })
+
+  it("renderiza botão de copiar linha no hover", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiffLineRow, { ln: ADD, path: "a.ts", api: api() }),
+    )
+    expect(html).toContain("Copiar linha")
+  })
 })

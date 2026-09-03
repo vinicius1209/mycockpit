@@ -918,10 +918,7 @@ pub async fn set_hud_expanded(
             return Err(error);
         }
     };
-    if runtime.expanded
-        && focus.unwrap_or(false)
-        && current_presentation_epoch(&app) == epoch
-    {
+    if runtime.expanded && focus.unwrap_or(false) && current_presentation_epoch(&app) == epoch {
         if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
             window.set_focus().map_err(|error| error.to_string())?;
         }

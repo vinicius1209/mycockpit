@@ -137,11 +137,7 @@ pub fn extrair_resposta(corpo: &str) -> Option<Value> {
 pub fn extrair_session_id(headers: &str) -> Option<String> {
     headers
         .lines()
-        .find(|linha| {
-            linha
-                .to_ascii_lowercase()
-                .starts_with("mcp-session-id:")
-        })
+        .find(|linha| linha.to_ascii_lowercase().starts_with("mcp-session-id:"))
         .and_then(|linha| linha.split_once(':'))
         .map(|(_, valor)| valor.trim().to_string())
         .filter(|valor| !valor.is_empty())
@@ -250,10 +246,7 @@ async fn repassar(estado: &EstadoProxy, mensagem: &Value) -> Result<Option<Value
             );
         }
         if !(200..300).contains(&resposta.status) {
-            return Err(format!(
-                "o MCP remoto respondeu HTTP {}",
-                resposta.status
-            ));
+            return Err(format!("o MCP remoto respondeu HTTP {}", resposta.status));
         }
         estado.guardar_session(&resposta.headers);
         // 202 sem corpo é a resposta legítima a uma notificação.
@@ -447,8 +440,7 @@ pub fn configure_codex_launch(
         cmd.arg("-c")
             .arg(format!("{key}.command={}", aspas(program)));
     }
-    cmd.arg("-c")
-        .arg(format!("{key}.args=[\"{SUBCOMANDO}\"]"));
+    cmd.arg("-c").arg(format!("{key}.args=[\"{SUBCOMANDO}\"]"));
     if let Some(socket) = launch.env.get(SOCK_ENV) {
         cmd.arg("-c")
             .arg(format!("{key}.env.{SOCK_ENV}={}", aspas(socket)));
@@ -473,8 +465,14 @@ mod tests {
         assert_eq!(launch.url, None);
         assert!(launch.http_headers.is_empty());
         assert_eq!(launch.bearer_token_env_var, None);
-        assert_eq!(launch.env.get(SOCK_ENV).map(String::as_str), Some("/tmp/mc-mcpx.sock"));
-        assert!(!launch.env.values().any(|v| v.to_lowercase().contains("bearer")));
+        assert_eq!(
+            launch.env.get(SOCK_ENV).map(String::as_str),
+            Some("/tmp/mc-mcpx.sock")
+        );
+        assert!(!launch
+            .env
+            .values()
+            .any(|v| v.to_lowercase().contains("bearer")));
     }
 
     #[test]
@@ -529,7 +527,8 @@ mod tests {
         let puro = r#"{"jsonrpc":"2.0","id":1,"result":{"tools":[]}}"#;
         assert_eq!(extrair_resposta(puro), Some(esperado.clone()));
         // Streamable HTTP real costuma devolver a resposta única como SSE.
-        let sse = "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
+        let sse =
+            "event: message\ndata: {\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"tools\":[]}}\n\n";
         assert_eq!(extrair_resposta(sse), Some(esperado));
     }
 
@@ -560,7 +559,9 @@ mod tests {
 
     #[test]
     fn notificacao_e_reconhecida_por_id_ausente_ou_nulo() {
-        assert!(eh_notificacao(&json!({"jsonrpc": "2.0", "method": "notifications/initialized"})));
+        assert!(eh_notificacao(
+            &json!({"jsonrpc": "2.0", "method": "notifications/initialized"})
+        ));
         assert!(eh_notificacao(&json!({"jsonrpc": "2.0", "id": null})));
         assert!(!eh_notificacao(&json!({"jsonrpc": "2.0", "id": 1})));
     }

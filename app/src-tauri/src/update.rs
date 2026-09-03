@@ -180,7 +180,11 @@ fn plan(agent: &str, m: &Method) -> Option<(&'static str, &'static str, Vec<&'st
             // o CASK do brew chama-se `claude-code`, NÃO `claude` (o binário) —
             // `brew upgrade claude` dava "Cask 'claude' is not installed".
             Method::Homebrew => ("homebrew", "brew", vec!["upgrade", "claude-code"]),
-            Method::Npm => ("npm", "npm", vec!["i", "-g", "@anthropic-ai/claude-code@latest"]),
+            Method::Npm => (
+                "npm",
+                "npm",
+                vec!["i", "-g", "@anthropic-ai/claude-code@latest"],
+            ),
             // nativo/desconhecido: o CLI tem auto-update embutido.
             _ => ("self-update", "claude", vec!["update"]),
         }),
@@ -619,8 +623,14 @@ mod tests {
         assert_eq!((m, prog), ("npm", "npm"));
         assert!(args.contains(&"@anthropic-ai/claude-code@latest"));
         // claude nativo/desconhecido → self-update
-        assert_eq!(plan("claude-code", &Method::Native).unwrap().0, "self-update");
-        assert_eq!(plan("claude-code", &Method::Unknown).unwrap().0, "self-update");
+        assert_eq!(
+            plan("claude-code", &Method::Native).unwrap().0,
+            "self-update"
+        );
+        assert_eq!(
+            plan("claude-code", &Method::Unknown).unwrap().0,
+            "self-update"
+        );
         // claude homebrew → cask `claude-code`, NÃO `claude`
         let (_, prog_h, args_h) = plan("claude-code", &Method::Homebrew).unwrap();
         assert_eq!(prog_h, "brew");
@@ -650,7 +660,10 @@ mod tests {
             Begin::Started(_) => panic!("segundo begin devia devolver o job vivo"),
         }
         // agent DIFERENTE não é bloqueado pelo job do codex.
-        assert!(matches!(jobs.begin("claude-code", 3_000), Begin::Started(_)));
+        assert!(matches!(
+            jobs.begin("claude-code", 3_000),
+            Begin::Started(_)
+        ));
     }
 
     #[test]
@@ -723,7 +736,9 @@ mod tests {
         // case-insensitive.
         assert!(is_brew_lock_error("error: another active homebrew process"));
         // saída normal não dispara.
-        assert!(!is_brew_lock_error("==> Upgrading codex 0.144.6 -> 0.146.0"));
+        assert!(!is_brew_lock_error(
+            "==> Upgrading codex 0.144.6 -> 0.146.0"
+        ));
         assert!(!is_brew_lock_error(""));
     }
 
@@ -748,6 +763,9 @@ mod tests {
             "/tmp/mc-teste-inexistente/b/claude".to_string(),
         ];
         let others = other_paths_of(all, "/tmp/mc-teste-inexistente/a/claude");
-        assert_eq!(others, vec!["/tmp/mc-teste-inexistente/b/claude".to_string()]);
+        assert_eq!(
+            others,
+            vec!["/tmp/mc-teste-inexistente/b/claude".to_string()]
+        );
     }
 }

@@ -1,0 +1,1 @@
+- Se precisar criar mocks, não precisa servir um servidor HTTP. Crie o HTML e abra-o no navegador pelo caminho, ou mostre o caminho para o usuário.

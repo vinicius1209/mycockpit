@@ -4,6 +4,7 @@
 
 use serde::Serialize;
 use std::path::Path;
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct Persona {
@@ -139,12 +140,12 @@ fn read_specs(claude_dir: &Path) -> Vec<Spec> {
                 .ok()
                 .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
                 .map(|v| {
-                    let get = |k: &str| {
-                        v.get(k).and_then(|x| x.as_str()).map(str::to_string)
-                    };
+                    let get = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
                     (
                         get("stage"),
-                        get("title").or_else(|| get("name")).or_else(|| get("description")),
+                        get("title")
+                            .or_else(|| get("name"))
+                            .or_else(|| get("description")),
                     )
                 })
                 .unwrap_or((None, None));
@@ -201,9 +202,7 @@ fn read_memory(project_path: &str) -> MemoryInfo {
     MemoryInfo {
         exists,
         count,
-        path: index
-            .is_file()
-            .then(|| index.to_string_lossy().to_string()),
+        path: index.is_file().then(|| index.to_string_lossy().to_string()),
     }
 }
 
@@ -244,29 +243,65 @@ pub fn read_project_sources(path: String) -> ProjectSources {
     }
 }
 
-/// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória). Trunca p/ a UI.
-/// ESCOPADO: só dentro da raiz dada (o projeto) ou de ~/.claude (memórias/skills
-/// globais). Markdown de agent renderizado na UI nunca deve virar primitiva de
-/// leitura arbitrária do disco (~/.ssh etc).
+/// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória e visualizador de markdown). Trunca p/ a UI.
+/// ESCOPADO: só dentro da raiz dada (o projeto), extra_dirs autorizados, ~/.claude, artefatos do brain
+/// ou anexos do app. Markdown renderizado na UI nunca deve virar primitiva de
+/// leitura arbitrária do disco (~/.ssh, /etc etc).
 #[tauri::command]
-pub fn read_text_file(root: String, path: String) -> Result<String, String> {
+pub fn read_text_file(app: tauri::AppHandle, root: String, path: String) -> Result<String, String> {
+    let attachments = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("attachments"));
+    read_text_file_scoped(&root, &path, attachments.as_deref())
+}
+
+fn read_text_file_scoped(
+    root: &str,
+    path: &str,
+    attachments: Option<&Path>,
+) -> Result<String, String> {
     let canon = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
     let mut allowed: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(r) = std::fs::canonicalize(&root) {
+        // Também autoriza as pastas extras vinculadas a este projeto (extra_dirs)
+        for extra in crate::mycockpit::resolve_extra_dirs(&root) {
+            if let Ok(e) = std::fs::canonicalize(extra) {
+                allowed.push(e);
+            }
+        }
         allowed.push(r);
     }
     if let Some(home) = std::env::var_os("HOME") {
-        if let Ok(c) = std::fs::canonicalize(Path::new(&home).join(".claude")) {
+        let home_path = Path::new(&home);
+        if let Ok(c) = std::fs::canonicalize(home_path.join(".claude")) {
             allowed.push(c);
+        }
+        // Artefatos de agentes (.gemini/antigravity-cli/brain)
+        if let Ok(b) = std::fs::canonicalize(
+            home_path
+                .join(".gemini")
+                .join("antigravity-cli")
+                .join("brain"),
+        ) {
+            allowed.push(b);
+        }
+    }
+    // A raiz vem do runtime Tauri em vez de reconstruir um caminho específico
+    // do macOS; assim a mesma fronteira vale no Linux.
+    if let Some(attachments) = attachments {
+        if let Ok(att) = std::fs::canonicalize(attachments) {
+            allowed.push(att);
         }
     }
     if !allowed.iter().any(|a| canon.starts_with(a)) {
-        return Err("caminho fora do projeto (e de ~/.claude): leitura bloqueada".into());
+        return Err("caminho fora do projeto (e de locais autorizados): leitura bloqueada".into());
     }
     let c = std::fs::read_to_string(&canon).map_err(|e| e.to_string())?;
-    Ok(if c.chars().count() > 24000 {
-        let mut out: String = c.chars().take(24000).collect();
-        out.push_str("\n…");
+    Ok(if c.chars().count() > 100_000 {
+        let mut out: String = c.chars().take(100_000).collect();
+        out.push_str("\n\n… (arquivo truncado por tamanho)");
         out
     } else {
         c
@@ -294,10 +329,7 @@ pub struct SlashCommand {
     pub plugin_key: Option<String>,
     #[serde(rename = "pluginName", skip_serializing_if = "Option::is_none")]
     pub plugin_name: Option<String>,
-    #[serde(
-        rename = "pluginFingerprint",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "pluginFingerprint", skip_serializing_if = "Option::is_none")]
     pub plugin_fingerprint: Option<String>,
     #[serde(rename = "contributionId", skip_serializing_if = "Option::is_none")]
     pub contribution_id: Option<String>,
@@ -631,12 +663,20 @@ mod tests {
         )
         .unwrap();
         std::fs::create_dir_all(home.join(".mycockpit/commands")).unwrap();
-        std::fs::write(home.join(".mycockpit/commands/casa-global.md"), "corpo global\n").unwrap();
+        std::fs::write(
+            home.join(".mycockpit/commands/casa-global.md"),
+            "corpo global\n",
+        )
+        .unwrap();
         // claude: projeto (command + skill) e global
         std::fs::create_dir_all(proj.join(".claude/commands")).unwrap();
         std::fs::write(proj.join(".claude/commands/review.md"), "revise o diff\n").unwrap();
         // MESMO nome que a casa: a casa tem que vencer o dedup
-        std::fs::write(proj.join(".claude/commands/deploy.md"), "deploy do claude\n").unwrap();
+        std::fs::write(
+            proj.join(".claude/commands/deploy.md"),
+            "deploy do claude\n",
+        )
+        .unwrap();
         std::fs::create_dir_all(proj.join(".claude/skills/minha-skill")).unwrap();
         std::fs::write(
             proj.join(".claude/skills/minha-skill/SKILL.md"),
@@ -652,7 +692,9 @@ mod tests {
     }
 
     fn achar<'a>(v: &'a [SlashCommand], name: &str) -> &'a SlashCommand {
-        v.iter().find(|c| c.name == name).unwrap_or_else(|| panic!("comando {name} ausente"))
+        v.iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("comando {name} ausente"))
     }
 
     #[test]
@@ -660,7 +702,10 @@ mod tests {
         let (proj, home) = slash_fixture("claude");
         let out = collect_agent_commands(&proj, Some(&home), "claude-code");
         let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
-        assert_eq!(nomes, vec!["casa-global", "deploy", "minha-skill", "review"]);
+        assert_eq!(
+            nomes,
+            vec!["casa-global", "deploy", "minha-skill", "review"]
+        );
         // nada do codex numa conversa claude
         assert!(!nomes.contains(&"triage"));
         assert_eq!(achar(&out, "casa-global").source, "mycockpit");
@@ -700,7 +745,10 @@ mod tests {
         assert!(!nomes.contains(&"minha-skill"));
         assert_eq!(achar(&out, "triage").source, "codex");
         assert_eq!(achar(&out, "triage").origin, "global");
-        assert_eq!(achar(&out, "triage").body.as_deref(), Some("faça a triagem\n"));
+        assert_eq!(
+            achar(&out, "triage").body.as_deref(),
+            Some("faça a triagem\n")
+        );
         let _ = std::fs::remove_dir_all(proj.parent().unwrap());
     }
 
@@ -717,7 +765,10 @@ mod tests {
             let out = collect_agent_commands(&proj, Some(&home), agent);
             let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
             // a casa é agnóstica: aparece pra todo agent, sempre.
-            assert!(nomes.contains(&"casa-global"), "{agent}: casa global sempre");
+            assert!(
+                nomes.contains(&"casa-global"),
+                "{agent}: casa global sempre"
+            );
             assert!(nomes.contains(&"deploy"), "{agent}: casa do projeto sempre");
             let claude_dirs = caps.command_sources.contains(&CommandSource::ClaudeDirs);
             assert_eq!(
@@ -755,13 +806,21 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("mc-run-state-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
         let rel = ".mycockpit/missions/2026-07-24-abc123-tarefa/run-state.json";
-        write_mission_state(tmp.to_string_lossy().into(), rel.into(), "{\"version\":1}".into())
-            .unwrap();
+        write_mission_state(
+            tmp.to_string_lossy().into(),
+            rel.into(),
+            "{\"version\":1}".into(),
+        )
+        .unwrap();
         let out = std::fs::read_to_string(tmp.join(rel)).unwrap();
         assert_eq!(out, "{\"version\":1}");
         // regrava por cima (marcos seguintes) sem erro.
-        write_mission_state(tmp.to_string_lossy().into(), rel.into(), "{\"version\":2}".into())
-            .unwrap();
+        write_mission_state(
+            tmp.to_string_lossy().into(),
+            rel.into(),
+            "{\"version\":2}".into(),
+        )
+        .unwrap();
         let out = std::fs::read_to_string(tmp.join(rel)).unwrap();
         assert_eq!(out, "{\"version\":2}");
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -769,10 +828,12 @@ mod tests {
 
     #[test]
     fn write_mission_state_rejeita_cwd_invalido() {
-        assert!(
-            write_mission_state("/caminho/que/nao/existe".into(), "a/b.json".into(), "x".into())
-                .is_err()
-        );
+        assert!(write_mission_state(
+            "/caminho/que/nao/existe".into(),
+            "a/b.json".into(),
+            "x".into()
+        )
+        .is_err());
     }
 
     #[test]
@@ -796,8 +857,7 @@ mod tests {
         std::fs::write(base.join("plan.md"), "# plano").unwrap();
         std::fs::write(base.join("2-reviewer.json"), "{}").unwrap();
         std::fs::write(base.join("reports/05.md"), "rel").unwrap();
-        let mut files =
-            list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
+        let mut files = list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
         files.sort();
         assert_eq!(files, vec!["2-reviewer.json", "plan.md", "reports/05.md"]);
         std::fs::remove_dir_all(&tmp).unwrap();
@@ -817,8 +877,7 @@ mod tests {
         std::fs::write(secret.join("chave.txt"), "sensível").unwrap();
         // symlink DENTRO da missão apontando pro segredo:
         std::os::unix::fs::symlink(&secret, base.join("link")).unwrap();
-        let files =
-            list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
+        let files = list_mission_files(tmp.to_string_lossy().into(), dir.into()).unwrap();
         // só o arquivo real; NADA de dentro do symlink (nem o nome chave.txt).
         assert_eq!(files, vec!["plan.md"]);
         assert!(!files.iter().any(|f| f.contains("chave")));
@@ -829,12 +888,38 @@ mod tests {
     fn list_mission_files_pasta_ausente_devolve_vazio() {
         let tmp = std::env::temp_dir().join(format!("mc-list2-{}", std::process::id()));
         std::fs::create_dir_all(&tmp).unwrap();
-        let out =
-            list_mission_files(tmp.to_string_lossy().into(), ".mycockpit/missions/x".into())
-                .unwrap();
+        let out = list_mission_files(tmp.to_string_lossy().into(), ".mycockpit/missions/x".into())
+            .unwrap();
         assert!(out.is_empty());
         // traversal rejeitado.
         assert!(list_mission_files(tmp.to_string_lossy().into(), "../x".into()).is_err());
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn read_text_file_permite_dentro_do_projeto_e_bloqueia_fora() {
+        let tmp = std::env::temp_dir().join(format!("mc-read-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let arq_projeto = tmp.join("doc.md");
+        std::fs::write(&arq_projeto, "# Conteúdo permitido").unwrap();
+
+        // Arquivo dentro do root: permitido
+        let res =
+            read_text_file_scoped(&tmp.to_string_lossy(), &arq_projeto.to_string_lossy(), None);
+        assert!(res.is_ok());
+        assert_eq!(res.unwrap(), "# Conteúdo permitido");
+
+        // Arquivo arbitrário fora do root e dos autorizados: bloqueado
+        let fora = std::env::temp_dir().join(format!("mc-secret-{}", std::process::id()));
+        std::fs::create_dir_all(&fora).unwrap();
+        let arq_fora = fora.join("senha.txt");
+        std::fs::write(&arq_fora, "segredo").unwrap();
+
+        let res_bloqueado =
+            read_text_file_scoped(&tmp.to_string_lossy(), &arq_fora.to_string_lossy(), None);
+        assert!(res_bloqueado.is_err());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+        std::fs::remove_dir_all(&fora).unwrap();
     }
 }

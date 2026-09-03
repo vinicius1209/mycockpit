@@ -125,7 +125,13 @@ fn normalize_claude_family(payload: &Value) -> Option<HookSignal> {
         // evento desconhecido: fail-open — ignora, nunca inventa estado.
         _ => return None,
     };
-    Some(HookSignal { session_id, cwd, kind, event, tool })
+    Some(HookSignal {
+        session_id,
+        cwd,
+        kind,
+        event,
+        tool,
+    })
 }
 
 /// Dialeto AgyConfigHooks: o payload NÃO carrega o nome do evento (por isso o
@@ -152,7 +158,13 @@ fn normalize_agy(event_hint: Option<&str>, payload: &Value) -> Option<HookSignal
         "Stop" => SignalKind::Idle,
         _ => return None,
     };
-    Some(HookSignal { session_id, cwd, kind, event, tool })
+    Some(HookSignal {
+        session_id,
+        cwd,
+        kind,
+        event,
+        tool,
+    })
 }
 
 /// Normaliza UM payload pro dialeto dado. PURO.
@@ -226,7 +238,11 @@ fn now_ms() -> i64 {
 /// Lista ordenada (mais recente primeiro) — o shape que o front consome.
 pub fn snapshot(map: &HashMap<String, ExternalSession>) -> Vec<ExternalSession> {
     let mut v: Vec<ExternalSession> = map.values().cloned().collect();
-    v.sort_by(|a, b| b.last_seen.cmp(&a.last_seen).then(a.session_id.cmp(&b.session_id)));
+    v.sort_by(|a, b| {
+        b.last_seen
+            .cmp(&a.last_seen)
+            .then(a.session_id.cmp(&b.session_id))
+    });
     v
 }
 
@@ -273,11 +289,7 @@ pub fn ingest(
 /// Hidratação do boot do front (padrão `usage_snapshots`).
 #[tauri::command]
 pub fn hook_sessions(state: State<'_, ExternalSessions>) -> Vec<ExternalSession> {
-    state
-        .0
-        .lock()
-        .map(|m| snapshot(&m))
-        .unwrap_or_default()
+    state.0.lock().map(|m| snapshot(&m)).unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -575,8 +587,7 @@ pub async fn permission_roundtrip(
     }
     // é o evento de permissão deste dialeto? (claude/codex: nome no payload;
     // agy: só no header — o payload não carrega o evento.)
-    let event = str_of(payload, "hook_event_name")
-        .or_else(|| event_hint.map(str::to_string))?;
+    let event = str_of(payload, "hook_event_name").or_else(|| event_hint.map(str::to_string))?;
     if event != crate::hooks_install::permission_event_name(dialect) {
         return None;
     }
@@ -606,7 +617,11 @@ pub async fn permission_roundtrip(
                 return Some(decision_body(dialect, &HookDecision::Ask));
             };
             let changed = apply_signal(&mut map, agent, sig, now_ms());
-            if changed { Some(snapshot(&map)) } else { None }
+            if changed {
+                Some(snapshot(&map))
+            } else {
+                None
+            }
         };
         if let Some(list) = changed {
             let _ = app.emit(SESSIONS_EVENT, &list);
@@ -806,7 +821,9 @@ mod tests {
         // tipo desconhecido degrada pra waiting (notificação = precisa de você).
         base["notification_type"] = json!("tipo_novo_do_futuro");
         assert_eq!(
-            normalize(HookDialect::ClaudeSettings, None, &base).unwrap().kind,
+            normalize(HookDialect::ClaudeSettings, None, &base)
+                .unwrap()
+                .kind,
             SignalKind::Waiting
         );
     }
@@ -937,7 +954,10 @@ mod tests {
         // claude/codex: hookSpecificOutput.decision.behavior (docs + Xirp).
         let allow = decision_body(HookDialect::ClaudeSettings, &HookDecision::Allow);
         let v: Value = serde_json::from_str(&allow).unwrap();
-        assert_eq!(v["hookSpecificOutput"]["hookEventName"], "PermissionRequest");
+        assert_eq!(
+            v["hookSpecificOutput"]["hookEventName"],
+            "PermissionRequest"
+        );
         assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "allow");
         let deny = decision_body(
             HookDialect::CodexHooksJson,
@@ -945,7 +965,10 @@ mod tests {
         );
         let v: Value = serde_json::from_str(&deny).unwrap();
         assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "deny");
-        assert_eq!(v["hookSpecificOutput"]["decision"]["decisionReason"], "motivo");
+        assert_eq!(
+            v["hookSpecificOutput"]["decision"]["decisionReason"],
+            "motivo"
+        );
         let ask = decision_body(HookDialect::ClaudeSettings, &HookDecision::Ask);
         let v: Value = serde_json::from_str(&ask).unwrap();
         assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "ask");

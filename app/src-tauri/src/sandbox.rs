@@ -102,11 +102,7 @@ pub enum SemPerfil {
 /// `(allow default)` seguido de `(deny file-write* ...)` é a DENYLIST que a
 /// medida exigiu. A ordem importa no Seatbelt: a última regra que casa vence,
 /// então os `deny` vêm depois do `allow default`.
-pub fn perfil_macos(
-    p: Permission,
-    plan_first: bool,
-    alvo: &Alvo,
-) -> Result<String, SemPerfil> {
+pub fn perfil_macos(p: Permission, plan_first: bool, alvo: &Alvo) -> Result<String, SemPerfil> {
     if !confina(p, plan_first) {
         return Err(SemPerfil::ModoEscreve);
     }
@@ -218,7 +214,10 @@ pub fn confinamento() -> Confinamento {
             nota: "o sistema barra escrita no projeto",
         }
     } else {
-        Confinamento { selo: Selo::Ausente, nota: "" }
+        Confinamento {
+            selo: Selo::Ausente,
+            nota: "",
+        }
     }
 }
 
@@ -277,12 +276,7 @@ fn contem(hay: &str, agulhas: &[&str]) -> bool {
 /// isso PRIMEIRO evita que um "operation not permitted" vindo do próprio
 /// trabalho do agente (tentar escrever em `/etc`, por exemplo) seja lido como
 /// bloqueio nosso.
-pub fn classifica(
-    confinado: bool,
-    stderr: &str,
-    sucesso: bool,
-    emitiu_saida: bool,
-) -> Veredito {
+pub fn classifica(confinado: bool, stderr: &str, sucesso: bool, emitiu_saida: bool) -> Veredito {
     if !confinado {
         return Veredito::Irrelevante;
     }
@@ -321,7 +315,10 @@ mod tests {
     use super::*;
 
     fn alvo(raiz: &str) -> Alvo {
-        Alvo { raiz: raiz.into(), ..Default::default() }
+        Alvo {
+            raiz: raiz.into(),
+            ..Default::default()
+        }
     }
 
     #[test]
@@ -392,7 +389,11 @@ mod tests {
 
     #[test]
     fn worktree_igual_a_raiz_nao_duplica() {
-        let a = Alvo { raiz: "/repo".into(), worktree: Some("/repo".into()), ..Default::default() };
+        let a = Alvo {
+            raiz: "/repo".into(),
+            worktree: Some("/repo".into()),
+            ..Default::default()
+        };
         let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
         assert_eq!(p.matches("(subpath \"/repo\")").count(), 1);
     }
@@ -425,7 +426,11 @@ mod tests {
     fn raiz_invalida_com_worktree_valido_ainda_protege_o_worktree() {
         // Perder um alvo não pode derrubar o outro: a conversa isolada é
         // exatamente onde o agente está trabalhando.
-        let a = Alvo { raiz: "".into(), worktree: Some("/wt/x".into()), ..Default::default() };
+        let a = Alvo {
+            raiz: "".into(),
+            worktree: Some("/wt/x".into()),
+            ..Default::default()
+        };
         let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
         assert!(p.contains("\"/wt/x\""));
     }
@@ -509,7 +514,9 @@ mod tests {
         c.current_dir("/repo");
         let e = envelopa(c, std::path::Path::new("/tmp/p.sb"));
         assert_eq!(
-            e.as_std().get_current_dir().map(|p| p.to_string_lossy().to_string()),
+            e.as_std()
+                .get_current_dir()
+                .map(|p| p.to_string_lossy().to_string()),
             Some("/repo".to_string())
         );
     }
@@ -575,7 +582,10 @@ mod tests {
             std::fs::read_to_string(format!("{raiz}/alvo.txt")).unwrap(),
             "original"
         );
-        println!("stderr do bloqueio (insumo do S3): {}", String::from_utf8_lossy(&saida.stderr).trim());
+        println!(
+            "stderr do bloqueio (insumo do S3): {}",
+            String::from_utf8_lossy(&saida.stderr).trim()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -595,7 +605,12 @@ mod tests {
     #[test]
     fn negacao_do_sandbox_e_reconhecida() {
         assert_eq!(
-            classifica(true, "sh: /repo/x.txt: Operation not permitted", false, false),
+            classifica(
+                true,
+                "sh: /repo/x.txt: Operation not permitted",
+                false,
+                false
+            ),
             Veredito::Negou
         );
     }
@@ -639,7 +654,11 @@ mod tests {
     fn toda_causa_de_sandbox_TEM_frase() {
         // Veredito sem frase seria diagnóstico que morre no log — o oposto do
         // que o S3 existe pra fazer.
-        for v in [Veredito::RunnerFalhou, Veredito::Negou, Veredito::SilencioSuspeito] {
+        for v in [
+            Veredito::RunnerFalhou,
+            Veredito::Negou,
+            Veredito::SilencioSuspeito,
+        ] {
             assert!(frase(v).is_some(), "{v:?} sem frase");
         }
         assert!(frase(Veredito::Irrelevante).is_none());
@@ -666,7 +685,10 @@ mod tests {
         // E na tarefa de LEITURA, sob o mesmo sandbox, ele produz normalmente
         // (3 bytes pra "diga apenas OK"). Ou seja: o emudecimento é o sintoma do
         // bloqueio, e é o ÚNICO sintoma que ele dá.
-        assert_eq!(classifica(true, "", true, false), Veredito::SilencioSuspeito);
+        assert_eq!(
+            classifica(true, "", true, false),
+            Veredito::SilencioSuspeito
+        );
         assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
     }
 

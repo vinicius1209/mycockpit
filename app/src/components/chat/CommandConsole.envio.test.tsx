@@ -143,6 +143,29 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
   it("sem fila, a faixa não ocupa espaço nenhum", async () => {
     expect(await montar()).not.toContain("Na fila")
   })
+
+  it("cada item da fila exibe ações de envio forçado, edição e remoção", async () => {
+    chat.byId = {
+      [CONV]: conversa({
+        running: true,
+        queued: [fila("instrução pendente")],
+      }),
+    }
+    const html = await montar({ running: true })
+    expect(html).toContain("Enviar agora")
+    expect(html).toContain("Editar mensagem")
+    expect(html).toContain("Remover da fila")
+  })
+})
+
+describe("com texto digitado durante o turno, o composer oferece enfileirar e envio forçado", () => {
+  it("mostra botões de enfileirar e enviar agora ao lado do botão parar", async () => {
+    rascunho("mensagem digitada em voo")
+    const html = await montar({ running: true })
+    expect(html).toContain("Enfileirar")
+    expect(html).toContain("Enviar agora")
+    expect(desabilitado(html, "Parar")).toBe(false)
+  })
 })
 
 describe("o placeholder conta o estado certo", () => {

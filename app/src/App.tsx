@@ -15,6 +15,7 @@ import { GlobalInteractionHost } from "@/components/common/GlobalInteractionHost
 import { LightboxOverlay } from "@/components/chat/Lightbox"
 import { SettingsDialog } from "@/components/settings/SettingsDialog"
 import { AddProjectDialog } from "@/components/layout/AddProjectDialog"
+import { MarkdownViewerDialog } from "@/components/common/MarkdownViewerDialog"
 import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingGate } from "@/components/onboarding/OnboardingGate"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
@@ -613,6 +614,7 @@ export default function App() {
             popover). */}
         <SettingsDialog />
         <AddProjectDialog />
+        <MarkdownViewerDialog />
         <ConfirmHost />
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false), tour
             depois wizard. O boot de projetos segue por baixo; finish grava onboarded=true. */}

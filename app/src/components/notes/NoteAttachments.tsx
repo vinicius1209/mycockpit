@@ -15,9 +15,10 @@
  *    virar necessidade, sai do Rust como a evidência já faz.
  */
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { FileText, X } from "lucide-react"
 import { attachmentUrl, revokeAttachmentUrl, type Attachment } from "@/lib/attachments"
+import { useLightbox, type LightboxImage } from "@/store/lightbox"
 
 function Miniatura({ att }: { att: Attachment }) {
   const [url, setUrl] = useState<string | null>(null)
@@ -53,27 +54,65 @@ export function NoteAttachments({
   attachments: readonly Attachment[]
   onRemove?: (path: string) => void
 }) {
+  const gallery = useMemo<LightboxImage[]>(() => {
+    return attachments
+      .filter((a) => a.kind === "image")
+      .map((a) => ({
+        path: a.path,
+        name: a.name,
+        source: "anexo" as const,
+        mime: a.mime,
+      }))
+  }, [attachments])
+
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {attachments.map((att) => (
-        <div
-          key={att.path}
-          title={att.name}
-          className="group/att relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg bg-background/60"
-        >
-          <Miniatura att={att} />
-          {onRemove && (
-            <button
-              type="button"
-              onClick={() => onRemove(att.path)}
-              aria-label={`Remover ${att.name}`}
-              className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded bg-background/85 text-muted-foreground opacity-0 transition-opacity group-hover/att:opacity-100 hover:text-destructive"
-            >
-              <X className="size-3" />
-            </button>
-          )}
-        </div>
-      ))}
+      {attachments.map((att) => {
+        const isImage = att.kind === "image"
+        const imageIndex = isImage
+          ? gallery.findIndex((g) => g.path === att.path)
+          : -1
+
+        return (
+          <div
+            key={att.path}
+            className="group/att relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-lg bg-background/60"
+          >
+            {isImage ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (imageIndex >= 0) {
+                    useLightbox.getState().open(gallery, imageIndex)
+                  }
+                }}
+                title={`${att.name} (clique para ampliar)`}
+                aria-label={`Ampliar imagem ${att.name}`}
+                className="size-full cursor-zoom-in transition-opacity hover:opacity-90 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Miniatura att={att} />
+              </button>
+            ) : (
+              <div title={att.name} className="grid size-full place-items-center">
+                <Miniatura att={att} />
+              </div>
+            )}
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onRemove(att.path)
+                }}
+                aria-label={`Remover ${att.name}`}
+                className="absolute top-0.5 right-0.5 grid size-4 place-items-center rounded bg-background/85 text-muted-foreground opacity-0 transition-opacity group-hover/att:opacity-100 hover:text-destructive"
+              >
+                <X className="size-3" />
+              </button>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

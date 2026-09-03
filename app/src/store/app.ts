@@ -124,6 +124,10 @@ interface AppState {
   openDiffTab: (focusPath?: string) => void
   /** Volta pra conversa. A aba do diff deixa de existir, não fica escondida. */
   closeDiffTab: () => void
+  /** Abre/fecha a visualização em split de ramos da conversa ativa. */
+  branchSplitOpen: boolean
+  toggleBranchSplit: () => void
+  setBranchSplitOpen: (v: boolean) => void
   /** Abre/fecha a view global "Agendado" (F7). */
   setScheduledOpen: (v: boolean) => void
   /** Abre/fecha o workspace global de Planos de voo. */
@@ -220,6 +224,7 @@ export const useApp = create<AppState>()(
       contextPanelTab: "contexto",
       viewMode: "linear",
       mainTab: { kind: "conversa" },
+      branchSplitOpen: false,
       scheduledOpen: false,
       flightPlansOpen: false,
       fleetOpen: false,
@@ -250,6 +255,7 @@ export const useApp = create<AppState>()(
       setActiveProject: (id) =>
         set({
           activeProjectId: id,
+          branchSplitOpen: false,
           scheduledOpen: false,
           flightPlansOpen: false,
           fleetOpen: false,
@@ -306,13 +312,20 @@ export const useApp = create<AppState>()(
       setContextPanelTab: (contextPanelTab) => set({ contextPanelTab }),
       // o switcher não conhece os workspaces globais; trocar de superfície os fecha.
       setViewMode: (viewMode) =>
-        set({ viewMode, scheduledOpen: false, flightPlansOpen: false, fleetOpen: false }),
+        set({
+          viewMode,
+          branchSplitOpen: viewMode === "linear" ? get().branchSplitOpen : false,
+          scheduledOpen: false,
+          flightPlansOpen: false,
+          fleetOpen: false,
+        }),
       // Cada pedido ganha um selo próprio (`focusSeq`). Sem ele, clicar DE
       // NOVO no mesmo arquivo era no-op: o efeito que rola até ele depende do
       // `focusPath`, a string não mudava, e quem tinha rolado pra longe não
       // voltava. Pedir a mesma coisa duas vezes é pedido, não repetição.
       openDiffTab: (focusPath) =>
         set((s) => ({
+          branchSplitOpen: false,
           mainTab: {
             kind: "diff",
             focusPath,
@@ -321,6 +334,9 @@ export const useApp = create<AppState>()(
           },
         })),
       closeDiffTab: () => set({ mainTab: { kind: "conversa" } }),
+      toggleBranchSplit: () =>
+        set((s) => ({ branchSplitOpen: !s.branchSplitOpen })),
+      setBranchSplitOpen: (branchSplitOpen) => set({ branchSplitOpen }),
       setScheduledOpen: (scheduledOpen) =>
         set({
           scheduledOpen,

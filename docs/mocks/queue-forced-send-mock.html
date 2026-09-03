@@ -1,0 +1,959 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frota · Proposta de UI: Fila do Composer & Envio Forçado</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: dark;
+    --background: #0a0b0d;
+    --rail: #0c0d10;
+    --foreground: #e7e8ea;
+    --card: #141619;
+    --card-foreground: #e7e8ea;
+    --popover: #191c20;
+    --primary: #ecedee;
+    --primary-foreground: #0a0b0d;
+    --secondary: #191c20;
+    --secondary-hover: #22262c;
+    --muted: #141619;
+    --muted-foreground: #9aa0a7;
+    --accent: #1e2126;
+    --faint: #687078;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --input: rgba(255, 255, 255, 0.12);
+    --destructive: #f2766b;
+    --destructive-bg: rgba(242, 118, 107, 0.12);
+    --brass: #e4a862;
+    --brass-soft: rgba(228, 168, 98, 0.14);
+    --st-queued: #d99138;
+    --st-queued-bg: rgba(217, 145, 56, 0.12);
+    --st-queued-border: rgba(217, 145, 56, 0.35);
+    --st-running: #5bb8e8;
+    --st-running-bg: rgba(91, 184, 232, 0.12);
+    --st-success: #5bd6a0;
+    --shadow-pop: 0 16px 40px -8px rgba(0, 0, 0, 0.45);
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+    --font-sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "Geist Mono", monospace;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --background: #fbfbfa;
+    --rail: #f5f5f3;
+    --foreground: #191c20;
+    --card: #ffffff;
+    --card-foreground: #191c20;
+    --popover: #ffffff;
+    --primary: #191c20;
+    --primary-foreground: #ffffff;
+    --secondary: #f0f1f2;
+    --secondary-hover: #e5e6e8;
+    --muted: #f5f5f4;
+    --muted-foreground: #6b7280;
+    --accent: #ebecef;
+    --faint: #9ca3af;
+    --border: rgba(0, 0, 0, 0.08);
+    --border-strong: rgba(0, 0, 0, 0.16);
+    --input: rgba(0, 0, 0, 0.1);
+    --destructive: #dc2626;
+    --destructive-bg: rgba(220, 38, 38, 0.08);
+    --brass: #b87b2e;
+    --brass-soft: rgba(184, 123, 46, 0.12);
+    --st-queued: #b87314;
+    --st-queued-bg: rgba(184, 115, 20, 0.1);
+    --st-queued-border: rgba(184, 115, 20, 0.3);
+    --st-running: #0284c7;
+    --st-running-bg: rgba(2, 132, 199, 0.1);
+    --st-success: #16a34a;
+    --shadow-pop: 0 12px 36px -6px rgba(0, 0, 0, 0.08);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font: 13px/1.5 var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    padding: 24px 20px 80px;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  header.mock-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 20px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .title-group h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+  }
+  .title-group p {
+    font-size: 12px;
+    color: var(--muted-foreground);
+    margin: 0;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .theme-toggle {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    padding: 6px 12px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .theme-toggle:hover {
+    background: var(--secondary-hover);
+  }
+
+  .tabs-nav {
+    display: flex;
+    gap: 6px;
+    background: var(--secondary);
+    padding: 4px;
+    border-radius: var(--radius-md);
+    margin-bottom: 28px;
+    width: fit-content;
+    border: 1px solid var(--border);
+  }
+  .tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+  }
+  .tab-btn.active {
+    background: var(--card);
+    color: var(--foreground);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  }
+
+  .tab-pane {
+    display: none;
+  }
+  .tab-pane.active {
+    display: block;
+  }
+
+  .explainer-box {
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 14px 16px;
+    margin-bottom: 24px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--foreground);
+  }
+  .explainer-box strong {
+    color: var(--foreground);
+  }
+  .explainer-box ul {
+    margin: 6px 0 0;
+    padding-left: 18px;
+    color: var(--muted-foreground);
+  }
+  .explainer-box li {
+    margin-bottom: 4px;
+  }
+
+  .chat-simulation-area {
+    background: var(--rail);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    padding: 24px 20px 20px;
+    position: relative;
+    box-shadow: var(--shadow-pop);
+  }
+
+  .turn-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+  .turn-status-bar .pulse-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--st-running);
+    animation: pulse 1.6s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  .caps-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 8px 12px;
+    font-size: 11px;
+    color: var(--muted-foreground);
+    margin-bottom: 16px;
+  }
+  .caps-bar .left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .caps-bar code {
+    font-family: var(--font-mono);
+    color: var(--brass);
+    font-size: 12px;
+  }
+
+  .current-queued-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .current-queued-label {
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    color: var(--muted-foreground);
+    opacity: 0.7;
+    text-transform: uppercase;
+    font-weight: 500;
+    padding-left: 2px;
+  }
+  .current-queued-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: var(--radius-md);
+    border: 1px solid rgba(228, 168, 98, 0.3);
+    background: rgba(228, 168, 98, 0.05);
+    padding: 6px 10px;
+    font-size: 12px;
+    color: var(--foreground);
+  }
+  .current-queued-chip .idx {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+    font-variant-numeric: tabular-nums;
+  }
+  .current-queued-chip .text {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .current-queued-chip .close-btn {
+    background: none;
+    border: none;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 2px 4px;
+  }
+  .current-queued-chip .close-btn:hover {
+    color: var(--foreground);
+  }
+
+  .composer-compound-box {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-xl);
+    border: 1px solid var(--border);
+    background: var(--card);
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    transition: border-color 0.15s;
+  }
+  .composer-compound-box:focus-within {
+    border-color: var(--border-strong);
+  }
+
+  .queue-dock {
+    background: var(--st-queued-bg);
+    border-bottom: 1px solid var(--st-queued-border);
+    padding: 8px 12px;
+  }
+  .queue-dock-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .queue-dock-title {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--st-queued);
+  }
+  .queue-dock-badge {
+    background: var(--st-queued);
+    color: #1a1306;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 9999px;
+    font-size: 10px;
+  }
+  .queue-dock-hint {
+    font-size: 11px;
+    color: var(--muted-foreground);
+  }
+
+  .queue-item-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--card);
+    border: 1px solid var(--st-queued-border);
+    border-radius: var(--radius-md);
+    padding: 7px 10px;
+    margin-bottom: 4px;
+    font-size: 12px;
+  }
+  .queue-item-card:last-child {
+    margin-bottom: 0;
+  }
+  .queue-item-idx {
+    font-family: var(--font-mono);
+    color: var(--st-queued);
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .queue-item-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--foreground);
+  }
+  .queue-actions-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .btn-queue-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border-radius: var(--radius-sm);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    background: var(--secondary);
+    color: var(--foreground);
+  }
+  .btn-queue-action:hover {
+    background: var(--secondary-hover);
+    border-color: var(--border);
+  }
+  .btn-force-send {
+    background: var(--st-queued);
+    color: #1a1306;
+    font-weight: 600;
+    border: none;
+  }
+  .btn-force-send:hover {
+    filter: brightness(1.1);
+  }
+  .btn-queue-remove {
+    background: transparent;
+    color: var(--muted-foreground);
+    padding: 3px 5px;
+  }
+  .btn-queue-remove:hover {
+    color: var(--destructive);
+    background: var(--destructive-bg);
+  }
+
+  .composer-body {
+    padding: 10px 14px 4px;
+  }
+  .composer-turn-notice {
+    font-size: 11px;
+    color: var(--muted-foreground);
+    margin-bottom: 6px;
+  }
+  .composer-textarea {
+    width: 100%;
+    min-height: 48px;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--foreground);
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+    line-height: 1.45;
+  }
+  .composer-textarea::placeholder {
+    color: var(--muted-foreground);
+    opacity: 0.6;
+  }
+
+  .composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.03);
+  }
+  .composer-tools-left {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .pill-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 9999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    color: var(--foreground);
+    cursor: pointer;
+  }
+  .pill-control.amber {
+    background: var(--st-queued-bg);
+    border-color: var(--st-queued-border);
+    color: var(--st-queued);
+    font-weight: 500;
+  }
+  .composer-tools-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .context-pct {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--destructive);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .context-pct .circle-ring {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid var(--destructive);
+  }
+
+  .btn-stop-square {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--destructive);
+    border: none;
+    color: #fff;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: transform 0.1s, filter 0.15s;
+  }
+  .btn-stop-square:hover {
+    filter: brightness(1.1);
+  }
+  .btn-stop-square svg {
+    fill: currentColor;
+  }
+
+  .btn-interrupt-send-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-enqueue-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    padding: 5px 11px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .btn-enqueue-action:hover {
+    background: var(--secondary-hover);
+    border-color: var(--border-strong);
+  }
+  .btn-force-turn-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--st-queued);
+    color: #1a1306;
+    border: none;
+    padding: 5px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    transition: filter 0.15s;
+  }
+  .btn-force-turn-btn:hover {
+    filter: brightness(1.12);
+  }
+
+  .suggestion-chips {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+  .sug-chip {
+    background: var(--card);
+    border: 1px solid var(--border);
+    color: var(--muted-foreground);
+    padding: 5px 12px;
+    border-radius: 9999px;
+    font-size: 12px;
+  }
+
+  .interactive-console {
+    margin-top: 24px;
+    background: var(--secondary);
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-md);
+    padding: 12px 16px;
+    font-size: 12px;
+  }
+  .interactive-console-header {
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .interactive-console p {
+    margin: 4px 0;
+    color: var(--muted-foreground);
+  }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <header class="mock-header">
+    <div class="title-group">
+      <h1>Fila de Mensagens do Composer & Envio Forçado</h1>
+      <p>Estudo comparativo de UI/UX para o Frota (Tauri + React) de acordo com o STYLEGUIDE</p>
+    </div>
+    <div class="header-actions">
+      <button class="theme-toggle" onclick="toggleTheme()">🌓 Alternar Tema</button>
+    </div>
+  </header>
+
+  <!-- Navegação de Abas -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" onclick="showTab('tab-proposal')">✨ Proposta Recomendada (Bandeja Integrada + Envio Forçado)</button>
+    <button class="tab-btn" onclick="showTab('tab-current')">📷 Estado Atual (Fiel ao Print)</button>
+    <button class="tab-btn" onclick="showTab('tab-architecture')">⚙️ Arquitetura Técnica do Envio Forçado</button>
+  </div>
+
+  <!-- ABA 1: PROPOSTA RECOMENDADA -->
+  <div id="tab-proposal" class="tab-pane active">
+    <div class="explainer-box">
+      <strong>O que mudou nesta proposta:</strong>
+      <ul>
+        <li><strong>Bandeja Integrada (Queue Dock):</strong> A fila não fica mais flutuando como um chip perdido. Ela abraça o topo do Composer com borda e fundo dedicados em <code>--st-queued</code> (âmbar canônico de fila do Frota).</li>
+        <li><strong>Ação de "Enviar Agora" (Envio Forçado):</strong> Botão de ação rápida <code>⚡ Enviar agora</code> no item. Interrompe de forma segura o turno atual (cancela o CLI, salva os eventos parciais) e despacha a mensagem imediatamente como continuação da sessão.</li>
+        <li><strong>Ação de "Editar" (Desempilhar):</strong> Permite devolver o texto da fila de volta ao composer com 1 clique caso queira mudar de ideia antes de enviar.</li>
+        <li><strong>Affordance no Composer rodando:</strong> Enquanto o agente trabalha, o usuário ganha botões claros para <code>+ Enfileirar</code> (ou Enter) e <code>⚡ Parar e Enviar Agora</code> (ou ⌘Enter) caso esteja digitando uma nova instrução urgente.</li>
+      </ul>
+    </div>
+
+    <div class="chat-simulation-area">
+      <div class="turn-status-bar">
+        <span class="pulse-dot"></span>
+        <span>está trabalhando... ••• 2min 43s</span>
+      </div>
+
+      <div class="caps-bar">
+        <div class="left">
+          <code>{ }</code>
+          <span><strong>Capacidades deste run</strong> 5 fontes · 286 tools confirmadas · recursos do provider não observados</span>
+        </div>
+        <span>⌄</span>
+      </div>
+
+      <!-- COMPOSER INTEGRADO COM A BANDEJA DA FILA -->
+      <div class="composer-compound-box">
+
+        <!-- BANDEJA DA FILA -->
+        <div class="queue-dock" id="interactive-queue-dock">
+          <div class="queue-dock-header">
+            <span class="queue-dock-title">
+              <span class="queue-dock-badge" id="queue-count-badge">1</span>
+              Na fila · enviam juntas ao terminar ou force agora
+            </span>
+            <span class="queue-dock-hint">Próximo envio coalescido</span>
+          </div>
+
+          <div id="queue-items-container">
+            <div class="queue-item-card" id="queue-item-1">
+              <span class="queue-item-idx">1.</span>
+              <span class="queue-item-text" id="queue-text-1">voce garante que é producao no novo supabase mesmo?</span>
+              <div class="queue-actions-group">
+                <button class="btn-queue-action btn-force-send" onclick="simulateForceSend(1)" title="Interrompe o turno atual e despacha esta mensagem imediatamente">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                  Enviar agora
+                </button>
+                <button class="btn-queue-action" onclick="simulateEdit(1)" title="Devolve para o composer para editar">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Editar
+                </button>
+                <button class="btn-queue-action btn-queue-remove" onclick="simulateRemove(1)" title="Remover da fila">✕</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- CORPO DO COMPOSER -->
+        <div class="composer-body">
+          <textarea
+            id="composer-input"
+            class="composer-textarea"
+            placeholder="Enfileirar próxima mensagem (ou ⌘↵ para enviar agora)..."
+            oninput="updateComposerState()"
+            onkeydown="handleComposerKey(event)"
+          ></textarea>
+        </div>
+
+        <!-- RODAPÉ DO COMPOSER -->
+        <div class="composer-footer">
+          <div class="composer-tools-left">
+            <button class="pill-control" title="Anexar arquivo">📎</button>
+            <button class="pill-control">Claude Code · Opus (alias) · high 🔒 ⌄</button>
+            <button class="pill-control amber">🛡️ Liberado</button>
+            <button class="pill-control">✦</button>
+            <button class="pill-control">🎙️</button>
+          </div>
+
+          <div class="composer-tools-right">
+            <div class="context-pct">
+              <span>contexto 96%</span>
+              <span class="circle-ring"></span>
+            </div>
+
+            <div id="composer-action-buttons" class="btn-interrupt-send-group">
+              <button id="btn-quick-enqueue" class="btn-enqueue-action" style="display: none;" onclick="simulateAddQueue()">
+                + Enfileirar <span style="opacity: 0.6; font-size: 10px;">↵</span>
+              </button>
+              <button id="btn-force-turn" class="btn-force-turn-btn" style="display: none;" onclick="simulateForceFromComposer()">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+                Parar e Enviar <span style="opacity: 0.8; font-size: 10px;">⌘↵</span>
+              </button>
+
+              <button class="btn-stop-square" onclick="simulateStop()" title="Parar o turno atual">
+                <svg width="11" height="11" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="suggestion-chips">
+        <span class="sug-chip">Explicar o projeto</span>
+        <span class="sug-chip">Rodar os testes</span>
+        <span class="sug-chip">Criar uma branch</span>
+      </div>
+
+      <div class="interactive-console">
+        <div class="interactive-console-header">
+          <span>🧪 Experimente a Interatividade:</span>
+        </div>
+        <p>1. Digite no campo acima para ver aparecerem os botões <strong>+ Enfileirar</strong> e <strong>⚡ Parar e Enviar</strong>.</p>
+        <p>2. Clique em <strong>Editar</strong> no item da fila para puxá-lo de volta ao composer.</p>
+        <p>3. Clique em <strong>Enviar agora</strong> no item da fila para simular a interrupção segura do turno e envio imediato.</p>
+        <div id="simulation-log" style="margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--st-running);"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ABA 2: ESTADO ATUAL -->
+  <div id="tab-current" class="tab-pane">
+    <div class="explainer-box">
+      <strong>Limitações do estado atual observado no print:</strong>
+      <ul>
+        <li><strong>Fila isolada/desconectada:</strong> O chip fica solto no espaço entre a faixa de capacidades e o composer.</li>
+        <li><strong>Cor inconsistente com o STYLEGUIDE:</strong> O estilo atual usa <code>border-brass/30 bg-brass/5</code> em vez de <code>--st-queued</code> (o âmbar específico de fila e aviso do Frota).</li>
+        <li><strong>Zero opções além do [x]:</strong> Se o usuário digitou uma frase com erro, ele não consegue editar nem desempilhar. Ou aguarda o agente terminar ou apaga tudo com o [x].</li>
+        <li><strong>Sem botão de envio forçado:</strong> O usuário digitou uma pergunta crítica (<em>"voce garante que é producao no novo supabase mesmo?"</em>), mas o agente continuará rodando até acabar o turno (já em 2min 43s!). Não há um botão direto para intervir imediatamente.</li>
+      </ul>
+    </div>
+
+    <div class="chat-simulation-area">
+      <div class="turn-status-bar">
+        <span class="pulse-dot"></span>
+        <span>está trabalhando... ••• 2min 43s</span>
+      </div>
+
+      <div class="caps-bar">
+        <div class="left">
+          <code>{ }</code>
+          <span><strong>Capacidades deste run</strong> 5 fontes · 286 tools confirmadas · recursos do provider não observados · ...</span>
+        </div>
+        <span>⌄</span>
+      </div>
+
+      <!-- FILA ATUAL -->
+      <div class="current-queued-wrap">
+        <span class="current-queued-label">NA FILA · ENVIAM JUNTAS AO TERMINAR</span>
+        <div class="current-queued-chip">
+          <span class="idx">1.</span>
+          <span class="text">voce garante que é producao no novo supabase mesmo?</span>
+          <button class="close-btn" title="Remover da fila">✕</button>
+        </div>
+      </div>
+
+      <!-- COMPOSER ATUAL -->
+      <div style="border-radius: var(--radius-xl); border: 1px solid var(--border); background: var(--card); overflow: hidden;">
+        <div class="composer-body">
+          <div class="composer-turn-notice">
+            Turno em andamento: a permissão vale a partir do próximo envio.
+          </div>
+          <textarea class="composer-textarea" placeholder="Enfileirar próxima mensagem..." readonly></textarea>
+        </div>
+        <div class="composer-footer">
+          <div class="composer-tools-left">
+            <button class="pill-control">📎</button>
+            <button class="pill-control">Claude Code · Opus (alias) · high 🔒 ⌄</button>
+            <button class="pill-control amber">🛡️ Liberado</button>
+            <button class="pill-control">✦</button>
+            <button class="pill-control">🎙️</button>
+          </div>
+          <div class="composer-tools-right">
+            <div class="context-pct">
+              <span>contexto 96%</span>
+              <span class="circle-ring"></span>
+            </div>
+            <button class="btn-stop-square" title="Parar">
+              <svg width="11" height="11" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="suggestion-chips">
+        <span class="sug-chip">Explicar o projeto</span>
+        <span class="sug-chip">Rodar os testes</span>
+        <span class="sug-chip">Criar uma branch</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ABA 3: ARQUITETURA -->
+  <div id="tab-architecture" class="tab-pane">
+    <div class="explainer-box">
+      <strong>Como o "Envio Forçado" se comporta nos bastidores:</strong>
+      <p style="margin-top: 8px;">
+        Motores de terminal headless (como <code>claude -p</code>, <code>agy -p</code> ou <code>codex</code>) não possuem suporte a injeção dinâmica de prompts via stdin durante um stream de tool calls sem encerrar o turno.
+      </p>
+      <p>
+        Portanto, o <strong>Envio Forçado</strong> no Frota segue uma sequência de 3 passos à prova de perda de dados:
+      </p>
+      <ol style="color: var(--foreground); margin-top: 8px; padding-left: 20px;">
+        <li style="margin-bottom: 6px;"><strong>Passo 1 — Cancelamento Gracioso:</strong> Aciona <code>cancelConversationTurn(convId)</code>. O backend emite SIGINT/cancel para o processo filho, fecha os arquivos abertos e captura a saída parcial até aquele momento.</li>
+        <li style="margin-bottom: 6px;"><strong>Passo 2 — Persistência do Histórico:</strong> O turno atual é finalizado e salvo no SQLite com seu status interrompido e custo acumulado real até ali.</li>
+        <li style="margin-bottom: 6px;"><strong>Passo 3 — Despacho Imediato do Novo Turno:</strong> A mensagem forçada (ou a fila inteira selecionada) é retirada da fila e despachada via <code>handleSend(text, undefined, attachments, HUMANO, convId)</code> mantendo o mesmo <code>session_id</code> para não perder o contexto anterior.</li>
+      </ol>
+      <p style="margin-top: 12px; color: var(--st-success);">
+        ✓ Respeita todas as regras do repositório (ADR-046, fail-closed no efeito, preservação de blobs de anexo e autoria do humano).
+      </p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let queuedMessages = [
+    { id: 1, text: "voce garante que é producao no novo supabase mesmo?" }
+  ];
+
+  function toggleTheme() {
+    const root = document.documentElement;
+    const cur = root.getAttribute('data-theme');
+    root.setAttribute('data-theme', cur === 'dark' ? 'light' : 'dark');
+  }
+
+  function showTab(id) {
+    document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    event.target.classList.add('active');
+  }
+
+  function renderQueue() {
+    const dock = document.getElementById('interactive-queue-dock');
+    const container = document.getElementById('queue-items-container');
+    const badge = document.getElementById('queue-count-badge');
+
+    if (queuedMessages.length === 0) {
+      dock.style.display = 'none';
+      return;
+    }
+
+    dock.style.display = 'block';
+    badge.textContent = queuedMessages.length;
+    container.innerHTML = '';
+
+    queuedMessages.forEach((msg, idx) => {
+      const card = document.createElement('div');
+      card.className = 'queue-item-card';
+      card.innerHTML = `
+        <span class="queue-item-idx">${idx + 1}.</span>
+        <span class="queue-item-text">${escapeHtml(msg.text)}</span>
+        <div class="queue-actions-group">
+          <button class="btn-queue-action btn-force-send" onclick="simulateForceSend(${msg.id})" title="Interrompe o turno atual e despacha esta mensagem imediatamente">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+            Enviar agora
+          </button>
+          <button class="btn-queue-action" onclick="simulateEdit(${msg.id})" title="Devolve para o composer para editar">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+            Editar
+          </button>
+          <button class="btn-queue-action btn-queue-remove" onclick="simulateRemove(${msg.id})" title="Remover da fila">✕</button>
+        </div>
+      `;
+      container.appendChild(card);
+    });
+  }
+
+  function simulateRemove(id) {
+    queuedMessages = queuedMessages.filter(m => m.id !== id);
+    renderQueue();
+    logAction("Mensagem removida da fila.");
+  }
+
+  function simulateEdit(id) {
+    const item = queuedMessages.find(m => m.id === id);
+    if (!item) return;
+    const input = document.getElementById('composer-input');
+    input.value = item.text;
+    queuedMessages = queuedMessages.filter(m => m.id !== id);
+    renderQueue();
+    updateComposerState();
+    input.focus();
+    logAction(`Mensagem "${item.text.slice(0, 30)}..." desempilhada de volta no editor.`);
+  }
+
+  function simulateForceSend(id) {
+    const item = queuedMessages.find(m => m.id === id);
+    if (!item) return;
+    queuedMessages = queuedMessages.filter(m => m.id !== id);
+    renderQueue();
+    logAction(`⚡ [Envio Forçado Acionado]: Cancelando turno em andamento e disparando novo turno com: "${item.text}"`);
+  }
+
+  function simulateForceFromComposer() {
+    const input = document.getElementById('composer-input');
+    const val = input.value.trim();
+    if (!val) return;
+    input.value = '';
+    updateComposerState();
+    logAction(`⚡ [Envio Forçado Acionado]: Cancelando turno em andamento e disparando novo turno com: "${val}"`);
+  }
+
+  function simulateAddQueue() {
+    const input = document.getElementById('composer-input');
+    const val = input.value.trim();
+    if (!val) return;
+    queuedMessages.push({ id: Date.now(), text: val });
+    input.value = '';
+    renderQueue();
+    updateComposerState();
+    logAction(`Mensagem enfileirada: "${val}"`);
+  }
+
+  function simulateStop() {
+    logAction("■ [Parar Acionado]: Turno cancelado pelo usuário.");
+  }
+
+  function updateComposerState() {
+    const input = document.getElementById('composer-input');
+    const hasText = input.value.trim().length > 0;
+    document.getElementById('btn-quick-enqueue').style.display = hasText ? 'inline-flex' : 'none';
+    document.getElementById('btn-force-turn').style.display = hasText ? 'inline-flex' : 'none';
+  }
+
+  function handleComposerKey(e) {
+    if (e.key === 'Enter') {
+      if (e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        simulateForceFromComposer();
+      } else if (!e.shiftKey) {
+        e.preventDefault();
+        simulateAddQueue();
+      }
+    }
+  }
+
+  function logAction(msg) {
+    const el = document.getElementById('simulation-log');
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  renderQueue();
+</script>
+
+</body>
+</html>
