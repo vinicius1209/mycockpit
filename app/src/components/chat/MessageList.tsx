@@ -96,7 +96,7 @@ import {
 import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
 import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
-import { AgentMessageCard } from "@/components/chat/AgentMessageCard"
+import { Markdown } from "@/components/common/Markdown"
 import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
 
 export type { FeedbackApi } from "@/components/chat/TurnActions"
@@ -1294,7 +1294,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "text") {
-    return <AgentMessageCard text={it.text} />
+    return <Markdown text={it.text} />
   }
 
   // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
@@ -1520,7 +1520,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     const hasText = n.text.trim().length > 0
     return (
       <div className="group/msg flex flex-col gap-1.5">
-        {hasText && <AgentMessageCard text={n.text} />}
+        {hasText && <Markdown text={n.text} />}
         {n.tools.length > 0 && (
           <ToolGroup
             tools={n.tools}

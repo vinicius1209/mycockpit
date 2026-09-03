@@ -5450,3 +5450,21 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   de turno); conformidade estrita com o STYLEGUIDE §6 ("dono único do agora") e §10 (divisão de
   arquivos). Quando a chegada de um conselheiro também está viva, ela interrompe o
   coalescimento e o indicador do executor permanece no fim cronológico do fio.
+
+### ADR-151 · restauração da prosa sóbria e contínua do agent (reversão do AgentMessageCard) ✅
+- **Contexto:** o experimento do ADR-149 introduziu `AgentMessageCard` encapsulando cada trecho
+  de texto do agent em um contêiner com fundo de cartão (`bg-card`), borda (`border-border/40`),
+  cantos arredondados (`rounded-2xl`) e sombra (`shadow-xs`). Em turnos com execução de
+  ferramentas intercaladas (como no AGY ou Claude Code ao rodar comandos, testes e lint),
+  cada atualização curta de status virava uma caixa individual fechada. O histórico ficava
+  fragmentado em uma pilha de caixas brancas alternadas com disclosures de ferramentas,
+  pesando visualmente o transcript e violando o princípio de austeridade do cockpit.
+- **Decisão:** (1) Remover `AgentMessageCard` e reverter a renderização de texto e nós de prosa
+  do assistente em `MessageList.tsx` diretamente para `<Markdown text={...} />`. (2) A prosa do
+  agente volta a respirar com leveza e continuidade no canvas, sob o cabeçalho do grupo e sem
+  bordas, sombras ou paddings artificiais em torno de cada parágrafo. (3) Manter o balão do
+  usuário (`UserMessageBubble`) que delimita com sobriedade os prompts enviados e acomoda as
+  ações rápidas de hover (editar, bifurcar e copiar).
+- **Consequência:** retorno à sobriedade visual e à fluidez editorial do chat da Frota;
+  eliminação do ruído de caixas repetitivas durante execuções com ferramentas; respeito ao
+  STYLEGUIDE §3 e §4.
