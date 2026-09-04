@@ -63,6 +63,21 @@ export function escapeHtml(str: string): string {
     .replace(/"/g, "&quot;")
 }
 
+/**
+ * Destaca um arquivo inteiro preservando quebras de linha. O retorno do
+ * highlight.js é HTML escapado com spans de tokens; no fallback, todo o texto
+ * também é escapado antes de chegar ao visualizador.
+ */
+export function highlightCode(text: string, language: string | null): string {
+  if (!text) return ""
+  if (!language || !hljs.getLanguage(language)) return escapeHtml(text)
+  try {
+    return hljs.highlight(text, { language, ignoreIllegals: true }).value
+  } catch {
+    return escapeHtml(text)
+  }
+}
+
 const HIGHLIGHT_CACHE = new Map<string, string>()
 const MAX_CACHE_SIZE = 2500
 

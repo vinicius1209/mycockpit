@@ -13,11 +13,13 @@
 //
 // A forma é união discriminada porque foi a que o Paseo provou aguentar: lá o
 // `WorkspaceTabTarget` tem 12 variantes hoje e nasceu com poucas, sem
-// retrabalho no meio. Aqui são DUAS, e a fase 2 só existe se a 1 se provar.
+// retrabalho no meio. Aqui a leitura de arquivo entra como a terceira variante
+// depois de o diff provar a fronteira entre índice e leitor.
 
 /** Ícone fica com o componente; aqui é só identidade e rótulo. */
 export type MainTab =
   | { kind: "conversa" }
+  | { kind: "arquivo"; path: string }
   | {
       kind: "diff"
       focusPath?: string
@@ -44,6 +46,12 @@ export function mainTabEntries(tab: MainTab): MainTabEntry[] {
   ]
   if (tab.kind === "diff") {
     base.push({ kind: "diff", label: "Alterações", closable: true })
+  } else if (tab.kind === "arquivo") {
+    base.push({
+      kind: "arquivo",
+      label: tab.path.split("/").pop() || tab.path,
+      closable: true,
+    })
   }
   return base
 }

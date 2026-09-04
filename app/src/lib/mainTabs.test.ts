@@ -10,11 +10,13 @@ import { latestCompletedTurnId, mainTabEntries, type MainTab } from "./mainTabs"
 
 const conversa: MainTab = { kind: "conversa" }
 const diff: MainTab = { kind: "diff" }
+const arquivo: MainTab = { kind: "arquivo", path: "src/components/App.tsx" }
 
 describe("mainTabEntries", () => {
   it("a conversa está sempre lá: ela é o fundo, não um item que entra e sai", () => {
     expect(mainTabEntries(conversa).map((e) => e.kind)).toEqual(["conversa"])
     expect(mainTabEntries(diff).map((e) => e.kind)).toEqual(["conversa", "diff"])
+    expect(mainTabEntries(arquivo).map((e) => e.kind)).toEqual(["conversa", "arquivo"])
   })
 
   it("a conversa NÃO fecha; a do diff, sim", () => {
@@ -25,6 +27,16 @@ describe("mainTabEntries", () => {
 
   it("a ordem é estável: a conversa vem primeiro sempre", () => {
     expect(mainTabEntries(diff)[0].kind).toBe("conversa")
+    expect(mainTabEntries(arquivo)[0].kind).toBe("conversa")
+  })
+
+  it("a aba de arquivo usa o nome curto sem perder o caminho no estado", () => {
+    expect(mainTabEntries(arquivo)[1]).toEqual({
+      kind: "arquivo",
+      label: "App.tsx",
+      closable: true,
+    })
+    expect(arquivo).toEqual({ kind: "arquivo", path: "src/components/App.tsx" })
   })
 
   it("focusPath não muda a lista de abas (é estado DENTRO da aba)", () => {

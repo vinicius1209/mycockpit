@@ -8,6 +8,7 @@ import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
 import { MainTabs } from "@/components/layout/MainTabs"
 import { DiffTab } from "@/components/layout/DiffTab"
+import { FileTab } from "@/components/layout/FileTab"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { SddView } from "@/components/sdd/SddView"
@@ -58,7 +59,7 @@ export function AppShell() {
   const mainTab = useApp((s) => s.mainTab)
   const branchSplitOpen = useApp((s) => s.branchSplitOpen)
   const openDiffTab = useApp((s) => s.openDiffTab)
-  const closeDiffTab = useApp((s) => s.closeDiffTab)
+  const closeMainTab = useApp((s) => s.closeMainTab)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const fleetOpen = useApp((s) => s.fleetOpen)
@@ -146,10 +147,11 @@ export function AppShell() {
                 {viewMode === "linear" && !coberto && (
                   <MainTabs
                     tab={mainTab}
-                    onSelect={(k: "conversa" | "diff") =>
-                      k === "diff" ? openDiffTab(undefined) : closeDiffTab()
-                    }
-                    onClose={() => closeDiffTab()}
+                    onSelect={(kind) => {
+                      if (kind === "diff") openDiffTab(undefined)
+                      else if (kind === "conversa") closeMainTab()
+                    }}
+                    onClose={() => closeMainTab()}
                   />
                 )}
                 {/* F7: as views globais (Agendado, Planos de voo, Frota) cobrem o
@@ -195,6 +197,11 @@ export function AppShell() {
                 {viewMode === "linear" && !coberto && mainTab.kind === "diff" && (
                   <div className={HOST_SUPERFICIE}>
                     <DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} />
+                  </div>
+                )}
+                {viewMode === "linear" && !coberto && mainTab.kind === "arquivo" && (
+                  <div className={HOST_SUPERFICIE}>
+                    <FileTab path={mainTab.path} />
                   </div>
                 )}
                 {cobertura && (

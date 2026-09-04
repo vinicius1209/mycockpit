@@ -14,6 +14,7 @@ import {
   Columns2,
   Command,
   Copy,
+  File,
   FileDiff,
   GitFork,
   MessageSquare,
@@ -75,6 +76,17 @@ export function MainTabs({
   )
   const hasBranches = Boolean(family && family.branches.length > 1)
   const commandShortcut = commandMenuShortcut(currentPlatform())
+  const transient =
+    tab.kind === "diff"
+      ? { kind: tab.kind, label: "Alterações", title: "Alterações", Icon: FileDiff }
+      : tab.kind === "arquivo"
+        ? {
+            kind: tab.kind,
+            label: tab.path.split("/").pop() || tab.path,
+            title: tab.path,
+            Icon: File,
+          }
+        : null
 
   return (
     <div
@@ -136,23 +148,24 @@ export function MainTabs({
             </button>
           </div>
         )}
-        {tab.kind === "diff" && (
+        {transient && (
           <div
             className="group/aba flex h-[26px] items-center rounded-md bg-sel transition-colors"
           >
             <button
               role="tab"
               aria-selected
-              onClick={() => onSelect("diff")}
+              onClick={() => onSelect(transient.kind)}
+              title={transient.title}
               className="flex h-full items-center gap-1.5 rounded-md pl-2 pr-1 text-[11px] font-medium text-foreground transition-colors"
             >
-              <FileDiff className="size-3.5 shrink-0" />
-              Alterações
+              <transient.Icon className="size-3.5 shrink-0" />
+              <span className="max-w-[180px] truncate">{transient.label}</span>
             </button>
             <button
-              onClick={() => onClose("diff")}
-              title="Fechar Alterações"
-              aria-label="Fechar Alterações"
+              onClick={() => onClose(transient.kind)}
+              title={`Fechar ${transient.label}`}
+              aria-label={`Fechar ${transient.label}`}
               className="mr-1 rounded p-0.5 text-transparent transition-colors group-hover/aba:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
             >
               <X className="size-3" />

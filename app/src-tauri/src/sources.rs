@@ -3,8 +3,13 @@
 //! Memórias ← dir path-encoded do Claude CLI. Sempre lê do disco; zero store paralelo.
 
 use serde::Serialize;
+use std::io::Read;
 use std::path::Path;
 use tauri::Manager;
+
+const MAX_TEXT_BYTES: u64 = 400_000;
+const MAX_TEXT_CHARS: usize = 100_000;
+const MAX_PREVIEW_BYTES: u64 = 32 * 1024 * 1024;
 
 #[derive(Serialize)]
 pub struct Persona {
@@ -262,6 +267,37 @@ fn read_text_file_scoped(
     path: &str,
     attachments: Option<&Path>,
 ) -> Result<String, String> {
+    let canon = scoped_file_path(root, path, attachments)?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&canon)
+        .map_err(|e| e.to_string())?
+        .take(MAX_TEXT_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+
+    let truncated_by_bytes = bytes.len() as u64 > MAX_TEXT_BYTES;
+    if truncated_by_bytes {
+        bytes.truncate(MAX_TEXT_BYTES as usize);
+    }
+    let valid_len = match std::str::from_utf8(&bytes) {
+        Ok(_) => bytes.len(),
+        Err(error) if error.error_len().is_none() => error.valid_up_to(),
+        Err(error) => return Err(format!("O arquivo não é texto UTF-8 válido: {error}")),
+    };
+    let text = std::str::from_utf8(&bytes[..valid_len]).map_err(|e| e.to_string())?;
+    let truncated_by_chars = text.chars().count() > MAX_TEXT_CHARS;
+    let mut output: String = text.chars().take(MAX_TEXT_CHARS).collect();
+    if truncated_by_bytes || truncated_by_chars {
+        output.push_str("\n\n… (arquivo truncado por tamanho)");
+    }
+    Ok(output)
+}
+
+fn scoped_file_path(
+    root: &str,
+    path: &str,
+    attachments: Option<&Path>,
+) -> Result<std::path::PathBuf, String> {
     let canon = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
     let mut allowed: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(r) = std::fs::canonicalize(&root) {
@@ -298,14 +334,50 @@ fn read_text_file_scoped(
     if !allowed.iter().any(|a| canon.starts_with(a)) {
         return Err("caminho fora do projeto (e de locais autorizados): leitura bloqueada".into());
     }
-    let c = std::fs::read_to_string(&canon).map_err(|e| e.to_string())?;
-    Ok(if c.chars().count() > 100_000 {
-        let mut out: String = c.chars().take(100_000).collect();
-        out.push_str("\n\n… (arquivo truncado por tamanho)");
-        out
-    } else {
-        c
-    })
+    if !canon.is_file() {
+        return Err("O caminho selecionado não é um arquivo.".into());
+    }
+    Ok(canon)
+}
+
+/// Lê imagens como bytes crus. O teto é aplicado antes e durante a leitura:
+/// isso evita a inflação de um `Vec<u8>` serializado como JSON e também cobre
+/// o arquivo que cresce entre `metadata` e `read`.
+#[tauri::command]
+pub fn read_project_file_bytes(
+    app: tauri::AppHandle,
+    root: String,
+    path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let attachments = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("attachments"));
+    read_project_file_bytes_scoped(&root, &path, attachments.as_deref())
+        .map(tauri::ipc::Response::new)
+}
+
+fn read_project_file_bytes_scoped(
+    root: &str,
+    path: &str,
+    attachments: Option<&Path>,
+) -> Result<Vec<u8>, String> {
+    let canon = scoped_file_path(root, path, attachments)?;
+    let size = std::fs::metadata(&canon).map_err(|e| e.to_string())?.len();
+    if size > MAX_PREVIEW_BYTES {
+        return Err("O arquivo é grande demais para a pré-visualização.".into());
+    }
+    let mut bytes = Vec::with_capacity(size as usize);
+    std::fs::File::open(&canon)
+        .map_err(|e| e.to_string())?
+        .take(MAX_PREVIEW_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > MAX_PREVIEW_BYTES {
+        return Err("O arquivo é grande demais para a pré-visualização.".into());
+    }
+    Ok(bytes)
 }
 
 /// Opção invocável por "/": comando da casa (.mycockpit/commands), comando
@@ -921,5 +993,30 @@ mod tests {
 
         std::fs::remove_dir_all(&tmp).unwrap();
         std::fs::remove_dir_all(&fora).unwrap();
+    }
+
+    #[test]
+    fn read_project_file_bytes_preserva_payload_e_aplica_teto() {
+        let tmp = std::env::temp_dir().join(format!("mc-preview-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let image = tmp.join("pixel.png");
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        std::fs::write(&image, png).unwrap();
+
+        let read =
+            read_project_file_bytes_scoped(&tmp.to_string_lossy(), &image.to_string_lossy(), None)
+                .unwrap();
+        assert_eq!(read, png);
+
+        let huge = tmp.join("grande.png");
+        std::fs::File::create(&huge)
+            .unwrap()
+            .set_len(MAX_PREVIEW_BYTES + 1)
+            .unwrap();
+        let rejected =
+            read_project_file_bytes_scoped(&tmp.to_string_lossy(), &huge.to_string_lossy(), None);
+        assert!(rejected.is_err());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 }

@@ -44,6 +44,21 @@ export async function readTextFile(root: string, path: string): Promise<string> 
   return invoke<string>("read_text_file", { root, path })
 }
 
+/** Lê uma imagem sem serializar cada byte como um número JSON. */
+export async function readProjectFileBytes(
+  root: string,
+  path: string,
+): Promise<Uint8Array> {
+  const raw = await invoke<ArrayBuffer | Uint8Array | number[]>(
+    "read_project_file_bytes",
+    { root, path },
+  )
+  if (raw instanceof Uint8Array) return raw
+  if (raw instanceof ArrayBuffer) return new Uint8Array(raw)
+  if (Array.isArray(raw)) return Uint8Array.from(raw)
+  throw new Error("O aplicativo devolveu um formato de arquivo inesperado.")
+}
+
 export interface SlashCommand {
   name: string
   description: string | null

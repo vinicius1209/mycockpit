@@ -789,6 +789,7 @@ pub fn run() {
             mycockpit::export_context_bundle,
             sources::read_project_sources,
             sources::read_text_file,
+            sources::read_project_file_bytes,
             sources::read_project_commands,
             sources::list_project_files,
             sources::write_mission_state,

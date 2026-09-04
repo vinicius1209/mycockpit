@@ -5568,3 +5568,25 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   o projeto ganha navegação local sem duplicar o diff, e cada afirmação do painel
   continua ligada a uma fonte observável. O arquivo principal encolhe porque as
   novas superfícies e a tira de abas vivem em módulos próprios.
+
+### ADR-157 · o explorador indexa na coluna e lê no palco principal ✅
+- **Contexto:** a primeira entrega de Arquivos agrupava caminhos somente pela
+  primeira pasta e substituía a própria lista por uma leitura inline. Ela não
+  preservava a hierarquia do projeto, perdia o contexto de navegação ao abrir um
+  item e oferecia apenas texto ou Markdown numa largura inadequada. Alterações já
+  havia provado a fronteira correta: a coluna decide e o palco largo lê.
+- **Decisão:** Arquivos passa a construir uma árvore real a partir do inventário
+  de `list_project_files`, com pastas expansíveis, ordenação natural, busca que
+  preserva ancestrais e navegação por teclado. Clicar num arquivo abre a variante
+  transitória `arquivo` de `MainTab`; a conversa permanece montada, como ocorre
+  com o diff. O visualizador principal escolhe o renderer por formato: Markdown
+  canônico, código e texto com `highlight.js`, ou imagem raster. Imagens são
+  transferidas em resposta IPC binária com teto de 32 MiB e têm cabeçalho,
+  dimensões e total de pixels validados antes de chegar ao decoder. Texto também
+  passa a ser lido de forma limitada, sem carregar o arquivo inteiro antes do
+  truncamento.
+- **Consequência:** a coluna volta a funcionar como navegação densa de IDE, o
+  arquivo recebe largura e ferramentas próprias sem competir com o contexto, e
+  arquivos grandes ou imagens hostis não transformam uma ação de consulta em
+  crescimento de memória sem limite. A aba é efêmera e somente leitura; edição
+  continua no editor escolhido pela pessoa.

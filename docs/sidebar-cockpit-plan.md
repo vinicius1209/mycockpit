@@ -8,6 +8,15 @@
 > modular como próximo passo. Este plano descreve o produto real, não declara o
 > HTML de validação como entrega.
 
+> **Correção de produto, 04/09/2026:** a primeira implementação de Arquivos
+> agrupou caminhos pela primeira pasta e abriu o conteúdo dentro da coluna.
+> Isso não é um explorador de arquivos. O contrato corrigido é uma árvore real,
+> hierárquica e expansível, no padrão de Zed e VS Code. A coluna funciona como
+> índice; clicar num arquivo abre uma aba transitória no palco principal, pela
+> mesma fronteira já validada por Alterações. Código recebe realce de sintaxe,
+> Markdown é renderizado e imagens compatíveis ganham pré-visualização segura.
+> Este bloco substitui os itens divergentes do plano original abaixo.
+
 ## O problema
 
 O painel direito atual reúne contexto do projeto, alterações e a checklist do
@@ -48,10 +57,13 @@ Ordem das abas: **Arquivos, Plano, Alterações, Contexto**.
 ### Arquivos
 
 - busca pelo caminho;
-- agrupamento pela primeira pasta, sem carregar conteúdo durante a listagem;
-- seleção abre uma leitura rápida dentro do próprio painel;
-- Markdown usa o renderer já adotado pelo app; os demais textos usam fonte
-  monoespaçada;
+- árvore hierárquica real, com pastas expansíveis, ordenação natural e navegação
+  por teclado;
+- a coluna só indexa; seleção abre uma aba transitória no painel principal;
+- Markdown usa o renderer canônico, código usa fonte monoespaçada e realce de
+  sintaxe, PNG, JPEG, GIF, WebP, BMP e ICO usam visualização de imagem;
+- imagens chegam por IPC binário, com teto de bytes e validação de dimensões
+  antes da decodificação;
 - falha de leitura é mostrada na superfície, nunca engolida.
 
 ### Plano
@@ -76,8 +88,9 @@ abas; não reimplementa diff, doutrina, memória, missões nem permissões.
    checkpoint concluído.
 2. Criar `ConversationPlanPanel.tsx`, consumidor da projeção e da checklist
    existente.
-3. Criar `ProjectFilesPanel.tsx`, consumidor de `listProjectFiles` e
-   `readTextFile` já registrados no backend.
+3. Criar `ProjectFilesPanel.tsx` como árvore e índice, consumidor apenas de
+   `listProjectFiles`; criar a variante `arquivo` de `MainTab` e o leitor largo
+   no palco principal.
 4. Acrescentar `arquivos` ao estado efêmero `ContextPanelTab` e integrar os dois
    painéis sem aumentar o arquivo monolítico `ContextPanel.tsx`.
 5. Cobrir a ordem e os rótulos das abas, os estados vazio/erro e os call sites
@@ -87,9 +100,9 @@ abas; não reimplementa diff, doutrina, memória, missões nem permissões.
 
 - gerar resumo por modelo automaticamente;
 - persistir meta editável sem confirmação humana;
-- editor completo de código ou terminal na sidebar;
+- edição de código ou terminal na sidebar;
 - inventar atividade de arquivo com base no foco da UI;
-- substituir a aba principal de diff pela leitura rápida.
+- editar o arquivo dentro do visualizador, que permanece somente leitura.
 
 ## Validação
 

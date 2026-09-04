@@ -45,10 +45,11 @@ interface AppState {
   viewMode: "painel" | "linear" | "sdd"
   /** Aba aberta DENTRO da superfície Trabalho (docs/abas-no-principal-plan.md).
    *  União discriminada, igual à do Paseo, porque ela aguenta ganhar variante
-   *  (terminal, arquivo, PR) sem retrabalho — mas hoje são DUAS e só.
+   *  (terminal, PR) sem retrabalho. Hoje conversa, diff e arquivo usam o mesmo
+   *  contrato transitório.
    *
-   *  NÃO persiste, de propósito: reabrir o app numa tela de diff que você não
-   *  lembra de ter aberto é pior que reabrir na conversa. Aba é gesto da
+   *  NÃO persiste, de propósito: reabrir o app num leitor que você não lembra
+   *  de ter aberto é pior que reabrir na conversa. Aba é gesto da
    *  sessão, não preferência. */
   mainTab: MainTab
   /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
@@ -122,8 +123,10 @@ interface AppState {
   setViewMode: (m: "painel" | "linear" | "sdd") => void
   /** Abre (ou refoca) a aba do diff, opcionalmente já num arquivo. */
   openDiffTab: (focusPath?: string) => void
-  /** Volta pra conversa. A aba do diff deixa de existir, não fica escondida. */
-  closeDiffTab: () => void
+  /** Abre um arquivo real na aba principal, fora da coluna estreita. */
+  openFileTab: (path: string) => void
+  /** Volta pra conversa. A aba transitória deixa de existir. */
+  closeMainTab: () => void
   /** Abre/fecha a visualização em split de ramos da conversa ativa. */
   branchSplitOpen: boolean
   toggleBranchSplit: () => void
@@ -249,12 +252,17 @@ export const useApp = create<AppState>()(
           activeProjectId: s.activeProjectId ?? projects[0]?.id ?? null,
         })),
       addProject: (p) =>
-        set((s) => ({ projects: [p, ...s.projects], activeProjectId: p.id })),
+        set((s) => ({
+          projects: [p, ...s.projects],
+          activeProjectId: p.id,
+          mainTab: { kind: "conversa" },
+        })),
       setAddProjectOpen: (addProjectOpen) => set({ addProjectOpen }),
       // trocar de projeto é navegação → fecha qualquer workspace global.
       setActiveProject: (id) =>
         set({
           activeProjectId: id,
+          mainTab: { kind: "conversa" },
           branchSplitOpen: false,
           scheduledOpen: false,
           flightPlansOpen: false,
@@ -333,7 +341,9 @@ export const useApp = create<AppState>()(
               (s.mainTab.kind === "diff" ? (s.mainTab.focusSeq ?? 0) : 0) + 1,
           },
         })),
-      closeDiffTab: () => set({ mainTab: { kind: "conversa" } }),
+      openFileTab: (path) =>
+        set({ branchSplitOpen: false, mainTab: { kind: "arquivo", path } }),
+      closeMainTab: () => set({ mainTab: { kind: "conversa" } }),
       toggleBranchSplit: () =>
         set((s) => ({ branchSplitOpen: !s.branchSplitOpen })),
       setBranchSplitOpen: (branchSplitOpen) => set({ branchSplitOpen }),

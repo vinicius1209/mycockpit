@@ -9,10 +9,11 @@ const sources = import.meta.glob("./ProjectFilesPanel.tsx", {
 const source = Object.values(sources)[0] ?? ""
 
 describe("a árvore de arquivos", () => {
-  it("mantém ícone e nome no trilho esquerdo da linha", () => {
-    expect(source).toContain('className="w-full justify-start text-left')
-    expect(source).toContain(
-      'className="min-w-0 flex-1 truncate text-left font-mono',
-    )
+  it("é uma árvore de navegação e abre o leitor no palco principal", () => {
+    expect(source).toContain('role="tree"')
+    expect(source).toContain('role="treeitem"')
+    expect(source).toContain("openFileTab(node.path)")
+    expect(source).not.toContain("readTextFile")
+    expect(source).not.toContain("<Markdown")
   })
 })

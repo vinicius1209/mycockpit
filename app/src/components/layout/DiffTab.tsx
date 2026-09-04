@@ -52,7 +52,7 @@ export function DiffTab({
       onSendToComposer={(text) => {
         if (!activeConvId) return
         useComposerDrafts.getState().setText(activeConvId, text)
-        useApp.getState().closeDiffTab()
+        useApp.getState().closeMainTab()
         setTimeout(focusConsoleComposer, 120)
       }}
     />

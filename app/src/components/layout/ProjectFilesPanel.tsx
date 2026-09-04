@@ -1,253 +1,280 @@
-import { useEffect, useMemo, useRef, useState } from "react"
 import {
-  ArrowLeft,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react"
+import {
+  ChevronDown,
+  ChevronRight,
   File,
+  FileCode2,
+  FileImage,
   FileText,
   Folder,
+  FolderOpen,
+  RefreshCw,
   Search,
 } from "lucide-react"
-import { Markdown } from "@/components/common/Markdown"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { isTauri } from "@/lib/db"
-import { listProjectFiles, readTextFile } from "@/lib/sources"
+import {
+  buildProjectFileTree,
+  visibleProjectFileNodes,
+  type ProjectFileNode,
+} from "@/lib/fileTree"
+import { projectFilePreviewKind } from "@/lib/projectFilePreview"
+import { listProjectFiles } from "@/lib/sources"
+import { cn } from "@/lib/utils"
+import { useApp } from "@/store/app"
 
 type LoadState = "loading" | "ready" | "error" | "browser"
 
-interface FileGroup {
-  name: string
-  files: Array<{ path: string; label: string }>
-}
+const MAX_SEARCH_RESULTS = 500
 
-const MAX_VISIBLE = 300
-
-function errorMessage(error: unknown, fallback: string): string {
+function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === "string" && error.trim()) return error
-  return fallback
+  return "Não foi possível listar os arquivos."
 }
 
-function groupsOf(files: string[]): FileGroup[] {
-  const groups = new Map<string, Array<{ path: string; label: string }>>()
-  for (const path of files) {
-    const slash = path.indexOf("/")
-    const name = slash === -1 ? "Raiz" : path.slice(0, slash)
-    const label = slash === -1 ? path : path.slice(slash + 1)
-    const rows = groups.get(name) ?? []
-    rows.push({ path, label })
-    groups.set(name, rows)
-  }
-  return [...groups.entries()].map(([name, rows]) => ({ name, files: rows }))
-}
-
-function absolutePath(root: string, path: string): string {
-  return `${root.replace(/\/$/, "")}/${path}`
+function FileGlyph({ path }: { path: string }) {
+  const kind = projectFilePreviewKind(path)
+  if (kind === "image") return <FileImage className="size-3.5" aria-hidden="true" />
+  if (kind === "markdown") return <FileText className="size-3.5" aria-hidden="true" />
+  if (kind === "code") return <FileCode2 className="size-3.5" aria-hidden="true" />
+  return <File className="size-3.5" aria-hidden="true" />
 }
 
 export function ProjectFilesPanel({ root }: { root: string }) {
   const [files, setFiles] = useState<string[]>([])
   const [status, setStatus] = useState<LoadState>("loading")
+  const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
-  const [selected, setSelected] = useState<string | null>(null)
-  const [content, setContent] = useState<string | null>(null)
-  const [readError, setReadError] = useState<string | null>(null)
-  const [reading, setReading] = useState(false)
-  const readGeneration = useRef(0)
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [focusedPath, setFocusedPath] = useState<string | null>(null)
+  const loadGeneration = useRef(0)
+  const rowRefs = useRef(new Map<string, HTMLButtonElement>())
+  const mainTab = useApp((state) => state.mainTab)
+  const openFileTab = useApp((state) => state.openFileTab)
 
-  useEffect(() => {
-    let cancelled = false
-    setFiles([])
-    setSelected(null)
-    setContent(null)
-    setReadError(null)
-    setQuery("")
+  const loadFiles = useCallback(async () => {
+    const generation = ++loadGeneration.current
     if (!isTauri()) {
       setStatus("browser")
       return
     }
     setStatus("loading")
-    listProjectFiles(root)
-      .then((next) => {
-        if (!cancelled) {
-          setFiles(next)
-          setStatus("ready")
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled) {
-          setStatus("error")
-          setReadError(errorMessage(error, "Não foi possível listar os arquivos."))
-        }
-      })
-    return () => {
-      cancelled = true
+    setError(null)
+    try {
+      const next = await listProjectFiles(root)
+      if (generation !== loadGeneration.current) return
+      setFiles(next)
+      setStatus("ready")
+    } catch (cause) {
+      if (generation !== loadGeneration.current) return
+      setError(errorMessage(cause))
+      setStatus("error")
     }
   }, [root])
+
+  useEffect(() => {
+    setFiles([])
+    setQuery("")
+    setExpanded(new Set())
+    setFocusedPath(null)
+    void loadFiles()
+    return () => {
+      loadGeneration.current += 1
+    }
+  }, [loadFiles])
 
   const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("pt-BR")
     const matches = normalized
       ? files.filter((path) => path.toLocaleLowerCase("pt-BR").includes(normalized))
       : files
-    return { total: matches.length, visible: matches.slice(0, MAX_VISIBLE) }
+    return {
+      total: matches.length,
+      paths: normalized ? matches.slice(0, MAX_SEARCH_RESULTS) : matches,
+      searching: Boolean(normalized),
+    }
   }, [files, query])
 
-  const groups = useMemo(() => groupsOf(filtered.visible), [filtered.visible])
+  const tree = useMemo(() => buildProjectFileTree(filtered.paths), [filtered.paths])
+  const rows = useMemo(
+    () => visibleProjectFileNodes(tree, expanded, filtered.searching),
+    [expanded, filtered.searching, tree],
+  )
 
-  async function openFile(path: string) {
-    const generation = ++readGeneration.current
-    setSelected(path)
-    setContent(null)
-    setReadError(null)
-    setReading(true)
-    try {
-      const text = await readTextFile(root, absolutePath(root, path))
-      if (generation === readGeneration.current) setContent(text)
-    } catch (error) {
-      if (generation === readGeneration.current) {
-        setReadError(
-          errorMessage(error, "Este arquivo não pôde ser exibido como texto."),
-        )
+  useEffect(() => {
+    if (rows.length === 0) {
+      setFocusedPath(null)
+    } else if (!focusedPath || !rows.some((row) => row.node.path === focusedPath)) {
+      setFocusedPath(rows[0].node.path)
+    }
+  }, [focusedPath, rows])
+
+  function toggleDirectory(path: string) {
+    setExpanded((current) => {
+      const next = new Set(current)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  function focusRow(path: string) {
+    setFocusedPath(path)
+    requestAnimationFrame(() => rowRefs.current.get(path)?.focus())
+  }
+
+  function activate(node: ProjectFileNode) {
+    if (node.kind === "directory") {
+      if (!filtered.searching) toggleDirectory(node.path)
+      return
+    }
+    openFileTab(node.path)
+  }
+
+  function handleKeyDown(event: KeyboardEvent, index: number) {
+    const row = rows[index]
+    if (!row) return
+    const { node } = row
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault()
+      const delta = event.key === "ArrowDown" ? 1 : -1
+      const next = rows[Math.max(0, Math.min(rows.length - 1, index + delta))]
+      if (next) focusRow(next.node.path)
+      return
+    }
+    if (event.key === "ArrowRight" && node.kind === "directory") {
+      event.preventDefault()
+      if (!expanded.has(node.path) && !filtered.searching) {
+        toggleDirectory(node.path)
+      } else if (rows[index + 1]?.parentPath === node.path) {
+        focusRow(rows[index + 1].node.path)
       }
-    } finally {
-      if (generation === readGeneration.current) setReading(false)
+      return
+    }
+    if (event.key === "ArrowLeft") {
+      event.preventDefault()
+      if (node.kind === "directory" && expanded.has(node.path) && !filtered.searching) {
+        toggleDirectory(node.path)
+      } else if (row.parentPath) {
+        focusRow(row.parentPath)
+      }
+      return
+    }
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      activate(node)
     }
   }
 
-  function closeFile() {
-    readGeneration.current += 1
-    setSelected(null)
-    setContent(null)
-    setReadError(null)
-    setReading(false)
-  }
-
-  if (selected) {
-    const markdown = /\.(md|mdx)$/i.test(selected)
-    return (
-      <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex h-11 shrink-0 items-center gap-2 px-3">
-          <Button
-            type="button"
-            variant="ghost"
-            size="icone-compacto"
-            onClick={closeFile}
-            aria-label="Voltar aos arquivos"
-          >
-            <ArrowLeft />
-          </Button>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-foreground/85">
-            {selected}
-          </span>
-        </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="px-4 pb-6">
-            {reading ? (
-              <p className="py-8 text-center text-[12px] text-muted-foreground">
-                Lendo arquivo…
-              </p>
-            ) : readError ? (
-              <div className="rounded-lg bg-destructive/10 px-3 py-3 text-[12px] leading-relaxed text-destructive">
-                {readError}
-              </div>
-            ) : content != null && markdown ? (
-              <Markdown text={content} />
-            ) : content != null ? (
-              <pre
-                data-selectable
-                className="overflow-x-auto font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/80"
-              >
-                {content}
-              </pre>
-            ) : null}
-          </div>
-        </ScrollArea>
-      </div>
-    )
-  }
+  const selectedPath = mainTab.kind === "arquivo" ? mainTab.path : null
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="relative shrink-0 px-3 pt-2 pb-3">
-        <Search className="pointer-events-none absolute top-4 left-5 size-3.5 text-muted-foreground/65" />
-        <Input
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Buscar arquivo"
-          aria-label="Buscar arquivo"
-          className="h-8 border-0 bg-secondary/55 pr-3 pl-8 text-[12px] shadow-none"
-        />
+      <div className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-2">
+        <div className="relative min-w-0 flex-1">
+          <Search className="pointer-events-none absolute top-2 left-2 size-3.5 text-muted-foreground/65" />
+          <Input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Buscar arquivo"
+            aria-label="Buscar arquivo"
+            className="h-8 border-0 bg-secondary/55 pr-3 pl-8 text-[12px] shadow-none"
+          />
+        </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icone-compacto"
+          onClick={() => void loadFiles()}
+          disabled={status === "loading"}
+          aria-label="Atualizar arquivos"
+          title="Atualizar arquivos"
+        >
+          <RefreshCw className={cn("size-3.5", status === "loading" && "animate-spin")} />
+        </Button>
       </div>
 
-      {status === "loading" ? (
-        <p className="px-5 py-8 text-center text-[12px] text-muted-foreground">
+      <div className="flex h-7 shrink-0 items-center px-4 font-mono text-[11px] tabular-nums text-muted-foreground/60">
+        <span>{filtered.searching ? `${filtered.total} encontrados` : `${files.length} arquivos`}</span>
+        {filtered.total > MAX_SEARCH_RESULTS && filtered.searching && (
+          <span className="ml-auto">primeiros {MAX_SEARCH_RESULTS}</span>
+        )}
+      </div>
+
+      {status === "loading" && files.length === 0 ? (
+        <p className="px-5 py-8 text-[12px] text-muted-foreground">
           Lendo a árvore do projeto…
         </p>
       ) : status === "browser" ? (
-        <p className="px-5 py-8 text-center text-[12px] leading-relaxed text-muted-foreground">
+        <p className="px-5 py-8 text-[12px] leading-relaxed text-muted-foreground">
           A árvore de arquivos está disponível no aplicativo.
         </p>
       ) : status === "error" ? (
         <div className="mx-4 rounded-lg bg-destructive/10 px-3 py-3 text-[12px] leading-relaxed text-destructive">
-          {readError ?? "Não foi possível listar os arquivos."}
+          {error}
         </div>
+      ) : rows.length === 0 ? (
+        <p className="px-5 py-8 text-[12px] text-muted-foreground">
+          Nenhum arquivo encontrado.
+        </p>
       ) : (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="px-3 pb-6">
-            <div className="mb-3 flex items-center justify-between px-2 font-mono text-[11px] text-muted-foreground/65">
-              <span>
-                {query.trim()
-                  ? `${filtered.total} encontrados`
-                  : `${files.length} arquivos`}
-              </span>
-              {filtered.total > MAX_VISIBLE && (
-                <span>primeiros {MAX_VISIBLE}</span>
-              )}
-            </div>
-            {groups.length === 0 ? (
-              <p className="px-2 py-8 text-center text-[12px] text-muted-foreground">
-                Nenhum arquivo encontrado.
-              </p>
-            ) : (
-              groups.map((group) => (
-                <section key={group.name} className="mb-4">
-                  <div className="mb-1 flex items-center gap-2 px-2">
-                    <Folder className="size-3.5 text-muted-foreground/70" />
-                    <span className="min-w-0 flex-1 truncate font-mono text-[11px] font-medium text-muted-foreground">
-                      {group.name}
-                    </span>
-                    <span className="font-mono text-[11px] tabular-nums text-muted-foreground/55">
-                      {group.files.length}
-                    </span>
-                  </div>
-                  <ul className="flex flex-col gap-px">
-                    {group.files.map((file) => {
-                      const DocIcon = /\.(md|mdx|txt)$/i.test(file.path)
-                        ? FileText
-                        : File
-                      return (
-                        <li key={file.path}>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="padrao"
-                            onClick={() => void openFile(file.path)}
-                            title={file.path}
-                            className="w-full justify-start text-left font-normal text-foreground/80 hover:bg-sel-hover"
-                          >
-                            <DocIcon className="size-3.5 shrink-0 text-muted-foreground/55" />
-                            <span className="min-w-0 flex-1 truncate text-left font-mono text-[11px]">
-                              {file.label}
-                            </span>
-                          </Button>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              ))
-            )}
+          <div role="tree" aria-label="Arquivos do projeto" className="px-2 pb-4">
+            {rows.map((row, index) => {
+              const { node, depth } = row
+              const isDirectory = node.kind === "directory"
+              const isExpanded = filtered.searching || expanded.has(node.path)
+              const isSelected = selectedPath === node.path
+              const DirectoryIcon = isExpanded ? FolderOpen : Folder
+              return (
+                <Button
+                  key={node.path}
+                  ref={(element) => {
+                    if (element) rowRefs.current.set(node.path, element)
+                    else rowRefs.current.delete(node.path)
+                  }}
+                  type="button"
+                  role="treeitem"
+                  size="compacto"
+                  variant="ghost"
+                  tabIndex={focusedPath === node.path ? 0 : -1}
+                  aria-level={depth + 1}
+                  aria-expanded={isDirectory ? isExpanded : undefined}
+                  aria-selected={isSelected}
+                  title={node.path}
+                  onFocus={() => setFocusedPath(node.path)}
+                  onClick={() => activate(node)}
+                  onKeyDown={(event) => handleKeyDown(event, index)}
+                  style={{ paddingLeft: 8 + depth * 12 }}
+                  className={cn(
+                    "flex w-full justify-start gap-1 rounded-md pr-2 text-left font-normal",
+                    isSelected ? "bg-sel text-foreground" : "text-foreground/80 hover:bg-sel-hover",
+                  )}
+                >
+                  <span className="grid size-3.5 shrink-0 place-items-center text-muted-foreground/55">
+                    {isDirectory ? (
+                      isExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground/65">
+                    {isDirectory ? <DirectoryIcon className="size-3.5" aria-hidden="true" /> : <FileGlyph path={node.path} />}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+                    {node.name}
+                  </span>
+                </Button>
+              )
+            })}
           </div>
         </ScrollArea>
       )}

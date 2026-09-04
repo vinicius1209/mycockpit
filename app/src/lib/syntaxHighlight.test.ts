@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest"
-import { detectLanguage, escapeHtml, highlightDiffLine } from "./syntaxHighlight"
+import {
+  detectLanguage,
+  escapeHtml,
+  highlightCode,
+  highlightDiffLine,
+} from "./syntaxHighlight"
 
 describe("detectLanguage", () => {
   it("detecta arquivos typescript e react", () => {
@@ -69,5 +74,18 @@ describe("highlightDiffLine", () => {
   it("faz fallback gracioso se linguagem não for suportada", () => {
     const html = highlightDiffLine("alguma linha de código", "linguagem_inexistente")
     expect(html).toBe("alguma linha de código")
+  })
+})
+
+describe("highlightCode", () => {
+  it("destaca o arquivo inteiro e preserva as quebras de linha", () => {
+    const html = highlightCode("const primeiro = 1\nconst segundo = 2", "typescript")
+    expect(html).toContain("hljs-keyword")
+    expect(html).toContain("\n")
+    expect(html).toContain("segundo")
+  })
+
+  it("escapa HTML quando a linguagem não é conhecida", () => {
+    expect(highlightCode("<segredo>\n&", null)).toBe("&lt;segredo&gt;\n&amp;")
   })
 })
