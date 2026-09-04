@@ -72,7 +72,10 @@ export function LightboxOverlay() {
       role="dialog"
       aria-modal="true"
       aria-label={img.name}
-      className="fixed inset-0 z-50 flex flex-col bg-black/85 backdrop-blur-sm"
+      // Camada modal imersiva: precisa ficar acima de painéis ancorados
+      // (z-120) e dos menus que vivem dentro deles (z-130). O z-50 anterior
+      // fazia a imagem abrir literalmente atrás da gaveta de Notas.
+      className="fixed inset-0 z-[140] flex flex-col bg-black/85 backdrop-blur-sm"
       onClick={close}
     >
       {/* barra superior: nome + contador + ações (clique aqui não fecha) */}

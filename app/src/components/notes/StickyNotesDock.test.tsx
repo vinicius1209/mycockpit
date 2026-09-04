@@ -264,6 +264,42 @@ describe("a fronteira de colisão da gaveta", () => {
   })
 })
 
+describe("a hierarquia entre a gaveta e o visualizador de imagens", () => {
+  it("mantém o lightbox acima da gaveta de Notas", () => {
+    // Regressão real do build 355: a gaveta vive em z-120, mas o lightbox
+    // ainda usava o z-50 genérico. O clique funcionava e a imagem carregava,
+    // só que por baixo da própria nota que a abriu.
+    const fontes = {
+      ...(import.meta.glob("./StickyNotesTrigger.tsx", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>),
+      ...(import.meta.glob("../chat/Lightbox.tsx", {
+        query: "?raw",
+        import: "default",
+        eager: true,
+      }) as Record<string, string>),
+    }
+    const gaveta = Object.entries(fontes).find(([path]) =>
+      path.endsWith("StickyNotesTrigger.tsx"),
+    )?.[1]
+    const lightbox = Object.entries(fontes).find(([path]) =>
+      path.endsWith("Lightbox.tsx"),
+    )?.[1]
+
+    expect(gaveta, "StickyNotesTrigger.tsx não foi lido").toContain(
+      'className="z-[120]"',
+    )
+    expect(lightbox, "Lightbox.tsx não foi lido").toContain(
+      'z-[140]',
+    )
+    expect(lightbox).not.toContain(
+      'className="fixed inset-0 z-50 flex flex-col',
+    )
+  })
+})
+
 describe("a folha deixa o texto comandar", () => {
   it("a cor aparece uma vez como marcador, não como fundo da superfície", () => {
     const html = render({

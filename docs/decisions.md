@@ -5535,3 +5535,18 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Consequência:** eliminação da dissonância espacial na navegação de tarefas; preservação do foco linear
   no estilo ChatGPT com poder de cockpit agêntico quando bifurcado; gestão limpa e explícita do ciclo de vida
   de git worktrees; conformidade com as catracas e o STYLEGUIDE.
+
+### ADR-155 · o visualizador imersivo fica acima dos painéis ancorados ✅
+- **Contexto:** a gaveta de Notas foi elevada para `z-120` para ultrapassar a
+  barra de título nativa (`z-110`), e seus menus internos usam `z-130`. O
+  lightbox global continuou no nível genérico `z-50`. Clicar numa miniatura
+  carregava a imagem e escurecia o palco, mas o painel que originou o gesto
+  permanecia por cima, ocultando o visualizador.
+- **Decisão:** reservar `z-140` para o lightbox imersivo. A ordem efetiva passa
+  a ser barra de título (`110`), painel ancorado (`120`), menu pertencente ao
+  painel (`130`) e visualizador modal (`140`). O painel permanece montado atrás
+  do visualizador, preservando a nota e a posição de leitura quando a imagem é
+  fechada.
+- **Consequência:** anexos de notas e imagens do fio usam o mesmo lightbox e
+  sempre aparecem acima da superfície que iniciou o gesto, sem fechar a gaveta,
+  duplicar estado ou introduzir outra primitiva de diálogo.
