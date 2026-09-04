@@ -11,7 +11,10 @@ import { Markdown } from "@/components/common/Markdown"
 import { AgentMark } from "@/components/common/AgentMark"
 import { Button } from "@/components/ui/button"
 import { controle } from "@/components/ui/controle"
-import { getConversationFamily } from "@/components/layout/conversationTree"
+import {
+  EMPTY_CONVERSATIONS,
+  getConversationFamily,
+} from "@/components/layout/conversationTree"
 import { confirm } from "@/lib/confirm"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
@@ -148,9 +151,10 @@ export function BranchSplitView() {
   const ensureConversationLoaded = useChat((s) => s.ensureConversationLoaded)
   const setBranchSplitOpen = useApp((s) => s.setBranchSplitOpen)
 
-  const conversations = useChat((s) =>
-    activeProjectId ? s.conversationsByProject[activeProjectId] ?? [] : [],
-  )
+  const conversations =
+    useChat((s) =>
+      activeProjectId ? s.conversationsByProject[activeProjectId] : undefined,
+    ) ?? EMPTY_CONVERSATIONS
 
   const family = useMemo(
     () => getConversationFamily(conversations, activeId),

@@ -12,7 +12,10 @@ import { useMission } from "@/store/mission"
 import type { ConversationMeta } from "@/lib/db/conversations"
 import { hasComposerDraft, useComposerDrafts } from "@/store/composerDrafts"
 import { ConversationRow } from "@/components/layout/ConversationRow"
-import { groupConversationTree } from "@/components/layout/conversationTree"
+import {
+  EMPTY_CONVERSATIONS,
+  groupConversationTree,
+} from "@/components/layout/conversationTree"
 
 /** Ids das conversas rodando, como string estável (só muda em transição de run
  * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
@@ -114,19 +117,13 @@ function useDraftPresence(): Map<string, boolean> {
   return out
 }
 
-// Array vazio ESTÁVEL (module-level): o selector abaixo NÃO pode retornar um `[]`
-// novo a cada chamada — o useSyncExternalStore do React 18 detecta referência
-// nova a cada snapshot e entra em loop infinito ("getSnapshot should be cached"),
-// que dava TELA PRETA quando o projeto ainda não tinha as conversas carregadas.
-const EMPTY_CONVS: ConversationMeta[] = []
-
 /** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
  *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
 export function ConversationList({ projectId }: { projectId: string }) {
   // default FORA do selector (?? numa constante estável): selector devolve o
   // array do store (ref estável) ou undefined (estável) — nunca um `[]` novo.
   const conversations =
-    useChat((s) => s.conversationsByProject[projectId]) ?? EMPTY_CONVS
+    useChat((s) => s.conversationsByProject[projectId]) ?? EMPTY_CONVERSATIONS
   const activeId = useChat((s) => s.activeId)
   const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)

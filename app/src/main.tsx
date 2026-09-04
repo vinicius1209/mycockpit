@@ -8,6 +8,11 @@ import "@fontsource-variable/geist-mono"
 import "./index.css"
 import App from "./App.tsx"
 import { AppContextMenu } from "@/components/common/AppContextMenu"
+import { installRuntimeLogging } from "@/lib/runtimeLogging"
+
+// Antes do primeiro render: erros do React/WebView precisam sobreviver à tela
+// preta e chegar ao arquivo rotativo da release.
+installRuntimeLogging()
 
 // Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo. O popover da tray

@@ -586,16 +586,18 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // Logs precisam existir também na release: sem isso, uma falha do
+        // WebView deixava só a janela preta e o Frota.log parado na build de
+        // debug anterior. O teto + rotação limitam o disco a ~4 MB.
+        .plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .max_file_size(1_000_000)
+                .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+                .build(),
+        )
         .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-
             // Backup rotativo do banco ANTES de qualquer escrita da sessão (o
             // plugin SQL só abre depois, então db+wal+shm estão quiescentes).
             // Rede de segurança contra corrupção/perda: nunca bloqueia o boot.

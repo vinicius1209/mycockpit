@@ -1,5 +1,10 @@
 import type { ConversationMeta } from "@/lib/db/conversations"
 
+// Fallback compartilhado e ESTÁVEL para selectors Zustand. Um literal `[]`
+// dentro do selector cria um snapshot novo a cada leitura e faz o React entrar
+// em loop durante o boot, antes de as conversas do projeto serem hidratadas.
+export const EMPTY_CONVERSATIONS: ConversationMeta[] = []
+
 export interface ConversationNode {
   item: ConversationMeta
   children: ConversationMeta[]

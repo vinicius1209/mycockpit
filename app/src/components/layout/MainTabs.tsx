@@ -32,7 +32,10 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { commandMenuShortcut, currentPlatform, openCommandMenu } from "@/lib/commandMenu"
 import { latestCompletedTurnId, type MainTab } from "@/lib/mainTabs"
-import { getConversationFamily } from "@/components/layout/conversationTree"
+import {
+  EMPTY_CONVERSATIONS,
+  getConversationFamily,
+} from "@/components/layout/conversationTree"
 import { controle } from "@/components/ui/controle"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
@@ -53,9 +56,10 @@ export function MainTabs({
   const newConversation = useChat((s) => s.newConversation)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
   const forkConversationAt = useChat((s) => s.forkConversationAt)
-  const conversations = useChat((s) =>
-    activeProjectId ? s.conversationsByProject[activeProjectId] ?? [] : [],
-  )
+  const conversations =
+    useChat((s) =>
+      activeProjectId ? s.conversationsByProject[activeProjectId] : undefined,
+    ) ?? EMPTY_CONVERSATIONS
   const branchSplitOpen = useApp((s) => s.branchSplitOpen)
   const toggleBranchSplit = useApp((s) => s.toggleBranchSplit)
 

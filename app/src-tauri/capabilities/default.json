@@ -26,6 +26,7 @@
     "opener:default",
     "opener:allow-open-url",
     "clipboard-manager:allow-read-text",
-    "notification:default"
+    "notification:default",
+    "log:default"
   ]
 }
