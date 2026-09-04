@@ -234,10 +234,10 @@ export function ProjectFilesPanel({ root }: { root: string }) {
                             size="padrao"
                             onClick={() => void openFile(file.path)}
                             title={file.path}
-                            className="w-full justify-start font-normal text-foreground/80 hover:bg-sel-hover"
+                            className="w-full justify-start text-left font-normal text-foreground/80 hover:bg-sel-hover"
                           >
                             <DocIcon className="size-3.5 shrink-0 text-muted-foreground/55" />
-                            <span className="min-w-0 flex-1 truncate font-mono text-[11px]">
+                            <span className="min-w-0 flex-1 truncate text-left font-mono text-[11px]">
                               {file.label}
                             </span>
                           </Button>
