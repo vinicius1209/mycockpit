@@ -5,169 +5,257 @@ import type {
   MissionPreset,
 } from "@/lib/missionTypes"
 
-const FACTORY_REVISION = 3
+const FACTORY_REVISION = 4
+const QUALITY_LOOP_LIMIT = 30
 
-/** Planos de fábrica já desenham o retorno do reviewer. O runtime não inventa
- * `fix-N`: a mesma fase Corrigir pode ser visitada até duas vezes. */
-function defaultReviewWorkflow(base: MissionPreset): MissionPreset {
-  const reviewer = base.phases.find((phase) => phase.persona === "reviewer")
-  const reviewerIndex = base.phases.findIndex(
-    (phase) => phase.persona === "reviewer",
-  )
-  const executor = [...base.phases]
-    .reverse()
-    .find((phase) => phase.persona === "executor")
-  if (!reviewer || !executor) return base
-  const correction: MissionPhaseDef = {
-    ...executor,
-    id: `${executor.id}-fix`,
-    label: "Corrigir",
-    instructions:
-      "A revisão anterior foi reprovada. Corrija exatamente os pontos do handoff do reviewer e preserve o restante.",
-  }
-  const phases = [...base.phases, correction]
-  const nodes: MissionPlanNode[] = phases.map((phase, index) => ({
+const PLAN_INSTRUCTIONS =
+  "Leia as instruções do repositório e inspecione o estado real antes de planejar. " +
+  "Transforme o pedido numa matriz verificável de aceitação: comportamento, regressões, " +
+  "erros, segurança e, quando houver interface visível, estados e viewports que precisam " +
+  "ser comparados por screenshot. Não implemente nesta fase e não reduza requisitos vagos: " +
+  "torne explícito o que significa ficar 100% fiel ao pedido."
+
+const BUILD_INSTRUCTIONS =
+  "Implemente o plano inteiro no worktree, preservando mudanças alheias. Rode os testes " +
+  "focais enquanto trabalha. Quando houver interface visível, abra a superfície real e " +
+  "faça uma primeira inspeção visual; não trate build verde como prova de qualidade visual."
+
+const VERIFY_INSTRUCTIONS =
+  "Você é a verificação independente. Inspecione o diff e rode de verdade as checagens " +
+  "proporcionais ao risco: testes focais e de regressão, lint, tipos e build quando existirem. " +
+  "Se houver interface visível, abra a superfície real, exerça os estados relevantes e salve " +
+  "screenshots reproduzíveis junto dos artefatos da missão; compare com a referência ou com " +
+  "a versão anterior no mesmo ambiente. Não confie apenas no relato do executor. Responda " +
+  "APROVADO somente se tudo passar. Em qualquer falha, comece com REPROVADO, nunca escreva " +
+  "a palavra de aprovação e entregue uma lista acionável para a correção."
+
+const FIX_INSTRUCTIONS =
+  "Leia o feedback mais recente dos reviewers e corrija todos os itens reprovados, sem " +
+  "apagar trabalho válido. Reproduza cada falha antes de alterar, adicione cobertura contra " +
+  "regressão quando couber e atualize as screenshots se a interface mudou de propósito. " +
+  "Não encerre por conta própria: a saída desta fase sempre volta à verificação independente."
+
+const JUDGE_INSTRUCTIONS =
+  "Você é o juiz final e independente. Reabra o resultado, inspecione o diff e confronte " +
+  "cada item da matriz de aceitação com evidência concreta. Reexecute amostras críticas dos " +
+  "testes. Se houver interface visível, produza screenshots frescas dos estados e viewports " +
+  "relevantes, olhe as imagens e compare-as com a referência; avalie fidelidade, hierarquia, " +
+  "legibilidade, estados vazio/erro/loading e regressões. Não aceite checklist narrado sem " +
+  "prova. Só responda APROVADO quando todos os critérios estiverem satisfeitos, sem ressalvas " +
+  "nem pendências. Caso contrário, comece com REPROVADO, nunca escreva a palavra de aprovação " +
+  "e descreva exatamente o que a próxima rodada deve corrigir."
+
+function qualityLoopWorkflow(base: MissionPreset): MissionPreset {
+  const nodes: MissionPlanNode[] = base.phases.map((phase, index) => ({
     id: `node-${phase.id}`,
     phaseId: phase.id,
     position:
-      phase.id === correction.id
-        ? { x: Math.max(0, reviewerIndex) * 224, y: 284 }
+      phase.id === "fix"
+        ? { x: 560, y: 284 }
         : { x: index * 224, y: 92 },
   }))
-  const mainEdges: MissionPlanEdge[] = base.phases
-    .slice(0, -1)
-    .map((phase, index) => ({
-      id: `edge-node-${phase.id}-node-${base.phases[index + 1].id}`,
-      source: `node-${phase.id}`,
-      target: `node-${base.phases[index + 1].id}`,
-      condition: "success",
-    }))
+  const edge = (
+    id: string,
+    source: string,
+    target: string,
+    condition: MissionPlanEdge["condition"],
+    label?: string,
+    limited = false,
+  ): MissionPlanEdge => ({
+    id,
+    source: `node-${source}`,
+    target: `node-${target}`,
+    condition,
+    ...(label ? { label } : {}),
+    ...(limited ? { maxTraversals: QUALITY_LOOP_LIMIT } : {}),
+  })
+
   return {
     ...base,
     revision: FACTORY_REVISION,
     factoryRevision: FACTORY_REVISION,
     mode: "graph",
-    phases,
+    gatePolicy: "nunca",
     graph: {
       version: 1,
-      entryNodeId: nodes[0]?.id ?? null,
+      entryNodeId: "node-plan",
       nodes,
       edges: [
-        ...mainEdges,
-        {
-          id: `edge-node-${reviewer.id}-node-${correction.id}`,
-          source: `node-${reviewer.id}`,
-          target: `node-${correction.id}`,
-          condition: "failure",
-          label: "Reprovado",
-          maxTraversals: 2,
-        },
-        {
-          id: `edge-node-${correction.id}-node-${reviewer.id}`,
-          source: `node-${correction.id}`,
-          target: `node-${reviewer.id}`,
-          condition: "success",
-          label: "Corrigido",
-          maxTraversals: 2,
-        },
+        edge("edge-plan-build", "plan", "build", "success"),
+        edge("edge-build-verify", "build", "verify", "success"),
+        edge("edge-verify-judge", "verify", "judge", "success", "Verificado", true),
+        edge("edge-verify-fix", "verify", "fix", "failure", "Falhou nos testes", true),
+        edge("edge-judge-fix", "judge", "fix", "failure", "Ainda não está 100%", true),
+        edge("edge-fix-verify", "fix", "verify", "success", "Corrigido", true),
       ],
     },
   }
 }
 
+function phase(input: MissionPhaseDef): MissionPhaseDef {
+  return { ...input, autonomy: "auto" }
+}
+
 export const DEFAULT_MISSION_PRESETS: MissionPreset[] = [
-  defaultReviewWorkflow({
+  qualityLoopWorkflow({
     id: "feature",
     name: "Feature completa",
-    maxCostUsd: 25,
+    description:
+      "Planeja, implementa, testa e repete correção + julgamento até aprovação integral.",
+    maxCostUsd: null,
     phases: [
-      { id: "plan", label: "Planejar", persona: "planner", agent: "claude-code", model: "opus", effort: null, maxRetries: 1 },
-      { id: "build", label: "Executar", persona: "executor", agent: "codex", model: null, effort: null, maxRetries: 2 },
-      { id: "review", label: "Revisar", persona: "reviewer", agent: "claude-code", model: "opus", effort: null, maxRetries: 1 },
+      phase({
+        id: "plan", label: "Definir régua", persona: "planner",
+        agent: "claude-code", model: "claude-opus-5[1m]", effort: "max", maxRetries: 1,
+        instructions: PLAN_INSTRUCTIONS,
+        exitCriteria: [
+          "Todos os requisitos do pedido aparecem numa matriz objetiva de aceitação.",
+          "Riscos, regressões prováveis e comandos de verificação foram identificados.",
+          "Mudanças visíveis têm referências, estados e viewports definidos para screenshots.",
+        ],
+      }),
+      phase({
+        id: "build", label: "Implementar", persona: "executor",
+        agent: "codex", model: "gpt-5.6-sol", effort: "xhigh", maxRetries: 2,
+        instructions: BUILD_INSTRUCTIONS,
+        entryCriteria: ["A matriz de aceitação e as restrições do repositório estão claras."],
+        exitCriteria: [
+          "A implementação cobre a matriz de aceitação sem deixar TODOs ou mocks enganosos.",
+          "Testes focais relevantes foram executados durante a implementação.",
+          "Mudanças visíveis foram abertas e inspecionadas no ambiente real.",
+        ],
+      }),
+      phase({
+        id: "verify", label: "Testar e capturar", persona: "reviewer",
+        agent: "agy", model: "gemini-3.1-pro-high", effort: null, maxRetries: 1,
+        instructions: VERIFY_INSTRUCTIONS,
+        exitCriteria: [
+          "Os comandos executados e seus resultados reais estão registrados no handoff.",
+          "A cobertura inclui o comportamento novo e regressões plausíveis do entorno.",
+          "Toda mudança visível possui screenshots dos estados relevantes, ou uma justificativa objetiva de não aplicabilidade.",
+        ],
+      }),
+      phase({
+        id: "judge", label: "Julgar 100%", persona: "reviewer",
+        agent: "claude-code", model: "claude-opus-5[1m]", effort: "max", maxRetries: 1,
+        instructions: JUDGE_INSTRUCTIONS,
+        entryCriteria: ["A verificação independente aprovou testes e evidências da rodada atual."],
+        exitCriteria: [
+          "Cada item da matriz de aceitação tem evidência concreta e atual.",
+          "Não existem ressalvas, perguntas abertas, testes ignorados ou regressões conhecidas.",
+          "Quando há UI, screenshots frescas foram abertas e julgadas, não apenas geradas.",
+        ],
+      }),
+      phase({
+        id: "fix", label: "Corrigir", persona: "executor",
+        agent: "codex", model: "gpt-5.6-sol", effort: "xhigh", maxRetries: 2,
+        instructions: FIX_INSTRUCTIONS,
+        entryCriteria: ["Existe feedback de reprovação concreto da verificação ou do juiz."],
+        exitCriteria: [
+          "Todos os pontos da reprovação mais recente foram corrigidos e rechecados localmente.",
+          "A correção preserva os critérios que já estavam aprovados nas rodadas anteriores.",
+        ],
+      }),
     ],
   }),
-  // UI-first (revisão 3): as instruções por fase nasceram da auditoria de uma
-  // missão real de landing page (ADR-091). O plano estava certo — decidiu
-  // "grande prova visual do produto" — e a entrega saiu sem NENHUMA imagem de
-  // produto na dobra. Passou porque o critério do revisor era, literalmente,
-  // `lint` + `build` + `git diff --check`: um compilador, não um olho.
-  //
-  // A persona `reviewer` manda "rode git diff para ver o CÓDIGO real". Num
-  // fluxo de UI isso é metade do trabalho, e a outra metade não estava escrita
-  // em lugar nenhum. Aqui está.
-  defaultReviewWorkflow({
+  qualityLoopWorkflow({
     id: "ui-first",
     name: "UI-first",
-    maxCostUsd: 15,
+    description:
+      "Fluxo visual rigoroso com comparação por screenshots e juiz independente.",
+    maxCostUsd: null,
     phases: [
-      {
-        id: "plan",
-        label: "Planejar",
-        persona: "planner",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
+      phase({
+        id: "plan", label: "Definir referência", persona: "planner",
+        agent: "claude-code", model: "claude-opus-5[1m]", effort: "max", maxRetries: 1,
         instructions:
-          "Se já existe uma versão da tela, ela é a RÉGUA DE QUALIDADE, não um " +
-          "rascunho a superar em quantidade. Antes de planejar, descreva o que a " +
-          "versão atual já acerta (composição, hierarquia, prova visual) e diga " +
-          "explicitamente o que a nova versão precisa MANTER. Uma variação que " +
-          "simplifica a dobra é regressão, não alternativa.",
+          PLAN_INSTRUCTIONS + " A versão atual é a régua mínima: descreva composição, hierarquia e prova visual que não podem piorar.",
         exitCriteria: [
-          "O plano nomeia o que a versão atual já acerta e que não pode piorar.",
-          "O plano diz onde fica a prova visual do produto na primeira dobra.",
+          "O plano nomeia o que a versão atual acerta e não pode regredir.",
+          "Cada estado visível e viewport relevante tem uma referência de comparação.",
+          "A primeira dobra e a principal prova visual do produto estão explicitamente definidas.",
         ],
-      },
-      {
-        id: "ui",
-        label: "Executar UI",
-        persona: "executor",
-        agent: "agy",
-        model: null,
-        effort: null,
-        maxRetries: 2,
+      }),
+      phase({
+        id: "build", label: "Implementar UI", persona: "executor",
+        agent: "agy", model: "gemini-3.1-pro-high", effort: null, maxRetries: 2,
         instructions:
-          "Interface é composição, não lista de seções. A primeira dobra precisa " +
-          "de prova visual do produto (captura ou mock do produto funcionando), " +
-          "e não só texto centralizado. Se o plano elegeu uma frase como promessa " +
-          "central, ela é a headline; não a rebaixe a citação decorativa.",
+          BUILD_INSTRUCTIONS + " Interface é composição, não lista de seções. Preserve a linguagem visual existente, a prova visual do produto na primeira dobra e valide interação por interação.",
         exitCriteria: [
-          "A primeira dobra tem prova visual do produto, não apenas texto.",
-          "A promessa central do plano está na headline, não numa caixa de citação.",
+          "A interface implementada mantém ou melhora a composição e a hierarquia da referência.",
+          "Estados principal, vazio, loading, erro e responsivo aplicáveis foram exercitados.",
+          "A superfície foi aberta e inspecionada, não inferida apenas pelo código.",
         ],
-      },
-      {
-        id: "review",
-        label: "Revisar",
-        persona: "reviewer",
-        agent: "claude-code",
-        model: "sonnet",
-        effort: null,
-        maxRetries: 1,
-        instructions:
-          "Em fluxo de UI, `lint` e `build` verdes são o PISO, nunca o critério. " +
-          "ABRA o resultado e olhe: suba o servidor local, capture a primeira " +
-          "dobra e compare lado a lado com a versão anterior. Reprove se a nova " +
-          "estiver pior em composição, hierarquia ou prova visual, mesmo com " +
-          "todos os comandos passando. Julgue a entrega contra as DECISÕES do " +
-          "planejador, não só contra a lista de passos.",
+      }),
+      phase({
+        id: "verify", label: "Testar e capturar", persona: "reviewer",
+        agent: "codex", model: "gpt-5.6-sol", effort: "xhigh", maxRetries: 1,
+        instructions: VERIFY_INSTRUCTIONS,
         exitCriteria: [
-          "Você abriu o resultado e olhou a primeira dobra, não só o diff.",
-          "Cada decisão de design do planejador foi conferida contra a tela.",
-          "Se há versão anterior, a comparação lado a lado está no handoff.",
+          "Testes funcionais, acessibilidade básica, tipos, lint e build aplicáveis passaram.",
+          "Screenshots reproduzíveis cobrem os estados e viewports definidos pelo plano.",
+          "A comparação com a referência está descrita com diferenças concretas, não gosto genérico.",
         ],
-      },
+      }),
+      phase({
+        id: "judge", label: "Julgar fidelidade", persona: "reviewer",
+        agent: "claude-code", model: "claude-opus-5[1m]", effort: "max", maxRetries: 1,
+        instructions: JUDGE_INSTRUCTIONS,
+        exitCriteria: [
+          "As screenshots atuais foram abertas e comparadas lado a lado com a referência.",
+          "A primeira dobra preserva a prova visual do produto definida no plano.",
+          "Não há regressão de composição, hierarquia, legibilidade, interação ou responsividade.",
+          "A entrega está fiel ao pedido inteiro e não possui ressalvas conhecidas.",
+        ],
+      }),
+      phase({
+        id: "fix", label: "Corrigir UI", persona: "executor",
+        agent: "agy", model: "gemini-3.1-pro-high", effort: null, maxRetries: 2,
+        instructions: FIX_INSTRUCTIONS,
+        exitCriteria: [
+          "Cada diferença visual ou funcional reprovada foi reproduzida e corrigida.",
+          "Novas screenshots demonstram a correção sem regredir estados já aprovados.",
+        ],
+      }),
     ],
   }),
-  defaultReviewWorkflow({
+  qualityLoopWorkflow({
     id: "barato",
     name: "Econômico",
+    description:
+      "Mesma disciplina de qualidade com modelos econômicos e teto de US$ 5 para tarefas pequenas.",
     maxCostUsd: 5,
     phases: [
-      { id: "plan", label: "Planejar", persona: "planner", agent: "claude-code", model: "sonnet", effort: null, maxRetries: 1 },
-      { id: "build", label: "Executar", persona: "executor", agent: "codex", model: null, effort: null, maxRetries: 1 },
-      { id: "review", label: "Revisar", persona: "reviewer", agent: "claude-code", model: "sonnet", effort: null, maxRetries: 1 },
+      phase({
+        id: "plan", label: "Definir régua", persona: "planner",
+        agent: "claude-code", model: "claude-sonnet-5[1m]", effort: "high", maxRetries: 1,
+        instructions: PLAN_INSTRUCTIONS,
+        exitCriteria: ["O pedido foi convertido em critérios verificáveis e proporcionais ao escopo."],
+      }),
+      phase({
+        id: "build", label: "Implementar", persona: "executor",
+        agent: "codex", model: "gpt-5.6-terra", effort: "high", maxRetries: 2,
+        instructions: BUILD_INSTRUCTIONS,
+        exitCriteria: ["A implementação e os testes focais cobrem todos os critérios definidos."],
+      }),
+      phase({
+        id: "verify", label: "Testar e capturar", persona: "reviewer",
+        agent: "agy", model: "gemini-3.6-flash-medium", effort: null, maxRetries: 1,
+        instructions: VERIFY_INSTRUCTIONS,
+        exitCriteria: ["Testes reais e evidências visuais aplicáveis sustentam o veredito."],
+      }),
+      phase({
+        id: "judge", label: "Julgar", persona: "reviewer",
+        agent: "claude-code", model: "claude-sonnet-5[1m]", effort: "high", maxRetries: 1,
+        instructions: JUDGE_INSTRUCTIONS,
+        exitCriteria: ["Todos os critérios têm evidência e não restam ressalvas conhecidas."],
+      }),
+      phase({
+        id: "fix", label: "Corrigir", persona: "executor",
+        agent: "codex", model: "gpt-5.6-terra", effort: "high", maxRetries: 2,
+        instructions: FIX_INSTRUCTIONS,
+        exitCriteria: ["A reprovação mais recente foi integralmente corrigida e rechecada."],
+      }),
     ],
   }),
 ]

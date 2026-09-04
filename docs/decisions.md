@@ -5707,3 +5707,40 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   barrado no tipo, na escrita, na leitura e no disparo. Fica FORA desta ADR, e
   segue como limitação honesta do F6, o retry automático e a execução com o app
   fechado (`docs/automation-evolution.md`).
+
+### ADR-162 · o painel não ressuscita rejeições nem empresta desfechos ✅
+- **Contexto:** a aba Conversa mostrava o último terminal existente mesmo depois
+  de um novo pedido iniciar outro turno. Durante o trabalho seguinte, o rótulo
+  genérico “Turno concluído” parecia afirmar que o turno atual já havia acabado.
+  No aprendizado, “remover” apagava a linha da lição; sem esse registro, uma
+  destilação posterior podia considerar a mesma regra inédita e propô-la de
+  novo. O painel de Contexto também deixava sua área rolável com o mínimo
+  intrínseco do conteúdo, ocultando as últimas linhas sob o piso da aplicação.
+- **Decisão:** o desfecho canônico só aparece quando pertence ao pedido humano
+  mais recente. Enquanto não existe mapa semântico persistido, o cabeçalho nomeia
+  a projeção disponível como `Fatos do fio`, sem anunciar atualização invisível
+  nem contar todo o histórico como novo. Descartar uma memória grava o estado
+  `archived` e a oculta da lista cotidiana; esse tombstone continua participando
+  da deduplicação e impede a ressurreição automática. Falha ao persistir reverte
+  a atualização otimista e fica visível. A área rolável recebe `min-h-0` na
+  fronteira flexível.
+- **Consequência:** estado anterior deixa de se passar pelo turno atual, a
+  inferência opcional degrada para fatos nomeados, uma rejeição humana permanece
+  respeitada e todo o conteúdo do painel volta a ser alcançável pela rolagem.
+
+### ADR-163 · qualidade de feature usa verificador e juiz independentes em loop ✅
+- **Contexto:** os Planos de voo de fábrica tinham um reviewer genérico e só
+  duas rodadas de correção. O plano salvo de Feature completa não exigia testes
+  nem screenshots, e um teto gravado como `0` impedia até a primeira fase. Um
+  único modelo podia, na prática, validar o próprio relato.
+- **Decisão:** os três modelos de fábrica passam a desenhar explicitamente
+  `planejar → implementar → verificar → julgar`, com reprovação de qualquer
+  reviewer retornando a `corrigir → verificar`. O verificador roda evidência
+  objetiva e captura a superfície visível; o juiz usa outro agent/modelo, abre
+  a evidência e só emite `APROVADO` sem ressalvas. O ciclo permite 30
+  travessias por conexão e continua sob a barreira global de 100 visitas.
+  Teto nulo significa sem teto; zero deixa de ser um plano válido.
+- **Consequência:** build verde não se confunde com fidelidade visual, feedback
+  reprovado alimenta a rodada seguinte, e a missão só percorre o término feliz
+  depois de verificação objetiva e juízo independente. O plano Econômico
+  conserva seu teto explícito de US$ 5; os demais não prometem custo limitado.

@@ -15,7 +15,6 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import {
-  deleteLesson,
   isTauri,
   listDeliveries,
   listLessons,
@@ -65,15 +64,40 @@ export function LearningSection({ projectId }: { projectId: string }) {
   }, [projectId])
 
   async function remove(id: string) {
-    // otimista: some da UI já; se o delete falhar, o próximo load reexibe.
+    const priorIndex = lessons.findIndex((lesson) => lesson.id === id)
+    const prior = lessons[priorIndex]
+    // “Descartar” grava um tombstone reversível. Apagar a linha tornava a mesma
+    // regra inédita de novo e permitia que a destilação a ressuscitasse.
     setLessons((cur) => cur.filter((l) => l.id !== id))
-    await deleteLesson(id)
+    try {
+      await setLessonStatus(id, "archived")
+    } catch {
+      setLessons((cur) => {
+        if (!prior || cur.some((lesson) => lesson.id === id)) return cur
+        const next = [...cur]
+        next.splice(Math.min(priorIndex, next.length), 0, prior)
+        return next
+      })
+      toast.error("Não foi possível descartar a memória.")
+    }
   }
 
   async function changeStatus(id: string, status: LessonStatus) {
     // otimista: promover/rebaixar é reversível (só muda o status, não exclui).
+    const priorStatus = lessons.find((lesson) => lesson.id === id)?.status
     setLessons((cur) => cur.map((l) => (l.id === id ? { ...l, status } : l)))
-    await setLessonStatus(id, status)
+    try {
+      await setLessonStatus(id, status)
+    } catch {
+      if (priorStatus) {
+        setLessons((cur) =>
+          cur.map((lesson) =>
+            lesson.id === id ? { ...lesson, status: priorStatus } : lesson,
+          ),
+        )
+      }
+      toast.error("Não foi possível alterar a memória.")
+    }
   }
 
   async function review() {
@@ -94,7 +118,8 @@ export function LearningSection({ projectId }: { projectId: string }) {
   }
 
   if (!loaded) return null
-  if (deliveries === 0 && lessons.length === 0) {
+  const visibleLessons = lessons.filter((lesson) => lesson.status !== "archived")
+  if (deliveries === 0 && visibleLessons.length === 0) {
     return (
       <p className="text-[12px] leading-snug text-muted-foreground/70">
         Nada aprendido ainda. Quando uma missão termina com sucesso, a entrega
@@ -103,8 +128,8 @@ export function LearningSection({ projectId }: { projectId: string }) {
     )
   }
 
-  const active = lessons.filter((l) => l.status === "active")
-  const dormant = lessons.filter((l) => l.status !== "active")
+  const active = visibleLessons.filter((lesson) => lesson.status === "active")
+  const dormant = visibleLessons.filter((lesson) => lesson.status === "candidate")
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -136,7 +161,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
       {dormant.length > 0 && (
         <div className="flex flex-col gap-1 opacity-70">
           <div className="text-[11px] text-muted-foreground/45">
-            Não injetadas ({dormant.length}) · candidatas/arquivadas
+            Aguardando sua decisão ({dormant.length})
           </div>
           <ul className="flex flex-col gap-1">
             {dormant.map((l) => (
@@ -151,7 +176,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {lessons.length > 0 && (
+      {visibleLessons.length > 0 && (
         <button
           onClick={() => void review()}
           disabled={curating}
@@ -244,8 +269,8 @@ function LessonRow({
         )}
         <button
           onClick={onRemove}
-          title="Remover lição"
-          aria-label={`Remover lição: ${l.rule}`}
+          title="Descartar memória"
+          aria-label={`Descartar memória: ${l.rule}`}
           className="rounded p-0.5 text-muted-foreground hover:text-st-error"
         >
           <Trash2 className="size-3" />

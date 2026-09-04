@@ -89,11 +89,11 @@ describe("Planos de voo", () => {
       laidOut.graph?.nodes.map((node) => [node.phaseId, node.position]),
     )
     expect(byPhase.get("plan")?.y).toBe(byPhase.get("build")?.y)
-    expect(byPhase.get("build")?.y).toBe(byPhase.get("review")?.y)
-    expect(byPhase.get("build")?.x).toBeLessThan(byPhase.get("review")!.x)
-    expect(byPhase.get("build-fix")?.x).toBe(byPhase.get("review")?.x)
-    expect(byPhase.get("build-fix")!.y).toBeGreaterThan(
-      byPhase.get("review")!.y,
+    expect(byPhase.get("build")?.y).toBe(byPhase.get("verify")?.y)
+    expect(byPhase.get("build")?.x).toBeLessThan(byPhase.get("verify")!.x)
+    expect(byPhase.get("fix")?.x).toBe(byPhase.get("verify")?.x)
+    expect(byPhase.get("fix")!.y).toBeGreaterThan(
+      byPhase.get("verify")!.y,
     )
   })
 
@@ -136,5 +136,25 @@ describe("Planos de voo", () => {
       ok: false,
       error: "O Plano de voo não possui fases válidas.",
     })
+  })
+
+  it("rejeita teto zero, que impediria a primeira fase de iniciar", () => {
+    expect(validateMissionPlan({ ...preset(), maxCostUsd: 0 })).toEqual([
+      "O teto de custo precisa ser maior que zero ou ficar vazio.",
+    ])
+    const envelope = JSON.parse(serializeMissionPlan(preset()))
+    envelope.plan.maxCostUsd = 0
+    expect(parseMissionPlan(JSON.stringify(envelope))).toEqual({
+      ok: false,
+      error: "O teto de custo precisa ser maior que zero ou ficar vazio.",
+    })
+    expect(validateMissionPlan({ ...preset(), maxCostUsd: Number.NaN })).toEqual([
+      "O teto de custo precisa ser maior que zero ou ficar vazio.",
+    ])
+    expect(
+      validateMissionPlan({ ...preset(), maxCostUsd: Number.POSITIVE_INFINITY }),
+    ).toEqual([
+      "O teto de custo precisa ser maior que zero ou ficar vazio.",
+    ])
   })
 })

@@ -58,9 +58,14 @@ O interpretador é serial e determinístico:
 7. encerra com erro quando um resultado `failure` não possui rota.
 
 Para reviewers, `APROVADO` é `success` e reprovação é `failure`. Os planos de
-fábrica já desenham `Revisar → Corrigir → Revisar`, com no máximo duas
-travessias por conexão cíclica. Quando o retorno de revisão esgota, a entrega
-termina com ressalva explícita.
+fábrica separam implementação, verificação e juízo final. O caminho de qualidade
+é `Testar e capturar → Julgar`; qualquer reprovação percorre
+`Corrigir → Testar e capturar` antes de voltar ao juiz. A verificação combina
+comandos reais com screenshots quando existe superfície visível, e o juiz usa
+outro agent/modelo para não aprovar o próprio trabalho. Cada conexão do ciclo
+aceita até 30 travessias, ainda subordinada à barreira global de 100 visitas.
+Se a barreira for alcançada, o desfecho conserva a reprovação como ressalva
+explícita; nunca aparece como aprovação integral.
 
 Retry e recovery não são branches funcionais. Retry pertence à visita;
 rate-limit, crédito ou indisponibilidade do CLI abrem recovery e reexecutam a

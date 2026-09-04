@@ -646,12 +646,14 @@ export function FlightPlansView() {
                     Teto de custo em US$ · vazio = sem teto
                     <Input
                       type="number"
-                      min={0}
+                      min={0.5}
                       step="0.5"
                       value={selectedPlan.maxCostUsd ?? ""}
                       onChange={(event) => {
                         const raw = event.target.value.trim()
-                        patchPlan({ ...selectedPlan, maxCostUsd: raw === "" ? null : Math.max(0, Number(raw) || 0) })
+                        const parsed = Number(raw)
+                        const maxCostUsd = raw === "" ? null : Number.isFinite(parsed) ? Math.max(0.5, parsed) : 0.5
+                        patchPlan({ ...selectedPlan, maxCostUsd })
                       }}
                       placeholder="Sem teto"
                       className="h-8 text-[12px]"

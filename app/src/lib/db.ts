@@ -1597,19 +1597,16 @@ export async function listActiveLessons(
   }
 }
 
-/** Muda o status de uma lição (promover candidate→active, rebaixar
- *  active→candidate, arquivar). Reversível — NÃO exclui. Best-effort. */
+/** Muda o status de uma lição sem excluir. A falha propaga para a superfície
+ *  não anunciar uma decisão que não foi persistida. */
 export async function setLessonStatus(
   id: string,
   status: LessonStatus,
 ): Promise<void> {
   const db = await getDb()
-  if (!db) return
-  try {
-    await db.execute("UPDATE lessons SET status = $1 WHERE id = $2", [status, id])
-  } catch {
-    // best-effort: falha não vale quebrar a auditoria.
-  }
+  if (!db) throw new Error("Banco de memórias indisponível")
+  await ensureLearningTables(db)
+  await db.execute("UPDATE lessons SET status = $1 WHERE id = $2", [status, id])
 }
 
 /** Funde os usos de uma lição duplicada na canônica (curador/dedup): soma o

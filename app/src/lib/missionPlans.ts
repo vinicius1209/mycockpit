@@ -244,6 +244,12 @@ export function validateMissionPlan(preset: MissionPreset): string[] {
   if (!preset.id.trim()) return ["O plano precisa de um identificador."]
   if (!preset.name.trim()) return ["O plano precisa de um nome."]
   if (preset.phases.length === 0) return ["O plano precisa de ao menos uma fase."]
+  if (
+    preset.maxCostUsd !== null &&
+    (!Number.isFinite(preset.maxCostUsd) || preset.maxCostUsd <= 0)
+  ) {
+    return ["O teto de custo precisa ser maior que zero ou ficar vazio."]
+  }
   const phaseIds = new Set<string>()
   for (const phase of preset.phases) {
     if (!phase.id || phaseIds.has(phase.id)) {
@@ -358,6 +364,17 @@ export function parseMissionPlan(raw: string):
   }
   const rawPlan = value.plan
   if (
+    rawPlan.maxCostUsd !== null &&
+    (typeof rawPlan.maxCostUsd !== "number" ||
+      !Number.isFinite(rawPlan.maxCostUsd) ||
+      rawPlan.maxCostUsd <= 0)
+  ) {
+    return {
+      ok: false,
+      error: "O teto de custo precisa ser maior que zero ou ficar vazio.",
+    }
+  }
+  if (
     typeof rawPlan.id !== "string" ||
     typeof rawPlan.name !== "string" ||
     (rawPlan.revision !== undefined &&
@@ -370,10 +387,6 @@ export function parseMissionPlan(raw: string):
         rawPlan.factoryRevision < 1)) ||
     (rawPlan.description !== undefined && typeof rawPlan.description !== "string") ||
     (rawPlan.mode !== undefined && rawPlan.mode !== "linear" && rawPlan.mode !== "graph") ||
-    (rawPlan.maxCostUsd !== null &&
-      (typeof rawPlan.maxCostUsd !== "number" ||
-        !Number.isFinite(rawPlan.maxCostUsd) ||
-        rawPlan.maxCostUsd < 0)) ||
     !Array.isArray(rawPlan.phases) ||
     !rawPlan.phases.every(validImportedPhase) ||
     (rawPlan.gatePolicy !== undefined &&

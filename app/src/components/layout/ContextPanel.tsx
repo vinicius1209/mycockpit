@@ -489,7 +489,7 @@ export function ContextPanel() {
           onCloseDelivery={closeDeliveryDiff}
         />
       ) : (
-        <ScrollArea className="flex-1">
+        <ScrollArea className="min-h-0 flex-1">
           {/* Identidade (nome/path) mora no titlebar + sidebar; copiar o caminho
               vive no menu de contexto do projeto. Painel começa nos controles. */}
           <Section title="Ajustes">

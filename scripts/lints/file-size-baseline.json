@@ -14,7 +14,7 @@
     "lib/agents.ts": 533,
     "lib/companion.test.ts": 944,
     "lib/companion.ts": 654,
-    "lib/db.ts": 2265,
+    "lib/db.ts": 2262,
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 977,

@@ -35,10 +35,17 @@ export function latestCanonicalOutcome(
   items: readonly ChatItem[],
   _runtime: RuntimeState,
 ): DeterministicConversationFacts["latestOutcome"] {
+  const latestUserIndex = items.findLastIndex(
+    (item) => item.kind === "user" && !item.advisorTo,
+  )
   for (let index = items.length - 1; index >= 0; index--) {
     const item = items[index]
     const status = terminalStatus(item)
     if (!status) continue
+    // O terminal anterior continua no histórico, mas não descreve o turno
+    // aberto depois dele. Mostrá-lo sem essa distinção fazia “Turno concluído”
+    // parecer o desfecho do trabalho que ainda estava em voo.
+    if (index < latestUserIndex) return null
     return {
       terminalItemId: item.id,
       status,

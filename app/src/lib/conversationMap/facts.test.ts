@@ -47,10 +47,25 @@ describe("fatos determinísticos do mapa da conversa", () => {
     expect(facts.latestOutcome?.terminalItemId).toBe(RESULTADO.id)
   })
 
-  it("preserva o último desfecho real enquanto o turno seguinte está em voo", () => {
+  it("não atribui o desfecho anterior ao turno que está em voo", () => {
+    const next: ChatItem = {
+      kind: "user",
+      id: "pedido-seguinte",
+      text: "Agora confira os dados do painel.",
+      ts: RESULTADO.ts! + 1,
+    }
+    expect(
+      latestCanonicalOutcome([PEDIDO, RESPOSTA, RESULTADO, next], {
+        running: true,
+        finalizing: false,
+      }),
+    ).toBeNull()
+  })
+
+  it("mostra o terminal quando ele pertence ao pedido mais recente", () => {
     expect(
       latestCanonicalOutcome([PEDIDO, RESPOSTA, RESULTADO], {
-        running: true,
+        running: false,
         finalizing: false,
       }),
     ).toMatchObject({ terminalItemId: RESULTADO.id, status: "succeeded" })

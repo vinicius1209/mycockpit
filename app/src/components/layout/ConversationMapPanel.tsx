@@ -197,11 +197,18 @@ export function ConversationMapPanel({
     generatedAt: entry?.stored?.generatedAt ?? null,
     staleSettledTurns: entry?.staleSettledTurns ?? 0,
   })
-  const updateLabel = statusLabel(
-    view.provenance.semanticStatus,
-    view.provenance.generatedAt,
-    view.provenance.staleSettledTurns,
-  )
+  // Sem mapa semântico ainda, o painel já é útil pelos fatos canônicos. Não
+  // anuncie uma atualização invisível nem conte todos os turnos como “novos”
+  // em relação a um mapa que nunca existiu.
+  const updateLabel = entry?.stored
+    ? statusLabel(
+        view.provenance.semanticStatus,
+        view.provenance.generatedAt,
+        view.provenance.staleSettledTurns,
+      )
+    : entry?.semanticStatus === "unavailable"
+      ? "Fatos do fio · leitura local indisponível"
+      : "Fatos do fio"
 
   async function updateManually() {
     if (!conversationId) return

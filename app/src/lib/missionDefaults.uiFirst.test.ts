@@ -22,15 +22,12 @@ describe("preset ui-first", () => {
 
   it("TODA fase declara critério de saída — o gate não pode ser implícito", () => {
     for (const p of uiFirst.phases) {
-      // A fase "Corrigir" é gerada pelo defaultReviewWorkflow a partir do
-      // executor, então herda os critérios dele; as três autorais precisam ter.
-      if (!["plan", "ui", "review"].includes(p.id)) continue
       expect(p.exitCriteria?.length, `fase ${p.id}`).toBeGreaterThan(0)
     }
   })
 
   it("o revisor é mandado OLHAR o resultado, não só o diff", () => {
-    const r = fase("review")
+    const r = fase("judge")
     const texto = [r.instructions ?? "", ...(r.exitCriteria ?? [])].join(" ").toLowerCase()
     // O defeito era o revisor parar no `git diff`. A instrução precisa mandar
     // abrir a coisa.
@@ -47,7 +44,7 @@ describe("preset ui-first", () => {
   })
 
   it("o executor sabe que a dobra precisa de prova visual do produto", () => {
-    const u = fase("ui")
+    const u = fase("build")
     const texto = [u.instructions ?? "", ...(u.exitCriteria ?? [])].join(" ").toLowerCase()
     expect(texto).toMatch(/dobra/)
     expect(texto).toMatch(/prova visual|produto/)
@@ -61,4 +58,58 @@ describe("preset ui-first", () => {
       }
     }
   })
+
+  it("só encerra depois de verificar e julgar; qualquer reprovação volta à correção", () => {
+    const edges = uiFirst.graph!.edges.map((edge) => [
+      edge.source,
+      edge.condition,
+      edge.target,
+      edge.maxTraversals,
+    ])
+    expect(edges).toContainEqual(["node-verify", "success", "node-judge", 30])
+    expect(edges).toContainEqual(["node-verify", "failure", "node-fix", 30])
+    expect(edges).toContainEqual(["node-judge", "failure", "node-fix", 30])
+    expect(edges).toContainEqual(["node-fix", "success", "node-verify", 30])
+  })
+
+  it("verificador e juiz exigem screenshots e são independentes do executor", () => {
+    const verifier = fase("verify")
+    const judge = fase("judge")
+    expect(verifier.agent).not.toBe(fase("build").agent)
+    expect(judge.agent).not.toBe(fase("build").agent)
+    expect([verifier.instructions, judge.instructions].join(" ").toLowerCase()).toMatch(
+      /screenshots?/,
+    )
+  })
+})
+
+describe("loops dos presets de fábrica", () => {
+  it.each(DEFAULT_MISSION_PRESETS)(
+    "$name mantém verificador e juiz separados do executor e retorna toda reprovação à correção",
+    (preset) => {
+      const byId = new Map(preset.phases.map((phase) => [phase.id, phase]))
+      const build = byId.get("build")!
+      const verify = byId.get("verify")!
+      const judge = byId.get("judge")!
+      expect(verify.agent).not.toBe(build.agent)
+      expect(judge.agent).not.toBe(build.agent)
+      expect(preset.gatePolicy).toBe("nunca")
+      expect(preset.phases.every((phase) => phase.autonomy === "auto")).toBe(true)
+      expect(
+        preset.graph?.edges.map((edge) => [
+          edge.source,
+          edge.condition,
+          edge.target,
+          edge.maxTraversals,
+        ]),
+      ).toEqual(
+        expect.arrayContaining([
+          ["node-verify", "success", "node-judge", 30],
+          ["node-verify", "failure", "node-fix", 30],
+          ["node-judge", "failure", "node-fix", 30],
+          ["node-fix", "success", "node-verify", 30],
+        ]),
+      )
+    },
+  )
 })

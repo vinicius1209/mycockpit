@@ -800,6 +800,11 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
                 .error
                 .map(|error| error.code)
                 .unwrap_or_else(|| "process_failed".into());
+            log::warn!(
+                "fonte de inferência recusou a geração: source={} code={}",
+                APPLE_SOURCE_ID,
+                code,
+            );
             finish(
                 started_at,
                 "unavailable",
