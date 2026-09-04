@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
 import { contextWindowFor } from "@/lib/contextWindow"
-import { drainQueued } from "@/components/chat/drenarFila"
+import { dispatchQueuedNow, drainQueued } from "@/components/chat/drenarFila"
+import { stopActiveConversation } from "@/components/chat/filaComposer"
 import { notaDeTrocaDeModelo } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
@@ -18,6 +19,7 @@ import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
+import { useConversationMapRefresh } from "@/components/chat/useConversationMapRefresh"
 import {
   useChat,
   useActiveConv,
@@ -46,7 +48,6 @@ import {
 } from "@/components/mission/MissionTimeline"
 import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent } from "@/lib/agent"
-import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import { avisoDeMotorAusente } from "@/lib/detect"
 import { BannersDoComposer } from "@/components/chat/BannersDoComposer"
@@ -105,15 +106,12 @@ import {
   type PreflightRetryRequest,
 } from "@/lib/mcpPreflightRetry"
 import { continueConversationWith } from "@/lib/chatHandoff"
-import { serializeContext } from "@/lib/fusion"
-import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
+import { listAgentDefs } from "@/lib/agentDefs"
 import {
-  buildAdviceItem,
-  buildAdvisorPrompt,
   detectAdvisorMention,
   resolveAdvisor,
-  runAdvisor,
 } from "@/lib/advisor"
+import { consultAdvisor } from "@/components/chat/consultAdvisor"
 
 function greetingFor(date: Date): string {
   const h = date.getHours()
@@ -133,8 +131,9 @@ export function ChatPanel() {
   // `avisoDeMotorAusente`, não aqui.
   const motorAusente = conv ? avisoDeMotorAusente(conv.agent, detectados) : null
   const planDetailedInSidebar = useApp(
-    (s) => s.contextOpen && s.contextPanelTab === "plano",
+    (s) => s.contextOpen && s.contextPanelTab === "conversa",
   )
+  const transcriptReveal = useApp((s) => s.transcriptReveal)
   // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
@@ -160,6 +159,13 @@ export function ChatPanel() {
   const running = conv.running
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
+  useConversationMapRefresh({
+    conversationId: activeId,
+    projectId: project?.id ?? null,
+    items,
+    running,
+    finalizing,
+  })
 
   const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom } = useChatScroll({
     activeId,
@@ -373,7 +379,7 @@ export function ChatPanel() {
           toast.error(`A persona "${mention.def.name}" não existe mais.`)
           return
         }
-        await handleConsult(convId, resolved.def, mention.question, project, {
+        await consultAdvisor(convId, resolved.def, mention.question, project, {
           text,
           attachments,
         })
@@ -815,78 +821,6 @@ export function ChatPanel() {
    *  todos os itens (dedup por path — o dedup por hash do backend pode repetir
    *  o mesmo blob). true = despachou algo. */
 
-  // Especialistas E1 — consulta de conselheiro: grava SEU pedido no fio
-  // (endereçado à persona), monta o prompt (persona + contexto serializado da
-  // conversa ATUAL + pergunta + anexos), dispara pelo runAgent no modo LEITURA
-  // (read-only, nada tocado no disco) e anexa UM item de parecer, carimbado com
-  // persona id+version+digest. NÃO passa pelo reducer do executor — a consulta
-  // inteira (pergunta + parecer) é lateral ao turno.
-  async function handleConsult(
-    convId: string,
-    def: AgentDef,
-    question: string,
-    proj: { path: string },
-    /** O envio COMO FOI DIGITADO (com a `@menção` e os anexos). A consulta é um
-     *  pedido humano no fio, não só um parecer que aparece do nada. */
-    sent: { text: string; attachments: Attachment[] },
-  ) {
-    const conv = useChat.getState().byId[convId]
-    const cwd = conv?.worktreePath ?? proj.path
-    // contexto serializado da conversa ATÉ AQUI (reusa o serializeContext do
-    // Fusion — o mesmo preâmbulo enriquecido, não reimplementa). Tirado ANTES do
-    // append do pedido: o preâmbulo diz "conversa até aqui" e a pergunta viaja
-    // no campo próprio do prompt — serializar depois a duplicaria.
-    const context = serializeContext(conv?.items ?? [])
-    // O pedido entra no fio como turno de PRIMEIRA CLASSE, igual ao do executor
-    // (store.start grava o `user` no mesmo gesto). Sem isto a conversa abria
-    // direto no parecer — "cadê minha pergunta?" — e o título nunca derivava
-    // (deriveTitle procura um item `user`; o persist do appendItems deriva
-    // sozinho a partir dele). Anexado ANTES de disparar: se o parecer falhar ou
-    // o app fechar no meio, o que você pediu não se perde.
-    await useChat.getState().appendItems(convId, [
-      {
-        kind: "user",
-        id: crypto.randomUUID(),
-        text: sent.text,
-        attachments: sent.attachments.length ? sent.attachments : undefined,
-        // endereçado à conselheira, NÃO ao executor: o fio mostra a fala como
-        // sua, mas ela não conta como turno de executor (executorItems) — a
-        // conversa segue "crua" pro 1º envio de verdade, com a injeção de
-        // persona/doutrina intacta.
-        advisorTo: { id: def.id, name: def.name },
-        ts: Date.now(),
-      },
-    ])
-    useChat.getState().setAdvising(convId, { id: def.id, name: def.name })
-    try {
-      const prompt = buildAdvisorPrompt({
-        def,
-        context,
-        question,
-        attachments: sent.attachments.map((a) => a.path),
-      })
-      const res = await runAdvisor({ def, prompt, cwd })
-      if (!res.text) {
-        toast.error(
-          res.error
-            ? `O parecer de ${def.name} falhou: ${res.error}`
-            : `O parecer de ${def.name} veio vazio.`,
-        )
-        return
-      }
-      await useChat
-        .getState()
-        .appendItems(convId, [buildAdviceItem(def, question, res.text)])
-    } catch (e) {
-      toast.error(
-        typeof e === "string" ? e : `Não consegui consultar ${def.name}.`,
-      )
-    } finally {
-      useChat.getState().setAdvising(convId, null)
-    }
-  }
-
-
   // Revezamento: continua a MESMA conversa em OUTRO agent (limite/erro do
   // atual). O contexto vai por preâmbulo determinístico (handoff, tail-biased);
   // o disco (cwd/worktree) o novo agent herda de graça; o pedido pendente (o
@@ -922,14 +856,6 @@ export function ChatPanel() {
     })
   }
 
-  function handleStop() {
-    const convId = useChat.getState().activeId
-    if (!convId) return
-    void cancelConversationTurn(convId).then((fusion) => {
-      if (fusion) toast("Disputa cancelada")
-    })
-  }
-
   const hasConversation = items.length > 0
   const greeting = greetingFor(new Date())
 
@@ -957,6 +883,7 @@ export function ChatPanel() {
       {/* `@container`: a régua de turnos cabe pela largura do FIO, não da janela. */}
       <div
         ref={scrollRef} onScroll={onScroll}
+        data-chat-scroll
         className="@container relative flex-1 overflow-x-hidden overflow-y-auto"
       >
         {/* Missão TOMA a tela: renderiza primeiro e suprime o empty state (antes
@@ -1010,7 +937,7 @@ export function ChatPanel() {
                   )
                   return
                 }
-                handleStop()
+                void stopActiveConversation()
               }}
               onRetry={(tool) => {
                 const label = presentTool(tool.name, tool.input).label
@@ -1057,6 +984,11 @@ export function ChatPanel() {
               }}
               onContinueWith={(a) => void handleContinueWith(a)}
               feedback={feedback}
+              reveal={
+                transcriptReveal?.conversationId === activeId
+                  ? transcriptReveal
+                  : null
+              }
             />
           </div>
         ) : !vista.boasVindas ? null : (
@@ -1147,7 +1079,8 @@ export function ChatPanel() {
             finalizing={finalizing}
             preparing={!!conv?.preparing}
             missionRunning={missionRunning}
-            onStop={handleStop}
+            onStop={stopActiveConversation}
+            onDispatchQueue={(id) => dispatchQueuedNow(id, project?.path, handleSend)}
             onOpenEspecialistas={() => setEspecialistasOpen(true)}
           />
         </div>

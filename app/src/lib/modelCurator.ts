@@ -8,7 +8,7 @@
 // que o agentModels() mescla via cache de aprovados).
 
 import { appDataDir } from "@tauri-apps/api/path"
-import { suggest } from "@/lib/agent"
+import { generateUtilityText } from "@/lib/utility"
 import {
   AGENTS,
   agentModels,
@@ -198,7 +198,12 @@ export async function runModelCurator(): Promise<void> {
   try {
     // MESMO caminho de invocação das sugestões (comando `suggest`, claude -p
     // barato); cwd neutro = app_data_dir (existe sempre; nada de projeto).
-    raw = await suggest("haiku", await appDataDir(), buildCuratorPrompt(candidates))
+    raw = await generateUtilityText({
+      task: "model_curator",
+      model: "haiku",
+      cwd: await appDataDir(),
+      prompt: buildCuratorPrompt(candidates),
+    })
   } catch {
     return // best-effort: sem helper agora, tenta na próxima semana
   }

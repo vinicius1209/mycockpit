@@ -61,6 +61,36 @@ export type ScheduleVocab = Extract<SessionMode, "leitura" | "padrao" | "auto">
 
 /** Nome que o banco e a UI de automações usam pro mesmo conjunto. */
 export type SchedulePermission = ScheduleVocab
+
+/**
+ * O clamp ÚNICO do vocabulário de automação — leitura do banco, criação e
+ * edição no store, e o disparo no motor passam TODOS por aqui.
+ *
+ * # O bug que esta função existe pra matar (04/09/2026)
+ *
+ * O ADR-023 abriu `auto` pra automação: o tipo cresceu, o seletor apareceu na
+ * tela e o `scheduleEngine` ganhou o braço. Só que os DOIS clamps que ficam
+ * entre o clique e o processo continuaram escritos à mão como
+ * `p === "padrao" ? "padrao" : "leitura"` — um no `store/schedules.create`, o
+ * outro no `toSchedule` do banco. Escolher "Auto" gravava `leitura` e, mesmo
+ * se gravasse certo, a leitura de volta rebaixava. O usuário via o botão
+ * selecionado e o Codex rodava em sandbox `read-only`: shell negado com
+ * "Operation not permitted", filesystem só-leitura, e a automação reportando
+ * uma falha que não tinha nada a ver com o que ele pediu.
+ *
+ * É a MESMA lição do `modoEfetivoDoSpawn` logo abaixo, e por isso ela mora no
+ * mesmo arquivo: construir o eixo não é ligá-lo. Um controle que aparece na
+ * tela e não chega no processo é pior que não existir — ele é exibido.
+ *
+ * Fail-closed intacto: `liberado` (ou qualquer valor estranho, inclusive um
+ * gravado à mão no SQLite) cai em `leitura`, o mais restrito.
+ */
+export function normalizeSchedulePermission(
+  v: string | null | undefined,
+): SchedulePermission {
+  return v === "padrao" || v === "auto" ? v : "leitura"
+}
+
 /** Vocabulário da fase de missão (`lib/missionDraft.ts`). `inherit` não é um
  *  modo: é "usa o do projeto". */
 export type AutonomyVocab = "auto" | "inherit"

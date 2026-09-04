@@ -218,6 +218,13 @@ vi.mock("react", async (orig) => {
   }
 })
 
+// Começa a carregar o grafo real do composer durante a preparação da bancada,
+// antes de o relógio de cada `it` começar. Deixar esse import dentro de
+// `montar` fazia o primeiro caso pagar sozinho toda a transformação a frio e
+// estourar 5 s conforme outras frentes acrescentavam dependências legítimas ao
+// componente. O módulo continua sendo o real e recebe os mesmos mocks içados.
+const commandConsoleModule = import("@/components/chat/CommandConsole")
+
 /** Renderiza o composer como o ChatPanel o monta. */
 export async function montar(
   props: Partial<{
@@ -228,13 +235,14 @@ export async function montar(
     onOpenEspecialistas: () => void
   }> = {},
 ) {
-  const { CommandConsole } = await import("@/components/chat/CommandConsole")
+  const { CommandConsole } = await commandConsoleModule
   return renderToStaticMarkup(
     <CommandConsole
       onSend={(text, cfg, attachments) =>
         enviados.push({ text, cfg, attachments })
       }
       onStop={() => {}}
+      onDispatchQueue={async () => {}}
       {...props}
     />,
   )

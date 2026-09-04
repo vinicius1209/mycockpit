@@ -6,8 +6,8 @@
     "ts": 500
   },
   "arquivos": {
-    "components/chat/ChatPanel.tsx": 1167,
-    "components/chat/MessageList.tsx": 1788,
+    "components/chat/ChatPanel.tsx": 1100,
+    "components/chat/MessageList.tsx": 1727,
     "components/layout/ContextPanel.tsx": 827,
     "components/scheduled/ScheduledView.tsx": 1071,
     "components/sdd/SddView.tsx": 1415,
@@ -15,7 +15,7 @@
     "lib/agents.ts": 533,
     "lib/companion.test.ts": 944,
     "lib/companion.ts": 654,
-    "lib/db.ts": 2576,
+    "lib/db.ts": 2265,
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 977,

@@ -5,6 +5,13 @@
 > numa coluna de ~390px, cortando linha no meio. Palavras dele: "olha que
 > experiência ruim, sem formatação, sem espaço, fica meio inútil".
 
+> **Correção de integração (04/09/2026):** Alterações evoluiu para um índice de
+> controle de versão, mas não voltou a assumir a leitura do diff. Os conjuntos
+> preparado e não preparado são independentes; descartar trabalha sobre o
+> diretório de trabalho e preserva o índice. Erros de Git têm estado explícito,
+> ações destrutivas usam a confirmação compartilhada e caminhos são validados
+> no Rust antes do efeito. Ver ADR-160.
+
 ## O diagnóstico é dimensional, não estético
 
 O painel direito abre em `defaultSize="30%"` e tem teto de `maxSize="42%"`

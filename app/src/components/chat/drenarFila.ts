@@ -12,7 +12,16 @@ import {
 import { readProjectCommands } from "@/lib/sources"
 import { HUMANO } from "@/lib/sendOrigin"
 import type { Attachment } from "@/lib/attachments"
+import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import { useChat } from "@/store/chat"
+
+type EnviarFila = (
+  texto: string,
+  cfg: undefined,
+  anexos: Attachment[],
+  origem: typeof HUMANO,
+  originConvId?: string,
+) => unknown
 
 export async function drainQueued(
   convId: string,
@@ -20,13 +29,7 @@ export async function drainQueued(
   projectPath: string,
   /** O `handleSend` do ChatPanel. Parâmetro e não import: a fila é do humano,
    *  mas a drenagem não precisa conhecer o composer pra saber disso. */
-  enviar: (
-    texto: string,
-    cfg: undefined,
-    anexos: Attachment[],
-    origem: typeof HUMANO,
-    originConvId?: string,
-  ) => unknown,
+  enviar: EnviarFila,
 ): Promise<boolean> {
   const all = useChat.getState().dequeueQueued(convId)
   if (all.length === 0) return false
@@ -60,4 +63,28 @@ export async function drainQueued(
   // ele que digitou (ADR-046).
   void enviar(texts.join("\n\n"), undefined, atts, HUMANO, convId)
   return true
+}
+
+/** Interrompe o turno, quando ainda existe um, e garante o despacho da fila.
+ *  Se o processo ainda está fechando, o `finally` canônico do ChatPanel fará a
+ *  drenagem; se a conversa já está ociosa, este caminho drena imediatamente.
+ *  `dequeueQueued` é atômico, portanto a corrida entre os dois não duplica o
+ *  lote. */
+export async function dispatchQueuedNow(
+  convId: string,
+  projectPath: string | undefined,
+  enviar: EnviarFila,
+  interromper: (id: string) => Promise<unknown> = cancelConversationTurn,
+): Promise<"enviado" | "aguardando" | "vazio"> {
+  if (!projectPath) throw new Error("projeto indisponível para despachar a fila")
+  let conv = useChat.getState().byId[convId]
+  if (!conv?.queued?.length) return "vazio"
+  if (conv.running) await interromper(convId)
+
+  conv = useChat.getState().byId[convId]
+  if (!conv?.queued?.length) return "vazio"
+  if (conv.running || conv.finalizing) return "aguardando"
+  return (await drainQueued(convId, conv.agent, projectPath, enviar))
+    ? "enviado"
+    : "vazio"
 }

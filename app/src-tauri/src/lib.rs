@@ -75,6 +75,7 @@ mod tool_gateway;
 mod tray;
 mod update;
 mod usage_window;
+mod utility;
 mod work_gateway;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
@@ -583,6 +584,45 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN parent_id TEXT REFERENCES conversations(id) ON DELETE SET NULL;",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 44,
+            description: "create_conversation_maps",
+            sql: "CREATE TABLE IF NOT EXISTS conversation_maps ( \
+                    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, \
+                    schema_version INTEGER NOT NULL, prompt_version INTEGER NOT NULL, \
+                    payload_json TEXT NOT NULL, summarized_through_item_id TEXT, \
+                    summarized_through_ts INTEGER, input_digest TEXT NOT NULL, \
+                    source_kind TEXT NOT NULL, source_id TEXT NOT NULL, \
+                    source_fingerprint TEXT, generation_mode TEXT NOT NULL, \
+                    generated_at INTEGER NOT NULL, latency_ms INTEGER, \
+                    turns_since_rebase INTEGER NOT NULL DEFAULT 0, cost_usd REAL, \
+                    cost_source TEXT \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 45,
+            description: "create_conversation_map_pins",
+            sql: "CREATE TABLE IF NOT EXISTS conversation_map_pins ( \
+                    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, \
+                    schema_version INTEGER NOT NULL, revision INTEGER NOT NULL, \
+                    pins_json TEXT NOT NULL, updated_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 46,
+            description: "create_utility_usage_daily",
+            sql: "CREATE TABLE IF NOT EXISTS utility_usage_daily ( \
+                    day TEXT NOT NULL, task TEXT NOT NULL, source_id TEXT NOT NULL, \
+                    calls INTEGER NOT NULL DEFAULT 0, successes INTEGER NOT NULL DEFAULT 0, \
+                    unpriced_calls INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0, \
+                    input_tokens INTEGER NOT NULL DEFAULT 0, output_tokens INTEGER NOT NULL DEFAULT 0, \
+                    last_latency_ms INTEGER, updated_at INTEGER NOT NULL, \
+                    PRIMARY KEY (day, task, source_id) \
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -733,6 +773,7 @@ pub fn run() {
         .manage(hook_sessions::ExternalSessions::default())
         .manage(attachments::ActiveConvs::default())
         .manage(stt::SttSession::default())
+        .manage(std::sync::Arc::new(utility::UtilityState::new()))
         .manage(companion::CompanionState::default())
         // aprovação granular inline: registro compartilhado (listener por-run +
         // comando answer_approval) dos pedidos pendentes. Arc: o mesmo mapa é lido
@@ -749,6 +790,9 @@ pub fn run() {
             osnotify::notify_via_osascript,
             agent::suggest,
             agent::judge,
+            utility::utility_probe,
+            utility::utility_generate,
+            utility::utility_cancel,
             context::read_project_context,
             detect::detect_agents,
             opencode_auth::opencode_credentials,
@@ -813,6 +857,14 @@ pub fn run() {
             modes::detect_modes,
             sandbox::sandbox_confinamento,
             git::git_commit,
+            git::git_status,
+            git::git_stage_file,
+            git::git_unstage_file,
+            git::git_stage_all,
+            git::git_unstage_all,
+            git::git_discard_file,
+            git::git_discard_all,
+            git::git_diff_staged,
             git::git_create_pr,
             git::pr_context,
             github::gh_pr_view,

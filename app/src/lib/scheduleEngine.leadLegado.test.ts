@@ -48,6 +48,8 @@ function leadLegado(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     kind: "lead",
     agent: "lead",
     model: null,
+    effort: null,
+    planId: null,
     prompt: "",
     permission: "leitura",
     recurrence: JSON.stringify({ kind: "daily", hour: 8, minute: 0 }),

@@ -4,7 +4,7 @@
 // juntas: são a receita de "seção" e de "ativo" do painel (ADR-043, Fase 2).
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
-import { FileDiff, Folder, ListChecks, PanelRight } from "lucide-react"
+import { FileDiff, Folder, PanelRight, Route } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ContextPanelTab } from "@/store/app"
 
@@ -50,7 +50,7 @@ export function StageBadge({ stage }: { stage: string }) {
   )
 }
 
-/** Aba do painel (Arquivos | Plano | Alterações | Contexto). Ativa = a MESMA
+/** Aba do painel (Arquivos | Conversa | Alterações | Contexto). Ativa = a MESMA
  *  receita das linhas da árvore (§2, ADR-043): preenchimento neutro `--sel` +
  *  peso, sem tinta. Saiu o sublinhado brass, que era a terceira linguagem de
  *  "ativo" do app, e o contador saiu do brass junto (número é metadado, não gesto).
@@ -136,10 +136,10 @@ export function ContextPanelTabs({
         label="Arquivos"
       />
       <TabBtn
-        active={tab === "plano"}
-        onClick={() => onSelect("plano")}
-        icon={ListChecks}
-        label="Plano"
+        active={tab === "conversa"}
+        onClick={() => onSelect("conversa")}
+        icon={Route}
+        label="Conversa"
       />
       <TabBtn
         active={tab === "alteracoes"}

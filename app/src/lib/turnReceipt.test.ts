@@ -4,7 +4,7 @@
 // A regra que estes testes protegem: o aviso NUNCA some. Resposta ruim, helper
 // mudo, prazo estourado — tudo cai na frase de hoje, nunca no silêncio.
 
-import { describe, expect, it, vi } from "vitest"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import {
   fraseDoTurno,
   parseReceipt,
@@ -13,8 +13,10 @@ import {
   RECEIPT_MAX,
 } from "./turnReceipt"
 
-vi.mock("@/lib/agent", () => ({ suggest: vi.fn() }))
+vi.mock("@/lib/utility", () => ({ generateUtilityText: vi.fn() }))
 vi.mock("@/lib/suggestions", () => ({ buildContext: () => "contexto" }))
+
+beforeEach(() => vi.clearAllMocks())
 
 describe("parseReceipt", () => {
   it("frase limpa passa inteira", () => {
@@ -118,23 +120,29 @@ describe("turnReceipt", () => {
   const base = { cwd: "/proj", items: [] }
 
   it("helper desligado nem chega a perguntar (custo zero)", async () => {
-    const { suggest } = await import("@/lib/agent")
+    const { generateUtilityText } = await import("@/lib/utility")
     expect(await turnReceipt({ ...base, helperModel: null })).toBeNull()
-    expect(suggest).not.toHaveBeenCalled()
+    expect(generateUtilityText).not.toHaveBeenCalled()
   })
 
   it("resposta boa vira recibo", async () => {
-    const { suggest } = await import("@/lib/agent")
-    vi.mocked(suggest).mockResolvedValue("Extraiu o parser pra lib/")
+    const { generateUtilityText } = await import("@/lib/utility")
+    vi.mocked(generateUtilityText).mockResolvedValue("Extraiu o parser pra lib/")
     expect(await turnReceipt({ ...base, helperModel: "haiku" })).toBe(
       "Extraiu o parser pra lib/",
+    )
+    expect(generateUtilityText).toHaveBeenCalledWith(
+      expect.objectContaining({ task: "turn_receipt", deadlineMs: 3_000 }),
     )
   })
 
   it("helper que estoura o PRAZO não segura o aviso", async () => {
-    const { suggest } = await import("@/lib/agent")
-    vi.mocked(suggest).mockImplementation(
-      () => new Promise((r) => setTimeout(() => r("tarde demais"), 5_000)),
+    const { generateUtilityText } = await import("@/lib/utility")
+    vi.mocked(generateUtilityText).mockImplementation(
+      ({ deadlineMs = 3_000 }) =>
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("deadline_exceeded")), deadlineMs),
+        ),
     )
     const t0 = Date.now()
     const out = await turnReceipt({ ...base, helperModel: "haiku", deadlineMs: 30 })
@@ -143,8 +151,8 @@ describe("turnReceipt", () => {
   })
 
   it("helper que EXPLODE não derruba o aviso", async () => {
-    const { suggest } = await import("@/lib/agent")
-    vi.mocked(suggest).mockRejectedValue(new Error("sem rede"))
+    const { generateUtilityText } = await import("@/lib/utility")
+    vi.mocked(generateUtilityText).mockRejectedValue(new Error("sem rede"))
     expect(await turnReceipt({ ...base, helperModel: "haiku" })).toBeNull()
   })
 })

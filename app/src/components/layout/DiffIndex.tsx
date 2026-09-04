@@ -1,32 +1,45 @@
-// A aba "Alterações" da COLUNA: índice, não leitor.
+// A aba "Alterações" da COLUNA: central completa de Source Control (estilo VS Code / Zed).
 //
-// A divisão que este arquivo materializa (docs/abas-no-principal-plan.md,
-// F1.3): **a coluna decide, a aba lê**. Aqui ficam as ações sobre o CONJUNTO
-// (abrir no editor, atualizar, commit, PR) e a consciência ambiente (branch,
-// ±totais, quais arquivos mexeram). Ler o diff e comentar linha é da aba, que
-// tem largura pra isso.
-//
-// O que saiu daqui e por quê: o acordeão inline. Numa coluna de ~390px úteis o
-// código quebrava no meio da linha, e expandir um arquivo empurrava os outros
-// dez pra 200 linhas de distância — a lista perdia o próprio trabalho. Clicar
-// num arquivo agora ABRE A ABA já nele.
+// A coluna decide, a aba lê (F1.3). Aqui o desenvolvedor tem controle total:
+// - Visualização por seções: Staged Changes vs Changes (com counters)
+// - Ações granulares e globais: Stage (+), Unstage (-), Discard (↩ com confirmação)
+// - Modos de exibição: Lista plana ou Árvore hierárquica por diretórios
+// - Composer de commit avançado com geração de mensagem via IA (Conventional Commits)
+// - Ações de conjunto: Branch/Sync status, Abrir no editor, Abrir PR.
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
+  Check,
   CheckCheck,
-  ChevronRight,
+  FolderTree,
   GitBranch,
+  GitPullRequest,
+  List,
   Loader2,
   MessageSquareText,
+  Minus,
+  Plus,
   RefreshCw,
+  RotateCcw,
   X,
 } from "lucide-react"
-import { loadGitDiff, type GitDiff } from "@/lib/git"
+import {
+  loadGitStatus,
+  stageAll,
+  unstageAll,
+  discardAll,
+  type GitStatus,
+} from "@/lib/git"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
+import { CommitComposer } from "./DiffPanel/CommitComposer"
+import { GitSection, GitFileList } from "./DiffPanel/GitSection"
+import { PrComposer } from "./DiffPanel/shipBar"
+import { openUrl } from "@tauri-apps/plugin-opener"
 import { useApp } from "@/store/app"
+import { controle } from "@/components/ui/controle"
+import { confirm } from "@/lib/confirm"
+import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { ShipBar } from "./DiffPanel/shipBar"
-import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 
 export function DiffIndex({
   cwd,
@@ -39,34 +52,127 @@ export function DiffIndex({
   onRequestFix?: () => void
   onCloseDelivery?: () => void
 }) {
-  const [diff, setDiff] = useState<GitDiff | null>(null)
+  const [status, setStatus] = useState<GitStatus | null>(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const loadEpoch = useRef(0)
+  const [viewMode, setViewMode] = useState<"list" | "tree">("list")
+  const [stagedOpen, setStagedOpen] = useState(true)
+  const [unstagedOpen, setUnstagedOpen] = useState(true)
+  const [prOpen, setPrOpen] = useState(false)
+  const [prUrl, setPrUrl] = useState<string | null>(null)
+
   const openDiffTab = useApp((s) => s.openDiffTab)
   const mainTab = useApp((s) => s.mainTab)
 
   function reload() {
+    const epoch = ++loadEpoch.current
     setLoading(true)
-    void loadGitDiff(cwd).then((d) => {
-      setDiff(d)
-      setLoading(false)
-    })
+    setLoadError(null)
+    void loadGitStatus(cwd)
+      .then((next) => {
+        if (loadEpoch.current !== epoch) return
+        setStatus(next)
+      })
+      .catch((error) => {
+        if (loadEpoch.current !== epoch) return
+        setStatus(null)
+        setLoadError(
+          typeof error === "string"
+            ? error
+            : "Não foi possível consultar o estado do Git.",
+        )
+      })
+      .finally(() => {
+        if (loadEpoch.current === epoch) setLoading(false)
+      })
   }
+
   useEffect(() => {
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
-  const files = diff?.files ?? []
-  const totalAdd = files.reduce((s, f) => s + f.additions, 0)
-  const totalDel = files.reduce((s, f) => s + f.deletions, 0)
+  const staged = status?.staged ?? []
+  const unstaged = status?.unstaged ?? []
+  const totalChanges = staged.length + unstaged.length
+
+  const totalAdd =
+    staged.reduce((s, f) => s + f.additions, 0) +
+    unstaged.reduce((s, f) => s + f.additions, 0)
+  const totalDel =
+    staged.reduce((s, f) => s + f.deletions, 0) +
+    unstaged.reduce((s, f) => s + f.deletions, 0)
+
   const abertoNaAba = mainTab.kind === "diff" ? mainTab.focusPath : undefined
+
+  function renderFileDelta(add: number, del: number) {
+    return (
+      <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums">
+        {add > 0 && <span className="text-st-success">+{add}</span>}
+        {del > 0 && <span className="text-st-error">−{del}</span>}
+      </span>
+    )
+  }
+
+  async function handleStageAll() {
+    try {
+      await stageAll(cwd)
+      toast.success("Todas as alterações foram preparadas para commit")
+      reload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao preparar as alterações")
+    }
+  }
+
+  async function handleUnstageAll() {
+    try {
+      await unstageAll(cwd)
+      toast.success("Todas as alterações saíram da preparação")
+      reload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao desfazer a preparação")
+    }
+  }
+
+  async function handleDiscardAll() {
+    const accepted = await confirm({
+      title: "Descartar todas as alterações não preparadas?",
+      description:
+        "Arquivos não rastreados serão apagados. O que já está preparado para commit será preservado.",
+      confirmLabel: "Descartar alterações",
+      danger: true,
+    })
+    if (!accepted) return
+    try {
+      await discardAll(cwd)
+      toast.success("Alterações não preparadas descartadas")
+      reload()
+    } catch (e) {
+      toast.error(typeof e === "string" ? e : "Falha ao descartar alterações")
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {prOpen && (
+        <PrComposer
+          cwd={cwd}
+          onClose={() => setPrOpen(false)}
+          onOpened={(url) => {
+            setPrUrl(url)
+            setPrOpen(false)
+          }}
+        />
+      )}
+
       {delivery && (
         <div className="shrink-0 border-b border-brass/30 bg-brass/[0.07] px-3 py-2.5">
           <div className="flex items-start gap-2">
-            <CheckCheck className="mt-0.5 size-3.5 shrink-0 text-st-success" aria-hidden="true" />
+            <CheckCheck
+              className="mt-0.5 size-3.5 shrink-0 text-st-success"
+              aria-hidden="true"
+            />
             <p className="min-w-0 flex-1 text-[12px] leading-snug text-foreground/90">
               <span className="font-medium">Entrega</span>
               {delivery.text && <span className="text-muted-foreground"> · </span>}
@@ -77,12 +183,14 @@ export function DiffIndex({
           </div>
           <div className="mt-2 flex items-center justify-end gap-2">
             <button
+              type="button"
               onClick={onCloseDelivery}
               className="flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12px] text-foreground transition-colors hover:bg-accent"
             >
               <X className="size-3.5" /> Fechar
             </button>
             <button
+              type="button"
               onClick={onRequestFix}
               className="flex items-center gap-1.5 rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
             >
@@ -91,86 +199,248 @@ export function DiffIndex({
           </div>
         </div>
       )}
-      {loading && !diff ? (
+
+      {loading && !status ? (
         <div className="flex flex-1 items-center justify-center text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
         </div>
-      ) : !diff?.isRepo ? (
+      ) : loadError ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+          <p className="text-[13px] font-medium text-foreground">
+            Não foi possível ler as alterações
+          </p>
+          <p className="text-[12px] text-muted-foreground">{loadError}</p>
+          <button
+            type="button"
+            onClick={reload}
+            className={cn(controle("compacto"), "border hover:bg-accent")}
+          >
+            Tentar novamente
+          </button>
+        </div>
+      ) : !status?.isRepo ? (
         <div className="flex flex-1 items-center justify-center px-6 text-center text-[13px] text-muted-foreground">
-          Este projeto não é um repositório git.
+          Este projeto não é um repositório Git.
         </div>
       ) : (
         <>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {/* Barra STICKY: ver o comentário original no DiffPanel — bg sólido
-                (blur custa por-frame), cor do cartão pra ocluir direito. */}
-            <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-2 text-[11px]">
-              {diff?.branch ? (
-                <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground">
-                  <GitBranch className="size-3 shrink-0" />
-                  <span className="truncate">{diff.branch}</span>
-                </span>
-              ) : (
-                <span className="text-muted-foreground/60">Alterações</span>
-              )}
-              <span className="ml-auto flex items-center gap-2 font-mono tabular-nums">
-                {totalAdd > 0 && <span className="text-st-success">+{totalAdd}</span>}
-                {totalDel > 0 && <span className="text-st-error">−{totalDel}</span>}
+          {/* Barra STICKY: Branch, Sync, Totais e Controles Globais */}
+          <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b bg-card px-3 py-1.5 text-[11px]">
+            {status.branch ? (
+              <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground">
+                <GitBranch className="size-3 shrink-0" />
+                <span className="truncate">{status.branch}</span>
+                {status.upstream && (status.ahead > 0 || status.behind > 0) && (
+                  <span className="ml-1 text-[11px] tabular-nums text-foreground/80">
+                    {status.ahead > 0 && `↑${status.ahead}`}
+                    {status.behind > 0 && `↓${status.behind}`}
+                  </span>
+                )}
               </span>
-              <OpenInEditor projectPath={cwd} rel="" alvo="o projeto" />
-              <button
-                onClick={reload}
-                className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-                aria-label="Atualizar diff"
-                title="Atualizar"
-              >
-                <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
-              </button>
-            </div>
-            {files.length === 0 ? (
-              <div className="px-6 py-16 text-center text-[13px] text-muted-foreground">
-                Nenhuma alteração não-commitada. Working tree limpa.
+            ) : (
+              <span className="text-muted-foreground/60">Alterações</span>
+            )}
+
+            <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
+              {totalAdd > 0 && <span className="text-st-success">+{totalAdd}</span>}
+              {totalDel > 0 && <span className="text-st-error">−{totalDel}</span>}
+            </span>
+
+            {/* Alternador Lista vs Árvore */}
+            <button
+              type="button"
+              onClick={() => setViewMode(viewMode === "list" ? "tree" : "list")}
+              className={cn(
+                controle("chip", { quadrado: true }),
+                "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+              )}
+              title={viewMode === "list" ? "Ver em árvore" : "Ver em lista"}
+              aria-label={viewMode === "list" ? "Ver em árvore" : "Ver em lista"}
+            >
+              {viewMode === "list" ? (
+                <FolderTree className="size-3.5" />
+              ) : (
+                <List className="size-3.5" />
+              )}
+            </button>
+
+            <OpenInEditor projectPath={cwd} rel="" alvo="o projeto" />
+
+            <button
+              type="button"
+              onClick={reload}
+              className={cn(
+                controle("chip", { quadrado: true }),
+                "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+              )}
+              aria-label="Atualizar status"
+              title="Atualizar"
+            >
+              <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
+            </button>
+          </div>
+
+          {/* Composer de Commit no topo */}
+          <CommitComposer
+            cwd={cwd}
+            stagedCount={staged.length}
+            totalChanges={totalChanges}
+            onCommitted={reload}
+          />
+
+          {/* Área com rolagem contendo as seções de arquivos */}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {totalChanges === 0 ? (
+              <div className="px-6 py-14 text-center text-[12px] text-muted-foreground">
+                Nenhuma alteração pendente. A árvore de trabalho está limpa.
               </div>
             ) : (
-              <div className="flex flex-col pb-2">
-                {files.map((f) => {
-                  const st = STATUS_META[f.status] ?? STATUS_META.modified
-                  const aberto = f.path === abertoNaAba
-                  return (
-                    <button
-                      key={f.path}
-                      onClick={() => openDiffTab(f.path)}
-                      title={`${f.path} · abrir na aba Alterações`}
-                      className={cn(
-                        "flex w-full items-center gap-2 px-4 py-1.5 text-left transition-colors",
-                        aberto ? "bg-sel" : "hover:bg-accent/40",
-                      )}
-                    >
-                      {/* Seta apontando pra DIREITA e parada: ela não expande
-                          mais nada aqui, indica que o conteúdo abre ao lado. */}
-                      <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
-                      <span
-                        className={cn("shrink-0 font-mono text-[11px] font-bold", st.cls)}
-                        title={st.title}
+              <div className="flex flex-col">
+                {/* Seção 1: Staged Changes */}
+                <GitSection
+                  title="Preparadas"
+                  count={staged.length}
+                  isOpen={stagedOpen}
+                  onToggle={() => setStagedOpen(!stagedOpen)}
+                  actions={
+                    staged.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handleUnstageAll()
+                        }}
+                        title="Desfazer toda a preparação"
+                        aria-label="Desfazer toda a preparação"
+                        className={cn(
+                          controle("chip", { quadrado: true }),
+                          "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        )}
                       >
-                        {st.label}
-                      </span>
-                      <FilePathLabel path={f.path} />
-                      <span className="flex shrink-0 items-center gap-1.5 font-mono text-[11px] tabular-nums">
-                        {f.additions > 0 && (
-                          <span className="text-st-success">+{f.additions}</span>
-                        )}
-                        {f.deletions > 0 && (
-                          <span className="text-st-error">−{f.deletions}</span>
-                        )}
-                      </span>
-                    </button>
-                  )
-                })}
+                        <Minus className="size-3" />
+                      </button>
+                    )
+                  }
+                >
+                  <GitFileList
+                    cwd={cwd}
+                    files={staged}
+                    viewMode={viewMode}
+                    activePath={abertoNaAba}
+                    onOpenFile={(p) => openDiffTab(p)}
+                    onReload={reload}
+                    renderDelta={renderFileDelta}
+                  />
+                </GitSection>
+
+                {/* Seção 2: Changes (Unstaged) */}
+                <GitSection
+                  title="Alterações"
+                  count={unstaged.length}
+                  isOpen={unstagedOpen}
+                  onToggle={() => setUnstagedOpen(!unstagedOpen)}
+                  actions={
+                    unstaged.length > 0 && (
+                      <div className="flex items-center gap-0.5">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleDiscardAll()
+                          }}
+                          title="Descartar alterações não preparadas"
+                          aria-label="Descartar alterações não preparadas"
+                          className={cn(
+                            controle("chip", { quadrado: true }),
+                            "text-muted-foreground hover:bg-accent hover:text-st-error",
+                          )}
+                        >
+                          <RotateCcw className="size-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handleStageAll()
+                          }}
+                          title="Preparar todas as alterações"
+                          aria-label="Preparar todas as alterações"
+                          className={cn(
+                            controle("chip", { quadrado: true }),
+                            "text-muted-foreground hover:bg-accent hover:text-foreground",
+                          )}
+                        >
+                          <Plus className="size-3" />
+                        </button>
+                      </div>
+                    )
+                  }
+                >
+                  <GitFileList
+                    cwd={cwd}
+                    files={unstaged}
+                    viewMode={viewMode}
+                    activePath={abertoNaAba}
+                    onOpenFile={(p) => openDiffTab(p)}
+                    onReload={reload}
+                    renderDelta={renderFileDelta}
+                  />
+                </GitSection>
               </div>
             )}
           </div>
-          <ShipBar cwd={cwd} hasChanges={files.length > 0} onDone={reload} />
+
+          {/* Rodapé: Abrir Pull Request ou link de PR aberto */}
+          {prUrl ? (
+            <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-[12px]">
+              <button
+                type="button"
+                onClick={() =>
+                  void openUrl(prUrl).catch((error) =>
+                    toast.error(
+                      typeof error === "string"
+                        ? error
+                        : "Não foi possível abrir o pull request.",
+                    ),
+                  )
+                }
+                className={cn(
+                  controle("chip"),
+                  "text-git-open transition-colors hover:underline",
+                )}
+              >
+                <GitPullRequest className="size-3.5" /> PR aberto, abrir no GitHub
+              </button>
+              <button
+                type="button"
+                onClick={() => setPrUrl(null)}
+                aria-label="Fechar aviso do pull request"
+                className={cn(
+                  controle("chip", { quadrado: true }),
+                  "ml-auto text-muted-foreground hover:text-foreground",
+                )}
+                title="Fechar aviso"
+              >
+                <Check className="size-3.5" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-3 py-2">
+              <span className="text-[11px] text-muted-foreground">
+                {totalChanges} {totalChanges === 1 ? "arquivo alterado" : "arquivos alterados"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPrOpen(true)}
+                className={cn(
+                  controle("chip"),
+                  "border text-foreground hover:bg-accent",
+                )}
+              >
+                <GitPullRequest className="size-3" /> Abrir pull request
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

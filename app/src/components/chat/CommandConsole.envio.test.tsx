@@ -3,8 +3,7 @@
 // O gate é puro e tem teste próprio (`composerSend.test.ts`); o que se prova
 // aqui é que o composer OBEDECE a ele — que o botão primário acende e apaga
 // pelo mesmo critério, que o Parar toma o lugar do Enviar com turno em voo, e
-// que o composer DIZ o que vai acontecer com o Enter (o placeholder é a única
-// pista que o usuário tem de que a mensagem vai pra fila em vez de sair).
+// que o composer DIZ o que Enter e Tab farão durante o turno.
 import { beforeEach, describe, expect, it } from "vitest"
 import {
   CONV,
@@ -75,26 +74,31 @@ describe("o botão primário acende só quando há o que enviar", () => {
   })
 })
 
-describe("com turno em voo o primário vira PARAR", () => {
-  it("running: some o Enviar, entra o Parar", async () => {
+describe("com turno em voo há correção imediata, fila e PARAR", () => {
+  it("running: some o Enviar, entram corrigir, enfileirar e Parar", async () => {
     rascunho("roda os testes")
     const html = await montar({ running: true })
     expect(desabilitado(html, "Enviar")).toBeNull()
+    expect(desabilitado(html, "Interromper e enviar")).toBe(false)
+    expect(desabilitado(html, "Enfileirar")).toBe(false)
     expect(desabilitado(html, "Parar")).toBe(false)
   })
 
-  it("o composer avisa que o Enter vai ENFILEIRAR", async () => {
-    // É a única pista de que a mensagem não sai agora. Sem ela o usuário aperta
-    // Enter achando que enviou.
+  it("o composer avisa que Enter corrige e Tab enfileira", async () => {
     expect(await montar({ running: true })).toContain(
-      "Enfileirar próxima mensagem…",
+      "Enter corrige agora · Tab envia no próximo turno…",
     )
   })
 
-  it("finalizing conta como turno em voo", async () => {
+  it("durante finalizing só aceita fila e não oferece outro Parar", async () => {
+    rascunho("roda os testes")
+    const html = await montar({ finalizing: true })
     expect(await montar({ finalizing: true })).toContain(
-      "Enfileirar próxima mensagem…",
+      "Turno terminando · Tab envia assim que fechar…",
     )
+    expect(desabilitado(html, "Enfileirar")).toBe(false)
+    expect(desabilitado(html, "Interromper e enviar")).toBeNull()
+    expect(desabilitado(html, "Parar")).toBeNull()
   })
 })
 
@@ -107,7 +111,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       }),
     }
     const html = await montar({ running: true })
-    expect(html).toContain("Na fila · enviam juntas ao terminar")
+    expect(html).toContain("Na fila · enviam quando este turno terminar")
     expect(html.indexOf("primeiro isso")).toBeLessThan(
       html.indexOf("depois aquilo"),
     )
@@ -152,18 +156,40 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       }),
     }
     const html = await montar({ running: true })
-    expect(html).toContain("Enviar agora")
+    expect(html).toContain("Interromper e enviar")
     expect(html).toContain("Editar mensagem")
     expect(html).toContain("Remover da fila")
   })
+
+  it("fila sem turno não promete uma conclusão futura e pode ser enviada", async () => {
+    chat.byId = {
+      [CONV]: conversa({ queued: [fila("instrução que ficou pendente")] }),
+    }
+    const html = await montar()
+    expect(html).toContain("Prontas para enviar")
+    expect(desabilitado(html, "Enviar a fila")).toBe(false)
+    expect(html).not.toContain("ao terminar")
+  })
+
+  it("durante finalizing informa a espera e não oferece ação sem efeito", async () => {
+    chat.byId = {
+      [CONV]: conversa({
+        finalizing: true,
+        queued: [fila("instrução pendente")],
+      }),
+    }
+    const html = await montar({ finalizing: true })
+    expect(html).toContain("Na fila · aguardando o fechamento do turno")
+    expect(desabilitado(html, "Enviar a fila")).toBeNull()
+  })
 })
 
-describe("com texto digitado durante o turno, o composer oferece enfileirar e envio forçado", () => {
-  it("mostra botões de enfileirar e enviar agora ao lado do botão parar", async () => {
+describe("com texto digitado durante o turno, o composer oferece fila e correção", () => {
+  it("mostra os dois gestos ao lado do botão Parar", async () => {
     rascunho("mensagem digitada em voo")
     const html = await montar({ running: true })
     expect(html).toContain("Enfileirar")
-    expect(html).toContain("Enviar agora")
+    expect(html).toContain("Interromper e enviar")
     expect(desabilitado(html, "Parar")).toBe(false)
   })
 })
@@ -180,7 +206,7 @@ describe("o placeholder conta o estado certo", () => {
     rascunho("roda os testes")
     const html = await montar({ running: true, missionRunning: true })
     expect(html).toContain("Missão em andamento")
-    expect(html).not.toContain("Enfileirar próxima mensagem…")
+    expect(html).not.toContain("Tab envia no próximo turno…")
     expect(desabilitado(html, "Enviar")).toBeNull() // com turno em voo, é Parar
   })
 })

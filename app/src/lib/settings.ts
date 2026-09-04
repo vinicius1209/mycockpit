@@ -9,6 +9,10 @@ import {
   type UserPreferences,
   type UserProfile,
 } from "@/lib/userProfile"
+import {
+  DEFAULT_UTILITY_INFERENCE,
+  type UtilityInferenceSettings,
+} from "@/lib/utility/types"
 
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
@@ -26,6 +30,9 @@ export interface GlobalSettings {
   /** Modelo helper das sugestões quando o projeto não define um no config.toml.
    *  null = sugestões desligadas por padrão. */
   helperModel: string | null
+  /** Inferências auxiliares, separadas dos runs. A política remota é por
+   *  finalidade; autorizar pills não autoriza ler o histórico da conversa. */
+  utilityInference: UtilityInferenceSettings
   /** Liga/desliga o botão de ditado (mic) globalmente. */
   dictationEnabled: boolean
   /** Atalho do ditado, serializado "modificadores+e.code" (ex. "alt+Space",
@@ -154,6 +161,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   defaultModel: "claude-opus-5[1m]",
   defaultEffort: null,
   helperModel: "haiku",
+  utilityInference: DEFAULT_UTILITY_INFERENCE,
   dictationEnabled: true,
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,
   dictationVocab: [],

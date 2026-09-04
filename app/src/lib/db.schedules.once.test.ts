@@ -29,6 +29,14 @@ const h = vi.hoisted(() => ({
     "last_run_status",
     "created_at",
   ]),
+  runCols: new Set<string>([
+    "id",
+    "schedule_id",
+    "started_at",
+    "status",
+    "cost",
+    "conv_id",
+  ]),
   rows: [] as Record<string, unknown>[],
   runs: [] as Record<string, unknown>[],
   /** Colunas efetivamente acrescentadas por ALTER (prova a migração e a
@@ -51,12 +59,13 @@ vi.mock("@tauri-apps/plugin-sql", () => {
       if (sql.startsWith("CREATE TABLE") || sql.startsWith("CREATE INDEX")) {
         return { rowsAffected: 0 }
       }
-      const alter = /^ALTER TABLE schedules ADD COLUMN (\w+)/.exec(sql)
+      const alter = /^ALTER TABLE (schedules|schedule_runs) ADD COLUMN (\w+)/.exec(sql)
       if (alter) {
-        const col = alter[1]
+        const [, table, col] = alter
+        const columns = table === "schedules" ? h.cols : h.runCols
         // mensagem REAL do SQLite — é ela que o addColumn reconhece pra engolir
-        if (h.cols.has(col)) throw new Error(`duplicate column name: ${col}`)
-        h.cols.add(col)
+        if (columns.has(col)) throw new Error(`duplicate column name: ${col}`)
+        columns.add(col)
         h.altered.push(col)
         return { rowsAffected: 0 }
       }
@@ -150,6 +159,8 @@ function rec(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     kind: "agent",
     agent: "codex",
     model: null,
+    effort: null,
+    planId: null,
     prompt: "faz o merge da PR da release",
     permission: "padrao",
     recurrence: JSON.stringify({ kind: "once", at: T0 }),
@@ -176,11 +187,20 @@ beforeEach(() => {
   h.runs.length = 0
 })
 
-describe("migração da coluna completed_at", () => {
-  it("o boot acrescenta kind e completed_at por ALTER (tabela que nasce do frontend)", async () => {
+describe("migração incremental das automações", () => {
+  it("o boot acrescenta todas as colunas novas por ALTER", async () => {
     await listSchedules()
-    expect(h.altered).toEqual(["kind", "completed_at"])
+    expect(h.altered).toEqual([
+      "kind",
+      "completed_at",
+      "effort",
+      "plan_id",
+      "error",
+    ])
     expect(h.cols.has("completed_at")).toBe(true)
+    expect(h.cols.has("effort")).toBe(true)
+    expect(h.cols.has("plan_id")).toBe(true)
+    expect(h.runCols.has("error")).toBe(true)
   })
 })
 
@@ -339,6 +359,12 @@ describe("segundo boot, sobre o banco JÁ migrado", () => {
 
     expect(await fresh.listSchedules()).toHaveLength(1)
     // nada foi acrescentado desta vez: só o "duplicate column name" engolido
-    expect(h.altered).toEqual(["kind", "completed_at"])
+    expect(h.altered).toEqual([
+      "kind",
+      "completed_at",
+      "effort",
+      "plan_id",
+      "error",
+    ])
   })
 })

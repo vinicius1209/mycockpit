@@ -17,7 +17,7 @@
 //    acontecer no fio; resumir seria contar o que você leu. E a chamada custa —
 //    limitar ao turno que rodou longe dos seus olhos é onde ela se paga.
 
-import { suggest } from "@/lib/agent"
+import { generateUtilityText } from "@/lib/utility"
 import { buildContext } from "@/lib/suggestions"
 import type { ChatItem } from "@/store/chat"
 
@@ -103,9 +103,9 @@ export function fraseDoTurno(receipt: string | null, ok: boolean): string {
 /**
  * Pede o resumo ao helper, desistindo no prazo.
  *
- * O `race` não CANCELA a chamada perdedora — o custo dela já foi pago quando
- * saiu. O que o prazo protege é o seu aviso, não a sua fatura; quem protege a
- * fatura é o `helperModel: null`, que nem chega aqui.
+ * O prazo pertence ao perfil e o gateway encerra o processo quando ele vence.
+ * Quem chama ainda recebe `null`, portanto a notificação genérica continua
+ * saindo sem depender da disponibilidade do helper.
  */
 export async function turnReceipt(p: {
   helperModel: string | null
@@ -115,12 +115,15 @@ export async function turnReceipt(p: {
 }): Promise<string | null> {
   if (!p.helperModel) return null
   const prompt = `${RECEIPT_PROMPT}\n\nConversa recente:\n${buildContext(p.items as ChatItem[])}`
-  const prazo = new Promise<null>((r) =>
-    setTimeout(() => r(null), p.deadlineMs ?? RECEIPT_DEADLINE_MS),
-  )
   try {
-    const raw = await Promise.race([suggest(p.helperModel, p.cwd, prompt), prazo])
-    return typeof raw === "string" ? parseReceipt(raw) : null
+    const raw = await generateUtilityText({
+      task: "turn_receipt",
+      model: p.helperModel,
+      cwd: p.cwd,
+      prompt,
+      deadlineMs: p.deadlineMs ?? RECEIPT_DEADLINE_MS,
+    })
+    return parseReceipt(raw)
   } catch {
     return null // helper indisponível: o aviso sai genérico, nunca deixa de sair
   }

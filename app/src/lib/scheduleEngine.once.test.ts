@@ -62,6 +62,8 @@ function schedule(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     kind: "agent",
     agent: "codex",
     model: null,
+    effort: null,
+    planId: null,
     prompt: "faz o merge da PR da release",
     permission: "padrao",
     recurrence: JSON.stringify({ kind: "once", at: T0 }),

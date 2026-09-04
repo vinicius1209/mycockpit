@@ -161,9 +161,82 @@ export function worktreeRemovalNote(r: WorktreeRemoval): string | null {
   return `Branch ${r.branch} ficou: tem commit que a base não tem.`
 }
 
-/** Stage tudo + commit no cwd. Devolve o SHA curto. Ação local. */
-export async function gitCommit(cwd: string, message: string): Promise<string> {
-  return invoke<string>("git_commit", { cwd, message })
+export interface GitFileItem {
+  path: string
+  oldPath: string | null
+  status: "modified" | "added" | "deleted" | "renamed" | "untracked"
+  staged: boolean
+  additions: number
+  deletions: number
+}
+
+export interface GitStatus {
+  isRepo: boolean
+  branch: string | null
+  upstream: string | null
+  ahead: number
+  behind: number
+  staged: GitFileItem[]
+  unstaged: GitFileItem[]
+}
+
+/** Carrega o status estruturado do git (staged, unstaged, branch, sync). */
+export async function loadGitStatus(cwd: string): Promise<GitStatus> {
+  if (!isTauri()) {
+    return {
+      isRepo: false,
+      branch: null,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [],
+    }
+  }
+  return invoke<GitStatus>("git_status", { cwd })
+}
+
+export async function stageFile(cwd: string, path: string): Promise<void> {
+  return invoke("git_stage_file", { cwd, path })
+}
+
+export async function unstageFile(cwd: string, path: string): Promise<void> {
+  return invoke("git_unstage_file", { cwd, path })
+}
+
+export async function stageAll(cwd: string): Promise<void> {
+  return invoke("git_stage_all", { cwd })
+}
+
+export async function unstageAll(cwd: string): Promise<void> {
+  return invoke("git_unstage_all", { cwd })
+}
+
+export async function discardFile(cwd: string, path: string): Promise<void> {
+  return invoke("git_discard_file", { cwd, path })
+}
+
+export async function discardAll(cwd: string): Promise<void> {
+  return invoke("git_discard_all", { cwd })
+}
+
+export async function loadGitDiffStaged(cwd: string): Promise<string> {
+  if (!isTauri()) return ""
+  return invoke<string>("git_diff_staged", { cwd })
+}
+
+/** Commit no cwd. Suporta opções amend e stageAll. Devolve o SHA curto. */
+export async function gitCommit(
+  cwd: string,
+  message: string,
+  options?: { amend?: boolean; stageAll?: boolean },
+): Promise<string> {
+  return invoke<string>("git_commit", {
+    cwd,
+    message,
+    amend: options?.amend,
+    stageAll: options?.stageAll,
+  })
 }
 
 export interface PrTemplate {

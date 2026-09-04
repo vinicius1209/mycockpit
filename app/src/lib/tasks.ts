@@ -166,7 +166,7 @@ export interface TaskPlansView {
 /** Memo por IDENTIDADE do array de items. A derivação é O(N) sobre o fio
  *  inteiro e três lugares a pediam para o MESMO array no MESMO frame — o
  *  ChatPanel (plano vivo acima do composer), o MessageList (marcos no
- *  transcript) e o ContextPanel (aba Plano). Rodava 2 a 3 vezes por token do
+ *  transcript) e o ContextPanel (aba Conversa). Rodava 2 a 3 vezes por token do
  *  streaming; agora o primeiro que chegar calcula e os outros consomem.
  *
  *  WeakMap e não cache de 1 entrada: a chave é o próprio array, então duas

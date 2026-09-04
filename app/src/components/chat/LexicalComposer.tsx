@@ -1,6 +1,6 @@
 // Composer Lexical da conversa — desde o cutover, o ÚNICO composer do console.
-// Entrega Enter=envia / Shift+Enter=quebra linha, menções "@", comandos "/",
-// histórico ↑/↓ e envio forçado imediato com ⌘Enter durante turnos em voo.
+// Entrega Enter=envia/corrige, Tab=fila, Shift+Enter=quebra linha, menções "@",
+// comandos "/" e histórico ↑/↓.
 
 import { useEffect, useMemo, useRef } from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
@@ -57,8 +57,8 @@ import { collectPaste } from "@/hooks/useAttachments"
 import { buildLexicalAtItems } from "@/hooks/useAtMentions"
 import { useMentionSearch } from "@/hooks/useMentionSearch"
 import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
-import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+import { ComposerSubmitKeys } from "@/components/chat/composerSubmitKeys"
 
 // Tema da menção: chip brass no tema do app. As chaves casam o trigger (`@`);
 // `Focused` aplica o estado selecionado do pill.
@@ -81,55 +81,6 @@ function $hasLeadingSlashPill(): boolean {
   if (!$isElementNode(first)) return false
   const child = first.getFirstChild()
   return $isBeautifulMentionNode(child) && child.getTrigger() === SLASH_TRIGGER
-}
-
-/** Enter (sem shift) serializa e envia; Shift+Enter deixa o RichText quebrar
- *  linha. Registrado em prioridade ALTA pra vencer o insert-parágrafo padrão —
- *  por isso as duas guardas são load-bearing:
- *  - menu de menção aberto (o nosso MentionsMenu carrega
- *    `data-beautiful-mention-menu`) → o Enter escolhe o item, não envia;
- *  - IME compondo (acento/CJK) → o Enter confirma a composição, não envia. */
-function EnterToSubmitPlugin({
-  onSubmit,
-  onForceSubmit,
-}: {
-  onSubmit: (text: string) => void
-  onForceSubmit?: (text: string) => void
-}) {
-  const [editor] = useLexicalComposerContext()
-  const onSubmitRef = useRef(onSubmit)
-  onSubmitRef.current = onSubmit
-  const onForceSubmitRef = useRef(onForceSubmit)
-  onForceSubmitRef.current = onForceSubmit
-  const shortcut = useApp((s) => s.settings.userPreferences?.composerSendShortcut ?? "enter")
-  useEffect(() => {
-    return editor.registerCommand(
-      KEY_ENTER_COMMAND,
-      (event: KeyboardEvent | null): boolean => {
-        if (event?.isComposing) return false
-        if (document.querySelector("[data-beautiful-mention-menu]")) return false
-        if (event?.metaKey || event?.ctrlKey) {
-          if (onForceSubmitRef.current) {
-            event?.preventDefault()
-            const text = editor.getEditorState().read($serializeDraft)
-            onForceSubmitRef.current(text.trim())
-            return true
-          }
-        }
-        if (shortcut === "cmd-enter") {
-          if (!event?.metaKey && !event?.ctrlKey) return false
-        } else if (event?.shiftKey) {
-          return false
-        }
-        event?.preventDefault()
-        const text = editor.getEditorState().read($serializeDraft)
-        onSubmitRef.current(text.trim())
-        return true
-      },
-      COMMAND_PRIORITY_HIGH,
-    )
-  }, [editor, shortcut])
-  return null
 }
 
 /** Ponte do menu "/" de comandos: a LÓGICA (lista, filtro, inserção) mora no
@@ -543,6 +494,7 @@ export function LexicalComposer({
   onChangeText,
   onSubmit,
   onForceSubmit,
+  onQueueSubmit,
   placeholder,
   mentionNames,
   mentionFiles,
@@ -560,10 +512,12 @@ export function LexicalComposer({
   value: string
   /** Cada mudança no editor serializa e escreve aqui (vira o draft). */
   onChangeText: (text: string) => void
-  /** Enter sem shift: recebe o texto serializado (menção → `@nome`). */
+  /** Enter em repouso: recebe o texto serializado (menção → `@nome`). */
   onSubmit: (text: string) => void
-  /** ⌘Enter com turno em voo: envio forçado imediato. */
+  /** Enter com turno em voo: correção imediata, interrompe e retoma. */
   onForceSubmit?: (text: string) => void
+  /** Tab com turno em voo: guarda para o próximo turno. */
+  onQueueSubmit?: (text: string) => void
   placeholder: string
   /** Personas conhecidas (mesma fonte do marketplace) → itens do menu `@`. */
   mentionNames: string[]
@@ -676,7 +630,11 @@ export function LexicalComposer({
             onChangeText(text)
           }}
         />
-        <EnterToSubmitPlugin onSubmit={onSubmit} onForceSubmit={onForceSubmit} />
+        <ComposerSubmitKeys
+          onSubmit={onSubmit}
+          onForceSubmit={onForceSubmit}
+          onQueueSubmit={onQueueSubmit}
+        />
         <SlashMenuKeysPlugin slash={slash} />
         <HistoryRecallPlugin history={history} />
         <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />

@@ -1,4 +1,4 @@
-// O GATE DO ENVIO — a decisão de "isto vai, isto espera, isto não sai daqui".
+// O GATE DO COMPOSER — a decisão de "isto vai, isto espera, isto não sai daqui".
 //
 // Estava embutida no `submit()` do CommandConsole em DOIS ramos quase iguais
 // (um pro turno em andamento, outro pro repouso), cada um repetindo as mesmas
@@ -10,8 +10,8 @@
 // Aqui vira uma decisão só, pura e testável, e o componente ganha UM caminho de
 // despacho: quem envia e quem enfileira mandam o MESMO par (texto + anexos).
 
-/** O que o Enter (ou o botão) faz com o que está no composer agora. */
-export type DespachoDoEnter =
+/** Destino solicitado pelo botão ou pelo atalho explícito do composer. */
+export type DestinoDoComposer =
   /** Sai agora: vira turno. */
   | "enviar"
   /** Turno em andamento: entra na fila e sai junto quando o atual terminar. */
@@ -53,10 +53,11 @@ export interface EstadoDoComposer {
  *    esvazia a fila (`dequeueQueued`) e o envio re-entrante é recusado pela
  *    guarda de missão — as mensagens **somem**, sem voltar pra fila e sem aviso.
  *    Enfileirar o que o despacho vai recusar é prometer um envio que não existe.
- * 4. **Turno em voo enfileira.** É a única saída honesta: o `--permission-mode`
- *    e a sessão são fixos no spawn, então não dá pra emendar no turno corrente.
+ * 4. **Turno em voo enfileira.** O gesto explícito de fila usa este caminho.
+ *    O Enter durante execução é tratado antes pelo editor: ele pede correção
+ *    imediata e, sem transporte nativo de steering, interrompe e retoma.
  */
-export function despachoDoEnter(e: EstadoDoComposer): DespachoDoEnter {
+export function destinoDoComposer(e: EstadoDoComposer): DestinoDoComposer {
   const temConteudo = e.texto.length > 0 || e.anexos > 0
   if (!temConteudo || e.disabled || !e.anexosSuportados) return "barrado"
   if (e.missionRunning) return "barrado"
@@ -67,5 +68,5 @@ export function despachoDoEnter(e: EstadoDoComposer): DespachoDoEnter {
 /** O botão primário de enviar está clicável? (Com turno em voo ele já virou
  *  Parar, então "enfileirar" não acende o Enviar.) */
 export function podeEnviar(e: EstadoDoComposer): boolean {
-  return despachoDoEnter(e) === "enviar"
+  return destinoDoComposer(e) === "enviar"
 }

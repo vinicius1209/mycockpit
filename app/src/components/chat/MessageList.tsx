@@ -60,7 +60,7 @@ import {
 } from "@/components/chat/toolGroupDisclosure"
 import { EVIDENCE_MISSING, evidenceName, evidenceUrl } from "@/lib/evidence"
 import { useLightbox, type LightboxImage } from "@/store/lightbox"
-import { lineDiff, trimOuterContext, type DiffRow } from "@/lib/linediff"
+import { editHunks, UnifiedDiff } from "@/components/chat/InlineDiff"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { TurnNoteBlock } from "@/components/chat/TurnNote"
 import {
@@ -98,11 +98,10 @@ import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
 import { Markdown } from "@/components/common/Markdown"
 import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
+import { useTranscriptReveal } from "@/components/chat/useTranscriptReveal"
+import type { TranscriptRevealRequest } from "@/store/appTypes"
 
 export type { FeedbackApi } from "@/components/chat/TurnActions"
-
-/** Máx. de linhas mostradas num bloco de diff (Edit/Write) antes de "… +N linhas". */
-const DIFF_MAX_LINES = 80
 
 const KIND_ICON: Record<ToolKind, LucideIcon> = {
   bash: Terminal,
@@ -128,90 +127,6 @@ function scrollContainerOf(el: HTMLElement): HTMLElement | null {
   }
   return null
 }
-
-/** Reúne os hunks de um tool de edição + contagem. Edit → 1 hunk; MultiEdit →
- *  1 por edição; Write → tudo adição. null = não é tool de edição. */
-function editHunks(
-  name: string,
-  input: Record<string, unknown>,
-): { hunks: DiffRow[][]; added: number; removed: number } | null {
-  const acc = { hunks: [] as DiffRow[][], added: 0, removed: 0 }
-  const push = (o: string, nw: string) => {
-    const d = lineDiff(o, nw)
-    acc.hunks.push(d.rows)
-    acc.added += d.added
-    acc.removed += d.removed
-  }
-  if (
-    name === "Edit" &&
-    typeof input.old_string === "string" &&
-    typeof input.new_string === "string"
-  ) {
-    push(input.old_string, input.new_string)
-    return acc
-  }
-  if (name === "MultiEdit" && Array.isArray(input.edits)) {
-    for (const e of input.edits as Record<string, unknown>[]) {
-      if (e && typeof e.old_string === "string") {
-        push(e.old_string, typeof e.new_string === "string" ? e.new_string : "")
-      }
-    }
-    return acc.hunks.length ? acc : null
-  }
-  if (name === "Write" && typeof input.content === "string") {
-    push("", input.content)
-    return acc
-  }
-  return null
-}
-
-/** Diff unificado (interleaved), estilo Warp: contexto cinza + add/del
- *  coloridos, contexto externo aparado, cap de linhas. */
-function UnifiedDiff({ rows }: { rows: DiffRow[] }) {
-  const trimmed = trimOuterContext(rows)
-  const shown = trimmed.slice(0, DIFF_MAX_LINES)
-  const hidden = trimmed.length - shown.length
-  return (
-    <div className="overflow-x-auto py-1 font-mono text-[12px] leading-relaxed">
-      {shown.map((r, idx) => (
-        <div
-          key={idx}
-          className={cn(
-            "flex gap-2 px-2",
-            r.type === "add" && "bg-st-success/10",
-            r.type === "del" && "bg-st-error/10",
-          )}
-        >
-          <span
-            className={cn(
-              "w-3 shrink-0 select-none text-center",
-              r.type === "add"
-                ? "text-st-success"
-                : r.type === "del"
-                  ? "text-st-error"
-                  : "text-transparent",
-            )}
-          >
-            {r.type === "add" ? "+" : r.type === "del" ? "−" : " "}
-          </span>
-          <span
-            data-selectable
-            className={cn(
-              "break-words whitespace-pre-wrap [overflow-wrap:anywhere]",
-              r.type === "ctx" ? "text-muted-foreground/70" : "text-foreground/85",
-            )}
-          >
-            {r.text || " "}
-          </span>
-        </div>
-      ))}
-      {hidden > 0 && (
-        <div className="px-2 pl-7 text-muted-foreground">… +{hidden} linhas</div>
-      )}
-    </div>
-  )
-}
-
 
 /** Tool call como LINHA (círculo de status + ícone + rótulo + meta), colapsável.
  *  A prosa do agent é o conteúdo; a ferramenta é rodapé, não caixa. `active` =
@@ -1559,6 +1474,11 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   )
 }
 
+function nodeItemIds(node: Node): string[] {
+  if (node.type === "item") return [node.item.id]
+  return node.itemIds?.length ? node.itemIds : [node.key]
+}
+
 
 
 /** Selos de leitura por item, com identidade preservada (ver
@@ -1607,6 +1527,7 @@ export function MessageList({
   onApprovePlan,
   onKeepPlanning,
   feedback,
+  reveal,
 }: {
   items: ChatItem[]
   running: boolean
@@ -1639,6 +1560,9 @@ export function MessageList({
   onKeepPlanning?: (id: string) => void
   /** Loop de feedback do Linear (M2). null/undefined fora do Linear. */
   feedback?: FeedbackApi | null
+  /** Fonte pedida pela aba Conversa. O nonce permite revelar o mesmo item de
+   *  novo; a lista calcula o scroll relativo ao wrapper real do transcript. */
+  reveal?: TranscriptRevealRequest | null
 }) {
   const threadItems = useMemo(() => visibleThreadItems(items, finalizing), [items, finalizing])
   const nodes = useStableNodes(threadItems)
@@ -1675,6 +1599,14 @@ export function MessageList({
     () => (hiddenCount > 0 ? windowStartIndex(threadItems, firstVisibleKey) : 0),
     [threadItems, firstVisibleKey, hiddenCount],
   )
+  const { listRef, revealedItemId } = useTranscriptReveal({
+    reveal,
+    items,
+    threadItems,
+    hiddenCount,
+    windowStart,
+    setShowAll,
+  })
   const feedbackByResult = useMemo(
     () => feedbackTextByResult(threadItems, turnStartIndex(threadItems, windowStart)),
     [threadItems, windowStart],
@@ -1710,7 +1642,7 @@ export function MessageList({
     onKeepPlanning,
   }
   return (
-    <div className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-5 px-8 py-8">
+    <div ref={listRef} className="mx-auto flex w-full max-w-[760px] min-w-0 flex-col gap-5 px-8 py-8">
       {hiddenCount > 0 && (
         <button
           onClick={() => setShowAll(true)}
@@ -1762,7 +1694,14 @@ export function MessageList({
               }
             >
               {g.nodes.map((n) => (
-                <div key={n.key} className="min-w-0">
+                <div
+                  key={n.key}
+                  data-chat-item-ids={nodeItemIds(n).join(" ")}
+                  className={cn(
+                    "min-w-0 rounded-md transition-colors",
+                    nodeItemIds(n).includes(revealedItemId ?? "") && "bg-brass-soft",
+                  )}
+                >
                   {renderNode(n, { ...ctxBase, isLast: n.key === lastKey })}
                 </div>
               ))}

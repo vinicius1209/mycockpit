@@ -4,7 +4,7 @@
 
 use serde::Serialize;
 use std::fs;
-use std::path::Path;
+use std::path::{Component, Path};
 use std::process::Command;
 
 /// git -C <cwd> <args>, stdout no sucesso (None se falhar/git ausente).
@@ -25,8 +25,9 @@ fn untracked_patch(cwd: &str, rel: &str) -> String {
     let full = Path::new(cwd).join(rel);
     let mut out =
         format!("diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n");
-    let too_big = fs::metadata(&full)
-        .map(|m| m.len() > UNTRACKED_MAX_BYTES)
+    let too_big = fs::symlink_metadata(&full)
+        // Não siga symlink não rastreado para ler conteúdo fora do projeto.
+        .map(|m| m.file_type().is_symlink() || m.len() > UNTRACKED_MAX_BYTES)
         .unwrap_or(true);
     let bytes = if too_big { None } else { fs::read(&full).ok() };
     let Some(bytes) = bytes else {
@@ -347,16 +348,408 @@ pub async fn remove_worktree(
 
 // ---------------- Shippar: commit + PR (v2.6) ----------------
 
-/// Stage tudo + commit no cwd (worktree da conversa ou pasta do projeto). Devolve
-/// o SHA curto. Ação LOCAL (reversível via git).
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileItem {
+    pub path: String,
+    pub old_path: Option<String>,
+    pub status: String,
+    pub staged: bool,
+    pub additions: u32,
+    pub deletions: u32,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitStatus {
+    pub is_repo: bool,
+    pub branch: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub staged: Vec<GitFileItem>,
+    pub unstaged: Vec<GitFileItem>,
+}
+
+fn parse_numstat(output: &str) -> std::collections::HashMap<String, (u32, u32)> {
+    let mut map = std::collections::HashMap::new();
+    for line in output.lines() {
+        let parts: Vec<&str> = line.split('\t').collect();
+        if parts.len() >= 3 {
+            let add = parts[0].parse::<u32>().unwrap_or(0);
+            let del = parts[1].parse::<u32>().unwrap_or(0);
+            let path = parts[2].trim().to_string();
+            map.insert(path, (add, del));
+        }
+    }
+    map
+}
+
+pub fn parse_status_porcelain(raw: &str) -> (Vec<GitFileItem>, Vec<GitFileItem>) {
+    let mut staged = Vec::new();
+    let mut unstaged = Vec::new();
+    let mut tokens = raw.split('\0').peekable();
+
+    while let Some(token) = tokens.next() {
+        if token.is_empty() || token.len() < 3 {
+            continue;
+        }
+        let bytes = token.as_bytes();
+        let x = bytes[0] as char;
+        let y = bytes[1] as char;
+        let path = token[3..].to_string();
+        let mut old_path = None;
+
+        if (x == 'R' || x == 'C' || y == 'R' || y == 'C') && tokens.peek().is_some() {
+            if let Some(next_tok) = tokens.next() {
+                if !next_tok.is_empty() {
+                    old_path = Some(next_tok.to_string());
+                }
+            }
+        }
+
+        if x != ' ' && x != '?' {
+            let status = match x {
+                'M' => "modified",
+                'A' => "added",
+                'D' => "deleted",
+                'R' => "renamed",
+                'C' => "added",
+                _ => "modified",
+            };
+            staged.push(GitFileItem {
+                path: path.clone(),
+                old_path: old_path.clone(),
+                status: status.to_string(),
+                staged: true,
+                additions: 0,
+                deletions: 0,
+            });
+        }
+
+        if y != ' ' {
+            let status = match y {
+                'M' => "modified",
+                'D' => "deleted",
+                '?' => "untracked",
+                'T' => "modified",
+                _ => "modified",
+            };
+            unstaged.push(GitFileItem {
+                path,
+                old_path,
+                status: status.to_string(),
+                staged: false,
+                additions: 0,
+                deletions: 0,
+            });
+        }
+    }
+
+    (staged, unstaged)
+}
+
+fn empty_git_status() -> GitStatus {
+    GitStatus {
+        is_repo: false,
+        branch: None,
+        upstream: None,
+        ahead: 0,
+        behind: 0,
+        staged: Vec::new(),
+        unstaged: Vec::new(),
+    }
+}
+
+fn git_status_sync(cwd: &str) -> Result<GitStatus, String> {
+    let (cwd, is_repo) = git_cwd_state(cwd)?;
+    if !is_repo {
+        return Ok(empty_git_status());
+    }
+
+    let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty() && s != "HEAD");
+
+    let upstream = git(&cwd, &["rev-parse", "--abbrev-ref", "@{upstream}"])
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+
+    let (ahead, behind) = if upstream.is_some() {
+        run_git(
+            &cwd,
+            &["rev-list", "--left-right", "--count", "HEAD...@{upstream}"],
+        )
+        .and_then(|out| {
+            let parts: Vec<&str> = out.split_whitespace().collect();
+            if parts.len() == 2 {
+                let a = parts[0].parse::<u32>().unwrap_or(0);
+                let b = parts[1].parse::<u32>().unwrap_or(0);
+                Ok((a, b))
+            } else {
+                Err("o Git devolveu uma contagem de sincronização inválida".into())
+            }
+        })?
+    } else {
+        (0, 0)
+    };
+
+    let staged_numstat = parse_numstat(&run_git(&cwd, &["diff", "--cached", "--numstat"])?);
+
+    let unstaged_numstat = parse_numstat(&run_git(&cwd, &["diff", "--numstat"])?);
+
+    let raw_status = run_git(&cwd, &["status", "--porcelain=v1", "-z", "-uall"])?;
+
+    let (mut staged, mut unstaged) = parse_status_porcelain(&raw_status);
+
+    for item in &mut staged {
+        if let Some((add, del)) = staged_numstat.get(&item.path) {
+            item.additions = *add;
+            item.deletions = *del;
+        }
+    }
+
+    for item in &mut unstaged {
+        if let Some((add, del)) = unstaged_numstat.get(&item.path) {
+            item.additions = *add;
+            item.deletions = *del;
+        } else if item.status == "untracked" {
+            let full = Path::new(&cwd).join(&item.path);
+            if let Ok(meta) = fs::symlink_metadata(&full) {
+                if !meta.file_type().is_symlink() && meta.len() <= UNTRACKED_MAX_BYTES {
+                    if let Ok(bytes) = fs::read(&full) {
+                        if !bytes.contains(&0) {
+                            let count = bytes.iter().filter(|&&b| b == b'\n').count() as u32;
+                            item.additions = count.max(1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(GitStatus {
+        is_repo: true,
+        branch,
+        upstream,
+        ahead,
+        behind,
+        staged,
+        unstaged,
+    })
+}
+
+/// Valida o diretório e separa ausência de repositório de falha ao iniciar o
+/// Git. O primeiro é um estado de produto; o segundo precisa atravessar o IPC.
+fn git_cwd_state(cwd: &str) -> Result<(String, bool), String> {
+    let root = crate::skills::validate_project_path(cwd)?;
+    let root = root.to_string_lossy().into_owned();
+    let output = Command::new("git")
+        .args(["-C", root.as_str(), "rev-parse", "--is-inside-work-tree"])
+        .output()
+        .map_err(|error| format!("não foi possível executar o Git: {error}"))?;
+    if !output.status.success() {
+        return Ok((root, false));
+    }
+    let is_repo = String::from_utf8_lossy(&output.stdout).trim() == "true";
+    Ok((root, is_repo))
+}
+
+/// Fronteira comum dos efeitos Git. O frontend só envia caminhos que vieram do
+/// próprio `git status`, mas comando Tauri é uma fronteira pública e valida de
+/// novo: nenhuma mutação pode escapar do projeto por `..`, absoluto ou cwd
+/// amplo demais.
+fn validated_git_cwd(cwd: &str) -> Result<String, String> {
+    let (root, is_repo) = git_cwd_state(cwd)?;
+    if !is_repo {
+        return Err("este projeto não é um repositório Git".into());
+    }
+    Ok(root)
+}
+
+fn validate_git_relative_path(path: &str) -> Result<(), String> {
+    let relative = Path::new(path);
+    if path.is_empty()
+        || relative.is_absolute()
+        || !relative
+            .components()
+            .all(|component| matches!(component, Component::Normal(_)))
+    {
+        return Err("caminho de arquivo inválido (fora do projeto)".into());
+    }
+    Ok(())
+}
+
+/// Devolve um arquivo não rastreado somente quando o pai canônico continua
+/// dentro do projeto. O arquivo em si pode ser symlink, porque removê-lo apaga
+/// apenas o link; o que não pode existir é um symlink intermediário que leve o
+/// `remove_file` para fora da raiz.
+fn contained_untracked_file(cwd: &str, path: &str) -> Result<std::path::PathBuf, String> {
+    let root = Path::new(cwd);
+    let full = root.join(path);
+    let parent = full
+        .parent()
+        .ok_or_else(|| "caminho de arquivo inválido".to_string())?;
+    let canonical_parent = fs::canonicalize(parent)
+        .map_err(|_| "a pasta do arquivo não rastreado já não existe".to_string())?;
+    if !canonical_parent.starts_with(root) {
+        return Err("o caminho atravessa um link para fora do projeto".into());
+    }
+    Ok(full)
+}
+
+/// Status completo e estruturado (staged, unstaged, branch, ahead/behind).
 #[tauri::command]
-pub async fn git_commit(cwd: String, message: String) -> Result<String, String> {
+pub async fn git_status(cwd: String) -> Result<GitStatus, String> {
+    tauri::async_runtime::spawn_blocking(move || git_status_sync(&cwd))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
+/// Stage arquivo individual (git add -A -- <path>).
+#[tauri::command]
+pub async fn git_stage_file(cwd: String, path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
+        validate_git_relative_path(&path)?;
+        run_git(&cwd, &["add", "-A", "--", &path]).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Unstage arquivo individual (git restore --staged -- <path>).
+#[tauri::command]
+pub async fn git_unstage_file(cwd: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
+        validate_git_relative_path(&path)?;
+        run_git(&cwd, &["restore", "--staged", "--", &path])
+            .or_else(|_| {
+                if git(&cwd, &["rev-parse", "--verify", "HEAD"]).is_some() {
+                    run_git(&cwd, &["reset", "HEAD", "--", &path])
+                } else {
+                    run_git(&cwd, &["rm", "--cached", "--", &path])
+                }
+            })
+            .map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Stage all (git add -A).
+#[tauri::command]
+pub async fn git_stage_all(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
+        run_git(&cwd, &["add", "-A"]).map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Unstage all (git restore --staged .).
+#[tauri::command]
+pub async fn git_unstage_all(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
+        run_git(&cwd, &["restore", "--staged", "."])
+            .or_else(|_| {
+                if git(&cwd, &["rev-parse", "--verify", "HEAD"]).is_some() {
+                    run_git(&cwd, &["reset", "HEAD", "."])
+                } else {
+                    run_git(&cwd, &["rm", "--cached", "-r", "."])
+                }
+            })
+            .map(|_| ())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Descarta só o que NÃO está preparado: rastreado volta ao índice; arquivo
+/// novo não rastreado é apagado. Mudança já staged nunca é desfeita por este
+/// gesto, inclusive quando o mesmo arquivo também tem mudanças unstaged.
+fn discard_file_sync(cwd: &str, path: &str) -> Result<(), String> {
+    let cwd = validated_git_cwd(cwd)?;
+    validate_git_relative_path(path)?;
+    let tracked = run_git(&cwd, &["ls-files", "-z", "--", path])?;
+    let is_tracked = tracked.split('\0').any(|candidate| candidate == path);
+    if is_tracked {
+        return run_git(&cwd, &["restore", "--", path])
+            .or_else(|_| run_git(&cwd, &["checkout", "--", path]))
+            .map(|_| ());
+    }
+
+    let full = contained_untracked_file(&cwd, path)?;
+    let metadata = fs::symlink_metadata(&full)
+        .map_err(|_| "o arquivo não rastreado já não existe".to_string())?;
+    if metadata.is_dir() {
+        return Err("o descarte individual aceita apenas arquivos".into());
+    }
+    fs::remove_file(&full).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn git_discard_file(cwd: String, path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || discard_file_sync(&cwd, &path))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Descarta todas as alterações não preparadas e arquivos não rastreados. O
+/// índice é fonte do restore, portanto tudo que já está staged é preservado.
+fn discard_all_sync(cwd: &str) -> Result<(), String> {
+    let cwd = validated_git_cwd(cwd)?;
+    run_git(&cwd, &["restore", "."])?;
+    run_git(&cwd, &["clean", "-fd"])?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn git_discard_all(cwd: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || discard_all_sync(&cwd))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Diff apenas dos arquivos staged (git diff --cached).
+#[tauri::command]
+pub async fn git_diff_staged(cwd: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
+        run_git(&cwd, &["diff", "--cached", "--no-color"])
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Commit no cwd. Suporta amend e stage_all opcional. Se stage_all não for definido
+/// e houver arquivos em stage, comita apenas os staged.
+#[tauri::command]
+pub async fn git_commit(
+    cwd: String,
+    message: String,
+    amend: Option<bool>,
+    stage_all: Option<bool>,
+) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let cwd = validated_git_cwd(&cwd)?;
         if message.trim().is_empty() {
             return Err("mensagem de commit vazia".into());
         }
-        run_git(&cwd, &["add", "-A"])?;
-        run_git(&cwd, &["commit", "-m", &message])?;
+        let has_staged = git(&cwd, &["diff", "--cached", "--quiet"]).is_none();
+        if stage_all.unwrap_or(false) || (!has_staged && stage_all.is_none()) {
+            run_git(&cwd, &["add", "-A"])?;
+        }
+        let mut args: Vec<&str> = vec!["commit"];
+        if amend.unwrap_or(false) {
+            args.push("--amend");
+        }
+        args.push("-m");
+        args.push(&message);
+        run_git(&cwd, &args)?;
         Ok(git(&cwd, &["rev-parse", "--short", "HEAD"])
             .map(|s| s.trim().to_string())
             .unwrap_or_default())
@@ -502,35 +895,36 @@ fn read_templates(cwd: &str) -> Vec<PrTemplate> {
     out
 }
 
+fn empty_pr_context() -> PrContext {
+    PrContext {
+        is_repo: false,
+        branch: None,
+        base_candidates: vec![],
+        base_default: String::new(),
+        accounts: vec![],
+        account_current: None,
+        templates: vec![],
+        title_default: String::new(),
+        has_pr_skill: false,
+    }
+}
+
 /// Detecta o contexto de PR do cwd (worktree ou projeto). Alimenta o composer.
-fn pr_context_sync(cwd: String) -> PrContext {
-    let is_repo = git(&cwd, &["rev-parse", "--is-inside-work-tree"])
-        .map(|s| s.trim() == "true")
-        .unwrap_or(false);
+fn pr_context_sync(cwd: &str) -> Result<PrContext, String> {
+    let (cwd, is_repo) = git_cwd_state(cwd)?;
     if !is_repo {
-        return PrContext {
-            is_repo: false,
-            branch: None,
-            base_candidates: vec![],
-            base_default: String::new(),
-            accounts: vec![],
-            account_current: None,
-            templates: vec![],
-            title_default: String::new(),
-            has_pr_skill: false,
-        };
+        return Ok(empty_pr_context());
     }
     let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD");
-    let mut base_candidates: Vec<String> = git(&cwd, &["branch", "--format=%(refname:short)"])
+    let mut base_candidates: Vec<String> = run_git(&cwd, &["branch", "--format=%(refname:short)"])
         .map(|s| {
             s.lines()
                 .map(|l| l.trim().to_string())
                 .filter(|l| !l.is_empty())
                 .collect()
-        })
-        .unwrap_or_default();
+        })?;
     if let Some(b) = &branch {
         base_candidates.retain(|c| c != b);
     }
@@ -557,7 +951,7 @@ fn pr_context_sync(cwd: String) -> PrContext {
         .unwrap_or_default();
     let has_pr_skill = Path::new(&cwd).join(".claude/skills/pr/SKILL.md").exists()
         || Path::new(&cwd).join(".claude/commands/pr.md").exists();
-    PrContext {
+    Ok(PrContext {
         is_repo: true,
         branch,
         base_candidates,
@@ -567,24 +961,14 @@ fn pr_context_sync(cwd: String) -> PrContext {
         templates,
         title_default,
         has_pr_skill,
-    }
+    })
 }
 
 #[tauri::command]
-pub async fn pr_context(cwd: String) -> PrContext {
-    tauri::async_runtime::spawn_blocking(move || pr_context_sync(cwd))
+pub async fn pr_context(cwd: String) -> Result<PrContext, String> {
+    tauri::async_runtime::spawn_blocking(move || pr_context_sync(&cwd))
         .await
-        .unwrap_or(PrContext {
-            is_repo: false,
-            branch: None,
-            base_candidates: vec![],
-            base_default: String::new(),
-            accounts: vec![],
-            account_current: None,
-            templates: vec![],
-            title_default: String::new(),
-            has_pr_skill: false,
-        })
+        .map_err(|error| error.to_string())?
 }
 
 /// Push + abre o PR com base/conta/título/corpo ESCOLHIDOS no composer. Outward
@@ -596,6 +980,10 @@ fn create_pr_sync(
     title: String,
     body: String,
 ) -> Result<PrResult, String> {
+    let cwd = validated_git_cwd(&cwd)?;
+    if title.trim().is_empty() {
+        return Err("informe um título para o pull request".into());
+    }
     let branch = git(&cwd, &["rev-parse", "--abbrev-ref", "HEAD"])
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty() && s != "HEAD")
@@ -722,6 +1110,35 @@ mod pulse_tests {
 mod worktree_tests {
     use super::*;
 
+    struct TestRepo {
+        path: std::path::PathBuf,
+    }
+
+    impl TestRepo {
+        fn new(tag: &str) -> Self {
+            let unique = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos();
+            let path = std::env::temp_dir()
+                .join(format!("frota-git-{tag}-{}-{unique}", std::process::id()));
+            fs::create_dir_all(&path).unwrap();
+            let cwd = path.to_string_lossy();
+            run_git(&cwd, &["init", "-q"]).unwrap();
+            Self { path }
+        }
+
+        fn cwd(&self) -> String {
+            self.path.to_string_lossy().into_owned()
+        }
+    }
+
+    impl Drop for TestRepo {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+
     /// Formato real, copiado de `git worktree list --porcelain` no repo do
     /// próprio projeto (main + dois worktrees de ferramentas de fora).
     const PORCELAIN: &str = "\
@@ -770,5 +1187,125 @@ branch refs/heads/mycockpit/bbb22222
     #[test]
     fn saida_vazia_nao_quebra() {
         assert!(parse_worktree_paths("").is_empty());
+    }
+
+    #[test]
+    fn parse_status_porcelain_separa_staged_e_unstaged() {
+        let raw = "M  staged_only.txt\0 M unstaged_only.txt\0MM both.txt\0?? untracked.txt\0";
+        let (staged, unstaged) = parse_status_porcelain(raw);
+        assert_eq!(staged.len(), 2);
+        assert_eq!(staged[0].path, "staged_only.txt");
+        assert_eq!(staged[0].status, "modified");
+        assert_eq!(staged[1].path, "both.txt");
+
+        assert_eq!(unstaged.len(), 3);
+        assert_eq!(unstaged[0].path, "unstaged_only.txt");
+        assert_eq!(unstaged[0].status, "modified");
+        assert_eq!(unstaged[1].path, "both.txt");
+        assert_eq!(unstaged[2].path, "untracked.txt");
+        assert_eq!(unstaged[2].status, "untracked");
+    }
+
+    #[test]
+    fn parse_status_porcelain_reconhece_renomeados() {
+        let raw = "R  novo.txt\0antigo.txt\0";
+        let (staged, unstaged) = parse_status_porcelain(raw);
+        assert_eq!(staged.len(), 1);
+        assert_eq!(staged[0].path, "novo.txt");
+        assert_eq!(staged[0].old_path.as_deref(), Some("antigo.txt"));
+        assert_eq!(staged[0].status, "renamed");
+        assert!(unstaged.is_empty());
+    }
+
+    #[test]
+    fn parse_numstat_mapeia_linhas_e_arquivos() {
+        let numstat = "10\t5\tsrc/app.ts\n20\t0\tsrc/new.ts\n-\t-\timage.png\n";
+        let map = parse_numstat(numstat);
+        assert_eq!(map.get("src/app.ts"), Some(&(10, 5)));
+        assert_eq!(map.get("src/new.ts"), Some(&(20, 0)));
+        assert_eq!(map.get("image.png"), Some(&(0, 0)));
+    }
+
+    #[test]
+    fn mutacao_recusa_caminho_que_escaparia_do_projeto() {
+        for path in ["", ".", "../segredo", "src/../../segredo", "/tmp/segredo"] {
+            assert!(
+                validate_git_relative_path(path).is_err(),
+                "aceitou {path:?}"
+            );
+        }
+        assert!(validate_git_relative_path("src/painel.tsx").is_ok());
+    }
+
+    #[test]
+    fn consulta_distingue_diretorio_sem_git_de_caminho_invalido() {
+        let repo = TestRepo::new("not-repo");
+        fs::remove_dir_all(repo.path.join(".git")).unwrap();
+
+        assert!(!git_status_sync(&repo.cwd()).unwrap().is_repo);
+        assert!(!pr_context_sync(&repo.cwd()).unwrap().is_repo);
+        assert!(git_status_sync("/caminho/que/nao/existe/frota").is_err());
+        assert!(pr_context_sync("/caminho/que/nao/existe/frota").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn descarte_recusa_symlink_intermediario_para_fora_do_projeto() {
+        use std::os::unix::fs::symlink;
+
+        let repo = TestRepo::new("inside");
+        let outside = TestRepo::new("outside");
+        let secret = outside.path.join("segredo.txt");
+        fs::write(&secret, "preservado\n").unwrap();
+        symlink(&outside.path, repo.path.join("atalho")).unwrap();
+
+        let result = discard_file_sync(&repo.cwd(), "atalho/segredo.txt");
+
+        assert!(result.is_err());
+        assert_eq!(fs::read_to_string(secret).unwrap(), "preservado\n");
+    }
+
+    #[test]
+    fn descartar_arquivo_preserva_a_versao_ja_preparada() {
+        let repo = TestRepo::new("discard-file");
+        let file = repo.path.join("estado.txt");
+        fs::write(&file, "versão preparada\n").unwrap();
+        run_git(&repo.cwd(), &["add", "--", "estado.txt"]).unwrap();
+        fs::write(&file, "mudança ainda não preparada\n").unwrap();
+
+        discard_file_sync(&repo.cwd(), "estado.txt").unwrap();
+
+        assert_eq!(fs::read_to_string(&file).unwrap(), "versão preparada\n");
+        assert_eq!(
+            run_git(&repo.cwd(), &["ls-files", "--cached", "estado.txt"])
+                .unwrap()
+                .trim(),
+            "estado.txt"
+        );
+    }
+
+    #[test]
+    fn descartar_todas_preserva_stage_e_apaga_so_nao_rastreados() {
+        let repo = TestRepo::new("discard-all");
+        let tracked = repo.path.join("preparado.txt");
+        let untracked = repo.path.join("novo.txt");
+        fs::write(&tracked, "conteúdo preparado\n").unwrap();
+        run_git(&repo.cwd(), &["add", "--", "preparado.txt"]).unwrap();
+        fs::write(&tracked, "mudança ainda não preparada\n").unwrap();
+        fs::write(&untracked, "arquivo novo\n").unwrap();
+
+        discard_all_sync(&repo.cwd()).unwrap();
+
+        assert_eq!(
+            fs::read_to_string(&tracked).unwrap(),
+            "conteúdo preparado\n"
+        );
+        assert!(!untracked.exists());
+        assert_eq!(
+            run_git(&repo.cwd(), &["ls-files", "--cached", "preparado.txt"])
+                .unwrap()
+                .trim(),
+            "preparado.txt"
+        );
     }
 }

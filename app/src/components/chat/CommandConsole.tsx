@@ -23,7 +23,7 @@ import {
 } from "@/components/chat/ComposerParts"
 import { ExecutionRow } from "@/components/chat/ExecutionRow"
 import { resolvePermission, setProjectPermissionEverywhere } from "@/lib/permission"
-import { despachoDoEnter, podeEnviar, type EstadoDoComposer } from "@/components/chat/composerSend"
+import { destinoDoComposer, podeEnviar, type EstadoDoComposer } from "@/components/chat/composerSend"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useAtMentions } from "@/hooks/useAtMentions"
@@ -78,6 +78,7 @@ export function CommandConsole({
   preparing,
   missionRunning,
   onStop,
+  onDispatchQueue,
   onOpenEspecialistas,
 }: {
   onSend: (
@@ -93,6 +94,8 @@ export function CommandConsole({
   /** Missão rodando nesta conversa → composer travado (envio manual bloqueado). */
   missionRunning?: boolean
   onStop?: () => void
+  /** Interrompe, se preciso, e despacha a fila da conversa indicada. */
+  onDispatchQueue: (convId: string) => Promise<unknown>
   /** Atalho ✦ do composer: abre o marketplace de Especialistas sobre a conversa. */
   onOpenEspecialistas?: () => void
 }) {
@@ -383,7 +386,7 @@ export function CommandConsole({
   // e não a memória de quem escreve o próximo call site.
   function submit(overrideText?: unknown) {
     const text = textoDoEnvio(overrideText, value)
-    if (despachoDoEnter(estadoDoComposer(text)) === "barrado") return
+    if (destinoDoComposer(estadoDoComposer(text)) === "barrado") return
     // UM caminho só para enviar e para ENFILEIRAR (turno em andamento): texto e
     // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo
     // e empilha na fila. Eram dois ramos gêmeos aqui — e ramo gêmeo é como o
@@ -409,7 +412,7 @@ export function CommandConsole({
 
   function handleForceSendQueued(index: number) {
     if (!activeId) return
-    forceSendQueued(activeId, index, onStop)
+    forceSendQueued(activeId, index, onDispatchQueue)
   }
 
   function handleForceSendDraft(overrideText?: unknown) {
@@ -424,7 +427,7 @@ export function CommandConsole({
         resetHistory()
         if (activeId === useChat.getState().activeId) focusComposer()
       },
-      onStop,
+      onDispatchQueue,
     )
   }
 
@@ -436,8 +439,10 @@ export function CommandConsole({
     ? "Missão em andamento; pare a missão para enviar manualmente…"
     : preparing
       ? "Verificando capacidades…"
-      : running || finalizing
-      ? "Enfileirar próxima mensagem…"
+      : running
+        ? "Enter corrige agora · Tab envia no próximo turno…"
+        : finalizing
+          ? "Turno terminando · Tab envia assim que fechar…"
       : commands.length > 0
         ? "Peça algo…  ou / para comandos"
         : "Peça algo ao seu time de agents…"
@@ -498,7 +503,8 @@ export function CommandConsole({
           setHistIdx(null)
         }}
         onSubmit={(text) => submit(text)}
-        onForceSubmit={canEnqueue ? (text) => handleForceSendDraft(text) : undefined}
+        onForceSubmit={running && canEnqueue ? (text) => handleForceSendDraft(text) : undefined}
+        onQueueSubmit={canEnqueue ? (text) => submit(text) : undefined}
         placeholder={placeholder}
         mentionNames={presets.map((p) => p.name)}
         mentionFiles={projectFiles}
@@ -548,7 +554,8 @@ export function CommandConsole({
           queued={conv.queued ?? []}
           onRemove={(i) => useChat.getState().removeQueued(activeId, i)}
           onEdit={handleEditQueued}
-          onForceSend={handleForceSendQueued}
+          onForceSend={finalizing ? undefined : handleForceSendQueued}
+          turnState={running ? "running" : finalizing ? "finalizing" : "idle"}
         />
       )}
       <ComposerShell
@@ -588,6 +595,7 @@ export function CommandConsole({
             onAttach={attach}
             onEspecialistas={onOpenEspecialistas}
             running={running}
+            finalizing={finalizing}
             onStop={onStop}
             onSubmit={submit}
             canSend={canSend}

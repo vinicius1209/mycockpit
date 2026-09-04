@@ -158,28 +158,36 @@ export function QueuedChips({
   onRemove,
   onEdit,
   onForceSend,
+  turnState,
 }: {
   queued: QueuedMsg[]
   onRemove: (index: number) => void
   onEdit?: (index: number) => void
   onForceSend?: (index: number) => void
+  turnState: "running" | "finalizing" | "idle"
 }) {
   if (queued.length === 0) return null
+  const queueLabel =
+    turnState === "running"
+      ? "Na fila · enviam quando este turno terminar"
+      : turnState === "finalizing"
+        ? "Na fila · aguardando o fechamento do turno"
+        : "Prontas para enviar"
   return (
-    <div className="mb-1 flex flex-col gap-1.5 rounded-xl border border-st-queued/40 bg-st-queued/10 p-2">
+    <div className="mb-1 flex flex-col gap-1.5 rounded-xl border bg-st-queued/10 p-2">
       <div className="flex items-center justify-between px-0.5">
         <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-st-queued uppercase">
           <span className="rounded-full bg-st-queued/25 px-1.5 py-px font-mono text-[11px] font-bold text-st-queued">
             {queued.length}
           </span>
-          Na fila · enviam juntas ao terminar
+          {queueLabel}
         </span>
       </div>
       {queued.map((msg, i) => (
         <span
           key={i}
           title={msg.text}
-          className="flex items-center gap-2 rounded-md border border-st-queued/30 bg-card/85 px-2.5 py-1 text-[12px] text-foreground/90 shadow-xs"
+          className="flex items-center gap-2 rounded-md border bg-card/85 px-2.5 py-1 text-[12px] text-foreground/90 shadow-xs"
         >
           <span className="font-mono text-[11px] font-medium text-st-queued/80">{i + 1}.</span>
           <span className="min-w-0 flex-1 truncate">{msg.text}</span>
@@ -204,11 +212,19 @@ export function QueuedChips({
                 size="chip"
                 onClick={() => onForceSend(i)}
                 className="text-st-queued hover:bg-st-queued/20 hover:text-st-queued"
-                title="Priorizar esta mensagem, interromper o turno e enviar a fila"
-                aria-label="Priorizar e enviar a fila agora"
+                title={
+                  turnState === "running"
+                    ? "Priorizar, interromper o turno e enviar a fila"
+                    : "Priorizar e enviar a fila"
+                }
+                aria-label={
+                  turnState === "running"
+                    ? "Interromper e enviar a fila"
+                    : "Enviar a fila"
+                }
               >
                 <Zap className="size-2.5 fill-current" />
-                <span>Enviar agora</span>
+                <span>{turnState === "running" ? "Interromper e enviar" : "Enviar"}</span>
               </Button>
             )}
             {onEdit && (
@@ -382,6 +398,7 @@ export function ComposerActions({
   onAttach,
   onEspecialistas,
   running,
+  finalizing,
   onStop,
   stopTitle,
   onSubmit,
@@ -402,6 +419,7 @@ export function ComposerActions({
   /** Atalho ✦: abre o marketplace de Especialistas sobre a conversa. */
   onEspecialistas?: () => void
   running?: boolean
+  finalizing?: boolean
   onStop?: () => void
   /** Tooltip do Parar quando parar custa mais do que parece (ex. trabalho em
    *  background do provider morre junto — deferred-work-plan D1.4). */
@@ -452,6 +470,7 @@ export function ComposerActions({
         {contextRing}
         <SendSplit
           running={running}
+          finalizing={finalizing}
           canSend={canSend}
           canEnqueue={canEnqueue}
           onForceSendDraft={onForceSendDraft}
@@ -481,6 +500,7 @@ export function ComposerActions({
  */
 function SendSplit({
   running,
+  finalizing,
   canSend,
   canEnqueue,
   onForceSendDraft,
@@ -494,6 +514,7 @@ function SendSplit({
   missionDisabled,
 }: {
   running?: boolean
+  finalizing?: boolean
   canSend: boolean
   canEnqueue?: boolean
   onForceSendDraft?: () => void
@@ -507,46 +528,48 @@ function SendSplit({
   missionDisabled?: boolean
 }) {
   // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria).
-  if (running) {
+  if (running || finalizing) {
     return (
       <div className="flex items-center gap-1.5">
-        {canEnqueue && (
+        {running && canEnqueue && onForceSendDraft && (
           <Button
             variant="secondary"
             size="compacto"
-            onClick={onSubmit}
+            onClick={onForceSendDraft}
             className="rounded-full"
-            title="Enfileirar próxima mensagem (Enter)"
-            aria-label="Enfileirar"
+            title="Interromper o turno e enviar esta mensagem (Enter)"
+            aria-label="Interromper e enviar"
           >
-            <span>Enfileirar</span>
+            <Zap className="size-3 fill-current" />
+            <span>Interromper e enviar</span>
             <span className="font-mono text-[11px] text-muted-foreground">↵</span>
           </Button>
         )}
-        {canEnqueue && onForceSendDraft && (
+        {canEnqueue && (
           <Button
             variant="ghost"
             size="compacto"
-            onClick={onForceSendDraft}
+            onClick={onSubmit}
             className="rounded-full bg-st-queued/15 text-st-queued hover:bg-st-queued/25 hover:text-st-queued"
-            title="Interromper turno e enviar agora (⌘Enter)"
-            aria-label="Interromper e enviar agora"
+            title="Enfileirar para o próximo turno (Tab)"
+            aria-label="Enfileirar"
           >
-            <Zap className="size-3 fill-current" />
-            <span>Enviar agora</span>
-            <span className="font-mono text-[11px] opacity-75">⌘↵</span>
+            <span>Enfileirar</span>
+            <span className="font-mono text-[11px] opacity-75">Tab</span>
           </Button>
         )}
-        <Button
-          variant="destructive"
-          size="icone-padrao"
-          onClick={onStop}
-          className="rounded-full"
-          aria-label="Parar"
-          title={stopTitle ?? "Parar"}
-        >
-          <Square className="size-3 fill-current" />
-        </Button>
+        {running && (
+          <Button
+            variant="destructive"
+            size="icone-padrao"
+            onClick={onStop}
+            className="rounded-full"
+            aria-label="Parar"
+            title={stopTitle ?? "Parar"}
+          >
+            <Square className="size-3 fill-current" />
+          </Button>
+        )}
       </div>
     )
   }

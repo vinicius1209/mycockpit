@@ -1451,6 +1451,13 @@ fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bo
     cmd
 }
 
+/// Adapter legado do helper textual usado pelo gateway utilitário. A gramática
+/// do CLI permanece aqui, junto do runner do fornecedor; o gateway recebe um
+/// comando pronto e nunca conhece flags, posição do prompt ou MCP.
+pub(crate) fn utility_helper_command(model: &str, cwd: &str, prompt: &str) -> Command {
+    claude_oneshot(model, cwd, prompt, "text", true)
+}
+
 /// Juiz do Fusion: roda um modelo forte SEM tools e SEM MCP, com `--output-format
 /// json` (→ captura `total_cost_usd` Reported). Retorna o texto (a decisão do juiz,
 /// que o front parseia) + o custo. (Cancelável fica p/ a robustez, Sprint 4.)

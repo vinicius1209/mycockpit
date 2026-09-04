@@ -651,13 +651,13 @@ function NewScheduleDialog({
     setSaving(true)
     try {
       await createSchedule({
-        name,
-        projectId,
-        agent,
+        name, projectId,
+        kind: "agent", agent,
         model: model === "default" ? null : model,
+        effort: null,
         prompt,
         permission,
-        recurrence,
+        planId: null, recurrence,
       })
       toast.success(`Automação "${name.trim()}" criada`)
       onOpenChange(false)

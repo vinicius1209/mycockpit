@@ -6,11 +6,16 @@ import {
   forceSendQueued,
   promoteQueued,
   pullQueued,
+  stopActiveConversation,
 } from "@/components/chat/filaComposer"
 import type { Attachment } from "@/lib/attachments"
+import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 
 vi.mock("sonner", () => ({
-  toast: vi.fn(),
+  toast: Object.assign(vi.fn(), { error: vi.fn() }),
+}))
+vi.mock("@/lib/cancelConversationTurn", () => ({
+  cancelConversationTurn: vi.fn(async () => false),
 }))
 
 const CONV = "conv-teste-fila"
@@ -26,6 +31,7 @@ const anexoFake: Attachment = {
 beforeEach(() => {
   vi.clearAllMocks()
   useChat.setState({
+    activeId: CONV,
     byId: {
       [CONV]: {
         id: CONV,
@@ -45,6 +51,13 @@ beforeEach(() => {
         ],
       } as any,
     },
+  })
+})
+
+describe("stopActiveConversation", () => {
+  it("cancela a conversa ativa pelo id capturado no gesto", async () => {
+    await stopActiveConversation()
+    expect(cancelConversationTurn).toHaveBeenCalledWith(CONV)
   })
 })
 
@@ -97,34 +110,40 @@ describe("enqueueFront: insere no topo da fila", () => {
 })
 
 describe("forceSendQueued: envio forçado de item da fila", () => {
-  it("promove o item se necessário e aciona onStop", () => {
-    const onStop = vi.fn()
-    forceSendQueued(CONV, 1, onStop)
+  it("promove o item se necessário e pede o despacho no alvo explícito", () => {
+    const onDispatch = vi.fn(async () => undefined)
+    forceSendQueued(CONV, 1, onDispatch)
 
     expect(useChat.getState().byId[CONV]?.queued?.[0].text).toBe("mensagem 2")
-    expect(onStop).toHaveBeenCalled()
+    expect(onDispatch).toHaveBeenCalledWith(CONV)
+  })
+
+  it("índice inválido não interrompe nem despacha", () => {
+    const onDispatch = vi.fn(async () => undefined)
+    forceSendQueued(CONV, 99, onDispatch)
+    expect(onDispatch).not.toHaveBeenCalled()
   })
 })
 
 describe("forceSendDraft: envio forçado direto do composer", () => {
-  it("enfileira na frente, limpa o draft e aciona onStop", () => {
-    const onStop = vi.fn()
+  it("enfileira na frente, limpa o draft e pede o despacho", () => {
+    const onDispatch = vi.fn(async () => undefined)
     const clearDraft = vi.fn()
 
-    forceSendDraft(CONV, "para tudo agora!", [], clearDraft, onStop)
+    forceSendDraft(CONV, "para tudo agora!", [], clearDraft, onDispatch)
 
     expect(useChat.getState().byId[CONV]?.queued?.[0].text).toBe("para tudo agora!")
     expect(clearDraft).toHaveBeenCalled()
-    expect(onStop).toHaveBeenCalled()
+    expect(onDispatch).toHaveBeenCalledWith(CONV)
   })
 
   it("não faz nada se o texto for vazio e sem anexos", () => {
-    const onStop = vi.fn()
+    const onDispatch = vi.fn(async () => undefined)
     const clearDraft = vi.fn()
 
-    forceSendDraft(CONV, "   ", [], clearDraft, onStop)
+    forceSendDraft(CONV, "   ", [], clearDraft, onDispatch)
 
     expect(clearDraft).not.toHaveBeenCalled()
-    expect(onStop).not.toHaveBeenCalled()
+    expect(onDispatch).not.toHaveBeenCalled()
   })
 })

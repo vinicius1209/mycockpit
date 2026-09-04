@@ -17,6 +17,21 @@
 > Markdown é renderizado e imagens compatíveis ganham pré-visualização segura.
 > Este bloco substitui os itens divergentes do plano original abaixo.
 
+> **Evolução da aba Plano, 04/09/2026:** a premissa “primeiro pedido + último
+> checkpoint = norte” foi aceita somente como fallback determinístico da
+> primeira entrega. O produto refinado está em
+> `docs/mapa-vivo-da-conversa-prd.md`, com contrato implementável em
+> `docs/mapa-vivo-da-conversa-spec.md`: o chat continua livre, o objetivo passa
+> a ser opcional e a aba ganha foco atual, mudanças de rumo, entendimentos,
+> pendências, fontes e correções humanas, com Foundation Models no Mac e
+> fallbacks explícitos. Esse PRD manda sobre as seções `Plano` e `Fora desta
+> entrega` abaixo; o contrato de Arquivos permanece neste documento.
+
+> **Status do Mapa Vivo, 04/09/2026:** a evolução foi implementada. A aba se
+> chama `Conversa`, e o contrato vigente está no PRD, na SPEC e na ADR-159.
+> As descrições históricas de `Plano` abaixo permanecem apenas como registro da
+> primeira entrega determinística.
+
 ## O problema
 
 O painel direito atual reúne contexto do projeto, alterações e a checklist do

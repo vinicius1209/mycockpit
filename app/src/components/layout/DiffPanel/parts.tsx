@@ -15,6 +15,7 @@ export const STATUS_META: Record<
   added: { label: "A", title: "novo", cls: "text-st-success" },
   deleted: { label: "D", title: "removido", cls: "text-st-error" },
   renamed: { label: "R", title: "renomeado", cls: "text-brass" },
+  untracked: { label: "U", title: "não rastreado", cls: "text-muted-foreground" },
 }
 
 /** Quebra o caminho em pasta + nome: o nome fica legível quando o caminho

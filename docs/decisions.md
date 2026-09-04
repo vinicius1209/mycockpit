@@ -5590,3 +5590,78 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   arquivos grandes ou imagens hostis não transformam uma ação de consulta em
   crescimento de memória sem limite. A aba é efêmera e somente leitura; edição
   continua no editor escolhido pela pessoa.
+
+### ADR-158 · correção imediata e fila são gestos diferentes ✅
+- **Contexto:** o primeiro fluxo de fila fazia Enter enfileirar e reservava
+  `Cmd+Enter` para “Enviar agora”. A ação só chamava o cancelamento e dependia
+  implicitamente do `finally` do turno para despachar. Quando `cancelled`
+  chegava antes de `done`, a store já mostrava repouso e “interrompido”, mas a
+  faixa ainda prometia que a fila seria enviada “ao terminar”. Codex e Claude
+  atuais tratam Enter durante execução como correção do trabalho em voo; Codex
+  reserva Tab para o próximo turno.
+- **Decisão:** Enter mantém o significado de envio e, durante um turno ativo,
+  pede correção imediata. Enquanto os adapters da Frota não oferecem steering
+  nativo por capability, a UI nomeia o mecanismo real: “Interromper e enviar”.
+  Tab é o gesto explícito de fila. `cancelled` e `error` mantêm `finalizing` até
+  `done`; nesse intervalo não existe um segundo botão Parar nem uma ação de
+  envio sem efeito. O despacho forçado recebe o `convId` explícito, cancela
+  quando necessário e drena diretamente se a conversa já estiver ociosa. A
+  remoção atômica da fila impede duplicação com o `finally` canônico.
+- **Consequência:** a pessoa não confunde fila com correção, o estado
+  “interrompido + esperando terminar” desaparece e “Interromper e enviar” tem
+  efeito mesmo se o turno já tiver encerrado. Steering nativo continua sendo
+  evolução de transporte e capability, não uma ficção da interface genérica.
+
+### ADR-159 · mapa vivo é leitura derivada, com inferência utilitária contida ✅
+- **Contexto:** a projeção do ADR-156 preservava o primeiro pedido, a checklist
+  e o último checkpoint, mas não explicava uma conversa longa que mudou de
+  direção. Reaproveitar o helper remoto de sugestões daria ao mapa uma
+  autorização que a pessoa nunca concedeu e misturaria conveniência semântica
+  com o run principal. O Foundation Models oferece uma rota on-device, mas sua
+  disponibilidade e sua saída não são fonte canônica de execução.
+- **Decisão:** (1) Substituir a aba `Plano` por `Conversa`, compondo fatos
+  determinísticos, mapa semântico versionado e pins humanos separados. Pin
+  vence geração; estado de run, tarefa, interação e trabalho diferido continua
+  nos donos existentes. (2) Persistir mapas, pins e métricas nas migrações 44,
+  45 e 46, com CAS por digest ou revisão. (3) Criar um gateway utilitário com
+  perfis, duas filas limitadas, deduplicação, cancelamento, prazo e política por
+  finalidade. A configuração legada só autoriza os consumidores que já a
+  usavam; `conversation_map` não herda acesso remoto. (4) No Mac compatível,
+  executar Foundation Models num sidecar Swift one-shot separado do ditado,
+  com schema guiado, processo sem tools ou sessão, pipes limitados a 64 KiB e
+  grupo encerrado no cancelamento. Ausência ou resposta inválida preserva fatos
+  e o último mapa válido. (5) Foco precisa citar o pedido humano mais recente,
+  desfecho precisa citar o terminal canônico e trajetória exige duas falas
+  humanas distintas. (6) A leitura não entra no prompt, handoff, memória ou
+  despacho de trabalho nesta versão.
+- **Consequência:** conversas livres ganham orientação sem exigir objetivo
+  inicial nem promover interpretação a verdade operacional. O mapa funciona
+  sem Apple Intelligence em modo factual, não aciona rota paga implicitamente
+  e pode ser corrigido pela pessoa. O gateway centraliza recibo, sugestões,
+  curadoria e mensagem de commit sem mudar os fallbacks de cada domínio. Esta
+  ADR substitui a semântica da aba `Plano` do ADR-156; a arquitetura de Arquivos
+  dos ADRs 156 e 157 permanece válida.
+
+### ADR-160 · Alterações separa índice, leitura e efeitos destrutivos ✅
+- **Contexto:** a evolução da aba Alterações transformou a coluna num controle
+  de versão completo, com preparação, descarte, commit e pull request. A
+  primeira integração confundia erro de consulta com “não é repositório”,
+  montava confirmações e o diálogo de pull request fora das primitivas
+  canônicas e, no backend, restaurava arquivos a partir de `HEAD`. Esse último
+  comportamento podia apagar uma mudança já preparada quando a pessoa queria
+  descartar apenas a parte ainda não preparada. Caminhos absolutos ou com `..`
+  também chegavam aos comandos destrutivos sem uma fronteira própria.
+- **Decisão:** a coluna continua sendo o índice e abre o diff no palco
+  principal. Preparado e não preparado permanecem conjuntos distintos. O
+  descarte restaura o diretório de trabalho a partir do índice, nunca de
+  `HEAD`; o descarte global preserva o índice e remove apenas alterações não
+  preparadas e arquivos não rastreados. Antes de qualquer efeito, o Rust valida
+  o diretório como repositório Git real e aceita somente caminho relativo
+  normal, sem seguir symlink ao ler conteúdo não rastreado. Erros atravessam o
+  IPC e recebem estado com nova tentativa. Confirmações destrutivas e o
+  compositor de pull request usam as primitivas compartilhadas. Sugestão de
+  mensagem só aparece quando o modelo auxiliar está explicitamente habilitado.
+- **Consequência:** preparar passa a ser uma proteção que o descarte respeita,
+  falhas deixam de se disfarçar como estado vazio e a aba oferece os mesmos
+  gestos no Mac e no Linux. O Git continua sendo a fonte de verdade; a UI não
+  mantém uma cópia otimista de stage, commit ou pull request.

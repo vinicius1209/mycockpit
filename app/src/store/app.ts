@@ -15,18 +15,19 @@ import {
   persistProjectOrder as dbPersistProjectOrder,
 } from "@/lib/db"
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
+import type {
+  ContextPanelTab,
+  ProjectConfig,
+  TranscriptRevealRequest,
+} from "@/store/appTypes"
+
+export type {
+  ContextPanelTab,
+  ProjectConfig,
+  TranscriptRevealRequest,
+} from "@/store/appTypes"
 
 type Theme = "dark" | "light"
-export type ContextPanelTab = "arquivos" | "plano" | "alteracoes" | "contexto"
-
-/** Config por projeto (espelho resolvido de .mycockpit/config.toml, Fase 1). */
-export interface ProjectConfig {
-  exists: boolean
-  permission: PermissionMode
-  helper: string | null // null = sugestões desligadas
-  mode: string // linear | sdd (o valor legado "fusion" é aceito e ignorado)
-  extraDirs: string[] // pastas extras liberadas ao agent (viram --add-dir)
-}
 
 interface AppState {
   projects: Project[]
@@ -52,6 +53,9 @@ interface AppState {
    *  de ter aberto é pior que reabrir na conversa. Aba é gesto da
    *  sessão, não preferência. */
   mainTab: MainTab
+  /** Pedido efêmero para revelar uma fonte do mapa no fio. O nonce permite
+   *  repetir o gesto para o mesmo item sem depender de limpar estado. */
+  transcriptReveal: TranscriptRevealRequest | null
   /** F7 — view GLOBAL "Agendado" aberta? Estado PRÓPRIO (não é um viewMode):
    *  quando true, ela cobre o conteúdo principal; qualquer navegação (trocar
    *  superfície/projeto) fecha. Não persiste. */
@@ -127,6 +131,7 @@ interface AppState {
   openFileTab: (path: string) => void
   /** Volta pra conversa. A aba transitória deixa de existir. */
   closeMainTab: () => void
+  revealTranscriptItem: (conversationId: string, itemId: string) => void
   /** Abre/fecha a visualização em split de ramos da conversa ativa. */
   branchSplitOpen: boolean
   toggleBranchSplit: () => void
@@ -224,9 +229,10 @@ export const useApp = create<AppState>()(
       theme: "dark",
       sidebarOpen: true,
       contextOpen: true,
-      contextPanelTab: "contexto",
+      contextPanelTab: "conversa",
       viewMode: "linear",
       mainTab: { kind: "conversa" },
+      transcriptReveal: null,
       branchSplitOpen: false,
       scheduledOpen: false,
       flightPlansOpen: false,
@@ -344,6 +350,15 @@ export const useApp = create<AppState>()(
       openFileTab: (path) =>
         set({ branchSplitOpen: false, mainTab: { kind: "arquivo", path } }),
       closeMainTab: () => set({ mainTab: { kind: "conversa" } }),
+      revealTranscriptItem: (conversationId, itemId) =>
+        set((state) => ({
+          mainTab: { kind: "conversa" },
+          transcriptReveal: {
+            conversationId,
+            itemId,
+            nonce: (state.transcriptReveal?.nonce ?? 0) + 1,
+          },
+        })),
       toggleBranchSplit: () =>
         set((s) => ({ branchSplitOpen: !s.branchSplitOpen })),
       setBranchSplitOpen: (branchSplitOpen) => set({ branchSplitOpen }),
@@ -453,6 +468,14 @@ export const useApp = create<AppState>()(
             userPreferences: {
               ...current.settings.userPreferences,
               ...persistedSettings.userPreferences,
+            },
+            utilityInference: {
+              ...current.settings.utilityInference,
+              ...persistedSettings.utilityInference,
+              tasks: {
+                ...current.settings.utilityInference.tasks,
+                ...persistedSettings.utilityInference?.tasks,
+              },
             },
             missionPresets: reconcileMissionPresets(
               persistedSettings.missionPresets,

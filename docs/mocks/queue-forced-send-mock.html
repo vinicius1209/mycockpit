@@ -610,9 +610,9 @@
       <strong>O que mudou nesta proposta:</strong>
       <ul>
         <li><strong>Bandeja Integrada (Queue Dock):</strong> A fila não fica mais flutuando como um chip perdido. Ela abraça o topo do Composer com borda e fundo dedicados em <code>--st-queued</code> (âmbar canônico de fila do Frota).</li>
-        <li><strong>Ação de "Enviar Agora" (Envio Forçado):</strong> Botão de ação rápida <code>⚡ Enviar agora</code> no item. Interrompe de forma segura o turno atual (cancela o CLI, salva os eventos parciais) e despacha a mensagem imediatamente como continuação da sessão.</li>
+        <li><strong>Ação de "Interromper e enviar":</strong> O item priorizado interrompe de forma segura o turno atual, salva os eventos parciais e é despachado como continuação da sessão.</li>
         <li><strong>Ação de "Editar" (Desempilhar):</strong> Permite devolver o texto da fila de volta ao composer com 1 clique caso queira mudar de ideia antes de enviar.</li>
-        <li><strong>Affordance no Composer rodando:</strong> Enquanto o agente trabalha, o usuário ganha botões claros para <code>+ Enfileirar</code> (ou Enter) e <code>⚡ Parar e Enviar Agora</code> (ou ⌘Enter) caso esteja digitando uma nova instrução urgente.</li>
+        <li><strong>Gestos do composer rodando:</strong> <code>Enter</code> corrige o rumo agora; <code>Tab</code> guarda a mensagem para o próximo turno. Como o transporte atual da Frota ainda não encaminha steering nativo, a correção imediata aparece honestamente como <code>Interromper e enviar</code>.</li>
       </ul>
     </div>
 
@@ -638,7 +638,7 @@
           <div class="queue-dock-header">
             <span class="queue-dock-title">
               <span class="queue-dock-badge" id="queue-count-badge">1</span>
-              Na fila · enviam juntas ao terminar ou force agora
+              Na fila · enviam quando este turno terminar
             </span>
             <span class="queue-dock-hint">Próximo envio coalescido</span>
           </div>
@@ -650,7 +650,7 @@
               <div class="queue-actions-group">
                 <button class="btn-queue-action btn-force-send" onclick="simulateForceSend(1)" title="Interrompe o turno atual e despacha esta mensagem imediatamente">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                  Enviar agora
+                  Interromper e enviar
                 </button>
                 <button class="btn-queue-action" onclick="simulateEdit(1)" title="Devolve para o composer para editar">
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -667,7 +667,7 @@
           <textarea
             id="composer-input"
             class="composer-textarea"
-            placeholder="Enfileirar próxima mensagem (ou ⌘↵ para enviar agora)..."
+            placeholder="Enter corrige agora · Tab envia no próximo turno..."
             oninput="updateComposerState()"
             onkeydown="handleComposerKey(event)"
           ></textarea>
@@ -691,11 +691,11 @@
 
             <div id="composer-action-buttons" class="btn-interrupt-send-group">
               <button id="btn-quick-enqueue" class="btn-enqueue-action" style="display: none;" onclick="simulateAddQueue()">
-                + Enfileirar <span style="opacity: 0.6; font-size: 10px;">↵</span>
+                Enfileirar <span style="opacity: 0.6; font-size: 10px;">Tab</span>
               </button>
               <button id="btn-force-turn" class="btn-force-turn-btn" style="display: none;" onclick="simulateForceFromComposer()">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-                Parar e Enviar <span style="opacity: 0.8; font-size: 10px;">⌘↵</span>
+                Interromper e enviar <span style="opacity: 0.8; font-size: 10px;">↵</span>
               </button>
 
               <button class="btn-stop-square" onclick="simulateStop()" title="Parar o turno atual">
@@ -719,7 +719,7 @@
         </div>
         <p>1. Digite no campo acima para ver aparecerem os botões <strong>+ Enfileirar</strong> e <strong>⚡ Parar e Enviar</strong>.</p>
         <p>2. Clique em <strong>Editar</strong> no item da fila para puxá-lo de volta ao composer.</p>
-        <p>3. Clique em <strong>Enviar agora</strong> no item da fila para simular a interrupção segura do turno e envio imediato.</p>
+        <p>3. Clique em <strong>Interromper e enviar</strong> no item da fila para simular a interrupção segura e o despacho imediato.</p>
         <div id="simulation-log" style="margin-top: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--st-running);"></div>
       </div>
     </div>
@@ -802,7 +802,7 @@
     <div class="explainer-box">
       <strong>Como o "Envio Forçado" se comporta nos bastidores:</strong>
       <p style="margin-top: 8px;">
-        Motores de terminal headless (como <code>claude -p</code>, <code>agy -p</code> ou <code>codex</code>) não possuem suporte a injeção dinâmica de prompts via stdin durante um stream de tool calls sem encerrar o turno.
+        Os agentes atuais distinguem correção do turno em voo e fila do próximo turno. O transporte atual da Frota ainda não expõe esse steering em todos os adapters; por isso o fallback imediato é interromper e retomar, com esse custo dito na ação.
       </p>
       <p>
         Portanto, o <strong>Envio Forçado</strong> no Frota segue uma sequência de 3 passos à prova de perda de dados:
@@ -861,7 +861,7 @@
         <div class="queue-actions-group">
           <button class="btn-queue-action btn-force-send" onclick="simulateForceSend(${msg.id})" title="Interrompe o turno atual e despacha esta mensagem imediatamente">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Enviar agora
+            Interromper e enviar
           </button>
           <button class="btn-queue-action" onclick="simulateEdit(${msg.id})" title="Devolve para o composer para editar">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -932,14 +932,12 @@
   }
 
   function handleComposerKey(e) {
-    if (e.key === 'Enter') {
-      if (e.metaKey || e.ctrlKey) {
-        e.preventDefault();
-        simulateForceFromComposer();
-      } else if (!e.shiftKey) {
-        e.preventDefault();
-        simulateAddQueue();
-      }
+    if (e.key === 'Tab' && e.target.value.trim()) {
+      e.preventDefault();
+      simulateAddQueue();
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      simulateForceFromComposer();
     }
   }
 

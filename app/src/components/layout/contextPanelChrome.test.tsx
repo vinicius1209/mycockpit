@@ -3,19 +3,19 @@ import { describe, expect, it } from "vitest"
 import { ContextPanelTabs } from "./contextPanelChrome"
 
 describe("a navegação do painel direito", () => {
-  it("mantém a ordem Arquivos, Plano, Alterações e Contexto", () => {
+  it("mantém a ordem Arquivos, Conversa, Alterações e Contexto", () => {
     const html = renderToStaticMarkup(
-      <ContextPanelTabs tab="plano" changedCount={2} onSelect={() => {}} />,
+      <ContextPanelTabs tab="conversa" changedCount={2} onSelect={() => {}} />,
     )
 
     const files = html.indexOf("Arquivos")
-    const plan = html.indexOf("Plano")
+    const conversation = html.indexOf("Conversa")
     const changes = html.indexOf("Alterações")
     const context = html.indexOf("Contexto")
 
     expect(files).toBeGreaterThan(-1)
-    expect(files).toBeLessThan(plan)
-    expect(plan).toBeLessThan(changes)
+    expect(files).toBeLessThan(conversation)
+    expect(conversation).toBeLessThan(changes)
     expect(changes).toBeLessThan(context)
     expect(html).toContain(">2</span>")
   })

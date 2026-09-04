@@ -13,6 +13,7 @@ export type ResultItem = Extract<ChatItem, { kind: "result" }>
 export interface IncidentNode {
   type: "incident"
   key: string
+  itemIds?: string[]
   severity: "limit" | "error"
   message: string
   resetHint?: string
@@ -24,9 +25,9 @@ export interface IncidentNode {
  * solto, ou o marco compacto de um plano publicado. */
 export type Node =
   | { type: "item"; key: string; item: ChatItem }
-  | { type: "prose"; key: string; text: string; tools: ToolItem[] }
-  | { type: "tools"; key: string; tools: ToolItem[] }
-  | { type: "plan"; key: string; anchorId: string }
+  | { type: "prose"; key: string; text: string; tools: ToolItem[]; itemIds?: string[] }
+  | { type: "tools"; key: string; tools: ToolItem[]; itemIds?: string[] }
+  | { type: "plan"; key: string; anchorId: string; itemIds?: string[] }
   | IncidentNode
 
 const LIMIT_PATTERNS = [
@@ -153,6 +154,7 @@ function terminalIncidentAt(
     node: {
       type: "incident",
       key: first.id,
+      itemIds: items.slice(start, end + 1).map((item) => item.id),
       severity,
       message: message || fallbackMessage,
       resetHint,
@@ -262,7 +264,7 @@ export function foldNodes(
   }
   // segmento corrente: prosa costurada (`texts`, concatenada direto) + as tools
   // que ela disparou. `texts` vazio e só `tools` = burst solto (sem narração).
-  let seg: { key: string; texts: string[]; tools: ToolItem[] } | null = null
+  let seg: { key: string; texts: string[]; tools: ToolItem[]; itemIds: string[] } | null = null
   const flush = () => {
     if (!seg) return
     if (seg.texts.length) {
@@ -271,9 +273,10 @@ export function foldNodes(
         key: seg.key,
         text: seg.texts.join(""),
         tools: seg.tools,
+        itemIds: seg.itemIds,
       })
     } else if (seg.tools.length) {
-      nodes.push({ type: "tools", key: seg.key, tools: seg.tools })
+      nodes.push({ type: "tools", key: seg.key, tools: seg.tools, itemIds: seg.itemIds })
     }
     seg = null
   }
@@ -303,14 +306,16 @@ export function foldNodes(
     if (it.kind === "tool" && isTaskTool(it.name)) {
       flush()
       if (it.name === "TaskCreate" && !planShownInTurn) {
-        nodes.push({ type: "plan", key: it.id, anchorId: it.id })
+        nodes.push({ type: "plan", key: it.id, anchorId: it.id, itemIds: [it.id] })
         planShownInTurn = true
       }
       continue
     }
     if (it.kind === "tool") {
-      if (!seg) seg = { key: it.id, texts: [], tools: [] }
-      seg.tools.push(...withDescendants(it))
+      if (!seg) seg = { key: it.id, texts: [], tools: [], itemIds: [] }
+      const tools = withDescendants(it)
+      seg.tools.push(...tools)
+      seg.itemIds.push(...tools.map((tool) => tool.id))
       continue
     }
     if (it.kind === "text") {
@@ -318,9 +323,10 @@ export function foldNodes(
       // fecha o passo anterior (levando as tools dele) e abre um novo.
       if (seg && seg.texts.length && continuesProse(seg.texts.join(""), it.text)) {
         seg.texts.push(it.text)
+        seg.itemIds.push(it.id)
       } else {
         flush()
-        seg = { key: it.id, texts: [it.text], tools: [] }
+        seg = { key: it.id, texts: [it.text], tools: [], itemIds: [it.id] }
       }
       continue
     }
@@ -369,15 +375,24 @@ function sameNode(prev: Node, next: Node): boolean {
     case "item":
       return prev.type === "item" && prev.item === next.item
     case "plan":
-      return prev.type === "plan" && prev.anchorId === next.anchorId
+      return (
+        prev.type === "plan" &&
+        prev.anchorId === next.anchorId &&
+        sameStrings(prev.itemIds ?? [], next.itemIds ?? [])
+      )
     case "prose":
       return (
         prev.type === "prose" &&
         prev.text === next.text &&
+        sameStrings(prev.itemIds ?? [], next.itemIds ?? []) &&
         sameTools(prev.tools, next.tools)
       )
     case "tools":
-      return prev.type === "tools" && sameTools(prev.tools, next.tools)
+      return (
+        prev.type === "tools" &&
+        sameStrings(prev.itemIds ?? [], next.itemIds ?? []) &&
+        sameTools(prev.tools, next.tools)
+      )
     case "incident":
       return (
         prev.type === "incident" &&
@@ -385,6 +400,7 @@ function sameNode(prev: Node, next: Node): boolean {
         prev.message === next.message &&
         prev.resetHint === next.resetHint &&
         prev.result === next.result &&
+        sameStrings(prev.itemIds ?? [], next.itemIds ?? []) &&
         sameStrings(prev.details, next.details)
       )
   }

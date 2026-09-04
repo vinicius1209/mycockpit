@@ -98,6 +98,10 @@ vi.mock("@tauri-apps/plugin-sql", () => {
         }
         return { rowsAffected: 1 }
       }
+      if (sql.startsWith("DELETE FROM schedule_runs WHERE schedule_id IN")) {
+        h.deleted.push("schedule_runs")
+        return { rowsAffected: 1 }
+      }
       const outros = ["schedules", "cards", "conversations", "projects"]
       for (const t of outros) {
         if (sql.startsWith(`DELETE FROM ${t} `)) {

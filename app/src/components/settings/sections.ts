@@ -51,6 +51,7 @@ export type SectionId =
   | "resources"
   | "extensions"
   | "models"
+  | "conversation-reading"
   | "hooks"
   | "ledger"
   | "integrations"
@@ -204,6 +205,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: Layers,
     group: "agentes",
     busca: ["modelo", "opus", "sonnet", "gpt", "gemini", "preço", "token", "catálogo"],
+  },
+  {
+    id: "conversation-reading",
+    label: "Leitura das conversas",
+    title: "Leitura das conversas",
+    question: "Como o Frota mantém um mapa curto do rumo de conversas longas.",
+    icon: Waypoints,
+    group: "agentes",
+    busca: ["conversa", "mapa", "resumo", "rumo", "apple intelligence", "foundation models", "privacidade"],
   },
   {
     id: "hooks",

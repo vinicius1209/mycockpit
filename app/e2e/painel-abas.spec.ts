@@ -12,12 +12,12 @@ import { test, expect, type Page } from "@playwright/test"
 // O que estas medições travam:
 //  - nenhuma aba é cortada em NENHUMA largura do painel (ele é redimensionável,
 //    `minSize` 240px a `maxSize` 42% — AppShell.tsx);
-//  - na largura padrão o rótulo APARECE (degradar por decreto era a saída
-//    recusada: ícone-só sempre vira dois enigmas a decorar);
+//  - quando os quatro rótulos cabem, eles APARECEM (degradar por decreto era a
+//    saída recusada: ícone-só sempre vira enigmas a decorar);
 //  - no painel mínimo a tira degrada pra ícone, e o CONTADOR continua visível
 //    nos dois modos (é o único dado da tira que muda sozinho).
 
-const ABAS = ["Contexto", "Alterações", "Plano"] as const
+const ABAS = ["Arquivos", "Conversa", "Alterações", "Contexto"] as const
 
 async function preparar(page: Page) {
   await page.addInitScript(() => {
@@ -98,8 +98,8 @@ test("nenhuma aba é cortada, em nenhuma largura do painel", async ({ page }) =>
   await comContadorLargo(page)
 
   // Janela mínima do app (940, tauri.conf.json) → painel no `minSize` de 240px;
-  // e uma janela larga, onde o painel abre na proporção padrão de 30%.
-  for (const largura of [940, 1280, 1600]) {
+  // e janelas largas, onde o painel abre na proporção padrão de 30%.
+  for (const largura of [940, 1280, 1600, 1920]) {
     await page.setViewportSize({ width: largura, height: 832 })
     await page.waitForTimeout(200)
     const m = await medir(page)
@@ -122,9 +122,10 @@ test("rótulo quando cabe, ícone quando não cabe — e o contador fica nos doi
   await preparar(page)
   await comContadorLargo(page)
 
-  // Largura PADRÃO da janela (tauri.conf.json): o painel abre em ~30% e os três
-  // rótulos precisam aparecer. É o caso que estava cortando o "PLANO".
-  await page.setViewportSize({ width: 1280, height: 832 })
+  // Com painel >= 400px, os quatro nomes cabem e precisam aparecer. Em
+  // larguras menores a própria quarta aba exige a degradação documentada no
+  // componente, sem corte e preservando nome acessível.
+  await page.setViewportSize({ width: 1920, height: 832 })
   await page.waitForTimeout(200)
   const padrao = await medir(page)
   for (const aba of padrao.abas) {

@@ -1,6 +1,6 @@
 # Arquitetura atual
 
-> Documento vivo, revisado em 30/08/2026. Para comportamento por agente, as
+> Documento vivo, revisado em 04/09/2026. Para comportamento por agente, as
 > fontes executáveis são `app/src-tauri/src/adapters.rs` e os espelhos
 > `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`. Planos e matrizes
 > datadas explicam decisões, mas não substituem esses registries.
@@ -56,6 +56,8 @@ atividade.
 | texto e anexos ainda não enviados | `store/composerDrafts.ts` | durável por conversa; persiste em `conversation_drafts` |
 | permissões e perguntas pendentes | `store/interactions.ts` | uma fila real compartilhada pela UI e pelo Companion |
 | notas | `store/stickyNotes.ts` | só entram no prompt por menção ou gesto explícito |
+| mapa vivo da conversa | `store/conversationMaps.ts` | semântico derivado; pins humanos e fatos canônicos vencem a geração |
+| alterações do projeto | Git via `lib/git.ts` | consulta sob demanda; a UI não antecipa stage, descarte, commit ou pull request |
 | missões, disputas, cards e worktrees | stores próprias | não duplicar esses estados no chat |
 
 Zustand + efeitos é o padrão das superfícies atuais. Existe um
@@ -114,6 +116,13 @@ ADR-122.
   como o MCP interno `mc-tools` para adapters com essa capability.
 - `app/src-tauri/src/work_gateway.rs`: processos longos iniciados por ferramenta
   e telemetria de trabalho.
+- `app/src-tauri/src/utility.rs`: gateway tipado e limitado para inferências
+  auxiliares; o mapa usa o sidecar one-shot `intelligence/main.swift` no Mac.
+- `app/src-tauri/src/git.rs` e `app/src/lib/git.ts`: fronteira de controle de
+  versão; caminhos e repositório são validados antes de efeitos, e o descarte
+  do diretório de trabalho preserva o índice preparado.
+- `app/src/lib/utility/` e `app/src/lib/conversationMap/`: scheduler comum,
+  perfis de finalidade, projeção factual, validação semântica e composição.
 - `app/src/lib/tooling.ts` e `app/src/lib/resources.ts`: espelho do manifesto,
   materializadores e claims de navegador/desktop.
 - `app/src/components/settings/LocalResourcesSettings.tsx` e
@@ -122,6 +131,12 @@ ADR-122.
 O contrato conceitual e a evidência histórica por versão estão em
 [`agent-runner.md`](./agent-runner.md). Matrizes datadas precisam ser verificadas
 novamente antes de alterar uma capability.
+
+Na interface, `DiffIndex` é o índice estreito de controle de versão.
+`GitSection` organiza os conjuntos preparado e não preparado, enquanto a aba
+principal de diff continua responsável pela leitura. `CommitComposer` e
+`PrComposer` iniciam efeitos somente após gesto humano; erros voltam para a
+superfície em vez de serem convertidos em repositório vazio.
 
 Tools, MCPs, skills, plugins e recursos locais têm domínios separados. O
 contrato, a comparação com Orca/Paseo e a migração estão em
@@ -140,6 +155,10 @@ Entidades centrais:
 - `conversations`: transcript serializado, sessão, agente, modelo e contexto;
 - `conversation_drafts`: texto, anexos e atualização do rascunho por conversa;
 - `turn_costs`: ledger de custo por turno;
+- `conversation_maps`, `conversation_map_pins`: leitura derivada e correções
+  humanas em registros separados;
+- `utility_inference_usage`: observação de fonte, latência, sucesso e custo
+  conhecido ou desconhecido por finalidade;
 - `missions`, `deliveries`, `stage_runs`: execução e evidência das Features;
 - `mcp_servers`, `mcp_bindings`, `mcp_health`: control plane MCP;
 - `plugin_grants`, `plugin_audit_events`: decisão humana atual e trilha recente

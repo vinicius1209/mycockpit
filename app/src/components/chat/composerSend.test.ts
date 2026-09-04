@@ -8,7 +8,7 @@
 // pra trás uma vez.
 import { describe, expect, it } from "vitest"
 import {
-  despachoDoEnter,
+  destinoDoComposer,
   podeEnviar,
   type EstadoDoComposer,
 } from "./composerSend"
@@ -29,24 +29,24 @@ function composer(over: Partial<EstadoDoComposer> = {}): EstadoDoComposer {
 
 describe("o vazio não sai", () => {
   it("sem texto e sem anexo, barrado", () => {
-    expect(despachoDoEnter(composer({ texto: "" }))).toBe("barrado")
+    expect(destinoDoComposer(composer({ texto: "" }))).toBe("barrado")
   })
 
   it("sem texto e sem anexo, barrado TAMBÉM com turno em andamento", () => {
     // A fila não existe pra guardar mensagem vazia: Enter num composer limpo
     // durante um turno não pode empilhar nada.
     expect(
-      despachoDoEnter(composer({ texto: "", running: true })),
+      destinoDoComposer(composer({ texto: "", running: true })),
     ).toBe("barrado")
   })
 
   it("só anexo, sem texto, ENVIA (a imagem é a mensagem)", () => {
-    expect(despachoDoEnter(composer({ texto: "", anexos: 1 }))).toBe("enviar")
+    expect(destinoDoComposer(composer({ texto: "", anexos: 1 }))).toBe("enviar")
   })
 
   it("só anexo, sem texto, ENFILEIRA com turno em andamento", () => {
     expect(
-      despachoDoEnter(composer({ texto: "", anexos: 1, running: true })),
+      destinoDoComposer(composer({ texto: "", anexos: 1, running: true })),
     ).toBe("enfileirar")
   })
 })
@@ -55,13 +55,13 @@ describe("anexo que o motor não lê barra a mensagem INTEIRA", () => {
   it("em repouso, barrado", () => {
     // Enviar "a metade que dá" faria o usuário achar que o agente viu a imagem.
     expect(
-      despachoDoEnter(composer({ anexos: 1, anexosSuportados: false })),
+      destinoDoComposer(composer({ anexos: 1, anexosSuportados: false })),
     ).toBe("barrado")
   })
 
   it("com turno em andamento, também barrado (a fila não é atalho)", () => {
     expect(
-      despachoDoEnter(
+      destinoDoComposer(
         composer({ anexos: 1, anexosSuportados: false, running: true }),
       ),
     ).toBe("barrado")
@@ -70,35 +70,35 @@ describe("anexo que o motor não lê barra a mensagem INTEIRA", () => {
 
 describe("turno em andamento enfileira, não envia", () => {
   it("running: enfileirar", () => {
-    expect(despachoDoEnter(composer({ running: true }))).toBe("enfileirar")
+    expect(destinoDoComposer(composer({ running: true }))).toBe("enfileirar")
   })
 
   it("finalizing (o CLI ainda fecha a conta): enfileirar", () => {
-    expect(despachoDoEnter(composer({ finalizing: true }))).toBe("enfileirar")
+    expect(destinoDoComposer(composer({ finalizing: true }))).toBe("enfileirar")
   })
 
   it("com texto E anexo, enfileira os dois pelo mesmo gate", () => {
     expect(
-      despachoDoEnter(composer({ anexos: 2, running: true })),
+      destinoDoComposer(composer({ anexos: 2, running: true })),
     ).toBe("enfileirar")
   })
 })
 
 describe("o que trava o composer trava a fila junto", () => {
   it("disabled barra em repouso", () => {
-    expect(despachoDoEnter(composer({ disabled: true }))).toBe("barrado")
+    expect(destinoDoComposer(composer({ disabled: true }))).toBe("barrado")
   })
 
   it("disabled barra também com turno em andamento", () => {
     expect(
-      despachoDoEnter(composer({ disabled: true, running: true })),
+      destinoDoComposer(composer({ disabled: true, running: true })),
     ).toBe("barrado")
   })
 
   it("missão em andamento barra o envio manual", () => {
     // M2: as fases compartilham o worktree; um envio manual em paralelo
     // embolaria o diff e o handoff.
-    expect(despachoDoEnter(composer({ missionRunning: true }))).toBe("barrado")
+    expect(destinoDoComposer(composer({ missionRunning: true }))).toBe("barrado")
   })
 
   it("missão em andamento barra ATÉ a fila, com turno linear em voo", () => {
@@ -108,10 +108,10 @@ describe("o que trava o composer trava a fila junto", () => {
     // mensagens somem sem voltar pra fila e sem aviso. Fila que o despacho vai
     // recusar é pior que Enter que não faz nada: ela promete um envio.
     expect(
-      despachoDoEnter(composer({ missionRunning: true, running: true })),
+      destinoDoComposer(composer({ missionRunning: true, running: true })),
     ).toBe("barrado")
     expect(
-      despachoDoEnter(composer({ missionRunning: true, finalizing: true })),
+      destinoDoComposer(composer({ missionRunning: true, finalizing: true })),
     ).toBe("barrado")
   })
 })
@@ -151,7 +151,7 @@ describe("nenhuma combinação inventa um quarto desfecho", () => {
         finalizing: bit(5),
         missionRunning: bit(6),
       })
-      const d = despachoDoEnter(e)
+      const d = destinoDoComposer(e)
       desfechos.add(d)
       // Invariante que vale em TODA combinação: sem conteúdo, nada sai.
       if (e.texto === "" && e.anexos === 0) expect(d).toBe("barrado")

@@ -67,7 +67,11 @@ export function turnControl(event: AgentEvent): Partial<ConvState> {
       return { running: false, finalizing: true, runId: null, startedAt: null }
     case "error":
     case "cancelled":
-      return { running: false, runId: null, startedAt: null }
+      // O evento terminal entra no fio antes do `done` e antes de o processo
+      // devolver o controle ao ChatPanel. Até lá a fila ainda não foi drenada:
+      // liberar a UI aqui criava o estado impossível "interrompido + fila que
+      // será enviada ao terminar". `done` é a única fronteira de repouso.
+      return { running: false, finalizing: true, runId: null, startedAt: null }
     case "startup_failed":
       return {
         running: false,

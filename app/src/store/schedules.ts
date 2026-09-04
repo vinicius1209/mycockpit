@@ -9,10 +9,13 @@ import {
   listSchedules,
   rescheduleSchedule,
   setScheduleEnabled,
+  updateSchedule,
+  type ScheduleKind,
   type SchedulePermission,
   type ScheduleRecord,
   type ScheduleRunRecord,
 } from "@/lib/db"
+import { normalizeSchedulePermission } from "@/lib/sessionMode"
 import {
   computeNextRun,
   parseRecurrence,
@@ -23,10 +26,17 @@ import { dispatchSchedule } from "@/lib/scheduleEngine"
 export interface NewScheduleInput {
   name: string
   projectId: string
+  /** "agent" = um prompt; "mission" = um Plano de voo (loop agêntico). O form
+   *  só produz estes dois; "lead" é legado de leitura (ADR-078). */
+  kind: Extract<ScheduleKind, "agent" | "mission">
   agent: string
   model: string | null
+  /** null = default do agent (nenhuma flag no spawn). */
+  effort: string | null
   prompt: string
   permission: SchedulePermission
+  /** Plano de voo, obrigatório quando `kind === "mission"`. */
+  planId: string | null
   recurrence: Recurrence
 }
 
@@ -38,6 +48,10 @@ interface SchedulesState {
 
   reload: () => Promise<void>
   create: (input: NewScheduleInput) => Promise<void>
+  /** Edita uma automação existente (mesmo form do criar). O next_run é
+   *  RECALCULADO da recorrência nova; histórico e id não se tocam. LANÇA com o
+   *  motivo quando o rascunho é inválido — a view mostra em vez de fingir. */
+  edit: (id: string, input: NewScheduleInput) => Promise<void>
   toggle: (id: string, enabled: boolean) => Promise<void>
   remove: (id: string) => Promise<void>
   /** "Rodar agora": dispara já, SEM mexer no next_run do calendário. */
@@ -67,19 +81,28 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
     ) {
       throw new Error("O horário escolhido já passou")
     }
+    // fail-closed: Plano de voo sem plano escolhido nasceria sem nada pra
+    // rodar (e o disparo é que descobriria). Recusa aqui.
+    if (input.kind === "mission" && !input.planId) {
+      throw new Error("Escolha um Plano de voo")
+    }
     const s: ScheduleRecord = {
       id: crypto.randomUUID(),
       name: input.name.trim(),
       projectId: input.projectId,
-      // Só se CRIA "agent". "lead" segue existindo no tipo e no banco porque
-      // linhas antigas precisam continuar LEGÍVEIS pra serem desligadas com a
-      // causa escrita (ADR-078) — o que sumiu foi o produtor, não o leitor.
-      kind: "agent",
+      // Só se CRIA "agent" e "mission". "lead" segue existindo no tipo e no
+      // banco porque linhas antigas precisam continuar LEGÍVEIS pra serem
+      // desligadas com a causa escrita (ADR-078) — o que sumiu foi o produtor,
+      // não o leitor.
+      kind: input.kind,
       agent: input.agent,
       model: input.model,
+      effort: input.effort,
       prompt: input.prompt.trim(),
-      // regra dura: só leitura|padrao chega aqui (o tipo já barra 'liberado').
-      permission: input.permission === "padrao" ? "padrao" : "leitura",
+      // clamp ÚNICO do vocabulário (lib/sessionMode) — o que estava escrito à
+      // mão aqui engolia o "auto" que a tela oferecia (ADR-158).
+      permission: normalizeSchedulePermission(input.permission),
+      planId: input.kind === "mission" ? input.planId : null,
       recurrence: JSON.stringify(input.recurrence),
       enabled: true,
       nextRun: computeNextRun(input.recurrence, new Date()),
@@ -89,6 +112,34 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
       createdAt: Date.now(),
     }
     await insertSchedule(s)
+    await get().reload()
+  },
+
+  edit: async (id, input) => {
+    // MESMAS guardas do create: horário morto e Plano de voo vazio não passam
+    // por edição do que já existe (senão a edição vira a porta dos fundos).
+    if (
+      input.recurrence.kind === "once" &&
+      computeNextRun(input.recurrence, new Date()) == null
+    ) {
+      throw new Error("O horário escolhido já passou")
+    }
+    if (input.kind === "mission" && !input.planId) {
+      throw new Error("Escolha um Plano de voo")
+    }
+    await updateSchedule(id, {
+      name: input.name.trim(),
+      projectId: input.projectId,
+      kind: input.kind,
+      agent: input.agent,
+      model: input.model,
+      effort: input.effort,
+      prompt: input.prompt.trim(),
+      permission: normalizeSchedulePermission(input.permission),
+      planId: input.kind === "mission" ? input.planId : null,
+      recurrence: JSON.stringify(input.recurrence),
+      nextRun: computeNextRun(input.recurrence, new Date()),
+    })
     await get().reload()
   },
 

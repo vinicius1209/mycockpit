@@ -5,22 +5,24 @@
 // notificação agrupada no sino e o next_run recalcula pro futuro.
 //
 // SEM retry automático na v1: uma execução que falha marca 'failed' + sino;
-// re-rodar é decisão humana ("Rodar agora" na view Agendado).
+// re-rodar é decisão humana ("Rodar agora" na view Agendado). O que a falha
+// PRECISA carregar é o MOTIVO (lib/scheduleOutcome) — sem ele o histórico só
+// dizia "falhou" e a pessoa tinha que abrir a conversa pra descobrir o quê.
 //
 // O disparo usa o caminho NORMAL de envio: conversa nova no projeto (via
 // registerConversation — sem roubar a seleção), start/handleEvent/finish/
 // persist do useChat e runAgent — aparece no sidebar como run vivo, custo
-// contabilizado nos items. Permissão da automação: 'leitura' (default) ou
-// 'padrao'; 'liberado' é clampado fora AQUI além do tipo.
+// contabilizado nos items. Automação de PLANO DE VOO (kind "mission") sai por
+// lib/scheduleMission, que roda a missão multi-fase na mesma conversa nova.
+// Permissão da automação: 'leitura' (default), 'padrao' ou 'auto'; 'liberado'
+// é clampado fora pelo normalizeSchedulePermission, além do tipo.
 
 import { runAgent } from "@/lib/agent"
 import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
 import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
 import {
-  insertScheduleRun,
   listSchedules,
   markScheduleCompleted,
-  markScheduleRun,
   setScheduleEnabled,
   setScheduleNextRun,
   type ScheduleRecord,
@@ -30,10 +32,20 @@ import {
   parseRecurrence,
   splitDueAndMissed,
 } from "@/lib/schedules"
+import { dispatchMissionSchedule } from "@/lib/scheduleMission"
+import {
+  failureNotice,
+  recordScheduleOutcome,
+  turnOutcome,
+  type ScheduleOutcome,
+} from "@/lib/scheduleOutcome"
+import { normalizeSchedulePermission } from "@/lib/sessionMode"
 import { clearUnattendedRun, markUnattendedRun } from "@/lib/unattendedRuns"
 import { useApp } from "@/store/app"
-import { useChat, type ChatItem } from "@/store/chat"
+import { useChat } from "@/store/chat"
 import { useNotifs } from "@/store/notifications"
+
+export { turnOutcome }
 
 /** Guarda in-memory anti-duplo-disparo (tick de 60s × run longo × "Rodar
  *  agora"). O next_run já avança no disparo, isto cobre a janela async. */
@@ -51,39 +63,6 @@ function shortDate(d: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(d)
-}
-
-/** Desfecho do turno lido dos items reduzidos pelo caminho normal do chat:
- *  ok = o último item "terminal" é um result com ok=true; o custo vem do
- *  último result (que carrega o total do turno — results consecutivos já
- *  foram colapsados pelo reduceItems). */
-export function turnOutcome(items: ChatItem[]): {
-  ok: boolean
-  cost: number | null
-} {
-  let cost: number | null = null
-  let ok = false
-  for (let i = items.length - 1; i >= 0; i--) {
-    const it = items[i]
-    if (it.kind === "result") {
-      cost = it.costUsd ?? null
-      ok = it.ok
-      break
-    }
-    if (it.kind === "error" || it.kind === "cancelled" || it.kind === "limit") {
-      ok = false
-      // segue procurando um result anterior só pra recuperar o custo gasto.
-      for (let j = i - 1; j >= 0; j--) {
-        const prev = items[j]
-        if (prev.kind === "result") {
-          cost = prev.costUsd ?? null
-          break
-        }
-      }
-      break
-    }
-  }
-  return { ok, cost }
 }
 
 /** Dispara UMA automação agora. `manual=true` ("Rodar agora") não mexe no
@@ -123,18 +102,14 @@ export async function dispatchSchedule(
     // Ela é desligada uma vez, com a causa escrita, e fica na lista até você
     // excluir — some da vista só por gesto seu.
     if (s.kind === "lead") {
-      const startedAt = Date.now()
       const motivo =
-        "O tipo \u201cProposta do lead\u201d foi removido: ele dependia do board, que não existe mais. Esta automação foi desligada e não vai rodar."
-      await insertScheduleRun({
-        id: crypto.randomUUID(),
-        scheduleId: s.id,
-        startedAt,
+        "O tipo “Proposta do lead” foi removido: ele dependia do board, que não existe mais. Esta automação foi desligada e não vai rodar."
+      await recordScheduleOutcome(s, Date.now(), {
         status: "failed",
         cost: null,
         convId: null,
+        error: motivo,
       })
-      await markScheduleRun(s.id, startedAt, "failed")
       // next_run null junto: desligar sem limpar o calendário deixaria a
       // automação com um horário futuro que nunca chega.
       await setScheduleEnabled(s.id, false, null)
@@ -152,20 +127,11 @@ export async function dispatchSchedule(
       .getState()
       .projects.find((p) => p.id === s.projectId)
     if (!project) {
-      await insertScheduleRun({
-        id: crypto.randomUUID(),
-        scheduleId: s.id,
-        startedAt,
+      await finishWith(s, startedAt, {
         status: "failed",
         cost: null,
         convId: null,
-      })
-      await markScheduleRun(s.id, startedAt, "failed")
-      useNotifs.getState().push({
-        kind: "run_error",
-        title: `Automação falhou: ${s.name}`,
-        subtitle: "Projeto não encontrado (arquivado?).",
-        projectId: s.projectId,
+        error: "Projeto não encontrado (arquivado?).",
       })
       return
     }
@@ -174,33 +140,46 @@ export async function dispatchSchedule(
     // ausente/deslogada às 3h não ganha conversa nem run gasto; a falha entra
     // no histórico com o MOTIVO real. O next_run já avançou lá em cima, então
     // não retenta em loop — re-rodar segue decisão humana ("Rodar agora").
-    const dispatchBlock = dispatchBlockReason(
-      s.agent,
-      useApp.getState().settings.detected ?? {},
-    )
+    // No Plano de voo o agent do registro não manda: quem roda são as fases.
+    const dispatchBlock =
+      s.kind === "mission"
+        ? null
+        : dispatchBlockReason(
+            s.agent,
+            useApp.getState().settings.detected ?? {},
+          )
     if (dispatchBlock) {
-      await insertScheduleRun({
-        id: crypto.randomUUID(),
-        scheduleId: s.id,
-        startedAt,
+      await finishWith(s, startedAt, {
         status: "failed",
         cost: null,
         convId: null,
-      })
-      await markScheduleRun(s.id, startedAt, "failed")
-      useNotifs.getState().push({
-        kind: "run_error",
-        title: `Automação falhou: ${s.name}`,
-        subtitle: dispatchBlock,
-        projectId: s.projectId,
+        error: dispatchBlock,
       })
       return
     }
+
+    // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp ÚNICO
+    // (lib/sessionMode), o mesmo da escrita e da leitura no banco — foi ter
+    // TRÊS cópias desta linha que fez o "Auto" da tela virar 'leitura' no
+    // processo (ADR-158). "auto" passa: roda sem pedir, mas com o freio de
+    // cada CLI (claude classificador, codex sandbox de SO, agy --sandbox).
+    const permission = normalizeSchedulePermission(s.permission)
 
     // conversa NOVA no projeto, em background (não rouba a seleção).
     const convId = crypto.randomUUID()
     const title = `⏰ ${s.name} — ${shortDate(new Date(startedAt))}`
     await useChat.getState().registerConversation(s.projectId, convId, title)
+
+    // ── PLANO DE VOO: o loop agêntico multi-fase (lib/scheduleMission) ──
+    if (s.kind === "mission") {
+      const outcome = await dispatchMissionSchedule(s, {
+        convId,
+        project,
+        permission,
+      })
+      await finishWith(s, startedAt, outcome)
+      return
+    }
 
     const runId = crypto.randomUUID()
     // normaliza id persistido: modelo que SAIU do CLI (ex. gpt-5.3-codex) não
@@ -209,17 +188,8 @@ export async function dispatchSchedule(
       s.agent,
       s.model && s.model !== "default" ? s.model : null,
     )
-    // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp além do tipo.
-    // Clamp explícito: "liberado" NUNCA passa (bypass sem humano na frente não
-    // tem quem segure um erro). "auto" passa — roda sem pedir, mas com o freio
-    // de cada CLI: claude classificador, codex sandbox de SO, agy --sandbox.
-    // Valor desconhecido cai em "leitura", o mais restrito (fail-closed).
-    const permission =
-      s.permission === "padrao"
-        ? "padrao"
-        : s.permission === "auto"
-          ? "auto"
-          : "leitura"
+    // effort: "default" e vazio são a MESMA coisa (nenhuma flag no spawn).
+    const effort = s.effort && s.effort !== "default" ? s.effort : null
 
     // Run DESASSISTIDO: ninguém está na frente da tela pra aprovar nada (nem no
     // "Rodar agora" — a conversa nasce em background, sem roubar a seleção).
@@ -237,7 +207,7 @@ export async function dispatchSchedule(
     const doctrine = buildDoctrineBlock(
       (await readDoctrine(project.path)).content,
     )
-    let invokeFailed = false
+    let invokeFailed: string | null = null
     let accepted = false
     let preflightBlocked = false
     try {
@@ -246,7 +216,7 @@ export async function dispatchSchedule(
         convId,
         s.agent,
         model,
-        null,
+        effort,
         doctrine ? `${doctrine}\n\n${s.prompt}` : s.prompt,
         project.path,
         null, // sessão fresca — cada execução é um turno independente
@@ -261,13 +231,17 @@ export async function dispatchSchedule(
             accepted = true
             useChat
               .getState()
-              .start(convId, s.prompt, runId, s.agent, model, null, [])
+              .start(convId, s.prompt, runId, s.agent, model, effort, [])
           }
           if (accepted) useChat.getState().handleEvent(convId, e)
         },
       )
-    } catch {
-      invokeFailed = true
+    } catch (e) {
+      // o spawn nem chegou a produzir stream: a mensagem do invoke é a ÚNICA
+      // pista que existe. Engoli-la deixava o histórico com "falhou" e nada.
+      invokeFailed =
+        (e instanceof Error ? e.message : typeof e === "string" ? e : "") ||
+        "Falha ao iniciar o agent."
     } finally {
       // antes do finish/persist: o turno acabou, nada mais pode expirar por
       // este run (e o notice que o vigia tenha injetado entra no persist final).
@@ -279,40 +253,36 @@ export async function dispatchSchedule(
     }
 
     const items = useChat.getState().byId[convId]?.items ?? []
-    const outcome = turnOutcome(items)
-    const ok = !invokeFailed && outcome.ok
-    const status = preflightBlocked ? "blocked" : ok ? "ok" : "failed"
-    await insertScheduleRun({
-      id: crypto.randomUUID(),
-      scheduleId: s.id,
-      startedAt,
-      status,
-      cost: outcome.cost,
+    const turn = turnOutcome(items)
+    const ok = invokeFailed == null && turn.ok
+    await finishWith(s, startedAt, {
+      status: preflightBlocked ? "blocked" : ok ? "ok" : "failed",
+      cost: turn.cost,
       convId,
+      error: preflightBlocked
+        ? "Uma capacidade exigida não está disponível. Revise os MCPs do projeto."
+        : ok
+          ? null
+          : (invokeFailed ?? turn.error),
     })
-    await markScheduleRun(s.id, startedAt, status)
-    if (preflightBlocked) {
-      useNotifs.getState().push({
-        kind: "run_error",
-        title: `Automação aguardando configuração: ${s.name}`,
-        subtitle: "Uma capacidade exigida não está disponível. Revise os MCPs do projeto.",
-        projectId: s.projectId,
-        convId,
-      })
-    } else if (!ok) {
-      useNotifs.getState().push({
-        kind: "run_error",
-        title: `Automação falhou: ${s.name}`,
-        subtitle: 'Sem retry automático na v1; use "Rodar agora" em Agendado.',
-        projectId: s.projectId,
-        convId,
-      })
-    }
   } catch {
     // fail-soft: uma automação quebrada não derruba o motor nem as próximas.
   } finally {
     inFlight.delete(s.id)
   }
+}
+
+/** Persiste o desfecho (schedule_runs + last_run) e avisa quando não deu certo.
+ *  Um ponto só: antes cada braço de falha repetia insert+mark+push e o motivo
+ *  real ficava em três textos diferentes (ou em nenhum). */
+async function finishWith(
+  s: ScheduleRecord,
+  startedAt: number,
+  outcome: ScheduleOutcome,
+): Promise<void> {
+  await recordScheduleOutcome(s, startedAt, outcome)
+  const notice = failureNotice(s, outcome)
+  if (notice) useNotifs.getState().push(notice)
 }
 
 /** Um tick do motor (boot imediato + a cada 60s no App.tsx):

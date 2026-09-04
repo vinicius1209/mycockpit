@@ -1,6 +1,5 @@
 import Database from "@tauri-apps/plugin-sql"
 import type { Project } from "@/lib/types"
-import type { SchedulePermission } from "@/lib/sessionMode"
 import type { ConvRef } from "@/lib/attachments"
 import type { FusionRun } from "@/store/fusion"
 import type { FusionOutcome } from "@/lib/retro"
@@ -8,6 +7,7 @@ import type { DeliveryRecord } from "@/lib/recall"
 import type { CumulativeUsage } from "@/lib/usage"
 import { planUsageRecompute, recomputeSummary, worthLedgerRow } from "@/lib/usage"
 import { addColumn, ensureComposerDraftTables } from "@/lib/db/schema"
+import { deleteSchedulesOfProject } from "@/lib/db/schedules"
 
 export { addColumn } from "@/lib/db/schema"
 
@@ -190,10 +190,9 @@ export async function restoreProject(id: string): Promise<void> {
 export async function hardDeleteProject(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
-  await ensureScheduleTables(db)
   await ensureBoardTables(db)
   await ensureSddMarkTables(db)
-  await db.execute("DELETE FROM schedules WHERE project_id = $1", [id])
+  await deleteSchedulesOfProject(id)
   await db.execute("DELETE FROM cards WHERE project_id = $1", [id])
   await db.execute("DELETE FROM sdd_plan_marks WHERE project_id = $1", [id])
   await db.execute("DELETE FROM conversations WHERE project_id = $1", [id])
@@ -1821,343 +1820,33 @@ export async function listPresets(): Promise<AgentPreset[]> {
 }
 
 // ---------------- F6: automações agendadas (schedules + schedule_runs) ----------------
-// Mesmo padrão idempotente das tabelas de aprendizado: CREATE TABLE IF NOT
-// EXISTS do frontend, cache de promessa que RESETA em falha (erro transitório
-// não envenena o processo). A recorrência é um JSON string discriminado
-// (lib/schedules.Recurrence); o DB não interpreta.
+// A implementação MUDOU DE ARQUIVO (lib/db/schedules.ts) pela catraca de
+// tamanho; a PORTA continua aqui, e é de propósito: os call sites e os mocks
+// de teste (`vi.mock("@/lib/db")`) apontam pra este módulo desde o F6, e
+// mover a porta junto com a fatia quebraria os dois sem ganho nenhum.
+export type {
+  ScheduleEdit,
+  ScheduleKind,
+  SchedulePermission,
+  ScheduleRecord,
+  ScheduleRunRecord,
+} from "@/lib/db/schedules"
+export {
+  _resetScheduleTablesForTests,
+  deleteSchedule,
+  deleteSchedulesOfProject,
+  insertSchedule,
+  insertScheduleRun,
+  listScheduleRuns,
+  listSchedules,
+  markScheduleCompleted,
+  markScheduleRun,
+  rescheduleSchedule,
+  setScheduleEnabled,
+  setScheduleNextRun,
+  updateSchedule,
+} from "@/lib/db/schedules"
 
-/** Definido no eixo (lib/sessionMode), reexportado pela porta de sempre. */
-export type { SchedulePermission }
-
-/** Tipo do schedule (S4.3): "agent" roda runAgent numa conversa nova (o fluxo
- *  F6 original); "lead" chama proposePlan — sem conversa, sem clamp extra (o
- *  lead não roda agent de código, só o helper one-shot que escreve texto). */
-export type ScheduleKind = "agent" | "lead"
-
-export interface ScheduleRecord {
-  id: string
-  name: string
-  projectId: string
-  /** Fluxo do disparo. Valor estranho no banco degrada pra "agent". */
-  kind: ScheduleKind
-  agent: string
-  /** Valor cru do picker ("default" = deixa o CLI escolher). */
-  model: string | null
-  prompt: string
-  permission: SchedulePermission
-  /** JSON discriminado (lib/schedules.parseRecurrence valida na leitura). */
-  recurrence: string
-  enabled: boolean
-  nextRun: number | null
-  lastRunAt: number | null
-  lastRunStatus: string | null
-  /** Quando a automação SE ENCERROU (só a recorrência "uma vez" chega aqui):
-   *  ela fica na lista, desabilitada e marcada como concluída, com "Reagendar".
-   *  null = nunca encerrou. Distingue "concluída" de "pausada pelo usuário". */
-  completedAt: number | null
-  createdAt: number
-}
-
-export interface ScheduleRunRecord {
-  id: string
-  scheduleId: string
-  startedAt: number
-  /** "ok" | "failed" (v1 não tem retry automático — falha fica falha). */
-  status: string
-  cost: number | null
-  convId: string | null
-}
-
-let schedulesReady: Promise<void> | null = null
-
-async function ensureScheduleTables(db: Database): Promise<void> {
-  if (!schedulesReady) {
-    const run = (async () => {
-      await db.execute(
-        `CREATE TABLE IF NOT EXISTS schedules (
-           id TEXT PRIMARY KEY,
-           name TEXT NOT NULL,
-           project_id TEXT NOT NULL,
-           agent TEXT NOT NULL,
-           model TEXT,
-           prompt TEXT NOT NULL,
-           permission TEXT NOT NULL DEFAULT 'leitura',
-           recurrence TEXT NOT NULL,
-           enabled INTEGER NOT NULL DEFAULT 1,
-           next_run INTEGER,
-           last_run_at INTEGER,
-           last_run_status TEXT,
-           created_at INTEGER NOT NULL
-         )`,
-      )
-      await db.execute(
-        `CREATE TABLE IF NOT EXISTS schedule_runs (
-           id TEXT PRIMARY KEY,
-           schedule_id TEXT NOT NULL,
-           started_at INTEGER NOT NULL,
-           status TEXT NOT NULL,
-           cost REAL,
-           conv_id TEXT
-         )`,
-      )
-      await db.execute(
-        `CREATE INDEX IF NOT EXISTS idx_schedule_runs_schedule ON schedule_runs(schedule_id)`,
-      )
-      // S4.3 — tipo do schedule (agent × lead). Tabela nasce do frontend, então
-      // coluna nova entra via addColumn (idempotente, padrão lessons.scope).
-      await addColumn(
-        db,
-        `ALTER TABLE schedules ADD COLUMN kind TEXT NOT NULL DEFAULT 'agent'`,
-      )
-      // Recorrência "uma vez": marca de encerramento. Mesma via do `kind`
-      // (addColumn idempotente) — a tabela nasce do frontend, então NADA de
-      // migration no lib.rs (v25/v26 seguem reservadas pros presets).
-      await addColumn(db, `ALTER TABLE schedules ADD COLUMN completed_at INTEGER`)
-    })()
-    schedulesReady = run.catch((e) => {
-      schedulesReady = null
-      throw e
-    })
-  }
-  return schedulesReady
-}
-
-interface ScheduleRow {
-  id: string
-  name: string
-  project_id: string
-  kind: string
-  agent: string
-  model: string | null
-  prompt: string
-  permission: string
-  recurrence: string
-  enabled: number
-  next_run: number | null
-  last_run_at: number | null
-  last_run_status: string | null
-  completed_at: number | null
-  created_at: number
-}
-
-function toSchedule(r: ScheduleRow): ScheduleRecord {
-  return {
-    id: r.id,
-    name: r.name,
-    projectId: r.project_id,
-    // clamp de leitura: valor estranho degrada pra "agent" (fluxo original).
-    kind: r.kind === "lead" ? "lead" : "agent",
-    agent: r.agent,
-    model: r.model,
-    prompt: r.prompt,
-    // clamp de leitura: qualquer valor estranho (inclusive um 'liberado'
-    // gravado à mão no SQLite) degrada pra 'leitura' — a regra dura do F6.
-    permission: r.permission === "padrao" ? "padrao" : "leitura",
-    recurrence: r.recurrence,
-    enabled: r.enabled === 1,
-    nextRun: r.next_run,
-    lastRunAt: r.last_run_at,
-    lastRunStatus: r.last_run_status,
-    completedAt: r.completed_at,
-    createdAt: r.created_at,
-  }
-}
-
-const SCHEDULE_COLS =
-  "id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, completed_at, created_at"
-
-/** Todas as automações (habilitadas ou não). null = fora do Tauri; [] = falha. */
-export async function listSchedules(): Promise<ScheduleRecord[] | null> {
-  const db = await getDb()
-  if (!db) return null
-  try {
-    await ensureScheduleTables(db)
-    const rows = await db.select<ScheduleRow[]>(
-      `SELECT ${SCHEDULE_COLS} FROM schedules ORDER BY created_at ASC`,
-    )
-    return rows.map(toSchedule)
-  } catch {
-    return []
-  }
-}
-
-export async function insertSchedule(s: ScheduleRecord): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await ensureScheduleTables(db)
-  await db.execute(
-    "INSERT INTO schedules (id, name, project_id, kind, agent, model, prompt, permission, recurrence, enabled, next_run, last_run_at, last_run_status, completed_at, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)",
-    [
-      s.id,
-      s.name,
-      s.projectId,
-      s.kind,
-      s.agent,
-      s.model,
-      s.prompt,
-      s.permission,
-      s.recurrence,
-      s.enabled ? 1 : 0,
-      s.nextRun,
-      s.lastRunAt,
-      s.lastRunStatus,
-      s.completedAt,
-      s.createdAt,
-    ],
-  )
-}
-
-/** Liga/pausa uma automação. Ao ligar, o caller recalcula e passa o next_run. */
-export async function setScheduleEnabled(
-  id: string,
-  enabled: boolean,
-  nextRun: number | null,
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  try {
-    await ensureScheduleTables(db)
-    await db.execute(
-      "UPDATE schedules SET enabled = $1, next_run = $2 WHERE id = $3",
-      [enabled ? 1 : 0, nextRun, id],
-    )
-  } catch {
-    // best-effort: a UI recarrega do banco.
-  }
-}
-
-export async function setScheduleNextRun(
-  id: string,
-  nextRun: number | null,
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  try {
-    await ensureScheduleTables(db)
-    await db.execute("UPDATE schedules SET next_run = $1 WHERE id = $2", [
-      nextRun,
-      id,
-    ])
-  } catch {
-    // best-effort.
-  }
-}
-
-/** Marca o desfecho da última execução (o next_run já foi avançado no disparo). */
-export async function markScheduleRun(
-  id: string,
-  lastRunAt: number,
-  lastRunStatus: string,
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  try {
-    await ensureScheduleTables(db)
-    await db.execute(
-      "UPDATE schedules SET last_run_at = $1, last_run_status = $2 WHERE id = $3",
-      [lastRunAt, lastRunStatus, id],
-    )
-  } catch {
-    // best-effort.
-  }
-}
-
-/** ENCERRA a automação de uma vez: desabilita, zera o next_run e carimba a
- *  marca de concluída. Não apaga nada — o registro fica na lista com o
- *  histórico do que rodou (apagar não deixaria rastro nem do disparo nem da
- *  conversa que ele produziu). Best-effort com aviso no console: o motor não
- *  pode cair aqui, mas uma falha silenciosa deixaria a automação re-disparável. */
-export async function markScheduleCompleted(
-  id: string,
-  completedAt: number,
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  try {
-    await ensureScheduleTables(db)
-    await db.execute(
-      "UPDATE schedules SET enabled = 0, next_run = NULL, completed_at = $1 WHERE id = $2",
-      [completedAt, id],
-    )
-  } catch (e) {
-    console.warn("[schedules] markScheduleCompleted falhou", e)
-  }
-}
-
-/** Reagenda uma automação: nova recorrência + next_run, religa e LIMPA a marca
- *  de concluída. É o botão "Reagendar" da lista — gesto humano explícito, então
- *  a falha SOBE (a view mostra o erro em vez de fingir que salvou). */
-export async function rescheduleSchedule(
-  id: string,
-  recurrence: string,
-  nextRun: number,
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await ensureScheduleTables(db)
-  await db.execute(
-    "UPDATE schedules SET recurrence = $1, next_run = $2, enabled = 1, completed_at = NULL WHERE id = $3",
-    [recurrence, nextRun, id],
-  )
-}
-
-/** Exclui a automação E o histórico dela (hard delete, com confirm na UI). */
-export async function deleteSchedule(id: string): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await ensureScheduleTables(db)
-  await db.execute("DELETE FROM schedule_runs WHERE schedule_id = $1", [id])
-  await db.execute("DELETE FROM schedules WHERE id = $1", [id])
-}
-
-export async function insertScheduleRun(r: ScheduleRunRecord): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  try {
-    await ensureScheduleTables(db)
-    await db.execute(
-      "INSERT INTO schedule_runs (id, schedule_id, started_at, status, cost, conv_id) VALUES ($1, $2, $3, $4, $5, $6)",
-      [r.id, r.scheduleId, r.startedAt, r.status, r.cost, r.convId],
-    )
-  } catch {
-    // best-effort: perder uma linha de histórico não pode derrubar o motor.
-  }
-}
-
-/** Histórico recente de TODAS as automações (a view agrupa por schedule_id —
- *  alimenta o custo médio das últimas 5 e o histórico expandível). */
-export async function listScheduleRuns(
-  limit = 300,
-): Promise<ScheduleRunRecord[]> {
-  const db = await getDb()
-  if (!db) return []
-  try {
-    await ensureScheduleTables(db)
-    const rows = await db.select<
-      {
-        id: string
-        schedule_id: string
-        started_at: number
-        status: string
-        cost: number | null
-        conv_id: string | null
-      }[]
-    >(
-      "SELECT id, schedule_id, started_at, status, cost, conv_id FROM schedule_runs ORDER BY started_at DESC LIMIT $1",
-      [limit],
-    )
-    return rows.map((r) => ({
-      id: r.id,
-      scheduleId: r.schedule_id,
-      startedAt: r.started_at,
-      status: r.status,
-      cost: r.cost,
-      convId: r.conv_id,
-    }))
-  } catch {
-    return []
-  }
-}
 
 // ---------------- E1: Board de intenção (cards) ----------------
 // O CARD é a unidade durável de intenção, ligada à conversa que a executa.

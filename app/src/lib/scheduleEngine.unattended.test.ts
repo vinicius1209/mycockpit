@@ -56,6 +56,8 @@ function schedule(over: Partial<ScheduleRecord> = {}): ScheduleRecord {
     kind: "agent",
     agent: "codex",
     model: null,
+    effort: null,
+    planId: null,
     prompt: "faz a varredura",
     permission: "padrao",
     recurrence: JSON.stringify({ kind: "daily", hour: 3, minute: 0 }),

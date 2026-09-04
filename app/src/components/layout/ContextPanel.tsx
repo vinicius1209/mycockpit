@@ -18,7 +18,7 @@ import {
   StageBadge,
 } from "@/components/layout/contextPanelChrome"
 import { DiffIndex } from "@/components/layout/DiffIndex"
-import { ConversationPlanPanel } from "@/components/layout/ConversationPlanPanel"
+import { ActiveConversationMapPanel } from "@/components/layout/ActiveConversationMapPanel"
 import { ProjectFilesPanel } from "@/components/layout/ProjectFilesPanel"
 import {
   Dialog,
@@ -333,10 +333,6 @@ export function ContextPanel() {
     }
     if (!running) jumpedOnRun.current = false
   }, [running, setTab])
-  // items da conversa ativa SÓ com a aba Plano visível (evita re-render nas outras).
-  const planItems = useChat((s) =>
-    tab === "plano" && s.activeId ? s.byId[s.activeId]?.items : undefined,
-  )
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
 
@@ -479,8 +475,12 @@ export function ContextPanel() {
         </div>
       ) : tab === "arquivos" ? (
         <ProjectFilesPanel root={activeWorktree ?? project.path} />
-      ) : tab === "plano" ? (
-        <ConversationPlanPanel items={planItems} title={activeTitle} />
+      ) : tab === "conversa" ? (
+        <ActiveConversationMapPanel
+          conversationId={activeConvId}
+          projectId={project.id}
+          title={activeTitle}
+        />
       ) : tab === "alteracoes" ? (
         <DiffIndex
           cwd={activeWorktree ?? project.path}

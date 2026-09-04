@@ -6,7 +6,7 @@
 // chama o helper pago.
 
 import type { ChatState } from "@/store/chat"
-import { suggest } from "@/lib/agent"
+import { generateUtilityText } from "@/lib/utility"
 import {
   SUGGEST_PROMPT,
   SUGGEST_DEBOUNCE_MS,
@@ -55,11 +55,12 @@ export async function generateSuggestionsImpl(get: Get, convId: string) {
   const myGen = gen[convId] ?? 0
   get().setSuggesting(convId, true)
   try {
-    const raw = await suggest(
-      helperModel,
-      proj.path,
-      `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
-    )
+    const raw = await generateUtilityText({
+      task: "composer_suggestions",
+      model: helperModel,
+      cwd: proj.path,
+      prompt: `${SUGGEST_PROMPT}\n\nConversa recente:\n${buildContext(c.items)}`,
+    })
     // descarta se um novo run começou enquanto gerava (anti-concorrência)
     if ((gen[convId] ?? 0) !== myGen) return
     const list = parseSuggestions(raw)
