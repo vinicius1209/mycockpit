@@ -100,7 +100,7 @@ export const useSchedules = create<SchedulesState>((set, get) => ({
       effort: input.effort,
       prompt: input.prompt.trim(),
       // clamp ÚNICO do vocabulário (lib/sessionMode) — o que estava escrito à
-      // mão aqui engolia o "auto" que a tela oferecia (ADR-158).
+      // mão aqui engolia o "auto" que a tela oferecia (ADR-161).
       permission: normalizeSchedulePermission(input.permission),
       planId: input.kind === "mission" ? input.planId : null,
       recurrence: JSON.stringify(input.recurrence),

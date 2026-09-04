@@ -103,6 +103,28 @@ com F7 junto no mínimo necessário (a seção "Agendado" precisa morar em algum
 lugar). F8 em seguida reusa a ponte gh pronta. Quick wins do Painel entram de
 carona na F6 (Launchpad já vai ser tocado).
 
+## Estado atual (04/09/2026, ADR-161)
+
+O F6 entregue diverge do texto acima em três pontos, e a diferença é decisão
+escrita, não deriva:
+
+- **O motor roda no FRONT**, não em loop tokio no Rust (`lib/scheduleEngine`,
+  tick de 60s no `App.tsx`). O resto do parágrafo continua valendo: mesmo
+  caminho do `run_agent`, conversa visível, custo contabilizado.
+- **Zero retry**, não "1 retry, depois pausa". Falha marca `failed` com o
+  MOTIVO real na linha do histórico e no sino; re-rodar é gesto humano
+  ("Rodar agora"). Retry automático continua fora até a dor ser real: um
+  disparo que já escreveu no repositório não pode ser repetido sozinho.
+- **A automação também dispara um Plano de voo** (`kind: "mission"`), que é o
+  "(ou missão)" do conceito lá em cima, agora ligado. Nesse fluxo o
+  agent/modelo/esforço são POR FASE e moram no plano; o que a automação
+  escolhe é o plano, o projeto, a permissão e o horário. As três pausas que só
+  fazem sentido com gente na frente (gate, recuperação, confirmação de
+  worktree) são fechadas pelo DISPARADOR, em `lib/scheduleMission`.
+
+O que segue igual e é limitação honesta: **app fechado não roda**, e o que
+venceu há mais de 5 minutos vira notificação em vez de disparar sozinho.
+
 ## Anti-metas
 
 - Rodar automação com app fechado via launchd (v1 não; revisitar se a dor for real).

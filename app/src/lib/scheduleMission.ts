@@ -1,4 +1,4 @@
-// ADR-158 — automação de PLANO DE VOO: o disparo agendado de uma missão
+// ADR-161 — automação de PLANO DE VOO: o disparo agendado de uma missão
 // multi-fase (o "loop agêntico"), em vez de um prompt só.
 //
 // Por que ele mora AQUI e não dentro do store/mission: a régua de "tem alguém

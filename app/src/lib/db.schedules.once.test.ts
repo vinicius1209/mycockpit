@@ -138,6 +138,7 @@ import {
   markScheduleRun,
   rescheduleSchedule,
   setScheduleEnabled,
+  updateSchedule,
   type ScheduleRecord,
 } from "@/lib/db"
 import {
@@ -333,6 +334,69 @@ describe("Reagendar (o botão da automação concluída)", () => {
     const lida = await byId("s1")
     expect(lida.lastRunAt).toBe(T0)
     expect(lida.lastRunStatus).toBe("ok")
+  })
+})
+
+describe("o que a LEITURA do banco preserva (ADR-161)", () => {
+  it("permissão 'auto' sobrevive à ida e volta (o clamp à mão rebaixava)", async () => {
+    // o bug real: `toSchedule` fazia `=== "padrao" ? "padrao" : "leitura"`, e o
+    // "Auto" escolhido na tela voltava do banco como read-only. O agent rodava
+    // confinado e a automação falhava por um motivo que ninguém tinha pedido.
+    await insertSchedule(rec({ id: "auto1", permission: "auto" }))
+    expect((await byId("auto1")).permission).toBe("auto")
+  })
+
+  it("'liberado' gravado à mão no SQLite continua caindo em leitura", async () => {
+    await insertSchedule(rec({ id: "solto", permission: "liberado" as never }))
+    expect((await byId("solto")).permission).toBe("leitura")
+  })
+
+  it("esforço e Plano de voo atravessam a persistência", async () => {
+    await insertSchedule(
+      rec({
+        id: "missao",
+        kind: "mission",
+        effort: "xhigh",
+        planId: "preset-abc",
+      }),
+    )
+    const lido = await byId("missao")
+    expect(lido.kind).toBe("mission")
+    expect(lido.effort).toBe("xhigh")
+    expect(lido.planId).toBe("preset-abc")
+  })
+
+  it("kind desconhecido no banco degrada pro fluxo de prompt", async () => {
+    await insertSchedule(rec({ id: "xpto", kind: "banana" as never }))
+    expect((await byId("xpto")).kind).toBe("agent")
+  })
+
+  it("editar reescreve os campos e LIMPA a marca de concluída", async () => {
+    await insertSchedule(
+      rec({ id: "e1", completedAt: T0, permission: "leitura", effort: null }),
+    )
+    await updateSchedule("e1", {
+      name: "novo nome",
+      projectId: "p1",
+      kind: "agent",
+      agent: "codex",
+      model: "gpt-5.6-codex",
+      effort: "high",
+      prompt: "outro pedido",
+      permission: "auto",
+      planId: null,
+      recurrence: JSON.stringify({ kind: "daily", hour: 6, minute: 15 }),
+      nextRun: T0 + 60 * MIN,
+    })
+    const lido = await byId("e1")
+    expect(lido.name).toBe("novo nome")
+    expect(lido.permission).toBe("auto")
+    expect(lido.effort).toBe("high")
+    expect(lido.nextRun).toBe(T0 + 60 * MIN)
+    // a "uma vez" que já rodou volta ao calendário ao ser editada.
+    expect(lido.completedAt).toBeNull()
+    // histórico NÃO é reescrito: editar muda o futuro, não o passado.
+    expect(lido.createdAt).toBe(T0 - 60 * MIN)
   })
 })
 

@@ -1,4 +1,4 @@
-// O form da automação: CRIAR e EDITAR na mesma superfície (ADR-158). Antes só
+// O form da automação: CRIAR e EDITAR na mesma superfície (ADR-161). Antes só
 // dava pra criar, e consertar uma automação que falhava significava excluir e
 // redigitar o prompt inteiro — o que ninguém faz, então a automação quebrada
 // simplesmente ficava lá.
@@ -36,7 +36,6 @@ import {
   draftInput,
   draftRecurrence,
   emptyDraft,
-  nextFullHourValue,
   type RecurrenceMode,
   type ScheduleDraft,
 } from "@/lib/scheduleForm"
@@ -125,7 +124,7 @@ function ChipRow<T extends string>({
           onClick={() => onChange(v)}
           className={cn(
             controle("compacto"),
-            "border",
+            "border transition-colors",
             value === v ? SELECTED_FILL : UNSELECTED,
           )}
         >
@@ -566,5 +565,3 @@ export function ScheduleFormDialog({
     </AppDialog>
   )
 }
-
-export { nextFullHourValue }

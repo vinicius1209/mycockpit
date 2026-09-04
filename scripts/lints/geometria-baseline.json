@@ -54,7 +54,7 @@
   "components/onboarding/ThemeStep.tsx": 1,
   "components/panel/CostAudit.tsx": 1,
   "components/panel/MissionControl.tsx": 2,
-  "components/scheduled/ScheduledView.tsx": 6,
+  "components/scheduled/ScheduledView.tsx": 4,
   "components/sdd/SddView.tsx": 12,
   "components/settings/Especialistas.tsx": 2,
   "components/settings/HooksSettings.tsx": 2,

@@ -5665,3 +5665,45 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   falhas deixam de se disfarçar como estado vazio e a aba oferece os mesmos
   gestos no Mac e no Linux. O Git continua sendo a fonte de verdade; a UI não
   mantém uma cópia otimista de stage, commit ou pull request.
+
+### ADR-161 · o agendamento é um contrato: o que a tela oferece, o processo recebe ✅
+- **Contexto:** o primeiro agendamento real do usuário (04/09/2026, `Pendencias
+  na Prime`, Codex) falhou sem ter nada a ver com o pedido: shell negado com
+  `sandbox_apply: Operation not permitted`, filesystem somente leitura, MCPs
+  recusados. A automação estava rodando confinada em `read-only`. O ADR-023
+  tinha aberto `auto` para automações, mexendo no tipo, no seletor e no braço
+  do motor, mas os DOIS clamps do meio do caminho continuaram escritos à mão
+  como `=== "padrao" ? "padrao" : "leitura"` — um no `store/schedules.create`,
+  outro no `toSchedule` do banco. Escolher "Auto" gravava `leitura`, e mesmo um
+  valor correto no SQLite era rebaixado na leitura. É literalmente a lição do
+  `modoEfetivoDoSpawn` (ADR de 23/08) se repetindo: construir o eixo não é
+  ligá-lo, e uma garantia pendurada num controle desconectado é pior que
+  nenhuma, porque ela é exibida. Somava-se a isso um histórico que só dizia
+  "falhou", um `blocked` desenhado como cinza saudável com rótulo de erro, e
+  nenhum caminho de edição: consertar uma automação exigia excluir e redigitar
+  o prompt inteiro.
+- **Decisão:** o vocabulário de automação passa a ter UM clamp
+  (`normalizeSchedulePermission`, em `lib/sessionMode`, ao lado da régua de
+  permissividade), consumido pela escrita, pela leitura do banco e pelo
+  disparo. O registro ganha `effort` (o esforço do modelo, que só existia na
+  conversa) e `plan_id`; `schedule_runs` ganha `error`, e o desfecho de um
+  disparo vira um contrato único (`lib/scheduleOutcome`) que grava o motivo
+  REAL colhido do turno e o repete no sino. `blocked` deixa de ser desenhado
+  como falha. O form vira criar-e-editar sobre uma régua pura e única
+  (`lib/scheduleForm.draftInput`): o mesmo `null` que desabilita o botão é o
+  que faria o store recusar. E a automação passa a poder disparar um **Plano de
+  voo** (`kind: "mission"`): o disparador — nunca o `store/mission` — fecha as
+  três portas que pendurariam uma missão desassistida para sempre: política de
+  gate forçada em `nunca`, recuperação abortada fail-closed por observador, e
+  worktree resolvido antes do launch com o modal respondido `não` por
+  construção (automação não escreve no repositório real por uma confirmação que
+  ninguém viu).
+- **Consequência:** "Auto" numa automação passa a significar o que a tela
+  promete, e o esforço do modelo deixa de ser privilégio da conversa. Uma
+  execução que falha diz por quê na própria lista. Um agendamento pode ser um
+  loop agêntico completo, com o teto de custo do plano valendo, e uma missão
+  agendada termina — bem ou mal — em vez de ficar viva em memória esperando
+  alguém que não está lá. A régua de segurança não afrouxou: `liberado` segue
+  barrado no tipo, na escrita, na leitura e no disparo. Fica FORA desta ADR, e
+  segue como limitação honesta do F6, o retry automático e a execução com o app
+  fechado (`docs/automation-evolution.md`).

@@ -14,6 +14,7 @@ import {
   FlaskConical,
   Info,
   Loader2,
+  Pencil,
   Play,
   Plus,
   Sunrise,
@@ -23,65 +24,37 @@ import {
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { AppDialog } from "@/components/ui/app-dialog"
-import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
 import { StatusDot } from "@/components/common/StatusDot"
-import type { AgentStatus } from "@/lib/types"
+import {
+  DateTimeField,
+  ScheduleFormDialog,
+  type ScheduleTemplate,
+} from "@/components/scheduled/ScheduleFormDialog"
 import { confirm } from "@/lib/confirm"
-import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
-import { agentModels, defaultModelFor, LEAGUE_AGENTS } from "@/lib/agents"
-import type {
-  SchedulePermission,
-  ScheduleRecord,
-  ScheduleRunRecord,
-} from "@/lib/db"
+import type { ScheduleRecord, ScheduleRunRecord } from "@/lib/db"
 import { fmtCost } from "@/lib/format"
 import {
   computeNextRun,
-  fmtRunShort,
   fmtUntilShort,
-  nextRuns,
-  parseCronExpr,
   parseLocalDateTime,
   parseRecurrence,
   recurrenceToText,
   scheduleLifecycle,
-  toLocalDateTimeValue,
-  type Recurrence,
 } from "@/lib/schedules"
 import { isScheduleRunning } from "@/lib/scheduleEngine"
+import { nextFullHourValue } from "@/lib/scheduleForm"
+import {
+  fmtScheduleWhen,
+  lastRunLabel,
+  runStatusLabel,
+  scheduleStatus,
+} from "@/lib/schedulePresentation"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useSchedules } from "@/store/schedules"
 import { cn } from "@/lib/utils"
-
-const WEEKDAYS_PT = [
-  "domingo",
-  "segunda",
-  "terça",
-  "quarta",
-  "quinta",
-  "sexta",
-  "sábado",
-]
-
-function fmtWhen(ts: number): string {
-  return new Intl.DateTimeFormat("pt-BR", {
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(new Date(ts))
-}
 
 /** Abre a conversa que uma execução criou (navega pro Trabalho). */
 async function openRunConv(projectId: string, convId: string) {
@@ -90,29 +63,6 @@ async function openRunConv(projectId: string, convId: string) {
   await useChat.getState().openProject(projectId)
   await useChat.getState().switchConversation(convId)
   app.setViewMode("linear")
-}
-
-/** Estado da automação → AgentStatus do StatusDot canônico: pulsa azul quando
- *  roda, vermelho quando a última falhou, CINZA nos dois casos saudáveis
- *  ("nunca rodou" e "última deu certo"), porque estado ambiente é cinza
- *  (STYLEGUIDE §2). Quem desempata esses dois é o texto, não a cor: ver
- *  `lastRunLabel` abaixo. */
-function scheduleStatus(
-  lastRunStatus: string | null,
-  running: boolean,
-): AgentStatus {
-  if (running) return "running"
-  if (lastRunStatus === "ok") return "success"
-  if (lastRunStatus === "failed") return "error"
-  return "idle"
-}
-
-/** O desempate que o dot não faz mais: "nunca rodou" vs "rodou em X".
- *  Sem `lastRunAt` não inventa horário (§6): diz que nunca rodou, que é a
- *  informação melhor que a cor dava. */
-export function lastRunLabel(lastRunAt: number | null | undefined): string {
-  if (lastRunAt == null) return "nunca rodou"
-  return `última ${fmtWhen(lastRunAt)}`
 }
 
 function ScheduleRow({
@@ -132,6 +82,7 @@ function ScheduleRow({
   const [open, setOpen] = useState(false)
   const [firing, setFiring] = useState(false)
   const [reschedOpen, setReschedOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
   const running = firing || isScheduleRunning(s.id)
 
   const rec = parseRecurrence(s.recurrence)
@@ -216,7 +167,7 @@ function ScheduleRow({
               <span
                 title={
                   s.completedAt != null
-                    ? `Rodou e se encerrou em ${fmtWhen(s.completedAt)} (automação de uma vez).`
+                    ? `Rodou e se encerrou em ${fmtScheduleWhen(s.completedAt)} (automação de uma vez).`
                     : "Rodou e se encerrou (automação de uma vez)."
                 }
                 className="flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted px-1.5 py-px text-[11px] font-medium text-muted-foreground"
@@ -315,6 +266,18 @@ function ScheduleRow({
             aria-label={s.enabled ? "Pausar automação" : "Ativar automação"}
           />
         )}
+        {/* Editar no hover, do lado do Rodar: consertar o prompt (ou a
+            permissão que fez o turno morrer em sandbox) tinha que ser excluir
+            e redigitar tudo — e ninguém faz isso, então a automação quebrada
+            ficava lá. */}
+        <button
+          onClick={() => setEditOpen(true)}
+          title="Editar automação"
+          aria-label="Editar automação"
+          className="shrink-0 rounded p-1 text-muted-foreground opacity-0 transition-colors group-hover:opacity-100 focus:opacity-100 hover:text-foreground"
+        >
+          <Pencil className="size-3.5" />
+        </button>
         {/* Excluir só aparece no hover — separado do Switch, evita o clique errado
             que a linha antiga convidava (destrutivo colado no benigno). */}
         <button
@@ -355,27 +318,39 @@ function ScheduleRow({
                   onClick={() =>
                     r.convId && void openRunConv(s.projectId, r.convId)
                   }
-                  title={r.convId ? "Abrir a conversa desta execução" : undefined}
-                  className="flex items-center gap-2.5 rounded px-1 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-accent/50 disabled:cursor-default"
+                  title={r.error ?? (r.convId ? "Abrir a conversa desta execução" : undefined)}
+                  className="flex flex-col gap-0.5 rounded px-1 py-1.5 text-left text-[12px] transition-colors enabled:hover:bg-accent/50 disabled:cursor-default"
                 >
-                  <StatusDot status={scheduleStatus(r.status, false)} />
-                  <span className="tabular-nums text-foreground/85">
-                    {fmtWhen(r.startedAt)}
+                  <span className="flex w-full items-center gap-2.5">
+                    <StatusDot status={scheduleStatus(r.status, false)} />
+                    <span className="tabular-nums text-foreground/85">
+                      {fmtScheduleWhen(r.startedAt)}
+                    </span>
+                    {/* Histórico assentado: "ok" é o caso comum e não ganha
+                        tinta (STYLEGUIDE §2); só a falha grita. */}
+                    <span
+                      className={cn(
+                        r.status === "ok"
+                          ? "text-muted-foreground"
+                          : r.status === "blocked"
+                            ? "text-st-queued"
+                            : "text-st-error",
+                      )}
+                    >
+                      {runStatusLabel(r.status)}
+                    </span>
+                    <span className="ml-auto tabular-nums text-muted-foreground">
+                      {fmtCost(r.cost ?? undefined)}
+                    </span>
                   </span>
-                  {/* Histórico assentado: "ok" é o caso comum e não ganha
-                      tinta (STYLEGUIDE §2); só a falha grita. */}
-                  <span
-                    className={cn(
-                      r.status === "ok"
-                        ? "text-muted-foreground"
-                        : "text-st-error",
-                    )}
-                  >
-                    {r.status === "ok" ? "ok" : "falhou"}
-                  </span>
-                  <span className="ml-auto tabular-nums text-muted-foreground">
-                    {fmtCost(r.cost ?? undefined)}
-                  </span>
+                  {/* O MOTIVO, quando existe. Antes a linha dizia só "falhou" e
+                      descobrir o porquê exigia abrir a conversa — que é
+                      justamente o que ninguém faz às 8h da manhã. */}
+                  {r.error && (
+                    <span className="truncate pl-[18px] text-[11px] text-muted-foreground/80">
+                      {r.error}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -387,41 +362,13 @@ function ScheduleRow({
         open={reschedOpen}
         onOpenChange={setReschedOpen}
       />
+      <ScheduleFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        schedule={s}
+      />
     </div>
   )
-}
-
-/** Campo de data+hora do "Uma vez" (input nativo datetime-local, hora local).
- *  `min` é só ajuda visual do browser — a guarda de verdade é o parse + a
- *  comparação com agora, aqui e no store. */
-function DateTimeField({
-  value,
-  onChange,
-  autoFocus,
-}: {
-  value: string
-  onChange: (v: string) => void
-  autoFocus?: boolean
-}) {
-  return (
-    <Input
-      autoFocus={autoFocus}
-      type="datetime-local"
-      value={value}
-      min={toLocalDateTimeValue(Date.now())}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-[210px]"
-    />
-  )
-}
-
-/** Default do campo: a PRÓXIMA hora cheia. Previsível e sempre no futuro (um
- *  "agora + 5min" nasceria colado no limite da guarda). */
-function nextFullHourValue(): string {
-  const d = new Date()
-  d.setMinutes(0, 0, 0)
-  d.setHours(d.getHours() + 1)
-  return toLocalDateTimeValue(d.getTime())
 }
 
 /** "Reagendar": dá um novo instante à automação de uma vez que já rodou (ou
@@ -452,7 +399,7 @@ function RescheduleDialog({
     setSaving(true)
     try {
       await reschedule(s.id, ms)
-      toast.success(`"${s.name}" reagendada para ${fmtWhen(ms)}`)
+      toast.success(`"${s.name}" reagendada para ${fmtScheduleWhen(ms)}`)
       onOpenChange(false)
     } catch (e) {
       toast.error(
@@ -505,22 +452,11 @@ function RescheduleDialog({
   )
 }
 
-type RecurrenceMode = "once" | "daily" | "weekly" | "cron"
+/** O ícone é só da vitrine do empty state, então mora aqui: o template que
+ *  viaja pro form (lib do dialog) é dado puro. */
+type TemplateCard = ScheduleTemplate & { icon: typeof Clock }
 
-/** Template do empty state: clicar abre o dialog PRÉ-PREENCHIDO — o usuário
- *  só escolhe o projeto e confirma. Todos nascem com permissão Leitura. */
-interface ScheduleTemplate {
-  id: string
-  name: string
-  desc: string
-  icon: typeof Clock
-  prompt: string
-  mode: "daily" | "weekly"
-  time: string
-  weekday?: number
-}
-
-const TEMPLATES: ScheduleTemplate[] = [
+const TEMPLATES: TemplateCard[] = [
   {
     id: "resumo-matinal",
     name: "Resumo matinal",
@@ -557,361 +493,6 @@ const TEMPLATES: ScheduleTemplate[] = [
  *  recorrência (presets com hora; cron no modo avançado, validado ao vivo,
  *  com preview das 3 próximas execuções) + permissão (Leitura default |
  *  Padrão — Liberado NEM aparece). `template` pré-preenche o form. */
-function NewScheduleDialog({
-  open,
-  onOpenChange,
-  template,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  template: ScheduleTemplate | null
-}) {
-  const projects = useApp((s) => s.projects)
-  const activeProjectId = useApp((s) => s.activeProjectId)
-  const createSchedule = useSchedules((s) => s.create)
-
-  const [name, setName] = useState("")
-  const [projectId, setProjectId] = useState<string>("")
-  // Só existe UM tipo de automação: prompt num agent de código. O tipo
-  // "Proposta do lead" saiu (ADR-078) — ele lia os cards de um board que não
-  // tem mais como criar card, então rodava, não produzia nada e reportava OK.
-  const [agent, setAgent] = useState("claude-code")
-  const [model, setModel] = useState(defaultModelFor("claude-code"))
-  const [prompt, setPrompt] = useState("")
-  const [mode, setMode] = useState<RecurrenceMode>("daily")
-  const [time, setTime] = useState("08:00")
-  const [weekday, setWeekday] = useState(1)
-  const [cron, setCron] = useState("0 8 * * *")
-  // "Uma vez": data+hora como o input nativo entrega ("2026-07-25T18:30").
-  const [onceAt, setOnceAt] = useState("")
-  const [permission, setPermission] = useState<SchedulePermission>("leitura")
-  const [saving, setSaving] = useState(false)
-
-  // reabrir o dialog reseta o form (e ancora o projeto no ativo); com
-  // template, o form nasce preenchido — só falta escolher o projeto.
-  useEffect(() => {
-    if (!open) return
-    setName(template?.name ?? "")
-    setProjectId(activeProjectId ?? projects[0]?.id ?? "")
-    setAgent("claude-code")
-    setModel(defaultModelFor("claude-code"))
-    setPrompt(template?.prompt ?? "")
-    setMode(template?.mode ?? "daily")
-    setTime(template?.time ?? "08:00")
-    setWeekday(template?.weekday ?? 1)
-    setCron("0 8 * * *")
-    setOnceAt(nextFullHourValue())
-    setPermission("leitura")
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
-
-  const timeParts = /^(\d{2}):(\d{2})$/.exec(time)
-  const cronValid = parseCronExpr(cron) != null
-  const onceMs = mode === "once" ? parseLocalDateTime(onceAt) : null
-  // guarda do "Uma vez": data no passado NÃO vira automação (ela nasceria sem
-  // disparo nenhum). recurrence null ⇒ o botão Criar fica desabilitado.
-  const onceFuture = onceMs != null && onceMs > Date.now()
-  const recurrence: Recurrence | null =
-    mode === "once"
-      ? onceFuture
-        ? { kind: "once", at: onceMs }
-        : null
-      : mode === "cron"
-        ? cronValid
-          ? { kind: "cron", expr: cron.trim() }
-          : null
-        : timeParts
-          ? mode === "daily"
-            ? {
-                kind: "daily",
-                hour: Number(timeParts[1]),
-                minute: Number(timeParts[2]),
-              }
-            : {
-                kind: "weekly",
-                weekday,
-                hour: Number(timeParts[1]),
-                minute: Number(timeParts[2]),
-              }
-          : null
-
-  // Preview VIVO das próximas execuções (lição das UIs de cron): recalcula a
-  // cada tecla — puro (computeNextRun), sem invoke nem estado extra.
-  const preview = recurrence ? nextRuns(recurrence, new Date(), 3) : []
-
-  const canSave =
-    !saving &&
-    name.trim().length > 0 &&
-    projectId.length > 0 &&
-    prompt.trim().length > 0 &&
-    recurrence != null
-
-  async function handleSave() {
-    if (!recurrence) return
-    setSaving(true)
-    try {
-      await createSchedule({
-        name, projectId,
-        kind: "agent", agent,
-        model: model === "default" ? null : model,
-        effort: null,
-        prompt,
-        permission,
-        planId: null, recurrence,
-      })
-      toast.success(`Automação "${name.trim()}" criada`)
-      onOpenChange(false)
-    } catch (e) {
-      // motivo real quando existe (ex.: a guarda de horário no passado do
-      // store) — genérico só quando a falha vem muda.
-      toast.error(
-        e instanceof Error && e.message
-          ? e.message
-          : "Falha ao criar a automação",
-      )
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const fieldLabel = "text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
-
-  return (
-    <AppDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      size="lg"
-      className="max-w-[520px]"
-      title="Nova automação"
-      description="Um prompt que roda sozinho no projeto, no horário que você definir."
-      footer={
-        <>
-          <Button variant="outline" size="padrao" onClick={() => onOpenChange(false)}>
-            Cancelar
-          </Button>
-          <Button size="padrao" disabled={!canSave} onClick={() => void handleSave()}>
-            Criar automação
-          </Button>
-        </>
-      }
-    >
-
-        <div className="flex flex-col gap-3.5">
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel}>Nome</label>
-            <Input
-              autoFocus
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Resumo matinal de PRs e CI"
-            />
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel}>Projeto</label>
-              <Select value={projectId} onValueChange={setProjectId}>
-                <SelectTrigger size="sm" className="w-full">
-                  <SelectValue placeholder="Escolha o projeto" />
-                </SelectTrigger>
-                <SelectContent>
-                  {projects.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel}>Agent</label>
-              <Select
-                value={agent}
-                onValueChange={(a) => {
-                  setAgent(a)
-                  setModel(defaultModelFor(a))
-                }}
-              >
-                <SelectTrigger size="sm" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {LEAGUE_AGENTS.map((a) => (
-                    <SelectItem key={a.id} value={a.id}>
-                      {a.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-
-          {agentModels(agent).length > 0 && (
-            <div className="flex flex-col gap-1.5">
-              <label className={fieldLabel}>Modelo</label>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger size="sm" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {agentModels(agent).map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel}>Prompt</label>
-            <Textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              placeholder="Resuma as PRs abertas e as falhas de CI. Não altere nada."
-              className="min-h-[72px] rounded-md border border-input bg-transparent px-3 py-2 text-[13px]"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel}>Recorrência</label>
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  ["once", "Uma vez", "roda uma vez na data e hora e para"],
-                  ["daily", "Diário", "todo dia no mesmo horário"],
-                  ["weekly", "Semanal", "toda semana no mesmo dia e horário"],
-                  ["cron", "Avançado (cron)", "expressão de 5 campos"],
-                ] as const
-              ).map(([m, label, hint]) => (
-                <button
-                  key={m}
-                  type="button"
-                  title={hint}
-                  onClick={() => setMode(m)}
-                  className={cn(
-                    "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    mode === m ? SELECTED_FILL : UNSELECTED,
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {/* o campo segue o modo: data+hora no "Uma vez", cron no avançado
-                (o campo de cron SOME quando não é o modo escolhido). */}
-            {mode === "once" ? (
-              <div className="mt-1 flex items-center gap-2">
-                <DateTimeField value={onceAt} onChange={setOnceAt} />
-              </div>
-            ) : mode !== "cron" ? (
-              <div className="mt-1 flex items-center gap-2">
-                {mode === "weekly" && (
-                  <Select
-                    value={String(weekday)}
-                    onValueChange={(v) => setWeekday(Number(v))}
-                  >
-                    <SelectTrigger size="sm">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {WEEKDAYS_PT.map((d, i) => (
-                        <SelectItem key={d} value={String(i)}>
-                          {d}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                <span className="text-[12px] text-muted-foreground">às</span>
-                <Input
-                  type="time"
-                  value={time}
-                  onChange={(e) => setTime(e.target.value)}
-                  className="w-[110px]"
-                />
-              </div>
-            ) : (
-              <div className="mt-1 flex flex-col gap-1">
-                <Input
-                  value={cron}
-                  onChange={(e) => setCron(e.target.value)}
-                  placeholder="0 8 * * 1  (min hora dia mês dia-da-semana)"
-                  className="font-mono text-[13px]"
-                  aria-invalid={!cronValid}
-                />
-              </div>
-            )}
-            {/* linha viva: 3 próximas execuções; cron inválido mostra o erro
-                NO LUGAR do preview (mesma linha, sem pular layout). */}
-            {mode === "cron" && !cronValid ? (
-              <p className="text-[11px] text-st-error" data-testid="recurrence-preview">
-                Expressão inválida. São 5 campos: números, *, */n e listas a,b
-                (sem ranges na v1).
-              </p>
-            ) : mode === "once" && !onceFuture ? (
-              <p className="text-[11px] text-st-error" data-testid="recurrence-preview">
-                {onceMs == null
-                  ? "Escolha uma data e um horário."
-                  : "Esse horário já passou, escolha um no futuro."}
-              </p>
-            ) : recurrence != null ? (
-              <p
-                className="text-[11px] text-muted-foreground/80 tabular-nums"
-                data-testid="recurrence-preview"
-              >
-                {recurrence.kind === "once"
-                  ? `Roda ${recurrenceToText(recurrence)} e para.`
-                  : preview.length > 0
-                    ? `Próximas: ${preview.map(fmtRunShort).join(" · ")}`
-                    : "Essa expressão nunca dispara."}
-              </p>
-            ) : null}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label className={fieldLabel}>Permissão</label>
-            <div className="flex items-center gap-1.5">
-              {(
-                [
-                  ["leitura", "Leitura", "só lê e relata (recomendado)"],
-                  ["padrao", "Padrão", "pode editar; o que pedir permissão expira sem ninguém"],
-                  ["auto", "Auto", "roda sem pedir, com o freio de segurança da CLI"],
-                ] as const
-              ).map(([p, label, hint]) => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => setPermission(p)}
-                  title={hint}
-                  className={cn(
-                    "rounded-md border px-2.5 py-1 text-[12px] transition-colors",
-                    permission === p ? SELECTED_FILL : UNSELECTED,
-                  )}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <p className="text-[11px] leading-snug text-muted-foreground/70">
-              Automação nunca roda com <strong className="font-medium">Liberado</strong>:
-              bypass total sem ninguém na frente não tem quem segure um erro.
-              O <strong className="font-medium">Auto</strong> é o meio-termo, roda sem
-              pedir, mas com o freio da CLI (Claude barra o destrutivo por
-              classificador; Codex confina em sandbox de SO; Antigravity só tem
-              sandbox best-effort, então lá o freio é o mais fraco dos três).
-              Em <strong className="font-medium">Padrão</strong>, o que pedir permissão
-              expira sozinho e o turno morre, não há quem aprove às 3h.
-            </p>
-          </div>
-        </div>
-
-    </AppDialog>
-  )
-}
-
 export function ScheduledView() {
   const schedules = useSchedules((s) => s.schedules)
   const runs = useSchedules((s) => s.runs)
@@ -1061,7 +642,7 @@ export function ScheduledView() {
           </div>
         )}
       </div>
-      <NewScheduleDialog
+      <ScheduleFormDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         template={dialogTemplate}

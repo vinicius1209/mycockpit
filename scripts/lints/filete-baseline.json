@@ -30,7 +30,7 @@
   "components/onboarding/NotificationStep.tsx": 2,
   "components/onboarding/ThemeStep.tsx": 1,
   "components/panel/MissionControl.tsx": 1,
-  "components/scheduled/ScheduledView.tsx": 5,
+  "components/scheduled/ScheduledView.tsx": 4,
   "components/sdd/SddView.tsx": 1,
   "components/settings/ConfinamentoCard.tsx": 1,
   "components/settings/CostMaintenance.tsx": 2,

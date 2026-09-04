@@ -161,7 +161,7 @@ export async function dispatchSchedule(
     // Regra dura do F6: automação NUNCA roda 'liberado'. Clamp ÚNICO
     // (lib/sessionMode), o mesmo da escrita e da leitura no banco — foi ter
     // TRÊS cópias desta linha que fez o "Auto" da tela virar 'leitura' no
-    // processo (ADR-158). "auto" passa: roda sem pedir, mas com o freio de
+    // processo (ADR-161). "auto" passa: roda sem pedir, mas com o freio de
     // cada CLI (claude classificador, codex sandbox de SO, agy --sandbox).
     const permission = normalizeSchedulePermission(s.permission)
 

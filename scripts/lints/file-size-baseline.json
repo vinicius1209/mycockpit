@@ -9,7 +9,6 @@
     "components/chat/ChatPanel.tsx": 1100,
     "components/chat/MessageList.tsx": 1727,
     "components/layout/ContextPanel.tsx": 827,
-    "components/scheduled/ScheduledView.tsx": 1071,
     "components/sdd/SddView.tsx": 1415,
     "components/settings/Especialistas.tsx": 829,
     "lib/agents.ts": 533,

@@ -119,7 +119,7 @@ async function ensureScheduleTables(db: Database): Promise<void> {
       // (addColumn idempotente) — a tabela nasce do frontend, então NADA de
       // migration no lib.rs (v25/v26 seguem reservadas pros presets).
       await addColumn(db, `ALTER TABLE schedules ADD COLUMN completed_at INTEGER`)
-      // ADR-158 — o esforço do modelo e o Plano de voo. Mesma via: colunas
+      // ADR-161 — o esforço do modelo e o Plano de voo. Mesma via: colunas
       // NULL, sem default, porque "não escolhido" e "escolhido como default"
       // são a mesma coisa aqui (o motor não manda flag nenhuma).
       await addColumn(db, `ALTER TABLE schedules ADD COLUMN effort TEXT`)
