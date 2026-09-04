@@ -72,15 +72,9 @@ describe("a faixa mostra o modo do projeto que VAI RODAR", () => {
   })
 })
 
-describe("o aviso de que a troca só vale no próximo envio", () => {
-  it("com turno em andamento, o composer diz isso na cara", async () => {
-    expect(await montar({ running: true })).toContain(
-      "Turno em andamento: a permissão vale a partir do próximo envio.",
-    )
-  })
-
-  it("em repouso, o aviso não aparece", async () => {
-    expect(await montar()).not.toContain("Turno em andamento")
+describe("o repouso do composer", () => {
+  it("não ocupa uma linha permanente para explicar o próximo envio", async () => {
+    expect(await montar({ running: true })).not.toContain("próximo envio")
   })
 })
 

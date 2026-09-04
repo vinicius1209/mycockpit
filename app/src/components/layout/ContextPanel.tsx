@@ -371,8 +371,8 @@ export function ContextPanel() {
     setExtraDirs([...cur, picked])
   }
 
-  // (a troca de permissão mora em lib/permission.ts, chamada pela ExecutionRow —
-  // as três camadas que precisam concordar estão lá, em fonte única.)
+  // A troca de permissão mora em lib/permission.ts; as três camadas que
+  // precisam concordar estão lá, em fonte única.
 
   const projectPath = project?.path
   useEffect(() => {
@@ -494,8 +494,8 @@ export function ContextPanel() {
               vive no menu de contexto do projeto. Painel começa nos controles. */}
           <Section title="Ajustes">
             <div className="flex flex-col gap-2.5">
-              {/* Permissões MUDARAM DE CASA: viraram o controle de 3 posições na
-                  linha de execução do composer (ExecutionRow). Ficavam aqui, a
+              {/* Permissões MUDARAM DE CASA: viraram o controle de 3 posições no
+                  rodapé do composer. Ficavam aqui, a
                   três cliques do lugar onde a consequência aparece — e o composer
                   só falava do assunto DEPOIS que você tinha liberado. */}
 

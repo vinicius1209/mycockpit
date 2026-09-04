@@ -117,9 +117,8 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
-  // (o selo de "liberado" saiu daqui: a permissão agora é um controle de 3
-  // posições na ExecutionRow, que mostra o modo ATUAL em vez de só alertar
-  // depois que você já liberou.)
+  // A permissão agora é um controle de três posições no rodapé do composer,
+  // junto do envio que ela afeta.
   const [destination, setDestination] = useState(settings.defaultAgent)
   // normaliza o default persistido: um id que saiu do CLI (gpt-5.3-codex, o3)
   // não pode virar 400 em todo envio novo com a UI fingindo normalidade.
@@ -573,7 +572,6 @@ export function CommandConsole({
         }
         header={
           <ExecutionRow
-            running={running}
             convAgent={convAgent}
             mode={permissionMode}
           />

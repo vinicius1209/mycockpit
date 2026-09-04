@@ -1,33 +1,52 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { CommitComposer } from "./CommitComposer"
 
+function renderComposer(props: React.ComponentProps<typeof CommitComposer>) {
+  return renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(CommitComposer, props),
+    ),
+  )
+}
+
 describe("CommitComposer", () => {
-  it("renderiza campo de título com placeholder e contador de caracteres", () => {
-    const html = renderToStaticMarkup(
-      createElement(CommitComposer, {
-        cwd: "/fake",
-        stagedCount: 2,
-        totalChanges: 5,
-        onCommitted: vi.fn(),
-      }),
-    )
+  it("prioriza a mensagem e a ação de commit sem expor opções avançadas", () => {
+    const html = renderComposer({
+      cwd: "/fake",
+      stagedCount: 2,
+      totalChanges: 5,
+      onCommitted: vi.fn(),
+    })
     expect(html).toContain("Mensagem do commit")
-    expect(html).toContain("0/72")
-    expect(html).toContain("Sugerir")
+    expect(html).toContain('aria-label="Sugerir mensagem"')
+    expect(html).toContain('aria-label="Mais opções de commit"')
     expect(html).toContain("Criar commit (2)")
+    expect(html).not.toContain("0/72")
+    expect(html).not.toContain("Retificar o último commit")
   })
 
   it("renderiza label de commit direto quando não há staged", () => {
-    const html = renderToStaticMarkup(
-      createElement(CommitComposer, {
-        cwd: "/fake",
-        stagedCount: 0,
-        totalChanges: 5,
-        onCommitted: vi.fn(),
-      }),
-    )
+    const html = renderComposer({
+      cwd: "/fake",
+      stagedCount: 0,
+      totalChanges: 5,
+      onCommitted: vi.fn(),
+    })
     expect(html).toContain("Criar commit")
+  })
+
+  it("não oferece um commit quando a árvore de trabalho está limpa", () => {
+    const html = renderComposer({
+      cwd: "/fake",
+      stagedCount: 0,
+      totalChanges: 0,
+      onCommitted: vi.fn(),
+    })
+    expect(html).toBe("")
   })
 })

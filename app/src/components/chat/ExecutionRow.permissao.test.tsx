@@ -8,7 +8,6 @@ function render(
 ) {
   return renderToStaticMarkup(
     <ExecutionRow
-      running={false}
       convAgent="claude-code"
       mode="padrao"
       {...over}
@@ -16,15 +15,9 @@ function render(
   )
 }
 
-describe("a faixa não mente sobre quando a troca passa a valer", () => {
-  it("com turno em andamento, diz que a permissão vale no próximo envio", () => {
-    expect(render({ running: true })).toContain(
-      "Turno em andamento: a permissão vale a partir do próximo envio.",
-    )
-  })
-
-  it("sem turno em andamento, o aviso não aparece", () => {
-    expect(render({ running: false })).not.toContain("Turno em andamento")
+describe("a faixa recua quando não há incompatibilidade", () => {
+  it("não repete instrução operacional sobre o próximo envio", () => {
+    expect(render()).not.toContain("próximo envio")
   })
 })
 

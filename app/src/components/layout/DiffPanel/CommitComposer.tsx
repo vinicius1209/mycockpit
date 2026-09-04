@@ -1,10 +1,20 @@
 import { useState } from "react"
-import { Check, ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react"
+import { Check, ChevronDown, FileText, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { gitCommit } from "@/lib/git"
 import { generateCommitMessage } from "@/lib/commitAi"
 import { useApp } from "@/store/app"
-import { controle, iconeDeControle } from "@/components/ui/controle"
+import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
 
 export function CommitComposer({
@@ -26,9 +36,10 @@ export function CommitComposer({
   const [generating, setGenerating] = useState(false)
 
   const helperModel = useApp((s) => s.settings.helperModel)
+  const hasChanges = totalChanges > 0
 
   async function handleGenerateAi() {
-    if (generating) return
+    if (generating || busy || !hasChanges) return
     if (!helperModel) {
       toast.error("Ative o modelo auxiliar nas Configurações para sugerir a mensagem")
       return
@@ -54,6 +65,7 @@ export function CommitComposer({
   }
 
   async function handleSubmit() {
+    if (busy || !hasChanges) return
     const cleanTitle = title.trim()
     if (!cleanTitle) {
       toast.error("Informe o título do commit")
@@ -83,13 +95,22 @@ export function CommitComposer({
 
   const titleLen = title.length
   const isTitleLong = titleLen > 72
-  const hasChanges = totalChanges > 0
+
+  // Sem alterações não existe decisão de commit a tomar. O estado limpo já é
+  // comunicado pela área de arquivos, então manter o formulário aqui só cria
+  // uma falsa ação e domina visualmente o painel.
+  if (!hasChanges) return null
+
+  const commitLabel = amend
+    ? "Retificar commit"
+    : stagedCount > 0
+      ? `Criar commit (${stagedCount})`
+      : "Criar commit"
 
   return (
-    <div className="shrink-0 border-b border-border/40 bg-card/60 p-3">
-      {/* Campo de título */}
+    <div className="shrink-0 border-b border-border/40 px-3 py-2.5">
       <div className="relative">
-        <input
+        <Input
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -99,28 +120,46 @@ export function CommitComposer({
               void handleSubmit()
             }
           }}
-          placeholder="Mensagem do commit (⌘Enter para criar)…"
+          placeholder="Mensagem do commit"
+          aria-label="Mensagem do commit"
+          aria-invalid={isTitleLong}
           className={cn(
-            "w-full rounded-md border bg-secondary/40 px-2.5 py-1.5 pr-14 text-[12px] text-foreground outline-none",
-            "focus:border-brass/50 focus:bg-secondary/60",
-            isTitleLong ? "border-st-warning/60" : "border",
+            "h-8 bg-secondary/40 px-2.5 pr-10 text-[12px] shadow-none",
+            "focus-visible:bg-secondary/60",
+            isTitleLong && "border-st-warning/60 focus-visible:border-st-warning",
           )}
         />
-        <span
-          className={cn(
-            "pointer-events-none absolute top-1.5 right-2 font-mono text-[11px] tabular-nums",
-            isTitleLong ? "text-st-warning" : "text-muted-foreground/60",
-          )}
-          title="Tamanho recomendado do título: até 72 caracteres"
-        >
-          {titleLen}/72
-        </span>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="absolute top-1 right-1">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icone-chip"
+                onClick={() => void handleGenerateAi()}
+                disabled={generating || busy || !helperModel}
+                aria-label="Sugerir mensagem"
+              >
+                {generating ? (
+                  <Loader2 className="animate-spin" />
+                ) : (
+                  <Sparkles />
+                )}
+              </Button>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="left" sideOffset={6}>
+            {helperModel
+              ? "Sugerir mensagem a partir das alterações"
+              : "Ative o modelo auxiliar nas Configurações"}
+          </TooltipContent>
+        </Tooltip>
       </div>
 
-      {/* Descrição estendida colapsável */}
       {showBody && (
         <div className="mt-2">
-          <textarea
+          <Textarea
             value={body}
             onChange={(e) => setBody(e.target.value)}
             onKeyDown={(e) => {
@@ -130,91 +169,80 @@ export function CommitComposer({
               }
             }}
             rows={3}
-            placeholder="Descrição detalhada ou tópicos (opcional)…"
-            className="w-full resize-none rounded-md border border-border/40 bg-secondary/40 p-2 font-mono text-[11px] text-foreground outline-none transition-colors focus:border-brass/50 focus:bg-secondary/60"
+            placeholder="Descrição do commit (opcional)"
+            aria-label="Descrição do commit"
+            className="min-h-20 resize-none bg-secondary/40 px-2.5 py-2 font-mono text-[11px] shadow-none focus-visible:bg-secondary/60"
           />
         </div>
       )}
 
-      {/* Barra de ações e opções */}
-      <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          {/* Botão de gerar com IA */}
-          <button
-            type="button"
-            onClick={() => void handleGenerateAi()}
-            disabled={generating || busy || !hasChanges || !helperModel}
-            title={
-              helperModel
-                ? "Sugerir mensagem a partir das alterações"
-                : "Ative o modelo auxiliar nas Configurações"
-            }
-            className={cn(
-              controle("chip"),
-              "border border-brass/30 bg-brass/10 text-brass hover:bg-brass/20 disabled:opacity-40",
-            )}
-          >
-            {generating ? (
-              <Loader2 className={cn(iconeDeControle("chip"), "animate-spin")} />
-            ) : (
-              <Sparkles className={iconeDeControle("chip")} />
-            )}
-            <span>Sugerir</span>
-          </button>
-
-          {/* Alternador de corpo/descrição */}
-          <button
-            type="button"
-            onClick={() => setShowBody(!showBody)}
-            title={showBody ? "Ocultar descrição" : "Adicionar descrição estendida"}
-            className={cn(
-              controle("chip"),
-              "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
-            )}
-          >
-            {showBody ? (
-              <ChevronDown className={iconeDeControle("chip")} />
-            ) : (
-              <ChevronRight className={iconeDeControle("chip")} />
-            )}
-            <span>Descrição</span>
-          </button>
-
-          {/* Retificação do commit anterior. */}
-          <label className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground select-none hover:text-foreground">
-            <input
-              type="checkbox"
-              checked={amend}
-              onChange={(e) => setAmend(e.target.checked)}
-              className="size-3 rounded border-border accent-brass"
-            />
-            <span>Retificar</span>
-          </label>
+      <div className="mt-2 flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          {titleLen > 0 && (
+            <span
+              className={cn(
+                "font-mono text-[11px] tabular-nums",
+                isTitleLong ? "text-st-warning" : "text-muted-foreground",
+              )}
+              title="Tamanho recomendado do título: até 72 caracteres"
+            >
+              {titleLen}/72
+            </span>
+          )}
         </div>
 
-        {/* Botão principal de comitar */}
-        <button
-          type="button"
-          onClick={() => void handleSubmit()}
-          disabled={busy || !title.trim() || !hasChanges}
-          className={cn(
-            controle("compacto"),
-            "bg-primary font-medium text-primary-foreground shadow-xs transition-colors hover:bg-primary/90 disabled:opacity-40",
-          )}
-        >
-          {busy ? (
-            <Loader2 className={cn(iconeDeControle("compacto"), "animate-spin")} />
-          ) : (
-            <Check className={iconeDeControle("compacto")} />
-          )}
-          <span>
-            {stagedCount > 0
-              ? `Criar commit (${stagedCount})`
-              : amend
-                ? "Retificar commit"
-                : "Criar commit"}
-          </span>
-        </button>
+        <div className="flex items-stretch">
+          <Button
+            type="button"
+            variant="outline"
+            size="compacto"
+            onClick={() => void handleSubmit()}
+            disabled={busy || !title.trim()}
+            title={`${commitLabel} (⌘Enter)`}
+            className={cn(
+              "rounded-r-none px-3",
+              amend && "border-st-warning/60 text-st-warning",
+            )}
+          >
+            {busy ? <Loader2 className="animate-spin" /> : <Check />}
+            <span>{commitLabel}</span>
+          </Button>
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icone-compacto"
+                className={cn(
+                  "rounded-l-none border-l-0",
+                  amend && "border-st-warning/60 text-st-warning",
+                )}
+                aria-label="Mais opções de commit"
+                title="Mais opções de commit"
+              >
+                <ChevronDown />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-56">
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (showBody) setBody("")
+                  setShowBody(!showBody)
+                }}
+              >
+                <FileText />
+                {showBody ? "Remover descrição" : "Adicionar descrição"}
+              </DropdownMenuItem>
+              <DropdownMenuCheckboxItem
+                checked={amend}
+                onCheckedChange={(checked) => setAmend(checked === true)}
+              >
+                Retificar o último commit
+              </DropdownMenuCheckboxItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </div>
   )
