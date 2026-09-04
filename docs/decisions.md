@@ -5550,3 +5550,21 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Consequência:** anexos de notas e imagens do fio usam o mesmo lightbox e
   sempre aparecem acima da superfície que iniciou o gesto, sem fechar a gaveta,
   duplicar estado ou introduzir outra primitiva de diálogo.
+
+### ADR-156 · o painel direito separa projeto, conversa e evidência ✅
+- **Contexto:** o mock `sidebar-cockpit-mock.html` propôs Arquivos e uma meta da
+  conversa, mas o app real conservou apenas Contexto, Alterações e a checklist.
+  Em fios longos, Contexto descrevia o projeto e Plano descrevia as tarefas, sem
+  preservar na superfície o pedido que abriu a conversa nem a última entrega
+  concluída. Chamar qualquer recorte de “resumo de IA” também criaria uma nova
+  fonte de verdade sem proveniência.
+- **Decisão:** ordenar o painel como Arquivos, Plano, Alterações e Contexto.
+  Arquivos usa o inventário real de `list_project_files`. Plano mostra título,
+  trecho do primeiro pedido humano, última resposta terminada por `result.ok`,
+  checklist derivada de `TaskCreate`/`TaskUpdate` e trabalho diferido ainda vivo.
+  Streaming, falha e replay interrompido não viram entrega. Uma meta editável
+  fica fora até existir persistência própria e confirmação humana.
+- **Consequência:** a conversa ganha memória operacional sem geração automática,
+  o projeto ganha navegação local sem duplicar o diff, e cada afirmação do painel
+  continua ligada a uma fonte observável. O arquivo principal encolhe porque as
+  novas superfícies e a tira de abas vivem em módulos próprios.

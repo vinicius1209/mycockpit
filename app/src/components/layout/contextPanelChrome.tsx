@@ -4,7 +4,9 @@
 // juntas: são a receita de "seção" e de "ativo" do painel (ADR-043, Fase 2).
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
+import { FileDiff, Folder, ListChecks, PanelRight } from "lucide-react"
 import { cn } from "@/lib/utils"
+import type { ContextPanelTab } from "@/store/app"
 
 /** Seção do painel. Separação por PROXIMIDADE ASSIMÉTRICA (§4): 24px acima do
  *  título, 8px abaixo (razão 3:1) — é isso que gruda o título no conteúdo dele
@@ -48,10 +50,10 @@ export function StageBadge({ stage }: { stage: string }) {
   )
 }
 
-/** Aba do painel (Contexto | Alterações | Plano). Ativa = a MESMA receita das
- *  linhas da árvore (§2, ADR-043): preenchimento neutro `--sel` + peso, sem
- *  tinta. Saiu o sublinhado brass, que era a terceira linguagem de "ativo" do
- *  app, e o contador saiu do brass junto (número é metadado, não gesto).
+/** Aba do painel (Arquivos | Plano | Alterações | Contexto). Ativa = a MESMA
+ *  receita das linhas da árvore (§2, ADR-043): preenchimento neutro `--sel` +
+ *  peso, sem tinta. Saiu o sublinhado brass, que era a terceira linguagem de
+ *  "ativo" do app, e o contador saiu do brass junto (número é metadado, não gesto).
  *  Sem pip: o pip é o marcador do GUTTER de lista/árvore, e uma tira
  *  horizontal de abas não tem gutter.
  *
@@ -61,15 +63,15 @@ export function StageBadge({ stage }: { stage: string }) {
  *  roupa: aba é CONTROLE (clica), título de seção é RÓTULO (lê) — a hierarquia
  *  do painel achatava, e não dava pra distinguir navegação de conteúdo. O
  *  título de seção MANTÉM o tratamento, que ali é correto.
- *  O custo era medido, não estético: com caixa-alta a tira mede **353,6px**;
- *  sem, **298,9px** (−15%), e o painel padrão tem ~304px — era isso que cortava
- *  o "PLANO" em "PL".
+ *  O custo era medido, não estético: com caixa-alta a tira antiga media
+ *  **353,6px**; sem, **298,9px** (−15%). A quarta aba elevou a largura mínima
+ *  de rótulos completos para 400px; abaixo disso os quatro ícones dividem o
+ *  trilho igualmente e o nome permanece em `title`/`aria-label`.
  *
  *  DEGRADA POR LARGURA, não por decreto. Rótulo quando cabe, ícone quando não
- *  cabe (`@min-[274px]`, medido: a tira de rótulos precisa de 273,5px de
- *  content-box no pior caso, contador de 3 dígitos incluso; o painel tem
- *  `minSize` 240px, onde só o ícone cabe). O contador continua visível NOS DOIS
- *  modos: ele é o único dado da tira que muda sozinho. */
+ *  cabe (`@min-[400px]`; o painel tem `minSize` 240px, onde só o ícone cabe).
+ *  O contador continua visível NOS DOIS modos: ele é o único dado da tira que
+ *  muda sozinho. */
 export function TabBtn({
   active,
   onClick,
@@ -92,14 +94,14 @@ export function TabBtn({
       title={label}
       aria-label={label}
       className={cn(
-        "flex h-[26px] items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
+        "flex h-[26px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
         active
           ? "bg-sel text-foreground"
           : "text-muted-foreground/50 hover:bg-sel-hover hover:text-muted-foreground",
       )}
     >
       <Icon className="size-3.5 shrink-0" />
-      <span className="hidden @min-[274px]:inline">{label}</span>
+      <span className="hidden min-w-0 truncate @min-[400px]:inline">{label}</span>
       {badge != null && badge > 0 && (
         <span
           className={cn(
@@ -111,5 +113,47 @@ export function TabBtn({
         </span>
       )}
     </button>
+  )
+}
+
+/** Ordem semântica aprovada no mock do cockpit. Centralizar aqui evita que o
+ *  cabeçalho e o roteamento do painel ganhem ordens divergentes. */
+export function ContextPanelTabs({
+  tab,
+  changedCount,
+  onSelect,
+}: {
+  tab: ContextPanelTab
+  changedCount: number
+  onSelect: (tab: ContextPanelTab) => void
+}) {
+  return (
+    <header className="@container flex h-11 shrink-0 items-center gap-1 px-2.5">
+      <TabBtn
+        active={tab === "arquivos"}
+        onClick={() => onSelect("arquivos")}
+        icon={Folder}
+        label="Arquivos"
+      />
+      <TabBtn
+        active={tab === "plano"}
+        onClick={() => onSelect("plano")}
+        icon={ListChecks}
+        label="Plano"
+      />
+      <TabBtn
+        active={tab === "alteracoes"}
+        onClick={() => onSelect("alteracoes")}
+        icon={FileDiff}
+        badge={changedCount}
+        label="Alterações"
+      />
+      <TabBtn
+        active={tab === "contexto"}
+        onClick={() => onSelect("contexto")}
+        icon={PanelRight}
+        label="Contexto"
+      />
+    </header>
   )
 }

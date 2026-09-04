@@ -1,28 +1,25 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
   Brain,
   ChevronDown,
-  FileDiff,
   FileText,
   FolderGit2,
   FolderPlus,
-  ListChecks,
-  PanelRight,
   Plug,
   RefreshCw,
   X,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
+  ContextPanelTabs,
   Section,
   StageBadge,
-  TabBtn,
 } from "@/components/layout/contextPanelChrome"
 import { DiffIndex } from "@/components/layout/DiffIndex"
-import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import { deriveTasks } from "@/lib/tasks"
+import { ConversationPlanPanel } from "@/components/layout/ConversationPlanPanel"
+import { ProjectFilesPanel } from "@/components/layout/ProjectFilesPanel"
 import {
   Dialog,
   DialogContent,
@@ -286,6 +283,13 @@ export function ContextPanel() {
   )
   // P3: Entrega→diff só vale enquanto a conversa dela é a ativa.
   const activeConvId = useChat((s) => s.activeId)
+  const activeTitle = useChat((s) => {
+    if (!s.activeId || !s.projectId) return null
+    return (
+      s.conversationsByProject[s.projectId]?.find((c) => c.id === s.activeId)
+        ?.title ?? null
+    )
+  })
   const deliveryDiff = useApp((s) => s.deliveryDiff)
   const delivery =
     deliveryDiff && deliveryDiff.convId === activeConvId ? deliveryDiff : null
@@ -332,10 +336,6 @@ export function ContextPanel() {
   // items da conversa ativa SÓ com a aba Plano visível (evita re-render nas outras).
   const planItems = useChat((s) =>
     tab === "plano" && s.activeId ? s.byId[s.activeId]?.items : undefined,
-  )
-  const planTasks = useMemo(
-    () => (planItems ? deriveTasks(planItems) : []),
-    [planItems],
   )
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
@@ -469,29 +469,7 @@ export function ContextPanel() {
     // sem borda) — a proibição do §4 é de borda aninhada, não de raio, mas em
     // troca fica mais forte: nada aqui dentro pode ter hairline de largura total.
     <aside className="reveal-right flex h-full w-full flex-col overflow-hidden rounded-xl bg-card shadow-[var(--shadow-sm),var(--lift)]">
-      {/* `@container`: a tira decide rótulo × ícone pela largura REAL do painel
-          (redimensionável), não por breakpoint de janela — ver `TabBtn`. */}
-      <header className="@container flex h-11 shrink-0 items-center gap-1 px-2.5">
-        <TabBtn
-          active={tab === "contexto"}
-          onClick={() => setTab("contexto")}
-          icon={PanelRight}
-          label="Contexto"
-        />
-        <TabBtn
-          active={tab === "alteracoes"}
-          onClick={() => setTab("alteracoes")}
-          icon={FileDiff}
-          badge={changedCount}
-          label="Alterações"
-        />
-        <TabBtn
-          active={tab === "plano"}
-          onClick={() => setTab("plano")}
-          icon={ListChecks}
-          label="Plano"
-        />
-      </header>
+      <ContextPanelTabs tab={tab} changedCount={changedCount} onSelect={setTab} />
 
       {!project ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
@@ -499,6 +477,10 @@ export function ContextPanel() {
             Nenhum projeto selecionado.
           </p>
         </div>
+      ) : tab === "arquivos" ? (
+        <ProjectFilesPanel root={activeWorktree ?? project.path} />
+      ) : tab === "plano" ? (
+        <ConversationPlanPanel items={planItems} title={activeTitle} />
       ) : tab === "alteracoes" ? (
         <DiffIndex
           cwd={activeWorktree ?? project.path}
@@ -506,17 +488,6 @@ export function ContextPanel() {
           onRequestFix={requestDeliveryFix}
           onCloseDelivery={closeDeliveryDiff}
         />
-      ) : tab === "plano" ? (
-        <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          {planTasks.length > 0 ? (
-            <TaskChecklist tasks={planTasks} />
-          ) : (
-            <p className="px-2 py-10 text-center text-[13px] text-muted-foreground">
-              Sem plano nesta conversa. Quando o agent criar tarefas, a checklist
-              aparece aqui.
-            </p>
-          )}
-        </div>
       ) : (
         <ScrollArea className="flex-1">
           {/* Identidade (nome/path) mora no titlebar + sidebar; copiar o caminho

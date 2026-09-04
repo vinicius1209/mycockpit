@@ -8,7 +8,7 @@
   "arquivos": {
     "components/chat/ChatPanel.tsx": 1167,
     "components/chat/MessageList.tsx": 1788,
-    "components/layout/ContextPanel.tsx": 856,
+    "components/layout/ContextPanel.tsx": 827,
     "components/scheduled/ScheduledView.tsx": 1071,
     "components/sdd/SddView.tsx": 1415,
     "components/settings/Especialistas.tsx": 829,

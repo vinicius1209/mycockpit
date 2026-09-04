@@ -17,7 +17,7 @@ import {
 import { moveByDelta, reorderByIds } from "@/lib/reorder"
 
 type Theme = "dark" | "light"
-export type ContextPanelTab = "contexto" | "alteracoes" | "plano"
+export type ContextPanelTab = "arquivos" | "plano" | "alteracoes" | "contexto"
 
 /** Config por projeto (espelho resolvido de .mycockpit/config.toml, Fase 1). */
 export interface ProjectConfig {
