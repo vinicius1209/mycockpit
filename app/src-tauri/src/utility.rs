@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::State;
@@ -22,6 +23,7 @@ pub struct UtilityState {
     cancellations: Mutex<HashMap<String, oneshot::Sender<()>>>,
     apple_gate: Arc<Semaphore>,
     helper_gate: Arc<Semaphore>,
+    accepting: AtomicBool,
 }
 
 impl Default for UtilityState {
@@ -36,6 +38,36 @@ impl UtilityState {
             cancellations: Mutex::new(HashMap::new()),
             apple_gate: Arc::new(Semaphore::new(1)),
             helper_gate: Arc::new(Semaphore::new(1)),
+            accepting: AtomicBool::new(true),
+        }
+    }
+
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode iniciar outra análise".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.cancellations
+            .lock()
+            .map(|items| items.len())
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn cancel_all(&self) {
+        let senders = self
+            .cancellations
+            .lock()
+            .map(|mut items| items.drain().map(|(_, sender)| sender).collect::<Vec<_>>())
+            .unwrap_or_default();
+        for sender in senders {
+            let _ = sender.send(());
         }
     }
 }
@@ -514,6 +546,9 @@ async fn run_apple(
         .kill_on_drop(true);
     #[cfg(unix)]
     command.process_group(0);
+    if state.ensure_accepting().is_err() {
+        return UtilityRun::Cancelled;
+    }
     let Ok(mut child) = command.spawn() else {
         return UtilityRun::Failed;
     };
@@ -565,6 +600,9 @@ async fn run_helper(
         .stderr(std::process::Stdio::piped());
     #[cfg(unix)]
     command.process_group(0);
+    if state.ensure_accepting().is_err() {
+        return UtilityRun::Cancelled;
+    }
     let result = match command.spawn() {
         Ok(child) => wait_bounded(child, cancelled, deadline_at).await,
         Err(_) => UtilityRun::Failed,
@@ -630,6 +668,9 @@ fn helper_failure_code(output: &BoundedOutput) -> &'static str {
 
 async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> UtilityResult {
     let started_at = now_ms();
+    if state.ensure_accepting().is_err() {
+        return finish(started_at, "cancelled", None, None, Some("cancelled"));
+    }
     if request.attempt_id.is_empty() || request.input_digest.is_empty() {
         return finish(started_at, "invalid", None, None, Some("invalid_request"));
     }
@@ -654,6 +695,9 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
     }
     let (send_cancel, receive_cancel) = oneshot::channel();
     {
+        if state.ensure_accepting().is_err() {
+            return finish(started_at, "cancelled", None, None, Some("cancelled"));
+        }
         let Ok(mut cancellations) = state.cancellations.lock() else {
             return finish(started_at, "failed", None, None, Some("process_failed"));
         };

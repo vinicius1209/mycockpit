@@ -26,7 +26,7 @@ use axum::{
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::sync::{
@@ -292,6 +292,7 @@ fn now_epoch_ms() -> u64 {
 /// Receiver; mandar aqui alcança todos os celulares conectados.
 pub struct CompanionState {
     running: AtomicBool,
+    accepting: AtomicBool,
     /// C4 — credenciais VIVAS (legado + por aparelho), compartilhadas com o
     /// guard por Arc: revogar vale na hora, sem reiniciar o servidor.
     auth: Arc<Mutex<AuthSet>>,
@@ -309,6 +310,9 @@ pub struct CompanionState {
     /// ids), fechando o registro §4 da revisão C2 — um aparelho autenticado
     /// não despeja os ids pendentes de outro inundando o teto.
     recent_actions: Mutex<HashMap<String, Vec<(String, Instant)>>>,
+    /// Ações com identidade que receberam 202, mas ainda não tiveram veredito
+    /// do executor. Conexão aberta, sozinha, não é trabalho pendente.
+    pending_actions: Mutex<HashSet<String>>,
     tx: broadcast::Sender<String>,
     shutdown: Mutex<Option<oneshot::Sender<()>>>,
 }
@@ -317,15 +321,37 @@ impl Default for CompanionState {
     fn default() -> Self {
         Self {
             running: AtomicBool::new(false),
+            accepting: AtomicBool::new(true),
             auth: Arc::new(Mutex::new(AuthSet::default())),
             pairing: Mutex::new(PairingBoard::default()),
             last_seen_flush: Mutex::new(None),
             snapshot: Mutex::new(Value::Null),
             uploads: Mutex::new(HashMap::new()),
             recent_actions: Mutex::new(HashMap::new()),
+            pending_actions: Mutex::new(HashSet::new()),
             tx: broadcast::channel(64).0,
             shutdown: Mutex::new(None),
         }
+    }
+}
+
+impl CompanionState {
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode aceitar outra ação".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn pending_action_count(&self) -> usize {
+        self.pending_actions
+            .lock()
+            .map(|items| items.len())
+            .unwrap_or(0)
     }
 }
 
@@ -509,6 +535,7 @@ pub async fn companion_start(
     app: AppHandle,
     state: State<'_, CompanionState>,
 ) -> Result<CompanionInfo, String> {
+    state.ensure_accepting()?;
     // swap = check-and-set atômico: segunda chamada concorrente vê true e sai.
     if state.running.swap(true, Ordering::SeqCst) {
         return Ok(CompanionInfo {
@@ -802,6 +829,20 @@ pub fn flush_devices_on_exit(app: &AppHandle) {
     }
 }
 
+/// Teardown do servidor e dos sockets sem depender do frontend responder.
+pub(crate) fn shutdown_on_exit(app: &AppHandle) {
+    let state = app.state::<CompanionState>();
+    state.begin_shutdown();
+    flush_devices_on_exit(app);
+    let _ = state.tx.send(STOP_SENTINEL.to_string());
+    if let Ok(mut shutdown) = state.shutdown.lock() {
+        if let Some(sender) = shutdown.take() {
+            let _ = sender.send(());
+        }
+    }
+    state.running.store(false, Ordering::SeqCst);
+}
+
 /// Revogação INDIVIDUAL (C4): tira o aparelho do AuthSet vivo + do arquivo e
 /// derruba os WS abertos — o aparelho revogado cai no 401 e limpa o storage.
 #[tauri::command]
@@ -860,6 +901,11 @@ pub async fn companion_action_result(
     result: Value,
     state: State<'_, CompanionState>,
 ) -> Result<(), String> {
+    if let Some(id) = result.get("actionId").and_then(Value::as_str) {
+        if let Ok(mut pending) = state.pending_actions.lock() {
+            pending.remove(id);
+        }
+    }
     let _ = state
         .tx
         .send(json!({"type": "action-result", "data": result}).to_string());
@@ -1354,6 +1400,10 @@ async fn post_action(
     principal: Option<Extension<AuthPrincipal>>,
     Json(body): Json<Value>,
 ) -> Response {
+    let state = ctx.app.state::<CompanionState>();
+    if let Err(error) = state.ensure_accepting() {
+        return (StatusCode::SERVICE_UNAVAILABLE, error).into_response();
+    }
     // C2 — idempotência por actionId ANTES da sanitização completa (revisão C2
     // §3): o 1º aceite CONSOME os uploads do cache, então um retry com anexos
     // repassado ao sanitize viraria 400 ("attachmentId desconhecido") em vez
@@ -1402,7 +1452,22 @@ async fn post_action(
                 }
             }
             let kind = payload["kind"].as_str().unwrap_or("?").to_string();
-            let _ = ctx.app.emit("companion://action", payload);
+            if let Err(error) = state.ensure_accepting() {
+                return (StatusCode::SERVICE_UNAVAILABLE, error).into_response();
+            }
+            if let Some(id) = &action_id {
+                if let Ok(mut pending) = state.pending_actions.lock() {
+                    pending.insert(id.clone());
+                }
+            }
+            if ctx.app.emit("companion://action", payload).is_err() {
+                if let Some(id) = &action_id {
+                    if let Ok(mut pending) = state.pending_actions.lock() {
+                        pending.remove(id);
+                    }
+                }
+                return StatusCode::SERVICE_UNAVAILABLE.into_response();
+            }
             log::info!("companion: ação {kind} aceita");
             StatusCode::ACCEPTED.into_response()
         }

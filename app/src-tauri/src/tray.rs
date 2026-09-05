@@ -16,7 +16,6 @@ use tauri::{
     AppHandle, Emitter, LogicalPosition, Manager, PhysicalPosition, Runtime, State, WebviewUrl,
     WebviewWindowBuilder,
 };
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 pub const TRAY_ID: &str = "mycockpit-tray";
 pub const POPOVER_LABEL: &str = "tray-popover";
@@ -211,7 +210,7 @@ fn load_tray_preferences(app: &AppHandle) {
         .store(prefs.close_hint_shown, Ordering::Relaxed);
 }
 
-fn snapshot(state: &TrayState) -> TraySnapshot {
+pub(crate) fn current_snapshot(state: &TrayState) -> TraySnapshot {
     state.snapshot.lock().map(|s| s.clone()).unwrap_or_default()
 }
 
@@ -237,32 +236,6 @@ fn external_status_pt(status: &str) -> &'static str {
         "waiting" | "blocked" => "esperando você",
         _ => "ociosa",
     }
-}
-
-/// Mensagem do diálogo de saída (deferred-work-plan, D1.4): morte CONSCIENTE.
-/// Com trabalho em background do provider vivo, o aviso diz explicitamente que
-/// ele morre junto e fica marcado como interrompido — nunca silêncio.
-fn quit_warning(s: &TraySnapshot) -> String {
-    let mut msg = String::from(
-        "Os agents em voo serão interrompidos. Feche a janela se quiser \
-         mantê-los rodando na tray.",
-    );
-    if s.deferred > 0 {
-        let deferred = if s.deferred == 1 {
-            "Há 1 trabalho em background do agent em andamento: ele morre \
-             junto com o app e ficará marcado como interrompido."
-                .to_string()
-        } else {
-            format!(
-                "Há {} trabalhos em background do agent em andamento: eles \
-                 morrem junto com o app e ficarão marcados como interrompidos.",
-                s.deferred
-            )
-        };
-        msg.push_str("\n\n");
-        msg.push_str(&deferred);
-    }
-    msg
 }
 
 fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TraySnapshot) -> tauri::Result<Menu<R>> {
@@ -511,33 +484,8 @@ fn emit_background_action(
     .map_err(|error| error.to_string())
 }
 
-pub fn request_quit(app: &AppHandle) {
-    let snap = snapshot(&app.state::<TrayState>());
-    if snap.running == 0 && snap.deferred == 0 {
-        app.exit(0);
-        return;
-    }
-    // Confirmação NATIVA: não pode depender do webview responder — com o JS
-    // travado/recarregando, um evento pro frontend deixaria o app impossível
-    // de fechar pela tray. O callback roda fora da main thread do diálogo.
-    let handle = app.clone();
-    app.dialog()
-        .message(quit_warning(&snap))
-        .title("Sair com tarefas em execução?")
-        .buttons(MessageDialogButtons::OkCancelCustom(
-            "Interromper e sair".into(),
-            "Cancelar".into(),
-        ))
-        .kind(MessageDialogKind::Warning)
-        .show(move |ok| {
-            if ok {
-                handle.exit(0);
-            }
-        });
-}
-
 fn dispatch_native_action(app: &AppHandle, action: &str) {
-    let s = snapshot(&app.state::<TrayState>());
+    let s = current_snapshot(&app.state::<TrayState>());
     let result = match action {
         "open" => restore_main_window(app),
         "new-task" => emit_action(app, "new-task", None, None),
@@ -550,7 +498,7 @@ fn dispatch_native_action(app: &AppHandle, action: &str) {
         "running" => emit_action(app, "show-running", None, None),
         "schedules" => emit_action(app, "open-schedules", None, None),
         "quit" => {
-            request_quit(app);
+            crate::quit::request_quit(app, crate::quit::QuitOrigin::Tray);
             Ok(())
         }
         _ => Ok(()),
@@ -561,11 +509,14 @@ fn dispatch_native_action(app: &AppHandle, action: &str) {
 }
 
 fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
+    if crate::quit::is_draining(app) {
+        return;
+    }
     let Some(win) = app.get_webview_window(POPOVER_LABEL) else {
         return;
     };
     if crate::hud::is_floating(app) {
-        let s = snapshot(&app.state::<TrayState>());
+        let s = current_snapshot(&app.state::<TrayState>());
         let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
         crate::hud::toggle_from_tray(app);
         return;
@@ -637,7 +588,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
             let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
         }
     }
-    let s = snapshot(&app.state::<TrayState>());
+    let s = current_snapshot(&app.state::<TrayState>());
     let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
     ensure_vibrancy(app, &win); // agora a janela está realizada (contentView ok)
     let _ = win.show();
@@ -751,7 +702,7 @@ pub fn set_tray_snapshot(
 
 #[tauri::command]
 pub fn get_tray_snapshot(state: State<'_, TrayState>) -> TraySnapshot {
-    snapshot(&state)
+    current_snapshot(&state)
 }
 
 #[tauri::command]
@@ -786,7 +737,7 @@ pub fn tray_action(
 ) -> Result<(), String> {
     match action.as_str() {
         "quit" => {
-            request_quit(&app);
+            crate::quit::request_quit(&app, crate::quit::QuitOrigin::Tray);
             Ok(())
         }
         "open" => restore_main_window(&app),
@@ -797,11 +748,6 @@ pub fn tray_action(
         }
         _ => emit_action(&app, &action, conv_id, project_id),
     }
-}
-
-#[tauri::command]
-pub fn force_quit(app: AppHandle) {
-    app.exit(0);
 }
 
 #[cfg(test)]
@@ -883,30 +829,6 @@ mod tests {
     fn reopen_restaura_main_mesmo_quando_o_hud_conta_como_janela_visivel() {
         assert!(should_restore_main_on_reopen(false));
         assert!(should_restore_main_on_reopen(true));
-    }
-
-    /// D1.4 (deferred-work-plan): sair com trabalho em background do provider
-    /// vivo avisa que ele morre junto — nunca morte silenciosa.
-    #[test]
-    fn quit_warning_avisa_do_trabalho_em_background_que_morre_junto() {
-        let base = quit_warning(&TraySnapshot {
-            running: 1,
-            ..Default::default()
-        });
-        assert!(!base.contains("background"));
-        let um = quit_warning(&TraySnapshot {
-            running: 1,
-            deferred: 1,
-            ..Default::default()
-        });
-        assert!(um.contains("1 trabalho em background"));
-        assert!(um.contains("interrompido"));
-        let dois = quit_warning(&TraySnapshot {
-            running: 1,
-            deferred: 2,
-            ..Default::default()
-        });
-        assert!(dois.contains("2 trabalhos em background"));
     }
 
     /// H1 (hooks-plan): sessão externa no tray com copy honesta — espelho do

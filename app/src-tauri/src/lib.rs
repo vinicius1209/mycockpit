@@ -60,6 +60,7 @@ mod pricing;
 mod proc;
 mod processos;
 mod provider_mcp_inventory;
+mod quit;
 mod resource_broker;
 mod run_manifest;
 mod run_processes;
@@ -706,9 +707,7 @@ pub fn run() {
                         }
                         tray::notify_window_hidden(window.app_handle());
                     } else {
-                        // Mesma proteção do "Sair" da tray: com agents em voo,
-                        // confirma antes do exit(0) matar os runs (kill_all).
-                        tray::request_quit(window.app_handle());
+                        quit::request_quit(window.app_handle(), quit::QuitOrigin::CloseWindow);
                     }
                 }
             } else if window.label() == tray::POPOVER_LABEL {
@@ -767,6 +766,7 @@ pub fn run() {
         .manage(browser_panel::BrowserPanelRegistry::default())
         .manage(hud::HudState::default())
         .manage(tray::TrayState::default())
+        .manage(quit::QuitCoordinator::default())
         // Medidor de janela de uso: snapshots vivos por agent (fonte única
         // que o front hidrata no boot; ingest da statusline + poll gravam aqui).
         .manage(usage_window::UsageState::default())
@@ -889,7 +889,6 @@ pub fn run() {
             tray::get_tray_snapshot,
             tray::set_tray_preferences,
             tray::tray_action,
-            tray::force_quit,
             notch::get_notch_geometry,
             notch::get_screen_geometries,
             hud::hud_status,
@@ -952,28 +951,14 @@ pub fn run() {
             {
                 tray::handle_reopen(app_handle, *has_visible_windows);
             }
-            // Saída do app com run em voo: mata os CLIs de agent (senão ficam
-            // órfãos rodando headless, editando repo e gastando, sem UI).
-            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
-                let reg = app_handle.state::<agent::RunRegistry>();
-                reg.kill_all();
-                // Cinto E suspensório: o `caffeinate -w <pid>` já sai sozinho
-                // quando o app morre, mas soltar explicitamente aqui deixa a
-                // intenção legível e não depende de o `-w` existir sempre.
-                reg.2.solta();
-                app_handle
-                    .state::<std::sync::Arc<work_gateway::ProcessRegistry>>()
-                    .kill_all();
-                app_handle
-                    .state::<std::sync::Arc<plugin_runtime::PluginRuntimeRegistry>>()
-                    .kill_all();
-                app_handle
-                    .state::<std::sync::Arc<resource_broker::ResourceLeaseRegistry>>()
-                    .release_all();
-                // Revisão C4 (F2): o "visto por último" dos aparelhos do
-                // companion persiste no quit (senão só o poll das
-                // Configurações e o stop flushavam).
-                companion::flush_devices_on_exit(app_handle);
+            // A primeira passagem é sempre interceptada. Depois da decisão e
+            // do teardown, o coordenador marca Committed e chama exit(0), cuja
+            // segunda passagem é a única autorizada a encerrar o processo.
+            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+                if !quit::allows_exit(app_handle) {
+                    api.prevent_exit();
+                    quit::request_quit(app_handle, quit::QuitOrigin::Native);
+                }
             }
         });
 }

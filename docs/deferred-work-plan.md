@@ -8,6 +8,10 @@
 > **externo** (processos, Plano 2); este dá o mesmo direito ao trabalho **interno do
 > provider que ultrapassa o turno** (Plano 1).
 
+> **CORREÇÃO DE SAÍDA (05/09/2026):** D1.4 deixa de depender do diálogo da
+> barra de menus. O coordenador do ADR-164 conta trabalho diferido no inventário
+> nativo, confirma em qualquer porta de saída e só então cancela o run dono.
+
 ## A dor (o incidente que define o escopo)
 
 O usuário pediu uma pesquisa profunda; o Claude Code lançou um workflow em background

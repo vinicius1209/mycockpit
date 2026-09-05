@@ -9,6 +9,11 @@
 > instalado. A promoção continua condicionada à confirmação explícita do
 > usuário.
 
+> **CORREÇÃO DE SAÍDA (05/09/2026):** abrir, restaurar e ocultar continuam sob
+> este plano. A saída definitiva agora pertence ao coordenador nativo do
+> ADR-164 e de `docs/quit-lifecycle-plan.md`; nenhum caminho de janela ou menu
+> encerra processos diretamente.
+
 ## Resultado de produto
 
 O aviso terminal de limite ou erro deixa de parecer um cartão genérico de chat

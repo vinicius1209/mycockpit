@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::Emitter;
@@ -60,12 +61,75 @@ impl Default for PluginRuntimeView {
     }
 }
 
-#[derive(Default)]
 pub struct PluginRuntimeRegistry {
     entries: Mutex<HashMap<String, PluginRuntimeView>>,
+    accepting: AtomicBool,
+}
+
+impl Default for PluginRuntimeRegistry {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::new(HashMap::new()),
+            accepting: AtomicBool::new(true),
+        }
+    }
 }
 
 impl PluginRuntimeRegistry {
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| {
+                "o Frota está encerrando e não pode iniciar outra chamada de plugin".into()
+            })
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.entries
+            .lock()
+            .map(|entries| {
+                entries
+                    .values()
+                    .filter(|view| {
+                        matches!(
+                            view.state,
+                            PluginRuntimeState::Starting
+                                | PluginRuntimeState::Running
+                                | PluginRuntimeState::Stopping
+                        )
+                    })
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn stop_all(&self) {
+        let keys = self
+            .entries
+            .lock()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|(_, view)| {
+                        matches!(
+                            view.state,
+                            PluginRuntimeState::Starting | PluginRuntimeState::Running
+                        )
+                    })
+                    .map(|(key, _)| key.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for key in keys {
+            self.stop(&key);
+        }
+    }
+
     pub(crate) fn view(&self, plugin_key: &str) -> PluginRuntimeView {
         match self.entries.lock() {
             Ok(entries) => entries.get(plugin_key).cloned().unwrap_or_default(),
@@ -78,6 +142,7 @@ impl PluginRuntimeRegistry {
     }
 
     fn reserve(&self, plugin_key: &str, tool_id: &str) -> Result<PluginRuntimeView, String> {
+        self.ensure_accepting()?;
         let mut entries = self
             .entries
             .lock()
@@ -395,6 +460,7 @@ pub(crate) async fn invoke(
     tool_id: String,
     input: Value,
 ) -> Result<Value, String> {
+    registry.ensure_accepting()?;
     if !input.is_object() {
         return Err("input da tool precisa ser um objeto".into());
     }
@@ -441,6 +507,15 @@ pub(crate) async fn invoke(
     configure_environment(&mut command, &package, &project_path, &lease);
     #[cfg(unix)]
     command.process_group(0);
+
+    if let Err(error) = registry.ensure_accepting() {
+        emit_runtime(
+            &app,
+            &plugin_key,
+            registry.finish(&plugin_key, Some(error.clone())),
+        );
+        return Err(error);
+    }
 
     let spawned = command.spawn();
     let mut child = match spawned {

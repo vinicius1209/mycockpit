@@ -5744,3 +5744,27 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   reprovado alimenta a rodada seguinte, e a missão só percorre o término feliz
   depois de verificação objetiva e juízo independente. O plano Econômico
   conserva seu teto explícito de US$ 5; os demais não prometem custo limitado.
+
+### ADR-164 · sair é uma transação nativa de duas passagens ✅
+- **Contexto:** fechar a janela e sair de verdade tinham efeitos diferentes,
+  mas `Cmd+Q`, menu nativo, barra de menus e botão vermelho não atravessavam a
+  mesma política. A confirmação dependia do snapshot do frontend e a limpeza
+  explícita alcançava runs, processos e plugins, enquanto ditado, inferências,
+  updates e Companion dependiam em parte da morte do processo. Um webview
+  travado também não pode ser a autoridade para liberar a própria saída.
+- **Decisão:** `quit.rs` passa a ser a única fronteira de saída definitiva. A
+  primeira `ExitRequested` é impedida e abre no máximo uma decisão. O
+  inventário combina registries nativos com automações, trabalho diferido e
+  sessões externas publicados no instrumento. A confirmação só aparece quando
+  há trabalho que será interrompido ou automação que ficará indisponível; no
+  macOS, `Continuar no Frota` é o primeiro botão do `NSAlert`. Após o aceite,
+  um latch fecha novas admissões, o teardown sinaliza e aguarda cada recurso
+  próprio com prazo, grava um recibo sem conteúdo sensível e só então autoriza
+  a segunda passagem. O instrumento é uma janela, não um sidecar, e sessões
+  externas observadas nunca recebem sinal. Fechar com continuidade ativa
+  continua sendo apenas ocultação.
+- **Consequência:** todas as portas expressam a mesma decisão humana, cancelar
+  não altera trabalho vivo e nenhum IPC público pode forçar a saída. O app
+  reduz a chance de filhos órfãos sem prometer limpeza impossível em crash ou
+  `SIGKILL`; update de gerenciador de pacotes conserva um prazo próprio antes
+  de escalada.

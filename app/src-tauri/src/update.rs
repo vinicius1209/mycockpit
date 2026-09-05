@@ -26,6 +26,7 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::Emitter;
@@ -72,9 +73,20 @@ pub struct UpdateJob {
 /// Registry dos jobs de update, um por agent. Gerenciado pelo Tauri
 /// (`.manage(Arc<UpdateJobs>)` no lib.rs, padrão do ProcessRegistry do
 /// work_gateway). O Mutex é síncrono e as seções críticas são curtas.
-#[derive(Default)]
 pub struct UpdateJobs {
     jobs: Mutex<HashMap<String, UpdateJob>>,
+    pids: Mutex<HashMap<String, u32>>,
+    accepting: AtomicBool,
+}
+
+impl Default for UpdateJobs {
+    fn default() -> Self {
+        Self {
+            jobs: Mutex::new(HashMap::new()),
+            pids: Mutex::new(HashMap::new()),
+            accepting: AtomicBool::new(true),
+        }
+    }
 }
 
 /// Resultado do check-and-insert atômico do início de job.
@@ -86,6 +98,52 @@ enum Begin {
 }
 
 impl UpdateJobs {
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode iniciar outra atualização".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.jobs
+            .lock()
+            .map(|jobs| jobs.values().filter(|job| job.status == "running").count())
+            .unwrap_or(0)
+    }
+
+    fn register_pid(&self, agent: &str, pid: u32) {
+        if let Ok(mut pids) = self.pids.lock() {
+            pids.insert(agent.into(), pid);
+        }
+    }
+
+    fn clear_pid(&self, agent: &str) {
+        if let Ok(mut pids) = self.pids.lock() {
+            pids.remove(agent);
+        }
+    }
+
+    pub(crate) fn request_shutdown_all(&self) {
+        if let Ok(pids) = self.pids.lock() {
+            for pid in pids.values() {
+                signal_process_group(*pid, "-TERM");
+            }
+        }
+    }
+
+    pub(crate) fn kill_all(&self) {
+        if let Ok(pids) = self.pids.lock() {
+            for pid in pids.values() {
+                signal_process_group(*pid, "-KILL");
+            }
+        }
+    }
+
     /// Início de job ATÔMICO: sob o mesmo lock, checa se há `running` e, se
     /// não, insere o placeholder `running`. Dois cliques seguidos nunca geram
     /// dois `brew upgrade` concorrentes (o incidente do lock do brew).
@@ -448,6 +506,17 @@ async fn run_update_job(app: tauri::AppHandle, jobs: Arc<UpdateJobs>, agent: Str
     #[cfg(unix)]
     cmd.process_group(0);
 
+    if let Err(error) = jobs.ensure_accepting() {
+        let job = jobs.patch(&agent, |job| {
+            job.status = "failed".into();
+            job.output_tail = error.clone();
+        });
+        if let Some(job) = job {
+            emit_update(&app, "finished", Some(false), &job);
+        }
+        return;
+    }
+
     let mut child = match cmd.spawn() {
         Ok(child) => child,
         // ENOENT: npm/brew fora do PATH do app → devolve o comando pra rodar à mão.
@@ -463,6 +532,9 @@ async fn run_update_job(app: tauri::AppHandle, jobs: Arc<UpdateJobs>, agent: Str
             return;
         }
     };
+    if let Some(pid) = child.id() {
+        jobs.register_pid(&agent, pid);
+    }
 
     // Drena stdout/stderr em paralelo ao wait (senão o pipe cheio trava o filho).
     let mut stdout = child.stdout.take();
@@ -503,6 +575,7 @@ async fn run_update_job(app: tauri::AppHandle, jobs: Arc<UpdateJobs>, agent: Str
             false
         }
     };
+    jobs.clear_pid(&agent);
 
     let stdout_s = timeout(DRAIN_TIMEOUT, out_task)
         .await
@@ -564,6 +637,7 @@ pub async fn update_agent(
     jobs: tauri::State<'_, Arc<UpdateJobs>>,
     agent: String,
 ) -> Result<UpdateJob, String> {
+    jobs.ensure_accepting()?;
     // tabela ÚNICA de agent→binário (detect.rs, a mesma que a detecção
     // canônica usa) — nada de segunda cópia que possa divergir.
     let Some(bin) = crate::detect::agent_bin(&agent) else {

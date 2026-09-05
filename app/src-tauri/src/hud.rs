@@ -581,6 +581,9 @@ async fn recompute(
     expanded: Option<bool>,
     expected_epoch: Option<u64>,
 ) -> Result<HudRuntimeView, String> {
+    if crate::quit::is_draining(app) && expanded != Some(false) {
+        return Err("o Frota está encerrando".into());
+    }
     // Reposicionamentos sem gesto próprio herdam a intenção vigente. Assim,
     // uma medição de tela iniciada antes do Dock também é descartada se ele
     // assumir a janela enquanto `screen_geometries` espera a main thread.
@@ -830,6 +833,22 @@ pub fn prepare_for_main_window(app: &AppHandle) -> Result<(), String> {
         .map_err(|error| error.to_string())
 }
 
+/// Invalida hover/foco pendente e retira o instrumento antes do exit nativo.
+pub(crate) fn prepare_for_quit(app: &AppHandle) {
+    next_presentation_epoch(app);
+    let state = app.state::<HudState>();
+    state.auto_collapse.store(false, Ordering::Release);
+    if let Ok(mut runtime) = state.runtime.lock() {
+        runtime.expanded = false;
+    }
+    if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
+        let _ = window.set_focusable(false);
+        if let Err(error) = window.hide() {
+            log::warn!("não consegui esconder o instrumento na saída: {error}");
+        }
+    }
+}
+
 pub fn collapse_after_blur(app: &AppHandle) {
     if !is_floating(app) {
         if let Some(window) = app.get_webview_window(crate::tray::POPOVER_LABEL) {
@@ -849,6 +868,9 @@ pub fn collapse_after_blur(app: &AppHandle) {
 }
 
 pub fn toggle_from_tray(app: &AppHandle) {
+    if crate::quit::is_draining(app) {
+        return;
+    }
     let epoch = next_presentation_epoch(app);
     let handle = app.clone();
     tauri::async_runtime::spawn(async move {
@@ -902,6 +924,9 @@ pub async fn set_hud_expanded(
     focus: Option<bool>,
     auto_collapse: Option<bool>,
 ) -> Result<HudRuntimeView, String> {
+    if crate::quit::is_draining(&app) {
+        return Err("o Frota está encerrando".into());
+    }
     let epoch = next_presentation_epoch(&app);
     let transient = expanded && auto_collapse.unwrap_or(false);
     app.state::<HudState>()

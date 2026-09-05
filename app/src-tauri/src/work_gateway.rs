@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -91,19 +92,66 @@ impl ProcessRecord {
     }
 }
 
-#[derive(Default)]
 pub struct ProcessRegistry {
     processes: Arc<Mutex<HashMap<String, ProcessRecord>>>,
+    accepting: Arc<AtomicBool>,
+}
+
+impl Default for ProcessRegistry {
+    fn default() -> Self {
+        Self {
+            processes: Arc::new(Mutex::new(HashMap::new())),
+            accepting: Arc::new(AtomicBool::new(true)),
+        }
+    }
 }
 
 impl ProcessRegistry {
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode iniciar outro processo".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn active_count(&self) -> usize {
+        self.processes
+            .lock()
+            .map(|map| {
+                map.values()
+                    .filter(|record| matches!(record.view.status.as_str(), "running" | "stopping"))
+                    .count()
+            })
+            .unwrap_or(0)
+    }
+
+    pub(crate) fn stop_all(&self, app: &tauri::AppHandle) {
+        let ids = self
+            .processes
+            .lock()
+            .map(|map| {
+                map.iter()
+                    .filter(|(_, record)| record.view.status == "running")
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for id in ids {
+            let _ = self.stop(app, &id);
+        }
+    }
+
     pub fn kill_all(&self) {
         let pids: Vec<u32> = self
             .processes
             .lock()
             .map(|map| {
                 map.values()
-                    .filter(|record| record.view.status == "running")
+                    .filter(|record| matches!(record.view.status.as_str(), "running" | "stopping"))
                     .map(|record| record.view.pid)
                     .collect()
             })
@@ -179,6 +227,7 @@ impl ProcessRegistry {
         cwd: String,
         label: Option<String>,
     ) -> Result<ManagedProcessView, String> {
+        self.ensure_accepting()?;
         validate_command(&command)?;
         let cwd_path = Path::new(&cwd);
         if !cwd_path.is_dir() {
@@ -199,6 +248,7 @@ impl ProcessRegistry {
             .kill_on_drop(false);
         #[cfg(unix)]
         cmd.process_group(0);
+        self.ensure_accepting()?;
         let mut child = cmd
             .spawn()
             .map_err(|e| format!("falha ao iniciar processo: {e}"))?;
@@ -266,6 +316,7 @@ impl ProcessRegistry {
     fn clone_arc(&self) -> Self {
         Self {
             processes: self.processes.clone(),
+            accepting: self.accepting.clone(),
         }
     }
 

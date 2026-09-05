@@ -5,6 +5,11 @@
 > frase dita no final". Referência de qualidade citada: Wispr Flow (e a
 > família superwhisper / MacWhisper / VoiceInk).
 
+> **CORREÇÃO DE SAÍDA (05/09/2026):** `SttSession` participa do coordenador do
+> ADR-164. Uma captura ativa aparece na confirmação; depois do aceite, novas
+> capturas são recusadas e o sidecar recebe `CANCEL` com prazo antes da
+> escalada. Cancelar o diálogo não toca no ditado.
+
 > **CORREÇÃO DE CAPTURA (01/09/2026):** D1/D2 continuam sendo o contrato, mas o
 > produtor dos buffers deixou de ser o tap do `AVAudioEngine`. Com saída em fone
 > Bluetooth, o engine podia manter a captura presa ao aggregate device do macOS

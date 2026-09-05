@@ -9,6 +9,7 @@ use crate::attachments::{self, ActiveConvs, Attachment};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::{Emitter, Manager};
@@ -18,8 +19,8 @@ use tokio::sync::Notify;
 /// Registro de runs ativos → cancelar um run (H1) e matar TODOS na saída do app
 /// (sem isso, Cmd-Q no meio de um run deixa claude/codex órfãos rodando headless,
 /// possivelmente editando o repo e gastando tokens sem ninguém olhar).
-/// `.0`: run_id → sinal de cancelamento; `.1`: run_id → pid do processo vivo.
-#[derive(Default)]
+/// `.0`: run_id → sinal de cancelamento; `.1`: run_id → pid do processo vivo;
+/// `.3`: fronteira de admissão fechada durante o teardown.
 pub struct RunRegistry(
     pub Mutex<HashMap<String, Arc<Notify>>>,
     pub Mutex<HashMap<String, u32>>,
@@ -27,12 +28,44 @@ pub struct RunRegistry(
     /// exatamente o dos runs — e assim ela é reavaliada nos mesmos dois pontos
     /// em que o mapa muda, incluindo o `RunGuard`, que dispara em toda saída.
     pub crate::despertador::Despertador,
+    /// Fecha a fronteira de admissão antes do primeiro sinal de teardown.
+    AtomicBool,
 );
+
+impl Default for RunRegistry {
+    fn default() -> Self {
+        Self(
+            Mutex::new(HashMap::new()),
+            Mutex::new(HashMap::new()),
+            crate::despertador::Despertador::default(),
+            AtomicBool::new(true),
+        )
+    }
+}
 
 impl RunRegistry {
     /// Quantos runs vivos. É a contagem que decide a trava de sono.
     pub fn ativos(&self) -> usize {
         self.0.lock().map(|m| m.len()).unwrap_or(0)
+    }
+
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.3
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode iniciar outra tarefa".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.3.store(false, Ordering::Release);
+    }
+
+    pub(crate) fn request_cancel_all(&self) {
+        if let Ok(runs) = self.0.lock() {
+            for cancel in runs.values() {
+                cancel.notify_one();
+            }
+        }
     }
 }
 
@@ -353,6 +386,7 @@ pub async fn run_agent(
     pending_approvals: tauri::State<'_, std::sync::Arc<crate::approval::PendingApprovals>>,
     process_registry: tauri::State<'_, std::sync::Arc<crate::work_gateway::ProcessRegistry>>,
 ) -> Result<(), String> {
+    registry.ensure_accepting()?;
     let mut adapter = adapters::resolve(&agent)?;
     // Capabilities declaradas (G1.1): TODA decisão genérica deste run consulta
     // isto — nunca o nome do agent (o nome fica confinado à factory).
@@ -1242,6 +1276,8 @@ async fn run_once(
     // esta env e a manda num header — run NOSSO nunca vira "sessão externa"
     // no Painel. Inofensiva sem hooks instalados (ninguém a lê).
     crate::hook_sessions::correlate_run(&mut cmd, run_id);
+
+    registry.ensure_accepting()?;
 
     let bin = adapter.id();
     let mut child = cmd.spawn().map_err(|e| {

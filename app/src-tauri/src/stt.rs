@@ -10,7 +10,7 @@
 // morte inesperada do sidecar ("stt://ended" fora de um stop).
 
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tauri::Emitter;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
@@ -69,10 +69,70 @@ enum SttPhase {
     },
 }
 
-#[derive(Default)]
 pub struct SttSession {
     phase: Mutex<Option<SttPhase>>,
     next_id: AtomicU64,
+    accepting: AtomicBool,
+}
+
+impl Default for SttSession {
+    fn default() -> Self {
+        Self {
+            phase: Mutex::new(None),
+            next_id: AtomicU64::new(0),
+            accepting: AtomicBool::new(true),
+        }
+    }
+}
+
+impl SttSession {
+    pub(crate) fn ensure_accepting(&self) -> Result<(), String> {
+        self.accepting
+            .load(Ordering::Acquire)
+            .then_some(())
+            .ok_or_else(|| "o Frota está encerrando e não pode iniciar outro ditado".into())
+    }
+
+    pub(crate) fn begin_shutdown(&self) {
+        self.accepting.store(false, Ordering::Release);
+    }
+
+    pub(crate) async fn active_count(&self) -> usize {
+        usize::from(self.phase.lock().await.is_some())
+    }
+
+    pub(crate) async fn shutdown_all(&self) {
+        self.begin_shutdown();
+        let target = {
+            let mut guard = self.phase.lock().await;
+            match guard.take() {
+                Some(SttPhase::Starting { id, child, stdin }) => {
+                    *guard = Some(SttPhase::Stopping { id });
+                    Some((id, child, stdin))
+                }
+                Some(SttPhase::Active(active)) => {
+                    let id = active.id;
+                    *guard = Some(SttPhase::Stopping { id });
+                    Some((id, active.child, active.stdin))
+                }
+                other => {
+                    *guard = other;
+                    None
+                }
+            }
+        };
+        if let Some((id, mut child, mut stdin)) = target {
+            let _ = stdin.write_all(b"CANCEL\n").await;
+            let _ = stdin.flush().await;
+            if tokio::time::timeout(std::time::Duration::from_millis(300), child.wait())
+                .await
+                .is_err()
+            {
+                let _ = child.kill().await;
+            }
+            clear_stopping(self, id).await;
+        }
+    }
 }
 
 fn ready_outcome(
@@ -216,6 +276,7 @@ pub async fn stt_start(
     attempt_id: String,
     session: tauri::State<'_, SttSession>,
 ) -> Result<SttStartOutcome, String> {
+    session.ensure_accepting()?;
     let attempt_id = attempt_id.trim().to_string();
     if attempt_id.is_empty() || attempt_id.len() > 128 {
         return Err("identificador da tentativa de ditado inválido".into());
@@ -237,8 +298,11 @@ pub async fn stt_start(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    #[cfg(unix)]
+    cmd.process_group(0);
     let stdout = {
         let mut guard = session.phase.lock().await;
+        session.ensure_accepting()?;
         if guard.is_some() {
             return Err("já existe uma gravação em andamento".into());
         }

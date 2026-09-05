@@ -1,6 +1,6 @@
 # Arquitetura atual
 
-> Documento vivo, revisado em 04/09/2026. Para comportamento por agente, as
+> Documento vivo, revisado em 05/09/2026. Para comportamento por agente, as
 > fontes executáveis são `app/src-tauri/src/adapters.rs` e os espelhos
 > `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`. Planos e matrizes
 > datadas explicam decisões, mas não substituem esses registries.
@@ -81,9 +81,26 @@ podem precedê-lo e o wrapper keyed muda a cada conversa. Não use
 `firstElementChild` nem `scrollIntoView` para reconstruir essa âncora. Ver
 ADR-122.
 
+## Ciclo de vida da saída
+
+`app/src-tauri/src/quit.rs` é a única fronteira de saída definitiva. Fechar a
+janela principal continua sendo ocultação quando `Continuar ao fechar` está
+ativo. `Cmd+Q`, o menu nativo, a barra de menus e o botão vermelho sem
+continuidade apenas solicitam a saída ao coordenador.
+
+A primeira passagem de `RunEvent::ExitRequested` é impedida. O Rust consulta os
+donos reais de runs, processos, navegador, plugins, ditado, inferências,
+updates e Companion; o snapshot do instrumento complementa automações,
+trabalho diferido e sessões externas. Havendo consequência, uma confirmação
+nativa mantém `Continuar no Frota` como ação segura. Só depois do aceite a
+admissão fecha, os recursos próprios drenam com prazo e a segunda passagem é
+liberada. Sessões observadas no Terminal nunca recebem sinal.
+
 ## Runner e adapters
 
 - `app/src-tauri/src/agent.rs`: ciclo de vida do processo, Channel e eventos.
+- `app/src-tauri/src/quit.rs`: inventário, confirmação nativa, latch de duas
+  passagens, teardown limitado e recibo local sem conteúdo sensível.
 - `app/src-tauri/src/adapters.rs`: trait, capabilities e tradução dos streams.
 - `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`: espelho usado pela UI,
   separado por domínio e coberto por testes-gêmeos de contrato.
