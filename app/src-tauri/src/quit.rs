@@ -205,6 +205,16 @@ fn push_count(
 async fn inventory(app: &AppHandle) -> QuitInventory {
     let tray = crate::tray::current_snapshot(&app.state::<crate::tray::TrayState>());
     let backend_runs = app.state::<crate::agent::RunRegistry>().ativos();
+    // O snapshot React pode ainda estar em zero nos primeiros segundos do
+    // boot. Agendamento é dado persistido, então a leitura nativa vence essa
+    // janela e o snapshot permanece apenas como fallback conservador.
+    let persisted_schedules = match persisted_enabled_schedules(app) {
+        Ok(count) => count,
+        Err(error) => {
+            log::warn!("não consegui inventariar automações na saída: {error}");
+            0
+        }
+    };
     QuitInventory {
         runs: backend_runs.max(tray.running as usize),
         deferred: tray.deferred as usize,
@@ -224,10 +234,35 @@ async fn inventory(app: &AppHandle) -> QuitInventory {
         companion_actions: app
             .state::<crate::companion::CompanionState>()
             .pending_action_count(),
-        enabled_schedules: tray.enabled_schedules as usize,
+        enabled_schedules: persisted_schedules.max(tray.enabled_schedules as usize),
         external_sessions: tray.external.len(),
         instrument_visible: crate::hud::is_floating(app),
     }
+}
+
+fn persisted_enabled_schedules(app: &AppHandle) -> Result<usize, String> {
+    use rusqlite::OpenFlags;
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|error| error.to_string())?
+        .join("mycockpit.db");
+    let connection = rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|error| error.to_string())?;
+    connection
+        .busy_timeout(Duration::from_secs(1))
+        .map_err(|error| error.to_string())?;
+    query_enabled_schedules(&connection)
+}
+
+fn query_enabled_schedules(connection: &rusqlite::Connection) -> Result<usize, String> {
+    connection
+        .query_row(
+            "SELECT COUNT(*) FROM schedules WHERE enabled = 1",
+            [],
+            |row| row.get::<_, usize>(0),
+        )
+        .map_err(|error| error.to_string())
 }
 
 pub(crate) fn is_draining(app: &AppHandle) -> bool {
@@ -435,6 +470,18 @@ mod tests {
         };
         assert!(!inventory.needs_confirmation());
         assert!(inventory.message().contains("continuarão rodando"));
+    }
+
+    #[test]
+    fn automacoes_vem_do_sqlite_antes_do_snapshot_do_frontend() {
+        let connection = rusqlite::Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE schedules (enabled INTEGER NOT NULL);\
+                 INSERT INTO schedules VALUES (1), (0), (1);",
+            )
+            .unwrap();
+        assert_eq!(query_enabled_schedules(&connection), Ok(2));
     }
 
     #[test]

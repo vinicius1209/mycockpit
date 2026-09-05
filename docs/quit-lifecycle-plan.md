@@ -6,6 +6,11 @@
 > `docs/incidente-sessao-plan.md`. A restauração da janela principal pelo Dock,
 > instrumento e barra de menus permanece como está.
 
+> **CORREÇÃO DE PROVA (05/09/2026):** a validação da primeira build revelou
+> que o snapshot React podia ainda estar em zero logo após o boot. Automações
+> habilitadas agora são contadas diretamente no SQLite pelo Rust; o snapshot é
+> apenas fallback conservador. Nenhuma build final depende dessa hidratação.
+
 ## 1. Problema
 
 O Frota tem dois gestos diferentes que hoje parecem próximos demais:
@@ -142,13 +147,15 @@ que possui; o coordenador compõe, mas não adivinha.
 | Apple Intelligence/helper | `utility::UtilityState` | tentativas registradas | enviar cancelamento de todas e aguardar `wait_bounded` |
 | atualização de CLI | `update::UpdateJobs` | job `running` e método | `TERM` no grupo, prazo específico, depois `KILL` |
 | Companion | `companion::CompanionState` | ação aceita em curso, não mera conexão | sentinela, flush e graceful shutdown do servidor |
+| automações | tabela `schedules` + `TraySnapshot` | contagem persistida habilitada, com máximo conservador do snapshot | o processo encerra; não há daemon fora do app |
 | trava de sono | `Despertador` | não entra no diálogo | soltar depois dos runs |
 | instrumento | `hud::HudState` | não entra como processo | recolher e esconder; o processo principal encerra a janela |
 | sessões externas | `hook_sessions` | contexto informativo | nunca encerrar |
 
 O `TraySnapshot` continua útil para nomes e semântica de produto, mas não pode
-zerar um processo que o backend ainda vê. Se as fontes discordarem, o diálogo
-usa a contagem conservadora do backend e copy genérica.
+zerar um processo que o backend ainda vê nem uma automação habilitada no
+SQLite. Se as fontes discordarem, o diálogo usa a maior contagem conservadora
+e copy genérica.
 
 ## 5. Máquina de estados
 

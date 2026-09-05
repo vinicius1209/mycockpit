@@ -5754,8 +5754,8 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   travado também não pode ser a autoridade para liberar a própria saída.
 - **Decisão:** `quit.rs` passa a ser a única fronteira de saída definitiva. A
   primeira `ExitRequested` é impedida e abre no máximo uma decisão. O
-  inventário combina registries nativos com automações, trabalho diferido e
-  sessões externas publicados no instrumento. A confirmação só aparece quando
+  inventário combina registries nativos, a contagem persistida de automações e
+  a projeção de trabalho diferido e sessões externas do instrumento. A confirmação só aparece quando
   há trabalho que será interrompido ou automação que ficará indisponível; no
   macOS, `Continuar no Frota` é o primeiro botão do `NSAlert`. Após o aceite,
   um latch fecha novas admissões, o teardown sinaliza e aguarda cada recurso
