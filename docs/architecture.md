@@ -88,13 +88,16 @@ janela principal continua sendo ocultação quando `Continuar ao fechar` está
 ativo. `Cmd+Q`, o menu nativo, a barra de menus e o botão vermelho sem
 continuidade apenas solicitam a saída ao coordenador.
 
-A primeira passagem de `RunEvent::ExitRequested` é impedida. O Rust consulta os
-donos reais de runs, processos, navegador, plugins, ditado, inferências,
-updates e Companion; automações vêm do SQLite, e o snapshot do instrumento
-complementa trabalho diferido e sessões externas. Havendo consequência, uma confirmação
-nativa mantém `Continuar no Frota` como ação segura. Só depois do aceite a
-admissão fecha, os recursos próprios drenam com prazo e a segunda passagem é
-liberada. Sessões observadas no Terminal nunca recebem sinal.
+Saídas programáticas têm a primeira passagem de `RunEvent::ExitRequested`
+impedida. No macOS, `applicationShouldTerminate:` cobre também Cmd+Q, o menu do
+app e o Dock, devolvendo `NSTerminateLater` até a decisão terminar. O Rust
+consulta os donos reais de runs, processos, navegador, plugins, ditado,
+inferências, updates e Companion; automações vêm do SQLite, e o snapshot do
+instrumento complementa trabalho diferido e sessões externas. Havendo
+consequência, uma confirmação nativa mantém `Continuar no Frota` como ação
+segura. Só depois do aceite a admissão fecha, os recursos próprios drenam com
+prazo e o runtime recebe a confirmação de saída. Sessões observadas no Terminal
+nunca recebem sinal.
 
 ## Runner e adapters
 

@@ -5753,7 +5753,10 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   updates e Companion dependiam em parte da morte do processo. Um webview
   travado também não pode ser a autoridade para liberar a própria saída.
 - **Decisão:** `quit.rs` passa a ser a única fronteira de saída definitiva. A
-  primeira `ExitRequested` é impedida e abre no máximo uma decisão. O
+  primeira `ExitRequested` é impedida e abre no máximo uma decisão. No macOS,
+  o mesmo módulo acrescenta `applicationShouldTerminate:` ao delegate do Tao e
+  responde ao AppKit só depois da decisão, porque o Quit padrão chama
+  `terminate:` sem produzir `ExitRequested`. O
   inventário combina registries nativos, a contagem persistida de automações e
   a projeção de trabalho diferido e sessões externas do instrumento. A confirmação só aparece quando
   há trabalho que será interrompido ou automação que ficará indisponível; no

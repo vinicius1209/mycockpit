@@ -11,6 +11,12 @@
 > habilitadas agora são contadas diretamente no SQLite pelo Rust; o snapshot é
 > apenas fallback conservador. Nenhuma build final depende dessa hidratação.
 
+> **CORREÇÃO DE INTEGRAÇÃO NATIVA (05/09/2026):** a prova da build 363 mostrou
+> que o Quit padrão do macOS chama `terminate:` sem emitir
+> `RunEvent::ExitRequested`. O delegate do AppKit agora implementa
+> `applicationShouldTerminate:`, retorna `NSTerminateLater` e só responde ao
+> sistema depois da decisão ou do teardown. Isso cobre Cmd+Q, menu e Dock.
+
 ## 1. Problema
 
 O Frota tem dois gestos diferentes que hoje parecem próximos demais:

@@ -667,6 +667,8 @@ pub fn run() {
             // Tray: o app vive na barra de menu com a janela fechada (as
             // automações agendadas continuam); só "Sair" encerra de verdade.
             tray::create(app.handle())?;
+            #[cfg(target_os = "macos")]
+            quit::install_native_termination_bridge(app.handle()).map_err(std::io::Error::other)?;
             // Presenter do instrumento: carrega a preferência nativa, mede a
             // tela e só então decide entre popover clássico e HUD flutuante.
             // Falha mantém o popover clássico utilizável.
@@ -951,9 +953,9 @@ pub fn run() {
             {
                 tray::handle_reopen(app_handle, *has_visible_windows);
             }
-            // A primeira passagem é sempre interceptada. Depois da decisão e
-            // do teardown, o coordenador marca Committed e chama exit(0), cuja
-            // segunda passagem é a única autorizada a encerrar o processo.
+            // Saídas programáticas passam por este evento. Cmd+Q, o menu do
+            // app e o Dock são interceptados antes pelo delegate do AppKit em
+            // quit.rs, pois o item Quit nativo chama terminate: diretamente.
             if let tauri::RunEvent::ExitRequested { api, .. } = &event {
                 if !quit::allows_exit(app_handle) {
                     api.prevent_exit();

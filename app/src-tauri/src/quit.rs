@@ -1,11 +1,12 @@
 //! Coordenador único da saída definitiva do Frota (ADR-164).
 //!
-//! A primeira passagem de `ExitRequested` é sempre interceptada. Só este
-//! módulo pode confirmar a intenção, fechar a admissão, drenar recursos e
-//! autorizar a segunda passagem que encerra o processo.
+//! Saídas programáticas têm a primeira passagem de `ExitRequested`
+//! interceptada; no macOS, o delegate do AppKit intercepta `terminate:`. Só
+//! este módulo pode confirmar a intenção, fechar a admissão, drenar recursos e
+//! autorizar o encerramento do processo.
 
 use serde::Serialize;
-use std::sync::Mutex;
+use std::sync::{atomic::AtomicBool, atomic::Ordering, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Emitter, Manager};
 
@@ -29,6 +30,7 @@ enum QuitPhase {
 #[derive(Default)]
 pub(crate) struct QuitCoordinator {
     phase: Mutex<QuitPhase>,
+    native_termination_pending: AtomicBool,
 }
 
 impl QuitCoordinator {
@@ -81,6 +83,85 @@ impl QuitCoordinator {
             .lock()
             .is_ok_and(|phase| *phase == QuitPhase::Committed)
     }
+
+    fn mark_native_termination_pending(&self) {
+        self.native_termination_pending
+            .store(true, Ordering::Release);
+    }
+
+    fn take_native_termination_pending(&self) -> bool {
+        self.native_termination_pending
+            .swap(false, Ordering::AcqRel)
+    }
+}
+
+#[cfg(target_os = "macos")]
+static NATIVE_APP: std::sync::OnceLock<AppHandle> = std::sync::OnceLock::new();
+
+/// O item Quit padrão do AppKit chama `terminate:` e não passa pelo
+/// `RunEvent::ExitRequested` do Tauri. Acrescentamos ao delegate já instalado
+/// pelo Tao a decisão assíncrona oficial do AppKit: toda saída nativa espera o
+/// coordenador responder com `replyToApplicationShouldTerminate:`.
+#[cfg(target_os = "macos")]
+pub(crate) fn install_native_termination_bridge(app: &AppHandle) -> Result<(), String> {
+    use objc2::runtime::{AnyObject, Imp, Sel};
+    use objc2::{ffi, sel};
+    use objc2_app_kit::NSApplication;
+
+    NATIVE_APP
+        .set(app.clone())
+        .map_err(|_| "a ponte nativa de saída já foi instalada".to_string())?;
+
+    let marker = objc2::MainThreadMarker::new()
+        .ok_or_else(|| "a ponte nativa de saída exige a thread principal".to_string())?;
+    let native_app = NSApplication::sharedApplication(marker);
+    let delegate = native_app
+        .delegate()
+        .ok_or_else(|| "o AppKit não informou o delegate do aplicativo".to_string())?;
+    let delegate_object: &AnyObject = AsRef::<AnyObject>::as_ref(&*delegate);
+    let class = delegate_object.class();
+    let selector = sel!(applicationShouldTerminate:);
+    type Callback = unsafe extern "C-unwind" fn(
+        *mut AnyObject,
+        Sel,
+        *mut NSApplication,
+    ) -> objc2_app_kit::NSApplicationTerminateReply;
+    let callback: Imp = unsafe {
+        std::mem::transmute::<Callback, Imp>(native_application_should_terminate as Callback)
+    };
+    // `NSApplicationTerminateReply` é NSUInteger: Q@:@ no ABI 64-bit do macOS.
+    let added = unsafe {
+        ffi::class_addMethod(
+            class as *const _ as *mut _,
+            selector,
+            callback,
+            b"Q@:@\0".as_ptr().cast(),
+        )
+    };
+    if !added.as_bool() {
+        return Err("não foi possível instalar applicationShouldTerminate:".into());
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C-unwind" fn native_application_should_terminate(
+    _delegate: *mut objc2::runtime::AnyObject,
+    _selector: objc2::runtime::Sel,
+    _sender: *mut objc2_app_kit::NSApplication,
+) -> objc2_app_kit::NSApplicationTerminateReply {
+    use objc2_app_kit::NSApplicationTerminateReply;
+
+    let Some(app) = NATIVE_APP.get() else {
+        return NSApplicationTerminateReply::TerminateCancel;
+    };
+    let coordinator = app.state::<QuitCoordinator>();
+    if coordinator.is_committed() {
+        return NSApplicationTerminateReply::TerminateNow;
+    }
+    coordinator.mark_native_termination_pending();
+    request_quit(app, QuitOrigin::Native);
+    NSApplicationTerminateReply::TerminateLater
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
@@ -309,7 +390,7 @@ fn show_confirmation(app: &AppHandle, origin: QuitOrigin, inventory: QuitInvento
         use objc2_foundation::NSString;
 
         let Some(main_thread) = MainThreadMarker::new() else {
-            handle.state::<QuitCoordinator>().cancel();
+            cancel_request(&handle, origin);
             log::error!("não consegui abrir a confirmação de saída fora da thread principal");
             return;
         };
@@ -323,12 +404,11 @@ fn show_confirmation(app: &AppHandle, origin: QuitOrigin, inventory: QuitInvento
         if alert.runModal() == NSAlertSecondButtonReturn {
             start_teardown(handle, origin, inventory);
         } else {
-            handle.state::<QuitCoordinator>().cancel();
-            log::info!("saída cancelada: origem={origin:?}");
+            cancel_request(&handle, origin);
         }
     });
     if let Err(error) = scheduled {
-        app.state::<QuitCoordinator>().cancel();
+        cancel_request(app, origin);
         log::error!("não consegui abrir a confirmação de saída: {error}");
     }
 }
@@ -349,9 +429,37 @@ fn show_confirmation(app: &AppHandle, origin: QuitOrigin, inventory: QuitInvento
             if confirmed {
                 start_teardown(handle, origin, inventory);
             } else {
-                handle.state::<QuitCoordinator>().cancel();
+                cancel_request(&handle, origin);
             }
         });
+}
+
+fn cancel_request(app: &AppHandle, origin: QuitOrigin) {
+    let coordinator = app.state::<QuitCoordinator>();
+    coordinator.cancel();
+    #[cfg(target_os = "macos")]
+    if coordinator.take_native_termination_pending() {
+        if let Err(error) = reply_to_native_termination(app, false) {
+            log::error!("não consegui cancelar a saída nativa: {error}");
+        }
+    }
+    log::info!("saída cancelada: origem={origin:?}");
+}
+
+#[cfg(target_os = "macos")]
+fn reply_to_native_termination(app: &AppHandle, should_terminate: bool) -> Result<(), String> {
+    app.run_on_main_thread(move || {
+        use objc2::MainThreadMarker;
+        use objc2_app_kit::NSApplication;
+
+        let Some(marker) = MainThreadMarker::new() else {
+            log::error!("resposta de saída nativa executada fora da thread principal");
+            return;
+        };
+        NSApplication::sharedApplication(marker)
+            .replyToApplicationShouldTerminate(should_terminate);
+    })
+    .map_err(|error| error.to_string())
 }
 
 fn start_teardown(app: AppHandle, origin: QuitOrigin, inventory: QuitInventory) {
@@ -417,6 +525,17 @@ fn start_teardown(app: AppHandle, origin: QuitOrigin, inventory: QuitInventory) 
             "saída comprometida: origem={origin:?} duração_ms={}",
             started.elapsed().as_millis()
         );
+        #[cfg(target_os = "macos")]
+        if app
+            .state::<QuitCoordinator>()
+            .take_native_termination_pending()
+        {
+            if let Err(error) = reply_to_native_termination(&app, true) {
+                log::error!("não consegui concluir a saída nativa: {error}");
+                app.exit(0);
+            }
+            return;
+        }
         app.exit(0);
     });
 }
@@ -521,6 +640,14 @@ mod tests {
         assert!(!coordinator.is_committed());
         coordinator.commit();
         assert!(coordinator.is_committed());
+    }
+
+    #[test]
+    fn pedido_nativo_pendente_e_respondido_uma_unica_vez() {
+        let coordinator = QuitCoordinator::default();
+        coordinator.mark_native_termination_pending();
+        assert!(coordinator.take_native_termination_pending());
+        assert!(!coordinator.take_native_termination_pending());
     }
 
     #[tokio::test]
