@@ -47,6 +47,11 @@ continuar executando quando outra superfície ou outro projeto está visível; a
 sidebar e a faixa de status exibem o estado real sem transformar seleção em
 atividade.
 
+Planos de voo separa biblioteca e prancheta. O modo Tela cheia é uma camada
+fixa de apresentação abaixo da barra superior; ele cobre o esqueleto
+redimensionável, mas não cria outra árvore de estado nem altera o preset. Ver
+ADR-174.
+
 ## Donos de estado no frontend
 
 | Estado | Dono | Regra |
@@ -59,6 +64,7 @@ atividade.
 | mapa vivo da conversa | `store/conversationMaps.ts` | semântico derivado; pins humanos e fatos canônicos vencem a geração |
 | alterações do projeto | Git via `lib/git.ts` | consulta sob demanda; a UI não antecipa stage, descarte, commit ou pull request |
 | missões, disputas, cards e worktrees | stores próprias | não duplicar esses estados no chat |
+| Planos de voo | `settings.missionPresets` | preset e revisão persistem; seleção, inspetor e Tela cheia são locais à prancheta |
 
 Zustand + efeitos é o padrão das superfícies atuais. Existe um
 `QueryClientProvider` na raiz, mas ele não é fonte de verdade dessas stores e

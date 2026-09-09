@@ -2,7 +2,7 @@
   "components/settings/CompanionSettings.tsx": 1,
   "components/settings/ConfinamentoCard.tsx": 1,
   "components/settings/CostMaintenance.tsx": 1,
-  "components/settings/Especialistas.tsx": 7,
+  "components/settings/Especialistas.tsx": 5,
   "components/settings/HooksSettings.tsx": 1,
   "components/settings/MachineAgents.tsx": 1,
   "components/settings/McpAgentRows.tsx": 1,

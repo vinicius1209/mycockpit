@@ -8,6 +8,19 @@ Este arquivo é a fonte única. `CLAUDE.md` é um symlink para cá, e os agentes
 `.claude/agents/` apontam para cá. Regra nova de repositório entra **aqui**, não
 em três cópias.
 
+Blocos com regra própria têm um `AGENTS.md` ao lado do código. Eles não repetem
+o que está aqui: carregam a lei daquela camada e a cicatriz que a gerou. Leia o
+do bloco ANTES de mexer nele.
+
+| bloco | quando ler |
+|---|---|
+| `app/src-tauri/src/AGENTS.md` | nascimento do turno, plano de MCP, sondas, cache, comando Tauri |
+| `app/src/components/chat/AGENTS.md` | composer, `handleSend`, o que a pessoa vê entre o Enter e a bolha |
+| `app/src/lib/tasks.AGENTS.md` | derivação dos planos e terminalidade nas três superfícies de etapas |
+
+Regra que vale nos DOIS lados sobe pra cá. Bloco novo só ganha arquivo quando
+já custou retrabalho — não se abre camada por precaução.
+
 ## O que é
 
 **Frota** (nunca "MyCockpit" em texto que o usuário lê ou que vai num prompt),

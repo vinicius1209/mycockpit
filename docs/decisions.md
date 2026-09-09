@@ -5771,3 +5771,307 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   reduz a chance de filhos órfãos sem prometer limpeza impossível em crash ou
   `SIGKILL`; update de gerenciador de pacotes conserva um prazo próprio antes
   de escalada.
+
+### ADR-165 · revezamento proativo de motor e aviso de cota esgotada no composer ✅
+- **Contexto:** quando uma conversa atinge 100% de limite de uso da assinatura
+  do motor (como Codex com taxa esgotada e reset distante), o composer
+  permanecia travado com o cadeado no motor original (ex: Codex 🔒). O
+  mecanismo de revezamento ("Continuar com outro agente") só existia em incidentes
+  de falha durante a execução (`IncidentSequence.tsx`), sem permitir transplante
+  preventivo ou proativo em turnos já concluídos.
+- **Decisão:** o seletor de identidade do composer (`IdentityPicker`) destrava o
+  trilho de seleção de motor para conversas estabelecidas (`locked`), permitindo
+  marcar a intenção de revezamento (`stageAgent`) para o próximo envio. Quando a
+  cota do motor ativo está esgotada (via `limitedAgents` ou janelas de uso com
+  100%), o composer renderiza aviso contextual (`CotaEsgotadaBanner`) com botões para
+  os motores alternativos disponíveis na máquina. A escolha exibe o banner de
+  preparação (`RevezamentoStagedBanner`) com botão de desfazer e ícone de
+  revezamento (`ArrowRightLeft`) na porta de identidade. No disparo, o turno
+  utiliza a infraestrutura existente de transplante híbrido (`prepareTurnTransplant`),
+  inicia sessão fresca com o novo motor transferindo o contexto do fio, emite
+  aviso auditável no histórico (`notaDeRevezamentoDeMotor`) somente quando o
+  destino confirma a nova sessão e limpa a intenção preparada.
+- **Consequência:** conversas bloqueadas por limite de cota podem continuar com
+  outro motor sem perda de histórico. A interface não promete que motores
+  diferentes sempre consomem provedores diferentes; o gesto permanece deliberado
+  e humano, nenhuma sessão é bifurcada sem consentimento e o histórico só registra
+  a troca que realmente abriu sessão.
+
+
+### ADR-166 · a persona no composer vira cara viva, e o olhar é gesto (não animação) ✅
+- **Contexto:** o gatilho dos Especialistas no rodapé era um `<Sparkles>`, o
+  glifo universal de "IA mágica". Não dizia quem estava disponível, quantos
+  existiam nem se o time tinha sido instalado: um clique cego num rodapé com
+  seis controles. As caras já existiam (`lib/avatar.ts`, DiceBear determinístico
+  e offline) e já apareciam no marketplace, no menu de `@` e na faixa de
+  presença; o composer era a única superfície que fingia que elas não existiam.
+  A ideia de um avatar que segue o ponteiro esbarrava em duas paredes: o
+  DiceBear entrega um PÔSTER (olhos assados no SVG, sem alça pra mexer), e o §6
+  do STYLEGUIDE proíbe movimento ambiente.
+- **Decisão:** o botão passa a mostrar a pilha das caras reais do escopo mais a
+  contagem (`EspecialistasTrigger`), degradando pro glifo neutro quando não há
+  persona nenhuma (não se inventa cara). Para o olhar existe um SEGUNDO
+  renderizador, `AgentFace` + `lib/avatarRig.ts`, que consome o MESMO spec de
+  `avatarFor` (seed e cor da categoria): identidade continua com fonte única, só
+  o desenho é nosso. O olhar não é animação e sim resposta a gesto, da família
+  do `:hover`: acorda dentro de um raio de 180px, a intensidade cai com a
+  distância, volta ao neutro quando o cursor sai da janela, e
+  `prefers-reduced-motion` ou tela sem apontador fino degradam pra cara
+  ESTÁTICA, nunca pra ausência de cara. O rastreador de ponteiro é ÚNICO e de
+  módulo (`lib/olhar.ts`, padrão do `lib/minuteTick.ts`), coalescido por quadro,
+  ligado no primeiro assinante e desligado no último, com o ambiente injetável
+  para a suíte provar isso sem DOM.
+- **Consequência:** o rodapé passa a informar quem e quantos, sem nova fonte de
+  identidade e sem um `pointermove` por avatar. Fica um seam declarado: a mesma
+  persona tem um renderizador vivo (composer) e um pôster (demais superfícies).
+  Eles compartilham cor, seed e raio, então lêem como a mesma família; unificar
+  (o rig virando o renderizador padrão do registry de estilos) é mudança de
+  produto e entra por ADR própria, não de carona.
+
+### ADR-167 · o aviso de "Liberado" mora no ícone, não no botão inteiro ✅
+- **Contexto:** o `ModeSelect` pintava o controle inteiro de âmbar no modo
+  Liberado. Três problemas somados: a área grande punha o aviso no mesmo degrau
+  hierárquico do Enviar, dando dois primários ao rodapé; o âmbar ficava aceso
+  permanentemente, e sinal permanente vira papel de parede; e o token é o MESMO
+  de "precisa de você" (`--color-st-warning` é `--st-queued`), então o mesmo
+  pigmento passou a dizer duas coisas diferentes na mesma tela.
+- **Decisão:** o gatilho volta a ser ghost neutro e só o ÍCONE recebe
+  `text-st-warning`. O glifo já muda sozinho por modo (escudo-check →
+  escudo-alerta), então a cor apenas CONFIRMA o que a forma disse, o que mantém
+  o sinal legível sob daltonismo. As linhas do menu aberto seguem com o realce
+  de fundo: ali a comparação entre modos é o trabalho, e o âmbar é transitório.
+- **Consequência:** um primário só no rodapé e um âmbar que volta a significar
+  alguma coisa. O teste que exigia "só Liberado acende âmbar" continua valendo
+  sem mudança, porque ele fixa o significado e não a área pintada. Marcar o
+  próprio botão de Enviar no instante do despacho (o risco só se realiza ali)
+  fica registrado como alternativa avaliada e não adotada nesta rodada.
+
+### ADR-168 · o preflight sai do caminho crítico do envio ✅
+- **Contexto:** medição de 07/09/2026 no envio deste projeto. `run_agent`
+  chamava `plan_for_run`, que enumerava TODAS as fontes de inventário MCP a cada
+  envio: `codex mcp list --json` custava 1,3s medidos (1,27s / 1,41s / 1,28s) e
+  rodava inclusive nos turnos de claude-code, que aqui não referenciam nenhum
+  servidor de origem Codex. Depois vinham as sondas dos MCPs vinculados, em
+  FILA, com teto de 6s cada e cache de 5 minutos: os carimbos do próprio app em
+  `mcp_health` mostram 1,93s e 2,12s de intervalo entre duas sondas
+  consecutivas. Nada disso dependia do texto digitado. `proc::run` não tinha
+  timeout nenhum, então uma CLI pendurada travaria o envio para sempre, sem
+  mensagem.
+- **Decisão:** três cortes, todos agnósticos por construção. (1) O preflight
+  enumera só as fontes que ESTE run referencia, derivadas do prefixo do
+  `server_id` dos vínculos, mais a fonte própria do motor, que entra pela tabela
+  `FONTES_DE_INVENTARIO` (um registry, consultado por código genérico, nunca um
+  `if agent == "codex"`). A fonte própria entra mesmo sem vínculo porque é ela
+  que prova a política efetiva, e o gate de preflight é fail-closed. As
+  superfícies de Configurações seguem enumerando tudo: lá a pergunta é "o que
+  existe nesta máquina?". (2) As sondas dos vínculos passam a rodar em paralelo,
+  em três tempos (lê cache no banco, sonda sem banco, grava), divisão que também
+  é o que mantém o future do comando Tauri `Send` — `Connection` do rusqlite não
+  é `Sync` e não pode atravessar um `await`. Servidor repetido em dois vínculos
+  sonda uma vez. (3) O inventário por CLI ganha teto próprio
+  (`INVENTARIO_TIMEOUT`, 4s), e estourar o teto é ERRO de inventário, não lista
+  vazia: vazio diria "não tem MCP", que é outra afirmação.
+- **Consequência:** um envio de claude-code neste projeto deixa de pagar o
+  inventário do Codex, e o custo das sondas passa da soma para o mais lento.
+  Motor sem config nativo enumerável (o agy hoje, e o próximo motor amanhã) não
+  paga por um. O comportamento observável do plano não muda: as mesmas fontes
+  relevantes são consultadas, com os mesmos gates.
+
+### ADR-169 · o envio se declara antes de preparar, e o preparo tem rede ✅
+- **Contexto:** `ChatPanel.handleSend` fazia cerca de dez `await` (persona,
+  doutrina, lições, expansão de "/", export do transcript) ANTES de chamar
+  `beginPreparation`. Durante essa fase a conversa não sabia que existia um
+  envio, então não havia de onde derivar sinal nenhum. Depois vinha o preflight
+  do backend, e o único feedback do conjunto era o primário ficando cinza mais
+  um placeholder que ninguém via, porque o composer seguia cheio do texto da
+  pessoa. O §6 já mandava spinner a partir de 1s. Espera de segundos com a tela
+  imóvel não lê como lentidão, lê como travamento.
+- **Decisão:** o `runId` e o `beginPreparation` sobem para logo depois das
+  guardas que decidem se este texto é parecer, fila ou comando builtin, que são
+  os únicos casos em que o envio não vira turno desta conversa. O botão de
+  enviar ganha estado de preparo: troca a seta pelo círculo, mantém o mesmo
+  degrau de controle para a fileira não dançar, e muda o `aria-label` junto,
+  porque anunciar "Enviar" enquanto já se prepara mente para quem não vê a tela.
+  O spinner tem atraso de 700ms no CSS, preso à presença do elemento e nunca a
+  um timer, para não piscar num preflight quente. `prefers-reduced-motion`
+  degrada para ponto sólido visível, com `opacity` explícita porque o bloco
+  global desliga a revelação e sem isso o indicador sumiria. Como o carimbo
+  agora precede os `await`, um estouro no meio deixaria a conversa presa para
+  sempre: `handleSend` vira um invólucro que cria o `runId`, chama
+  `despacharEnvio` e, em qualquer exceção, apaga o carimbo e avisa a pessoa. A
+  limpeza varre as conversas porque `clearPreparation` já ignora quem não está
+  preparando aquele run, o que evita uma segunda API na store.
+- **Consequência:** a espera passa a ter dono visível desde o primeiro quadro, e
+  um segundo Enter durante o preparo encontra a guarda em vez de correr para um
+  run concorrente. A fronteira de aceite NÃO muda: a bolha continua nascendo do
+  `run_manifest`, porque o app não mostra como enviado o que o backend não
+  aceitou. Mostrar um item provisório reconciliado por id, no estilo do Paseo,
+  fica registrado como próximo passo possível e depende de ADR própria.
+
+### ADR-170 · comando Tauri que faz I/O não roda na thread principal ✅
+- **Contexto:** `export_conv_context` e `export_context_bundle` eram
+  `#[tauri::command]` SEM `async`, e comando sem `async` executa na thread
+  principal, que no macOS é a thread da UI. Os dois escrevem o transcript
+  inteiro da conversa (1,66 MB na maior conversa medida em 07/09/2026, com 1907
+  itens) e ainda varrem o diretório no `trim_old_exports`. Isso acontecia a cada
+  envio de conversa com resume nativo. Não era lentidão: era a janela
+  congelando.
+- **Decisão:** os dois passam a `#[tauri::command(async)]`. O corpo continua
+  síncrono de propósito, porque é I/O de bloqueio, e é exatamente por isso que
+  ele não pode morar na thread da UI. A regra vira lei da camada em
+  `app/src-tauri/src/AGENTS.md`: comando que toca disco, rede ou processo não é
+  síncrono.
+- **Consequência:** o congelamento sai. O custo de atravessar a ponte com o
+  payload continua, e fica declarado como dívida conhecida: reexportar só quando
+  o fio muda foi avaliado e recusado nesta rodada, porque um ponteiro de memória
+  desatualizado por um turno é problema de honestidade, não de performance.
+
+### ADR-171 · etapas incompletas não sobrevivem como atividade ao fim do turno
+- **Contexto (08/09/2026):** no incidente `e78edeef-2ace-4ad7-b158-27bd77d16465`,
+  o agente concluiu quatro de sete etapas, deixou uma em andamento e duas
+  pendentes, e encerrou o turno com sucesso. A sidebar continuava animando a
+  etapa antiga. O parâmetro `live` já presente no checklist impedia animação
+  em repouso, mas a execução de outro turno poderia reanimar o plano anterior.
+- **Decisão:** `deriveTaskPlans` projeta as etapas incompletas como `unsettled`
+  quando existe terminal ou um pedido posterior. A projeção não altera os
+  eventos persistidos nem acrescenta conclusões. `taskStatusForDisplay` aplica
+  a mesma apresentação estática quando o runtime está parado, inclusive no
+  replay sem evento terminal. O texto é "Sem conclusão registrada".
+- **Superfícies:** card vivo, marco do transcript e sidebar consomem o mesmo
+  plano derivado. A contagem permanece 4/7; nenhum consumidor pode mutar a
+  leitura compartilhada de `taskPlansOf`. O contrato fica em
+  `app/src/lib/tasks.AGENTS.md`.
+- **Verificação:** fixture extraída dos eventos reais do incidente, com prosa
+  não relacionada omitida; regressões de sucesso, erro, limite, cancelamento,
+  novo pedido, finalização e replay. Nenhuma capability de provider é alterada.
+
+### ADR-172 · a linha global de MCP usa o inventário do CLI
+- **Contexto (08/09/2026):** `agy mcp list` informa `computer-use` e `playwright`
+  como `stdio enabled`, mas a linha ainda oferecia instalar e mostrava o
+  interruptor do binding desligado. O toast de instalação não atualizava a
+  descoberta. Esta decisão evolui a leitura e o gesto descritos na ADR-104.
+- **Decisão:** `McpAgentState.cliInstallation` distingue `enabled`, `disabled`,
+  `absent` e `unknown`, pelo motor, nome exato e transporte no inventário
+  global. O binding e a saúde continuam separados. Resumo do CLI confirma uma
+  entrada de mesmo nome/transporte; não comprova comando equivalente, tools
+  disponíveis nem conexão. Por isso a linha usa um glifo neutro de CLI.
+- **Gesto:** entrada observada oferece "Remover do CLI", com alcance global
+  visível antes do clique. Ausência confirmada oferece instalar. Inventário
+  indisponível, incompleto ou ambíguo não libera escrita. O backend reconsulta
+  somente o destino antes do efeito; instalar exige ausência e remover exige
+  presença. O resumo não permite sobrescrever um homônimo por inferência.
+- **Reconciliação:** sucesso ou erro de alteração provoca nova descoberta,
+  pois timeout pode ocorrer depois de uma escrita. Resposta de projeto antigo
+  não entra no painel atual. Falha de atualização marca o inventário como
+  desconhecido e expõe o erro. Consulta tem teto de 4s, alteração de 10s e
+  encerramento do filho por `kill_on_drop`.
+- **Fronteiras e verificação:** tudo ocorre na descoberta de Configurações e
+  no gesto de instalar/remover, sem adicionar inventário ao envio. Testes usam
+  as colunas públicas capturadas do CLI e verificam estados, ambiguidade e
+  apresentação. `mcpAgentActions.ts` concentra a política visual extraída de
+  `mcp.ts` para respeitar o teto de arquivo. A ponte de `mc-work` para motores
+  de escopo global continua fora desta alteração; identidade apenas por CWD
+  não distinguiria duas conversas simultâneas no mesmo projeto.
+- **Caminhos que alteram estado:** `McpSettings.instalarNoCli` chama
+  `mcp_control::install_mcp_in_agent` para alterar a entrada pelo CLI e depois
+  `discover_mcp_servers` para atualizar `servers`/`providerInventories` no
+  painel. A descoberta mantém o `persist_registry` já existente; este trabalho
+  não cria bindings ou migrações. A mudança de planos altera apenas a projeção
+  em `deriveTaskPlans`, preservando os eventos no banco.
+- **Validação conjunta das ADRs 171/172:** `bun run test` passou em 398 arquivos
+  (3.940 testes); `cargo test` passou com 731 testes e 7 ignorados; build de
+  tipos por `bunx tsc -b --force` e `bun run check` passaram. A listagem real do
+  Agy foi consultada somente para leitura. Instalação/remoção real e inspeção
+  visual no app instalado não foram executadas nesta rodada.
+
+### ADR-173 · mc-work global com identidade de turno herdada pelo processo
+- **Contexto (08/09/2026):** Agy 1.1.27 mantém cadastro MCP global e não oferece
+  a injeção efêmera dos outros adapters. A sonda local confirmou que os filhos
+  MCP herdam o ambiente do processo Agy. Isso permite usar o listener existente
+  por run; CWD sozinho não distinguiria conversas simultâneas na mesma pasta.
+- **Decisão:** `work_mcp` e `work_mcp_global_env` no registry Rust, espelhadas
+  como `workMcp` e `workMcpGlobalEnv` em TS. Agy declara ambas; Claude/Codex
+  mantêm o canal efêmero; motores sem evidência conservam `false`.
+  `AgentDef` foi extraído para manter o registry abaixo do teto de arquivo.
+- **Gesto explícito:** Configurações > MCPs > Acompanhamento no Frota cadastra
+  `mc-work` pelo CLI, com o executável do app e o argumento `work-server`.
+  O alcance global aparece antes de conectar. Reativação usa `mcp enable`;
+  desconectar usa `mcp remove`. Uma entrada com mesmo nome e outra receita
+  bloqueia esses efeitos, sem sobrescrever configuração desconhecida.
+- **Pré-condição e cache:** versão mínima 1.1.27 e entrada habilitada com nome,
+  transporte e comando esperados. `work_mcp_setup` aquece no boot e reconsulta
+  por gesto em Configurações. Operações são serializadas; a cache de snapshot
+  tem lock curto, invalidado antes de instalar/reativar/remover e no instalador
+  genérico ao alterar `mc-work`. Consulta expira em 4s, escrita em 10s, com
+  `kill_on_drop`. O envio só lê a cache e informa sua idade no manifesto.
+  Mudança externa no CLI exige reverificação; o cadastro confirmado não é uma
+  sonda de conexão. Nenhuma descoberta nova entra no caminho do Enter.
+- **Identidade e vida:** cada spawn recebe seu próprio `MYCOCKPIT_WORK_SOCK`.
+  O endereço nunca é gravado na configuração global. O listener possui
+  `run_id`, `conv_id` e CWD definidos pelo app; não aceita esses campos do MCP.
+  Socket com permissão 0600, leitura limitada a 1 MiB e timeout de 6s.
+  Encerrar o listener revoga conexões pendentes e remove o socket. Consultar
+  ou interromper processo exige que ele pertença à conversa do listener.
+- **Disponibilidade:** `tools/list` consulta o listener vivo. Sem ele, o
+  helper declara zero tools, inclusive quando o Agy é aberto fora do Frota.
+  O adapter remove endereço ambiental herdado se este run não possui gateway.
+  Na retomada, ativar/desativar o canal reanuncia sua disponibilidade pelo
+  ledger existente; não anuncia mudanças nos MCPs externos do usuário.
+- **Permissões:** o shell do registry roda no app, fora do sandbox nativo.
+  Em Leitura, Auto e planejamento inicial, o listener expõe somente
+  `work_plan`/`work_update` e recusa as três tools de processos mesmo se
+  chamadas diretamente. Padrão/Liberado expõem cinco tools. FusionRo continua
+  sem canal. Essa fronteira vale para todos os adapters e o manifesto declara
+  a lista efetivamente permitida.
+- **Caminhos que alteram estado:** `WorkMcpSettings.change` →
+  `set_work_mcp_enabled` → CLI/cache → atualização dos inventários;
+  `work_mcp_status`/`warm` atualizam somente a cache;
+  `run_agent` cria o listener e o adapter materializa o ambiente do filho;
+  `handle_request` publica `work://event` ou altera o `ProcessRegistry`.
+  A derivação e terminalidade de etapas seguem a ADR-171, sem migração.
+- **Validação:** 3.946 testes frontend, 745 testes Rust (7 ignorados),
+  `bunx tsc -b --force` e `bun run check` passaram. Agy real iniciou o helper
+  compilado em dois processos simultâneos na mesma pasta, cada um consultando
+  seu próprio socket. O binário declarou 5/2/0 tools conforme acesso
+  completo/restrito/ausente. Testes com sockets reais e runtime Tauri de teste
+  cobrem entrega de eventos, encerramento e isolamento entre conversas.
+  [Evidência e limites](evidence/agy-work-mcp-1.1.27.md): cadastro global real,
+  inferência do modelo e inspeção visual do app instalado não foram executados.
+
+### ADR-174 · Planos de voo separam biblioteca, prancheta e contrato executável
+- **Contexto (08/09/2026):** a autoria misturava biblioteca, canvas e toda a
+  configuração de fase em três colunas permanentes dentro do cartão central.
+  O grafo era executável, mas a tela parecia um formulário de settings e ficava
+  estreita junto da sidebar do projeto. A referência de workflow builder também
+  sugeria hooks, triggers e checks que o runtime atual não possui como tipos de
+  nó; expô-los agora criaria controles sem efeito.
+- **Decisão:** biblioteca e prancheta viram estados distintos da mesma feature.
+  A prancheta usa Construir, canvas/Rota e inspetor contextual com abas Fase,
+  Segurança e Rotas. A paleta oferece somente fases que o runtime executa;
+  conexões continuam sendo `success`, `failure` ou `always`, com limite real de
+  travessias. Checks são fases Revisor com critérios, não um segundo mecanismo.
+  A validação inferior usa `validateMissionPlan` e o salvamento continua
+  automático, sem inventar um ciclo de publicação.
+- **Tela cheia:** uma camada fixa cobre a área útil abaixo da barra superior do Frota,
+  acima do esqueleto redimensionável e abaixo dos dialogs. `Esc`, o botão da
+  prancheta ou voltar à biblioteca encerram o modo. É estado visual local e não
+  entra no preset, nas Settings ou no snapshot de uma Missão.
+- **Segurança:** a prancheta torna visíveis a permissão do projeto, a autonomia
+  e a permissão efetiva da fase, o gate humano e o teto de custo. O projeto é o
+  teto. A troca usa `setProjectPermissionEverywhere`; Liberado exige o mesmo
+  gesto humano explícito antes de escrever store, SQLite e
+  `.mycockpit/config.toml`. Nenhuma fase pode elevar Leitura para escrita.
+- **Consequência:** não há migração nem mudança no interpretador. Hooks,
+  gatilhos e gate como nó continuam fora até ganharem contrato de domínio,
+  persistência, validação e runtime. O nome de arquivo exportado passa a usar
+  `.frota-plan.json`; o envelope interno permanece compatível com importações
+  anteriores.
+- **Caminhos que alteram estado:** edição, criação, duplicação, importação,
+  exclusão e restauração chamam `setSettings({ missionPresets })`; a permissão
+  chama `setProjectPermissionEverywhere`. Seleção, validação expandida,
+  biblioteca/prancheta e Tela cheia são estado local de apresentação.
+- **Verificação:** 400 arquivos e 3.949 testes frontend passaram; o Rust passou
+  com 745 testes e 7 ignorados; `bunx tsc -b --force` e `bun run check`
+  passaram. Os 29 testes E2E incluem o novo contrato de fullscreen, preservação
+  de seleção, inspetor, conexão e erro de nó inalcançável. Biblioteca,
+  prancheta, Tela cheia e Segurança foram abertas e inspecionadas em 1440×900.
