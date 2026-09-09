@@ -38,6 +38,7 @@ import {
   fmtResetIn,
   pillWindow,
   refreshUsageNow,
+  pollCadenceMs,
   snapshotUsable,
   sourceLabel,
   usagePillLabel,
@@ -164,6 +165,9 @@ function ProviderCard({
 
 export function UsagePill({ compact = false }: { compact?: boolean }) {
   const enabled = useApp((s) => s.settings.usageMeterEnabled)
+  // O rodapé anuncia a cadência REAL: era "~15 min" escrito à mão, e passaria a
+  // mentir no instante em que a escolha existisse.
+  const cadencia = pollCadenceMs(useApp((s) => s.settings.usagePollMinutes)) / 60_000
   const ctaDismissed = useApp((s) => s.settings.usageMeterCtaDismissed)
   const setSettings = useApp((s) => s.setSettings)
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
@@ -250,7 +254,7 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
       nota={
         <span className="flex items-center justify-between">
           <span>Não consome sua quota</span>
-          <span>Auto ~15 min</span>
+          <span>Auto ~{cadencia} min</span>
         </span>
       }
       conteudo={

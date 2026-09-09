@@ -44,6 +44,5 @@
   "components/settings/PresetSettings.tsx": 2,
   "components/settings/SessionCostLimit.tsx": 1,
   "components/settings/SettingsDialog.tsx": 3,
-  "components/settings/UsageMeterSettings.tsx": 3,
   "components/tray/TrayPopover.tsx": 1
 }

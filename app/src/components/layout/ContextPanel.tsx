@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -20,6 +20,7 @@ import {
 import { DiffIndex } from "@/components/layout/DiffIndex"
 import { ActiveConversationMapPanel } from "@/components/layout/ActiveConversationMapPanel"
 import { ProjectFilesPanel } from "@/components/layout/ProjectFilesPanel"
+import { useContextPanelTab } from "@/components/layout/useContextPanelTab"
 import {
   Dialog,
   DialogContent,
@@ -267,12 +268,6 @@ export function ContextPanel() {
   // Referência do agente nasce COLAPSADA: é consulta rara, abre sob demanda.
   const [showAgentCtx, setShowAgentCtx] = useState(false)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
-  const tab = useApp((s) => s.contextPanelTab)
-  const setTab = useApp((s) => s.setContextPanelTab)
-  // Enquanto o agente TRABALHA o que interessa é o que ele mexeu — ajuste é
-  // coisa de antes de começar. Ao entrar em run, o painel vai pra Alterações uma
-  // vez; depois disso a sua escolha manda (não sequestra a aba a cada turno).
-  const jumpedOnRun = useRef(false)
   // diff atribuído à conversa ativa: worktree isolado dela, senão a pasta do projeto.
   const activeWorktree = useChat(
     (s) =>
@@ -293,9 +288,6 @@ export function ContextPanel() {
   const deliveryDiff = useApp((s) => s.deliveryDiff)
   const delivery =
     deliveryDiff && deliveryDiff.convId === activeConvId ? deliveryDiff : null
-  useEffect(() => {
-    if (delivery) setTab("alteracoes")
-  }, [delivery, setTab])
 
   // Prefill + foco de “Pedir correção” (P3) e dos comentários do diff.
   function prefillComposer(convId: string, text: string) {
@@ -311,7 +303,9 @@ export function ContextPanel() {
 
   function closeDeliveryDiff() {
     useApp.getState().clearDeliveryDiff()
-    setTab("contexto")
+    // Fechar a entrega é você saindo de Alterações de propósito: passa pelo
+    // gesto (`selectTab`), senão o próximo run te arrastaria de volta pra lá.
+    selectTab("contexto")
   }
   // running da conversa ativa: quando o turno termina, recarrega a contagem de
   // arquivos alterados (o diff mudou) → badge na aba Alterações.
@@ -329,13 +323,9 @@ export function ContextPanel() {
     activeWorktree ?? project?.path,
     `${reload}:${running}`,
   )
-  useEffect(() => {
-    if (running && !jumpedOnRun.current) {
-      jumpedOnRun.current = true
-      setTab("alteracoes")
-    }
-    if (!running) jumpedOnRun.current = false
-  }, [running, setTab])
+  // Quem manda na aba (e por que) mora em useContextPanelTab: é regra com
+  // estado próprio e incidente atrás, não render.
+  const { tab, selectTab } = useContextPanelTab(running, delivery != null)
   const setMycockpit = useApp((s) => s.setMycockpit)
   const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
 
@@ -451,7 +441,7 @@ export function ContextPanel() {
     // sem borda) — a proibição do §4 é de borda aninhada, não de raio, mas em
     // troca fica mais forte: nada aqui dentro pode ter hairline de largura total.
     <aside className="reveal-right flex h-full w-full flex-col overflow-hidden rounded-xl bg-card shadow-[var(--shadow-sm),var(--lift)]">
-      <ContextPanelTabs tab={tab} changedCount={changedCount} onSelect={setTab} />
+      <ContextPanelTabs tab={tab} changedCount={changedCount} onSelect={selectTab} />
 
       {!project ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">

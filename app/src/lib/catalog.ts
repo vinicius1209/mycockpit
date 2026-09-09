@@ -4,6 +4,7 @@
 // o snapshot. O backend resolve o app_data_dir sozinho — invokes sem argumento.
 
 import { invoke } from "@tauri-apps/api/core"
+import { hidratarJanelasDoCatalogo } from "@/lib/contextWindow"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
 
@@ -35,7 +36,13 @@ export async function getModelsCatalog(): Promise<CatalogModel[]> {
   if (!isTauri()) return []
   try {
     const rows = await invoke<CatalogModel[]>("get_models_catalog")
-    return Array.isArray(rows) ? rows : []
+    if (!Array.isArray(rows)) return []
+    // O `limit.context` de cada modelo alimenta o anel de contexto. Fica AQUI,
+    // no ponto único de leitura do catálogo, porque o furo de 09/09/2026 foi
+    // exatamente uma segunda fonte que ninguém religava: o número certo estava
+    // em disco e o anel usava um palpite escrito à mão.
+    hidratarJanelasDoCatalogo(rows)
+    return rows
   } catch {
     return []
   }

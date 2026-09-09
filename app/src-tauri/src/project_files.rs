@@ -112,6 +112,20 @@ fn structural_exclusion(name: &str) -> bool {
     matches!(name, ".git" | ".DS_Store")
 }
 
+/// Esta entrada é excluída POR DECISÃO nossa (não é do projeto, é encanamento)?
+///
+/// Existe separado de `entry_from_path` porque a diferença entre "não mostro
+/// isto de propósito" e "não consegui ler isto" é a diferença entre uma pasta
+/// listada inteira e uma leitura parcial. As duas moravam no mesmo `None`, e o
+/// resultado é que TODO repositório git dizia "leitura parcial" na barra: o
+/// `.git` está sempre lá, sempre foi excluído de propósito, e a exclusão era
+/// contada como falha. Aviso que nunca apaga não avisa nada.
+fn structurally_excluded(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(structural_exclusion)
+}
+
 fn root_revision(root: &Path) -> String {
     fn stamp(path: &Path) -> (u64, u32, u64) {
         let Ok(metadata) = std::fs::metadata(path) else {
@@ -132,11 +146,12 @@ fn root_revision(root: &Path) -> String {
     blake3::hash(input.as_bytes()).to_hex()[..16].to_string()
 }
 
+/// Lê um caminho como entrada da árvore. `None` significa UMA coisa só: não deu
+/// para ler (nome fora de UTF-8, caminho fora da raiz, metadata recusada). Quem
+/// chama trata isso como leitura parcial, então exclusão nossa NÃO mora aqui —
+/// ela é filtro explícito de quem varre (`structurally_excluded`).
 fn entry_from_path(root: &Path, path: &Path) -> Option<ProjectDirEntry> {
     let name = path.file_name()?.to_str()?.to_string();
-    if structural_exclusion(&name) {
-        return None;
-    }
     let rel_path = path.strip_prefix(root).ok()?.to_str()?.replace('\\', "/");
     let link_metadata = std::fs::symlink_metadata(path).ok()?;
     let is_symlink = link_metadata.file_type().is_symlink();
@@ -196,6 +211,7 @@ fn list_dir_children_blocking(
     let mut entries = Vec::new();
     for result in builder.build().skip(1) {
         match result {
+            Ok(found) if structurally_excluded(found.path()) => {}
             Ok(found) => match entry_from_path(&root, found.path()) {
                 Some(entry) => entries.push(entry),
                 None => incomplete = true,
@@ -324,6 +340,9 @@ async fn search_git(
             break;
         }
         let absolute = root.join(&path);
+        if structurally_excluded(&absolute) {
+            continue;
+        }
         let mut entry = entry_from_path(root, &absolute).unwrap_or(ProjectDirEntry {
             name: Path::new(&path)
                 .file_name()
@@ -391,6 +410,9 @@ fn search_non_git_blocking(
             .file_type()
             .is_some_and(|kind| kind.is_file() || kind.is_symlink())
         {
+            continue;
+        }
+        if structurally_excluded(found.path()) {
             continue;
         }
         let Some(entry) = entry_from_path(root, found.path()) else {
@@ -473,6 +495,34 @@ mod tests {
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(&root).unwrap();
         root
+    }
+
+    /// Regressão: TODO repositório git dizia "leitura parcial" na barra do
+    /// explorador. O `.git` está sempre na raiz e sempre foi excluído de
+    /// propósito, mas a exclusão voltava como o mesmo `None` de "não consegui
+    /// ler" e acendia o aviso. Sinal que nunca apaga não informa nada, e este
+    /// ainda por cima era falso: a leitura estava completa.
+    #[test]
+    fn exclusao_nossa_nao_e_leitura_parcial() {
+        let root = fixture("excluded");
+        std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+        std::fs::write(root.join(".git/config"), "[core]").unwrap();
+        std::fs::write(root.join(".DS_Store"), "").unwrap();
+        std::fs::write(root.join("README.md"), "# oi").unwrap();
+
+        let page = list_dir_children_blocking(&root.to_string_lossy(), "", None, None).unwrap();
+        assert!(
+            !page.truncated,
+            "a leitura foi completa: o que faltou, faltou por decisão nossa"
+        );
+        assert_eq!(
+            page.entries
+                .iter()
+                .map(|entry| entry.rel_path.as_str())
+                .collect::<Vec<_>>(),
+            ["README.md"],
+            "o encanamento não vira item do projeto"
+        );
     }
 
     #[test]

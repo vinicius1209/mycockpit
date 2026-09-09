@@ -373,18 +373,29 @@ export function ProjectFilesPanel({ root }: { root: string }) {
         </Button>
       </div>
 
-      <div className="flex min-h-7 shrink-0 items-center gap-2 px-4 font-mono text-[11px] tabular-nums text-muted-foreground/60">
+      {/* Legenda da varredura, não barra de status: uma linha rasa embaixo da
+          busca. A contagem perdeu o "nesta pasta" (a árvore logo abaixo JÁ é a
+          pasta) e os dois sinais de corte ficam num grupo só à direita — eram
+          dois `ml-auto` irmãos, e com os dois ligados o segundo caía no meio da
+          linha em vez de encostar na borda. */}
+      <div className="flex min-h-6 shrink-0 items-center gap-2 px-4 font-mono text-[11px] tabular-nums text-muted-foreground/60">
         <span>
           {normalizedQuery
             ? `${search.entries.length} resultados`
-            : `${rootState.entries.length} itens nesta pasta`}
+            : `${rootState.entries.length} itens`}
         </span>
-        {(normalizedQuery ? search.nextCursor : rootState.nextCursor) && (
-          <span className="ml-auto">há mais</span>
-        )}
-        {(normalizedQuery ? search.truncated : rootState.truncated) && (
-          <span className="ml-auto">leitura parcial</span>
-        )}
+        <span className="ml-auto flex items-center gap-2">
+          {(normalizedQuery ? search.nextCursor : rootState.nextCursor) && (
+            <span>há mais</span>
+          )}
+          {/* "leitura parcial" é a diferença entre "a pasta tem 18 itens" e "só
+              consegui ler 18" — some quando a varredura é completa, que passou
+              a ser o caso normal desde que exclusão nossa deixou de contar como
+              falha (project_files.rs). */}
+          {(normalizedQuery ? search.truncated : rootState.truncated) && (
+            <span>leitura parcial</span>
+          )}
+        </span>
       </div>
 
       {notice && (

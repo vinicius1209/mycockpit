@@ -74,8 +74,16 @@ export function BannersDoComposer({
   const limitedAgents = useApp((s) => s.limitedAgents)
   const detectados = useApp((s) => s.settings.detected)
   const usageByAgent = useUsage((s) => s.byAgent)
+  // Turno concluído desmente leitura velha de "100%" (ver checkAgentQuota).
+  const lastSuccessByAgent = useUsage((s) => s.lastSuccessAt)
   const quota = conv
-    ? checkAgentQuota(conv.agent, limitedAgents, usageByAgent[conv.agent])
+    ? checkAgentQuota(
+        conv.agent,
+        limitedAgents,
+        usageByAgent[conv.agent],
+        undefined,
+        lastSuccessByAgent[conv.agent],
+      )
     : { exhausted: false, resetHint: null }
   const continuity = conv
     ? deriveComposerContinuity(conv.items, busy, quota.exhausted)
@@ -88,6 +96,7 @@ export function BannersDoComposer({
           detected: detectados ?? {},
           limitedAgents,
           byAgentSnapshots: usageByAgent,
+          lastSuccessByAgent,
           attachments:
             continuity?.mode === "continue-now"
               ? continuity.pending.attachments

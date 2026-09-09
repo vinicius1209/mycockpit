@@ -12,5 +12,5 @@
   "components/settings/PresetSettings.tsx": 4,
   "components/settings/SessionCostLimit.tsx": 1,
   "components/settings/SettingsDialog.tsx": 2,
-  "components/settings/UsageMeterSettings.tsx": 3
+  "components/settings/UsageMeterSettings.tsx": 2
 }

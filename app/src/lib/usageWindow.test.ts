@@ -12,6 +12,8 @@ import type { AgentProbe } from "@/lib/detect"
 import {
   POLL_FLOOR_MS,
   POLL_MS,
+  USAGE_POLL_CHOICES,
+  pollCadenceMs,
   STALE_MS,
   STALE_RATE_LIMITED_MS,
   USAGE_DANGER_PCT,
@@ -120,6 +122,40 @@ describe("política de poll (regra do Orca)", () => {
   it("sem login também não acelera (quem resolve é o usuário, não o retry)", () => {
     expect(nextPollDelayMs(1, "auth")).toBe(POLL_MS)
     expect(nextPollDelayMs(5, "auth")).toBe(POLL_MS)
+  })
+})
+
+describe("cadência escolhida pela pessoa", () => {
+  it("os três degraus viram milissegundos", () => {
+    expect(USAGE_POLL_CHOICES).toEqual([5, 10, 15])
+    expect(pollCadenceMs(5)).toBe(5 * 60_000)
+    expect(pollCadenceMs(10)).toBe(10 * 60_000)
+    expect(pollCadenceMs(15)).toBe(POLL_MS)
+  })
+
+  it("valor fora do conjunto cai no padrão, nunca vira poll em laço", () => {
+    // Setting persistido é dado de FORA (arquivo à mão, versão antiga): sem
+    // esta régua, um `0` gravado viraria martelada contra o provider.
+    for (const sujo of [0, 1, -5, 999, Number.NaN]) {
+      expect(pollCadenceMs(sujo)).toBe(POLL_MS)
+    }
+    expect(pollCadenceMs(null)).toBe(POLL_MS)
+    expect(pollCadenceMs(undefined)).toBe(POLL_MS)
+  })
+
+  it("escolher 5 min encurta o caminho FELIZ e o teto do backoff", () => {
+    const cinco = pollCadenceMs(5)
+    expect(nextPollDelayMs(0, null, cinco)).toBe(cinco)
+    expect(nextPollDelayMs(100, "spawn", cinco)).toBe(cinco)
+  })
+
+  it("…mas não move o piso: provider recusando não vira martelada", () => {
+    // O backoff transiente continua começando em 30s, e 429/auth continuam
+    // esperando a cadência inteira. Escolher 5 min não é licença pra insistir.
+    const cinco = pollCadenceMs(5)
+    expect(nextPollDelayMs(1, "spawn", cinco)).toBe(POLL_FLOOR_MS)
+    expect(nextPollDelayMs(1, "rate-limited", cinco)).toBe(cinco)
+    expect(nextPollDelayMs(1, "auth", cinco)).toBe(cinco)
   })
 })
 
@@ -293,6 +329,16 @@ describe("quem entra no poll (duePollAgents)", () => {
 
   it("medidor desligado = ninguém (o toggle esconde o mecanismo inteiro)", () => {
     expect(duePollAgents(false, { codex: probe() }, AGORA)).toEqual([])
+  })
+
+  it("a cadência escolhida chega até aqui, e é ela que solta o próximo poll", () => {
+    const detected = { codex: probe() }
+    const cinco = pollCadenceMs(5)
+    markPollAttempt("codex", AGORA)
+    recordPollResult("codex", true, null, AGORA)
+    // Na cadência padrão ainda não é hora; na de 5 min, já é.
+    expect(duePollAgents(true, detected, AGORA + cinco)).toEqual([])
+    expect(duePollAgents(true, detected, AGORA + cinco, cinco)).toEqual(["codex"])
   })
 
   it("CLI deslogada ou nunca detectada não gera spawn", () => {

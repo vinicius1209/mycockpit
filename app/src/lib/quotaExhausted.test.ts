@@ -65,6 +65,44 @@ describe("checkAgentQuota", () => {
     const status = checkAgentQuota("codex", {}, snap, AGORA + 31 * 60_000)
     expect(status).toEqual({ exhausted: false, resetHint: null })
   })
+
+  // Regressão de 09/09/2026: o auto-resume retomou, o turno rodou inteiro e
+  // terminou bem, e a faixa seguiu dizendo "sem cota para o próximo turno". O
+  // poll da janela é de 15 min e o snapshot vale 30, então o "100%" lido ANTES
+  // do turno continuava de pé DEPOIS dele. O app tinha a prova na mão.
+  it("turno concluído depois da leitura desmente o 100% dela", () => {
+    const snap = makeSnap("claude-code", 100, (AGORA + 3600 * 1000) / 1000)
+    const passou = AGORA + 60_000
+    const status = checkAgentQuota(
+      "claude-code",
+      {},
+      snap,
+      passou + 1_000,
+      passou,
+    )
+    expect(status).toEqual({ exhausted: false, resetHint: null })
+  })
+
+  it("turno ANTERIOR à leitura não desmente nada", () => {
+    // A leitura é mais nova que a prova: quem fala do agora é ela.
+    const snap = makeSnap("claude-code", 100, (AGORA + 3600 * 1000) / 1000)
+    const status = checkAgentQuota("claude-code", {}, snap, AGORA, AGORA - 60_000)
+    expect(status.exhausted).toBe(true)
+  })
+
+  it("a contraprova não apaga o limite que o próprio CLI anunciou", () => {
+    // `limitedAgents` é o `limit_reached` do CLI e tem cura própria (o
+    // `result.ok` em handleEvent). Deixar a contraprova mexer aqui seria dar
+    // duas curas ao mesmo sinal, e uma delas por caminho torto.
+    const status = checkAgentQuota(
+      "codex",
+      { codex: "em 4d 15h" },
+      null,
+      AGORA,
+      AGORA + 60_000,
+    )
+    expect(status.exhausted).toBe(true)
+  })
 })
 
 describe("eligibleHandoffTargets", () => {
@@ -181,5 +219,29 @@ describe("eligibleHandoffTargets", () => {
       "claude-code",
       "agy",
     ])
+  })
+})
+
+describe("a contraprova alcança os destinos de revezamento", () => {
+  it("destino com leitura velha de 100% volta a ser oferecível depois de um turno dele", () => {
+    // Sem isto, o motor que voltou continuaria fora da faixa de continuidade
+    // pelo resto da validade do snapshot, e a escolha oferecida seria menor do
+    // que a real.
+    const snap = makeSnap("codex", 100, (AGORA + 3600 * 1000) / 1000)
+    const entrada = {
+      currentAgent: "claude-code",
+      detected: { codex: makeProbe(true) },
+      byAgentSnapshots: { codex: snap },
+      now: AGORA + 60_000,
+    }
+    expect(
+      eligibleHandoffTargets(entrada).map((o) => o.id),
+    ).not.toContain("codex")
+    expect(
+      eligibleHandoffTargets({
+        ...entrada,
+        lastSuccessByAgent: { codex: AGORA + 30_000 },
+      }).map((o) => o.id),
+    ).toContain("codex")
   })
 })

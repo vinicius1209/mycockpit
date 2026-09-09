@@ -74,6 +74,7 @@ import {
 } from "@/lib/detect"
 import { agentDef } from "@/lib/agents"
 import { reloadActiveProposals } from "@/lib/modelCurator"
+import { getModelsCatalog } from "@/lib/catalog"
 import { runDailyModelMaintenance } from "@/lib/modelRound"
 import { BROWSER_DEMO_PROJECTS } from "@/lib/demoProjects"
 import {
@@ -192,6 +193,10 @@ export default function App() {
     void hydrateModelListings().then(() => refreshModelLists())
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
+    // Catálogo em disco → janela de contexto por modelo (anel do composer).
+    // Leitura local, sem rede: NÃO pode ficar atrás do portão de 24h da
+    // manutenção, senão o anel passa o dia inteiro no palpite escrito à mão.
+    void getModelsCatalog()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
     // Catálogo de preços, curador semanal e rodada de modelos (M3): a
     // sequência inteira, com os freios dela, mora em lib/modelRound.

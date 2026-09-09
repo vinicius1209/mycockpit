@@ -12,6 +12,7 @@ import { deleteAttachment, revokeAttachmentUrl } from "@/lib/attachments"
 import { deriveTitle } from "@/lib/convTitle"
 import { detectBlockedDir } from "@/lib/blockedDir"
 import { useApp } from "@/store/app"
+import { aplicarSinalDeCota } from "@/store/chat/quotaSignals"
 import type { FusionCandidate } from "@/store/fusion"
 import {
   aliasShiftNotice,
@@ -1639,16 +1640,11 @@ export const useChat = create<ChatState>((set, get) => {
       // Durante o preflight/startup do revezamento, a conversa ainda pertence
       // ao source, mas telemetria/limites do processo em voo pertencem ao target.
       const eventAgent = pendingTarget ?? beforeEvent?.agent
-      // efeitos GLOBAIS: limite marca o agent como limitado (cross-conversa,
-      // o seletor avisa); um result ok do mesmo agent cura a marca.
-      if (e.type === "limit_reached") {
-        if (eventAgent)
-          useApp.getState().setAgentLimited(eventAgent, e.reset_hint ?? null)
-        // marca o sinal FORTE p/ o auto-resume ler no fim do turno (+ guarda o hint)
+      // Cota do agent é efeito GLOBAL (cross-conversa): store/chat/quotaSignals.
+      aplicarSinalDeCota(eventAgent, e)
+      // …e o sinal FORTE p/ o auto-resume ler no fim do turno (+ guarda o hint).
+      if (e.type === "limit_reached")
         patch(convId, { limitHitThisTurn: true, resetHint: e.reset_hint ?? null })
-      } else if (e.type === "result" && e.ok) {
-        if (eventAgent) useApp.getState().clearAgentLimited(eventAgent)
-      }
       // Ledger de custo por turno (F: "hoje/7d" só via missões). Grava CADA
       // result que CONSUMIU, com preço ou sem (ADR-047: quem decide é o
       // recordTurnCost) — chat linear é caminho disjunto de missão/disputa, sem

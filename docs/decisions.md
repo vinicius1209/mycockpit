@@ -6211,3 +6211,51 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   mão. Testes fixam ordem do CLI, sentinela derivada, esforço divergente entre
   dois modelos do mesmo motor, slug sujo descartado, escondido fora da oferta,
   aposentado explicado, sumiço com evidência e o filtro que não roda sem lista.
+
+### ADR-178 · Medição de contexto e de cota deriva da fonte, não de tabela escrita à mão
+- **Contexto (09/09/2026):** três sintomas, uma doença. (1) A faixa de
+  continuidade dizia "sem cota para o próximo turno" logo depois de um turno
+  que o auto-resume rodou inteiro e concluiu. (2) O anel de contexto escondeu
+  o percentual de uma chamada real de `claude-opus-5`: 320.702 tokens medidos
+  contra uma "janela" de 200.000. (3) O explorador dizia "leitura parcial" em
+  todo repositório git. Nos três, o app tinha o dado certo à mão e consultava
+  um palpite ou um sinal que ninguém religava.
+- **Cota, a contraprova:** `checkAgentQuota` combinava o `limit_reached` do CLI
+  (que já era curado por `result.ok`) com o snapshot da janela de uso (que não
+  era curado por nada). O poll é de 15 min e o snapshot vale 30, então um
+  "100%" lido ANTES do turno seguia de pé DEPOIS dele. Agora `result.ok`
+  carimba `lastSuccessAt` por agent, e uma leitura de 100% ANTERIOR ao carimbo
+  não conclui "esgotado". A contraprova derruba a CONCLUSÃO, nunca o número:
+  quem diz quanto sobrou continua sendo o provider. Empate fica com a leitura.
+  Os efeitos globais de cota saíram de `handleEvent` para
+  `store/chat/quotaSignals`.
+- **Janela de contexto, a fonte:** `contextWindowFor` decidia por
+  `m.includes("1m") ? 1_000_000 : 200_000`, e errava justamente nos modelos de
+  topo (Opus 5, Sonnet 5 e Fable 5 já vêm com 1M sem o sufixo). O catálogo
+  models.dev, que o app já baixa e guarda, tinha `claude-opus-5 → context:
+  1_000_000` em disco e era lido em UM lugar: uma string de prompt do curador.
+  O catálogo passou a ser a primeira fonte, hidratado no boot por leitura local
+  (fora do portão de 24h da manutenção, senão o anel passa o dia no palpite). A
+  tabela de casa fica como fallback declarado, porque os slugs do agy e do
+  Codex não são ids de models.dev, e `context: null` é "não informou", nunca
+  "não tem janela". O sufixo `[1m]` é dialeto de flag e sai antes do casamento.
+- **Cadência escolhível:** o poll da janela de uso virou setting
+  (`usagePollMinutes`), com conjunto FECHADO de 5 · 10 · 15 min. Fechado e não
+  campo livre porque o poll spawna processo ou bate na conta do provider, e um
+  "1" digitado ali seria martelada silenciosa. `pollCadenceMs` valida na
+  leitura (valor de fora vira o padrão), e a escolha encurta o caminho feliz e
+  o teto do backoff SEM mover o piso de 30s nem a espera de 429/auth. O rodapé
+  do medidor anuncia a cadência real em vez do "~15 min" escrito à mão.
+- **Leitura parcial:** `entry_from_path` devolvia o mesmo `None` para "excluí
+  de propósito" (`.git`, `.DS_Store`) e para "não consegui ler", e o segundo
+  acendia o aviso. Como o `.git` está sempre na raiz, TODO repositório dizia
+  leitura parcial. A exclusão virou filtro explícito de quem varre
+  (`structurally_excluded`) e o `None` voltou a significar uma coisa só.
+- **Caminhos que alteram estado:** `recordTurnSuccess` (em `result.ok`),
+  `setSettings({ usagePollMinutes })`, e a hidratação de janelas por
+  `getModelsCatalog` no boot. Nenhum deles despacha trabalho nem escolhe motor.
+- **Verificação:** fixtures reais (o catálogo desta máquina, a chamada de
+  320.702 tokens, `.git` + `.DS_Store` em fixture de disco). Testes fixam a
+  contraprova nos dois sentidos, o empate, o catálogo ganhando do palpite, o
+  fallback preservado para slug fora do catálogo, os três degraus de cadência e
+  o piso que eles não movem.

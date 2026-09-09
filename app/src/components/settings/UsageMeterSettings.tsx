@@ -13,11 +13,13 @@ import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
 import { toast } from "sonner"
+import { RichSelect } from "@/components/ui/RichSelect"
 import { Switch } from "@/components/ui/switch"
-import { BlockTitle } from "@/components/settings/parts"
+import { BlockTitle, Row } from "@/components/settings/parts"
 import { type AgentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
 import { isTauri } from "@/lib/db"
+import { USAGE_POLL_CHOICES } from "@/lib/usageWindow"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -77,7 +79,7 @@ function StatuslineRow({ def }: { def: AgentDef }) {
   }
 
   return (
-    <li className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
+    <li className="rounded-lg border bg-secondary/20 px-3 py-2">
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13px] text-foreground">
@@ -174,6 +176,7 @@ function StatuslineRow({ def }: { def: AgentDef }) {
 
 export function UsageMeterSettings() {
   const enabled = useApp((s) => s.settings.usageMeterEnabled)
+  const cadencia = useApp((s) => s.settings.usagePollMinutes)
   const setSettings = useApp((s) => s.setSettings)
   const providers = usageWindowAgents()
   // nenhum motor com fonte (build sem claude/codex integrados): o bloco some
@@ -185,19 +188,44 @@ export function UsageMeterSettings() {
       <BlockTitle hint="Quanto da janela do seu plano já foi usada (percentual e reset), por provider, na barra superior. Não é custo em US$: é medição de carona, nenhuma quota é consumida.">
         Janela do plano
       </BlockTitle>
-      <div className="mb-2 flex items-center justify-between rounded-lg border border-border/50 bg-secondary/20 px-3 py-2">
-        <div>
-          <div className="text-[13px] text-foreground">Mostrar na barra</div>
-          <div className="text-[12px] text-muted-foreground">
-            Desligar esconde a pill e pausa as medições.
-          </div>
-        </div>
-        <Switch
-          checked={enabled}
-          onCheckedChange={(v) => setSettings({ usageMeterEnabled: v })}
-          aria-label="Mostrar o medidor de janela de uso na barra"
+      {/* `Row` de settings/parts, não cartão à mão: é o mesmo gesto das linhas
+          de provider logo abaixo, e a guarda de superfícies existe pra impedir
+          que a mesma coisa ganhe dois desenhos no mesmo arquivo. */}
+      <ul className="mb-2 flex flex-col gap-1.5">
+        <Row
+          titulo="Mostrar na barra"
+          dica="Desligar esconde a pill e pausa as medições."
+          direita={
+            <Switch
+              checked={enabled}
+              onCheckedChange={(v) => setSettings({ usageMeterEnabled: v })}
+              aria-label="Mostrar o medidor de janela de uso na barra"
+            />
+          }
         />
-      </div>
+        {/* A cadência só existe quando há o que medir: com o medidor desligado
+            o poll está pausado, e oferecer "de quanto em quanto tempo" ali
+            seria um controle que não faz nada. */}
+        {enabled && (
+          <Row
+            titulo="Reler a cada"
+            dica="Vale para a leitura automática. O botão Atualizar do medidor continua imediato, e uma falha do provider segue esperando o tempo dela."
+            direita={
+              <RichSelect
+                value={String(cadencia)}
+                onValueChange={(v) => setSettings({ usagePollMinutes: Number(v) })}
+                options={USAGE_POLL_CHOICES.map((min) => ({
+                  value: String(min),
+                  label: `${min} min`,
+                }))}
+                align="end"
+                triggerClassName="w-24"
+                aria-label="Intervalo da leitura automática da janela de uso"
+              />
+            }
+          />
+        )}
+      </ul>
       <ul className="flex flex-col gap-1.5">
         {providers.map((def) =>
           def.usageWindow === "statusline" ? (
@@ -205,7 +233,7 @@ export function UsageMeterSettings() {
           ) : (
             <li
               key={def.id}
-              className="rounded-lg border border-border/50 bg-secondary/20 px-3 py-2"
+              className="rounded-lg border bg-secondary/20 px-3 py-2"
             >
               <div className="truncate text-[13px] text-foreground">
                 {def.label}{" "}

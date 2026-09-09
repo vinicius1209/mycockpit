@@ -75,8 +75,23 @@ export interface UsageFailure {
 // informativa, snapshot velho > erro piscando.
 // ---------------------------------------------------------------------------
 
+/** Cadências escolhíveis, em MINUTOS. Conjunto FECHADO e não campo livre: o
+ *  poll spawna processo (ou bate na conta do provider), e um "1" digitado ali
+ *  viraria martelada silenciosa contra o fornecedor. */
+export const USAGE_POLL_CHOICES = [5, 10, 15] as const
+export type UsagePollMinutes = (typeof USAGE_POLL_CHOICES)[number]
+
 /** Cadência padrão do poll (sucesso → próximo em 15 min). */
 export const POLL_MS = 15 * 60_000
+
+/** Minutos escolhidos → ms; fora do conjunto cai no padrão. Setting persistido
+ *  é dado de FORA (arquivo à mão, versão antiga), e validar aqui é o que impede
+ *  um `0` gravado de virar poll em laço. */
+export function pollCadenceMs(minutes: number | null | undefined): number {
+  return (USAGE_POLL_CHOICES as readonly number[]).includes(minutes ?? 0)
+    ? minutes! * 60_000
+    : POLL_MS
+}
 /** Piso absoluto: nunca perguntar mais rápido que isto (o probe spawna um
  *  processo; e o tick do vigia é de 30s — o piso casa com ele). */
 export const POLL_FLOOR_MS = 30_000
@@ -102,12 +117,20 @@ const KINDS_SEM_PRESSA = new Set(["rate-limited", "auth"])
 
 /** Delay até a PRÓXIMA tentativa dado o histórico de falha. Sucesso (streak
  *  0) = cadência cheia. Falha transiente = retry rápido crescendo (30s, 60s,
- *  2min…) até a cadência cheia. 429/auth = NUNCA acelera. */
-export function nextPollDelayMs(streak: number, lastKind: string | null): number {
-  if (streak <= 0) return POLL_MS
-  if (lastKind != null && KINDS_SEM_PRESSA.has(lastKind)) return POLL_MS
+ *  2min…) até a cadência cheia. 429/auth = NUNCA acelera.
+ *
+ *  `cadencia` é a escolhida pela pessoa (5/10/15 min). Ela encurta a espera do
+ *  caminho FELIZ e o teto do backoff, e não toca no piso: escolher 5 min não
+ *  autoriza bater de 30 em 30 segundos num provider que está recusando. */
+export function nextPollDelayMs(
+  streak: number,
+  lastKind: string | null,
+  cadencia: number = POLL_MS,
+): number {
+  if (streak <= 0) return cadencia
+  if (lastKind != null && KINDS_SEM_PRESSA.has(lastKind)) return cadencia
   const exp = Math.min(streak - 1, POLL_BACKOFF_CAP)
-  return Math.min(POLL_MS, POLL_FLOOR_MS * 2 ** exp)
+  return Math.min(cadencia, POLL_FLOOR_MS * 2 ** exp)
 }
 
 /** Idade máxima que um snapshot pode ter e ainda aparecer no medidor. */
@@ -348,6 +371,7 @@ export function duePollAgents(
   enabled: boolean,
   detected: Record<string, AgentProbe>,
   now: number,
+  cadencia: number = POLL_MS,
 ): string[] {
   if (!enabled) return []
   const out: string[] = []
@@ -357,7 +381,10 @@ export function duePollAgents(
     if (!probe?.installed || probe.auth === "missing") continue
     const mark = pollMarks.get(def.id)
     if (mark?.inflight) continue
-    if (mark && now - mark.lastAttempt < nextPollDelayMs(mark.streak, mark.lastKind))
+    if (
+      mark &&
+      now - mark.lastAttempt < nextPollDelayMs(mark.streak, mark.lastKind, cadencia)
+    )
       continue
     out.push(def.id)
   }
@@ -384,7 +411,12 @@ export function parseFetchError(e: unknown): { kind: string; message: string } {
 export function checkUsageWindowPoll(now: number = Date.now()): void {
   if (!isTauri()) return
   const settings = useApp.getState().settings
-  const due = duePollAgents(settings.usageMeterEnabled, settings.detected, now)
+  const due = duePollAgents(
+    settings.usageMeterEnabled,
+    settings.detected,
+    now,
+    pollCadenceMs(settings.usagePollMinutes),
+  )
   for (const agent of due) {
     markPollAttempt(agent, now)
     void invoke<UsageSnapshot>("usage_fetch", { agent })

@@ -23,7 +23,9 @@ const stores = vi.hoisted(() => {
         },
       },
     },
-    usage: { byAgent: {} },
+    // `lastSuccessAt` é a contraprova de leitura velha de cota: o harness
+    // espelha o store inteiro, senão o componente lê `undefined` e explode.
+    usage: { byAgent: {}, lastSuccessAt: {} },
     chat: {
       byId: {},
       cancelAutoResume: vi.fn(),

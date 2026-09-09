@@ -16,17 +16,26 @@ interface UsageStore {
   /** Episódio de falha de poll por agent ("falhando desde X"). Statusline
    *  (push) não gera falha — a idade do snapshot cobre o silêncio. */
   failures: Record<string, UsageFailure>
+  /** Quando o agent CONCLUIU um turno pela última vez. Não é telemetria: é
+   *  contraprova. O poll roda a cada 15 min e o snapshot vale por 30, então uma
+   *  leitura de "100%" sobrevive muito depois de a janela ter virado — e quem
+   *  soube primeiro que ela virou foi o turno que passou. Ver
+   *  `checkAgentQuota`. */
+  lastSuccessAt: Record<string, number>
   /** Snapshot novo substitui o do agent e FECHA o episódio de falha (dado
    *  fresco é a prova de que a fonte voltou). */
   ingest: (snap: UsageSnapshot) => void
   /** Falha de poll: abre (ou estende) o episódio — `since` fica na 1ª falha
    *  da streak, é o "desde X" honesto do popover. */
   recordFailure: (agent: string, kind: string, message: string, now: number) => void
+  /** Um turno deste agent terminou com `result.ok`. */
+  recordTurnSuccess: (agent: string, now: number) => void
 }
 
 export const useUsage = create<UsageStore>((set) => ({
   byAgent: {},
   failures: {},
+  lastSuccessAt: {},
   ingest: (snap) =>
     set((s) => {
       const { [snap.agent]: _closed, ...rest } = s.failures
@@ -35,6 +44,8 @@ export const useUsage = create<UsageStore>((set) => ({
         failures: rest,
       }
     }),
+  recordTurnSuccess: (agent, now) =>
+    set((s) => ({ lastSuccessAt: { ...s.lastSuccessAt, [agent]: now } })),
   recordFailure: (agent, kind, message, now) =>
     set((s) => {
       const prev = s.failures[agent]

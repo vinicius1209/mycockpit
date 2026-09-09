@@ -130,6 +130,10 @@ export interface GlobalSettings {
    *  Desligar esconde a pill inteira; provider sem capability/fonte nem
    *  aparece com o medidor ligado (4 camadas de esconder do Orca). */
   usageMeterEnabled: boolean
+  /** Cadência do poll da janela de uso, em minutos (5 · 10 · 15). Conjunto
+   *  fechado: quem valida é `pollCadenceMs`, e valor fora dele vira o padrão.
+   *  Encurtar a cadência NÃO acelera o backoff de falha nem o piso do vigia. */
+  usagePollMinutes: number
   /** Teto de gasto POR SESSÃO em US$ que o usuário definiu (null = sem teto).
    *  Só existe pra dar régua ao custo da sessão: sem teto o número fica cinza
    *  (medição muda); com teto ele entra na régua de medidor do §2 como
@@ -194,6 +198,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   stalledAfterMin: 10,
   unattendedAnswerAfterMin: 10,
   usageMeterEnabled: true,
+  usagePollMinutes: 15,
   sessionCostLimit: null,
   usageMeterCtaDismissed: false,
   observedResolutions: {},
