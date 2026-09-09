@@ -11,10 +11,8 @@ import type { Attachment } from "@/lib/attachments"
 import { deleteAttachment, revokeAttachmentUrl } from "@/lib/attachments"
 import { deriveTitle } from "@/lib/convTitle"
 import { detectBlockedDir } from "@/lib/blockedDir"
-import { getAgentDef } from "@/lib/agentDefs"
 import { useApp } from "@/store/app"
 import type { FusionCandidate } from "@/store/fusion"
-import { normalizeModelValue } from "@/lib/agents"
 import {
   aliasShiftNotice,
   isAliasRequest,
@@ -22,8 +20,6 @@ import {
 } from "@/lib/modelResolution"
 import { recordTurnCost } from "@/lib/db"
 import {
-  listConversations as dbList,
-  loadConversation as dbLoad,
   createConversation as dbCreate,
   saveConversation as dbSave,
   renameConversation as dbRename,
@@ -32,6 +28,11 @@ import {
   setConversationPreset as dbSetPreset,
   type ConversationMeta,
 } from "@/lib/db/conversations"
+import { changedItemPositions } from "@/lib/db/conversationItems"
+import { createItemPersistence } from "@/store/chat/itemPersistence"
+import { createChatNavigation } from "@/store/chat/navigation"
+import type { RunLiveness } from "@/store/chat/runLiveness"
+export type { RunLiveness } from "@/store/chat/runLiveness"
 import { unseenBoundary } from "@/lib/unseen"
 import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
@@ -64,7 +65,6 @@ import { decidePlanGateImpl, pushPlanGateImpl } from "@/store/chat/planGate"
 import {
   EMPTY_CONTEXT_SNAPSHOT,
   contextSnapshotArgs,
-  hydrateContextSnapshot,
   reduceContextSnapshot,
   type ContextSnapshotState,
 } from "@/lib/contextSnapshot"
@@ -367,6 +367,8 @@ export interface ConvState extends ContextSnapshotState {
   stagedAgent?: string | null
   /** Timestamp (ms) de início do run atual, p/ cronômetro ao vivo. */
   startedAt: number | null
+  /** Vida do processo e relógios técnicos do run corrente. Não persiste. */
+  runLiveness?: RunLiveness
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
@@ -545,6 +547,8 @@ export interface ChatState {
   /** Fork CURADO até `uptoItemId`; false no no-op, sem anunciar gesto vazio. */
   forkConversationAt: (id: string, uptoItemId: string) => Promise<boolean>
   persist: (convId: string) => Promise<void>
+  /** Confirma somente a cauda incremental pendente antes de um novo envio. */
+  flushItems: (convId: string) => Promise<void>
   /** Anexa itens PRONTOS ao fio da conversa e persiste (marcos da missão, M2).
    *  EXIGE a conversa carregada em byId (ensureConversationLoaded antes) —
    *  no-op com aviso se não, pra nunca fabricar estado vazio que o persist
@@ -858,14 +862,23 @@ export function reduceItems(
         streamingTextId: id,
       }
     }
-    case "tool":
-      if (
-        e.id &&
-        c.items.some(
-          (it) => it.kind === "tool" && it.toolId === e.id,
-        )
-      ) {
-        return { streamingTextId: null }
+    case "tool": {
+      const existing = e.id
+        ? c.items.findIndex((it) => it.kind === "tool" && it.toolId === e.id)
+        : -1
+      if (existing >= 0) {
+        const item = c.items[existing]
+        if (item.kind !== "tool") return { streamingTextId: null }
+        const items = c.items.slice()
+        // `item.updated` do provider repete o id. Isso é uma atividade real,
+        // então renova o relógio sem criar outro cartão nem inventar output.
+        items[existing] = {
+          ...item,
+          name: e.name,
+          input: e.input,
+          activityAt: now,
+        }
+        return { items, streamingTextId: null }
       }
       return {
         items: [
@@ -883,6 +896,7 @@ export function reduceItems(
         ],
         streamingTextId: null,
       }
+    }
     // Trabalho DIFERIDO do provider (deferred-work-plan D1.2): vira/atualiza um
     // item tool sintético "DeferredWork" com ciclo de vida PRÓPRIO, pendurado
     // no tool_use `Workflow` de origem via parentToolId (Fio Vivo). O `stopped`
@@ -1080,10 +1094,31 @@ export function reduceItems(
 
 /** Reduz um evento do agent sobre o estado de UMA conversa (Linear). */
 function reduceEvent(c: ConvState, e: AgentEvent): Partial<ConvState> {
+  const now = Date.now()
+  const previous = c.runLiveness ?? {
+    mainAlive: null,
+    descendants: null,
+    rssMb: null,
+    lastByteAt: null,
+    lastEventAt: null,
+    observedAt: null,
+  }
+  const runLiveness: RunLiveness =
+    e.type === "run_status"
+      ? {
+          ...previous,
+          mainAlive: e.main_alive,
+          descendants: e.descendants,
+          rssMb: e.rss_mb,
+          lastByteAt: e.last_byte_at,
+          observedAt: e.observed_at,
+        }
+      : { ...previous, lastEventAt: now }
   return {
-    ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }),
+    ...reduceItems(c, e, { agent: c.agent, reqModel: c.reqModel }, now),
     ...turnControl(e),
     ...reduceRunManifest(c.runManifest, e),
+    runLiveness,
   }
 }
 
@@ -1092,33 +1127,9 @@ export const useChat = create<ChatState>((set, get) => {
   // do creator, a store é singleton, então a sugestão sobrevive a remount do
   // painel. O debounce e o token de invalidação vivem em store/chat/suggestions.
 
-  // Token de geração do openProject (M1): um openProject(A) LENTO em voo não
-  // pode clobrar um clique posterior (openProject(B) ou switchConversation).
-  // Cada openProject captura ++openGen; após cada await, se o token mudou,
-  // aborta sem aplicar set. switchConversation também invalida ao trocar o
-  // projeto ativo (o guard keepActive só cobria o caso mesmo-projeto).
-  let openGen = 0
-
-  // Persistência incremental durante o run: sem isso o único persist era no
-  // finally do turno (ChatPanel), então QUALQUER interrupção mid-run (restart do
-  // dev, crash, fechar a janela) perdia a resposta inteira E o session_id (o run
-  // nem era resumível). schedulePersist é um throttle trailing: o 1º evento de um
-  // burst agenda um snapshot ~1.2s depois, e re-arma no próximo → grava a cada
-  // ~1.2s enquanto streama, sem martelar o disco a cada text_delta.
-  const persistTimer: Record<string, ReturnType<typeof setTimeout>> = {}
-  const schedulePersist = (convId: string) => {
-    if (persistTimer[convId]) return // já agendado neste burst → coalesce
-    persistTimer[convId] = setTimeout(() => {
-      delete persistTimer[convId]
-      void get().persist(convId)
-    }, 1200)
-  }
-  const cancelPersist = (convId: string) => {
-    if (persistTimer[convId]) {
-      clearTimeout(persistTimer[convId])
-      delete persistTimer[convId]
-    }
-  }
+  const itemPersistence = createItemPersistence(get)
+  const schedulePersist = itemPersistence.schedule
+  const cancelPersist = itemPersistence.cancel
 
   /** Aplica um patch parcial em UMA conversa (no-op se ela não existe mais). */
   const patch = (convId: string, p: Partial<ConvState>) =>
@@ -1128,69 +1139,11 @@ export const useChat = create<ChatState>((set, get) => {
       return { byId: { ...s.byId, [convId]: { ...cur, ...p } } }
     })
 
-  /** Garante que a conversa está carregada em byId (do disco se preciso). */
-  const ensureLoaded = async (projectId: string, convId: string) => {
-    if (get().byId[convId]) return
-    const conv = await dbLoad(convId)
-    // S3: resolve o NOME do preset carimbado (rótulo da mesa/composer). Best-
-    // effort: preset apagado → name null (o drift do S3.4 dá o aviso formal).
-    let presetName: string | null = null
-    if (conv !== "corrupt" && conv?.presetId) {
-      try {
-        // personas moram em arquivo (projeto + global) desde jul/2026 — sem o
-        // caminho do projeto, uma persona local ficaria sem nome na mesa.
-        const path =
-          useApp.getState().projects.find((p) => p.id === projectId)?.path ??
-          null
-        presetName = (await getAgentDef(path, conv.presetId))?.name ?? null
-      } catch {
-        presetName = null
-      }
-    }
-    // linha corrompida: estado read-only com aviso (persist/envio bloqueados),
-    // nunca "conversa vazia" que o próximo persist gravaria por cima.
-    const state: ConvState =
-      conv === "corrupt"
-        ? {
-            ...emptyConv(projectId),
-            corrupt: true,
-            items: [
-              {
-                kind: "notice",
-                id: uid(),
-                message:
-                  "Histórico desta conversa está corrompido no banco. Envio bloqueado pra não sobrescrever (a linha segue recuperável via SQLite).",
-              },
-            ],
-          }
-        : {
-            ...emptyConv(projectId),
-            items: markOrphanedProcesses(conv?.items ?? []),
-            sessionId: conv?.sessionId ?? null,
-            suggestions: conv?.suggestions ?? [],
-            agent: conv?.agent ?? "claude-code",
-            // Valores persistidos podem ter saído do CLI (display names do agy,
-            // modelos removidos do codex). Normaliza antes de qualquer
-            // composer/adapter poder reutilizar esse valor.
-            reqModel: normalizeModelValue(
-              conv?.agent ?? "claude-code",
-              conv?.reqModel ?? null,
-            ),
-            effort: conv?.effort ?? null,
-            // modelo RESOLVIDO da última sessão: TitleBar/validação não
-            // degradam pro rótulo do agent depois de um restart.
-            model: conv?.model ?? null,
-            worktreePath: conv?.worktreePath ?? null,
-            presetId: conv?.presetId ?? null,
-            presetDigest: conv?.presetDigest ?? null,
-            presetName,
-            ...hydrateContextSnapshot(conv || null),
-            sessionMode: (conv?.sessionMode as ConvState["sessionMode"]) ?? null,
-          }
-    set((s) =>
-      s.byId[convId] ? {} : { byId: { ...s.byId, [convId]: state } },
-    )
-  }
+  const navigation = createChatNavigation(get, set, {
+    uid,
+    emptyConversation: emptyConv,
+    markOrphanedProcesses,
+  })
 
   return {
     projectId: null,
@@ -1201,7 +1154,7 @@ export const useChat = create<ChatState>((set, get) => {
     queuedPrompt: null,
 
     // a closure ensureLoaded exposta como action (mesma semântica, zero seleção)
-    ensureConversationLoaded: ensureLoaded,
+    ensureConversationLoaded: navigation.ensureLoaded,
 
     queuePrompt: (queuedPrompt) => set({ queuedPrompt }),
     setSuggestions: (convId, suggestions) => patch(convId, { suggestions }),
@@ -1212,61 +1165,13 @@ export const useChat = create<ChatState>((set, get) => {
     scheduleSuggestions: (convId) => scheduleSuggestionsImpl(get, convId),
     generateSuggestions: (convId) => generateSuggestionsImpl(get, convId),
 
-    openProject: async (projectId) => {
-      const gen = ++openGen
-      if (!projectId) {
-        set({ projectId: null, activeId: null, conversations: [] })
-        return
-      }
-      let list = (await dbList(projectId)) ?? []
-      // outro openProject/switchConversation venceu enquanto o dbList voava →
-      // não clobra a escolha mais recente.
-      if (gen !== openGen) return
-      if (list.length === 0) {
-        const id = uid()
-        await dbCreate(projectId, id)
-        if (gen !== openGen) return
-        list = [{ id, title: null, updatedAt: Date.now(), color: null, worktreePath: null, agent: null }]
-        set((s) => ({
-          projectId,
-          activeId: id,
-          conversations: list,
-          conversationsByProject: { ...s.conversationsByProject, [projectId]: list },
-          byId: s.byId[id] ? s.byId : { ...s.byId, [id]: emptyConv(projectId) },
-        }))
-        return
-      }
-      // exibe em ordem de criação, mas abre a usada mais recentemente
-      const mostRecent = list.reduce(
-        (best, c) => (c.updatedAt > best.updatedAt ? c : best),
-        list[0],
-      ).id
-      // Se já estamos neste projeto e o activeId atual é uma conversa dele (ex.:
-      // o usuário acabou de clicar numa conversa de projeto não-ativo, que
-      // trocou o projeto ativo E chamou switchConversation), preserva a escolha
-      // — não pula pra "mais recente" e clobbra o clique. Senão, abre a recente.
-      const prev = get()
-      const keepActive =
-        prev.projectId === projectId &&
-        prev.activeId != null &&
-        list.some((c) => c.id === prev.activeId)
-      const activeId = keepActive ? prev.activeId! : mostRecent
-      set((s) => ({
-        projectId,
-        activeId,
-        conversations: list,
-        conversationsByProject: { ...s.conversationsByProject, [projectId]: list },
-      }))
-      // ensureLoaded só ADICIONA em byId (guardado, não sobrescreve) → não há
-      // set de navegação após este await pra proteger com o token.
-      await ensureLoaded(projectId, activeId)
-    },
+    openProject: navigation.openProject,
 
     // Lazy: carrega as metas de um projeto no mapa quando ele é expandido no
     // sidebar. No-op se já carregadas (não remexe no que já está na tela).
     loadProjectConversations: async (projectId) => {
       if (get().conversationsByProject[projectId]) return
-      const list = (await dbList(projectId)) ?? []
+      const list = await navigation.loadMeta(projectId)
       set((s) =>
         s.conversationsByProject[projectId]
           ? {}
@@ -1369,7 +1274,7 @@ export const useChat = create<ChatState>((set, get) => {
       const owner = projectOfConv(s.conversationsByProject, id) ?? s.projectId
       // invalida qualquer openProject em voo: o clique do usuário é a escolha
       // mais recente e não pode ser sobrescrito quando o dbList atrasado chegar.
-      openGen++
+      navigation.invalidate()
       // S1.1 — a conversa estava marcada "terminou e você não viu"? Captura a
       // fronteira ANTES do markSeen apagar o selo: ela vira o divisor "novas
       // mensagens" desta visita. Derivada dos items já carregados (o selo só
@@ -1392,7 +1297,7 @@ export const useChat = create<ChatState>((set, get) => {
             ? st.conversationsByProject[owner]
             : st.conversations,
       }))
-      if (owner) await ensureLoaded(owner, id)
+      if (owner) await navigation.ensureLoaded(owner, id)
     },
 
     // Corpo em store/chat/remove.ts junto da lista inteira do que morre com a
@@ -1579,6 +1484,10 @@ export const useChat = create<ChatState>((set, get) => {
       // S1: UPSERT de linha inteira (stringify da conversa TODA na main thread)
       // — span de PAREDE (inclui o await do SQLite); no-op sem mc.office.perf.
       const endSpan = perfSpan("persist")
+      // Publica primeiro a revisão itemizada, na mesma fila serial das escritas
+      // de streaming. O snapshot integral abaixo segue como compatibilidade e
+      // rollback; no reload, a revisão incremental confirmada é preferida.
+      await itemPersistence.replaceAll(convId, c.items)
       await dbSave(
         convId,
         c.projectId,
@@ -1613,6 +1522,10 @@ export const useChat = create<ChatState>((set, get) => {
             c.projectId === st.projectId ? nextList : st.conversations,
         }
       })
+    },
+
+    flushItems: async (convId) => {
+      await itemPersistence.flush(convId)
     },
 
     appendItems: async (convId, items) => {
@@ -1701,6 +1614,7 @@ export const useChat = create<ChatState>((set, get) => {
               preparing: undefined,
               preflightGate: undefined,
               startedAt: Date.now(),
+              runLiveness: undefined,
               suggestions: [],
               suggesting: false,
               blockedDir: null, // novo turno zera o aviso de pasta bloqueada
@@ -1834,6 +1748,12 @@ export const useChat = create<ChatState>((set, get) => {
           if (dir) patch(convId, { blockedDir: dir })
         }
       }
+      const afterEvent = get().byId[convId]
+      const changedPositions =
+        beforeEvent && afterEvent
+          ? changedItemPositions(beforeEvent.items, afterEvent.items)
+          : afterEvent?.items.map((_, position) => position) ?? []
+      const itemCountChanged = beforeEvent?.items.length !== afterEvent?.items.length
       // Persistência incremental (sobrevive a interrupção mid-run):
       if (e.type === "session") {
         // Ledger de resoluções observadas (P2): o app aprende o que o CLI
@@ -1884,8 +1804,11 @@ export const useChat = create<ChatState>((set, get) => {
         // pendente pra não gravar um snapshot atrasado por cima.
         cancelPersist(convId)
       } else {
-        // texto/tool/result em streaming → snapshot throttled a cada ~1.2s.
-        schedulePersist(convId)
+        // Texto/tool em streaming → somente as posições alteradas, coalescidas
+        // na mesma janela de recuperação que o snapshot antigo usava.
+        if (afterEvent && (changedPositions.length || itemCountChanged)) {
+          schedulePersist(convId, changedPositions, afterEvent.items.length)
+        }
       }
     },
 
@@ -1893,6 +1816,7 @@ export const useChat = create<ChatState>((set, get) => {
       const process = event.data.process
       const convId = process?.convId ?? event.data.convId
       if (!convId) return
+      const beforeItems = get().byId[convId]?.items ?? []
       set((s) => {
         const cur = s.byId[convId]
         if (!cur) return {}
@@ -1923,9 +1847,36 @@ export const useChat = create<ChatState>((set, get) => {
           }
         }
         if (
+          event.kind === "process_output" &&
+          event.data.processId &&
+          typeof event.data.seq === "number" &&
+          typeof event.data.line === "string"
+        ) {
+          const items = cur.items.map((it) => {
+            const managed = it.kind === "tool" ? it.managedProcess : undefined
+            if (!managed || managed.id !== event.data.processId) return it
+            if (event.data.seq! <= (managed.outputSeq ?? 0)) return it
+            const lines = managed.output
+              ? [...managed.output.split("\n"), event.data.line!]
+              : [event.data.line!]
+            const output = lines.slice(-240).join("\n")
+            return {
+              ...it,
+              managedProcess: {
+                ...managed,
+                // O backend já limita linhas/bytes; este teto local protege
+                // replay legado e impede que a redução cresça sem limite.
+                output: output.slice(-256 * 1024),
+                outputSeq: event.data.seq,
+                updatedAt: event.data.updatedAt ?? managed.updatedAt,
+              },
+            }
+          })
+          return { byId: { ...s.byId, [convId]: { ...cur, items } } }
+        }
+        if (
           process &&
-          (event.kind === "process_output" ||
-            event.kind === "process_stopping" ||
+          (event.kind === "process_stopping" ||
             event.kind === "process_exited")
         ) {
           const terminal =
@@ -2033,7 +1984,11 @@ export const useChat = create<ChatState>((set, get) => {
         }
         return {}
       })
-      schedulePersist(convId)
+      const afterItems = get().byId[convId]?.items ?? []
+      const changed = changedItemPositions(beforeItems, afterItems)
+      if (changed.length || beforeItems.length !== afterItems.length) {
+        schedulePersist(convId, changed, afterItems.length)
+      }
     },
 
     toggleTurnReaction: async (convId, resultId, reaction) => {
@@ -2160,6 +2115,7 @@ export const useChat = create<ChatState>((set, get) => {
               preparing: undefined,
               preflightGate: undefined,
               startedAt: Date.now(),
+              runLiveness: undefined,
               suggestions: [],
               suggesting: false,
               pendingPlan: undefined,

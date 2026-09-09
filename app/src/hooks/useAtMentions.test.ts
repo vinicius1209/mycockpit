@@ -45,7 +45,7 @@ describe("buildLexicalAtItems (itens do @ do composer)", () => {
     expect(itens).toHaveLength(21)
   })
 
-  it("sem arquivos carregados, lista só as personas", () => {
+  it("sem conjunto quente, lista só as personas", () => {
     const itens = buildLexicalAtItems(["Aline"], [])
     expect(itens).toEqual([{ value: "Aline", kind: "agent" }])
   })

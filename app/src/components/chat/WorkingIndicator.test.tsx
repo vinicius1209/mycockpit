@@ -90,4 +90,51 @@ describe("WorkingIndicator — indicador de atividade viva", () => {
     )
     expect(html).toContain("sintetizando resposta após 14 ações…")
   })
+
+  it("troca o genérico por estado factual do processo quando o turno fica mudo", () => {
+    const common = {
+      agent: "codex",
+      presetId: null,
+      finalizing: false,
+      running: true,
+      startedAt: Date.now() - 20_000,
+      stalledSince: Date.now() - 10 * 60_000,
+    }
+    const active = renderToStaticMarkup(
+      createElement(WorkingIndicator, {
+        ...common,
+        runLiveness: {
+          mainAlive: true,
+          descendants: 2,
+          rssMb: 180,
+          lastByteAt: null,
+          lastEventAt: common.stalledSince,
+          observedAt: Date.now(),
+        },
+      }),
+    )
+    expect(active).toContain("Processo ativo,")
+    expect(active).toContain("sem eventos")
+    expect(active).toContain("2 descendentes · 180 MB no grupo")
+
+    const dead = renderToStaticMarkup(
+      createElement(WorkingIndicator, {
+        ...common,
+        runLiveness: {
+          mainAlive: false,
+          descendants: 0,
+          rssMb: 0,
+          lastByteAt: null,
+          lastEventAt: common.stalledSince,
+          observedAt: Date.now(),
+        },
+      }),
+    )
+    expect(dead).toContain("Processo encerrou sem concluir o turno")
+
+    const unknown = renderToStaticMarkup(
+      createElement(WorkingIndicator, { ...common }),
+    )
+    expect(unknown).toContain("Não foi possível confirmar o estado do processo,")
+  })
 })

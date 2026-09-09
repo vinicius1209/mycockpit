@@ -13,7 +13,7 @@ import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
 import { comporCascata } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
-import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
+import { listConversations } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
 import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import {
@@ -59,8 +59,10 @@ import type { OfficeAgentId } from "@/lib/fleet/types"
 import {
   acceptChatTurn,
   createRunAcceptance,
+  recordDispatchError,
 } from "@/lib/chatRunAcceptance"
 import { continueConversationWith } from "@/lib/chatHandoff"
+import { newestConversation, runDeskPreparation } from "@/lib/fleet/deskPreparation"
 
 export { cancelDeskTurn } from "@/lib/fleet/cancel"
 
@@ -88,24 +90,6 @@ export interface DeskSendArgs {
    *  loop (o estado autoResume com o contador de tentativas fica) e nunca
    *  planeja (é continuação de execução) — mesma semântica do ChatPanel. */
   fromAutoResume?: boolean
-}
-
-function recordDispatchError(convId: string, error: unknown, fallback: string) {
-  const message = typeof error === "string" ? error : fallback
-  const conv = useChat.getState().byId[convId]
-  const last = conv?.items[conv.items.length - 1]
-  if (!last || last.kind !== "error" || last.message !== message) {
-    useChat.getState().handleEvent(convId, { type: "error", message })
-  }
-  toast.error(message)
-}
-
-/** A meta mais recente (updatedAt) do conjunto, ou null se vazio. */
-function newest(list: ConversationMeta[]): ConversationMeta | null {
-  return list.reduce<ConversationMeta | null>(
-    (best, c) => (best == null || c.updatedAt > best.updatedAt ? c : best),
-    null,
-  )
 }
 
 /** Prefixo do título fixo das conversas criadas pela mesa (o menu-balão usa
@@ -149,7 +133,7 @@ async function resolveDeskConversation(
     (await listConversations(projectId)) ??
     chat.conversationsByProject[projectId] ??
     []
-  const found = newest(
+  const found = newestConversation(
     list.filter(
       (c) => c.agent === agent && c.title?.startsWith(DESK_TITLE_PREFIX),
     ),
@@ -183,13 +167,30 @@ async function resolveDeskConversation(
  *  handleEvent por evento → finally com finish + persist + drenagem coalescida
  *  da fila + auto-resume em rate limit + notify + sugestões. */
 export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
+  await runDeskPreparation(args, sendFromDeskPrepared)
+}
+
+async function sendFromDeskPrepared(
+  args: DeskSendArgs,
+  runId: string,
+): Promise<void> {
   const { convId, projectId, projectPath, text } = args
   const attachments = args.attachments ?? []
   if (!isTauri()) {
     toast("O dispatch dos agents roda no app (bun run tauri dev)")
     return
   }
+  const appCommand = findAppCommand(text)
+  const known = useChat.getState().byId[convId]
+  if (known?.preparing) {
+    toast("As capacidades deste envio ainda estão sendo verificadas.")
+    return
+  }
+  // Quando a Mesa já conhece a conversa, o primeiro quadro fica marcado antes
+  // de qualquer I/O. Conversa fria recebe o mesmo carimbo assim que hidrata.
+  if (!appCommand) useChat.getState().beginPreparation(convId, runId)
   await useChat.getState().ensureConversationLoaded(projectId, convId)
+  if (!appCommand) useChat.getState().beginPreparation(convId, runId)
   const conv = useChat.getState().byId[convId]
   // janela do load: enviar agora criaria estado vazio e o persist (UPSERT de
   // linha inteira) apagaria o histórico — mesma guarda do ChatPanel.
@@ -197,7 +198,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     toast("Conversa ainda carregando. Tenta de novo.")
     return
   }
-  if (conv.preparing) {
+  if (conv.preparing && conv.preparing.runId !== runId) {
     toast("As capacidades deste envio ainda estão sendo verificadas.")
     return
   }
@@ -227,7 +228,7 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // Comando BUILTIN do app — MESMA interceptação do handleSend do ChatPanel:
   // AÇÃO de primeira classe, antes da expansão de .md. O /compactar nunca vira
   // texto pro fluxo normal (decisão por capability em lib/compact).
-  if (findAppCommand(text)) {
+  if (appCommand) {
     await runCompactTurn({
       convId,
       projectId,
@@ -319,7 +320,6 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   // "Planejar primeiro" da CONVERSA (toggle ligado por qualquer superfície);
   // auto-resume nunca planeja (é continuação de execução)
   const planFirst = !args.fromAutoResume && !!conv.planFirst
-  const runId = crypto.randomUUID()
   // sessão fresca quando o volante trocou de backend (resume do agent anterior
   // não vale pro novo); senão o resume normal da conversa.
   const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
@@ -491,8 +491,8 @@ export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
     onEvent: (event) => useChat.getState().handleEvent(convId, event),
   })
 
-  useChat.getState().beginPreparation(convId, runId)
   try {
+    await useChat.getState().flushItems?.(convId)
     await runAgent(
       runId,
       convId,

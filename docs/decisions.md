@@ -6075,3 +6075,86 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   passaram. Os 29 testes E2E incluem o novo contrato de fullscreen, preservação
   de seleção, inspetor, conexão e erro de nó inalcançável. Biblioteca,
   prancheta, Tela cheia e Segurança foram abertas e inspecionadas em 1440×900.
+
+### ADR-175 · Faixa operacional é lazy, observável e persistida por mudança
+- **Contexto (09/09/2026):** trocar projeto, abrir Arquivos e apertar Enviar
+  compartilhavam trabalho síncrono ou repetido com a thread da interface. O
+  explorador enumerava o projeto inteiro, o autocomplete de `@` herdava essa
+  enumeração, inventários nativos podiam subir subprocessos repetidos e o fio
+  serializava todo o JSON a cada janela de streaming. Ao mesmo tempo, o estado
+  genérico "está trabalhando" não distinguia um processo vivo de uma ponte sem
+  eventos.
+- **Decisão de navegação e arquivos:** projeto e conversa usam cache,
+  single-flight e token de geração. A troca aplica o shell no primeiro quadro e
+  nunca apresenta o transcript anterior sob o projeto novo. Arquivos lista um
+  nível por pedido; busca é paginada, limitada, ignore-aware e executada fora da
+  thread Tauri. Symlink aparece, mas não é seguido. Busca recursiva da Home é
+  recusada. Menções usam um hot set local e só consultam o backend com query;
+  os valores efetivamente usados persistem no rascunho.
+- **Decisão de trabalho oculto e envio:** mapa, contexto e painel só atualizam
+  quando possuem consumidor visível. Saída de processo gerenciado cruza a
+  ponte como delta numerado e limitado. As duas superfícies de envio entram em
+  preparação antes do primeiro `await`. O inventário nativo do Codex tem cache
+  de vida do processo, single-flight, invalidação após alteração e bypass
+  somente no gesto explícito de redescoberta. O manifesto registra se a fonte
+  foi cache, miss, compartilhada ou bypass.
+- **Decisão de vida do run:** `item.started` e `item.updated` do stream JSONL do
+  Codex renovam a mesma Tool por id; payload desconhecido degrada para Unknown.
+  A sonda de recursos percorre somente a árvore enraizada no processo do run e
+  publica processo principal, descendentes, RSS e último byte. Essas métricas
+  nunca contam como progresso. Depois do limiar, a linha informa processo
+  ativo, morto ou não confirmável em vez de manter atividade genérica.
+- **Decisão de persistência:** as migrations 48 e 49 criam
+  `conversation_items` e `conversation_item_state`. Um comando Rust aplica o
+  change-set e o marcador em uma transação SQLite. O primeiro write faz
+  bootstrap; os seguintes enviam somente posições alteradas. A leitura prefere
+  a revisão itemizada quando contagem, ordem, id e JSON fecham; qualquer
+  inconsistência volta ao snapshot integral. O snapshot legado continua sendo
+  gravado em repouso/terminal como rollback. Antes de novo envio, a cauda
+  incremental pendente é confirmada.
+- **Consequência:** não há daemon, indexador permanente, cancelamento
+  automático nem heartbeat teatral. Cache guarda somente sucesso; falha
+  continua visível e retentável. A frente de render do fio permanece sob
+  `docs/fluidez-do-fio-plan.md`, sem duplicar F3/F4 nesta decisão. A guarda
+  `check:tauri-hot-paths` impede que os seis comandos nativos desta faixa
+  voltem a bloquear a thread principal por regressão acidental.
+
+### ADR-176 · Continuidade entre agentes tem uma superfície e duas semânticas
+- **Contexto (09/09/2026):** o incidente terminal oferecia continuação
+  imediata dentro do fio, enquanto a cota preventiva preparava outro agente no
+  composer. As duas superfícies usavam o mesmo handoff híbrido, mas tinham
+  seletores, filtros e verbos diferentes. Em limite com retomada automática,
+  um terceiro aviso podia aparecer ao mesmo tempo. Essa duplicação tornava
+  incerto se o clique enviaria agora ou apenas mudaria o próximo envio.
+- **Decisão visual:** `ContinuityBanner` é a única porta dessa escolha acima do
+  composer. O fio registra somente o fato terminal. A faixa usa um único
+  marcador âmbar de estado, seleção neutra e um CTA. “Continuar agora no X”
+  retoma o pedido interrompido; “Usar X no próximo envio” apenas grava a
+  intenção. Claude Code, Antigravity e OpenCode aparecem pela mesma régua de
+  elegibilidade, nunca por decoração, ponto de presença ou comparação local de
+  fornecedor. Retomada automática coexistente é resumida dentro da faixa, com
+  cancelamento próprio, em vez de gerar outro cartão.
+- **Elegibilidade:** `eligibleHandoffTargets` consulta registry, detecção,
+  autenticação, cota e capabilities de anexo. Destino ausente, sem login,
+  esgotado, não agente ou incompatível falha fechado; estado ainda desconhecido
+  segue a política canônica de `dispatchBlockReason`.
+  `deriveComposerContinuity` dá prioridade à falha do último turno de executor
+  sobre o aviso preventivo de cota.
+- **Transação:** `continueConversationWith` marca `beginPreparation` antes do
+  primeiro `await`, localiza o último pedido dirigido ao executor, preserva os
+  anexos e só registra lições ou inicia o transplante após `run_manifest`.
+  Perguntas a Especialistas não substituem o pedido pendente. Falha pré-aceite
+  limpa o preparo e mantém agente e sessão de origem; a troca continua sendo
+  confirmada apenas pelo primeiro `session` do destino.
+- **Caminhos que alteram estado:** no modo futuro, `stageAgent` grava ou desfaz
+  a intenção e o envio normal a consome. No modo imediato, o gesto chama
+  `continueConversationWith`, cancela retomada automática e sugestões, prepara
+  o handoff e inicia `runAgent`; `run_manifest` abre o transplante e `session`
+  o confirma. Abrir detalhes, selecionar localmente, aguardar ou ocultar a
+  faixa não despacha trabalho.
+- **Verificação:** testes puros fixam terminalidade, prioridade, os três
+  destinos reais, filtros de autenticação/cota/anexos e copy dos dois modos.
+  O teste da orquestração fixa a resposta visível antes do primeiro `await`, o
+  pedido correto e seus anexos. A sequência de incidente prova que nenhuma
+  decisão permanece duplicada no transcript.
+

@@ -15,7 +15,11 @@
 
 import { describe, expect, it } from "vitest"
 
-import { lastExecutorTurnFailed } from "@/lib/turnOutcome"
+import {
+  lastExecutorTurnFailed,
+  lastExecutorTurnOutcome,
+  pendingExecutorRequest,
+} from "@/lib/turnOutcome"
 import type { ChatItem } from "@/store/chat"
 
 const user: ChatItem = { kind: "user", id: "u1", text: "roda os testes" }
@@ -45,8 +49,26 @@ describe("saída de emergência: destravar o modelo depois de um turno que falho
     expect(lastExecutorTurnFailed([user, limite])).toBe(true)
   })
 
+  it("result de falha isolado também é terminal e destrava", () => {
+    const failed: ChatItem = {
+      kind: "result",
+      id: "r-failed",
+      ok: false,
+      text: "o provider encerrou antes do erro estruturado",
+    }
+    expect(lastExecutorTurnFailed([user, failed])).toBe(true)
+    expect(lastExecutorTurnOutcome([user, failed])).toEqual({
+      kind: "failed",
+      terminalId: "r-failed",
+    })
+  })
+
   it("turno que deu certo NÃO destrava (a identidade da conversa continua fixa)", () => {
     expect(lastExecutorTurnFailed([user, ok])).toBe(false)
+    expect(lastExecutorTurnOutcome([user, ok])).toEqual({
+      kind: "succeeded",
+      terminalId: "r1",
+    })
   })
 
   it("conversa vazia não destrava nada (não há turno anterior)", () => {
@@ -72,5 +94,47 @@ describe("saída de emergência: destravar o modelo depois de um turno que falho
       text: "troca o modelo",
     }
     expect(lastExecutorTurnFailed([user, erro(ERRO_DO_AGY), parecer])).toBe(true)
+  })
+})
+
+describe("pedido pendente do executor", () => {
+  it("ignora a pergunta posterior dirigida a um Especialista", () => {
+    const attachment = {
+      path: "attachments/c1/erro.png",
+      name: "erro.png",
+      kind: "image" as const,
+      mime: "image/png",
+      bytes: 800,
+    }
+    const advisorQuestion: ChatItem = {
+      kind: "user",
+      id: "u-advice",
+      text: "Aline, o que você acha?",
+      advisorTo: { id: "aline", name: "Aline" },
+    }
+    const items: ChatItem[] = [
+      { ...user, attachments: [attachment] },
+      erro("falhou"),
+      advisorQuestion,
+    ]
+
+    expect(pendingExecutorRequest(items)).toEqual({
+      index: 0,
+      text: "roda os testes",
+      attachments: [attachment],
+    })
+  })
+
+  it("não inventa pedido numa conversa composta só por parecer", () => {
+    expect(
+      pendingExecutorRequest([
+        {
+          kind: "user",
+          id: "u-advice",
+          text: "revise",
+          advisorTo: { id: "aline", name: "Aline" },
+        },
+      ]),
+    ).toBeNull()
   })
 })

@@ -4,7 +4,10 @@ import type { ConversationMapInputV1 } from "./types"
 const h = vi.hoisted(() => ({ generate: vi.fn() }))
 vi.mock("@/lib/utility/gateway", () => ({ generateUtility: h.generate }))
 
-import { generateConversationMap } from "./generate"
+import {
+  conversationMapPayloadStats,
+  generateConversationMap,
+} from "./generate"
 
 function longInput(): ConversationMapInputV1 {
   const evidence = Array.from({ length: 3 }, (_, index) => ({
@@ -134,5 +137,29 @@ describe("geração em blocos do mapa", () => {
     })
     expect(result).toMatchObject({ ok: false, reason: "stale" })
     expect(h.generate).toHaveBeenCalledTimes(1)
+  })
+
+  it("recusa o payload final grande antes de atravessar a ponte", async () => {
+    const input = longInput()
+    input.pins.constraints.push({
+      id: "pin-grande",
+      text: "x".repeat(270_000),
+      pinnedAt: 1,
+    })
+
+    const result = await generateConversationMap({
+      mapInput: input,
+      request,
+      isCurrent: () => true,
+    })
+
+    expect(result).toMatchObject({
+      ok: false,
+      reason: "input_too_large",
+      inputDigest: expect.any(String),
+      payloadStats: { total: expect.any(Number) },
+    })
+    expect(conversationMapPayloadStats(input).total).toBeGreaterThan(256 * 1024)
+    expect(h.generate).not.toHaveBeenCalled()
   })
 })

@@ -20,7 +20,6 @@
 // Regras que a tela obedece: só número MEDIDO (nada de gráfico de tendência
 // com n=5, nada de streak — o app não mede isso); seção sem conteúdo não
 // renderiza título nem moldura; e todo derivado imprime o denominador.
-
 import { useEffect, useMemo, useState } from "react"
 import { Clock } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -65,9 +64,9 @@ import { CostHeatmap } from "@/components/panel/CostHeatmap"
 import { UnpricedNote } from "@/components/panel/UnpricedNote"
 import { SectionTitle } from "@/components/panel/SectionTitle"
 import { cn } from "@/lib/utils"
+import { usePanelRefreshEnabled } from "@/hooks/usePanelRefreshEnabled"
 
 const DAY_MS = 24 * 60 * 60 * 1000
-
 /** Cor categórica por agente: Claude=brass, Codex=azul (st-running),
  *  Antigravity=violeta de identidade. O verde saiu daqui porque cor de
  *  identidade não pode colidir com o vocabulário de status (STYLEGUIDE §2). */
@@ -82,7 +81,6 @@ function agentColor(id: string): string {
 function agentShort(id: string): string {
   return { "claude-code": "Claude Code", codex: "Codex", agy: "Antigravity" }[id] ?? id
 }
-
 /** CLIs da seção Frota (detalhe) — mesmos rótulos das Configurações ▸ Agents. */
 const CLI_TOOLS: { id: string; label: string }[] = [
   { id: "claude-code", label: "Claude Code" },
@@ -159,6 +157,7 @@ function DrawerLine({
 }
 
 export function MissionControl() {
+  const refreshEnabled = usePanelRefreshEnabled()
   const projects = useApp((s) => s.projects)
   const detected = useApp((s) => s.settings.detected)
   // H1 — sessões externas vivas (hooks): seleciona a REF crua (selector com
@@ -192,6 +191,7 @@ export function MissionControl() {
   const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
+    if (!refreshEnabled) return
     let cancelled = false
     const refresh = () => {
       const now = Date.now()
@@ -232,7 +232,7 @@ export function MissionControl() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [])
+  }, [refreshEnabled])
 
   // Todo o recorte da janela num memo só: as agregações varrem o ledger UMA
   // vez por carga (e por troca de janela), nunca por render.

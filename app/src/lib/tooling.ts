@@ -126,6 +126,12 @@ export interface EffectiveRunManifest {
   omissions?: EffectiveCapabilityOmission[]
   /** Redução de permissão aceita explicitamente só para este turno. */
   permissionOverride?: "leitura" | null
+  /** Descoberta nativa usada pelo preflight; ausente em manifests até v5. */
+  inventoryCache?: Array<{
+    source: string
+    state: "hit" | "miss" | "shared" | "bypass"
+    checkedAt: number | null
+  }>
   /** Compatibilidade de leitura com manifests v4. Manifests novos não bloqueiam. */
   blocked?: string | null
 }

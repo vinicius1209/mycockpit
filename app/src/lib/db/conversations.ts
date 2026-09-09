@@ -7,6 +7,7 @@ import { getDb, ensureBoardTables } from "@/lib/db"
 import { ensureComposerDraftTables, ensureConversationHierarchySchema } from "@/lib/db/schema"
 import type { ChatItem } from "@/store/chat"
 import type { ContextBasis } from "@/lib/contextSnapshot"
+import { loadConversationItemSnapshot } from "@/lib/db/conversationItems"
 
 /** S1.2 — persiste a ordem manual das conversas DE UM projeto. O filtro por
  *  project_id impede que um id vazado de outra lista mexa em conversa alheia. */
@@ -220,9 +221,13 @@ export async function loadConversation(
   )
   if (!rows.length) return null
   try {
+    const incrementalItems = await loadConversationItemSnapshot(id)
     return {
       sessionId: rows[0].session_id,
-      items: JSON.parse(rows[0].items) as ChatItem[],
+      // A fonte nova é realmente preferencial: um snapshot legado danificado
+      // não invalida uma revisão incremental que já fechou contagem e ids.
+      items:
+        incrementalItems ?? (JSON.parse(rows[0].items) as ChatItem[]),
       title: rows[0].title,
       suggestions: rows[0].suggestions
         ? (JSON.parse(rows[0].suggestions) as string[])

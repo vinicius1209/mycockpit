@@ -24,8 +24,13 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getRoot,
+  $isElementNode,
+  type LexicalNode,
 } from "lexical"
-import { $createBeautifulMentionNode } from "lexical-beautiful-mentions"
+import {
+  $createBeautifulMentionNode,
+  $isBeautifulMentionNode,
+} from "lexical-beautiful-mentions"
 import { splitMentions } from "@/components/chat/mentions"
 import {
   SLASH_TRIGGER,
@@ -143,4 +148,18 @@ export function $setDraft(
  *  quebra de linha → `\n`. É a string que vai pro `onSend` e pro rascunho. */
 export function $serializeDraft(): string {
   return $getRoot().getTextContent()
+}
+
+/** Metadado durável dos pills `@` realmente selecionados. Ele permite
+ * reconstruir um caminho depois do restart sem revarrer o projeto inteiro. */
+export function $mentionedValues(): string[] {
+  const values = new Set<string>()
+  const visit = (node: LexicalNode) => {
+    if ($isBeautifulMentionNode(node) && node.getTrigger() === "@") {
+      values.add(node.getValue())
+    }
+    if ($isElementNode(node)) node.getChildren().forEach(visit)
+  }
+  visit($getRoot())
+  return [...values]
 }

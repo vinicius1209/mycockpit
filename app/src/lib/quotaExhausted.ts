@@ -1,5 +1,7 @@
-import { DESTINATIONS } from "@/lib/agents"
-import { estadoNaMaquina, type AgentProbe } from "@/lib/detect"
+import type { Attachment } from "@/lib/attachments"
+import { agentDef, DESTINATIONS, dispatchBlockReason } from "@/lib/agents"
+import type { AgentProbe } from "@/lib/detect"
+import type { Destination } from "@/lib/types"
 import {
   fmtResetIn,
   snapshotUsable,
@@ -56,30 +58,61 @@ export function checkAgentQuota(
   }
 }
 
-/**
- * Identifica os agentes alternativos disponíveis para revezamento na máquina.
- */
-export function alternativeAgentsFor(
-  currentAgent: string,
-  detectados: Record<string, AgentProbe> = {},
-  limitedAgents: Record<string, string | null> = {},
-  byAgentSnapshots: Record<string, UsageSnapshot> = {},
-  now: number = Date.now(),
-): RevezamentoOpcao[] {
-  return DESTINATIONS.filter((d) => {
-    if (d.id === currentAgent) return false
-    if (!d.available) return false
-    if (estadoNaMaquina(d.id, detectados) === "ausente") return false
-    const quota = checkAgentQuota(
-      d.id,
-      limitedAgents,
-      byAgentSnapshots[d.id],
-      now,
-    )
-    if (quota.exhausted) return false
-    return true
-  }).map((d) => ({
-    id: d.id,
-    label: d.label,
-  }))
+export interface EligibleHandoffTargetsInput {
+  currentAgent: string
+  detected?: Record<string, AgentProbe>
+  limitedAgents?: Record<string, string | null>
+  byAgentSnapshots?: Record<string, UsageSnapshot>
+  attachments?: readonly Attachment[]
+  now?: number
+  /** Injetável só para testes de contrato e registries futuros. */
+  destinations?: Destination[]
+}
+
+function acceptsAttachments(
+  agent: string,
+  attachments: readonly Attachment[],
+): boolean {
+  const caps = agentDef(agent)?.caps
+  if (!caps) return attachments.length === 0
+  return attachments.every((attachment) =>
+    attachment.kind === "image"
+      ? caps.image
+      : attachment.kind === "pdf"
+        ? caps.pdf
+        : false,
+  )
+}
+
+/** Fonte única dos destinos realmente acionáveis pelas duas formas de
+ * continuidade. Estado desconhecido continua elegível; ausência, falta de
+ * login, cota esgotada e anexo incompatível falham fechados. */
+export function eligibleHandoffTargets({
+  currentAgent,
+  detected = {},
+  limitedAgents = {},
+  byAgentSnapshots = {},
+  attachments = [],
+  now = Date.now(),
+  destinations = DESTINATIONS,
+}: EligibleHandoffTargetsInput): RevezamentoOpcao[] {
+  return destinations
+    .filter((destination) => {
+      if (destination.kind !== "agent") return false
+      if (destination.id === currentAgent) return false
+      if (!destination.available) return false
+      if (dispatchBlockReason(destination.id, detected)) return false
+      if (!acceptsAttachments(destination.id, attachments)) return false
+      const quota = checkAgentQuota(
+        destination.id,
+        limitedAgents,
+        byAgentSnapshots[destination.id],
+        now,
+      )
+      return !quota.exhausted
+    })
+    .map((destination) => ({
+      id: destination.id,
+      label: destination.label,
+    }))
 }

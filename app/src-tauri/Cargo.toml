@@ -36,6 +36,7 @@ blake3 = "1"      # hash do conteúdo de anexos (nome de arquivo + dedup)
 semver = "1"      # versões e engine gate do manifesto de plugins
 url = "2"         # validação fechada de endpoints MCP contribuídos
 infer = "0.16"    # sniff de MIME por magic bytes (não confia no clipboard)
+ignore = "0.4"    # árvore/busca locais com .gitignore e .ignore aninhados
 tauri-plugin-opener = "2.5.4"
 # Companion Web (servidor LAN embutido): HTTP+WS sobre o tokio já existente.
 axum = { version = "0.8", features = ["ws", "multipart"] }

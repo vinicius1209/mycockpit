@@ -1,21 +1,13 @@
 import { memo } from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { TurnActions, type FeedbackApi } from "@/components/chat/TurnActions"
 import { TurnTelemetry } from "@/components/chat/TurnTelemetry"
 import {
   incidentPresentation,
   type IncidentStage,
 } from "@/components/chat/incidentPresentation"
-import { incidentTargets } from "@/components/chat/incidentTargets"
 import type { IncidentNode } from "@/components/chat/messageNodes"
-import { Button } from "@/components/ui/button"
 import { controle } from "@/components/ui/controle"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
 
 function markerClass(
@@ -31,19 +23,14 @@ function markerClass(
 
 export const IncidentSequence = memo(function IncidentSequence({
   incident,
-  currentAgent,
-  onContinueWith,
   feedback,
   feedbackText,
 }: {
   incident: IncidentNode
-  currentAgent: string
-  onContinueWith?: (agent: string) => void
   feedback?: FeedbackApi | null
   feedbackText?: string
 }) {
   const presentation = incidentPresentation(incident)
-  const targets = onContinueWith ? incidentTargets(currentAgent) : []
   const hasTechnicalDetails = Boolean(
     incident.result || incident.details.length > 0,
   )
@@ -98,77 +85,49 @@ export const IncidentSequence = memo(function IncidentSequence({
         ))}
       </ol>
 
-      {(hasTechnicalDetails || targets.length > 0) && (
+      {hasTechnicalDetails && (
         <div className="mt-5 flex flex-wrap items-start justify-between gap-2 border-t border-border/40 pt-2">
-          {hasTechnicalDetails && (
-            <details className="group/details min-w-0 flex-1">
-              <summary
-                className={cn(
-                  controle("compacto"),
-                  "w-max cursor-pointer list-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden",
-                )}
-              >
-                <ChevronRight className="size-3.5 transition-transform group-open/details:rotate-90" />
-                Detalhes técnicos
-              </summary>
-              <div className="mt-2 rounded-md bg-secondary/60 px-3 py-2.5">
-                {incident.result && (
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-                    <TurnTelemetry
+          <details className="group/details min-w-0 flex-1">
+            <summary
+              className={cn(
+                controle("compacto"),
+                "w-max cursor-pointer list-none text-muted-foreground transition-colors hover:bg-accent hover:text-foreground [&::-webkit-details-marker]:hidden",
+              )}
+            >
+              <ChevronRight className="size-3.5 transition-transform group-open/details:rotate-90" />
+              Detalhes técnicos
+            </summary>
+            <div className="mt-2 rounded-md bg-secondary/60 px-3 py-2.5">
+              {incident.result && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                  <TurnTelemetry
+                    it={incident.result}
+                    incidentTone={
+                      presentation.severity === "limit" ? "limit" : undefined
+                    }
+                  />
+                  {feedback && (
+                    <TurnActions
                       it={incident.result}
-                      incidentTone={
-                        presentation.severity === "limit" ? "limit" : undefined
-                      }
+                      feedbackText={feedbackText}
+                      api={feedback}
                     />
-                    {feedback && (
-                      <TurnActions
-                        it={incident.result}
-                        feedbackText={feedbackText}
-                        api={feedback}
-                      />
-                    )}
-                  </div>
-                )}
-                {incident.details.length > 0 && (
-                  <div
-                    data-selectable
-                    className={cn(
-                      "max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground",
-                      incident.result &&
-                        "mt-2 border-t border-border/40 pt-2",
-                    )}
-                  >
-                    {incident.details.join("\n")}
-                  </div>
-                )}
-              </div>
-            </details>
-          )}
-
-          {targets.length > 0 && onContinueWith && (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button type="button" size="compacto" variant="ghost">
-                  Continuar com outro agente
-                  <ChevronDown className="size-3.5" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                align="end"
-                sideOffset={6}
-                className="z-[120] min-w-56"
-              >
-                {targets.map((target) => (
-                  <DropdownMenuItem
-                    key={target.id}
-                    onSelect={() => onContinueWith(target.id)}
-                  >
-                    Continuar no {target.label}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          )}
+                  )}
+                </div>
+              )}
+              {incident.details.length > 0 && (
+                <div
+                  data-selectable
+                  className={cn(
+                    "max-h-40 overflow-y-auto font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-muted-foreground",
+                    incident.result && "mt-2 border-t border-border/40 pt-2",
+                  )}
+                >
+                  {incident.details.join("\n")}
+                </div>
+              )}
+            </div>
+          </details>
         </div>
       )}
     </section>

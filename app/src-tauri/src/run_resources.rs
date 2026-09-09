@@ -5,8 +5,10 @@
 //! limites: um CLI também pode consumir memória dentro do próprio heap sem
 //! publicar byte algum.
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
 use std::process::Stdio;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tokio::process::Command;
 use tokio::time::{Duration, Interval};
@@ -15,6 +17,13 @@ pub(crate) const MAX_PROTOCOL_LINE_BYTES: usize = 64 * 1024 * 1024;
 pub(crate) const STDERR_TAIL_BYTES: usize = 64 * 1024;
 const MEMORY_WARNING_LEVELS_MB: [u64; 5] = [2 * 1024, 4 * 1024, 8 * 1024, 16 * 1024, 32 * 1024];
 const MEMORY_POLL_INTERVAL: Duration = Duration::from_secs(5);
+
+pub(crate) fn epoch_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
 
 #[derive(Debug)]
 pub(crate) enum LineReadError {
@@ -26,6 +35,11 @@ impl fmt::Display for LineReadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Io(error) => write!(formatter, "falha lendo o stream do motor: {error}"),
+            Self::TooLong { limit } if *limit < 1024 * 1024 => write!(
+                formatter,
+                "uma linha do stream excedeu o limite de {} KiB",
+                limit / 1024
+            ),
             Self::TooLong { limit } => write!(
                 formatter,
                 "uma linha do stream excedeu o limite de {} MiB",
@@ -52,7 +66,7 @@ where
         Self::with_limit(reader, MAX_PROTOCOL_LINE_BYTES)
     }
 
-    fn with_limit(reader: R, max_bytes: usize) -> Self {
+    pub(crate) fn with_limit(reader: R, max_bytes: usize) -> Self {
         Self {
             inner: BufReader::new(reader),
             frame: Vec::with_capacity(max_bytes.min(64 * 1024)),
@@ -166,86 +180,146 @@ where
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum MemoryEvent {
-    Warning { rss_mb: u64 },
+pub(crate) struct ProcessObservation {
+    /// `None` significa que o sistema operacional não respondeu à sonda.
+    pub(crate) main_alive: Option<bool>,
+    pub(crate) descendants: Option<u32>,
+    pub(crate) rss_mb: Option<u64>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResourceEvent {
+    pub(crate) observation: ProcessObservation,
+    /// Só sobe quando cruza um novo patamar. RSS descreve recurso, nunca
+    /// progresso do agente.
+    pub(crate) warning_rss_mb: Option<u64>,
 }
 
 pub(crate) struct ProcessMemoryWatch {
-    pids: Vec<u32>,
+    root_pid: Option<u32>,
     interval: Interval,
     next_warning: usize,
 }
 
 impl ProcessMemoryWatch {
     pub(crate) fn new(child_pid: Option<u32>) -> Self {
-        let mut pids = vec![std::process::id()];
-        if let Some(pid) = child_pid.filter(|pid| *pid != std::process::id()) {
-            pids.push(pid);
-        }
         Self {
-            pids,
+            root_pid: child_pid,
             interval: tokio::time::interval(MEMORY_POLL_INTERVAL),
             next_warning: 0,
         }
     }
 
-    pub(crate) async fn next(&mut self) -> MemoryEvent {
-        loop {
-            self.interval.tick().await;
-            let Some(rss_mb) = process_rss_mb(&self.pids).await else {
-                continue;
-            };
-            let Some(threshold) = MEMORY_WARNING_LEVELS_MB.get(self.next_warning) else {
-                std::future::pending::<()>().await;
-                unreachable!();
-            };
-            if rss_mb >= *threshold {
+    pub(crate) async fn next(&mut self) -> ResourceEvent {
+        self.interval.tick().await;
+        let observation = process_tree_observation(self.root_pid).await;
+        let mut warning_rss_mb = None;
+        if let Some(rss_mb) = observation.rss_mb {
+            if MEMORY_WARNING_LEVELS_MB
+                .get(self.next_warning)
+                .is_some_and(|threshold| rss_mb >= *threshold)
+            {
                 while MEMORY_WARNING_LEVELS_MB
                     .get(self.next_warning)
                     .is_some_and(|level| rss_mb >= *level)
                 {
                     self.next_warning += 1;
                 }
-                return MemoryEvent::Warning { rss_mb };
+                warning_rss_mb = Some(rss_mb);
             }
+        }
+        ResourceEvent {
+            observation,
+            warning_rss_mb,
         }
     }
 }
 
-async fn process_rss_mb(pids: &[u32]) -> Option<u64> {
+async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
+    let Some(root_pid) = root_pid else {
+        return ProcessObservation {
+            main_alive: None,
+            descendants: None,
+            rss_mb: None,
+        };
+    };
     #[cfg(unix)]
     {
-        let pid_list = pids
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
         let output = Command::new("ps")
-            .args(["-o", "pid=,rss=", "-p", &pid_list])
+            .args(["-axo", "pid=,ppid=,rss="])
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
             .await
-            .ok()?;
-        Some(rss_kb_for_pids(&String::from_utf8_lossy(&output.stdout), pids) / 1024)
+            .ok();
+        match output.filter(|value| value.status.success()) {
+            Some(output) => {
+                process_tree_from_ps(&String::from_utf8_lossy(&output.stdout), root_pid)
+            }
+            None => ProcessObservation {
+                main_alive: None,
+                descendants: None,
+                rss_mb: None,
+            },
+        }
     }
     #[cfg(not(unix))]
     {
-        let _ = pids;
-        None
+        let _ = root_pid;
+        ProcessObservation {
+            main_alive: None,
+            descendants: None,
+            rss_mb: None,
+        }
     }
 }
 
-fn rss_kb_for_pids(table: &str, pids: &[u32]) -> u64 {
-    table
+fn process_tree_from_ps(table: &str, root_pid: u32) -> ProcessObservation {
+    let rows = table
         .lines()
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
-            let pid = fields.next()?.parse::<u32>().ok()?;
-            let rss = fields.next()?.parse::<u64>().ok()?;
-            pids.contains(&pid).then_some(rss)
+            Some((
+                fields.next()?.parse::<u32>().ok()?,
+                fields.next()?.parse::<u32>().ok()?,
+                fields.next()?.parse::<u64>().ok()?,
+            ))
         })
-        .sum()
+        .collect::<Vec<_>>();
+    if !rows.iter().any(|(pid, _, _)| *pid == root_pid) {
+        return ProcessObservation {
+            main_alive: Some(false),
+            descendants: Some(0),
+            rss_mb: Some(0),
+        };
+    }
+
+    let rss_by_pid = rows
+        .iter()
+        .map(|(pid, _, rss)| (*pid, *rss))
+        .collect::<HashMap<_, _>>();
+    let mut children = HashMap::<u32, Vec<u32>>::new();
+    for (pid, ppid, _) in rows {
+        children.entry(ppid).or_default().push(pid);
+    }
+    let mut seen = HashSet::from([root_pid]);
+    let mut queue = VecDeque::from([root_pid]);
+    while let Some(parent) = queue.pop_front() {
+        for child in children.get(&parent).into_iter().flatten() {
+            if seen.insert(*child) {
+                queue.push_back(*child);
+            }
+        }
+    }
+    let rss_kb = seen
+        .iter()
+        .filter_map(|pid| rss_by_pid.get(pid))
+        .sum::<u64>();
+    ProcessObservation {
+        main_alive: Some(true),
+        descendants: Some(seen.len().saturating_sub(1) as u32),
+        rss_mb: Some(rss_kb / 1024),
+    }
 }
 
 #[cfg(test)]
@@ -293,8 +367,29 @@ mod tests {
     }
 
     #[test]
-    fn soma_apenas_o_rss_dos_processos_observados() {
-        let table = "94445 131072\n95402 3145728\n94461 390144\n";
-        assert_eq!(rss_kb_for_pids(table, &[94445, 95402]), 3_276_800);
+    fn arvore_soma_apenas_raiz_e_descendentes_do_run() {
+        // Fixture no formato real de `ps -axo pid=,ppid=,rss=`. O processo
+        // 77 pertence a outro run e não pode contaminar memória nem contagem.
+        let table = "10 1 1024\n11 10 2048\n12 11 3072\n77 1 8192\n";
+        assert_eq!(
+            process_tree_from_ps(table, 10),
+            ProcessObservation {
+                main_alive: Some(true),
+                descendants: Some(2),
+                rss_mb: Some(6),
+            }
+        );
+    }
+
+    #[test]
+    fn arvore_confirma_quando_o_processo_principal_morreu() {
+        assert_eq!(
+            process_tree_from_ps("77 1 8192\n", 10),
+            ProcessObservation {
+                main_alive: Some(false),
+                descendants: Some(0),
+                rss_mb: Some(0),
+            }
+        );
     }
 }

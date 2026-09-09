@@ -5,11 +5,24 @@ import { ensureComposerDraftTables } from "@/lib/db/schema"
 export interface PersistedComposerDraft {
   text: string
   attachments: Attachment[]
+  mentionValues: string[]
 }
 
 interface DraftRow {
   text: string
   attachments: string
+  mention_values: string
+}
+
+function parseStrings(raw: string): string[] {
+  try {
+    const value: unknown = JSON.parse(raw)
+    return Array.isArray(value)
+      ? [...new Set(value.filter((item): item is string => typeof item === "string"))]
+      : []
+  } catch {
+    return []
+  }
 }
 
 function parseAttachments(raw: string): Attachment[] {
@@ -35,11 +48,15 @@ export async function loadComposerDraft(
   if (!db) return null
   await ensureComposerDraftTables(db)
   const rows = await db.select<DraftRow[]>(
-    "SELECT text, attachments FROM conversation_drafts WHERE conversation_id = $1",
+    "SELECT text, attachments, mention_values FROM conversation_drafts WHERE conversation_id = $1",
     [conversationId],
   )
   if (!rows.length) return null
-  return { text: rows[0].text, attachments: parseAttachments(rows[0].attachments) }
+  return {
+    text: rows[0].text,
+    attachments: parseAttachments(rows[0].attachments),
+    mentionValues: parseStrings(rows[0].mention_values),
+  }
 }
 
 export async function saveComposerDraft(
@@ -54,13 +71,20 @@ export async function saveComposerDraft(
     return
   }
   await db.execute(
-    `INSERT INTO conversation_drafts (conversation_id, text, attachments, updated_at)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO conversation_drafts (conversation_id, text, attachments, mention_values, updated_at)
+     VALUES ($1, $2, $3, $4, $5)
      ON CONFLICT(conversation_id) DO UPDATE SET
        text = excluded.text,
        attachments = excluded.attachments,
+       mention_values = excluded.mention_values,
        updated_at = excluded.updated_at`,
-    [conversationId, draft.text, JSON.stringify(draft.attachments), Date.now()],
+    [
+      conversationId,
+      draft.text,
+      JSON.stringify(draft.attachments),
+      JSON.stringify(draft.mentionValues),
+      Date.now(),
+    ],
   )
 }
 

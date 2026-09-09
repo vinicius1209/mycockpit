@@ -85,7 +85,54 @@ export async function readProjectCommands(
   return invoke<SlashCommand[]>("read_project_commands", { path, agent })
 }
 
-/** Lista arquivos do projeto (respeita .gitignore) p/ o "@". */
-export async function listProjectFiles(path: string): Promise<string[]> {
-  return invoke<string[]>("list_project_files", { path })
+export interface ProjectDirEntry {
+  name: string
+  relPath: string
+  kind: "directory" | "file"
+  isSymlink: boolean
+}
+
+export interface ProjectDirPage {
+  parent: string
+  entries: ProjectDirEntry[]
+  nextCursor: string | null
+  truncated: boolean
+  rootRevision: string
+}
+
+export interface ProjectFileSearchPage {
+  query: string
+  entries: ProjectDirEntry[]
+  nextCursor: string | null
+  truncated: boolean
+  source: "git" | "ignored-walk"
+  rootRevision: string
+}
+
+export async function listDirChildren(input: {
+  root: string
+  relPath?: string
+  cursor?: string | null
+  limit?: number
+}): Promise<ProjectDirPage> {
+  return invoke<ProjectDirPage>("list_dir_children", {
+    root: input.root,
+    relPath: input.relPath ?? "",
+    cursor: input.cursor ?? null,
+    limit: input.limit,
+  })
+}
+
+export async function searchProjectFiles(input: {
+  root: string
+  query: string
+  cursor?: string | null
+  limit?: number
+}): Promise<ProjectFileSearchPage> {
+  return invoke<ProjectFileSearchPage>("search_project_files", {
+    root: input.root,
+    query: input.query,
+    cursor: input.cursor ?? null,
+    limit: input.limit,
+  })
 }

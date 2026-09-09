@@ -19,6 +19,14 @@ export type AgentEvent =
   | { type: "run_manifest"; manifest: EffectiveRunManifest }
   | { type: "preflight_blocked"; gate: McpPreflightGate }
   | { type: "started" }
+  | {
+      type: "run_status"
+      main_alive: boolean | null
+      descendants: number | null
+      rss_mb: number | null
+      last_byte_at: number | null
+      observed_at: number
+    }
   | { type: "startup_failed"; message: string }
   | { type: "session"; session_id: string; model: string | null; tools: number }
   | { type: "text"; text: string }

@@ -1,6 +1,6 @@
 # Arquitetura atual
 
-> Documento vivo, revisado em 05/09/2026. Para comportamento por agente, as
+> Documento vivo, revisado em 09/09/2026. Para comportamento por agente, as
 > fontes executáveis são `app/src-tauri/src/adapters.rs` e os espelhos
 > `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`. Planos e matrizes
 > datadas explicam decisões, mas não substituem esses registries.
@@ -47,6 +47,12 @@ continuar executando quando outra superfície ou outro projeto está visível; a
 sidebar e a faixa de status exibem o estado real sem transformar seleção em
 atividade.
 
+Trocas de projeto e conversa aplicam primeiro um shell sem conteúdo velho e
+resolvem dados por cache, single-flight e geração. A aba Arquivos lista um nível
+por pedido; a busca recursiva é paginada, ignore-aware, recusada para a Home e
+compartilhada com o autocomplete de `@`. Contexto, fontes, patch e retrospectiva
+só trabalham quando a superfície consumidora está visível.
+
 Planos de voo separa biblioteca e prancheta. O modo Tela cheia é uma camada
 fixa de apresentação abaixo da barra superior; ele cobre o esqueleto
 redimensionável, mas não cria outra árvore de estado nem altera o preset. Ver
@@ -77,7 +83,9 @@ efeito.
 2. O gesto de enviar resolve projeto, cwd, permissão, agente, modelo e anexos.
 3. O frontend inicia o turno em `store/chat.ts`; `agent.rs` abre a CLI e envia
    `AgentEvent` normalizado por `Channel`.
-4. O reducer anexa eventos ao transcript e persiste `conversations.items`.
+4. O reducer anexa eventos ao transcript e publica somente as posições
+   alteradas em `conversation_items`; o snapshot `conversations.items` continua
+   sendo compactado em repouso/terminal como fallback de rollback.
 5. Só depois do envio aceito o rascunho é limpo. Trocar de conversa ou reiniciar
    o app não apaga texto nem anexos pendentes.
 
@@ -141,7 +149,13 @@ nunca recebem sinal.
 - `app/src-tauri/src/tool_gateway.rs`: Tool Catalog por run, hoje materializado
   como o MCP interno `mc-tools` para adapters com essa capability.
 - `app/src-tauri/src/work_gateway.rs`: processos longos iniciados por ferramenta
-  e telemetria de trabalho.
+  e telemetria de trabalho; saída cruza a ponte como delta sequenciado.
+- `app/src-tauri/src/run_resources.rs`: cauda limitada e liveness factual da
+  árvore enraizada no processo do run, sem converter vida em progresso.
+- `app/src-tauri/src/project_files.rs`: navegação rasa e busca paginada de
+  arquivos fora da thread Tauri, com contenção de raiz, ignore e symlinks.
+- `app/src-tauri/src/conversation_items.rs`: aplicação transacional do journal
+  incremental e validação fechada da revisão antes da leitura preferencial.
 - `app/src-tauri/src/utility.rs`: gateway tipado e limitado para inferências
   auxiliares; o mapa usa o sidecar one-shot `intelligence/main.swift` no Mac.
 - `app/src-tauri/src/git.rs` e `app/src/lib/git.ts`: fronteira de controle de
@@ -179,6 +193,8 @@ Entidades centrais:
 
 - `projects`: caminho, política e ordenação;
 - `conversations`: transcript serializado, sessão, agente, modelo e contexto;
+- `conversation_items`, `conversation_item_state`: journal posicional e revisão
+  atômica do transcript, com o snapshot integral acima como fallback;
 - `conversation_drafts`: texto, anexos e atualização do rascunho por conversa;
 - `turn_costs`: ledger de custo por turno;
 - `conversation_maps`, `conversation_map_pins`: leitura derivada e correções

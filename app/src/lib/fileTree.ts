@@ -110,3 +110,47 @@ export function visibleProjectFileNodes(
 export function fileName(path: string): string {
   return path.split("/").pop() || path
 }
+
+export interface LazyProjectFileEntry {
+  kind: "directory" | "file"
+  name: string
+  relPath: string
+  isSymlink: boolean
+}
+
+export interface VisibleLazyProjectFileEntry {
+  node: LazyProjectFileEntry
+  depth: number
+  parentPath: string | null
+}
+
+/** Projeta somente os ramos já recebidos do backend e abertos pela pessoa. */
+export function visibleLazyProjectFileEntries(
+  byDirectory: Readonly<Record<string, readonly LazyProjectFileEntry[]>>,
+  expanded: ReadonlySet<string>,
+): VisibleLazyProjectFileEntry[] {
+  const visible: VisibleLazyProjectFileEntry[] = []
+  function visit(parent: string, depth: number) {
+    for (const node of byDirectory[parent] ?? []) {
+      visible.push({ node, depth, parentPath: parent || null })
+      if (
+        node.kind === "directory" &&
+        !node.isSymlink &&
+        expanded.has(node.relPath)
+      ) {
+        visit(node.relPath, depth + 1)
+      }
+    }
+  }
+  visit("", 0)
+  return visible
+}
+
+export function mergeProjectFileEntries(
+  current: readonly LazyProjectFileEntry[],
+  next: readonly LazyProjectFileEntry[],
+): LazyProjectFileEntry[] {
+  const byPath = new Map(current.map((entry) => [entry.relPath, entry]))
+  for (const entry of next) byPath.set(entry.relPath, entry)
+  return [...byPath.values()]
+}

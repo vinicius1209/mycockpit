@@ -19,10 +19,8 @@ import { describe, expect, it } from "vitest"
 import {
   AutoResumeBanner,
   BlockedDirBanner,
-  CotaEsgotadaBanner,
   MotorAusenteBanner,
   PreflightGateBanner,
-  RevezamentoStagedBanner,
 } from "@/components/chat/ComposerBanners"
 import { RESUME_REASON_LIMIT } from "@/lib/autoResume"
 import { PENDING_DECISION } from "@/lib/attention"
@@ -190,59 +188,5 @@ describe("PreflightGateBanner", () => {
   it("mantém uma única ação primária quando há alternativas", () => {
     expect(html.match(/data-variant="default"/g)).toHaveLength(1)
     expect(html.match(/data-variant="ghost"/g)).toHaveLength(2)
-  })
-})
-
-describe("revezamento proativo", () => {
-  it("oferece alternativas dentro da superfície de decisão", () => {
-    const html = renderToStaticMarkup(
-      <CotaEsgotadaBanner
-        agentLabel="Codex"
-        resetHint="em 4d 15h"
-        alternatives={[
-          { id: "claude-code", label: "Claude Code" },
-          { id: "agy", label: "Antigravity" },
-        ]}
-        onSelect={() => {}}
-      />,
-    )
-    expect(html).toContain("Codex chegou ao limite de uso")
-    expect(html).toContain("Volta em 4d 15h")
-    expect(html).toContain("Usar Claude Code")
-    expect(html).toContain("Usar Antigravity")
-    for (const parte of PENDING_DECISION.split(" ")) {
-      expect(html).toContain(parte)
-    }
-    expect(html.match(/data-variant="default"/g)).toHaveLength(1)
-  })
-
-  it("não inventa saída quando nenhum outro motor foi confirmado", () => {
-    const html = renderToStaticMarkup(
-      <CotaEsgotadaBanner
-        agentLabel="Codex"
-        resetHint={null}
-        alternatives={[]}
-        onSelect={() => {}}
-      />,
-    )
-    expect(html).toContain("Nenhum outro motor disponível foi confirmado")
-    expect(html).not.toContain(">Usar ")
-  })
-
-  it("distingue troca preparada de troca já confirmada", () => {
-    const html = renderToStaticMarkup(
-      <RevezamentoStagedBanner
-        sourceLabel="Codex"
-        targetLabel="Claude Code"
-        onUndo={() => {}}
-      />,
-    )
-    expect(html).toContain("Próximo envio: Claude Code no lugar de Codex")
-    expect(html).toContain("só será confirmada quando o novo motor abrir a sessão")
-    expect(html).toContain("Desfazer")
-    expect(html).toContain("border bg-card")
-    for (const parte of PENDING_DECISION.split(" ")) {
-      expect(html).not.toContain(parte)
-    }
   })
 })

@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light" data-scenario="interrupted">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frota · Continuidade unificada</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fbfbfa;
+      --rail: #f6f6f4;
+      --foreground: #16181b;
+      --card: #ffffff;
+      --secondary: #f4f4f2;
+      --muted-foreground: #5c6166;
+      --faint: #8a9099;
+      --border: rgba(0, 0, 0, 0.09);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --sel: rgba(0, 0, 0, 0.055);
+      --brass: #a9742b;
+      --queued: #c1861f;
+      --success: #1f9d6b;
+      --shadow-sm: 0 1px 2px rgba(20, 22, 25, 0.08);
+      --shadow-pop: 0 12px 40px -8px rgba(20, 22, 25, 0.18);
+      --radius: 9px;
+      --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #0a0b0d;
+      --rail: #0c0d10;
+      --foreground: #e7e8ea;
+      --card: #141619;
+      --secondary: #191c20;
+      --muted-foreground: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.13);
+      --sel: rgba(255, 255, 255, 0.065);
+      --brass: #e4a862;
+      --queued: #d99138;
+      --success: #5bd6a0;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      padding: 20px;
+      background: var(--background);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--brass);
+      outline-offset: 2px;
+    }
+    svg { display: block; }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+    .review {
+      max-width: 1440px;
+      margin: 0 auto 16px;
+      display: flex;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .review-copy { min-width: 250px; }
+    .review-copy strong { display: block; font-size: 14px; font-weight: 650; }
+    .review-copy span { display: block; margin-top: 2px; color: var(--muted-foreground); font-size: 12px; }
+
+    .scenario-switch {
+      display: flex;
+      padding: 3px;
+      margin-left: auto;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .scenario-switch button, .theme-button {
+      height: 28px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      cursor: pointer;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+
+    .scenario-switch button[aria-selected="true"] {
+      color: var(--foreground);
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+      font-weight: 600;
+    }
+
+    .theme-button {
+      flex: none;
+      border: 1px solid var(--border);
+      background: var(--card);
+      color: var(--foreground);
+    }
+
+    .layout {
+      max-width: 1440px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(720px, 1fr) 276px;
+      gap: 16px;
+      align-items: start;
+    }
+
+    .window {
+      min-height: 790px;
+      overflow: hidden;
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      background: var(--card);
+      box-shadow: var(--shadow-pop);
+    }
+
+    .titlebar {
+      height: 42px;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      align-items: center;
+      padding: 0 14px;
+      background: var(--background);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .traffic { display: flex; align-items: center; gap: 7px; }
+    .traffic i { width: 11px; height: 11px; border-radius: 50%; }
+    .traffic i:nth-child(1) { background: #ff5f57; }
+    .traffic i:nth-child(2) { background: #febc2e; }
+    .traffic i:nth-child(3) { background: #28c840; }
+    .traffic b { margin-left: 12px; font-size: 12px; font-weight: 600; }
+
+    .mode-tabs {
+      display: flex;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: var(--rail);
+    }
+    .mode-tabs span { padding: 3px 15px; color: var(--muted-foreground); font-size: 12px; }
+    .mode-tabs .active { border-radius: 16px; background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+    .window-actions { justify-self: end; color: var(--muted-foreground); font-size: 12px; }
+
+    .workspace {
+      min-height: 748px;
+      display: grid;
+      grid-template-columns: 184px minmax(0, 1fr);
+    }
+
+    .sidebar {
+      padding: 22px 10px;
+      background: var(--rail);
+      border-right: 1px solid var(--border);
+    }
+    .side-label { margin: 0 8px 8px; color: var(--faint); font: 10px/1.2 var(--mono); text-transform: uppercase; letter-spacing: .06em; }
+    .side-row {
+      height: 32px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      padding: 0 9px;
+      border-radius: 7px;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .side-row.active { background: var(--sel); color: var(--foreground); font-weight: 600; }
+    .side-row .folder { color: var(--faint); }
+
+    .conversation {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+    }
+
+    .conversation-head {
+      height: 36px;
+      display: flex;
+      align-items: center;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .conversation-tab { padding: 4px 9px; border-radius: 6px; background: var(--secondary); font-size: 11px; }
+
+    .thread {
+      flex: 1;
+      min-height: 0;
+      padding: 30px clamp(32px, 7vw, 86px) 12px;
+      overflow: hidden;
+    }
+
+    .message { max-width: 760px; margin: 0 auto; font-size: 14px; line-height: 1.58; }
+    .message p { margin: 0 0 12px; }
+    .message ul { margin: 0 0 14px; padding-left: 19px; }
+    .message li { margin: 4px 0; }
+    .tool {
+      height: 30px;
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      margin: 14px 0;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .tool .check { color: var(--success); }
+    .tool .meta { margin-left: auto; color: var(--faint); font-family: var(--mono); font-size: 11px; }
+
+    .turn-result {
+      max-width: 760px;
+      margin: 20px auto 0;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .turn-result .event {
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      color: var(--muted-foreground);
+      font-size: 12px;
+    }
+    .event-dot {
+      width: 9px;
+      height: 2px;
+      margin-top: 8px;
+      border-radius: 1px;
+      background: var(--faint);
+    }
+    .event strong { color: var(--foreground); font-weight: 600; }
+    .event-note { margin-left: auto; padding-left: 20px; color: var(--faint); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+
+    .bottom {
+      padding: 0 clamp(24px, 6vw, 68px) 28px;
+    }
+
+    .continuity {
+      max-width: 792px;
+      margin: 0 auto 10px;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+      overflow: visible;
+    }
+
+    .continuity-main {
+      display: grid;
+      grid-template-columns: 20px minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 13px 14px 12px;
+      align-items: start;
+    }
+
+    .continuity-mark {
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      margin-top: 1px;
+      border: 1px solid color-mix(in srgb, var(--queued) 55%, transparent);
+      border-radius: 50%;
+      color: var(--queued);
+    }
+
+    .continuity-copy { min-width: 0; }
+    .continuity-copy h2 { margin: 0; font-size: 13px; line-height: 18px; font-weight: 650; }
+    .continuity-copy p { margin: 3px 0 0; max-width: 540px; color: var(--muted-foreground); font-size: 12px; line-height: 1.45; }
+
+    .agent-choice {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--card) 82%, transparent);
+    }
+    .agent-choice button {
+      height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .agent-choice button[aria-pressed="true"] { background: var(--sel); color: var(--foreground); font-weight: 600; }
+
+    .continuity-footer {
+      min-height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 7px 9px 7px 44px;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+    }
+
+    details { position: relative; }
+    details summary { color: var(--muted-foreground); cursor: pointer; list-style: none; font-size: 11px; }
+    details summary::-webkit-details-marker { display: none; }
+    details summary::before { content: "›"; display: inline-block; margin-right: 5px; transition: transform 120ms ease; }
+    details[open] summary::before { transform: rotate(90deg); }
+    .payload {
+      position: absolute;
+      left: -2px;
+      bottom: 27px;
+      z-index: 3;
+      width: 300px;
+      padding: 10px 12px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: var(--shadow-pop);
+    }
+    .payload strong { display: block; margin-bottom: 6px; font-size: 12px; }
+    .payload ul { margin: 0; padding: 0; list-style: none; color: var(--muted-foreground); font-size: 11px; }
+    .payload li { display: flex; gap: 7px; margin: 5px 0; }
+    .payload li::before { content: "✓"; color: var(--success); }
+
+    .decision-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; }
+    .quiet-action, .primary-action {
+      height: 28px;
+      padding: 0 11px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .quiet-action { border: 0; background: transparent; color: var(--muted-foreground); }
+    .primary-action { border: 1px solid var(--foreground); background: var(--foreground); color: var(--background); }
+    .primary-action:hover { opacity: .88; }
+
+    .composer {
+      max-width: 792px;
+      min-height: 105px;
+      margin: 0 auto;
+      padding: 15px 16px 11px;
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+    }
+    .composer-placeholder { min-height: 48px; color: var(--muted-foreground); font-size: 14px; }
+    .composer-foot { display: flex; align-items: center; gap: 12px; }
+    .composer-icon { color: var(--muted-foreground); font-size: 17px; }
+    .engine { display: flex; align-items: center; gap: 5px; color: var(--muted-foreground); font-size: 12px; }
+    .send {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      margin-left: auto;
+      border: 0;
+      border-radius: 50%;
+      background: var(--faint);
+      color: var(--background);
+      font-size: 16px;
+    }
+
+    .notes {
+      position: sticky;
+      top: 20px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      overflow: hidden;
+    }
+    .notes-head { padding: 14px 15px 12px; border-bottom: 1px solid var(--border); }
+    .notes-head span { color: var(--faint); font: 10px var(--mono); text-transform: uppercase; letter-spacing: .07em; }
+    .notes-head h1 { margin: 5px 0 0; font-size: 14px; line-height: 1.35; }
+    .note { display: grid; grid-template-columns: 20px 1fr; gap: 8px; padding: 13px 15px; border-bottom: 1px solid var(--border); }
+    .note:last-child { border-bottom: 0; }
+    .note-number { color: var(--brass); font: 11px/1.6 var(--mono); }
+    .note strong { display: block; margin-bottom: 3px; font-size: 12px; }
+    .note p { margin: 0; color: var(--muted-foreground); font-size: 11px; line-height: 1.5; }
+
+    .only-next { display: none; }
+    [data-scenario="next"] .only-interrupted { display: none; }
+    [data-scenario="next"] .only-next { display: revert; }
+
+    .toast {
+      position: fixed;
+      right: 20px;
+      bottom: 20px;
+      z-index: 10;
+      max-width: 360px;
+      padding: 10px 13px;
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: var(--shadow-pop);
+      color: var(--muted-foreground);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(8px);
+      pointer-events: none;
+      transition: opacity 140ms ease, transform 140ms ease;
+    }
+    .toast.visible { opacity: 1; transform: translateY(0); }
+    .toast strong { color: var(--foreground); }
+
+    @media (max-width: 1080px) {
+      .layout { grid-template-columns: 1fr; }
+      .notes { position: static; display: grid; grid-template-columns: repeat(3, 1fr); }
+      .notes-head { grid-column: 1 / -1; }
+      .note { border-bottom: 0; border-right: 1px solid var(--border); }
+      .note:last-child { border-right: 0; }
+    }
+
+    @media (max-width: 780px) {
+      body { padding: 10px; }
+      .review { align-items: stretch; flex-wrap: wrap; }
+      .scenario-switch { order: 3; width: 100%; margin: 0; }
+      .scenario-switch button { flex: 1; }
+      .layout { display: block; }
+      .window { min-height: 720px; }
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+      .titlebar { grid-template-columns: 1fr auto; }
+      .mode-tabs { display: none; }
+      .thread { padding: 24px 18px 10px; }
+      .bottom { padding: 0 12px 18px; }
+      .continuity-main { grid-template-columns: 20px 1fr; }
+      .agent-choice {
+        grid-column: 2;
+        display: grid;
+        grid-template-columns: repeat(3, max-content);
+        max-width: 100%;
+        overflow-x: auto;
+        justify-self: stretch;
+      }
+      .continuity-footer { padding-left: 44px; flex-wrap: wrap; }
+      .decision-actions { width: 100%; margin-left: 0; }
+      .primary-action { flex: 1; }
+      .notes { margin-top: 12px; grid-template-columns: 1fr; }
+      .note { border-right: 0; border-bottom: 1px solid var(--border); }
+      .event-note { display: none; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="review">
+    <div class="review-copy">
+      <strong>Continuidade unificada</strong>
+      <span>O mesmo componente, com resultado explícito para cada situação.</span>
+    </div>
+    <div class="scenario-switch" role="tablist" aria-label="Situação simulada">
+      <button type="button" role="tab" aria-selected="true" data-set-scenario="interrupted">Pedido interrompido</button>
+      <button type="button" role="tab" aria-selected="false" data-set-scenario="next">Próximo turno</button>
+    </div>
+    <button class="theme-button" type="button" id="themeButton">Tema escuro</button>
+  </header>
+
+  <div class="layout">
+    <main class="window" aria-label="Mock da conversa no Frota">
+      <header class="titlebar">
+        <div class="traffic"><i></i><i></i><i></i><b>Frota</b></div>
+        <div class="mode-tabs" aria-hidden="true"><span>Painel</span><span class="active">Trabalho</span><span>Features</span></div>
+        <div class="window-actions">Buscar&nbsp;&nbsp; Notas&nbsp;&nbsp; ⚙</div>
+      </header>
+
+      <div class="workspace">
+        <aside class="sidebar" aria-label="Projetos">
+          <p class="side-label">Geral</p>
+          <div class="side-row">⌁ <span>Frota</span></div>
+          <div class="side-row">◷ <span>Agendamentos</span></div>
+          <div class="side-row">⌘ <span>Planos de voo</span></div>
+          <p class="side-label" style="margin-top: 22px">Projetos</p>
+          <div class="side-row active"><span class="folder">□</span><span>mycockpit</span></div>
+          <div class="side-row"><span>↳</span><span>desempenho</span></div>
+          <div class="side-row"><span>↳</span><span>Sobre lentidão</span></div>
+        </aside>
+
+        <section class="conversation">
+          <header class="conversation-head"><span class="conversation-tab">▢&nbsp; Conversa</span></header>
+
+          <div class="thread">
+            <article class="message">
+              <p class="only-interrupted">Vou repetir as falhas isoladamente para separar instabilidade por carga de uma regressão real.</p>
+              <div class="only-next">
+                <p>Validação final concluída:</p>
+                <ul>
+                  <li>3.979 testes frontend passaram.</li>
+                  <li>758 testes Rust passaram, 7 exigem prova manual.</li>
+                  <li>TypeScript e build de produção passaram.</li>
+                </ul>
+                <p>Nenhuma alteração foi publicada.</p>
+              </div>
+              <div class="tool"><span class="check">✓</span><span>Inspecionar alterações</span><span class="meta">1 shell</span></div>
+            </article>
+
+            <div class="turn-result">
+              <div class="event">
+                <span class="event-dot"></span>
+                <span class="only-interrupted"><strong>Turno interrompido pelo limite.</strong> O pedido ficou preservado e ainda não recebeu resposta final.</span>
+                <span class="only-next"><strong>Turno concluído.</strong> A cota atual não aceita outro envio no Codex.</span>
+                <span class="event-note only-interrupted">interrompido · 22min 45s</span>
+                <span class="event-note only-next">concluído · 2h 20min</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="bottom">
+            <section class="continuity" aria-labelledby="continuityTitle">
+              <div class="continuity-main">
+                <span class="continuity-mark" aria-hidden="true">
+                  <svg width="10" height="10" viewBox="0 0 12 12" fill="none"><path d="M2 6a4 4 0 0 1 7.35-2.18M10 6a4 4 0 0 1-7.35 2.18" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M8 1.8h1.6v1.6M4 10.2H2.4V8.6" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                </span>
+                <div class="continuity-copy">
+                  <h2 id="continuityTitle"><span class="only-interrupted">O Codex parou antes de terminar</span><span class="only-next">Codex sem cota para o próximo turno</span></h2>
+                  <p class="only-interrupted">Escolha quem retoma agora o pedido que ficou pendente.</p>
+                  <p class="only-next">Este turno terminou normalmente. Escolha quem receberá o próximo pedido, sem enviar nada agora.</p>
+                </div>
+                <div class="agent-choice" aria-label="Agente de destino">
+                  <button type="button" aria-pressed="false" data-agent="Claude Code">Claude Code</button>
+                  <button type="button" aria-pressed="true" data-agent="Antigravity">Antigravity</button>
+                  <button type="button" aria-pressed="false" data-agent="OpenCode">OpenCode</button>
+                </div>
+              </div>
+
+              <div class="continuity-footer">
+                <details>
+                  <summary>O que vai junto</summary>
+                  <div class="payload">
+                    <strong>Memória pronta para continuidade</strong>
+                    <ul>
+                      <li class="only-interrupted">Pedido pendente integral</li>
+                      <li>Histórico e decisões recentes</li>
+                      <li>Arquivos alterados e estado do Git</li>
+                      <li>Regras do projeto e ferramentas disponíveis</li>
+                    </ul>
+                  </div>
+                </details>
+                <div class="decision-actions">
+                  <button type="button" class="quiet-action only-interrupted" data-dismiss>Esperar o Codex</button>
+                  <button type="button" class="quiet-action only-next" data-dismiss>Manter Codex</button>
+                  <button type="button" class="primary-action" id="primaryAction">
+                    <span class="only-interrupted">Continuar agora no <b data-agent-label>Antigravity</b></span>
+                    <span class="only-next">Usar <b data-agent-label>Antigravity</b> no próximo envio</span>
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="composer" aria-label="Composer">
+              <div class="composer-placeholder only-interrupted">Peça algo... ou / para comandos</div>
+              <div class="composer-placeholder only-next">Escreva o próximo pedido...</div>
+              <footer class="composer-foot">
+                <span class="composer-icon">⌕</span>
+                <span class="engine">Codex · Sol (5.6)⌄</span>
+                <span class="engine">♢ Liberado</span>
+                <button class="send" type="button" aria-label="Enviar">↑</button>
+              </footer>
+            </section>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <aside class="notes" aria-label="Decisões da proposta">
+      <div class="notes-head"><span>Leitura da proposta</span><h1>Uma superfície, dois resultados diferentes</h1></div>
+      <div class="note"><span class="note-number">01</span><div><strong>O fio registra o fato</strong><p>O transcript diz se o turno concluiu ou parou. Ele não oferece uma segunda ação concorrente.</p></div></div>
+      <div class="note"><span class="note-number">02</span><div><strong>A decisão mora no composer</strong><p>A mesma faixa escolhe destino, mostra elegibilidade e abre a memória de continuidade.</p></div></div>
+      <div class="note"><span class="note-number">03</span><div><strong>O verbo revela o efeito</strong><p>“Continuar agora” reenvia o pedido pendente. “No próximo envio” apenas prepara o agente.</p></div></div>
+    </aside>
+  </div>
+
+  <div class="toast" role="status" aria-live="polite" id="toast"></div>
+
+  <script>
+    const root = document.documentElement;
+    const scenarioButtons = [...document.querySelectorAll("[data-set-scenario]")];
+    const agentButtons = [...document.querySelectorAll("[data-agent]")];
+    const agentLabels = [...document.querySelectorAll("[data-agent-label]")];
+    const themeButton = document.getElementById("themeButton");
+    const primaryAction = document.getElementById("primaryAction");
+    const toast = document.getElementById("toast");
+    let selectedAgent = "Antigravity";
+    let toastTimer;
+
+    function showToast(html) {
+      toast.innerHTML = html;
+      toast.classList.add("visible");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("visible"), 3400);
+    }
+
+    scenarioButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        root.dataset.scenario = button.dataset.setScenario;
+        scenarioButtons.forEach((candidate) => {
+          candidate.setAttribute("aria-selected", String(candidate === button));
+        });
+        document.querySelectorAll("details[open]").forEach((details) => details.removeAttribute("open"));
+      });
+    });
+
+    agentButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedAgent = button.dataset.agent;
+        agentButtons.forEach((candidate) => {
+          candidate.setAttribute("aria-pressed", String(candidate === button));
+        });
+        agentLabels.forEach((label) => { label.textContent = selectedAgent; });
+      });
+    });
+
+    themeButton.addEventListener("click", () => {
+      const dark = root.dataset.theme === "dark";
+      root.dataset.theme = dark ? "light" : "dark";
+      themeButton.textContent = dark ? "Tema escuro" : "Tema claro";
+    });
+
+    primaryAction.addEventListener("click", () => {
+      if (root.dataset.scenario === "interrupted") {
+        showToast(`<strong>Gesto imediato.</strong> No produto, ${selectedAgent} receberia agora o pedido pendente e a memória preparada.`);
+      } else {
+        showToast(`<strong>Próximo envio preparado.</strong> ${selectedAgent} foi selecionado, mas nenhum pedido foi enviado.`);
+      }
+    });
+
+    document.querySelectorAll("[data-dismiss]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const text = root.dataset.scenario === "interrupted"
+          ? "A conversa permanece interrompida. Nenhum agente foi iniciado."
+          : "Codex continua selecionado. Nenhum pedido foi enviado.";
+        showToast(`<strong>Nenhuma troca feita.</strong> ${text}`);
+      });
+    });
+  </script>
+</body>
+</html>

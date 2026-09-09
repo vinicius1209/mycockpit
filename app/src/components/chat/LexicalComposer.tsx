@@ -44,7 +44,11 @@ import {
   MentionsMenuItem,
   mentionsTheme,
 } from "@/components/chat/ComposerMentionsMenu"
-import { $serializeDraft, $setDraft } from "@/components/chat/lexicalDraft"
+import {
+  $mentionedValues,
+  $serializeDraft,
+  $setDraft,
+} from "@/components/chat/lexicalDraft"
 import {
   SLASH_TRIGGER,
   slashPillCaretOffset,
@@ -497,9 +501,11 @@ export function LexicalComposer({
   onQueueSubmit,
   placeholder,
   mentionNames,
-  mentionFiles,
+  mentionPersisted,
+  mentionProjectRoot,
   mentionNotes,
   mentionTouched,
+  onMentionValuesChange,
   className,
   registerFocus,
   slash,
@@ -521,15 +527,17 @@ export function LexicalComposer({
   placeholder: string
   /** Personas conhecidas (mesma fonte do marketplace) → itens do menu `@`. */
   mentionNames: string[]
-  /** FASE 3 — arquivos do projeto (a MESMA listagem do useAtMentions, via
-   *  prop): entram no menu `@` sob "Arquivos" e viram pill `@caminho`. */
-  mentionFiles?: string[]
+  /** Pills já escolhidos: vocabulário local para restaurar o draft sem scan. */
+  mentionPersisted?: string[]
+  /** Raiz consultada por demanda somente quando a pessoa busca no `@`. */
+  mentionProjectRoot?: string
   /** N5 — endereços das notas (`nota/slug`): entram sob "Notas" e, no envio, o
    *  endereço vira o conteúdo ATUAL da nota, emoldurado. */
   mentionNotes?: string[]
   /** N7 — caminhos que a conversa TOCOU: sobem no ranqueamento dentro da mesma
    *  classe de casamento. */
   mentionTouched?: ReadonlySet<string>
+  onMentionValuesChange?: (values: string[]) => void
   /** Classes do box do input (as MESMAS do textarea, pra alinhar o cartão). */
   className?: string
   registerFocus?: (fn: () => void) => void
@@ -548,15 +556,17 @@ export function LexicalComposer({
 }) {
   // último texto emitido/recebido — evita loop OnChange ↔ DraftSync.
   const lastText = useRef<string | null>(null)
-  // Itens do "@" (FASE 3): personas + arquivos do projeto, na ORDEM que o menu
-  // agrupa (Especialistas antes de Arquivos, contíguos). A montagem é a pura
-  // buildLexicalAtItems (mesma regra de exclusão do textarea); o `kind` viaja
-  // como data do item e chega no menu/item pra separar seção e ícone.
-  const atItems = useMemo(
-    () => buildLexicalAtItems(mentionNames, mentionFiles ?? [], mentionNotes ?? []),
-    [mentionNames, mentionFiles, mentionNotes],
+  const lastMentions = useRef("")
+  // Só o conjunto quente fica local. O restante vem da busca por demanda.
+  const localFiles = useMemo(
+    () => [...new Set([...(mentionPersisted ?? []), ...(mentionTouched ?? [])])],
+    [mentionPersisted, mentionTouched],
   )
-  const buscarMencoes = useMentionSearch(atItems, mentionTouched)
+  const atItems = useMemo(
+    () => buildLexicalAtItems(mentionNames, localFiles, mentionNotes ?? []),
+    [mentionNames, localFiles, mentionNotes],
+  )
+  const buscarMencoes = useMentionSearch(atItems, mentionTouched, mentionProjectRoot)
   // Tudo que pode virar pill (persona OU caminho) — é o vocabulário que o
   // DraftSync usa pra reconstruir `@x` do draft como menção atômica.
   const mentionValues = useMemo(() => atItems.map((i) => i.value), [atItems])
@@ -609,7 +619,7 @@ export function LexicalComposer({
           // `rankearMencoes`, não a busca por substring da lib.
           triggers={["@"]}
           onSearch={buscarMencoes}
-          searchDelay={0}
+          searchDelay={120}
           menuComponent={MentionsMenu}
           menuItemComponent={MentionsMenuItem}
           // paridade com o popover do textarea: mesmo teto de itens…
@@ -624,10 +634,19 @@ export function LexicalComposer({
         <OnChangePlugin
           ignoreSelectionChange
           onChange={(editorState) => {
-            const text = editorState.read($serializeDraft)
-            if (text === lastText.current) return
-            lastText.current = text
-            onChangeText(text)
+            const snapshot = editorState.read(() => ({
+              text: $serializeDraft(),
+              mentions: $mentionedValues(),
+            }))
+            const mentionsKey = snapshot.mentions.join("\0")
+            if (mentionsKey !== lastMentions.current) {
+              lastMentions.current = mentionsKey
+              onMentionValuesChange?.(snapshot.mentions)
+            }
+            if (snapshot.text !== lastText.current) {
+              lastText.current = snapshot.text
+              onChangeText(snapshot.text)
+            }
           }}
         />
         <ComposerSubmitKeys

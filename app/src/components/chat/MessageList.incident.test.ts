@@ -1,13 +1,13 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { MessageList } from "./MessageList"
 import type { ChatItem } from "@/store/chat"
 
 const LIMIT = "You've hit your session limit · resets 1:50pm (America/Sao_Paulo)"
 
 describe("sequência de incidente", () => {
-  it("apresenta limite histórico como uma única sequência factual e acionável", () => {
+  it("apresenta limite histórico como uma única sequência factual", () => {
     const items: ChatItem[] = [
       { kind: "user", id: "u1", text: "Continue o trabalho" },
       {
@@ -34,7 +34,6 @@ describe("sequência de incidente", () => {
         finalizing: false,
         startedAt: null,
         agent: "claude-code",
-        onContinueWith: vi.fn(),
       }),
     )
 
@@ -45,7 +44,7 @@ describe("sequência de incidente", () => {
     expect(html).toContain("turno encerrado")
     expect(html).toContain("2min 01s")
     expect(html).toContain("US$ 35,16")
-    expect(html).toContain("Continuar com outro agente")
+    expect(html).not.toContain("Continuar com outro agente")
     expect(html).toContain("Detalhes técnicos")
     expect(html).not.toContain("Execução interrompida")
     expect(html).not.toContain("text-st-error")
@@ -69,7 +68,6 @@ describe("sequência de incidente", () => {
         finalizing: false,
         startedAt: null,
         agent: "codex",
-        onContinueWith: vi.fn(),
       }),
     )
 
@@ -77,11 +75,11 @@ describe("sequência de incidente", () => {
     expect(html).toContain("Motivo registrado")
     expect(html.match(/bg-st-error/g)).toHaveLength(1)
     expect(html).toContain("Detalhes técnicos")
-    expect(html).toContain("Continuar com outro agente")
+    expect(html).not.toContain("Continuar com outro agente")
     expect(html).not.toContain("Sessão em intervalo")
   })
 
-  it("não oferece revezamento no histórico nem antes de o turno assentar", () => {
+  it("nunca duplica a decisão de continuidade no transcript", () => {
     const historical = renderToStaticMarkup(
       createElement(MessageList, {
         items: [
@@ -92,7 +90,6 @@ describe("sequência de incidente", () => {
         finalizing: false,
         startedAt: null,
         agent: "codex",
-        onContinueWith: vi.fn(),
       }),
     )
     const running = renderToStaticMarkup(
@@ -102,7 +99,6 @@ describe("sequência de incidente", () => {
         finalizing: false,
         startedAt: Date.now(),
         agent: "codex",
-        onContinueWith: vi.fn(),
       }),
     )
     const finalizing = renderToStaticMarkup(
@@ -112,7 +108,6 @@ describe("sequência de incidente", () => {
         finalizing: true,
         startedAt: null,
         agent: "codex",
-        onContinueWith: vi.fn(),
       }),
     )
 

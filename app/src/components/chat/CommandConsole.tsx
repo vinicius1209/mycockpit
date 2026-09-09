@@ -29,7 +29,6 @@ import { resolvePermission, setProjectPermissionEverywhere } from "@/lib/permiss
 import { destinoDoComposer, podeEnviar, type EstadoDoComposer } from "@/components/chat/composerSend"
 import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
-import { useAtMentions } from "@/hooks/useAtMentions"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
 import { itensDeNota } from "@/components/notes/noteMention"
 import { arquivosTocados } from "@/lib/mentionRank"
@@ -71,6 +70,7 @@ const LexicalComposer = lazy(() =>
 // o cartão não mudou de pele no cutover).
 const CONSOLE_INPUT_CLASS =
   "max-h-[240px] min-h-[56px] resize-none border-0 bg-transparent! px-4 pt-3.5 text-[14px] leading-relaxed text-foreground shadow-none outline-none focus-visible:ring-0 focus-visible:ring-offset-0"
+const EMPTY_MENTION_VALUES: string[] = []
 
 export function CommandConsole({
   onSend,
@@ -106,6 +106,11 @@ export function CommandConsole({
   // isola a digitação do estado operacional do chat e da telemetria da Frota.
   const value = useComposerDrafts((s) =>
     activeId ? (s.byConv[activeId]?.text ?? "") : "",
+  )
+  const persistedMentions = useComposerDrafts((s) =>
+    activeId
+      ? (s.byConv[activeId]?.mentionValues ?? EMPTY_MENTION_VALUES)
+      : EMPTY_MENTION_VALUES,
   )
   // assina igual ao setter do useState (aceita string OU updater) p/ os hooks.
   const setValue = useCallback((v: SetStateAction<string>) => {
@@ -214,7 +219,7 @@ export function CommandConsole({
     useChat.getState().setConversationAgent(activeId, destination)
   }, [activeId, locked, convStamp, destination])
 
-  // Popover "/" (comandos), arquivos do "@", histórico ↑/↓ e anexos, cada
+  // Popover "/", busca do "@", histórico ↑/↓ e anexos, cada
   // feature num hook. O teclado chega pelos plugins do editor (slashBridge/
   // historyBridge/PASTE_COMMAND); a lógica mora aqui fora.
   const slash = useSlashCommands({
@@ -224,9 +229,6 @@ export function CommandConsole({
     setValue,
     focus: focusComposer,
   })
-  // arquivos do projeto prontos na montagem (cache por projeto) — o menu "@"
-  // do editor precisa deles quando abrir.
-  const at = useAtMentions({ project })
   // N5 — as notas do escopo visível viram endereço `@nota/slug`. A leitura é
   // por seletor (só o array de notas), então mudar o rascunho não re-renderiza
   // por causa daqui.
@@ -252,7 +254,6 @@ export function CommandConsole({
     setSlashDismissed,
     insertCommand,
   } = slash
-  const { files: projectFiles } = at
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
   const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
@@ -425,8 +426,7 @@ export function CommandConsole({
   // Comandos "/", paste → anexo e histórico ↑/↓ estilo shell: o LexicalComposer
   // recebe pontes pros hooks (a lógica mora aqui fora, os gestos de teclado nos
   // plugins do editor). O menu "/" é o próprio SlashPopover (renderizado
-  // abaixo, gateado só por showSlash). O "@" de arquivos vai por prop
-  // (mentionFiles, listagem do useAtMentions).
+  // abaixo, gateado só por showSlash). Arquivos do "@" vêm por busca sob demanda.
   // popover "/" efetivo: o showSlash do hook, suprimido com pill presente.
   // N5 — endereços mencionáveis das notas do escopo visível. `itensDeNota` é
   // puro e a lista é pequena (dezenas), então o memo aqui é sobre a store, não
@@ -482,9 +482,14 @@ export function CommandConsole({
         onQueueSubmit={canEnqueue ? (text) => submit(text) : undefined}
         placeholder={placeholder}
         mentionNames={presets.map((p) => p.name)}
-        mentionFiles={projectFiles}
+        mentionPersisted={persistedMentions}
+        mentionProjectRoot={project?.path}
         mentionNotes={enderecosDeNota}
         mentionTouched={arquivosDaConversa}
+        onMentionValuesChange={(values) => {
+          const id = useChat.getState().activeId
+          if (id) useComposerDrafts.getState().setMentionValues(id, values)
+        }}
         className={CONSOLE_INPUT_CLASS}
         registerFocus={(fn) => {
           lexicalFocus.current = fn

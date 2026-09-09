@@ -2463,8 +2463,14 @@ impl AgentAdapter for CodexAdapter {
                     vec![AgentEvent::Error { message: msg }]
                 }
             }
-            // begin/started e turn.started não viram cartão (mostramos no completed)
-            "item.started" | "item.updated" | "turn.started" => vec![],
+            // `codex exec --json` publica o começo/atualização antes do
+            // completed. Repetir a mesma Tool por id é replay-safe no reducer
+            // e mantém a linha viva ancorada em evento real do provider.
+            "item.started" | "item.updated" => match v.get("item") {
+                Some(item) => map_codex_item_activity(item),
+                None => vec![AgentEvent::Unknown { raw: v.clone() }],
+            },
+            "turn.started" => vec![],
             _ => vec![AgentEvent::Unknown { raw: v.clone() }],
         }
     }
@@ -2542,6 +2548,66 @@ fn codex_tool_result(
         lines,
         images,
     }
+}
+
+/// Abertura/atualização de item no stream JSONL legado do Codex. Só tipos cujo
+/// payload carrega identidade e argumentos próprios viram Tool; nenhum verbo é
+/// inferido da prosa do modelo.
+fn map_codex_item_activity(item: &serde_json::Value) -> Vec<AgentEvent> {
+    let id = item
+        .get("id")
+        .and_then(|x| x.as_str())
+        .unwrap_or_default()
+        .to_string();
+    if id.is_empty() {
+        return vec![AgentEvent::Unknown { raw: item.clone() }];
+    }
+    let item_type = item.get("type").and_then(|x| x.as_str()).unwrap_or("");
+    let event = match item_type {
+        "command_execution" => AgentEvent::Tool {
+            id,
+            name: "Bash".to_string(),
+            input: serde_json::json!({
+                "command": item.get("command").and_then(|x| x.as_str()).unwrap_or("")
+            }),
+            parent_tool_id: None,
+        },
+        "mcp_tool_call" => AgentEvent::Tool {
+            id,
+            name: item
+                .get("tool")
+                .and_then(|x| x.as_str())
+                .unwrap_or("mcp")
+                .to_string(),
+            input: item
+                .get("arguments")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            parent_tool_id: None,
+        },
+        "web_search" => AgentEvent::Tool {
+            id,
+            name: "WebSearch".to_string(),
+            input: serde_json::json!({
+                "query": item.get("query").and_then(|x| x.as_str()).unwrap_or("")
+            }),
+            parent_tool_id: None,
+        },
+        "file_change" => AgentEvent::Tool {
+            id,
+            name: "Edit".to_string(),
+            input: item
+                .get("changes")
+                .cloned()
+                .unwrap_or(serde_json::Value::Null),
+            parent_tool_id: None,
+        },
+        // Itens conhecidos sem ação visível. O texto chega no completed e o
+        // reasoning/todo continua não sendo promovido a progresso fictício.
+        "agent_message" | "reasoning" | "todo_list" => return vec![],
+        _ => return vec![AgentEvent::Unknown { raw: item.clone() }],
+    };
+    vec![event]
 }
 
 /// Mapeia um `item` do Codex (em item.completed) → evento normalizado.
@@ -4366,6 +4432,44 @@ mod tests {
             }
             _ => panic!("esperava ToolResult"),
         }
+    }
+
+    #[test]
+    fn codex_command_started_e_updated_ficam_visiveis_sem_duplicar_identidade() {
+        // Linha real do dialeto `codex exec --json` 0.147, reduzida apenas nos
+        // campos que o adapter consome. O status/exit_code nulos são como o CLI
+        // publica enquanto a ação ainda está em andamento.
+        let line = serde_json::json!({
+            "type": "item.started",
+            "item": {
+                "id": "item_0",
+                "type": "command_execution",
+                "command": "/bin/zsh -lc 'bun test'",
+                "aggregated_output": "",
+                "exit_code": null,
+                "status": "in_progress"
+            }
+        });
+        let mut adapter = CodexAdapter::default();
+        for kind in ["item.started", "item.updated"] {
+            let mut event = line.clone();
+            event["type"] = serde_json::Value::String(kind.into());
+            let events = adapter.on_stdout_line(&event.to_string());
+            assert!(matches!(
+                events.as_slice(),
+                [AgentEvent::Tool { id, name, .. }]
+                    if id == "item_0" && name == "Bash"
+            ));
+        }
+    }
+
+    #[test]
+    fn codex_item_started_desconhecido_degrada_para_unknown() {
+        let events = map_codex_item_activity(&serde_json::json!({
+            "id": "item-new",
+            "type": "future_action"
+        }));
+        assert!(matches!(events.as_slice(), [AgentEvent::Unknown { .. }]));
     }
 
     // ---- ADR-033: usage do codex é ACUMULADO DA THREAD ----

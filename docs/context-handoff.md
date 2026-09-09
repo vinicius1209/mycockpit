@@ -7,7 +7,7 @@
 Continuar uma conversa em outro provider sem tentar transferir a sessão privada
 do provider de origem e sem despejar todo o histórico na janela do novo modelo.
 
-O MyCockpit é o dono da memória durável. A sessão nativa é uma otimização:
+O Frota é o dono da memória durável. A sessão nativa é uma otimização:
 
 1. **Disco/worktree** — fonte de verdade do trabalho materializado.
 2. **SQLite** — histórico integral da conversa e metadados do cockpit.
@@ -79,6 +79,7 @@ recusa traversal/symlink para fora da raiz e aplica caps de linhas/caracteres.
 | Codex `exec` | sim | sim | sim | `exec resume` |
 | Codex app-server | sim | sim | sim | `thread/resume` |
 | Antigravity | sim | sim | não nesta CLI | não |
+| OpenCode | sim | sim | não nesta integração | não |
 
 O Codex recebe o MCP por overrides `-c` efêmeros; o config global do usuário não
 é alterado. `command`, `args` e `env` são transportados explicitamente, pois o
@@ -91,7 +92,7 @@ sem MCP por contrato. O Agy degrada honestamente para prompt + paths.
 
 - Falha do resume nativo: nova sessão + recap curto + ponteiro do transcript.
 - Falha do export: o revezamento segue com o working set e, nos providers com
-  gateway, SQLite; o Agy não recebe paths ou MCP inexistentes.
+  gateway, SQLite; integrações sem gateway não recebem MCP inexistente.
 - Falha antes do stream/spawn: vira item `error` persistido, não apenas toast.
 - O revezamento é transacional: preparar a memória não troca o agent, a sessão
   ou o modelo da conversa. O destino só é confirmado no primeiro evento
@@ -101,7 +102,16 @@ sem MCP por contrato. O Agy degrada honestamente para prompt + paths.
 - A interface agrupa o incidente terminal e sua telemetria em um único cartão:
   limite esperado usa âmbar, erro de configuração/execução usa vermelho e o
   detalhe técnico fica recolhido.
-- Todo erro/limite terminal pode oferecer `Continuar no …`.
+- O incidente terminal permanece factual no fio. Quando existe um pedido de
+  executor pendente, a faixa única acima do composer oferece continuação
+  imediata em Claude Code, Antigravity ou OpenCode, desde que o destino esteja
+  instalado, autenticado, com cota e compatível com os anexos.
+- Depois de um turno concluído, cota esgotada oferece os mesmos destinos, mas a
+  escolha apenas prepara o próximo envio. O verbo do botão explicita a
+  diferença e nenhum trabalho é despachado sem o gesto posterior da pessoa.
+- Uma retomada automática já agendada aparece dentro dessa mesma faixa. Trocar
+  de destino a cancela; o cancelamento próprio continua disponível sem criar um
+  segundo aviso concorrente.
 
 ## Validação
 
@@ -117,6 +127,12 @@ Os testes cobrem:
 - annotations read-only e transporte explícito do ambiente no Codex;
 - falha estruturada do Claude convertida em um incidente acionável e sem
   duplicatas;
+- seleção compartilhada de destinos, filtrando ausência, autenticação, cota,
+  tipo de destino e anexos incompatíveis;
+- prioridade da continuação imediata sobre a preparação preventiva e sobre a
+  apresentação separada da retomada automática;
+- preparo visível antes do primeiro `await`, pergunta a Especialista ignorada
+  como pedido pendente e anexos do executor preservados;
 - rollback do revezamento antes da sessão e commit no primeiro `session` do
   destino;
 - paridade do revezamento entre Linear e Office;

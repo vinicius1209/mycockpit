@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest"
 import {
   buildProjectFileTree,
   fileName,
+  mergeProjectFileEntries,
+  visibleLazyProjectFileEntries,
   visibleProjectFileNodes,
 } from "./fileTree"
 
@@ -78,5 +80,36 @@ describe("visibleProjectFileNodes", () => {
 describe("fileName", () => {
   it("extrai o nome para a aba principal", () => {
     expect(fileName("src/components/Button.tsx")).toBe("Button.tsx")
+  })
+})
+
+describe("árvore lazy", () => {
+  const src = {
+    kind: "directory" as const,
+    name: "src",
+    relPath: "src",
+    isSymlink: false,
+  }
+  const app = {
+    kind: "file" as const,
+    name: "app.ts",
+    relPath: "src/app.ts",
+    isSymlink: false,
+  }
+
+  it("não projeta filhos carregados enquanto a pasta estiver fechada", () => {
+    const directories = { "": [src], src: [app] }
+    expect(visibleLazyProjectFileEntries(directories, new Set())).toHaveLength(1)
+    expect(
+      visibleLazyProjectFileEntries(directories, new Set(["src"])).map(
+        (row) => row.node.relPath,
+      ),
+    ).toEqual(["src", "src/app.ts"])
+  })
+
+  it("mescla páginas sem duplicar caminhos", () => {
+    expect(mergeProjectFileEntries([app], [{ ...app, name: "APP.ts" }])).toEqual([
+      { ...app, name: "APP.ts" },
+    ])
   })
 })

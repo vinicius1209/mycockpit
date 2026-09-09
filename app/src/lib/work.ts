@@ -21,6 +21,8 @@ export interface ManagedProcess {
   status: ManagedProcessStatus
   exitCode: number | null
   output: string
+  /** Última linha incremental aplicada; ausente em snapshots legados. */
+  outputSeq?: number
   startedAt: number
   updatedAt: number
 }
@@ -66,6 +68,11 @@ export interface WorkEvent {
     | "browser_state"
   data: {
     process?: ManagedProcess
+    processId?: string
+    stream?: "stdout" | "stderr"
+    seq?: number
+    line?: string
+    updatedAt?: number
     runId?: string
     convId?: string
     projectId?: string

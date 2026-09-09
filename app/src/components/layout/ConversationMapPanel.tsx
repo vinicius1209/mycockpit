@@ -165,21 +165,14 @@ export function ConversationMapPanel({
   const queue = useInteractions((state) => state.queue)
   const [source, setSource] = useState<ConversationMapSource | null>(null)
   const [editing, setEditing] = useState(false)
-  const [manualIssue, setManualIssue] = useState(false)
+  const [manualStatus, setManualStatus] = useState<"retrying" | "failed" | null>(null)
   const [copiedInitial, setCopiedInitial] = useState(false)
 
 
   useEffect(() => {
     if (!conversationId) return
     void hydrate(conversationId)
-    scheduleRefresh({
-      conversationId,
-      projectId,
-      items: safeItems,
-      running,
-      finalizing,
-    })
-  }, [conversationId, finalizing, hydrate, items, projectId, running, scheduleRefresh])
+  }, [conversationId, hydrate])
 
   const pendingInteractions = useMemo(
     () =>
@@ -243,7 +236,7 @@ export function ConversationMapPanel({
 
   async function updateManually() {
     if (!conversationId) return
-    setManualIssue(false)
+    setManualStatus(entry?.blockedInputKey ? "retrying" : null)
     await refreshNow({
       conversationId,
       projectId,
@@ -252,7 +245,11 @@ export function ConversationMapPanel({
       finalizing,
       force: true,
     })
-    setManualIssue(!!useConversationMaps.getState().byConversation[conversationId]?.lastIssue)
+    setManualStatus(
+      useConversationMaps.getState().byConversation[conversationId]?.lastIssue
+        ? "failed"
+        : null,
+    )
   }
 
   function reveal(itemId: string) {
@@ -330,9 +327,11 @@ export function ConversationMapPanel({
             <span className="hidden @min-[340px]:inline">Ajustar</span>
           </Button>
         </div>
-        {manualIssue && (
+        {manualStatus && (
           <p role="status" className="px-5 pb-2 text-[11px] text-muted-foreground">
-            A leitura automática não está disponível agora. Os fatos do fio continuam abaixo.
+            {manualStatus === "retrying"
+              ? "Repetindo uma leitura que esta mesma entrada já recusou."
+              : "A leitura automática não está disponível agora. Os fatos do fio continuam abaixo."}
           </p>
         )}
         <ScrollArea className="flex-1">

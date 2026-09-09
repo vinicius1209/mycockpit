@@ -23,6 +23,7 @@ mod codex_resume_guard;
 mod companion;
 mod context;
 mod context_gateway;
+mod conversation_items;
 mod desktop;
 mod despertador;
 mod detect;
@@ -59,6 +60,7 @@ mod plugin_runtime;
 mod pricing;
 mod proc;
 mod processos;
+mod project_files;
 mod provider_mcp_inventory;
 mod quit;
 mod resource_broker;
@@ -625,6 +627,35 @@ pub fn run() {
                   );",
             kind: MigrationKind::Up,
         },
+        // Pills `@arquivo` sobrevivem ao restart sem exigir uma varredura do
+        // projeto: o texto continua sendo a fonte enviada, esta lista é só o
+        // vocabulário necessário para reconstruir os nós do composer.
+        Migration {
+            version: 47,
+            description: "conversation_drafts_mention_values",
+            sql: "ALTER TABLE conversation_drafts ADD COLUMN mention_values TEXT NOT NULL DEFAULT '[]';",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 48,
+            description: "create_conversation_items",
+            sql: "CREATE TABLE IF NOT EXISTS conversation_items ( \
+                    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE, \
+                    position INTEGER NOT NULL, item_id TEXT NOT NULL, item_json TEXT NOT NULL, \
+                    revision INTEGER NOT NULL, updated_at INTEGER NOT NULL, \
+                    PRIMARY KEY (conversation_id, position) \
+                  );",
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 49,
+            description: "create_conversation_item_state",
+            sql: "CREATE TABLE IF NOT EXISTS conversation_item_state ( \
+                    conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, \
+                    revision INTEGER NOT NULL, item_count INTEGER NOT NULL, updated_at INTEGER NOT NULL \
+                  );",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -789,6 +820,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             agent::run_agent,
             agent::cancel_agent,
+            conversation_items::save_conversation_item_changes,
+            conversation_items::load_conversation_items,
             approval::answer_interaction,
             approval::answer_approval,
             osnotify::notify_via_osascript,
@@ -839,7 +872,8 @@ pub fn run() {
             sources::read_text_file,
             sources::read_project_file_bytes,
             sources::read_project_commands,
-            sources::list_project_files,
+            project_files::list_dir_children,
+            project_files::search_project_files,
             sources::write_mission_state,
             sources::list_mission_files,
             sdd::read_sdd_plans,

@@ -10,6 +10,7 @@ import type {
   SemanticEvidenceItem,
 } from "./types"
 import { generateUtility } from "@/lib/utility/gateway"
+import { UTILITY_PROFILES } from "@/lib/utility/profiles"
 import type {
   UtilityFailureCode,
   UtilityRequest,
@@ -42,7 +43,35 @@ export type ConversationMapGeneration =
       reason: UtilityFailureCode
       source: UtilityResult<unknown>["source"]
       durationMs: number
+      inputDigest?: string
+      payloadStats?: ConversationMapPayloadStats
     }
+
+export interface ConversationMapPayloadStats {
+  total: number
+  previousMap: number
+  pins: number
+  turns: number
+  evidence: number
+  allowedEvidenceItemIds: number
+}
+
+function encodedBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value)).byteLength
+}
+
+export function conversationMapPayloadStats(
+  input: ConversationMapInputV1,
+): ConversationMapPayloadStats {
+  return {
+    total: encodedBytes(input),
+    previousMap: encodedBytes(input.previousMap),
+    pins: encodedBytes(input.pins),
+    turns: encodedBytes(input.turns),
+    evidence: encodedBytes(input.evidence),
+    allowedEvidenceItemIds: encodedBytes(input.allowedEvidenceItemIds),
+  }
+}
 
 function skeletonsFor(
   map: SemanticConversationMapV1 | null,
@@ -122,16 +151,29 @@ export async function generateConversationMap(input: {
         turn.itemIds.some((itemId) => chunkIds.has(itemId)),
       ),
     }
+    const payloadStats = conversationMapPayloadStats(blockInput)
+    const inputDigest = await sha256Hex(
+      JSON.stringify({
+        input: blockInput,
+        routePolicy: input.request.routePolicy,
+      }),
+    )
+    if (payloadStats.total > UTILITY_PROFILES.conversation_map.maxInputBytes) {
+      console.warn("[mapa da conversa] entrada excede o perfil", payloadStats)
+      return {
+        ok: false,
+        reason: "input_too_large",
+        source,
+        durationMs,
+        inputDigest,
+        payloadStats,
+      }
+    }
     const result = await generateUtility<typeof blockInput, unknown>({
       ...input.request,
       task: "conversation_map",
       payload: blockInput,
-      inputDigest: await sha256Hex(
-        JSON.stringify({
-          input: blockInput,
-          routePolicy: input.request.routePolicy,
-        }),
-      ),
+      inputDigest,
     })
     input.onTransportResult?.(result)
     durationMs += result.timing.durationMs
@@ -146,6 +188,8 @@ export async function generateConversationMap(input: {
         reason: result.fallbackReason ?? "process_failed",
         source: result.source,
         durationMs,
+        inputDigest,
+        payloadStats,
       }
     }
     const validated = await validateConversationMap(result.value, evidence, {
@@ -159,6 +203,8 @@ export async function generateConversationMap(input: {
         reason: "invalid_response",
         source: result.source,
         durationMs,
+        inputDigest,
+        payloadStats,
       }
     }
     previousMap = validated.value

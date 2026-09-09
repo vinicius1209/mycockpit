@@ -5,12 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import {
   _perfResetForTests,
   getPerfReport,
+  PERF_OPERATION_RING_MAX,
   PERF_RING_MAX,
   perfAgg,
   perfDuration,
   perfEnabled,
   perfFrame,
   perfMark,
+  perfOperation,
   perfSpan,
 } from "./perf"
 
@@ -37,6 +39,7 @@ describe("flag desligada (default)", () => {
     const endAgg = perfAgg("hitTest")
     endAgg()
     perfDuration("react:commit", 12)
+    perfOperation("nav.project.intent", { bytes: 2 })({ outcome: "ok" })
     perfFrame(500) // frame gigante — ainda assim nada registra
 
     expect(mark).not.toHaveBeenCalled()
@@ -49,12 +52,50 @@ describe("flag desligada (default)", () => {
     expect(report.hitches).toEqual([])
     expect(report.seconds).toEqual([])
     expect(report.totals).toEqual([])
+    expect(report.operations).toEqual([])
   })
 
   it("perfSpan desligado devolve o MESMO noop (zero alocação por chamada)", () => {
     _perfResetForTests(false)
     expect(perfSpan("a")).toBe(perfSpan("b"))
     expect(perfAgg("a")).toBe(perfSpan("b"))
+  })
+})
+
+describe("faixa operacional", () => {
+  it("guarda duração, tamanho, cache e desfecho sem payload", () => {
+    _perfResetForTests(true)
+    let clock = 20
+    vi.spyOn(performance, "now").mockImplementation(() => clock)
+    vi.spyOn(Date, "now").mockReturnValue(1_789_000_000_000)
+
+    const finish = perfOperation("files.root.request", {
+      bytes: 512,
+      cache: "miss",
+    })
+    clock = 27.25
+    finish({ outcome: "ok" })
+
+    expect(getPerfReport().operations).toEqual([
+      {
+        name: "files.root.request",
+        startedAt: 1_789_000_000_000,
+        durationMs: 7.3,
+        bytes: 512,
+        cache: "miss",
+        outcome: "ok",
+      },
+    ])
+  })
+
+  it("retém somente as operações mais recentes", () => {
+    _perfResetForTests(true)
+    for (let index = 0; index < PERF_OPERATION_RING_MAX + 3; index++) {
+      perfOperation(`op-${index}`)()
+    }
+    const { operations } = getPerfReport()
+    expect(operations).toHaveLength(PERF_OPERATION_RING_MAX)
+    expect(operations[0]?.name).toBe("op-3")
   })
 })
 

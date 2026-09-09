@@ -122,6 +122,28 @@ describe("ts carimbado na CRIAÇÃO do item (reduceItems, now injetável)", () =
       ),
     ).toMatchObject({ kind: "cancelled", ts: T0 })
   })
+
+  it("item.updated renova a atividade da mesma tool sem duplicar o cartão", () => {
+    const first = reduceItems(
+      base(),
+      { type: "tool", name: "Bash", input: { command: "bun test" }, id: "x" } as AgentEvent,
+      undefined,
+      T0,
+    )
+    const updated = reduceItems(
+      base(first.items),
+      { type: "tool", name: "Bash", input: { command: "bun test" }, id: "x" } as AgentEvent,
+      undefined,
+      T0 + 5000,
+    )
+    expect(updated.items).toHaveLength(1)
+    expect(lastItem(updated)).toMatchObject({
+      kind: "tool",
+      toolId: "x",
+      ts: T0,
+      activityAt: T0 + 5000,
+    })
+  })
 })
 
 describe("buildAdviceItem carimba o parecer no nascimento", () => {

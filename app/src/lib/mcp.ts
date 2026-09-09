@@ -134,9 +134,13 @@ export interface McpDiscovery {
 
 export async function discoverMcpServers(
   projectPath: string,
+  options?: { force?: boolean },
 ): Promise<McpDiscovery> {
   if (!isTauri()) return { servers: [], providerInventories: [] }
-  return invoke<McpDiscovery>("discover_mcp_servers", { projectPath })
+  return invoke<McpDiscovery>("discover_mcp_servers", {
+    projectPath,
+    force: options?.force,
+  })
 }
 
 export async function setMcpBinding(input: {

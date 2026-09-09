@@ -1,4 +1,4 @@
-import { useEffect } from "react"
+import { useEffect, useMemo, useRef } from "react"
 import type { ChatItem } from "@/store/chat"
 import { useConversationMaps } from "@/store/conversationMaps"
 
@@ -14,21 +14,39 @@ export function useConversationMapRefresh(input: {
   finalizing: boolean
 }) {
   const scheduleRefresh = useConversationMaps((state) => state.scheduleRefresh)
+  const active = input.running || input.finalizing
+  const terminalItemId = useMemo(() => {
+    if (active) return null
+    for (let index = input.items.length - 1; index >= 0; index--) {
+      const item = input.items[index]
+      if (
+        item.kind === "result" ||
+        item.kind === "error" ||
+        item.kind === "cancelled" ||
+        item.kind === "limit"
+      ) {
+        return item.id
+      }
+    }
+    return null
+  }, [active, input.items])
+  const latest = useRef(input)
+  latest.current = input
   useEffect(() => {
-    if (!input.conversationId || !input.projectId) return
+    const current = latest.current
+    if (!current.conversationId || !current.projectId || active) return
     scheduleRefresh({
-      conversationId: input.conversationId,
-      projectId: input.projectId,
-      items: input.items,
-      running: input.running,
-      finalizing: input.finalizing,
+      conversationId: current.conversationId,
+      projectId: current.projectId,
+      items: current.items,
+      running: false,
+      finalizing: false,
     })
   }, [
     input.conversationId,
-    input.finalizing,
-    input.items,
     input.projectId,
-    input.running,
+    active,
     scheduleRefresh,
+    terminalItemId,
   ])
 }

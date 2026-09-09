@@ -171,6 +171,7 @@ pub async fn run(
         }
     });
     let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
+    let mut last_byte_at = None;
     let interactions = Arc::new(DirectInteractions::new(app.clone(), pending));
     let mut reader = crate::run_resources::LimitedLineReader::new(stdout);
     let mut session_id: Option<String> = None;
@@ -223,7 +224,10 @@ pub async fn run(
             }
             line = reader.next_line() => {
                 let line = match line {
-                    Ok(Some(line)) => line,
+                    Ok(Some(line)) => {
+                        last_byte_at = Some(crate::run_resources::epoch_ms());
+                        line
+                    },
                     Ok(None) => {
                         if !prompt_started {
                             let stderr = stderr_task.await.unwrap_or_default();
@@ -369,15 +373,21 @@ pub async fn run(
                     MensagemAcp::Ruido => {}
                 }
             }
-            memory = memory_watch.next() => {
-                match memory {
-                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
-                        let _ = on_event.send(AgentEvent::Notice {
-                            message: format!(
-                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
-                            ),
-                        });
-                    }
+            resources = memory_watch.next() => {
+                let observation = resources.observation;
+                let _ = on_event.send(AgentEvent::RunStatus {
+                    main_alive: observation.main_alive,
+                    descendants: observation.descendants,
+                    rss_mb: observation.rss_mb,
+                    last_byte_at,
+                    observed_at: crate::run_resources::epoch_ms(),
+                });
+                if let Some(rss_mb) = resources.warning_rss_mb {
+                    let _ = on_event.send(AgentEvent::Notice {
+                        message: format!(
+                            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                        ),
+                    });
                 }
             }
         }

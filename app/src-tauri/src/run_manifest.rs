@@ -30,6 +30,8 @@ pub struct EffectiveRunManifest {
     pub omissions: Vec<EffectiveCapabilityOmission>,
     /// Redução de permissão aceita explicitamente só para este envio.
     pub permission_override: Option<String>,
+    /// Fonte, estado e instante da descoberta nativa usada no preflight.
+    pub inventory_cache: Vec<crate::mcp_control::McpInventoryCacheObservation>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -284,7 +286,7 @@ pub fn build(
     }
 
     EffectiveRunManifest {
-        schema_version: 5,
+        schema_version: 6,
         agent_id: agent_id.to_string(),
         managed_external_mcp: mcp_plan.managed,
         sources,
@@ -316,6 +318,7 @@ pub fn build(
             })
             .collect(),
         permission_override: mcp_plan.force_readonly.then(|| "leitura".into()),
+        inventory_cache: mcp_plan.inventory_cache.clone(),
     }
 }
 

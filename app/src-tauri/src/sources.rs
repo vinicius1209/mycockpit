@@ -236,16 +236,22 @@ fn read_drift(base: &Path) -> Vec<Drift> {
     out
 }
 
-#[tauri::command]
-pub fn read_project_sources(path: String) -> ProjectSources {
-    let base = Path::new(&path);
+fn read_project_sources_sync(path: &str) -> ProjectSources {
+    let base = Path::new(path);
     let cd = base.join(".claude");
     ProjectSources {
         personas: read_personas(&cd),
         specs: read_specs(&cd),
-        memory: read_memory(&path),
+        memory: read_memory(path),
         drift: read_drift(base),
     }
+}
+
+#[tauri::command]
+pub async fn read_project_sources(path: String) -> Result<ProjectSources, String> {
+    tauri::async_runtime::spawn_blocking(move || read_project_sources_sync(&path))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 /// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória e visualizador de markdown). Trunca p/ a UI.
@@ -623,35 +629,6 @@ fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
     }
 }
 
-/// Lista arquivos do projeto p/ o "@" (referência). git ls-files respeita o
-/// .gitignore e é rápido; fallback p/ walk em projeto sem git.
-#[tauri::command]
-pub fn list_project_files(path: String) -> Vec<String> {
-    if let Some(s) = crate::proc::run_ok(
-        "git",
-        &[
-            "-c",
-            "core.quotepath=false",
-            "-C",
-            &path,
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ],
-        None,
-    ) {
-        let mut v: Vec<String> = s.lines().take(8000).map(str::to_string).collect();
-        v.sort();
-        return v;
-    }
-    let base = Path::new(&path);
-    let mut out = Vec::new();
-    walk_files(base, base, &mut out, 0);
-    out.sort();
-    out
-}
-
 /// Persiste um arquivo de estado da missão no worktree (P1 confiabilidade:
 /// missão sobrevive a restart). Agora recebe o `rel_path` (ex.:
 /// `.mycockpit/missions/<slug>/run-state.json`) pra ISOLAR cada missão numa
@@ -687,8 +664,8 @@ pub fn write_mission_state(cwd: String, rel_path: String, content: String) -> Re
 }
 
 /// Lista os arquivos de UMA pasta de missão (`.mycockpit/missions/<slug>/`).
-/// As pastas de missão são gitignoradas, então `list_project_files` (git
-/// ls-files) NÃO as enxerga — daí este walker escopado. Devolve caminhos
+/// As pastas de missão são gitignoradas, então a busca normal do projeto NÃO
+/// as enxerga — daí este walker escopado. Devolve caminhos
 /// RELATIVOS ao rel_dir (ex.: "plan.md", "reports/05.md", "2-reviewer.json").
 /// Mesmo guard do write: rel_dir relativo, sem `..`, base real dentro do root.
 #[tauri::command]

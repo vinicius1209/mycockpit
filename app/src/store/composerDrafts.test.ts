@@ -33,11 +33,13 @@ describe("rascunho persistido por conversa", () => {
     const store = useComposerDrafts.getState()
     store.setText("c1", "const resposta = 42")
     store.setAttachments("c1", [imagem])
+    store.setMentionValues("c1", ["src/resposta.ts"])
     store.setText("c2", "outra tarefa")
 
     expect(useComposerDrafts.getState().byConv.c1).toEqual({
       text: "const resposta = 42",
       attachments: [imagem],
+      mentionValues: ["src/resposta.ts"],
     })
     expect(useComposerDrafts.getState().byConv.c2.text).toBe("outra tarefa")
 
@@ -45,6 +47,7 @@ describe("rascunho persistido por conversa", () => {
     expect(saveComposerDraft).toHaveBeenCalledWith("c1", {
       text: "const resposta = 42",
       attachments: [imagem],
+      mentionValues: ["src/resposta.ts"],
     })
   })
 
@@ -52,17 +55,18 @@ describe("rascunho persistido por conversa", () => {
     vi.mocked(loadComposerDraft).mockResolvedValueOnce({
       text: "do disco",
       attachments: [imagem],
+      mentionValues: ["src/do-disco.ts"],
     })
     await useComposerDrafts.getState().load("c1")
     expect(useComposerDrafts.getState().byConv.c1.attachments).toEqual([imagem])
 
-    let release!: (value: { text: string; attachments: Attachment[] }) => void
+    let release!: (value: { text: string; attachments: Attachment[]; mentionValues: string[] }) => void
     vi.mocked(loadComposerDraft).mockImplementationOnce(
       () => new Promise((resolve) => { release = resolve }),
     )
     const loading = useComposerDrafts.getState().load("c2")
     useComposerDrafts.getState().setText("c2", "digitado agora")
-    release({ text: "velho", attachments: [] })
+    release({ text: "velho", attachments: [], mentionValues: [] })
     await loading
     expect(useComposerDrafts.getState().byConv.c2.text).toBe("digitado agora")
   })
@@ -95,7 +99,18 @@ describe("rascunho persistido por conversa", () => {
   })
 
   it("só espaço não acende o marcador; anexo sem texto acende", () => {
-    expect(hasComposerDraft({ text: "  \n", attachments: [] })).toBe(false)
-    expect(hasComposerDraft({ text: "", attachments: [imagem] })).toBe(true)
+    expect(hasComposerDraft({ text: "  \n", attachments: [], mentionValues: [] })).toBe(false)
+    expect(hasComposerDraft({ text: "", attachments: [imagem], mentionValues: [] })).toBe(true)
+  })
+
+  it("deduplica e persiste os pills escolhidos com o rascunho", async () => {
+    useComposerDrafts.getState().setText("c1", "revise @src/app.ts")
+    useComposerDrafts.getState().setMentionValues("c1", ["src/app.ts", "src/app.ts"])
+    await vi.advanceTimersByTimeAsync(400)
+    expect(saveComposerDraft).toHaveBeenLastCalledWith("c1", {
+      text: "revise @src/app.ts",
+      attachments: [],
+      mentionValues: ["src/app.ts"],
+    })
   })
 })

@@ -55,13 +55,19 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
    turno morre por erro. E `prefers-reduced-motion` degrada para ponto sólido
    com `opacity` explícita: o bloco global desliga a revelação, e sem a opacidade
    o indicador sumiria — degradar para ausência de sinal é o que o §6 proíbe.
+5. **Revezamento imediato também é envio.** O incidente permanece factual no
+   fio; a decisão aparece na faixa única de continuidade acima do composer.
+   Depois das guardas, `continueConversationWith` chama `beginPreparation`
+   antes do primeiro `await`, conserva o pedido e os anexos do executor e limpa
+   o carimbo quando o destino não aceita o run. Retomada automática existente
+   entra na mesma faixa, nunca em um segundo aviso concorrente.
 
 ## A fronteira de aceite
 
-5. **A bolha do fio continua nascendo do `run_manifest`.** É o contrato de
+6. **A bolha do fio continua nascendo do `run_manifest`.** É o contrato de
    "estado real, nunca teatro": o app não mostra como enviado o que o backend
    não aceitou. Isto NÃO está em discussão por causa de latência.
-6. **Mas "não fingir que enviou" não obriga "não mostrar nada".** As duas coisas
+7. **Mas "não fingir que enviou" não obriga "não mostrar nada".** As duas coisas
    são separáveis: um item PRÓPRIO de envio-em-curso, visivelmente provisório e
    com identidade de cliente, reconciliado (ou removido com o texto de volta no
    composer) quando o backend responde, respeita o contrato e mata a sensação de
@@ -75,21 +81,21 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
 
 ## O caminho crítico
 
-7. **Trabalho no `despacharEnvio` só se depende do texto deste envio.** Persona,
+8. **Trabalho no `despacharEnvio` só se depende do texto deste envio.** Persona,
    doutrina e lições respondem "quem somos", não "o que você pediu"; podem estar
    resolvidas antes. O teste é literal: se a resposta seria a mesma com o campo
    vazio, não é trabalho deste envio.
-8. **Nada de reserializar a conversa inteira por mensagem.** `renderTranscript`
+9. **Nada de reserializar a conversa inteira por mensagem.** `renderTranscript`
    mais `exportConvContext` percorrem e mandam o fio todo pela ponte a cada
    envio (1,66 MB na maior conversa medida). O congelamento da janela foi
    resolvido no backend (ADR-170, o comando saiu da thread principal); o custo
    de atravessar a ponte continua e é dívida conhecida. Exportar só quando o fio
    MUDA foi avaliado e recusado: um ponteiro de memória desatualizado por um
    turno é problema de honestidade, não de performance.
-9. **Custo tem que ser proporcional ao gesto, não ao histórico.** Qualquer coisa
+10. **Custo tem que ser proporcional ao gesto, não ao histórico.** Qualquer coisa
    nova neste caminho que cresça com o tamanho da conversa é regressão: a
    conversa boa é a longa, e é justamente nela que o app fica lento.
-10. **Persona é conceito do produto, não de fornecedor.** Nada nesta pasta
+11. **Persona é conceito do produto, não de fornecedor.** Nada nesta pasta
     compara nome de motor para decidir o que mostrar. O gatilho dos
     Especialistas, as caras e a contagem valem igual com claude-code, codex e
     agy. Se um dia precisar variar, a resposta é uma capability no registry
@@ -97,12 +103,12 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
 
 ## Movimento
 
-11. **Movimento nesta pasta responde a GESTO, não ao tempo.** O olhar do avatar
+12. **Movimento nesta pasta responde a GESTO, não ao tempo.** O olhar do avatar
     dos Especialistas (`AgentFace`, ADR-166) segue o ponteiro dentro de um raio,
     volta ao neutro quando o cursor sai, e não existe sem cursor. É da família
     do `:hover`, não da família do spinner. Movimento ambiente no rodapé
     competiria com o único movimento que ali significa algo.
-12. **Ouvinte de janela é ÚNICO e de módulo.** `lib/olhar.ts` segue o padrão do
+13. **Ouvinte de janela é ÚNICO e de módulo.** `lib/olhar.ts` segue o padrão do
     `lib/minuteTick.ts`: um `pointermove` para N caras, coalescido por quadro,
     ligado no primeiro assinante e desligado no último. Seis avatares não podem
     virar seis assinaturas do mesmo evento, e medir geometria N vezes por quadro
@@ -125,6 +131,9 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
   estado do campo por situação.
 - `redeDePreparo.test.ts` — o corolário do item 2: estouro (assíncrono E
   síncrono) apaga o carimbo, e a falha deixa rastro em vez de sumir.
+- `lib/chatHandoff.test.ts`, `lib/composerContinuity.test.ts` e
+  `ContinuityBanner.test.tsx` — o item 5: resposta antes do primeiro `await`,
+  pedido/anexos preservados, semântica imediata ou futura e uma única faixa.
 
 Falta ainda um teste que fixe a ORDEM do item 2 — que o carimbo aconteça antes
 do primeiro `await` DENTRO do `despacharEnvio`. Hoje isso está garantido por

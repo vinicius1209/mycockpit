@@ -120,7 +120,7 @@ export function McpSettings() {
     }
   }, [])
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
     if (!project) {
       shownPathRef.current = null
       setServers([])
@@ -137,7 +137,7 @@ export function McpSettings() {
     setLoading(true)
     setError(null)
     try {
-      const found = await discoverMcpServers(path)
+      const found = await discoverMcpServers(path, { force })
       if (shownPathRef.current === path) {
         setServers(found.servers)
         setProviderInventories(found.providerInventories)
@@ -152,7 +152,7 @@ export function McpSettings() {
   }, [project])
 
   useEffect(() => {
-    void load()
+    void load(false)
   }, [load])
 
   useEffect(() => {
@@ -406,7 +406,7 @@ export function McpSettings() {
       toast.error(cause instanceof Error ? cause.message : String(cause))
     } finally {
       try {
-        const found = await discoverMcpServers(path)
+        const found = await discoverMcpServers(path, { force: true })
         if (shownPathRef.current === path) {
           setServers(found.servers)
           setProviderInventories(found.providerInventories)
@@ -453,7 +453,7 @@ export function McpSettings() {
         <Button
           size="padrao"
           variant="ghost"
-          onClick={() => void load()}
+          onClick={() => void load(true)}
           disabled={loading}
           className="h-7 gap-1.5 px-2 text-[12px]"
         >

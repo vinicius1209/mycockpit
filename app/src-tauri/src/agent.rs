@@ -189,6 +189,16 @@ pub enum AgentEvent {
     /// Evidência de que o transporte do provider foi criado e recebeu o pedido.
     /// É a fronteira que autoriza a UI a chamar uma falha posterior de execução.
     Started,
+    /// Sonda factual do processo do run. Não é heartbeat nem progresso: o
+    /// frontend usa somente para distinguir processo vivo, morto e estado não
+    /// confirmável quando o relógio de eventos do agente estoura.
+    RunStatus {
+        main_alive: Option<bool>,
+        descendants: Option<u32>,
+        rss_mb: Option<u64>,
+        last_byte_at: Option<u64>,
+        observed_at: u64,
+    },
     /// O manifesto aceitou o pedido, mas nenhum processo de execução nasceu.
     /// Não é incidente terminal e não pode virar `Error` no transcript.
     StartupFailed {
@@ -1348,6 +1358,7 @@ async fn run_once(
     });
     let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
     let _ = on_event.send(AgentEvent::Started);
+    let mut last_byte_at = None;
 
     // H1, o `notify` é registrado/desregistrado no run_agent (RunGuard); aqui só
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
@@ -1363,6 +1374,7 @@ async fn run_once(
             line = reader.next_line() => {
                 match line {
                     Ok(Some(line)) => {
+                        last_byte_at = Some(crate::run_resources::epoch_ms());
                         // O adapter decide como tratar a linha crua: estruturados
                         // (Claude/Codex) parseiam JSON → map_line; não-estruturados
                         // (agy) tratam como texto. Default preserva o comportamento
@@ -1410,15 +1422,21 @@ async fn run_once(
                 crate::run_processes::terminate_run(run_id, child_pid);
                 break;
             }
-            memory = memory_watch.next() => {
-                match memory {
-                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
-                        let _ = on_event.send(AgentEvent::Notice {
-                            message: format!(
-                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
-                            ),
-                        });
-                    }
+            resources = memory_watch.next() => {
+                let observation = resources.observation;
+                let _ = on_event.send(AgentEvent::RunStatus {
+                    main_alive: observation.main_alive,
+                    descendants: observation.descendants,
+                    rss_mb: observation.rss_mb,
+                    last_byte_at,
+                    observed_at: crate::run_resources::epoch_ms(),
+                });
+                if let Some(rss_mb) = resources.warning_rss_mb {
+                    let _ = on_event.send(AgentEvent::Notice {
+                        message: format!(
+                            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                        ),
+                    });
                 }
             }
         }

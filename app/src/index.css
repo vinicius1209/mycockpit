@@ -504,6 +504,10 @@
     conv-spin 0.9s linear infinite,
     preparo-surge 160ms ease-out 700ms forwards;
 }
+.espera-nomeada {
+  opacity: 0;
+  animation: preparo-surge 160ms ease-out 3s forwards;
+}
 /* Sem movimento: ponto sólido, VISÍVEL na hora. O `opacity: 1` é obrigatório
    aqui — a revelação era uma animação, e o bloco global de reduced-motion a
    desliga; sem isto o indicador ficaria invisível para sempre, que é degradar
@@ -516,6 +520,10 @@
     height: 8px;
     border-color: transparent;
     background: currentColor;
+  }
+  .espera-nomeada {
+    animation: none !important;
+    opacity: 1;
   }
 }
 

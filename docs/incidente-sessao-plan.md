@@ -14,6 +14,12 @@
 > ADR-164 e de `docs/quit-lifecycle-plan.md`; nenhum caminho de janela ou menu
 > encerra processos diretamente.
 
+> **CORREÇÃO DE CONTINUIDADE (09/09/2026):** a sequência no fio continua
+> factual, mas não contém mais seletor ou ação de revezamento. A decisão passou
+> para a faixa única acima do composer, compartilhada pelos modos “continuar
+> agora” e “usar no próximo envio”, conforme ADR-176. Os diagramas e checklists
+> antigos abaixo permanecem como histórico da direção original.
+
 ## Resultado de produto
 
 O aviso terminal de limite ou erro deixa de parecer um cartão genérico de chat

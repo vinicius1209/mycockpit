@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "check": "bun run check:filete && bun run check:primitivas && bun run check:geometria && bun run check:superficies && bun run check:type-scale && bun run check:file-size && bun run check:dead-tokens && bun run check:rodando && bun run check:paleta && bun run check:barra-de-acento && bun run check:marca && bun run check:guia && bun run check:config-de-agent && bun run check:fluidez",
+    "check": "bun run check:filete && bun run check:primitivas && bun run check:geometria && bun run check:superficies && bun run check:type-scale && bun run check:file-size && bun run check:dead-tokens && bun run check:rodando && bun run check:paleta && bun run check:barra-de-acento && bun run check:marca && bun run check:guia && bun run check:config-de-agent && bun run check:tauri-hot-paths && bun run check:fluidez",
     "check:type-scale": "node ../scripts/check-type-scale.mjs",
     "check:file-size": "node ../scripts/check-file-size-ratchet.mjs",
     "check:dead-tokens": "node ../scripts/check-dead-tokens.mjs",
@@ -24,6 +24,7 @@
     "check:filete": "node ../scripts/check-filete.mjs",
     "check:barra-de-acento": "node ../scripts/check-barra-de-acento.mjs",
     "check:config-de-agent": "node ../scripts/check-config-de-agent.mjs",
+    "check:tauri-hot-paths": "node ../scripts/check-tauri-hot-paths.mjs",
     "check:fluidez": "vitest run src/components/chat/fio.fluidez.test.ts"
   },
   "dependencies": {

@@ -1,19 +1,13 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi } from "vitest"
+import { describe, expect, it } from "vitest"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
-import { incidentTargets } from "@/components/chat/incidentTargets"
 import type { IncidentNode } from "@/components/chat/messageNodes"
 
-function renderIncident(
-  incident: IncidentNode,
-  onContinueWith?: (agent: string) => void,
-) {
+function renderIncident(incident: IncidentNode) {
   return renderToStaticMarkup(
     createElement(IncidentSequence, {
       incident,
-      currentAgent: "claude-code",
-      onContinueWith,
     }),
   )
 }
@@ -68,22 +62,16 @@ describe("sequência de incidente", () => {
     expect(html).not.toContain("bg-st-error/[0.07]")
   })
 
-  it("só oferece revezamento quando existe callback", () => {
-    const base: IncidentNode = {
+  it("registra o incidente sem repetir a decisão de continuidade", () => {
+    const html = renderIncident({
       type: "incident",
       key: "e1",
       severity: "error",
       message: "invalid transport",
       details: ["invalid transport"],
-    }
-
-    expect(renderIncident(base)).not.toContain("Continuar com outro agente")
-    expect(renderIncident(base, vi.fn())).toContain(
-      "Continuar com outro agente",
-    )
-    expect(incidentTargets("claude-code").map((target) => target.label)).toEqual(
-      ["Codex", "Antigravity", "OpenCode"],
-    )
-    expect(incidentTargets("claude-code", [])).toEqual([])
+    })
+    expect(html).toContain("Detalhes técnicos")
+    expect(html).not.toContain("Continuar com outro agente")
+    expect(html).not.toContain("Continuar no ")
   })
 })

@@ -6,9 +6,9 @@
     "ts": 500
   },
   "arquivos": {
-    "components/chat/ChatPanel.tsx": 1080,
-    "components/chat/MessageList.tsx": 1725,
-    "components/layout/ContextPanel.tsx": 827,
+    "components/chat/ChatPanel.tsx": 1075,
+    "components/chat/MessageList.tsx": 1655,
+    "components/layout/ContextPanel.tsx": 813,
     "components/sdd/SddView.tsx": 1415,
     "lib/companion.test.ts": 944,
     "lib/companion.ts": 654,
@@ -18,7 +18,7 @@
     "lib/fleet/send.test.ts": 977,
     "lib/fleet/send.ts": 718,
     "lib/sdd.ts": 510,
-    "store/chat.ts": 2349,
+    "store/chat.ts": 2305,
     "store/fusion.ts": 507,
     "store/interactions.ts": 640,
     "store/mission.ts": 1264

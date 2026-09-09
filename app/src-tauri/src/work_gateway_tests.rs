@@ -137,6 +137,95 @@ async fn duas_conversas_na_mesma_pasta_recebem_somente_os_proprios_eventos() {
     assert_eq!(emitted[1]["data"]["runId"], run_b);
 }
 
+#[test]
+fn saida_emite_delta_numerado_sem_repetir_o_tail_inteiro() {
+    let app = mock_app();
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let sink = events.clone();
+    app.listen("work://event", move |event| {
+        sink.lock()
+            .unwrap()
+            .push(serde_json::from_str(event.payload()).unwrap());
+    });
+    let registry = ProcessRegistry::default();
+    let view = ManagedProcessView {
+        id: "p1".into(),
+        run_id: "r1".into(),
+        conv_id: "c1".into(),
+        label: "Teste".into(),
+        command: "printf oi".into(),
+        cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+        pid: 1,
+        status: "running".into(),
+        exit_code: None,
+        output: String::new(),
+        started_at: 1,
+        updated_at: 1,
+    };
+    registry.processes.lock().unwrap().insert(
+        view.id.clone(),
+        ProcessRecord {
+            view,
+            tail: VecDeque::new(),
+            tail_bytes: 0,
+            output_seq: 0,
+        },
+    );
+    registry.append_output(app.handle(), "p1", "stdout", "primeira".into());
+    registry.append_output(app.handle(), "p1", "stderr", "segunda".into());
+
+    let emitted = events.lock().unwrap();
+    assert_eq!(emitted[0]["kind"], "process_output");
+    assert_eq!(emitted[0]["data"]["processId"], "p1");
+    assert_eq!(emitted[0]["data"]["seq"], 1);
+    assert_eq!(emitted[1]["data"]["seq"], 2);
+    assert!(emitted[0]["data"].get("process").is_none());
+    assert_eq!(registry.view("p1").unwrap().output, "primeira\nsegunda");
+}
+
+#[test]
+fn tail_de_processo_tem_teto_de_linhas_e_bytes() {
+    let app = mock_app();
+    let registry = ProcessRegistry::default();
+    let view = ManagedProcessView {
+        id: "p-volume".into(),
+        run_id: "r1".into(),
+        conv_id: "c1".into(),
+        label: "Volume".into(),
+        command: "gera saída".into(),
+        cwd: std::env::temp_dir().to_string_lossy().into_owned(),
+        pid: 1,
+        status: "running".into(),
+        exit_code: None,
+        output: String::new(),
+        started_at: 1,
+        updated_at: 1,
+    };
+    registry.processes.lock().unwrap().insert(
+        view.id.clone(),
+        ProcessRecord {
+            view,
+            tail: VecDeque::new(),
+            tail_bytes: 0,
+            output_seq: 0,
+        },
+    );
+    for index in 0..400 {
+        registry.append_output(
+            app.handle(),
+            "p-volume",
+            "stdout",
+            format!("{index:04} {}", "x".repeat(2_048)),
+        );
+    }
+    let map = registry.processes.lock().unwrap();
+    let record = map.get("p-volume").unwrap();
+    assert!(record.tail.len() <= TAIL_LINES);
+    assert!(record.tail_bytes <= TAIL_BYTES);
+    assert!(record.view.output.len() <= TAIL_BYTES);
+    assert_eq!(record.output_seq, 400);
+}
+
 #[tokio::test]
 async fn encerramento_revoga_socket_e_conexao_que_ainda_nao_enviou_o_pedido() {
     use std::os::unix::fs::PermissionsExt;
@@ -204,6 +293,8 @@ async fn processo_de_outra_conversa_nao_pode_ser_lido_nem_interrompido() {
         ProcessRecord {
             view,
             tail: VecDeque::new(),
+            tail_bytes: 0,
+            output_seq: 0,
         },
     );
     let listener = WorkListener::spawn(

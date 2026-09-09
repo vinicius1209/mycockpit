@@ -3,6 +3,7 @@ import {
   buildConversationMapInput,
   CONVERSATION_MAP_PROMPT_VERSION,
   generateConversationMap,
+  conversationMapPayloadStats,
   settledConversationTurns,
   sha256Hex,
   type ConversationMapPinsV1,
@@ -24,6 +25,7 @@ import { UTILITY_PROFILES } from "@/lib/utility/profiles"
 import type { UtilityFailureCode, UtilityLocality } from "@/lib/utility/types"
 import { useApp } from "@/store/app"
 import type { ChatItem } from "@/store/chat"
+import { perfOperation } from "@/lib/fleet/perf"
 
 const SETTLE_DELAY_MS = 700
 const REBASE_AFTER_TURNS = 20
@@ -41,6 +43,8 @@ export interface ConversationMapEntry {
   generatingAttemptId: string | null
   needsRebase: boolean
   lastIssue: UtilityFailureCode | "corrupt" | "conflict" | null
+  /** Entrada determinística já recusada nesta sessão. Nunca é persistida. */
+  blockedInputKey: string | null
 }
 
 interface RefreshArgs {
@@ -78,6 +82,7 @@ function initialEntry(): ConversationMapEntry {
     generatingAttemptId: null,
     needsRebase: false,
     lastIssue: null,
+    blockedInputKey: null,
   }
 }
 
@@ -235,6 +240,19 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
     const requestEpoch = refreshEpochs.get(args.conversationId) ?? 0
     const pinsRevision = entry.pins.revision
     const policySignature = JSON.stringify(policy)
+    const blockedInputKey = [
+      inputDigest,
+      policySignature,
+      CONVERSATION_MAP_PROMPT_VERSION,
+      pinsRevision,
+    ].join(":")
+    if (!args.force && entry.blockedInputKey === blockedInputKey) {
+      perfOperation("map.refresh.request", {
+        bytes: conversationMapPayloadStats(input).total,
+        cache: "hit",
+      })({ outcome: "deterministic_failure_deduplicated" })
+      return
+    }
     const attemptId = createUtilityAttemptId()
     set((state) => ({
       byConversation: {
@@ -248,6 +266,10 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
         },
       },
     }))
+    const finishPerf = perfOperation("map.refresh.request", {
+      bytes: conversationMapPayloadStats(input).total,
+      cache: "miss",
+    })
     const isCurrent = () => {
       const live = get().byConversation[args.conversationId]
       return (
@@ -285,6 +307,12 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
         )
       },
     })
+    finishPerf({
+      bytes: generated.ok
+        ? conversationMapPayloadStats(input).total
+        : generated.payloadStats?.total,
+      outcome: generated.ok ? "ok" : generated.reason,
+    })
     const live = get().byConversation[args.conversationId]
     if (live?.generatingAttemptId !== attemptId) return
     if (
@@ -306,6 +334,10 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
     }
     if (!generated.ok) {
       const stale = generated.reason === "stale"
+      const deterministic =
+        generated.reason === "input_too_large" ||
+        generated.reason === "invalid_request" ||
+        generated.reason === "invalid_response"
       set((state) => ({
         byConversation: {
           ...state.byConversation,
@@ -314,6 +346,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
             generatingAttemptId: null,
             semanticStatus: live.stored ? "stale" : stale ? "queued" : "unavailable",
             lastIssue: generated.reason,
+            blockedInputKey: deterministic ? blockedInputKey : live.blockedInputKey,
           },
         },
       }))
@@ -371,6 +404,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
           semanticStatus: "current",
           staleSettledTurns: 0,
           lastIssue: null,
+          blockedInputKey: null,
         },
       },
     }))
@@ -414,6 +448,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
             needsRebase: true,
             semanticStatus: entry.stored ? "stale" : "queued",
             lastIssue: null,
+            blockedInputKey: null,
           },
         },
       }))
@@ -434,3 +469,12 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
     return result
   },
 }))
+
+/** Somente testes: timers e dedupe são estado de módulo, não do zustand. */
+export function _resetConversationMapsForTests(): void {
+  for (const timer of refreshTimers.values()) clearTimeout(timer)
+  refreshTimers.clear()
+  refreshEpochs.clear()
+  hydratePromises.clear()
+  useConversationMaps.setState({ byConversation: {} })
+}

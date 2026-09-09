@@ -25,6 +25,8 @@ pub const WORK_UPDATE_TOOL: &str = "work_update";
 pub const SOCK_ENV: &str = "MYCOCKPIT_WORK_SOCK";
 
 const TAIL_LINES: usize = 240;
+const TAIL_BYTES: usize = 256 * 1024;
+const OUTPUT_LINE_BYTES: usize = 64 * 1024;
 const MAX_COMMAND_CHARS: usize = 8_000;
 const MAX_REQUEST_BYTES: u64 = 1_048_576;
 const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
@@ -86,6 +88,8 @@ pub struct ManagedProcessView {
 struct ProcessRecord {
     view: ManagedProcessView,
     tail: VecDeque<String>,
+    tail_bytes: usize,
+    output_seq: u64,
 }
 
 impl ProcessRecord {
@@ -179,23 +183,40 @@ impl ProcessRegistry {
         stream: &str,
         line: String,
     ) {
-        let mut view = None;
+        let mut delta = None;
         if let Ok(mut map) = self.processes.lock() {
             if let Some(record) = map.get_mut(id) {
+                // Conta também o separador usado por `refresh_output`; um byte
+                // extra na primeira linha é conservador e mantém o teto real.
+                record.tail_bytes = record.tail_bytes.saturating_add(line.len() + 1);
                 record.tail.push_back(line.clone());
-                while record.tail.len() > TAIL_LINES {
-                    record.tail.pop_front();
+                while record.tail.len() > TAIL_LINES || record.tail_bytes > TAIL_BYTES {
+                    if let Some(removed) = record.tail.pop_front() {
+                        record.tail_bytes = record.tail_bytes.saturating_sub(removed.len() + 1);
+                    }
                 }
                 record.view.updated_at = now_ms();
                 record.refresh_output();
-                view = Some(record.view.clone());
+                record.output_seq += 1;
+                delta = Some((
+                    record.view.conv_id.clone(),
+                    record.output_seq,
+                    record.view.updated_at,
+                ));
             }
         }
-        if let Some(process) = view {
+        if let Some((conv_id, seq, updated_at)) = delta {
             emit_work(
                 app,
                 "process_output",
-                json!({ "process": process, "stream": stream, "line": line }),
+                json!({
+                    "convId": conv_id,
+                    "processId": id,
+                    "stream": stream,
+                    "seq": seq,
+                    "line": line,
+                    "updatedAt": updated_at,
+                }),
             );
         }
     }
@@ -289,6 +310,8 @@ impl ProcessRegistry {
                 ProcessRecord {
                     view: view.clone(),
                     tail: VecDeque::new(),
+                    tail_bytes: 0,
+                    output_seq: 0,
                 },
             );
         }
@@ -299,9 +322,30 @@ impl ProcessRegistry {
             let app = app.clone();
             let id = id.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stdout).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    registry.append_output(&app, &id, "stdout", line);
+                let mut lines =
+                    crate::run_resources::LimitedLineReader::with_limit(stdout, OUTPUT_LINE_BYTES);
+                loop {
+                    match lines.next_line().await {
+                        Ok(Some(line)) => registry.append_output(&app, &id, "stdout", line),
+                        Ok(None) => break,
+                        Err(crate::run_resources::LineReadError::TooLong { .. }) => {
+                            registry.append_output(
+                                &app,
+                                &id,
+                                "stdout",
+                                "[linha de stdout omitida: excedeu 64 KiB]".into(),
+                            );
+                        }
+                        Err(crate::run_resources::LineReadError::Io(error)) => {
+                            registry.append_output(
+                                &app,
+                                &id,
+                                "stdout",
+                                format!("[falha ao ler stdout: {error}]"),
+                            );
+                            break;
+                        }
+                    }
                 }
             });
         }
@@ -310,9 +354,30 @@ impl ProcessRegistry {
             let app = app.clone();
             let id = id.clone();
             tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    registry.append_output(&app, &id, "stderr", line);
+                let mut lines =
+                    crate::run_resources::LimitedLineReader::with_limit(stderr, OUTPUT_LINE_BYTES);
+                loop {
+                    match lines.next_line().await {
+                        Ok(Some(line)) => registry.append_output(&app, &id, "stderr", line),
+                        Ok(None) => break,
+                        Err(crate::run_resources::LineReadError::TooLong { .. }) => {
+                            registry.append_output(
+                                &app,
+                                &id,
+                                "stderr",
+                                "[linha de stderr omitida: excedeu 64 KiB]".into(),
+                            );
+                        }
+                        Err(crate::run_resources::LineReadError::Io(error)) => {
+                            registry.append_output(
+                                &app,
+                                &id,
+                                "stderr",
+                                format!("[falha ao ler stderr: {error}]"),
+                            );
+                            break;
+                        }
+                    }
                 }
             });
         }

@@ -897,6 +897,7 @@ pub async fn run(
         }
     });
     let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
+    let mut last_byte_at = None;
 
     // Gate de interação: MESMO registro/evento do socket do Claude, sem socket —
     // aqui o pedido já chega pelo stream. O Drop/shutdown resolve fail-closed
@@ -950,7 +951,10 @@ pub async fn run(
             }
             line = reader.next_line() => {
                 let line = match line {
-                    Ok(Some(l)) => l,
+                    Ok(Some(l)) => {
+                        last_byte_at = Some(crate::run_resources::epoch_ms());
+                        l
+                    },
                     // EOF antes do turno = o app-server caiu na largada → o caller
                     // ainda pode cair no `exec`. Depois que o turno começou, só
                     // `turn/completed` é desfecho normal: EOF não pode virar Done(0).
@@ -1141,15 +1145,21 @@ pub async fn run(
                 crate::run_processes::terminate_run(run_id, child_pid);
                 break;
             }
-            memory = memory_watch.next() => {
-                match memory {
-                    crate::run_resources::MemoryEvent::Warning { rss_mb } => {
-                        let _ = on_event.send(AgentEvent::Notice {
-                            message: format!(
-                                "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
-                            ),
-                        });
-                    }
+            resources = memory_watch.next() => {
+                let observation = resources.observation;
+                let _ = on_event.send(AgentEvent::RunStatus {
+                    main_alive: observation.main_alive,
+                    descendants: observation.descendants,
+                    rss_mb: observation.rss_mb,
+                    last_byte_at,
+                    observed_at: crate::run_resources::epoch_ms(),
+                });
+                if let Some(rss_mb) = resources.warning_rss_mb {
+                    let _ = on_event.send(AgentEvent::Notice {
+                        message: format!(
+                            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                        ),
+                    });
                 }
             }
         }

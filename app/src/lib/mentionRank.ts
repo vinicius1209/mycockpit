@@ -4,9 +4,8 @@
  * O problema medido: o menu filtrava a lista CRUA por substring, na ordem do
  * disco. Digitar `@send` num repo grande devolvia tudo que tem "send" em
  * qualquer segmento do caminho — `docs/legacy/sender/README.md` antes de
- * `lib/fleet/send.ts` — e a listagem inteira (teto de 8000 arquivos no
- * `list_project_files`) era varrida a cada tecla, recalculando `split("/")` e
- * `toLowerCase()` de cada caminho.
+ * `lib/fleet/send.ts`. Hoje o projeto inteiro não entra mais nesta lista: a
+ * busca traz candidatos paginados e este índice ordena o conjunto quente.
  *
  * Duas mudanças, e as duas importam:
  *

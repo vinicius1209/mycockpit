@@ -18,13 +18,11 @@ import {
   AlertCircle,
   Ban,
   Bot,
-  Check,
   ChevronRight,
   Copy,
   FilePen,
   FileText,
   Globe,
-  ListChecks,
   MessageSquareQuote,
   RotateCcw,
   Search,
@@ -69,7 +67,7 @@ import {
 } from "@/components/chat/TurnActions"
 import { TurnTelemetry } from "@/components/chat/TurnTelemetry"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
-import { TaskChecklist } from "@/components/chat/TaskChecklist"
+import { PlanMilestone } from "@/components/chat/PlanMilestone"
 import { ActivityAge } from "@/components/chat/LiveTime"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
 import { GroupRow } from "@/components/chat/GroupRow"
@@ -97,7 +95,12 @@ import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
 import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
 import { Markdown } from "@/components/common/Markdown"
-import { pendingDeferred, useChat, type ChatItem } from "@/store/chat"
+import {
+  pendingDeferred,
+  useChat,
+  type ChatItem,
+  type RunLiveness,
+} from "@/store/chat"
 import { useTranscriptReveal } from "@/components/chat/useTranscriptReveal"
 import type { TranscriptRevealRequest } from "@/store/appTypes"
 
@@ -1222,7 +1225,6 @@ const MessageItem = memo(function MessageItem({
           message: it.message,
           details: [it.message],
         }}
-        currentAgent=""
       />
     )
   }
@@ -1238,7 +1240,6 @@ const MessageItem = memo(function MessageItem({
           resetHint: it.resetHint,
           details: [it.message],
         }}
-        currentAgent=""
       />
     )
   }
@@ -1322,77 +1323,10 @@ interface NodeCtx {
   feedbackByResult: Map<string, string>
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
-  onContinueWith?: (agent: string) => void
   /** Aprovar o plano proposto: precisa ENVIAR, e quem sabe enviar nesta
    *  conversa é o ChatPanel. Ausente = o cartão do gate só informa. */
   onApprovePlan?: (id: string) => void
   onKeepPlanning?: (id: string) => void
-}
-
-/** O transcript registra o plano; a checklist viva mora junto ao composer. */
-function PlanMilestone({
-  plan,
-  live,
-}: {
-  plan: AgentPlan
-  live: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const done = plan.tasks.filter((task) => task.status === "completed").length
-  const complete = plan.tasks.length > 0 && done === plan.tasks.length
-  const expandable = !live && plan.tasks.length > 0
-  const label = live
-    ? "Plano publicado"
-    : complete
-      ? "Plano concluído"
-      : plan.terminal
-        ? "Plano encerrado"
-        : "Plano registrado"
-  const meta = live
-    ? `${plan.tasks.length} etapa${plan.tasks.length === 1 ? "" : "s"}`
-    : `${done}/${plan.tasks.length}`
-
-  return (
-    <div className="animate-cockpit-rise">
-      <button
-        type="button"
-        onClick={() => expandable && setOpen((value) => !value)}
-        aria-expanded={expandable ? open : undefined}
-        className={cn(
-          "flex w-full items-center gap-2 rounded-md px-1.5 py-1 text-left text-[12px] text-muted-foreground transition-colors",
-          expandable && "hover:bg-accent/35 hover:text-foreground",
-        )}
-      >
-        {complete ? (
-          <Check className="size-3.5 shrink-0 text-st-success" />
-        ) : (
-          <ListChecks
-            className={cn(
-              "size-3.5 shrink-0",
-              "text-muted-foreground/65",
-            )}
-          />
-        )}
-        <span>{label}</span>
-        <span className="font-mono text-[11px] tabular-nums text-muted-foreground/75">
-          · {meta}
-        </span>
-        {expandable && (
-          <ChevronRight
-            className={cn(
-              "ml-auto size-3.5 text-muted-foreground/45 transition-transform",
-              open && "rotate-90",
-            )}
-          />
-        )}
-      </button>
-      {open && (
-        <div className="mt-1 ml-[7px] border-l border-border/40 py-1 pl-3">
-          <TaskChecklist tasks={plan.tasks} dense live={live} />
-        </div>
-      )}
-    </div>
-  )
 }
 
 /** Corpo de UM nó de render (sem gutter/cabeçalho — isso é do grupo). Mantém
@@ -1400,14 +1334,10 @@ function PlanMilestone({
  *  checklist e os cartões de item (user/result/erro/limite/advice…). */
 function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
   if (n.type === "incident") {
-    const continuable =
-      ctx.onContinueWith && !ctx.running && !ctx.finalizing && ctx.isLast
     const resultId = n.result?.id
     return (
       <IncidentSequence
         incident={n}
-        currentAgent={ctx.agent}
-        onContinueWith={continuable ? ctx.onContinueWith : undefined}
         feedback={
           resultId && ctx.feedbackByResult.has(resultId) ? ctx.feedback : null
         }
@@ -1517,10 +1447,10 @@ export function MessageList({
   presetId,
   advising,
   stalledSince,
+  runLiveness,
   unseenDividerId,
   onStop,
   onRetry,
-  onContinueWith,
   onApprovePlan,
   onKeepPlanning,
   feedback,
@@ -1540,6 +1470,8 @@ export function MessageList({
   /** Watchdog do turno: presente quando o provider está vivo, mas sem eventos
    *  observáveis desde este instante. */
   stalledSince?: number
+  /** Diagnóstico da árvore do processo, mostrado só quando o watchdog acusa silêncio. */
+  runLiveness?: RunLiveness
   /** S1.1 — id do primeiro item NÃO-VISTO (capturado ao abrir uma conversa com
    *  finishedUnseen): o divisor "novas mensagens" entra antes do grupo que
    *  começa nele. undefined = sem divisor nesta visita. */
@@ -1549,8 +1481,6 @@ export function MessageList({
   onStop?: (tool: ToolItem) => void
   /** Repetição explícita vira um novo turno, nunca reexecuta efeito escondido. */
   onRetry?: (tool: ToolItem) => void
-  /** Revezamento: continuar a conversa em outro agent (limite/erro). */
-  onContinueWith?: (agent: string) => void
   /** Aprovar o plano proposto (id do item `planGate`): o gesto ENVIA, e quem
    *  sabe enviar nesta conversa é o ChatPanel. */
   onApprovePlan?: (id: string) => void
@@ -1621,7 +1551,6 @@ export function MessageList({
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)
-  const stableContinue = useStableHandler(onContinueWith)
   const ctxBase: Omit<NodeCtx, "isLast"> = {
     running,
     finalizing,
@@ -1634,7 +1563,6 @@ export function MessageList({
     feedbackByResult,
     onStop: stableStop,
     onRetry: stableRetry,
-    onContinueWith: stableContinue,
     onApprovePlan,
     onKeepPlanning,
   }
@@ -1685,6 +1613,7 @@ export function MessageList({
                     startedAt={startedAt}
                     deferred={liveDeferred}
                     stalledSince={stalledSince}
+                    runLiveness={runLiveness}
                     nodes={g.nodes}
                     inline
                   />
@@ -1718,6 +1647,7 @@ export function MessageList({
           startedAt={startedAt}
           deferred={liveDeferred}
           stalledSince={stalledSince}
+          runLiveness={runLiveness}
         />
       )}
     </div>

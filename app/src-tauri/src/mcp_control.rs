@@ -7,13 +7,14 @@
 //! - guardar bindings por projeto/agent e montar um plano efêmero por run;
 //! - manter política/fallback fora do prompt e do julgamento do modelo.
 
+use futures_util::future::{BoxFuture, FutureExt, Shared};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
@@ -29,6 +30,30 @@ const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
 const INVENTARIO_TIMEOUT: Duration = Duration::from_secs(4);
 const MAX_TOOL_NAMES: usize = 80;
 const MAX_DETAIL_CHARS: usize = 800;
+
+type CodexInventoryResult = Result<Vec<DiscoveredServer>, String>;
+type CodexInventoryFuture = Shared<BoxFuture<'static, (CodexInventoryResult, i64)>>;
+
+#[derive(Default)]
+struct CodexInventoryState {
+    generation: u64,
+    cached: Option<(Vec<DiscoveredServer>, i64)>,
+    in_flight: Option<CodexInventoryFuture>,
+}
+
+static CODEX_INVENTORY: OnceLock<Mutex<HashMap<String, CodexInventoryState>>> = OnceLock::new();
+
+fn codex_inventory() -> &'static Mutex<HashMap<String, CodexInventoryState>> {
+    CODEX_INVENTORY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpInventoryCacheObservation {
+    pub source: String,
+    pub state: String,
+    pub checked_at: Option<i64>,
+}
 
 /// Por que uma configuração só funciona dentro do CLI que a definiu.
 ///
@@ -447,6 +472,8 @@ pub struct McpRunPlan {
     /// Consentimento efêmero para executar este envio em modo somente leitura.
     /// Nunca nasce da configuração sozinha, apenas de `RetryReadonly` válido.
     pub force_readonly: bool,
+    /// Evidência sanitizada da descoberta nativa usada neste run.
+    pub inventory_cache: Vec<McpInventoryCacheObservation>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -1297,7 +1324,7 @@ fn normalize_codex_launch_in(codex_home: &Path, server_name: &str, launch: &mut 
     }
 }
 
-async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, String> {
+async fn discover_codex_live(project_path: &str) -> CodexInventoryResult {
     let mut comando = Command::new("codex");
     comando
         .args(["mcp", "list", "--json"])
@@ -1345,6 +1372,89 @@ async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, Str
             })
         })
         .collect())
+}
+
+async fn discover_codex(
+    project_path: &str,
+    force: bool,
+) -> (CodexInventoryResult, McpInventoryCacheObservation) {
+    let key = project_path.to_string();
+    let (future, state, generation) = {
+        let mut cache = codex_inventory()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entry = cache.entry(key.clone()).or_default();
+        if force {
+            entry.generation = entry.generation.saturating_add(1);
+            entry.cached = None;
+            entry.in_flight = None;
+        } else if let Some((servers, checked_at)) = &entry.cached {
+            return (
+                Ok(servers.clone()),
+                McpInventoryCacheObservation {
+                    source: "codex".into(),
+                    state: "hit".into(),
+                    checked_at: Some(*checked_at),
+                },
+            );
+        }
+        if let Some(pending) = &entry.in_flight {
+            (pending.clone(), "shared", entry.generation)
+        } else {
+            let path = key.clone();
+            let pending = async move {
+                let result = discover_codex_live(&path).await;
+                (result, now_ms())
+            }
+            .boxed()
+            .shared();
+            entry.in_flight = Some(pending.clone());
+            (
+                pending,
+                if force { "bypass" } else { "miss" },
+                entry.generation,
+            )
+        }
+    };
+    // O lock cobre apenas lookup/publicação; o subprocesso nunca roda preso.
+    let (result, checked_at) = future.await;
+    {
+        let mut cache = codex_inventory()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let entry = cache.entry(key).or_default();
+        // Instalação/refresh explícito pode invalidar a geração enquanto o
+        // subprocesso antigo termina. O caller antigo recebe seu resultado,
+        // mas ele não pode recontaminar o cache novo.
+        if entry.generation == generation {
+            entry.in_flight = None;
+            if let Ok(servers) = &result {
+                entry.cached = Some((servers.clone(), checked_at));
+            }
+        }
+    }
+    (
+        result,
+        McpInventoryCacheObservation {
+            source: "codex".into(),
+            state: state.into(),
+            checked_at: Some(checked_at),
+        },
+    )
+}
+
+fn invalidate_native_inventory(agent: &str, project_path: &str) {
+    for (source, owner) in FONTES_DE_INVENTARIO {
+        if *owner == agent && *source == "codex" {
+            let mut cache = codex_inventory()
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let entry = cache.entry(project_path.into()).or_default();
+            entry.generation = entry.generation.saturating_add(1);
+            entry.cached = None;
+            entry.in_flight = None;
+        }
+    }
 }
 
 /// As FONTES de inventário MCP e o motor DONO de cada uma.
@@ -1418,15 +1528,23 @@ impl FontesDoInventario {
 async fn discover_live_with_status(
     project_path: &str,
     fontes: &FontesDoInventario,
-) -> (Vec<DiscoveredServer>, HashMap<String, String>) {
+    force: bool,
+) -> (
+    Vec<DiscoveredServer>,
+    HashMap<String, String>,
+    Vec<McpInventoryCacheObservation>,
+) {
     let mut out = if fontes.quer("claude") {
         discover_claude(project_path)
     } else {
         Vec::new()
     };
     let mut inventory_errors = HashMap::new();
+    let mut cache_observations = Vec::new();
     if fontes.quer("codex") {
-        match discover_codex(project_path).await {
+        let (result, observation) = discover_codex(project_path, force).await;
+        cache_observations.push(observation);
+        match result {
             Ok(servers) => {
                 out.extend(servers);
             }
@@ -1461,7 +1579,7 @@ async fn discover_live_with_status(
             .cmp(&b.name.to_lowercase())
             .then(a.source.cmp(&b.source))
     });
-    (out, inventory_errors)
+    (out, inventory_errors, cache_observations)
 }
 
 /// Descoberta COMPLETA. É o que as superfícies de Configurações usam: ali a
@@ -1469,7 +1587,7 @@ async fn discover_live_with_status(
 /// que a pessoa pode querer ligar. O caminho quente (preflight de turno) NÃO
 /// passa por aqui — ver `FontesDoInventario::para_run`.
 async fn discover_live(project_path: &str) -> Vec<DiscoveredServer> {
-    discover_live_with_status(project_path, &FontesDoInventario::Todas)
+    discover_live_with_status(project_path, &FontesDoInventario::Todas, false)
         .await
         .0
 }
@@ -1634,14 +1752,19 @@ fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -
 pub async fn discover_mcp_servers(
     app: tauri::AppHandle,
     project_path: String,
+    force: Option<bool>,
 ) -> Result<McpDiscoveryView, String> {
     // Valida antes de ler `.mcp.json` ou executar CLI dentro do path recebido
     // pelo WebView.
     let validation = db(&app)?;
     let project_id = project_id_for_path(&validation, &project_path)?;
     drop(validation);
-    let (servers, inventory_errors) =
-        discover_live_with_status(&project_path, &FontesDoInventario::Todas).await;
+    let (servers, inventory_errors, _) = discover_live_with_status(
+        &project_path,
+        &FontesDoInventario::Todas,
+        force.unwrap_or(false),
+    )
+    .await;
     let mut canonical: HashMap<String, Vec<crate::provider_mcp_inventory::ProviderMcpServer>> =
         HashMap::new();
     for server in &servers {
@@ -1962,6 +2085,7 @@ pub async fn install_mcp_in_agent(
             motivo
         });
     }
+    invalidate_native_inventory(&agent, &project_path);
     Ok(if stdout.is_empty() { stderr } else { stdout })
 }
 
@@ -2621,9 +2745,10 @@ pub async fn plan_for_run(
     // CAMINHO QUENTE: enumera só as fontes que ESTE run referencia (os vínculos
     // dele) mais a fonte própria do motor. Perguntar às demais é pedágio que não
     // depende do que a pessoa digitou — ver `app/src-tauri/src/AGENTS.md`.
-    let (servers, inventory_errors) = discover_live_with_status(
+    let (servers, inventory_errors, inventory_cache) = discover_live_with_status(
         &project_path,
         &FontesDoInventario::para_run(agent, &bindings),
+        false,
     )
     .await;
     // Inventário nativo do próprio agent indisponível impede provar a policy
@@ -2631,6 +2756,7 @@ pub async fn plan_for_run(
     if let Some(error) = inventory_errors.get(agent) {
         let mut plan = McpRunPlan {
             managed: true,
+            inventory_cache,
             ..Default::default()
         };
         plan.gate = Some(McpPreflightGate::control_plane(format!(
@@ -2645,6 +2771,7 @@ pub async fn plan_for_run(
         .collect();
     let mut plan = McpRunPlan {
         managed: true,
+        inventory_cache,
         disabled_codex_servers: servers
             .iter()
             .filter(|server| server.source == "codex")
@@ -2937,6 +3064,35 @@ mod tests {
                 "{fonte} tem que aparecer nas Configurações"
             );
         }
+    }
+
+    #[test]
+    fn instalacao_invalida_somente_o_inventario_nativo_do_dono() {
+        let project = "/tmp/frota-cache-invalidation-codex";
+        codex_inventory()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(
+                project.into(),
+                CodexInventoryState {
+                    generation: 0,
+                    cached: Some((vec![], 42)),
+                    in_flight: None,
+                },
+            );
+        invalidate_native_inventory("claude-code", project);
+        assert!(codex_inventory()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .contains_key(project));
+        invalidate_native_inventory("codex", project);
+        let cache = codex_inventory()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let invalidated = cache.get(project).expect("entrada retida com nova geração");
+        assert_eq!(invalidated.generation, 1);
+        assert!(invalidated.cached.is_none());
+        assert!(invalidated.in_flight.is_none());
     }
 
     /// Servidor repetido em dois vínculos é sondado UMA vez: a chave é o

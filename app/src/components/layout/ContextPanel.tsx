@@ -36,7 +36,6 @@ import { useComposerDrafts } from "@/store/composerDrafts"
 import type { ProjectConfig } from "@/store/app"
 import { readProjectContext } from "@/lib/context"
 import type { ClaudeDir, ContextFile, ProjectContext } from "@/lib/context"
-import { loadGitDiff } from "@/lib/git"
 import { fixPrefill } from "@/lib/deliveryDiff"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { readProjectSources, readTextFile } from "@/lib/sources"
@@ -57,6 +56,7 @@ import { writeMycockpitConfig } from "@/lib/mycockpit"
 import { fmtBytes } from "@/lib/format"
 import { isTauri } from "@/lib/db"
 import { cn, formatDisplayPath, shortPath } from "@/lib/utils"
+import { useGitChangedCount } from "@/hooks/useGitChangedCount"
 
 /** Linha de arquivo de instrução, 3 estados (presente/ausente), sem cheque. */
 function FileRow({
@@ -325,7 +325,10 @@ export function ContextPanel() {
     s.activeId ? (s.byId[s.activeId]?.agent ?? null) : null,
   )
   const readerAgent = convAgent ?? defaultAgent ?? null
-  const [changedCount, setChangedCount] = useState(0)
+  const changedCount = useGitChangedCount(
+    activeWorktree ?? project?.path,
+    `${reload}:${running}`,
+  )
   useEffect(() => {
     if (running && !jumpedOnRun.current) {
       jumpedOnRun.current = true
@@ -377,8 +380,8 @@ export function ContextPanel() {
   const projectPath = project?.path
   useEffect(() => {
     let cancelled = false
+    if (tab !== "contexto" || !projectPath) return
     setExpanded(null)
-    if (!projectPath) return
     // Separar 'fora do app' de 'erro de disco' (antes ambos viravam ctx=null).
     if (!isTauri()) {
       setCtx(null)
@@ -408,24 +411,7 @@ export function ContextPanel() {
     return () => {
       cancelled = true
     }
-  }, [projectPath, reload])
-
-  // Contagem de arquivos alterados p/ o badge da aba Alterações. Recarrega
-  // quando o worktree muda, no reload manual, e ao fim de cada turno (running).
-  useEffect(() => {
-    let cancelled = false
-    const cwd = activeWorktree ?? projectPath
-    if (!cwd) {
-      setChangedCount(0)
-      return
-    }
-    void loadGitDiff(cwd).then((d) => {
-      if (!cancelled) setChangedCount(d.isRepo ? d.files.length : 0)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [activeWorktree, projectPath, reload, running])
+  }, [projectPath, reload, tab])
 
   // Fatos do disco sobre as fontes de FORNECEDOR (cada uma tem um dono; ver
   // lib/contextSources). O painel dizia "o que o agente enxerga" e contava tudo

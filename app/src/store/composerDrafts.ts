@@ -10,9 +10,10 @@ import {
 export interface ComposerDraft {
   text: string
   attachments: Attachment[]
+  mentionValues: string[]
 }
 
-const EMPTY: ComposerDraft = { text: "", attachments: [] }
+const EMPTY: ComposerDraft = { text: "", attachments: [], mentionValues: [] }
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const inflight = new Map<string, Promise<void>>()
 const writes = new Map<string, Promise<void>>()
@@ -29,6 +30,7 @@ interface ComposerDraftState {
   load: (conversationId: string) => Promise<void>
   setText: (conversationId: string, text: string) => void
   setAttachments: (conversationId: string, attachments: Attachment[]) => void
+  setMentionValues: (conversationId: string, mentionValues: string[]) => void
   clear: (conversationId: string) => void
   /** Conversa apagada: limpa memória/timer; o FK recolhe a linha no banco. */
   forget: (conversationId: string) => void
@@ -118,6 +120,16 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
     setAttachments: (conversationId, attachments) => {
       const current = get().byConv[conversationId] ?? EMPTY
       patch(conversationId, { ...current, attachments })
+    },
+    setMentionValues: (conversationId, mentionValues) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      const previous = current.mentionValues ?? []
+      const unique = [...new Set(mentionValues)]
+      if (
+        unique.length === previous.length &&
+        unique.every((value, index) => value === previous[index])
+      ) return
+      patch(conversationId, { ...current, mentionValues: unique })
     },
     clear: (conversationId) => {
       const timer = timers.get(conversationId)

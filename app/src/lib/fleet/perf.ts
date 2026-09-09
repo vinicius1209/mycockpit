@@ -22,6 +22,8 @@ export const PERF_FLAG_KEY = "mc.office.perf"
 export const PERF_HITCH_MS = 50
 /** Ring buffer de hitches (últimos N). */
 export const PERF_RING_MAX = 100
+/** Operações recentes de navegação/envio/I/O, sem conteúdo sensível. */
+export const PERF_OPERATION_RING_MAX = 200
 /** Top spans anexados a cada hitch. */
 const HITCH_TOP_SPANS = 5
 /** Estatística por segundo retida (últimos N segundos ≈ 5 min). */
@@ -45,6 +47,17 @@ export type PerfSecond = {
   max: number
 }
 export type PerfTotal = { name: string; ms: number; count: number }
+export type PerfCacheState = "hit" | "miss" | "stale" | "bypass"
+export type PerfOperationMeta = {
+  bytes?: number
+  cache?: PerfCacheState
+  outcome?: string
+}
+export type PerfOperation = PerfOperationMeta & {
+  name: string
+  startedAt: number
+  durationMs: number
+}
 export type PerfReport = {
   enabled: boolean
   at: number
@@ -52,6 +65,8 @@ export type PerfReport = {
   seconds: PerfSecond[]
   /** Acumulado por span (ordenado por ms desc) — inclui os agregados. */
   totals: PerfTotal[]
+  /** Faixa operacional recente. Guarda só métricas, nunca conteúdo. */
+  operations: PerfOperation[]
 }
 
 function readFlag(): boolean {
@@ -80,6 +95,7 @@ const totals = new Map<string, { ms: number; count: number }>()
 /** Agregados de call sites quentes (perfAgg) — flush 1×/s nos totais. */
 const aggs = new Map<string, { ms: number; count: number }>()
 const seconds: PerfSecond[] = []
+const operations: PerfOperation[] = []
 let secondDts: number[] = []
 let secondAt = 0
 /** Nomes já emitidos no timeline — higiene 1×/s (clearMarks/clearMeasures). */
@@ -134,6 +150,33 @@ export function perfSpan(name: string): () => void {
     frameSpans.push({ name, ms })
     addTotal(name, ms)
     emitMeasure(name, t0, t1)
+  }
+}
+
+/**
+ * Mede uma operação percebida pela pessoa. Metadados aceitos são fechados e
+ * numéricos/categóricos para o diagnóstico nunca carregar prompt, caminho,
+ * conteúdo de arquivo ou segredo. Sem a flag, devolve o mesmo noop.
+ */
+export function perfOperation(
+  name: string,
+  start: Omit<PerfOperationMeta, "outcome"> = {},
+): (end?: PerfOperationMeta) => void {
+  if (!enabled) return NOOP
+  const clockStartedAt = performance.now()
+  const startedAt = Date.now()
+  return (end = {}) => {
+    const durationMs = round1(performance.now() - clockStartedAt)
+    operations.push({
+      name,
+      startedAt,
+      durationMs,
+      ...start,
+      ...end,
+    })
+    if (operations.length > PERF_OPERATION_RING_MAX) {
+      operations.splice(0, operations.length - PERF_OPERATION_RING_MAX)
+    }
   }
 }
 
@@ -240,6 +283,7 @@ export function getPerfReport(): PerfReport {
     hitches: hitches.map((h) => ({ ...h, spans: h.spans.slice() })),
     seconds: seconds.slice(),
     totals: totalsArr,
+    operations: operations.map((operation) => ({ ...operation })),
   }
 }
 
@@ -251,6 +295,7 @@ export function _perfResetForTests(on = false): void {
   totals.clear()
   aggs.clear()
   seconds.length = 0
+  operations.length = 0
   secondDts = []
   secondAt = 0
   measureNames.clear()

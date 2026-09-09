@@ -104,13 +104,7 @@ import {
   resolveAdvisor,
 } from "@/lib/advisor"
 import { consultAdvisor } from "@/components/chat/consultAdvisor"
-
-function greetingFor(date: Date): string {
-  const h = date.getHours()
-  if (h < 12) return "Bom dia"
-  if (h < 18) return "Boa tarde"
-  return "Boa noite"
-}
+import { greetingFor } from "@/components/chat/greeting"
 
 export function ChatPanel() {
   const project = useActiveProject()
@@ -690,6 +684,7 @@ export function ChatPanel() {
     })
 
     try {
+      await useChat.getState().flushItems?.(convId)
       await runAgent(
         runId,
         convId,
@@ -801,10 +796,9 @@ export function ChatPanel() {
    *  todos os itens (dedup por path — o dedup por hash do backend pode repetir
    *  o mesmo blob). true = despachou algo. */
 
-  // Revezamento: continua a MESMA conversa em OUTRO agent (limite/erro do
-  // atual). O contexto vai por preâmbulo determinístico (handoff, tail-biased);
-  // o disco (cwd/worktree) o novo agent herda de graça; o pedido pendente (o
-  // último prompt do usuário) é reenviado sem redigitar.
+  // Revezamento imediato: a decisão mora acima do composer; o transcript só
+  // registra o incidente. Continua a MESMA conversa em OUTRO agent e reenvia
+  // o último pedido do executor sem exigir que a pessoa o redigite.
   async function handleContinueWith(target: string) {
     if (!project || !isTauri()) return
     const convId = useChat.getState().activeId
@@ -897,6 +891,7 @@ export function ChatPanel() {
               presetId={conv.presetId}
               advising={conv.advising}
               stalledSince={conv.stalledSince}
+              runLiveness={conv.runLiveness}
               unseenDividerId={conv.unseenDividerId}
               // Só oferece o gesto quando ele funcionaria: com turno em voo o
               // envio da aprovação seria enfileirado e o cartão mentiria.
@@ -962,7 +957,6 @@ export function ChatPanel() {
                   HUMANO,
                 )
               }}
-              onContinueWith={(a) => void handleContinueWith(a)}
               feedback={feedback}
               reveal={
                 transcriptReveal?.conversationId === activeId
@@ -1021,6 +1015,7 @@ export function ChatPanel() {
             temProjeto={!!project}
             busy={running || finalizing || !!conv?.preparing}
             motorAusente={motorAusente}
+            onContinueNow={(agent) => void handleContinueWith(agent)}
             onReenviar={(prompt) =>
               void handleSend(prompt, undefined, [], AUTO_RESUME, activeId ?? undefined)
             }

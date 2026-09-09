@@ -71,8 +71,7 @@ fn count_entries(p: &Path) -> usize {
         .unwrap_or(0)
 }
 
-#[tauri::command]
-pub fn read_project_context(path: String) -> ProjectContext {
+fn read_project_context_sync(path: &str) -> ProjectContext {
     let base = Path::new(&path);
     let read = |name: &str| {
         let p = base.join(name);
@@ -118,6 +117,13 @@ pub fn read_project_context(path: String) -> ProjectContext {
         mycockpit_commands: count_md(&base.join(".mycockpit").join("commands")),
         mcp_servers,
     }
+}
+
+#[tauri::command]
+pub async fn read_project_context(path: String) -> Result<ProjectContext, String> {
+    tauri::async_runtime::spawn_blocking(move || read_project_context_sync(&path))
+        .await
+        .map_err(|error| error.to_string())
 }
 
 fn truncate(s: &str, max: usize) -> String {

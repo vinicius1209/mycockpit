@@ -6,7 +6,7 @@ import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { cn } from "@/lib/utils"
-import { deferredLiveLine } from "@/store/chat"
+import { deferredLiveLine, type RunLiveness } from "@/store/chat"
 import type { Node } from "@/components/chat/messageNodes"
 import { usePresets } from "@/store/presets"
 
@@ -51,6 +51,7 @@ export function WorkingIndicator({
   startedAt,
   deferred = [],
   stalledSince,
+  runLiveness,
   inline = false,
   nodes,
 }: {
@@ -68,6 +69,8 @@ export function WorkingIndicator({
    *  depois que o toast passou (achado real do usuário, 18/08/2026: 22min
    *  de silêncio sem sinal nenhum na linha). */
   stalledSince?: number
+  /** Sonda factual da árvore do processo. Não move o relógio de atividade. */
+  runLiveness?: RunLiveness
   /** Quando true, renderiza apenas a linha viva (sem duplicar gutter, avatar e nome do autor anterior). */
   inline?: boolean
   /** Nós do grupo do TURNO VIVO, para contextualizar a atividade (ação em curso
@@ -100,11 +103,34 @@ export function WorkingIndicator({
   // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
   // o cronômetro sumia); sem background, é o turno.
   const since = live ? live.since : running ? startedAt : null
+  const livenessTitle = runLiveness
+    ? [
+        runLiveness.descendants == null
+          ? null
+          : `${runLiveness.descendants} descendente${runLiveness.descendants === 1 ? "" : "s"}`,
+        runLiveness.rssMb == null ? null : `${runLiveness.rssMb} MB no grupo`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : undefined
 
   const liveLine = (
     <div className="flex min-w-0 items-center gap-2 text-[13px] text-muted-foreground">
       {stalled ? (
-        <ActivityAge at={stalledSince} stalled />
+        <span className="flex min-w-0 items-center gap-1 truncate" title={livenessTitle}>
+          {runLiveness?.mainAlive === false ? (
+            <span>Processo encerrou sem concluir o turno</span>
+          ) : (
+            <>
+              <span>
+                {runLiveness?.mainAlive === true
+                  ? "Processo ativo,"
+                  : "Não foi possível confirmar o estado do processo,"}
+              </span>
+              <ActivityAge at={stalledSince} stalled />
+            </>
+          )}
+        </span>
       ) : (
         <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
           {label}

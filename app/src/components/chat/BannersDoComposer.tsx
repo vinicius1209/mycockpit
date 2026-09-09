@@ -20,16 +20,18 @@ import { toast } from "sonner"
 import {
   AutoResumeBanner,
   BlockedDirBanner,
-  CotaEsgotadaBanner,
   MotorAusenteBanner,
   PreflightGateBanner,
-  RevezamentoStagedBanner,
 } from "@/components/chat/ComposerBanners"
+import { ContinuityBanner, type ContinuityMode } from "@/components/chat/ContinuityBanner"
 import { agentDef } from "@/lib/agents"
+import { resumeBannerLabel } from "@/lib/autoResume"
+import { deriveComposerContinuity } from "@/lib/composerContinuity"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
-import { alternativeAgentsFor, checkAgentQuota } from "@/lib/quotaExhausted"
+import { fmtTime } from "@/lib/format"
+import { checkAgentQuota, eligibleHandoffTargets } from "@/lib/quotaExhausted"
 import { useApp } from "@/store/app"
-import { hasExecutorTurn, useChat, type ConvState } from "@/store/chat"
+import { useChat, type ConvState } from "@/store/chat"
 import { useUsage } from "@/store/usage"
 
 /** O prompt do "retomar agora": o mesmo do agendamento automático, porque
@@ -43,6 +45,7 @@ export function BannersDoComposer({
   temProjeto,
   busy,
   motorAusente,
+  onContinueNow,
   onReenviar,
   onLiberarPasta,
   onLigarNavegador,
@@ -58,6 +61,8 @@ export function BannersDoComposer({
   busy: boolean
   /** `null` enquanto a detecção não rodou (§5 camada 3). */
   motorAusente: AvisoDeMotorAusente | null
+  /** Retoma imediatamente o pedido pendente em outro agente. */
+  onContinueNow: (agent: string) => void
   onReenviar: (prompt: string) => void
   onLiberarPasta: (dir: string) => void
   onLigarNavegador: () => void
@@ -69,18 +74,25 @@ export function BannersDoComposer({
   const limitedAgents = useApp((s) => s.limitedAgents)
   const detectados = useApp((s) => s.settings.detected)
   const usageByAgent = useUsage((s) => s.byAgent)
-  const established = !!conv && hasExecutorTurn(conv.items)
   const quota = conv
     ? checkAgentQuota(conv.agent, limitedAgents, usageByAgent[conv.agent])
     : { exhausted: false, resetHint: null }
+  const continuity = conv
+    ? deriveComposerContinuity(conv.items, busy, quota.exhausted)
+    : null
+  const continuityMode: ContinuityMode | null = continuity?.mode ?? null
   const alternatives =
-    conv && established && quota.exhausted && !conv.stagedAgent
-      ? alternativeAgentsFor(
-          conv.agent,
-          detectados ?? {},
+    conv && continuityMode && !conv.stagedAgent
+      ? eligibleHandoffTargets({
+          currentAgent: conv.agent,
+          detected: detectados ?? {},
           limitedAgents,
-          usageByAgent,
-        )
+          byAgentSnapshots: usageByAgent,
+          attachments:
+            continuity?.mode === "continue-now"
+              ? continuity.pending.attachments
+              : [],
+        })
       : []
   const sourceLabel = conv ? (agentDef(conv.agent)?.label ?? conv.agent) : ""
   const targetLabel = conv?.stagedAgent
@@ -89,7 +101,7 @@ export function BannersDoComposer({
 
   return (
     <>
-      {conv?.autoResume && (
+      {conv?.autoResume && continuityMode !== "continue-now" && (
         <AutoResumeBanner
           nextAt={conv.autoResume.nextAt}
           tries={conv.autoResume.tries}
@@ -114,17 +126,35 @@ export function BannersDoComposer({
       )}
 
       {conv?.stagedAgent && activeId ? (
-        <RevezamentoStagedBanner
+        <ContinuityBanner
+          state="staged"
           sourceLabel={sourceLabel}
           targetLabel={targetLabel}
+          busy={busy}
           onUndo={() => useChat.getState().stageAgent(activeId, null)}
         />
-      ) : conv && activeId && established && quota.exhausted ? (
-        <CotaEsgotadaBanner
-          agentLabel={sourceLabel}
+      ) : conv && activeId && continuityMode && continuity ? (
+        <ContinuityBanner
+          key={`${activeId}:${continuity.terminalId}:${continuityMode}`}
+          state="choose"
+          mode={continuityMode}
+          sourceLabel={sourceLabel}
           resetHint={quota.resetHint}
           alternatives={alternatives}
-          onSelect={(agent) => useChat.getState().stageAgent(activeId, agent)}
+          scheduledResume={
+            continuityMode === "continue-now" && conv.autoResume
+              ? {
+                  detail: `Retomada no ${sourceLabel} às ${fmtTime(conv.autoResume.nextAt)} · ${resumeBannerLabel(conv.autoResume.reason)} · tentativa ${conv.autoResume.tries} de ${conv.autoResume.maxTries}`,
+                  onCancel: () =>
+                    useChat.getState().cancelAutoResume(activeId),
+                }
+              : undefined
+          }
+          onSelect={
+            continuityMode === "continue-now"
+              ? onContinueNow
+              : (agent) => useChat.getState().stageAgent(activeId, agent)
+          }
         />
       ) : null}
 
