@@ -1,0 +1,2446 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frota · Construtor de planos de voo</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #f7f7f5;
+      --surface: #ffffff;
+      --surface-subtle: #f1f1ef;
+      --surface-raised: #fbfbfa;
+      --foreground: #1b1d20;
+      --muted: #61666c;
+      --faint: #8a9097;
+      --border: rgba(27, 29, 32, .11);
+      --divider: rgba(27, 29, 32, .07);
+      --selection: rgba(27, 29, 32, .065);
+      --hover: rgba(27, 29, 32, .035);
+      --brass: #a9742b;
+      --brass-hover: #966522;
+      --brass-soft: rgba(169, 116, 43, .12);
+      --brass-foreground: #fffaf1;
+      --running: #2f8fbf;
+      --running-soft: rgba(47, 143, 191, .12);
+      --warning: #c1861f;
+      --warning-soft: rgba(193, 134, 31, .12);
+      --error: #c94d43;
+      --error-soft: rgba(201, 77, 67, .11);
+      --success: #238b63;
+      --success-soft: rgba(35, 139, 99, .11);
+      --shadow-edge: 0 1px 2px rgba(20, 22, 25, .07);
+      --shadow-pop: 0 18px 60px -22px rgba(20, 22, 25, .34);
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, monospace;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #0d0f11;
+      --surface: #15181b;
+      --surface-subtle: #1a1d21;
+      --surface-raised: #111315;
+      --foreground: #eaebed;
+      --muted: #9ca2a9;
+      --faint: #6e757e;
+      --border: rgba(255, 255, 255, .11);
+      --divider: rgba(255, 255, 255, .065);
+      --selection: rgba(255, 255, 255, .075);
+      --hover: rgba(255, 255, 255, .04);
+      --brass: #dfa45d;
+      --brass-hover: #efb56e;
+      --brass-soft: rgba(223, 164, 93, .14);
+      --brass-foreground: #211609;
+      --running: #5bb8e8;
+      --running-soft: rgba(91, 184, 232, .13);
+      --warning: #dda04b;
+      --warning-soft: rgba(221, 160, 75, .14);
+      --error: #ef766d;
+      --error-soft: rgba(239, 118, 109, .13);
+      --success: #63c99a;
+      --success-soft: rgba(99, 201, 154, .12);
+      --shadow-edge: 0 1px 2px rgba(0, 0, 0, .34);
+      --shadow-pop: 0 18px 60px -22px rgba(0, 0, 0, .8);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      min-width: 860px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--background);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button,
+    input,
+    select,
+    textarea {
+      font: inherit;
+      color: inherit;
+    }
+
+    button { -webkit-tap-highlight-color: transparent; }
+
+    button:focus-visible,
+    input:focus-visible,
+    select:focus-visible,
+    textarea:focus-visible {
+      outline: 2px solid var(--brass);
+      outline-offset: 2px;
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: .45;
+    }
+
+    svg {
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-width: 1.7;
+    }
+
+    .icon { width: 16px; height: 16px; flex: 0 0 auto; }
+    .icon.small { width: 14px; height: 14px; }
+
+    .mono {
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "liga" 0, "calt" 0;
+    }
+
+    [hidden] { display: none !important; }
+
+    .app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .app-header {
+      height: 58px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border);
+      background: color-mix(in srgb, var(--surface) 94%, transparent);
+    }
+
+    .brand-mark {
+      width: 30px;
+      height: 30px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: var(--brass-soft);
+      color: var(--brass);
+    }
+
+    .brand-mark .icon { width: 18px; height: 18px; }
+
+    .brand-copy {
+      display: grid;
+      line-height: 1.15;
+    }
+
+    .brand-copy strong {
+      font-size: 13px;
+      font-weight: 650;
+    }
+
+    .brand-copy span {
+      margin-top: 3px;
+      color: var(--faint);
+      font: 11px/1.2 var(--mono);
+    }
+
+    .header-separator {
+      width: 1px;
+      height: 22px;
+      margin: 0 2px;
+      background: var(--divider);
+    }
+
+    .breadcrumb {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--muted);
+    }
+
+    .breadcrumb button {
+      min-height: 28px;
+      padding: 0 7px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .breadcrumb button:hover {
+      background: var(--hover);
+      color: var(--foreground);
+    }
+
+    .breadcrumb strong {
+      max-width: 320px;
+      overflow: hidden;
+      color: var(--foreground);
+      font-weight: 580;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .header-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .icon-button,
+    .button {
+      height: 32px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--foreground);
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .icon-button {
+      width: 32px;
+      padding: 0;
+      color: var(--muted);
+    }
+
+    .button {
+      padding: 0 11px;
+      font-size: 13px;
+      font-weight: 560;
+    }
+
+    .button:hover,
+    .icon-button:hover {
+      background: var(--hover);
+    }
+
+    .button.primary {
+      border-color: transparent;
+      background: var(--brass);
+      color: var(--brass-foreground);
+    }
+
+    .button.primary:hover { background: var(--brass-hover); }
+
+    .button.ghost {
+      border-color: transparent;
+      color: var(--muted);
+    }
+
+    .button.danger {
+      border-color: color-mix(in srgb, var(--error) 30%, transparent);
+      color: var(--error);
+    }
+
+    .badge {
+      min-height: 24px;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 0 8px;
+      border-radius: 999px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 570;
+    }
+
+    .badge.published {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .builder-view,
+    .library-view {
+      min-height: 0;
+      flex: 1;
+    }
+
+    .builder-view {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .plan-header {
+      min-height: 74px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 16px 12px 18px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .plan-title {
+      min-width: 0;
+      display: grid;
+      gap: 5px;
+    }
+
+    .plan-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .plan-title h1 {
+      margin: 0;
+      overflow: hidden;
+      font-size: 20px;
+      line-height: 1.2;
+      font-weight: 650;
+      letter-spacing: -.018em;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .plan-title p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .plan-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .revision {
+      margin-right: 6px;
+      color: var(--faint);
+      font: 11px var(--mono);
+    }
+
+    .builder-grid {
+      min-height: 0;
+      flex: 1;
+      display: grid;
+      grid-template-columns: 228px minmax(560px, 1fr) 316px;
+      background: var(--background);
+    }
+
+    .palette {
+      min-height: 0;
+      overflow-y: auto;
+      border-right: 1px solid var(--border);
+      background: var(--surface-raised);
+    }
+
+    .panel-head {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .panel-head strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .panel-head span {
+      margin-left: auto;
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .palette-search {
+      position: relative;
+      margin: 10px 10px 7px;
+    }
+
+    .palette-search .icon {
+      position: absolute;
+      top: 8px;
+      left: 9px;
+      width: 14px;
+      height: 14px;
+      color: var(--faint);
+      pointer-events: none;
+    }
+
+    .palette-search input {
+      width: 100%;
+      height: 32px;
+      padding: 0 9px 0 30px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+      font-size: 12px;
+    }
+
+    .palette-group {
+      padding: 7px 8px 2px;
+    }
+
+    .palette-label {
+      padding: 7px 7px 5px;
+      color: var(--faint);
+      font-size: 11px;
+      font-weight: 620;
+    }
+
+    .block-button {
+      width: 100%;
+      min-height: 36px;
+      display: grid;
+      grid-template-columns: 26px minmax(0, 1fr) 14px;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 7px;
+      border: 0;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--foreground);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .block-button:hover { background: var(--hover); }
+    .block-button[hidden] { display: none; }
+
+    .block-glyph {
+      width: 26px;
+      height: 26px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+    }
+
+    .block-glyph.trigger { background: var(--running-soft); color: var(--running); }
+    .block-glyph.gate { background: var(--warning-soft); color: var(--warning); }
+    .block-glyph.action { background: var(--brass-soft); color: var(--brass); }
+    .block-glyph .icon { width: 14px; height: 14px; }
+
+    .block-name {
+      overflow: hidden;
+      font-size: 12px;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .block-add {
+      color: var(--faint);
+      font-size: 14px;
+      line-height: 1;
+    }
+
+    .palette-note {
+      margin: 12px 12px 16px;
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.5;
+    }
+
+    .canvas-column {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+    }
+
+    .canvas-toolbar {
+      height: 46px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--divider);
+      background: var(--surface-raised);
+    }
+
+    .view-switch {
+      height: 28px;
+      display: flex;
+      align-items: center;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .view-switch button {
+      height: 22px;
+      padding: 0 8px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .view-switch button.active {
+      background: var(--selection);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    .canvas-summary {
+      margin-left: 3px;
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .canvas-tools {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .compact-button {
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 0 8px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+    }
+
+    .compact-button:hover {
+      background: var(--hover);
+      color: var(--foreground);
+    }
+
+    .graph-scroll {
+      position: relative;
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      background-color: var(--background);
+      background-image: radial-gradient(circle, color-mix(in srgb, var(--faint) 34%, transparent) 1px, transparent 1px);
+      background-position: 0 0;
+      background-size: 18px 18px;
+    }
+
+    .graph {
+      position: relative;
+      width: 900px;
+      min-width: 100%;
+      height: 590px;
+      transform-origin: 0 0;
+      transition: transform .16s ease;
+    }
+
+    .graph-legend {
+      position: absolute;
+      top: 18px;
+      left: 22px;
+      z-index: 3;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 5px 7px;
+      border-radius: 7px;
+      background: color-mix(in srgb, var(--background) 90%, transparent);
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .legend-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      border: 1px solid var(--border);
+      background: var(--surface);
+    }
+
+    .legend-dot.gate { border-color: var(--warning); background: var(--warning-soft); }
+    .legend-dot.check { border-color: var(--brass); background: var(--brass-soft); }
+
+    .edges {
+      position: absolute;
+      inset: 0;
+      z-index: 0;
+      width: 900px;
+      height: 590px;
+      overflow: visible;
+      color: color-mix(in srgb, var(--muted) 48%, transparent);
+      pointer-events: none;
+    }
+
+    .edges path {
+      vector-effect: non-scaling-stroke;
+      stroke-width: 1.4;
+    }
+
+    .edge-fail { color: color-mix(in srgb, var(--error) 58%, transparent); }
+    .edge-pass { color: color-mix(in srgb, var(--success) 58%, transparent); }
+
+    .edge-label {
+      position: absolute;
+      z-index: 1;
+      padding: 2px 5px;
+      border-radius: 5px;
+      background: var(--background);
+      color: var(--faint);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .edge-label.pass { color: var(--success); }
+    .edge-label.fail { color: var(--error); }
+
+    .node {
+      position: absolute;
+      z-index: 2;
+      width: 162px;
+      height: 76px;
+      padding: 9px 10px 8px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      box-shadow: var(--shadow-edge);
+      color: var(--foreground);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .node:hover { border-color: color-mix(in srgb, var(--foreground) 22%, transparent); }
+
+    .node.selected {
+      border-color: var(--foreground);
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--foreground) 9%, transparent);
+    }
+
+    .node[data-kind="gate"] {
+      border-color: color-mix(in srgb, var(--warning) 48%, var(--border));
+    }
+
+    .node[data-kind="trigger"] {
+      border-color: color-mix(in srgb, var(--running) 38%, var(--border));
+    }
+
+    .node[data-kind="check"] {
+      border-color: color-mix(in srgb, var(--brass) 38%, var(--border));
+    }
+
+    .node[data-state="running"] {
+      border-color: var(--running);
+      box-shadow: 0 0 0 3px var(--running-soft);
+    }
+
+    .node[data-state="success"] .node-state-dot {
+      background: var(--success);
+      box-shadow: none;
+    }
+
+    .node[data-state="running"] .node-state-dot {
+      background: var(--running);
+      animation: breathe 1s ease-in-out infinite;
+    }
+
+    .node[data-state="blocked"] .node-state-dot { background: var(--warning); }
+
+    .node.dynamic-node {
+      border-style: dashed;
+      border-color: var(--warning);
+    }
+
+    .node-top {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      color: var(--faint);
+      font-size: 11px;
+    }
+
+    .node-step {
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .node-kind {
+      margin-left: auto;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .node-title {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 7px;
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .node-name {
+      min-width: 0;
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .node-state-dot {
+      width: 6px;
+      height: 6px;
+      flex: 0 0 auto;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+
+    .node-meta {
+      display: block;
+      margin-top: 5px;
+      overflow: hidden;
+      color: var(--faint);
+      font: 11px var(--mono);
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .port {
+      position: absolute;
+      top: 50%;
+      width: 7px;
+      height: 7px;
+      border: 1px solid var(--border);
+      border-radius: 50%;
+      background: var(--surface);
+      transform: translateY(-50%);
+    }
+
+    .port.in { left: -4px; }
+    .port.out { right: -4px; }
+    .port.bottom { top: auto; right: 50%; bottom: -4px; transform: translateX(50%); }
+    .port.top { top: -4px; right: 50%; transform: translateX(50%); }
+
+    .finish-node {
+      height: 46px;
+      padding: 8px 10px;
+      border-radius: 24px;
+      background: var(--success-soft);
+    }
+
+    .finish-node .node-title { margin-top: 2px; }
+
+    .route-view {
+      min-height: 0;
+      flex: 1;
+      overflow: auto;
+      padding: 28px min(6vw, 70px);
+    }
+
+    .route-intro {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      max-width: 760px;
+      margin: 0 auto 16px;
+      padding: 12px;
+      border-radius: 9px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .route-intro .icon { margin-top: 1px; color: var(--brass); }
+
+    .route-list {
+      max-width: 760px;
+      margin: 0 auto;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .route-row {
+      min-height: 60px;
+      display: grid;
+      grid-template-columns: 32px minmax(0, 1fr) 150px 80px;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--divider);
+      cursor: pointer;
+    }
+
+    .route-row:first-child { border-top: 0; }
+    .route-row:hover { background: var(--hover); }
+
+    .route-number {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      background: var(--surface-subtle);
+      color: var(--faint);
+      font: 11px var(--mono);
+    }
+
+    .route-name { font-size: 12px; font-weight: 620; }
+    .route-purpose { margin-top: 2px; color: var(--muted); font-size: 11px; }
+    .route-agent { color: var(--muted); font: 11px var(--mono); }
+    .route-attempts { color: var(--faint); font: 11px var(--mono); text-align: right; }
+
+    .validation-bar {
+      min-height: 40px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 12px;
+      border-top: 1px solid var(--divider);
+      background: var(--surface-raised);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .validation-mark {
+      width: 18px;
+      height: 18px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .validation-bar.has-error .validation-mark {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .validation-detail {
+      margin-left: auto;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .validation-detail:hover { color: var(--foreground); }
+
+    .test-drawer {
+      max-height: 0;
+      overflow: hidden;
+      flex: 0 0 auto;
+      border-top: 0 solid var(--divider);
+      background: var(--surface);
+      transition: max-height .2s ease, border-width .2s ease;
+    }
+
+    .test-drawer.open {
+      max-height: 160px;
+      border-top-width: 1px;
+    }
+
+    .test-drawer-inner {
+      height: 150px;
+      display: grid;
+      grid-template-columns: 178px 1fr;
+    }
+
+    .test-summary {
+      padding: 12px;
+      border-right: 1px solid var(--divider);
+    }
+
+    .test-summary strong { font-size: 12px; }
+    .test-summary p { margin: 5px 0 0; color: var(--muted); font-size: 11px; }
+
+    .test-log {
+      overflow: auto;
+      padding: 10px 12px;
+      color: var(--muted);
+      font: 11px/1.65 var(--mono);
+    }
+
+    .log-line {
+      display: grid;
+      grid-template-columns: 64px 70px 1fr;
+      gap: 8px;
+    }
+
+    .log-time { color: var(--faint); }
+    .log-ok { color: var(--success); }
+    .log-info { color: var(--running); }
+
+    .inspector {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--border);
+      background: var(--surface-raised);
+    }
+
+    .builder-grid.inspector-collapsed {
+      grid-template-columns: 228px minmax(560px, 1fr) 46px;
+    }
+
+    .builder-grid.inspector-collapsed .inspector-title {
+      height: 100%;
+      padding: 9px;
+      border-bottom: 0;
+    }
+
+    .builder-grid.inspector-collapsed .inspector-kicker,
+    .builder-grid.inspector-collapsed .inspector-title-row h2,
+    .builder-grid.inspector-collapsed .inspector-tabs,
+    .builder-grid.inspector-collapsed .inspector-body,
+    .builder-grid.inspector-collapsed .inspector-foot {
+      display: none;
+    }
+
+    .builder-grid.inspector-collapsed .inspector-title-row {
+      margin-top: 0;
+    }
+
+    .builder-grid.inspector-collapsed .inspector-title-row .icon-button {
+      display: inline-flex;
+      margin: 0;
+      transform: rotate(180deg);
+    }
+
+    .inspector-title {
+      min-height: 72px;
+      padding: 12px;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .inspector-kicker {
+      color: var(--brass);
+      font: 11px var(--mono);
+    }
+
+    .inspector-title-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 5px;
+    }
+
+    .inspector-title-row h2 {
+      min-width: 0;
+      margin: 0;
+      overflow: hidden;
+      font-size: 14px;
+      font-weight: 650;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .inspector-title-row .icon-button {
+      width: 28px;
+      height: 28px;
+      margin-left: auto;
+    }
+
+    .inspector-tabs {
+      height: 38px;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      padding: 4px 8px 0;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .inspector-tabs button {
+      position: relative;
+      border: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .inspector-tabs button.active {
+      color: var(--foreground);
+      font-weight: 620;
+    }
+
+    .inspector-tabs button.active::after {
+      content: "";
+      position: absolute;
+      right: 9px;
+      bottom: -1px;
+      left: 9px;
+      height: 2px;
+      border-radius: 2px 2px 0 0;
+      background: var(--foreground);
+    }
+
+    .inspector-body {
+      min-height: 0;
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .inspector-section {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid var(--divider);
+    }
+
+    .inspector-section:first-child {
+      margin-top: 0;
+      padding-top: 0;
+      border-top: 0;
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 9px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+
+    .field > span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .field input,
+    .field select,
+    .field textarea {
+      width: 100%;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--surface);
+      color: var(--foreground);
+      font-size: 12px;
+    }
+
+    .field input,
+    .field select {
+      height: 32px;
+      padding: 0 9px;
+    }
+
+    .field textarea {
+      min-height: 72px;
+      padding: 8px 9px;
+      resize: vertical;
+      line-height: 1.45;
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .inline-note {
+      display: flex;
+      align-items: flex-start;
+      gap: 7px;
+      padding: 8px 9px;
+      border-radius: 7px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .inline-note.warning {
+      background: var(--warning-soft);
+      color: color-mix(in srgb, var(--warning) 88%, var(--foreground));
+    }
+
+    .inline-note .icon {
+      width: 14px;
+      height: 14px;
+      margin-top: 1px;
+    }
+
+    .permission-choice {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4px;
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+
+    .permission-scope {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+      padding: 8px 9px;
+      border-radius: 7px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .permission-scope .icon {
+      width: 14px;
+      height: 14px;
+      color: var(--faint);
+    }
+
+    .permission-scope strong {
+      margin-left: auto;
+      color: var(--warning);
+      font: 11px var(--mono);
+    }
+
+    .permission-choice button {
+      height: 28px;
+      border: 0;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--muted);
+      font-size: 11px;
+      cursor: pointer;
+    }
+
+    .permission-choice button.active {
+      background: var(--selection);
+      color: var(--foreground);
+      font-weight: 620;
+    }
+
+    .permission-choice button[data-mode="liberado"].active {
+      background: var(--warning-soft);
+      color: var(--warning);
+    }
+
+    .toggle-row {
+      min-height: 39px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      border-top: 1px solid var(--divider);
+    }
+
+    .toggle-row:first-child { border-top: 0; }
+    .toggle-copy { min-width: 0; }
+    .toggle-name { font-size: 12px; }
+    .toggle-why { margin-top: 1px; color: var(--faint); font-size: 11px; }
+
+    .toggle {
+      position: relative;
+      width: 34px;
+      height: 20px;
+      padding: 0;
+      border: 0;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--faint) 28%, transparent);
+      cursor: pointer;
+    }
+
+    .toggle::after {
+      content: "";
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: var(--surface);
+      box-shadow: var(--shadow-edge);
+      transition: transform .16s ease;
+    }
+
+    .toggle[aria-pressed="true"] {
+      background: var(--foreground);
+    }
+
+    .toggle[aria-pressed="true"]::after {
+      transform: translateX(14px);
+    }
+
+    .effective-card {
+      padding: 10px;
+      border-radius: 8px;
+      background: var(--surface-subtle);
+    }
+
+    .effective-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+    }
+
+    .effective-head strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    .effective-mode {
+      margin-left: auto;
+      color: var(--warning);
+      font: 11px var(--mono);
+    }
+
+    .effective-list {
+      display: grid;
+      gap: 5px;
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .effective-list span {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .effective-list i {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--faint);
+    }
+
+    .output-card {
+      padding: 9px 10px;
+      border-radius: 8px;
+      background: var(--surface-subtle);
+    }
+
+    .output-card + .output-card { margin-top: 7px; }
+
+    .output-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12px;
+      font-weight: 620;
+    }
+
+    .output-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+
+    .output-dot.fail { background: var(--error); }
+    .output-dot.always { background: var(--faint); }
+    .output-destination { margin-top: 4px; color: var(--muted); font-size: 11px; }
+
+    .inspector-foot {
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-top: 1px solid var(--divider);
+      background: var(--surface-raised);
+    }
+
+    .inspector-foot .button { height: 28px; font-size: 12px; }
+
+    .library-view {
+      overflow-y: auto;
+      background: var(--background);
+    }
+
+    .library-shell {
+      width: min(1080px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 48px 0 64px;
+    }
+
+    .library-hero {
+      display: flex;
+      align-items: flex-end;
+      gap: 24px;
+      padding-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .library-hero-copy { max-width: 620px; }
+
+    .library-hero h1 {
+      margin: 0;
+      font-size: 30px;
+      line-height: 1.15;
+      letter-spacing: -.025em;
+    }
+
+    .library-hero p {
+      margin: 9px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.55;
+    }
+
+    .library-hero .button { margin-left: auto; }
+
+    .library-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 18px 0 12px;
+    }
+
+    .library-filter strong { font-size: 12px; }
+    .library-filter span { color: var(--faint); font: 11px var(--mono); }
+    .library-filter .compact-button { margin-left: auto; }
+
+    .plan-table {
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      background: var(--surface);
+      overflow: hidden;
+    }
+
+    .plan-row {
+      width: 100%;
+      min-height: 78px;
+      display: grid;
+      grid-template-columns: minmax(260px, 1.5fr) 170px 130px 120px 22px;
+      align-items: center;
+      gap: 16px;
+      padding: 12px 16px;
+      border: 0;
+      border-top: 1px solid var(--divider);
+      background: transparent;
+      color: var(--foreground);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .plan-row:first-child { border-top: 0; }
+    .plan-row:hover { background: var(--hover); }
+
+    .plan-row-name {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .plan-icon {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      flex: 0 0 auto;
+      border-radius: 9px;
+      background: var(--surface-subtle);
+      color: var(--muted);
+    }
+
+    .plan-icon .icon { width: 17px; height: 17px; }
+    .plan-primary { font-size: 13px; font-weight: 630; }
+    .plan-secondary { margin-top: 4px; color: var(--muted); font-size: 11px; }
+    .plan-cell-label { color: var(--faint); font-size: 11px; }
+    .plan-cell-value { margin-top: 4px; color: var(--muted); font-size: 12px; }
+    .plan-row-chevron { color: var(--faint); }
+
+    .route-name,
+    .route-purpose,
+    .plan-primary,
+    .plan-secondary,
+    .plan-cell-label,
+    .plan-cell-value {
+      display: block;
+    }
+
+    dialog {
+      width: min(500px, calc(100vw - 32px));
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--foreground);
+      box-shadow: var(--shadow-pop);
+    }
+
+    dialog::backdrop {
+      background: rgba(11, 13, 15, .46);
+      backdrop-filter: blur(2px);
+    }
+
+    .dialog-head {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 16px;
+      border-bottom: 1px solid var(--divider);
+    }
+
+    .dialog-head h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .dialog-head p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .dialog-head .icon-button {
+      width: 28px;
+      height: 28px;
+      margin-left: auto;
+    }
+
+    .dialog-body { padding: 16px; }
+
+    .dialog-foot {
+      display: flex;
+      justify-content: flex-end;
+      gap: 7px;
+      padding: 11px 16px;
+      border-top: 1px solid var(--divider);
+    }
+
+    .publish-checks {
+      display: grid;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    .publish-check {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .publish-check .icon { color: var(--success); }
+
+    .toast {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      z-index: 100;
+      max-width: 340px;
+      display: flex;
+      align-items: flex-start;
+      gap: 9px;
+      padding: 11px 12px;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      background: var(--surface);
+      box-shadow: var(--shadow-pop);
+      color: var(--foreground);
+      font-size: 12px;
+      opacity: 0;
+      transform: translateY(10px);
+      pointer-events: none;
+      transition: opacity .16s ease, transform .16s ease;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .toast .icon { color: var(--brass); }
+
+    .canvas-fullscreen .palette,
+    .canvas-fullscreen .inspector,
+    .canvas-fullscreen .plan-header {
+      display: none;
+    }
+
+    .canvas-fullscreen .builder-grid { grid-template-columns: 1fr; }
+
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 0 0 var(--running-soft); }
+      50% { box-shadow: 0 0 0 5px var(--running-soft); }
+    }
+
+    @media (max-width: 1120px) {
+      .builder-grid { grid-template-columns: 204px minmax(520px, 1fr) 292px; }
+      .canvas-summary { display: none; }
+      .plan-title p { max-width: 390px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <defs>
+      <symbol id="i-route" viewBox="0 0 24 24">
+        <circle cx="6" cy="6" r="2.5"></circle><circle cx="18" cy="7" r="2.5"></circle><circle cx="7" cy="18" r="2.5"></circle>
+        <path d="M8.5 6h4a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3H10a3 3 0 0 0-3 3v.5"></path>
+      </symbol>
+      <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"></path></symbol>
+      <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"></path></symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"></path></symbol>
+      <symbol id="i-play" viewBox="0 0 24 24"><path d="m8 5 11 7-11 7V5Z"></path></symbol>
+      <symbol id="i-publish" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7 9m5-5 5 5"></path><path d="M5 14v5h14v-5"></path></symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z"></path></symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"></path></symbol>
+      <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></symbol>
+      <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><path d="M12 7v5l3 2"></path></symbol>
+      <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 12V7a1.5 1.5 0 0 1 3 0v4-6a1.5 1.5 0 0 1 3 0v6-5a1.5 1.5 0 0 1 3 0v6-3a1.5 1.5 0 0 1 3 0v5c0 5-3 8-8 8-3.5 0-5-2-6-4l-2-4a1.5 1.5 0 0 1 2.6-1.5L8 14"></path></symbol>
+      <symbol id="i-agent" viewBox="0 0 24 24"><path d="M8 5h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H8a3 3 0 0 1-3-3V8a3 3 0 0 1 3-3Z"></path><path d="M9 11h.01M15 11h.01M9 15h6M12 5V2"></path></symbol>
+      <symbol id="i-gate" viewBox="0 0 24 24"><path d="M5 20V5h14v15M5 9h14M12 9v11"></path></symbol>
+      <symbol id="i-branch" viewBox="0 0 24 24"><path d="M7 4v5a3 3 0 0 0 3 3h7"></path><path d="m14 9 3 3-3 3"></path><path d="M7 20v-5a3 3 0 0 1 3-3"></path></symbol>
+      <symbol id="i-checks" viewBox="0 0 24 24"><path d="m4 7 2 2 4-4M4 17l2 2 4-4M13 7h7M13 17h7"></path></symbol>
+      <symbol id="i-hook" viewBox="0 0 24 24"><path d="M8 4v6a4 4 0 0 0 8 0V4M5 4h6M13 4h6M12 14v6"></path></symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"></rect></symbol>
+      <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"></path></symbol>
+      <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"></path></symbol>
+      <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 11v6M12 7h.01"></path></symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5c0 5 3 8 7 10 4-2 7-5 7-10V6l-7-3Z"></path><path d="m9 12 2 2 4-4"></path></symbol>
+      <symbol id="i-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"></path></symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"></path></symbol>
+      <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"></circle><circle cx="12" cy="12" r="1"></circle><circle cx="19" cy="12" r="1"></circle></symbol>
+      <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"></path></symbol>
+      <symbol id="i-layout" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="M9 4v16M9 10h12"></path></symbol>
+    </defs>
+  </svg>
+
+  <main class="app" id="app">
+    <header class="app-header">
+      <div class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-route"></use></svg></div>
+      <div class="brand-copy"><strong>Frota</strong><span>projeto ativo</span></div>
+      <div class="header-separator"></div>
+      <nav class="breadcrumb" aria-label="Navegação">
+        <button type="button" id="libraryBreadcrumb">Planos de voo</button>
+        <svg class="icon small"><use href="#i-chevron-right"></use></svg>
+        <strong id="breadcrumbPlan">Feature completa</strong>
+      </nav>
+      <div class="header-actions">
+        <span class="badge">Projeto Frota</span>
+        <button class="icon-button" id="themeToggle" type="button" aria-label="Usar tema escuro" title="Alternar tema">
+          <svg class="icon theme-moon"><use href="#i-moon"></use></svg>
+          <svg class="icon theme-sun" hidden><use href="#i-sun"></use></svg>
+        </button>
+        <button class="icon-button" type="button" aria-label="Mais opções" id="moreButton" title="Mais opções">
+          <svg class="icon"><use href="#i-more"></use></svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="library-view" id="libraryView" hidden>
+      <div class="library-shell">
+        <div class="library-hero">
+          <div class="library-hero-copy">
+            <h1>Planos de voo</h1>
+            <p>Defina como a frota planeja, executa, verifica e pede decisões. Cada publicação congela uma revisão reproduzível.</p>
+          </div>
+          <button class="button primary" id="newPlanButton" type="button">
+            <svg class="icon"><use href="#i-plus"></use></svg>
+            Novo plano
+          </button>
+        </div>
+        <div class="library-filter">
+          <strong>Biblioteca</strong>
+          <span id="planCount">3 planos</span>
+          <button class="compact-button" type="button" id="libraryFilter">
+            <svg class="icon small"><use href="#i-list"></use></svg>
+            Todos
+          </button>
+        </div>
+        <div class="plan-table" id="planTable">
+          <button class="plan-row" type="button" data-plan="Feature completa" data-description="Entrega com planejamento, implementação, testes e revisão independente.">
+            <span class="plan-row-name">
+              <span class="plan-icon"><svg class="icon"><use href="#i-route"></use></svg></span>
+              <span><span class="plan-primary">Feature completa</span><span class="plan-secondary">Entrega com planejamento, implementação, testes e revisão independente.</span></span>
+            </span>
+            <span><span class="plan-cell-label">Disparo</span><span class="plan-cell-value">Manual</span></span>
+            <span><span class="plan-cell-label">Estrutura</span><span class="plan-cell-value">8 nós · 9 rotas</span></span>
+            <span><span class="plan-cell-label">Estado</span><span class="plan-cell-value">Rascunho</span></span>
+            <svg class="icon plan-row-chevron"><use href="#i-chevron-right"></use></svg>
+          </button>
+          <button class="plan-row" type="button" data-plan="Correção segura" data-description="Reproduz a falha, corrige, roda a suíte e encerra com revisão.">
+            <span class="plan-row-name">
+              <span class="plan-icon"><svg class="icon"><use href="#i-route"></use></svg></span>
+              <span><span class="plan-primary">Correção segura</span><span class="plan-secondary">Reproduz a falha, corrige, roda a suíte e encerra com revisão.</span></span>
+            </span>
+            <span><span class="plan-cell-label">Disparo</span><span class="plan-cell-value">Manual</span></span>
+            <span><span class="plan-cell-label">Estrutura</span><span class="plan-cell-value">6 nós · 7 rotas</span></span>
+            <span><span class="plan-cell-label">Estado</span><span class="plan-cell-value">Publicado</span></span>
+            <svg class="icon plan-row-chevron"><use href="#i-chevron-right"></use></svg>
+          </button>
+          <button class="plan-row" type="button" data-plan="Manutenção noturna" data-description="Atualiza dependências em worktree isolado e abre uma decisão pela manhã.">
+            <span class="plan-row-name">
+              <span class="plan-icon"><svg class="icon"><use href="#i-clock"></use></svg></span>
+              <span><span class="plan-primary">Manutenção noturna</span><span class="plan-secondary">Atualiza dependências em worktree isolado e abre uma decisão pela manhã.</span></span>
+            </span>
+            <span><span class="plan-cell-label">Disparo</span><span class="plan-cell-value">Agenda · 02:00</span></span>
+            <span><span class="plan-cell-label">Estrutura</span><span class="plan-cell-value">7 nós · 8 rotas</span></span>
+            <span><span class="plan-cell-label">Estado</span><span class="plan-cell-value">Publicado</span></span>
+            <svg class="icon plan-row-chevron"><use href="#i-chevron-right"></use></svg>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="builder-view" id="builderView">
+      <div class="plan-header">
+        <div class="plan-title">
+          <div class="plan-title-row">
+            <h1 id="planName">Feature completa</h1>
+            <span class="badge" id="planState">Rascunho</span>
+          </div>
+          <p id="planDescription">Entrega com planejamento, implementação, testes e revisão independente.</p>
+        </div>
+        <div class="plan-actions">
+          <span class="revision" id="revisionLabel">revisão 7 · salva</span>
+          <button class="button" id="testButton" type="button">
+            <svg class="icon"><use href="#i-play"></use></svg>
+            <span>Testar plano</span>
+          </button>
+          <button class="button primary" id="publishButton" type="button">
+            <svg class="icon"><use href="#i-publish"></use></svg>
+            Publicar
+          </button>
+        </div>
+      </div>
+
+      <div class="builder-grid">
+        <aside class="palette" aria-label="Blocos do plano">
+          <div class="panel-head">
+            <strong>Blocos</strong>
+            <span>clique para inserir</span>
+          </div>
+          <label class="palette-search">
+            <svg class="icon"><use href="#i-search"></use></svg>
+            <input id="blockSearch" type="search" placeholder="Buscar bloco" aria-label="Buscar bloco">
+          </label>
+          <div class="palette-group">
+            <div class="palette-label">Quando começar</div>
+            <button class="block-button" type="button" data-add="Disparo manual" data-kind="trigger">
+              <span class="block-glyph trigger"><svg class="icon"><use href="#i-hand"></use></svg></span>
+              <span class="block-name">Disparo manual</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Agendamento" data-kind="trigger">
+              <span class="block-glyph trigger"><svg class="icon"><use href="#i-clock"></use></svg></span>
+              <span class="block-name">Agendamento</span><span class="block-add">+</span>
+            </button>
+          </div>
+          <div class="palette-group">
+            <div class="palette-label">Trabalho</div>
+            <button class="block-button" type="button" data-add="Fase com agent" data-kind="phase">
+              <span class="block-glyph"><svg class="icon"><use href="#i-agent"></use></svg></span>
+              <span class="block-name">Fase com agent</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Especialista" data-kind="phase">
+              <span class="block-glyph"><svg class="icon"><use href="#i-agent"></use></svg></span>
+              <span class="block-name">Especialista</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Hook do projeto" data-kind="action">
+              <span class="block-glyph action"><svg class="icon"><use href="#i-hook"></use></svg></span>
+              <span class="block-name">Hook do projeto</span><span class="block-add">+</span>
+            </button>
+          </div>
+          <div class="palette-group">
+            <div class="palette-label">Controle</div>
+            <button class="block-button" type="button" data-add="Decisão humana" data-kind="gate">
+              <span class="block-glyph gate"><svg class="icon"><use href="#i-gate"></use></svg></span>
+              <span class="block-name">Decisão humana</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Condição" data-kind="branch">
+              <span class="block-glyph"><svg class="icon"><use href="#i-branch"></use></svg></span>
+              <span class="block-name">Condição</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Limite de repetição" data-kind="gate">
+              <span class="block-glyph gate"><svg class="icon"><use href="#i-stop"></use></svg></span>
+              <span class="block-name">Limite de repetição</span><span class="block-add">+</span>
+            </button>
+          </div>
+          <div class="palette-group">
+            <div class="palette-label">Verificação e saída</div>
+            <button class="block-button" type="button" data-add="Rodar comandos" data-kind="check">
+              <span class="block-glyph action"><svg class="icon"><use href="#i-checks"></use></svg></span>
+              <span class="block-name">Rodar comandos</span><span class="block-add">+</span>
+            </button>
+            <button class="block-button" type="button" data-add="Encerrar missão" data-kind="finish">
+              <span class="block-glyph"><svg class="icon"><use href="#i-check"></use></svg></span>
+              <span class="block-name">Encerrar missão</span><span class="block-add">+</span>
+            </button>
+          </div>
+          <div class="palette-note">Um bloco novo entra sem rota. A validação impede publicar até você conectá-lo ou removê-lo.</div>
+        </aside>
+
+        <section class="canvas-column" aria-label="Construtor do fluxo">
+          <div class="canvas-toolbar">
+            <div class="view-switch" role="tablist" aria-label="Visualização">
+              <button type="button" class="active" data-view="flow" role="tab" aria-selected="true">Fluxo</button>
+              <button type="button" data-view="route" role="tab" aria-selected="false">Rota</button>
+            </div>
+            <span class="canvas-summary">8 nós · 9 rotas · 1 gate humano</span>
+            <div class="canvas-tools">
+              <button class="compact-button" id="zoomOut" type="button" aria-label="Diminuir zoom"><svg class="icon small"><use href="#i-minus"></use></svg></button>
+              <span class="mono" id="zoomLabel" style="min-width:38px;text-align:center;color:var(--faint);font-size:11px">100%</span>
+              <button class="compact-button" id="zoomIn" type="button" aria-label="Aumentar zoom"><svg class="icon small"><use href="#i-plus"></use></svg></button>
+              <button class="compact-button" id="fitButton" type="button"><svg class="icon small"><use href="#i-fit"></use></svg>Enquadrar</button>
+              <button class="compact-button" id="fullscreenButton" type="button" aria-label="Expandir canvas"><svg class="icon small"><use href="#i-layout"></use></svg></button>
+            </div>
+          </div>
+
+          <div class="graph-scroll" id="graphScroll">
+            <div class="graph" id="graph">
+              <div class="graph-legend">
+                <span class="legend-item"><i class="legend-dot"></i> fase</span>
+                <span class="legend-item"><i class="legend-dot gate"></i> decisão</span>
+                <span class="legend-item"><i class="legend-dot check"></i> verificação</span>
+              </div>
+              <svg class="edges" viewBox="0 0 900 590" aria-hidden="true">
+                <defs>
+                  <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+                    <path d="M 0 0 L 10 5 L 0 10 z" style="fill:currentColor;stroke:none"></path>
+                  </marker>
+                </defs>
+                <path d="M194 137 H202" marker-end="url(#arrow)"></path>
+                <path d="M364 137 H372" marker-end="url(#arrow)"></path>
+                <path d="M534 137 H542" marker-end="url(#arrow)"></path>
+                <path d="M704 137 H712" marker-end="url(#arrow)"></path>
+                <path class="edge-pass" d="M793 175 V278" marker-end="url(#arrow)"></path>
+                <path class="edge-fail" d="M793 175 V218 H623 V278" marker-end="url(#arrow)"></path>
+                <path class="edge-pass" d="M793 354 V443" marker-end="url(#arrow)"></path>
+                <path class="edge-fail" d="M712 316 H696 V390 H623 V354" marker-end="url(#arrow)"></path>
+                <path d="M623 278 V235 H793 V175" marker-end="url(#arrow)"></path>
+              </svg>
+              <span class="edge-label pass" style="left:803px;top:218px">passou</span>
+              <span class="edge-label fail" style="left:653px;top:206px">falhou</span>
+              <span class="edge-label pass" style="left:793px;top:392px">aprovado</span>
+              <span class="edge-label fail" style="left:620px;top:377px">reprovado</span>
+              <span class="edge-label" style="left:624px;top:223px">nova tentativa</span>
+
+              <button class="node" type="button" data-node="manual" data-kind="trigger" style="left:32px;top:99px">
+                <span class="port out"></span>
+                <span class="node-top"><span class="node-step">INÍCIO</span><span class="node-kind">manual</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Nova missão</span></span>
+                <span class="node-meta">gesto humano</span>
+              </button>
+
+              <button class="node selected" type="button" data-node="plan" data-kind="phase" style="left:202px;top:99px">
+                <span class="port in"></span><span class="port out"></span>
+                <span class="node-top"><span class="node-step">FASE 01</span><span class="node-kind">planejador</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Definir a régua</span></span>
+                <span class="node-meta">Claude Code · Opus</span>
+              </button>
+
+              <button class="node" type="button" data-node="gate" data-kind="gate" style="left:372px;top:99px">
+                <span class="port in"></span><span class="port out"></span>
+                <span class="node-top"><span class="node-step">GATE</span><span class="node-kind">decisão</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Aprovar plano</span></span>
+                <span class="node-meta">sempre pede</span>
+              </button>
+
+              <button class="node" type="button" data-node="implement" data-kind="phase" style="left:542px;top:99px">
+                <span class="port in"></span><span class="port out"></span>
+                <span class="node-top"><span class="node-step">FASE 02</span><span class="node-kind">executor</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Implementar</span></span>
+                <span class="node-meta">Codex · gpt-5.6</span>
+              </button>
+
+              <button class="node" type="button" data-node="tests" data-kind="check" style="left:712px;top:99px">
+                <span class="port in"></span><span class="port bottom"></span>
+                <span class="node-top"><span class="node-step">CHECK</span><span class="node-kind">comandos</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Rodar verificações</span></span>
+                <span class="node-meta">3 comandos · bloqueia</span>
+              </button>
+
+              <button class="node" type="button" data-node="correct" data-kind="phase" style="left:542px;top:278px">
+                <span class="port top"></span><span class="port out"></span><span class="port bottom"></span>
+                <span class="node-top"><span class="node-step">FASE 03</span><span class="node-kind">executor</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Corrigir</span></span>
+                <span class="node-meta">Codex · 2 tentativas</span>
+              </button>
+
+              <button class="node" type="button" data-node="review" data-kind="phase" style="left:712px;top:278px">
+                <span class="port in"></span><span class="port top"></span><span class="port bottom"></span>
+                <span class="node-top"><span class="node-step">FASE 04</span><span class="node-kind">revisor</span></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Revisar evidências</span></span>
+                <span class="node-meta">Especialista Revisão</span>
+              </button>
+
+              <button class="node finish-node" type="button" data-node="finish" data-kind="finish" style="left:712px;top:443px">
+                <span class="port top"></span>
+                <span class="node-title"><i class="node-state-dot"></i><span class="node-name">Missão concluída</span></span>
+              </button>
+            </div>
+          </div>
+
+          <div class="route-view" id="routeView" hidden>
+            <div class="route-intro">
+              <svg class="icon"><use href="#i-route"></use></svg>
+              <div><strong>Esta rota nasce do fluxo visual.</strong><br>Use a lista para revisar fases e tentativas. Conexões, retornos e condições continuam no Fluxo.</div>
+            </div>
+            <div class="route-list">
+              <div class="route-row" data-route-node="plan"><span class="route-number">01</span><span><span class="route-name">Definir a régua</span><span class="route-purpose">Transforma o pedido em plano verificável</span></span><span class="route-agent">Claude Code · Opus</span><span class="route-attempts">1 tentativa</span></div>
+              <div class="route-row" data-route-node="gate"><span class="route-number">02</span><span><span class="route-name">Aprovar plano</span><span class="route-purpose">Pede uma decisão antes de editar</span></span><span class="route-agent">Gate humano</span><span class="route-attempts">sempre pede</span></div>
+              <div class="route-row" data-route-node="implement"><span class="route-number">03</span><span><span class="route-name">Implementar</span><span class="route-purpose">Executa o plano aprovado</span></span><span class="route-agent">Codex · gpt-5.6</span><span class="route-attempts">1 tentativa</span></div>
+              <div class="route-row" data-route-node="tests"><span class="route-number">04</span><span><span class="route-name">Rodar verificações</span><span class="route-purpose">Compila, testa e aplica as guardas</span></span><span class="route-agent">Comandos locais</span><span class="route-attempts">fecha na falha</span></div>
+              <div class="route-row" data-route-node="correct"><span class="route-number">05</span><span><span class="route-name">Corrigir</span><span class="route-purpose">Recebe a evidência e tenta novamente</span></span><span class="route-agent">Codex · gpt-5.6</span><span class="route-attempts">2 tentativas</span></div>
+              <div class="route-row" data-route-node="review"><span class="route-number">06</span><span><span class="route-name">Revisar evidências</span><span class="route-purpose">Julga critérios e aponta bloqueios</span></span><span class="route-agent">Especialista · Revisão</span><span class="route-attempts">1 tentativa</span></div>
+            </div>
+          </div>
+
+          <div class="test-drawer" id="testDrawer">
+            <div class="test-drawer-inner">
+              <div class="test-summary">
+                <strong id="testSummaryTitle">Plano ainda não testado</strong>
+                <p id="testSummaryCopy">O teste percorre a rota com dados locais. Nenhum agent é iniciado.</p>
+              </div>
+              <div class="test-log" id="testLog">
+                <div class="log-line"><span class="log-time">agora</span><span class="log-info">pronto</span><span>Use “Testar plano” para validar a rota.</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="validation-bar" id="validationBar">
+            <span class="validation-mark"><svg class="icon small"><use href="#i-check"></use></svg></span>
+            <strong id="validationTitle">Plano válido</strong>
+            <span id="validationCopy">8 nós conectados, saídas completas e limite de repetição definido.</span>
+            <button class="validation-detail" id="validationDetail" type="button">Ver evidência</button>
+          </div>
+        </section>
+
+        <aside class="inspector" id="inspector" aria-label="Inspetor do nó">
+          <div class="inspector-title">
+            <div class="inspector-kicker" id="inspectorKicker">FASE 01 · PLANEJADOR</div>
+            <div class="inspector-title-row">
+              <h2 id="inspectorTitle">Definir a régua</h2>
+              <button class="icon-button" id="collapseInspector" type="button" aria-label="Recolher inspetor">
+                <svg class="icon"><use href="#i-chevron-right"></use></svg>
+              </button>
+            </div>
+          </div>
+          <div class="inspector-tabs" role="tablist">
+            <button type="button" class="active" data-tab="config" role="tab" aria-selected="true">Configuração</button>
+            <button type="button" data-tab="security" role="tab" aria-selected="false">Segurança</button>
+            <button type="button" data-tab="output" role="tab" aria-selected="false">Saídas</button>
+          </div>
+          <div class="inspector-body">
+            <div class="tab-panel" data-panel="config">
+              <section class="inspector-section">
+                <label class="field"><span>Nome do nó</span><input id="nodeNameInput" value="Definir a régua"></label>
+                <div class="field-grid">
+                  <label class="field"><span>Papel</span><select id="roleSelect"><option>Planejador</option><option>Executor</option><option>Revisor</option></select></label>
+                  <label class="field"><span>Agent</span><select id="agentSelect"><option>Claude Code</option><option>Codex</option><option>Antigravity</option></select></label>
+                </div>
+                <div class="field-grid">
+                  <label class="field"><span>Modelo</span><select id="modelSelect"><option>Opus</option><option>Sonnet</option><option>Predefinido</option></select></label>
+                  <label class="field"><span>Tentativas</span><select id="attemptSelect"><option>1</option><option>2</option><option>3</option></select></label>
+                </div>
+                <label class="field"><span>Instrução específica</span><textarea id="instructionInput">Leia a tarefa, o estado real do projeto e escreva um plano com critérios observáveis.</textarea></label>
+              </section>
+              <section class="inspector-section">
+                <div class="section-title">Critérios</div>
+                <label class="field"><span>Entrada</span><textarea id="entryInput">Pedido humano presente
+Projeto acessível
+Árvore de trabalho inspecionada</textarea></label>
+                <label class="field"><span>Saída</span><textarea id="exitInput">Plano enumera arquivos e riscos
+Cada etapa tem verificação
+Escopo está explícito</textarea></label>
+                <div class="inline-note"><svg class="icon"><use href="#i-info"></use></svg><span>Os critérios entram no contexto do agent. Use um bloco de verificação quando o resultado puder ser provado por comando.</span></div>
+              </section>
+            </div>
+
+            <div class="tab-panel" data-panel="security" hidden>
+              <section class="inspector-section">
+                <div class="permission-scope"><svg class="icon"><use href="#i-shield"></use></svg><span>Teto do Projeto Frota</span><strong>ATÉ LIBERADO</strong></div>
+                <div class="section-title"><span>Modo padrão do plano</span><span>herdado pelo nó</span></div>
+                <div class="permission-choice" id="permissionChoice">
+                  <button type="button" data-mode="so-le">Só lê</button>
+                  <button type="button" data-mode="pede" class="active">Pede</button>
+                  <button type="button" data-mode="liberado">Liberado</button>
+                </div>
+                <div class="inline-note warning" id="liberadoWarning" hidden style="margin-top:8px"><svg class="icon"><use href="#i-info"></use></svg><span>Liberado permite efeitos sem nova confirmação. Só pode ser publicado com disparo manual.</span></div>
+                <label class="field" style="margin-top:10px"><span>Restrição deste nó</span><select id="nodePermissionSelect"><option value="inherit">Herdar do plano</option><option value="so-le">Restringir a Só lê</option><option value="pede">Restringir a Pede</option></select></label>
+                <div class="inline-note"><svg class="icon"><use href="#i-info"></use></svg><span>O projeto define o teto. O plano escolhe o padrão. O nó pode herdar ou restringir, nunca ampliar.</span></div>
+              </section>
+              <section class="inspector-section">
+                <div class="section-title">Restrições deste nó</div>
+                <div class="toggle-row"><div class="toggle-copy"><div class="toggle-name">Editar arquivos do projeto</div><div class="toggle-why">Nunca fora da raiz ativa</div></div><button class="toggle" type="button" aria-pressed="true" aria-label="Editar arquivos do projeto"></button></div>
+                <div class="toggle-row"><div class="toggle-copy"><div class="toggle-name">Executar comandos locais</div><div class="toggle-why">Comandos aparecem na evidência</div></div><button class="toggle" type="button" aria-pressed="true" aria-label="Executar comandos locais"></button></div>
+                <div class="toggle-row"><div class="toggle-copy"><div class="toggle-name">Acessar rede</div><div class="toggle-why">Mantém autenticação e domínios sob controle</div></div><button class="toggle" type="button" aria-pressed="false" aria-label="Acessar rede"></button></div>
+                <div class="toggle-row"><div class="toggle-copy"><div class="toggle-name">Pedir outro agent</div><div class="toggle-why">Exige confirmação humana no despacho</div></div><button class="toggle" type="button" aria-pressed="false" aria-label="Pedir outro agent"></button></div>
+              </section>
+              <section class="inspector-section">
+                <div class="section-title">Permissão efetiva</div>
+                <div class="effective-card">
+                  <div class="effective-head"><svg class="icon"><use href="#i-shield"></use></svg><strong id="effectiveTitle">Claude Code</strong><span class="effective-mode" id="effectiveMode">PEDE</span></div>
+                  <div class="effective-list" id="effectiveList">
+                    <span><i></i> leitura dentro do projeto</span>
+                    <span><i></i> edição pede confirmação</span>
+                    <span><i></i> rede bloqueada</span>
+                    <span><i></i> despacho pede gesto humano</span>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            <div class="tab-panel" data-panel="output" hidden>
+              <section class="inspector-section">
+                <div class="section-title">Rotas deste nó</div>
+                <div class="output-card">
+                  <div class="output-head"><span class="output-dot"></span>Concluído</div>
+                  <div class="output-destination" id="successDestination">Segue para Aprovar plano</div>
+                </div>
+                <div class="output-card">
+                  <div class="output-head"><span class="output-dot fail"></span>Falhou</div>
+                  <div class="output-destination" id="failureDestination">Encerra a missão com evidência</div>
+                </div>
+              </section>
+              <section class="inspector-section">
+                <div class="section-title">Resultado entregue</div>
+                <label class="field"><span>Formato esperado</span><select><option>Resumo estruturado</option><option>Texto livre</option><option>JSON validado</option></select></label>
+                <label class="field"><span>Campos obrigatórios</span><textarea>resumo
+riscos
+arquivos_afetados
+verificacoes</textarea></label>
+                <div class="inline-note"><svg class="icon"><use href="#i-info"></use></svg><span>A saída fica anexada à missão e alimenta o próximo nó sem depender do transcript visual.</span></div>
+              </section>
+            </div>
+          </div>
+          <div class="inspector-foot">
+            <button class="button ghost danger" id="removeNodeButton" type="button" hidden>
+              <svg class="icon small"><use href="#i-trash"></use></svg>
+              Remover nó
+            </button>
+            <span style="margin-left:auto;color:var(--faint);font:11px var(--mono)" id="saveState">salvo agora</span>
+          </div>
+        </aside>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="publishDialog">
+    <div class="dialog-head">
+      <div><h2>Publicar revisão 8?</h2><p>Novas missões passam a usar esta versão. As que já começaram preservam a revisão anterior.</p></div>
+      <button class="icon-button" type="button" data-close-dialog="publishDialog" aria-label="Fechar"><svg class="icon"><use href="#i-close"></use></svg></button>
+    </div>
+    <div class="dialog-body">
+      <div class="inline-note"><svg class="icon"><use href="#i-info"></use></svg><span>Publicar não inicia uma missão. O disparo continua dependendo de uma pessoa ou do agendamento configurado.</span></div>
+      <div class="publish-checks">
+        <div class="publish-check"><svg class="icon"><use href="#i-check"></use></svg>8 nós estão conectados</div>
+        <div class="publish-check"><svg class="icon"><use href="#i-check"></use></svg>Rotas de sucesso e falha estão completas</div>
+        <div class="publish-check"><svg class="icon"><use href="#i-check"></use></svg>Permissões efetivas foram compiladas</div>
+      </div>
+    </div>
+    <div class="dialog-foot">
+      <button class="button ghost" type="button" data-close-dialog="publishDialog">Continuar editando</button>
+      <button class="button primary" id="confirmPublish" type="button">Publicar revisão 8</button>
+    </div>
+  </dialog>
+
+  <dialog id="newPlanDialog">
+    <div class="dialog-head">
+      <div><h2>Novo plano de voo</h2><p>Comece com um fluxo seguro e ajuste os blocos no canvas.</p></div>
+      <button class="icon-button" type="button" data-close-dialog="newPlanDialog" aria-label="Fechar"><svg class="icon"><use href="#i-close"></use></svg></button>
+    </div>
+    <div class="dialog-body">
+      <label class="field"><span>Nome do plano</span><input id="newPlanName" value="Entrega orientada"></label>
+      <label class="field"><span>Começar com</span><select id="newPlanTemplate"><option>Planejar, executar e revisar</option><option>Fluxo vazio</option><option>Correção com evidência</option></select></label>
+    </div>
+    <div class="dialog-foot">
+      <button class="button ghost" type="button" data-close-dialog="newPlanDialog">Cancelar</button>
+      <button class="button primary" id="createPlanButton" type="button">Criar plano</button>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite">
+    <svg class="icon"><use href="#i-check"></use></svg>
+    <span id="toastText">Alteração salva.</span>
+  </div>
+
+  <script>
+    (function () {
+      var app = document.getElementById("app");
+      var builderView = document.getElementById("builderView");
+      var libraryView = document.getElementById("libraryView");
+      var graph = document.getElementById("graph");
+      var graphScroll = document.getElementById("graphScroll");
+      var routeView = document.getElementById("routeView");
+      var inspector = document.getElementById("inspector");
+      var testDrawer = document.getElementById("testDrawer");
+      var toastTimer;
+      var saveTimer;
+      var testTimers = [];
+      var selectedId = "plan";
+      var permissionMode = "pede";
+      var nodePermissions = { gate: "pede" };
+      var zoom = 1;
+      var revision = 7;
+      var dynamicCount = 0;
+      var inspectorCollapsed = false;
+
+      var nodes = {
+        manual: { kicker: "INÍCIO · MANUAL", name: "Nova missão", role: "Disparo", agent: "Pessoa", model: "Não se aplica", attempts: "1", instruction: "Começa quando uma pessoa confirma o objetivo da missão.", entry: "Objetivo informado", exit: "Missão criada", success: "Segue para Definir a régua", failure: "Não inicia a missão" },
+        plan: { kicker: "FASE 01 · PLANEJADOR", name: "Definir a régua", role: "Planejador", agent: "Claude Code", model: "Opus", attempts: "1", instruction: "Leia a tarefa, o estado real do projeto e escreva um plano com critérios observáveis.", entry: "Pedido humano presente\nProjeto acessível\nÁrvore de trabalho inspecionada", exit: "Plano enumera arquivos e riscos\nCada etapa tem verificação\nEscopo está explícito", success: "Segue para Aprovar plano", failure: "Encerra a missão com evidência" },
+        gate: { kicker: "GATE · DECISÃO HUMANA", name: "Aprovar plano", role: "Decisão", agent: "Pessoa", model: "Não se aplica", attempts: "1", instruction: "Mostre o plano, riscos e permissões efetivas antes de pedir a decisão.", entry: "Plano completo", exit: "Aprovado ou recusado", success: "Segue para Implementar", failure: "Encerra sem editar arquivos" },
+        implement: { kicker: "FASE 02 · EXECUTOR", name: "Implementar", role: "Executor", agent: "Codex", model: "gpt-5.6", attempts: "1", instruction: "Implemente somente o plano aprovado e preserve alterações fora do escopo.", entry: "Plano aprovado\nPermissão efetiva compilada", exit: "Mudanças aplicadas\nArquivos afetados listados", success: "Segue para Rodar verificações", failure: "Encerra a missão com evidência" },
+        tests: { kicker: "CHECK · COMANDOS", name: "Rodar verificações", role: "Verificação", agent: "Comandos locais", model: "Determinístico", attempts: "1", instruction: "Execute as verificações configuradas e preserve stdout, stderr e código de saída.", entry: "Mudanças aplicadas", exit: "Todos os comandos retornam código 0", success: "Segue para Revisar evidências", failure: "Segue para Corrigir" },
+        correct: { kicker: "FASE 03 · EXECUTOR", name: "Corrigir", role: "Executor", agent: "Codex", model: "gpt-5.6", attempts: "2", instruction: "Use somente a evidência da falha para corrigir e devolver o trabalho às verificações.", entry: "Falha reproduzível\nTentativas restantes", exit: "Correção aplicada", success: "Retorna para Rodar verificações", failure: "Encerra após o limite" },
+        review: { kicker: "FASE 04 · REVISOR", name: "Revisar evidências", role: "Revisor", agent: "Especialista Revisão", model: "Opus", attempts: "1", instruction: "Julgue os critérios com base nos diffs e resultados anexados. Não aprove sem evidência.", entry: "Verificações concluídas\nDiff disponível", exit: "Veredito e achados estruturados", success: "Segue para Missão concluída", failure: "Segue para Corrigir" },
+        finish: { kicker: "SAÍDA · SUCESSO", name: "Missão concluída", role: "Saída", agent: "Frota", model: "Não se aplica", attempts: "1", instruction: "Registre a revisão do plano, o veredito e as evidências.", entry: "Revisão aprovada", exit: "Missão encerrada", success: "Fim da rota", failure: "Não se aplica" }
+      };
+
+      function iconUse(id) {
+        return '<svg class="icon"><use href="#' + id + '"></use></svg>';
+      }
+
+      function showToast(message, icon) {
+        document.getElementById("toastText").textContent = message;
+        document.querySelector("#toast use").setAttribute("href", "#" + (icon || "i-check"));
+        document.getElementById("toast").classList.add("show");
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () {
+          document.getElementById("toast").classList.remove("show");
+        }, 2600);
+      }
+
+      function markSaved() {
+        document.getElementById("saveState").textContent = "salvando";
+        document.getElementById("revisionLabel").textContent = "revisão " + revision + " · salvando";
+        clearTimeout(saveTimer);
+        saveTimer = setTimeout(function () {
+          document.getElementById("saveState").textContent = "salvo agora";
+          document.getElementById("revisionLabel").textContent = "revisão " + revision + " · salva";
+        }, 520);
+      }
+
+      function selectNode(id) {
+        var data = nodes[id];
+        if (!data) return;
+        selectedId = id;
+        document.querySelectorAll(".node").forEach(function (node) {
+          node.classList.toggle("selected", node.dataset.node === id);
+        });
+        document.getElementById("inspectorKicker").textContent = data.kicker;
+        document.getElementById("inspectorTitle").textContent = data.name;
+        document.getElementById("nodeNameInput").value = data.name;
+        document.getElementById("roleSelect").value = optionOrFirst(document.getElementById("roleSelect"), data.role);
+        document.getElementById("agentSelect").value = optionOrFirst(document.getElementById("agentSelect"), data.agent);
+        document.getElementById("modelSelect").value = optionOrFirst(document.getElementById("modelSelect"), data.model);
+        document.getElementById("attemptSelect").value = optionOrFirst(document.getElementById("attemptSelect"), data.attempts);
+        document.getElementById("instructionInput").value = data.instruction;
+        document.getElementById("entryInput").value = data.entry;
+        document.getElementById("exitInput").value = data.exit;
+        document.getElementById("successDestination").textContent = data.success;
+        document.getElementById("failureDestination").textContent = data.failure;
+        document.getElementById("effectiveTitle").textContent = data.agent;
+        document.getElementById("removeNodeButton").hidden = id.indexOf("dynamic-") !== 0;
+        document.getElementById("nodePermissionSelect").value = nodePermissions[id] || "inherit";
+        document.getElementById("nodePermissionSelect").disabled = id === "gate";
+        updateEffectivePermission(permissionMode, false);
+      }
+
+      function optionOrFirst(select, desired) {
+        var match = Array.from(select.options).find(function (option) { return option.value === desired; });
+        return match ? desired : select.options[0].value;
+      }
+
+      function showBuilder(name, description) {
+        libraryView.hidden = true;
+        builderView.hidden = false;
+        document.getElementById("breadcrumbPlan").hidden = false;
+        document.querySelector(".breadcrumb > .icon").removeAttribute("hidden");
+        if (name) {
+          document.getElementById("planName").textContent = name;
+          document.getElementById("breadcrumbPlan").textContent = name;
+        }
+        if (description) document.getElementById("planDescription").textContent = description;
+      }
+
+      function showLibrary() {
+        builderView.hidden = true;
+        libraryView.hidden = false;
+        document.getElementById("breadcrumbPlan").hidden = true;
+        document.querySelector(".breadcrumb > .icon").setAttribute("hidden", "");
+      }
+
+      function setView(view) {
+        document.querySelectorAll("[data-view]").forEach(function (button) {
+          var active = button.dataset.view === view;
+          button.classList.toggle("active", active);
+          button.setAttribute("aria-selected", String(active));
+        });
+        graphScroll.hidden = view !== "flow";
+        routeView.hidden = view !== "route";
+      }
+
+      function updateZoom(next) {
+        zoom = Math.max(.75, Math.min(1.25, next));
+        graph.style.transform = "scale(" + zoom + ")";
+        document.getElementById("zoomLabel").textContent = Math.round(zoom * 100) + "%";
+      }
+
+      function setValidation(hasError) {
+        var bar = document.getElementById("validationBar");
+        bar.classList.toggle("has-error", hasError);
+        document.querySelector("#validationBar use").setAttribute("href", hasError ? "#i-info" : "#i-check");
+        document.getElementById("validationTitle").textContent = hasError ? dynamicCount + " bloco sem rota" : "Plano válido";
+        document.getElementById("validationCopy").textContent = hasError ? "Conecte ou remova o bloco antes de testar e publicar." : "8 nós conectados, saídas completas e limite de repetição definido.";
+        document.getElementById("publishButton").disabled = hasError;
+      }
+
+      function addNode(label, kind) {
+        dynamicCount += 1;
+        var id = "dynamic-" + dynamicCount;
+        var top = 480 + ((dynamicCount - 1) % 2) * 88;
+        var left = 30 + ((dynamicCount - 1) % 5) * 170;
+        nodes[id] = {
+          kicker: "NOVO BLOCO · SEM ROTA",
+          name: label,
+          role: kind === "gate" ? "Decisão" : "Executor",
+          agent: kind === "trigger" ? "Pessoa" : "Codex",
+          model: kind === "trigger" ? "Não se aplica" : "Predefinido",
+          attempts: "1",
+          instruction: "Defina o papel deste bloco na missão.",
+          entry: "Critério de entrada pendente",
+          exit: "Critério de saída pendente",
+          success: "Saída ainda não conectada",
+          failure: "Saída ainda não conectada"
+        };
+        var button = document.createElement("button");
+        button.className = "node dynamic-node";
+        button.type = "button";
+        button.dataset.node = id;
+        button.dataset.kind = kind;
+        button.style.left = left + "px";
+        button.style.top = top + "px";
+        button.innerHTML = '<span class="port in"></span><span class="port out"></span><span class="node-top"><span class="node-step">NOVO</span><span class="node-kind">sem rota</span></span><span class="node-title"><i class="node-state-dot"></i><span class="node-name"></span></span><span class="node-meta">configure e conecte</span>';
+        button.querySelector(".node-name").textContent = label;
+        button.addEventListener("click", function () { selectNode(id); });
+        graph.appendChild(button);
+        selectNode(id);
+        setValidation(true);
+        markSaved();
+        showToast(label + " inserido. Falta conectar o bloco.", "i-info");
+        graphScroll.scrollTo({ left: 0, top: Math.max(0, top - 180), behavior: "smooth" });
+      }
+
+      function removeSelectedNode() {
+        if (selectedId.indexOf("dynamic-") !== 0) return;
+        var target = graph.querySelector('[data-node="' + selectedId + '"]');
+        if (target) target.remove();
+        delete nodes[selectedId];
+        dynamicCount = Math.max(0, document.querySelectorAll(".dynamic-node").length);
+        selectNode("plan");
+        setValidation(dynamicCount > 0);
+        markSaved();
+        showToast("Bloco removido.", "i-check");
+      }
+
+      function updateEffectivePermission(mode, shouldSave) {
+        permissionMode = mode;
+        document.querySelectorAll("[data-mode]").forEach(function (button) {
+          button.classList.toggle("active", button.dataset.mode === mode);
+        });
+        var labels = { "so-le": "SÓ LÊ", "pede": "PEDE", "liberado": "LIBERADO" };
+        var nodeMode = nodePermissions[selectedId] || "inherit";
+        var ranks = { "so-le": 0, "pede": 1, "liberado": 2 };
+        var effective = nodeMode === "inherit" ? mode : (ranks[nodeMode] < ranks[mode] ? nodeMode : mode);
+        document.getElementById("effectiveMode").textContent = labels[effective];
+        document.getElementById("liberadoWarning").hidden = mode !== "liberado";
+        var list = document.getElementById("effectiveList");
+        if (effective === "so-le") {
+          list.innerHTML = "<span><i></i> leitura dentro do projeto</span><span><i></i> edição bloqueada</span><span><i></i> comandos sem efeito</span><span><i></i> rede bloqueada</span>";
+        } else if (effective === "liberado") {
+          list.innerHTML = "<span><i></i> leitura e edição dentro do projeto</span><span><i></i> comandos locais sem nova confirmação</span><span><i></i> rede segue bloqueada pelo nó</span><span><i></i> despacho ainda pede gesto humano</span>";
+        } else {
+          list.innerHTML = "<span><i></i> leitura dentro do projeto</span><span><i></i> edição pede confirmação</span><span><i></i> rede bloqueada</span><span><i></i> despacho pede gesto humano</span>";
+        }
+        if (shouldSave !== false) markSaved();
+      }
+
+      function clearTestTimers() {
+        testTimers.forEach(clearTimeout);
+        testTimers = [];
+      }
+
+      function runTest() {
+        if (dynamicCount > 0) {
+          testDrawer.classList.add("open");
+          document.getElementById("testSummaryTitle").textContent = "Teste bloqueado";
+          document.getElementById("testSummaryCopy").textContent = "Há bloco sem rota. Conecte ou remova antes de testar.";
+          document.getElementById("testLog").innerHTML = '<div class="log-line"><span class="log-time">agora</span><span style="color:var(--warning)">bloqueado</span><span>Validação estrutural encontrou ' + dynamicCount + ' bloco sem rota.</span></div>';
+          return;
+        }
+        clearTestTimers();
+        var order = ["manual", "plan", "gate", "implement", "tests", "review", "finish"];
+        var button = document.getElementById("testButton");
+        button.disabled = true;
+        button.querySelector("span").textContent = "Testando";
+        testDrawer.classList.add("open");
+        document.getElementById("testSummaryTitle").textContent = "Simulação local em andamento";
+        document.getElementById("testSummaryCopy").textContent = "Apenas a rota e suas regras estão sendo avaliadas. Nenhum agent foi iniciado.";
+        document.getElementById("testLog").innerHTML = '<div class="log-line"><span class="log-time">00:00.0</span><span class="log-info">início</span><span>Snapshot da revisão ' + revision + ' carregado.</span></div>';
+        document.querySelectorAll(".node").forEach(function (node) { delete node.dataset.state; });
+
+        order.forEach(function (id, index) {
+          testTimers.push(setTimeout(function () {
+            if (index > 0) {
+              var previous = graph.querySelector('[data-node="' + order[index - 1] + '"]');
+              if (previous) previous.dataset.state = "success";
+            }
+            var current = graph.querySelector('[data-node="' + id + '"]');
+            if (current) current.dataset.state = "running";
+            var data = nodes[id];
+            document.getElementById("testLog").insertAdjacentHTML("beforeend", '<div class="log-line"><span class="log-time">00:0' + index + '.2</span><span class="log-info">avaliando</span><span>' + data.name + '</span></div>');
+            document.getElementById("testLog").scrollTop = document.getElementById("testLog").scrollHeight;
+          }, 330 * index));
+        });
+
+        testTimers.push(setTimeout(function () {
+          var last = graph.querySelector('[data-node="finish"]');
+          if (last) last.dataset.state = "success";
+          button.disabled = false;
+          button.querySelector("span").textContent = "Testar plano";
+          document.getElementById("testSummaryTitle").textContent = "Rota válida";
+          document.getElementById("testSummaryCopy").textContent = "7 passos percorridos, 2 retornos limitados e 1 decisão humana preservada.";
+          document.getElementById("testLog").insertAdjacentHTML("beforeend", '<div class="log-line"><span class="log-time">00:02.4</span><span class="log-ok">concluído</span><span>Simulação terminou sem executar agents ou comandos.</span></div>');
+          showToast("Teste do plano concluído.", "i-check");
+        }, 330 * order.length + 120));
+      }
+
+      document.getElementById("libraryBreadcrumb").addEventListener("click", showLibrary);
+
+      document.querySelectorAll(".plan-row").forEach(function (row) {
+        row.addEventListener("click", function () {
+          showBuilder(row.dataset.plan, row.dataset.description);
+        });
+      });
+
+      document.getElementById("newPlanButton").addEventListener("click", function () {
+        document.getElementById("newPlanDialog").showModal();
+        setTimeout(function () { document.getElementById("newPlanName").select(); }, 0);
+      });
+
+      document.getElementById("createPlanButton").addEventListener("click", function () {
+        var input = document.getElementById("newPlanName");
+        var name = input.value.trim() || "Novo plano";
+        var row = document.createElement("button");
+        row.type = "button";
+        row.className = "plan-row";
+        row.dataset.plan = name;
+        row.dataset.description = "Novo fluxo pronto para configurar.";
+        row.innerHTML = '<span class="plan-row-name"><span class="plan-icon">' + iconUse("i-route") + '</span><span><span class="plan-primary"></span><span class="plan-secondary">Novo fluxo pronto para configurar.</span></span></span><span><span class="plan-cell-label">Disparo</span><span class="plan-cell-value">Manual</span></span><span><span class="plan-cell-label">Estrutura</span><span class="plan-cell-value">modelo seguro</span></span><span><span class="plan-cell-label">Estado</span><span class="plan-cell-value">Rascunho</span></span>' + iconUse("i-chevron-right");
+        row.querySelector(".plan-primary").textContent = name;
+        row.addEventListener("click", function () { showBuilder(name, row.dataset.description); });
+        document.getElementById("planTable").prepend(row);
+        document.getElementById("planCount").textContent = document.querySelectorAll(".plan-row").length + " planos";
+        document.getElementById("newPlanDialog").close();
+        showBuilder(name, row.dataset.description);
+        showToast("Plano criado a partir do modelo seguro.", "i-check");
+      });
+
+      document.querySelectorAll("[data-close-dialog]").forEach(function (button) {
+        button.addEventListener("click", function () {
+          document.getElementById(button.dataset.closeDialog).close();
+        });
+      });
+
+      document.getElementById("themeToggle").addEventListener("click", function () {
+        var root = document.documentElement;
+        var dark = root.dataset.theme === "dark";
+        root.dataset.theme = dark ? "light" : "dark";
+        document.querySelector(".theme-moon").toggleAttribute("hidden", !dark);
+        document.querySelector(".theme-sun").toggleAttribute("hidden", dark);
+        this.setAttribute("aria-label", dark ? "Usar tema escuro" : "Usar tema claro");
+      });
+
+      document.getElementById("moreButton").addEventListener("click", function () {
+        showToast("Histórico e duplicação entram no menu desta revisão.", "i-info");
+      });
+
+      document.querySelectorAll("[data-view]").forEach(function (button) {
+        button.addEventListener("click", function () { setView(button.dataset.view); });
+      });
+
+      document.querySelectorAll(".node").forEach(function (node) {
+        node.addEventListener("click", function () { selectNode(node.dataset.node); });
+      });
+
+      document.querySelectorAll("[data-route-node]").forEach(function (row) {
+        row.addEventListener("click", function () {
+          selectNode(row.dataset.routeNode);
+          setView("flow");
+        });
+      });
+
+      document.querySelectorAll(".inspector-tabs button").forEach(function (button) {
+        button.addEventListener("click", function () {
+          document.querySelectorAll(".inspector-tabs button").forEach(function (item) {
+            var active = item === button;
+            item.classList.toggle("active", active);
+            item.setAttribute("aria-selected", String(active));
+          });
+          document.querySelectorAll(".tab-panel").forEach(function (panel) {
+            panel.hidden = panel.dataset.panel !== button.dataset.tab;
+          });
+        });
+      });
+
+      document.getElementById("nodeNameInput").addEventListener("input", function () {
+        var value = this.value.trim() || "Nó sem nome";
+        nodes[selectedId].name = value;
+        document.getElementById("inspectorTitle").textContent = value;
+        var nodeName = graph.querySelector('[data-node="' + selectedId + '"] .node-name');
+        if (nodeName) nodeName.textContent = value;
+        markSaved();
+      });
+
+      ["instructionInput", "entryInput", "exitInput"].forEach(function (id) {
+        document.getElementById(id).addEventListener("input", markSaved);
+      });
+
+      ["roleSelect", "agentSelect", "modelSelect", "attemptSelect"].forEach(function (id) {
+        document.getElementById(id).addEventListener("change", markSaved);
+      });
+
+      document.querySelectorAll("[data-mode]").forEach(function (button) {
+        button.addEventListener("click", function () { updateEffectivePermission(button.dataset.mode); });
+      });
+
+      document.getElementById("nodePermissionSelect").addEventListener("change", function () {
+        nodePermissions[selectedId] = this.value;
+        updateEffectivePermission(permissionMode);
+      });
+
+      document.querySelectorAll(".toggle").forEach(function (toggle) {
+        toggle.addEventListener("click", function () {
+          toggle.setAttribute("aria-pressed", String(toggle.getAttribute("aria-pressed") !== "true"));
+          markSaved();
+        });
+      });
+
+      document.querySelectorAll("[data-add]").forEach(function (button) {
+        button.addEventListener("click", function () { addNode(button.dataset.add, button.dataset.kind); });
+      });
+
+      document.getElementById("blockSearch").addEventListener("input", function () {
+        var query = this.value.trim().toLocaleLowerCase("pt-BR");
+        document.querySelectorAll("[data-add]").forEach(function (button) {
+          button.hidden = query && button.dataset.add.toLocaleLowerCase("pt-BR").indexOf(query) === -1;
+        });
+      });
+
+      document.getElementById("removeNodeButton").addEventListener("click", removeSelectedNode);
+      document.getElementById("zoomOut").addEventListener("click", function () { updateZoom(zoom - .1); });
+      document.getElementById("zoomIn").addEventListener("click", function () { updateZoom(zoom + .1); });
+      document.getElementById("fitButton").addEventListener("click", function () {
+        updateZoom(1);
+        graphScroll.scrollTo({ left: 0, top: 0, behavior: "smooth" });
+      });
+
+      document.getElementById("fullscreenButton").addEventListener("click", function () {
+        app.classList.toggle("canvas-fullscreen");
+        showToast(app.classList.contains("canvas-fullscreen") ? "Canvas expandido." : "Painéis restaurados.", "i-fit");
+      });
+
+      document.getElementById("collapseInspector").addEventListener("click", function () {
+        inspectorCollapsed = !inspectorCollapsed;
+        document.querySelector(".builder-grid").classList.toggle("inspector-collapsed", inspectorCollapsed);
+        this.setAttribute("aria-label", inspectorCollapsed ? "Abrir inspetor" : "Recolher inspetor");
+      });
+
+      document.getElementById("testButton").addEventListener("click", runTest);
+      document.getElementById("validationDetail").addEventListener("click", function () {
+        testDrawer.classList.toggle("open");
+      });
+
+      document.getElementById("publishButton").addEventListener("click", function () {
+        document.getElementById("publishDialog").showModal();
+      });
+
+      document.getElementById("confirmPublish").addEventListener("click", function () {
+        revision = 8;
+        document.getElementById("publishDialog").close();
+        document.getElementById("planState").textContent = "Publicado";
+        document.getElementById("planState").classList.add("published");
+        document.getElementById("revisionLabel").textContent = "revisão 8 · publicada";
+        document.getElementById("publishButton").innerHTML = iconUse("i-check") + "Publicado";
+        document.getElementById("publishButton").disabled = true;
+        showToast("Revisão 8 publicada. Nenhuma missão foi iniciada.", "i-check");
+      });
+
+      document.getElementById("libraryFilter").addEventListener("click", function () {
+        showToast("A biblioteca já mostra todos os planos.", "i-info");
+      });
+
+      selectNode("plan");
+      updateEffectivePermission(permissionMode, false);
+    }());
+  </script>
+</body>
+</html>

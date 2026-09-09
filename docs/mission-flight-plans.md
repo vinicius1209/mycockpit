@@ -92,6 +92,26 @@ Além dos limites declarados no plano, o interpretador possui uma barreira de
 
 ## Autoria
 
+### Prancheta
+
+A entrada de Planos de voo separa dois gestos que antes competiam pela mesma
+largura: a biblioteca escolhe ou cria um plano; a prancheta edita um plano por
+vez. A prancheta tem três áreas estáveis:
+
+- Construir adiciona fases de planejamento, execução e revisão e explica como
+  desenhar conexões e retornos;
+- o centro alterna entre Rota e Fluxo visual sem criar um segundo estado;
+- o inspetor contextual separa Fase, Segurança e Rotas.
+
+O modo Tela cheia cobre a área de trabalho do app e preserva a barra superior
+do Frota. `Esc` devolve a prancheta ao cartão central. O modo é apenas layout:
+não muda plano, revisão, snapshot ou permissão.
+
+Não existe etapa de publicação. Cada alteração incrementa a revisão e é salva
+na fonte já consumida pelo launcher. A faixa inferior aplica continuamente o
+mesmo `validateMissionPlan` que protege o lançamento e expõe todas as
+pendências sob demanda.
+
 ### Rota
 
 Editor vertical para uma sequência simples. Permite adicionar, remover,
@@ -107,7 +127,14 @@ Fluxo visual.
 Canvas conectável para posicionar nós e criar/remover conexões. Ao selecionar
 uma conexão, a pessoa define `Concluiu`, `Falhou` ou `Sempre` e o limite de
 travessias. O inspetor de fase continua sendo a única fonte para configurar o
-agent.
+agent. Uma verificação é uma fase real com papel Revisor, critérios e um agent,
+não um bloco decorativo separado do runtime.
+
+A aba Segurança mostra a permissão do projeto, a autonomia da fase, a permissão
+efetiva resultante, o gate humano e o teto de custo. Mudar a permissão ali usa o
+mesmo caminho do projeto inteiro, incluindo SQLite e `.mycockpit/config.toml`.
+Escolher Liberado exige confirmação explícita e permanece o teto soberano de
+todas as fases.
 
 A mesma topologia alimenta Rota, Fluxo visual, launcher e runtime; não existe
 um segundo estado escondido no React Flow.
@@ -140,6 +167,13 @@ O app não promete `exactly-once` para efeitos externos produzidos pelo CLI.
 - `app/src/store/mission.ts`: efeitos de execução e checkpoints;
 - `app/src/components/mission/LinearRouteEditor.tsx`: autoria Rota;
 - `app/src/components/mission/MissionPlanCanvas.tsx`: autoria Fluxo visual;
+- `app/src/components/mission/FlightPlansView.tsx`: biblioteca, importação e
+  host do modo Tela cheia;
+- `app/src/components/mission/FlightPlanBuilder.tsx`: composição da prancheta;
+- `app/src/components/mission/FlightPlanInspector.tsx`: edição contextual de
+  fase, segurança e conexão;
+- `app/src/lib/flightPlanBuilder.ts`: criação, clonagem e métricas puras da
+  autoria;
 - `app/src/components/mission/MissionRunGraph.tsx`: mapa em voo;
 - `app/src/components/mission/MissionLauncher.tsx`: escolha e validação do plano.
 
@@ -148,4 +182,6 @@ O app não promete `exactly-once` para efeitos externos produzidos pelo CLI.
 - execução paralela e merge de ramos;
 - condições livres baseadas em texto de LLM;
 - gate como nó de primeira classe;
+- gatilhos de agenda, filesystem ou webhooks como nós do grafo;
+- hooks próprios de cada CLI como blocos portáveis do plano;
 - semântica distribuída `exactly-once` para subprocessos e efeitos externos.
