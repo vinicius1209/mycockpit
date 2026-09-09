@@ -1,4 +1,5 @@
-import { Clock3, LocateFixed } from "lucide-react"
+import { useState } from "react"
+import { Check, Clock3, Copy, LocateFixed } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -7,6 +8,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { copyText } from "@/lib/clipboard"
 import type { DirectionChange, SemanticClaim } from "@/lib/conversationMap"
 import type { ChatItem } from "@/store/chat"
 
@@ -58,6 +60,18 @@ export function ConversationMapSourceDialog({
   onClose: () => void
   onReveal: (itemId: string) => void
 }) {
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  async function handleCopy(itemId: string, text: string) {
+    const ok = await copyText(text)
+    if (ok) {
+      setCopiedId(itemId)
+      setTimeout(() => {
+        setCopiedId((curr) => (curr === itemId ? null : curr))
+      }, 1500)
+    }
+  }
+
   return (
     <Dialog open={!!source} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="gap-0 p-0 sm:max-w-xl">
@@ -67,7 +81,7 @@ export function ConversationMapSourceDialog({
             A leitura aponta para trechos reais, sem copiar o transcript.
           </DialogDescription>
         </DialogHeader>
-        <div className="flex max-h-[60vh] flex-col gap-1 overflow-y-auto px-5 py-4">
+        <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-5 py-4">
           {source?.evidence.map((ref) => {
             const item = items.find((candidate) => candidate.id === ref.itemId)
             if (!item) {
@@ -77,6 +91,9 @@ export function ConversationMapSourceDialog({
                 </div>
               )
             }
+            const text = sourceText(item)
+            const isCopied = copiedId === item.id
+
             return (
               <div key={ref.itemId} className="rounded-lg bg-secondary/45 px-3 py-3">
                 <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -89,19 +106,33 @@ export function ConversationMapSourceDialog({
                     </>
                   )}
                 </div>
-                <p className="mt-2 line-clamp-5 text-[12px] leading-relaxed text-foreground/80">
-                  {sourceText(item)}
-                </p>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="compacto"
-                  className="mt-2"
-                  onClick={() => onReveal(item.id)}
+                <div
+                  data-selectable
+                  className="mt-2 select-text whitespace-pre-wrap break-words text-[12px] leading-relaxed text-foreground/80"
                 >
-                  <LocateFixed />
-                  Ver no fio
-                </Button>
+                  {text}
+                </div>
+                <div className="mt-3 flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="compacto"
+                    onClick={() => void handleCopy(item.id, text)}
+                    title="Copiar trecho"
+                  >
+                    {isCopied ? <Check /> : <Copy />}
+                    {isCopied ? "Copiado" : "Copiar"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="compacto"
+                    onClick={() => onReveal(item.id)}
+                  >
+                    <LocateFixed />
+                    Ver no fio
+                  </Button>
+                </div>
               </div>
             )
           })}

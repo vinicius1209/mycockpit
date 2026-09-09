@@ -7,7 +7,31 @@ import type { DeferredWork } from "@/lib/work"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { cn } from "@/lib/utils"
 import { deferredLiveLine } from "@/store/chat"
+import type { Node } from "@/components/chat/messageNodes"
 import { usePresets } from "@/store/presets"
+
+/** Extrai se há ferramentas pendentes ou se todas as ações concluíram no grupo. */
+export function summarizeWorkingNodes(nodes?: Node[]): {
+  hasUnfinishedTool: boolean
+  completedToolsCount: number
+} {
+  if (!nodes || nodes.length === 0) {
+    return { hasUnfinishedTool: false, completedToolsCount: 0 }
+  }
+  let hasUnfinishedTool = false
+  let completedToolsCount = 0
+  for (const n of nodes) {
+    const tools = n.type === "tools" ? n.tools : n.type === "prose" ? n.tools : []
+    for (const t of tools) {
+      if (t.result == null) {
+        hasUnfinishedTool = true
+      } else {
+        completedToolsCount++
+      }
+    }
+  }
+  return { hasUnfinishedTool, completedToolsCount }
+}
 
 /** Indicador "trabalhando…" estilo Slack/typing: o avatar do executor no mesmo
  *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
@@ -28,6 +52,7 @@ export function WorkingIndicator({
   deferred = [],
   stalledSince,
   inline = false,
+  nodes,
 }: {
   agent: string
   presetId: string | null
@@ -45,6 +70,15 @@ export function WorkingIndicator({
   stalledSince?: number
   /** Quando true, renderiza apenas a linha viva (sem duplicar gutter, avatar e nome do autor anterior). */
   inline?: boolean
+  /** Nós do grupo do TURNO VIVO, para contextualizar a atividade (ação em curso
+   *  ou síntese depois das ações). Só o indicador INLINE passa isto, e a
+   *  omissão no indicador solto é deliberada: lá o último grupo NÃO é o do
+   *  executor, então as ações dele não descrevem o que está acontecendo agora.
+   *  Passá-las é inerte no caso comum (grupo de usuário não tem tool) e, com
+   *  parecer em voo sobre um grupo de executor, viraria "sintetizando resposta
+   *  após N ações…" contando ações do turno ANTERIOR — atividade inventada.
+   *  Ausente = rótulo genérico, que é a degradação honesta. */
+  nodes?: Node[]
 }) {
   // ADR-071: os dots voltam a pulsar quando a janela reaparece.
   const epoca = useEpocaDaJanela()
@@ -52,11 +86,16 @@ export function WorkingIndicator({
   const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
   const live = deferredLiveLine(deferred)
   const stalled = !live && stalledSince != null
+  const { hasUnfinishedTool, completedToolsCount } = summarizeWorkingNodes(nodes)
   const label = live
     ? live.text
     : finalizing
       ? "finalizando…"
-      : "está trabalhando…"
+      : !hasUnfinishedTool && completedToolsCount > 0
+        ? completedToolsCount === 1
+          ? "sintetizando resposta após 1 ação…"
+          : `sintetizando resposta após ${completedToolsCount} ações…`
+        : "está trabalhando…"
   // O relógio pertence ao que está ESCRITO na linha: com background vivo é o
   // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
   // o cronômetro sumia); sem background, é o turno.

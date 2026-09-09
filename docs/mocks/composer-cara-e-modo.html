@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Composer · a cara dos Especialistas + o peso do modo</title>
+<style>
+/* Tokens espelhados de app/src/index.css (não importe daqui, é mock). */
+:root{
+  --background:#fbfbfa; --card:#ffffff; --foreground:#16181b; --muted-foreground:#5c6166;
+  --border:rgba(0,0,0,.09); --border-strong:rgba(0,0,0,.14); --accent:#f1f1ef;
+  --brass:#a9742b; --st-warning:#c1861f; --st-running:#3b82f6;
+  --font-sans:"Geist Variable",ui-sans-serif,system-ui,-apple-system,sans-serif;
+  --dur-fast:120ms; --dur:200ms;
+}
+html[data-tema="escuro"]{
+  --background:#0a0b0d; --card:#141619; --foreground:#e7e8ea; --muted-foreground:#9aa0a7;
+  --border:rgba(255,255,255,.08); --border-strong:rgba(255,255,255,.13); --accent:#1e2126;
+  --brass:#e4a862; --st-warning:#d99138;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--background);color:var(--foreground);font-family:var(--font-sans);
+  font-size:13px;-webkit-font-smoothing:antialiased;padding:28px 32px 80px}
+h1{font-size:20px;font-weight:600;margin:0 0 4px}
+h2{font-size:14px;font-weight:600;margin:36px 0 4px}
+p.sub{color:var(--muted-foreground);font-size:12px;margin:0 0 16px;max-width:70ch;line-height:1.55}
+.barra{position:sticky;top:0;z-index:9;display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+  padding:10px 0 14px;margin-bottom:8px;background:var(--background);border-bottom:1px solid var(--border)}
+.barra button,.barra label{font:inherit;font-size:12px;color:var(--muted-foreground);
+  background:transparent;border:1px solid var(--border);border-radius:999px;padding:5px 11px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:6px}
+.barra button[aria-pressed="true"]{color:var(--foreground);border-color:var(--border-strong);background:var(--accent)}
+.barra input[type=range]{accent-color:var(--brass);width:110px}
+
+/* ---- composer falso ---- */
+.composer{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 12px 9px;
+  max-width:760px;margin:0 0 10px}
+.composer .texto{color:var(--muted-foreground);font-size:14px;padding:2px 2px 14px}
+.fileira{display:flex;align-items:center;gap:6px}
+.fileira .direita{margin-left:auto;display:flex;align-items:center;gap:6px}
+.rotulo-variante{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted-foreground);margin:20px 0 6px}
+.nota{font-size:12px;color:var(--muted-foreground);max-width:70ch;line-height:1.55;margin:2px 0 0}
+
+/* ---- controles (§13: chip 24 · compacto 28 · padrao 32 · destaque 36) ---- */
+.btn{height:32px;min-width:32px;display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:0;background:transparent;border-radius:999px;color:var(--muted-foreground);cursor:pointer;
+  font:inherit;font-size:12px;font-weight:500;padding:0 10px;transition:background var(--dur-fast),color var(--dur-fast)}
+.btn.icone{padding:0;width:32px}
+.btn:hover{background:var(--accent);color:var(--foreground)}
+.btn svg{width:16px;height:16px;flex:none}
+.btn .chev{width:12px;height:12px;opacity:.6}
+.pri{width:32px;height:32px;border-radius:999px;background:var(--foreground);color:var(--background);
+  display:inline-flex;align-items:center;justify-content:center;border:0;cursor:pointer}
+
+/* ---- B: variantes do modo ---- */
+.b-cheio{background:color-mix(in oklab,var(--st-warning) 15%,transparent);color:var(--st-warning)}
+.b-cheio:hover{background:color-mix(in oklab,var(--st-warning) 25%,transparent);color:var(--st-warning)}
+.b-icone svg.alerta{color:var(--st-warning)}
+.b-ponto::before{content:"";width:6px;height:6px;border-radius:999px;background:var(--st-warning);flex:none}
+.b-filete{position:relative}
+.b-filete::after{content:"";position:absolute;left:10px;right:10px;bottom:4px;height:1.5px;border-radius:2px;
+  background:var(--st-warning)}
+.b-texto{color:var(--st-warning)}
+.b-texto:hover{color:var(--st-warning);background:color-mix(in oklab,var(--st-warning) 12%,transparent)}
+.par{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.par .sep{width:1px;height:20px;background:var(--border)}
+
+/* ---- avatares ---- */
+.pilha{display:inline-flex;align-items:center;height:32px;padding:0 10px 0 6px;border-radius:999px;
+  border:0;background:transparent;cursor:pointer;gap:7px;transition:background var(--dur-fast)}
+.pilha:hover{background:var(--accent)}
+.pilha .caras{display:inline-flex}
+.pilha .caras > *{margin-left:-6px}
+.pilha .caras > *:first-child{margin-left:0}
+.pilha .n{font-size:12px;font-weight:500;color:var(--muted-foreground);font-variant-numeric:tabular-nums}
+.cara{border-radius:9px;display:block;background:transparent}
+.cara.anel{box-shadow:0 0 0 1.5px var(--card)}
+html[data-mov="reduzido"] .cara .rig{transform:none !important}
+
+.grade{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px;max-width:1100px}
+.cartao{border:1px solid var(--border);border-radius:12px;padding:14px;background:var(--card)}
+.cartao h3{margin:0 0 8px;font-size:12px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;
+  color:var(--muted-foreground)}
+.veredito{font-size:12px;line-height:1.5;color:var(--muted-foreground);margin-top:10px}
+.veredito b{color:var(--foreground);font-weight:600}
+.raio{position:fixed;pointer-events:none;border:1px dashed color-mix(in oklab,var(--brass) 50%,transparent);
+  border-radius:999px;display:none}
+html[data-raio="1"] .raio{display:block}
+</style>
+</head>
+<body>
+
+<h1>A cara dos Especialistas · e o peso do modo</h1>
+<p class="sub">Duas perguntas separadas no mesmo rodapé. À esquerda, quem é o time (identidade).
+Ao lado, quanto o agente pode fazer sem pedir (risco). Hoje as duas usam o mesmo idioma visual —
+um ícone genérico e um botão inteiro pintado — e por isso competem em vez de conversar.</p>
+
+<div class="barra">
+  <button id="tema" aria-pressed="false">Tema escuro</button>
+  <button id="mov" aria-pressed="false">Simular <code>prefers-reduced-motion</code></button>
+  <button id="raio" aria-pressed="false">Mostrar raio de atenção</button>
+  <label>Tamanho da cara <input id="tam" type="range" min="18" max="44" value="22" /> <span id="tamv">22px</span></label>
+</div>
+
+<h2>A · o gatilho dos Especialistas</h2>
+<p class="sub">O ✦ atual não diz nada que o resto do app não diga: é o ícone universal de "IA mágica".
+As caras já existem (DiceBear determinístico, offline) e já aparecem no marketplace, no @menu e na
+faixa de presença. Não usá-las aqui é jogar fora identidade que já está paga.</p>
+
+<div class="rotulo-variante">A0 · hoje</div>
+<div class="composer">
+  <div class="texto">Enter corrige agora · Tab envia no próximo turno…</div>
+  <div class="fileira">
+    <button class="btn icone" title="Anexar arquivo">📎</button>
+    <button class="btn">Antigravity · Gemini 3.8 Flash <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn b-cheio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    <button class="btn icone" title="Especialistas"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 3 1.9 4.6L18.5 9.5 13.9 11.4 12 16l-1.9-4.6L5.5 9.5l4.6-1.9z"/><path d="M19 15l.7 1.7L21.4 17.4l-1.7.7L19 19.8l-.7-1.7-1.7-.7 1.7-.7z"/></svg></button>
+    <button class="btn icone">🎙</button>
+    <div class="direita"><button class="pri">↑</button></div>
+  </div>
+</div>
+<p class="nota">Custo: um clique cego. Ninguém sabe se ali tem 0 ou 60 especialistas, nem quem está na conversa.</p>
+
+<div class="rotulo-variante">A1 · pilha de caras, estática</div>
+<div class="composer">
+  <div class="texto">Enter corrige agora · Tab envia no próximo turno…</div>
+  <div class="fileira">
+    <button class="btn icone">📎</button>
+    <button class="btn">Antigravity · Gemini 3.8 Flash <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn b-icone"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    <button class="pilha" data-caras="3" data-olhar="0" title="Especialistas"><span class="caras"></span><span class="n">6</span></button>
+    <button class="btn icone">🎙</button>
+    <div class="direita"><button class="pri">↑</button></div>
+  </div>
+</div>
+<p class="nota">Já resolve 80% do problema sem uma linha de animação: o botão passou a informar (quem, quantos).</p>
+
+<div class="rotulo-variante">A2 · pilha com olhar (acorda por proximidade)</div>
+<div class="composer">
+  <div class="texto">Enter corrige agora · Tab envia no próximo turno…</div>
+  <div class="fileira">
+    <button class="btn icone">📎</button>
+    <button class="btn">Antigravity · Gemini 3.8 Flash <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn b-icone"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    <button class="pilha" data-caras="3" data-olhar="1" title="Especialistas"><span class="caras"></span><span class="n">6</span></button>
+    <button class="btn icone">🎙</button>
+    <div class="direita"><button class="pri">↑</button></div>
+  </div>
+</div>
+<p class="nota">Fora do raio (180px) o olhar volta ao neutro e a cara para. Dentro, pupila segue e a cabeça
+inclina ~1,5px. Piscada só acontece com o cursor por perto. Sem cursor na tela (teclado), nada se mexe.</p>
+
+<div class="rotulo-variante">A3 · só o piloto + contagem</div>
+<div class="composer">
+  <div class="texto">Enter corrige agora · Tab envia no próximo turno…</div>
+  <div class="fileira">
+    <button class="btn icone">📎</button>
+    <button class="btn">Antigravity · Gemini 3.8 Flash <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></button>
+    <button class="btn b-icone"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    <button class="pilha" data-caras="1" data-olhar="1" title="Especialistas"><span class="caras"></span><span class="n">Íris · +5</span></button>
+    <button class="btn icone">🎙</button>
+    <div class="direita"><button class="pri">↑</button></div>
+  </div>
+</div>
+<p class="nota">Mais honesto quando existe piloto carimbado, e não briga por espaço com a faixa de presença.</p>
+
+<h2>B · o modo "Liberado"</h2>
+<p class="sub">O problema não é a cor, é a <b>área</b>. Pintar o controle inteiro coloca o aviso no mesmo
+nível hierárquico do botão de enviar, e o rodapé passa a ter dois primários. Pior: como o âmbar fica
+ligado o tempo todo, ele vira papel de parede — em duas semanas você não enxerga mais.
+Compare cada par: só o contraste entre <b>Padrão</b> e <b>Liberado</b> conta.</p>
+
+<div class="grade">
+  <div class="cartao">
+    <h3>B0 · hoje: fundo no botão inteiro</h3>
+    <div class="par">
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>Padrão</button>
+      <span class="sep"></span>
+      <button class="btn b-cheio"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    </div>
+    <p class="veredito">Grita. Compete com o Enviar e com o âmbar de "precisa de você" (<b>st-queued</b> é o
+    mesmo token) — dois significados na mesma tinta.</p>
+  </div>
+
+  <div class="cartao">
+    <h3>B1 · só o ícone em âmbar</h3>
+    <div class="par">
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>Padrão</button>
+      <span class="sep"></span>
+      <button class="btn b-icone"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    </div>
+    <p class="veredito"><b>A recomendada.</b> O ícone já muda de glifo (escudo-check → escudo-alerta):
+    a cor confirma o que a forma disse. Legível em daltonismo, quieta no periférico.</p>
+  </div>
+
+  <div class="cartao">
+    <h3>B2 · ponto âmbar antes do rótulo</h3>
+    <div class="par">
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>Padrão</button>
+      <span class="sep"></span>
+      <button class="btn b-ponto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    </div>
+    <p class="veredito">Some no periférico e o ponto muda a largura do controle entre modos — a fileira dança
+    ao trocar de modo. Descartada.</p>
+  </div>
+
+  <div class="cartao">
+    <h3>B3 · filete inferior</h3>
+    <div class="par">
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>Padrão</button>
+      <span class="sep"></span>
+      <button class="btn b-filete"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    </div>
+    <p class="veredito">Bonito, mas inventa um terceiro papel de filete (o guia só tem aresta e divisor). Entraria
+    por ADR, e não paga.</p>
+  </div>
+
+  <div class="cartao">
+    <h3>B4 · ícone + rótulo em âmbar, sem fundo</h3>
+    <div class="par">
+      <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg>Padrão</button>
+      <span class="sep"></span>
+      <button class="btn b-texto"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+    </div>
+    <p class="veredito">Meio-termo defensável. Um degrau acima do B1 em ruído; escolha esta se o B1 sumir
+    demais na sua tela.</p>
+  </div>
+
+  <div class="cartao">
+    <h3>B5 · B1 + o aviso ONDE ele importa</h3>
+    <div class="par">
+      <button class="btn b-icone"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>Liberado</button>
+      <span class="sep"></span>
+      <button class="pri" style="background:var(--st-warning);color:#1a1306">↑</button>
+    </div>
+    <p class="veredito">O risco só se realiza no <b>despacho</b>. Marcar o Enviar (borda âmbar de 1px) no
+    instante do gesto vale mais que âmbar permanente no seletor. Requer ADR curta.</p>
+  </div>
+</div>
+
+<div class="raio" id="raio-vis"></div>
+
+<script>
+/* --------------------------------------------------------------------------
+   Rig de cara. O DiceBear "thumbs" entrega um POSTER: olhos assados no SVG,
+   sem alça pra mexer. Olhar que segue ponteiro exige um rig nosso — este aqui
+   é a prova de que ele cabe em ~40 linhas e continua determinístico/offline.
+   -------------------------------------------------------------------------- */
+const COR = {engenharia:"#60a5fa",qualidade:"#34d399",estrategia:"#a78bfa",ops:"#fbbf24",design:"#f472b6",seguranca:"#f87171"};
+const TIME = [
+  {nome:"Íris", cat:"design"}, {nome:"Aline", cat:"engenharia"}, {nome:"Marco", cat:"estrategia"},
+  {nome:"Nero", cat:"ops"}, {nome:"Testa", cat:"qualidade"}, {nome:"Vault", cat:"seguranca"},
+];
+function hash(s){let h=2166136261;for(const c of s){h^=c.charCodeAt(0);h=Math.imul(h,16777619)}return h>>>0}
+
+function cara(p){
+  const {nome,cat,size}=p, h=hash(nome), cor=COR[cat]||"#e4a862";
+  const ns="http://www.w3.org/2000/svg";
+  const svg=document.createElementNS(ns,"svg");
+  svg.setAttribute("viewBox","0 0 40 40"); svg.setAttribute("width",size); svg.setAttribute("height",size);
+  svg.classList.add("cara","anel"); svg.style.borderRadius=Math.round(size*.28)+"px"; svg.style.background=cor;
+  const rig=document.createElementNS(ns,"g"); rig.setAttribute("class","rig");
+  rig.style.transition="transform var(--dur) cubic-bezier(.2,.8,.2,1)";
+  svg.appendChild(rig);
+  // olho = soquete claro + pupila que anda. seed decide a distância entre olhos.
+  const dx = 7 + (h % 3), oy = 17;
+  for(const s of [-1,1]){
+    const sock=document.createElementNS(ns,"ellipse");
+    sock.setAttribute("cx",20+s*dx); sock.setAttribute("cy",oy);
+    sock.setAttribute("rx",4.2); sock.setAttribute("ry",5.2);
+    sock.setAttribute("fill","rgba(255,255,255,.92)"); rig.appendChild(sock);
+    const pup=document.createElementNS(ns,"circle");
+    pup.setAttribute("cx",20+s*dx); pup.setAttribute("cy",oy);
+    pup.setAttribute("r",2.3); pup.setAttribute("fill","rgba(20,22,25,.82)");
+    pup.dataset.cx=20+s*dx; pup.dataset.cy=oy; pup.classList.add("pupila");
+    pup.style.transition="transform var(--dur-fast) linear"; rig.appendChild(pup);
+  }
+  const boca=document.createElementNS(ns,"path");
+  boca.setAttribute("d", (h%2) ? "M14 27q6 5 12 0" : "M15 28h10");
+  boca.setAttribute("stroke","rgba(255,255,255,.92)"); boca.setAttribute("stroke-width","2.4");
+  boca.setAttribute("stroke-linecap","round"); boca.setAttribute("fill","none"); rig.appendChild(boca);
+  const palpebra=document.createElementNS(ns,"rect");
+  palpebra.setAttribute("x","8"); palpebra.setAttribute("y","8"); palpebra.setAttribute("width","24");
+  palpebra.setAttribute("height","0"); palpebra.setAttribute("fill",cor); palpebra.classList.add("palpebra");
+  rig.appendChild(palpebra);
+  return svg;
+}
+
+const RAIO = 180;
+let caras = [];
+function montar(){
+  const size = +document.getElementById("tam").value;
+  document.getElementById("tamv").textContent = size+"px";
+  caras = [];
+  for(const btn of document.querySelectorAll(".pilha")){
+    const alvo = btn.querySelector(".caras"); alvo.innerHTML="";
+    const n = +btn.dataset.caras;
+    for(let i=0;i<n;i++){
+      const p = TIME[i];
+      const el = cara({nome:p.nome, cat:p.cat, size});
+      alvo.appendChild(el);
+      caras.push({el, olhar: btn.dataset.olhar==="1"});
+    }
+  }
+}
+
+/* Olhar: só reage DENTRO do raio; fora, volta ao neutro e para de calcular.
+   Não é animação ambiente — é resposta a um gesto, como hover. */
+function mover(e){
+  const reduz = document.documentElement.dataset.mov==="reduzido";
+  const anel = document.getElementById("raio-vis");
+  anel.style.width=anel.style.height=(RAIO*2)+"px";
+  anel.style.left=(e.clientX-RAIO)+"px"; anel.style.top=(e.clientY-RAIO)+"px";
+  for(const c of caras){
+    const r = c.el.getBoundingClientRect();
+    const cx = r.left+r.width/2, cy = r.top+r.height/2;
+    const dx = e.clientX-cx, dy = e.clientY-cy;
+    const d = Math.hypot(dx,dy);
+    const rig = c.el.querySelector(".rig");
+    if(!c.olhar || reduz || d>RAIO){
+      rig.style.transform="translate(0,0)";
+      c.el.querySelectorAll(".pupila").forEach(p=>p.style.transform="translate(0,0)");
+      continue;
+    }
+    const f = 1 - d/RAIO;                  // perto = mais atento
+    const ang = Math.atan2(dy,dx);
+    const px = Math.cos(ang)*1.9*f, py = Math.sin(ang)*1.6*f;   // pupila (unid. do viewBox)
+    const hx = Math.cos(ang)*1.2*f, hy = Math.sin(ang)*1.0*f;   // cabeça inclina
+    c.el.querySelectorAll(".pupila").forEach(p=>p.style.transform=`translate(${px}px,${py}px)`);
+    rig.style.transform=`translate(${hx}px,${hy}px)`;
+  }
+}
+window.addEventListener("pointermove", mover);
+/* Ponteiro sai da janela: olhar neutro. Nada fica "vivo" sem causa. */
+window.addEventListener("pointerleave", ()=>{
+  for(const c of caras){
+    c.el.querySelector(".rig").style.transform="translate(0,0)";
+    c.el.querySelectorAll(".pupila").forEach(p=>p.style.transform="translate(0,0)");
+  }
+});
+
+const tema=document.getElementById("tema"), mov=document.getElementById("mov"), raio=document.getElementById("raio");
+tema.onclick=()=>{const on=tema.getAttribute("aria-pressed")==="true";tema.setAttribute("aria-pressed",!on);
+  document.documentElement.dataset.tema=!on?"escuro":"claro";tema.textContent=!on?"Tema claro":"Tema escuro"};
+mov.onclick=()=>{const on=mov.getAttribute("aria-pressed")==="true";mov.setAttribute("aria-pressed",!on);
+  document.documentElement.dataset.mov=!on?"reduzido":"normal"};
+raio.onclick=()=>{const on=raio.getAttribute("aria-pressed")==="true";raio.setAttribute("aria-pressed",!on);
+  document.documentElement.dataset.raio=!on?"1":"0"};
+document.getElementById("tam").oninput=montar;
+montar();
+</script>
+</body>
+</html>

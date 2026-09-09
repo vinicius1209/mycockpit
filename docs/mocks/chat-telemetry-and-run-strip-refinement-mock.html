@@ -1,0 +1,933 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Frota · Refinamento de UI: Capacidades do Run & Resumo Final</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    color-scheme: light;
+    --bg-app: #fbfbfb;
+    --bg-surface: #ffffff;
+    --bg-card: #f7f7f8;
+    --bg-card-subtle: rgba(0, 0, 0, 0.02);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-subtle: rgba(0, 0, 0, 0.05);
+    --border-strong: rgba(0, 0, 0, 0.14);
+    --fg: #18181b;
+    --fg-muted: #71717a;
+    --fg-faint: #a1a1aa;
+    --brass: #b45309;
+    --brass-bg: rgba(180, 83, 9, 0.08);
+    --brass-border: rgba(180, 83, 9, 0.25);
+    --success: #15803d;
+    --success-bg: rgba(21, 128, 61, 0.08);
+    --amber: #b45309;
+    --amber-bg: rgba(245, 158, 11, 0.1);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-popover: 0 8px 24px -4px rgba(0,0,0,0.08), 0 2px 6px -1px rgba(0,0,0,0.04);
+  }
+
+  [data-theme="dark"] {
+    color-scheme: dark;
+    --bg-app: #121214;
+    --bg-surface: #18181b;
+    --bg-card: #202024;
+    --bg-card-subtle: rgba(255, 255, 255, 0.03);
+    --border: rgba(255, 255, 255, 0.09);
+    --border-subtle: rgba(255, 255, 255, 0.05);
+    --border-strong: rgba(255, 255, 255, 0.16);
+    --fg: #f4f4f5;
+    --fg-muted: #a1a1aa;
+    --fg-faint: #71717a;
+    --brass: #d97706;
+    --brass-bg: rgba(217, 119, 6, 0.12);
+    --brass-border: rgba(217, 119, 6, 0.3);
+    --success: #22c55e;
+    --success-bg: rgba(34, 197, 94, 0.1);
+    --amber: #f59e0b;
+    --amber-bg: rgba(245, 158, 11, 0.12);
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-popover: 0 12px 32px -4px rgba(0,0,0,0.5), 0 4px 12px -2px rgba(0,0,0,0.3);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg-app);
+    color: var(--fg);
+    min-height: 100vh;
+    padding: 32px 20px 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: background 0.2s, color 0.2s;
+  }
+
+  .font-mono {
+    font-family: 'Geist Mono', monospace;
+  }
+
+  /* Control bar */
+  .toolbar {
+    width: 100%;
+    max-width: 840px;
+    margin-bottom: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    padding: 10px 16px;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+  }
+  .toolbar-title {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pill-btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--bg-surface);
+    color: var(--fg);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 5px 12px;
+    border-radius: 20px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.15s;
+  }
+  .pill-btn:hover {
+    background: var(--bg-card);
+    border-color: var(--border-strong);
+  }
+  .pill-btn.active {
+    background: var(--fg);
+    color: var(--bg-surface);
+    border-color: var(--fg);
+  }
+
+  /* Section containers */
+  .demo-container {
+    width: 100%;
+    max-width: 840px;
+    display: flex;
+    flex-direction: column;
+    gap: 36px;
+  }
+
+  .card-section {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .section-tag {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 600;
+    color: var(--fg-muted);
+  }
+  .section-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--fg);
+    margin-top: 2px;
+  }
+
+  /* Chat context wrapper */
+  .chat-view {
+    background: var(--bg-app);
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Message block */
+  .msg-ai {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .msg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+  .msg-avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--brass-bg);
+    color: var(--brass);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .msg-author {
+    font-weight: 500;
+    color: var(--fg);
+  }
+  .msg-time {
+    font-size: 12px;
+    color: var(--fg-faint);
+  }
+  .msg-body {
+    font-size: 13.5px;
+    line-height: 1.6;
+    color: var(--fg);
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     1. RESUMO FINAL / RECIBO DO TURNO
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* ESTADO ATUAL (Pesado, 2 linhas, cache em destaque) */
+  .current-receipt-card {
+    border: 1px solid var(--border);
+    background: var(--bg-card-subtle);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .current-receipt-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+    color: var(--fg-muted);
+  }
+  .current-receipt-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .current-receipt-bottom {
+    font-size: 11px;
+    color: var(--fg-faint);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .icon-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--fg-muted);
+  }
+  .icon-btn {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--fg-muted);
+    transition: all 0.15s;
+  }
+  .icon-btn:hover {
+    background: var(--bg-card);
+    color: var(--fg);
+  }
+
+  /* PROPOSTA NOVA: Recibo Alinhado em Linha Única (Inspirado no Codex / Linear) */
+  .clean-receipt-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 2px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    border-top: 1px solid var(--border-subtle);
+    margin-top: 4px;
+  }
+  .clean-receipt-left {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex-wrap: nowrap;
+  }
+  .badge-success {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--success);
+    font-weight: 500;
+  }
+  .token-pill {
+    cursor: pointer;
+    position: relative;
+    color: var(--fg-muted);
+    border-radius: 4px;
+    padding: 1px 4px;
+    margin: -1px -4px;
+    transition: background 0.15s;
+  }
+  .token-pill:hover {
+    background: var(--bg-card);
+    color: var(--fg);
+  }
+
+  /* Tooltip flutuante no hover do token */
+  .tooltip-box {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    box-shadow: var(--shadow-popover);
+    white-space: nowrap;
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    gap: 3px;
+    pointer-events: none;
+  }
+  .token-pill:hover .tooltip-box {
+    display: flex;
+  }
+  .tooltip-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .tooltip-label { color: var(--fg-muted); }
+  .tooltip-val { font-family: 'Geist Mono', monospace; font-weight: 500; color: var(--fg); }
+
+  .clean-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    opacity: 0.7;
+    transition: opacity 0.15s;
+  }
+  .clean-receipt-row:hover .clean-actions {
+    opacity: 1;
+  }
+
+  /* ═════════════════════════════════════════════════════════════════════════
+     2. CAPACIDADES DESTE RUN (Strip vs Integrado no Composer)
+     ═════════════════════════════════════════════════════════════════════════ */
+
+  /* ESTADO ATUAL (Faixa pesada em cima do composer) */
+  .current-strip-box {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+  }
+  .current-strip-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .current-strip-body {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border-subtle);
+    font-size: 11px;
+    color: var(--fg-muted);
+    line-height: 1.5;
+  }
+
+  /* PROPOSTA NOVA: Integrado como Pílula Elegante no Composer (Estilo Codex) */
+  .composer-frame {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 12px 14px 10px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+    position: relative;
+  }
+  .composer-input {
+    width: 100%;
+    min-height: 48px;
+    color: var(--fg);
+    font-size: 13.5px;
+    line-height: 1.5;
+    border: none;
+    outline: none;
+    background: transparent;
+    resize: none;
+    font-family: inherit;
+  }
+  .composer-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .composer-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .composer-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Pílula de Capacidades Integrada */
+  .cap-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    padding: 4px 10px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: var(--bg-card-subtle);
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+  .cap-pill:hover, .cap-pill.active {
+    border-color: var(--border-strong);
+    background: var(--bg-card);
+    color: var(--fg);
+  }
+  .cap-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--success);
+  }
+
+  /* Popover Flutuante de Capacidades */
+  .cap-popover {
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 14px;
+    width: 380px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    box-shadow: var(--shadow-popover);
+    z-index: 100;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .cap-popover.open {
+    display: flex;
+  }
+  .popover-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .popover-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--fg);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .popover-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 11.5px;
+  }
+  .popover-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+  }
+  .popover-item-title {
+    color: var(--fg);
+    font-weight: 500;
+  }
+  .popover-item-desc {
+    color: var(--fg-muted);
+    font-size: 10.5px;
+  }
+  .popover-badge {
+    font-family: 'Geist Mono', monospace;
+    font-size: 10.5px;
+    background: var(--bg-card);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--fg-muted);
+    border: 1px solid var(--border-subtle);
+  }
+
+  /* Seletor de Modelo / Modo */
+  .mode-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--amber);
+    background: var(--amber-bg);
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-weight: 500;
+  }
+  .model-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 12px;
+    color: var(--fg-muted);
+    padding: 4px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .send-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--fg);
+    color: var(--bg-surface);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    cursor: pointer;
+  }
+
+  /* PROPOSTA NOVA 2: Faixa Ultra-fina Discreta (Micro-Strip) */
+  .micro-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 10px;
+    margin-bottom: 8px;
+    font-size: 11.5px;
+    color: var(--fg-muted);
+    border-radius: 8px;
+    background: transparent;
+    transition: background 0.15s;
+  }
+  .micro-strip:hover {
+    background: var(--bg-card-subtle);
+  }
+  .micro-strip-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  /* Comparison grid */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+  }
+  @media (max-width: 768px) {
+    .compare-grid { grid-template-columns: 1fr; }
+  }
+
+  .banner-explanation {
+    margin-top: 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--fg-muted);
+    background: var(--bg-card);
+    padding: 10px 14px;
+    border-radius: 8px;
+    border-left: 3px solid var(--brass);
+  }
+</style>
+</head>
+<body>
+
+  <!-- Barra de Controle do Mock -->
+  <div class="toolbar">
+    <div class="toolbar-title">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <span>Refinamento de UI · Frota</span>
+    </div>
+    <div class="toolbar-actions">
+      <button type="button" class="pill-btn active" id="btnModeSide">Comparação Lado a Lado</button>
+      <button type="button" class="pill-btn" id="btnModeClean">Ver Só Nova Proposta</button>
+      <button type="button" class="pill-btn" id="btnTheme">Alternar Tema ☀️/🌙</button>
+    </div>
+  </div>
+
+  <div class="demo-container">
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- PARTE 1: RESUMO FINAL DA CONVERSA (RECIBO DE CONCLUSÃO DO TURNO)       -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div class="card-section">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Problema 1</span>
+          <h2 class="section-label">Recibo Final do Turno (Telemetria & Ações)</h2>
+        </div>
+        <span class="font-mono text-[11px] text-muted-foreground" style="color:var(--fg-faint)">MessageList · TurnTelemetry</span>
+      </div>
+
+      <div class="compare-grid" id="compareGridReceipt">
+
+        <!-- ESTADO ATUAL -->
+        <div class="chat-view">
+          <div style="font-size: 11px; font-weight: 600; color: #e11d48; text-transform: uppercase;">Antes · Como está hoje</div>
+
+          <div class="msg-ai">
+            <div class="msg-header">
+              <div class="msg-avatar">A</div>
+              <span class="msg-author">Antigravity</span>
+              <span class="msg-time">20:49</span>
+            </div>
+            <div class="msg-body">
+              Entendido! Analisei os 14 pontos da arquitetura de especialistas e mapeei as dependências necessárias para a duplicação.
+            </div>
+
+            <!-- Recibo Atual -->
+            <div class="current-receipt-card">
+              <div class="current-receipt-top">
+                <div class="current-receipt-status">
+                  <span style="color: var(--success); font-weight: 500;">✓ concluído</span>
+                  <span style="color: var(--border);">·</span>
+                  <span class="font-mono">5min 26s</span>
+                  <span class="font-mono">1.3M ↓ · 8.4k ↑ · cache 1.1M</span>
+                </div>
+                <div class="icon-group">
+                  <button class="icon-btn" title="Editar">✏️</button>
+                  <button class="icon-btn" title="Bifurcar">⑂</button>
+                  <button class="icon-btn" title="Nota">📄</button>
+                  <button class="icon-btn" title="Útil">👍</button>
+                  <button class="icon-btn" title="Não útil">👎</button>
+                  <button class="icon-btn" title="Aprender">🎓</button>
+                </div>
+              </div>
+              <!-- Linha 2 Quebrada -->
+              <div class="current-receipt-bottom">
+                <span class="font-mono">gemini-3.8-flash-high</span>
+                <span style="color: var(--border);">·</span>
+                <span class="font-mono" style="font-weight: 500;">~US$ 0,213</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="banner-explanation">
+            <strong>Problemas apontados:</strong>
+            <br>• Quebra em 2 linhas desnecessariamente;
+            <br>• O modelo <code>gemini-3.8-flash-high</code> fica repetido (já aparece logo abaixo no composer);
+            <br>• Excesso de destaque para <code>cache 1.1M</code> e setas técnicas que sobrecarregam a leitura.
+          </div>
+        </div>
+
+        <!-- PROPOSTA NOVA -->
+        <div class="chat-view">
+          <div style="font-size: 11px; font-weight: 600; color: var(--success); text-transform: uppercase;">Depois · Proposta Refinada (Linha Única)</div>
+
+          <div class="msg-ai">
+            <div class="msg-header">
+              <div class="msg-avatar">A</div>
+              <span class="msg-author">Antigravity</span>
+              <span class="msg-time">20:49</span>
+            </div>
+            <div class="msg-body">
+              Entendido! Analisei os 14 pontos da arquitetura de especialistas e mapeei as dependências necessárias para a duplicação.
+            </div>
+
+            <!-- Recibo Novo em Linha Única -->
+            <div class="clean-receipt-row">
+              <div class="clean-receipt-left">
+                <span class="badge-success">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6L9 17l-5-5"/></svg>
+                  concluído
+                </span>
+                <span style="color: var(--border);">·</span>
+                <span class="font-mono">5min 26s</span>
+                <span style="color: var(--border);">·</span>
+
+                <!-- Token com Tooltip Interativo -->
+                <span class="token-pill font-mono" title="Passe o mouse para ver detalhes de cache">
+                  1.3M tokens
+                  <div class="tooltip-box">
+                    <div class="tooltip-line"><span class="tooltip-label">Entrada:</span> <span class="tooltip-val">1.3M</span></div>
+                    <div class="tooltip-line"><span class="tooltip-label">Saída:</span> <span class="tooltip-val">8.4k</span></div>
+                    <div class="tooltip-line"><span class="tooltip-label">Cache lido:</span> <span class="tooltip-val">1.1M (85%)</span></div>
+                  </div>
+                </span>
+
+                <span style="color: var(--border);">·</span>
+                <span class="font-mono" style="font-weight: 500; color: var(--fg);">~US$ 0,21</span>
+              </div>
+
+              <!-- Ações Discretas estilo Ghost/Minimal -->
+              <div class="clean-actions">
+                <button class="icon-btn" title="Editar rascunho">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                </button>
+                <button class="icon-btn" title="Bifurcar conversa">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M18 9a9 9 0 0 1-9 9M6 9v3a6 6 0 0 0 6 6"/></svg>
+                </button>
+                <button class="icon-btn" title="Adicionar nota">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+                </button>
+                <button class="icon-btn" title="Resposta útil">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 10v12M15 10.5a3 3 0 0 0-3-3l-1.5-4a1.5 1.5 0 0 0-3 0v4L5 10v12h14a2 2 0 0 0 2-1.7l1.5-8.5a2 2 0 0 0-2-2.3z"/></svg>
+                </button>
+              </div>
+            </div>
+
+          </div>
+
+          <div class="banner-explanation" style="border-left-color: var(--success);">
+            <strong>Ganhos da Proposta:</strong>
+            <br>• <strong>Uma única linha contínua:</strong> Nunca quebra, mantém a tela respirando;
+            <br>• <strong>Sem redundância:</strong> O modelo foi omitido porque já está fixado no composer logo abaixo;
+            <br>• <strong>Cache inteligente:</strong> Aparece em tooltip sob demanda ao passar o mouse em <code>1.3M tokens</code>;
+            <br>• <strong>Ações elegantes:</strong> Ícones vetoriais sutis que acendem sob foco/hover.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <!-- PARTE 2: CAPACIDADES DESTE RUN                                         -->
+    <!-- ═════════════════════════════════════════════════════════════════════ -->
+    <div class="card-section">
+      <div class="section-header">
+        <div>
+          <span class="section-tag">Problema 2</span>
+          <h2 class="section-label">Capacidades deste Run (Redução de Peso e Integração)</h2>
+        </div>
+        <span class="font-mono text-[11px] text-muted-foreground" style="color:var(--fg-faint)">RunCapabilityStrip · CommandConsole</span>
+      </div>
+
+      <div class="compare-grid" id="compareGridStrip">
+
+        <!-- ESTADO ATUAL -->
+        <div class="chat-view">
+          <div style="font-size: 11px; font-weight: 600; color: #e11d48; text-transform: uppercase;">Antes · Card Pesado Empilhando Acima</div>
+
+          <!-- Caixa atual de capacidades -->
+          <div class="current-strip-box">
+            <div class="current-strip-header">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <span class="font-mono" style="color: var(--brass); font-weight: 600;">{ }</span>
+                <span style="font-weight: 500; font-size: 12px;">Capacidades deste run</span>
+                <span class="font-mono" style="color: var(--fg-muted); font-size: 11px;">2 fontes · 57 tools confirmadas...</span>
+              </div>
+              <span>▲</span>
+            </div>
+            <div class="current-strip-body">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span>Tools nativas do provider</span>
+                <span class="font-mono">57 tools confirmadas</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+                <span>MCPs configurados no provider</span>
+                <span class="font-mono">inventário não observado</span>
+              </div>
+              <div style="color: var(--brass); font-size: 10.5px; margin-top: 6px;">
+                RECURSOS: O provider pode expor recursos por configuração própria...
+              </div>
+            </div>
+          </div>
+
+          <!-- Composer Atual -->
+          <div class="composer-frame">
+            <textarea class="composer-input" placeholder="Peça algo... ou / para comandos" readonly></textarea>
+            <div class="composer-footer">
+              <div class="composer-left">
+                <span class="model-pill">Antigravity · Gemini 3.8 Flash (High)</span>
+                <span class="mode-pill">🛡️ Liberado</span>
+              </div>
+              <div class="composer-right">
+                <div class="send-btn">↑</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="banner-explanation">
+            <strong>Problemas apontados:</strong>
+            <br>• Caixa branca/cinza pesada roubando espaço de leitura do chat;
+            <br>• Textos densos ("depende do provider", "não observado");
+            <br>• Sensação de layout fragmentado antes mesmo de digitar.
+          </div>
+        </div>
+
+        <!-- PROPOSTA NOVA: Pílula Integrada com Popover (Inspirada no Codex / Orbita) -->
+        <div class="chat-view">
+          <div style="font-size: 11px; font-weight: 600; color: var(--success); text-transform: uppercase;">Depois · Pílula Integrada com Popover sob Demanda</div>
+
+          <!-- Micro-faixa opcional OU direto no composer -->
+          <div class="micro-strip">
+            <div class="micro-strip-left">
+              <span class="font-mono" style="color: var(--brass); font-size: 12px;">{ }</span>
+              <span><strong>57 ferramentas</strong> prontas neste run</span>
+              <span style="color: var(--border);">·</span>
+              <span style="color: var(--fg-faint)">Frota com controle integral</span>
+            </div>
+            <span style="font-size: 11px; color: var(--fg-muted); cursor: pointer;" onclick="togglePopover()">Ver detalhes ▾</span>
+          </div>
+
+          <!-- Composer com Popover Flutuante -->
+          <div class="composer-frame">
+
+            <!-- Popover de Capacidades Flutuante (abre ao clicar na pílula) -->
+            <div class="cap-popover" id="capPopover">
+              <div class="popover-header">
+                <div class="popover-title">
+                  <span class="font-mono" style="color: var(--brass);">{ }</span>
+                  Capacidades & Ferramentas do Run
+                </div>
+                <span class="popover-badge">57 ativas</span>
+              </div>
+              <div class="popover-body">
+                <div class="popover-item">
+                  <div>
+                    <div class="popover-item-title">Ferramentas Nativas</div>
+                    <div class="popover-item-desc">grep, read_file, run_command, replace_file</div>
+                  </div>
+                  <span class="popover-badge">57 confirmadas</span>
+                </div>
+                <div class="popover-item">
+                  <div>
+                    <div class="popover-item-title">Servidores MCP</div>
+                    <div class="popover-item-desc">Sem MCPs externos acoplados</div>
+                  </div>
+                  <span class="popover-badge">nenhum</span>
+                </div>
+                <div class="popover-item" style="border-top: 1px solid var(--border-subtle); padding-top: 6px;">
+                  <div class="popover-item-desc" style="color: var(--fg-muted);">
+                    Nenhum recurso bloqueado por sandbox.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <textarea class="composer-input" placeholder="Peça algo ao seu time de agents... (ou / para comandos)" readonly></textarea>
+
+            <div class="composer-footer">
+              <div class="composer-left">
+                <!-- Pílula de Capacidades Discreta integrada ao Composer -->
+                <div class="cap-pill" id="capPillTrigger" onclick="togglePopover()" title="Clique para ver ferramentas disponíveis">
+                  <div class="cap-dot"></div>
+                  <span class="font-mono" style="font-size: 11px;">{ } 57 tools</span>
+                </div>
+
+                <span class="model-pill">
+                  Antigravity · Gemini 3.8 Flash (High) ▾
+                </span>
+                <span class="mode-pill">🛡️ Liberado</span>
+              </div>
+
+              <div class="composer-right">
+                <button class="icon-btn" title="Anexar arquivos">📎</button>
+                <div class="send-btn">↑</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="banner-explanation" style="border-left-color: var(--success);">
+            <strong>Ganhos da Proposta:</strong>
+            <br>• <strong>Zero poluição visual:</strong> A caixa pesada sumiu; o composer fica limpo como nas referências do Codex e Orbita;
+            <br>• <strong>Acesso sob demanda:</strong> O chip <code>{ } 57 tools</code> fica integrado na barra inferior e abre um popover flutuante leve;
+            <br>• <strong>Respeito ao layout:</strong> O chat tem 100% de área útil preservada para a conversa.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Toggle theme
+    const btnTheme = document.getElementById('btnTheme');
+    btnTheme.addEventListener('click', () => {
+      const current = document.documentElement.getAttribute('data-theme');
+      const next = current === 'dark' ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+    });
+
+    // Toggle popover
+    function togglePopover() {
+      const popover = document.getElementById('capPopover');
+      const trigger = document.getElementById('capPillTrigger');
+      popover.classList.toggle('open');
+      trigger.classList.toggle('active');
+    }
+
+    // Modes toggle
+    const btnModeSide = document.getElementById('btnModeSide');
+    const btnModeClean = document.getElementById('btnModeClean');
+    const grids = [document.getElementById('compareGridReceipt'), document.getElementById('compareGridStrip')];
+
+    btnModeClean.addEventListener('click', () => {
+      btnModeClean.classList.add('active');
+      btnModeSide.classList.remove('active');
+      grids.forEach(g => {
+        g.children[0].style.display = 'none';
+        g.style.gridTemplateColumns = '1fr';
+      });
+    });
+
+    btnModeSide.addEventListener('click', () => {
+      btnModeSide.classList.add('active');
+      btnModeClean.classList.remove('active');
+      grids.forEach(g => {
+        g.children[0].style.display = 'flex';
+        g.style.gridTemplateColumns = '1fr 1fr';
+      });
+    });
+  </script>
+</body>
+</html>

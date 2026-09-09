@@ -6,7 +6,12 @@
 // estabelecida mostraria o modelo de OUTRA conversa — e o usuário mandaria um
 // turno achando que trocou algo.
 import { describe, expect, it } from "vitest"
-import { notaDeTrocaDeModelo, identidadeEfetiva, resumoDaIdentidade } from "./composerIdentity"
+import {
+  notaDeTrocaDeModelo,
+  notaDeRevezamentoDeMotor,
+  identidadeEfetiva,
+  resumoDaIdentidade,
+} from "./composerIdentity"
 
 /** Os seletores mostrando uma escolha qualquer, sobrando de outra conversa. */
 const SELETORES = {
@@ -53,7 +58,6 @@ describe("conversa nova: vale o que está nos seletores", () => {
     expect(id.model).toBe("default")
   })
 })
-
 describe("conversa travada: vale o do 1º run, e o seletor só reflete", () => {
   it("o cru que sobrou de outra conversa NÃO vaza pro próximo turno", () => {
     const id = identidadeEfetiva({
@@ -206,5 +210,28 @@ describe("notaDeTrocaDeModelo", () => {
     // que a elegância da frase.
     expect(notaDeTrocaDeModelo(null, "sonnet")).toContain("default → sonnet")
     expect(notaDeTrocaDeModelo("opus", null)).toContain("opus → default")
+  })
+})
+
+describe("revezamento de motor (stagedAgent)", () => {
+  it("conversa travada com stagedAgent assume o novo motor e sinaliza revezando", () => {
+    const id = identidadeEfetiva({
+      travada: true,
+      modeloDestravado: true,
+      escolhaDeEmergencia: null,
+      conversa: { agent: "codex", reqModel: "gpt-5.6-sol", effort: "high" },
+      seletores: SELETORES,
+      stagedAgent: "claude-code",
+    })
+    expect(id.agent).toBe("claude-code")
+    expect(id.revezando).toBe(true)
+    expect(id.model).toBe("default")
+  })
+
+  it("notaDeRevezamentoDeMotor formata a troca entre motores sem travessão", () => {
+    expect(notaDeRevezamentoDeMotor("codex", "claude-code")).toBe(
+      "Revezamento de motor nesta conversa: Codex → Claude Code. O contexto recente foi transferido e vale deste turno em diante.",
+    )
+    expect(notaDeRevezamentoDeMotor("codex", "codex")).toBeNull()
   })
 })

@@ -1,0 +1,151 @@
+[
+  {
+    "kind": "user",
+    "id": "bc48d478-cfbf-49c9-8629-90f1ea5e4410",
+    "ts": 1788876126854,
+    "text": "[pedido omitido da fixture]"
+  },
+  {
+    "kind": "tool",
+    "id": "0c7118b0-4410-47e6-9965-753b62e3ba50",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:1",
+      "subject": "Branch nova a partir de origin/develop",
+      "description": "fix/acesso-carteira-detalhes-pedido; mover migration+teste ja escritos, git add cirurgico",
+      "activeForm": "Branch nova a partir de origin/develop"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "dfc4fb53-03fc-4790-b45e-09cd542ee7b5",
+    "name": "TaskUpdate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:1",
+      "status": "in_progress"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "ba9b6e74-c5b4-45b6-9536-8ea426d352d7",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:2",
+      "subject": "Migration cobrindo as 6 policies",
+      "description": "quotation_items, sales_order_items, delivery_tracking_events, delivery_tracking_consultations, order_cancellations, erp_integration_logs — so SELECT",
+      "activeForm": "Migration cobrindo as 6 policies"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "8d95b10d-21b3-49f0-ab89-dc56f60ee01d",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:3",
+      "subject": "Teste SQL estendido",
+      "description": "cobrir as 4 tabelas novas alem dos itens; dono ve / autor ve / terceiro nao ve",
+      "activeForm": "Teste SQL estendido"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "527d5064-3f7a-4257-a1a8-a499df6af3b0",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:4",
+      "subject": "Validar no Supabase local",
+      "description": "aplicar migration, provar vermelho sem fix e verde com fix",
+      "activeForm": "Validar no Supabase local"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "50091ee9-dded-493a-bbb7-2b61dd67c9fd",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:5",
+      "subject": "Commit + push + PR para develop",
+      "activeForm": "Commit + push + PR para develop"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "36f60931-0d11-4a12-a00c-3cf090c92a41",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:6",
+      "subject": "Housekeeping de branches e manifests",
+      "description": "limpar branches locais com upstream gone, plan-sync do plano acesso-historico-por-carteira",
+      "activeForm": "Housekeeping de branches e manifests"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "b6ced41e-edcc-43e0-a18f-a5f2ff3649b4",
+    "name": "TaskCreate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:7",
+      "subject": "Caminho de release",
+      "description": "PR #49 (release-please v1.29.2) + develop->main; apresentar sequencia antes de publicar em prod",
+      "activeForm": "Caminho de release"
+    },
+    "ts": 1788876253692
+  },
+  {
+    "kind": "tool",
+    "id": "8dc2f067-fde5-46b1-8b97-c2b0e500b320",
+    "name": "TaskUpdate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:4",
+      "status": "completed",
+      "description": "6/6 tabelas zeradas sem o fix; 3 papeis verdes com o fix; banco local intacto"
+    },
+    "ts": 1788876406446
+  },
+  {
+    "kind": "tool",
+    "id": "6f3d6318-b88f-48cc-8431-8dd52bd22c4f",
+    "name": "TaskUpdate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:5",
+      "status": "completed",
+      "description": "PR #50 aberto para develop"
+    },
+    "ts": 1788876454308
+  },
+  {
+    "kind": "tool",
+    "id": "bda56b93-cb6f-4535-95d2-d351b7ddd3d9",
+    "name": "TaskUpdate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:6",
+      "status": "completed",
+      "description": "8 branches locais mergeadas removidas, worktree orfao podado, develop/main realinhadas, manifest do plano fechado"
+    },
+    "ts": 1788876533688
+  },
+  {
+    "kind": "tool",
+    "id": "6c9be361-a686-44bf-93a6-488ad66de80b",
+    "name": "TaskUpdate",
+    "input": {
+      "taskId": "work:6e6e6684-6892-4ff6-b0e1-a8f964ab4c33:7",
+      "status": "completed",
+      "description": "PR #51 (develop->main) aberto e pronto; merge para prod aguarda o go do Vinicius"
+    },
+    "ts": 1788878482158
+  },
+  {
+    "kind": "result",
+    "id": "96dfe5eb-e2ce-4c30-891b-f56b3ea8106f",
+    "ok": true,
+    "ts": 1788878511709
+  }
+]

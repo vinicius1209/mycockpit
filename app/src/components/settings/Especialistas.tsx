@@ -10,54 +10,47 @@
 import { useMemo, useState } from "react"
 import {
   ArrowLeft,
+  Copy,
+  FolderOpen,
   Pencil,
   Plus,
-  RefreshCw,
   Search,
   Sparkles,
   Trash2,
   Users,
-  X,
 } from "lucide-react"
+import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { RichSelect } from "@/components/ui/RichSelect"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
-import {
-  DESTINATIONS,
-  agentEfforts,
-  agentModels,
-  normalizeModelValue,
-} from "@/lib/agents"
 import { shortDigest } from "@/lib/presets"
 import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import {
   ALL_CATEGORY,
-  buildCreateInput,
-  canCreate,
   categoriaDe,
-  emptyCreateForm,
+  duplicateFormState,
   especialistaResumo,
   filterEspecialistas,
   marketplaceCategories,
-  previewSeed,
   type CreateFormState,
 } from "@/lib/marketplace"
 import type { AgentDef, PresetScope } from "@/lib/agentDefs"
+import { isTauri } from "@/lib/db"
 import { usePresets } from "@/store/presets"
 import { useActiveProject } from "@/store/app"
 import { cn } from "@/lib/utils"
-
-const SELECT_TRIGGER =
-  "h-8 gap-1.5 rounded-md border bg-secondary/40 px-2.5 text-[13px] text-foreground data-[size=default]:h-8"
+import { CreateView } from "./EspecialistaCreateView"
 
 type View =
   | { kind: "list" }
   | { kind: "detail"; id: string }
-  /** editId null = criando novo; senão editando aquela persona. */
-  | { kind: "create"; editId: string | null }
+  /** editId null = criando novo ou duplicando; senão editando aquela persona. */
+  | {
+      kind: "create"
+      editId: string | null
+      initialForm?: CreateFormState
+      initialScope?: PresetScope
+    }
 
 /** Tag pequena (categoria/modelo/escopo) do card e do detalhe. */
 function Tag({ children, forte }: { children: React.ReactNode; forte?: boolean }) {
@@ -82,24 +75,72 @@ function modelTag(d: Pick<AgentDef, "backend" | "model">): string {
 function EspecialistaCard({
   def,
   onOpen,
+  onEdit,
+  onDuplicate,
 }: {
   def: AgentDef
   onOpen: () => void
+  onEdit: () => void
+  onDuplicate: () => void
 }) {
   return (
-    <button
+    // O cartão NÃO é um `role="button"`. Ele contém dois botões reais (editar,
+    // duplicar), e botão dentro de algo com papel de botão é aninhamento
+    // inválido: o leitor de tela anuncia um controle só e as ações internas
+    // somem. O clique no cartão continua existindo como CONVENIÊNCIA de mouse;
+    // quem carrega o teclado e a semântica é o botão do nome, abaixo.
+    <div
       onClick={onOpen}
-      className="flex flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3.5 text-left transition-colors hover:border-border/80 hover:bg-card"
+      className="group flex flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3.5 text-left transition-colors hover:border-border/80 hover:bg-card cursor-pointer"
     >
-      <div className="flex items-center gap-3">
-        <AgentAvatar def={def} size={40} />
-        <div className="min-w-0">
-          <div className="truncate text-[14px] font-semibold text-foreground">
-            {def.name}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-3 min-w-0">
+          <AgentAvatar def={def} size={40} />
+          <div className="min-w-0">
+            {/* O nome é o controle de abrir: um `<button>` de verdade, então
+                ganha foco, Enter e Espaço de graça, sem reimplementar teclado.
+                `text-left` porque botão centraliza por padrão e o nome alinha
+                pelo glifo com a categoria de baixo (§14). */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpen()
+              }}
+              className="block max-w-full truncate text-left text-[14px] font-semibold text-foreground"
+            >
+              {def.name}
+            </button>
+            <div className="truncate text-[12px] text-muted-foreground">
+              {categoriaDe(def)}
+            </div>
           </div>
-          <div className="truncate text-[12px] text-muted-foreground">
-            {categoriaDe(def)}
-          </div>
+        </div>
+        <div className="flex items-center gap-0.5 opacity-80 group-hover:opacity-100 transition-opacity">
+          <Button
+            size="chip"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation()
+              onEdit()
+            }}
+            title="Editar especialista"
+            aria-label={`Editar ${def.name}`}
+          >
+            <Pencil className="size-3" />
+          </Button>
+          <Button
+            size="chip"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation()
+              onDuplicate()
+            }}
+            title="Duplicar especialista"
+            aria-label={`Duplicar ${def.name}`}
+          >
+            <Copy className="size-3" />
+          </Button>
         </div>
       </div>
       <p className="line-clamp-2 min-h-[34px] text-[12px] leading-snug text-muted-foreground">
@@ -118,7 +159,7 @@ function EspecialistaCard({
           v{def.version} · {shortDigest(def.digest)}
         </span>
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -127,11 +168,13 @@ function DetailView({
   def,
   onBack,
   onEdit,
+  onDuplicate,
   onRemove,
 }: {
   def: AgentDef
   onBack: () => void
   onEdit: () => void
+  onDuplicate: () => void
   onRemove: () => void
 }) {
   return (
@@ -158,9 +201,7 @@ function DetailView({
             <SectionLabel>Rubrica, o que ele checa</SectionLabel>
             <ul className="list-disc pl-5 text-[13px] text-foreground/90">
               {def.rubric.map((r, i) => (
-                <li key={i} className="mb-1">
-                  {r}
-                </li>
+                <li key={i} className="mb-1">{r}</li>
               ))}
             </ul>
           </>
@@ -200,6 +241,16 @@ function DetailView({
         <Button size="padrao" variant="ghost" onClick={onBack} className="mr-auto">
           <ArrowLeft className="size-3.5" /> Voltar
         </Button>
+        {isTauri() && def.path && (
+          <Button
+            size="padrao"
+            variant="ghost"
+            onClick={() => void revealItemInDir(def.path)}
+            title="Mostrar na pasta"
+          >
+            <FolderOpen className="size-3.5" /> Mostrar na pasta
+          </Button>
+        )}
         <Button
           size="padrao"
           variant="ghost"
@@ -207,6 +258,9 @@ function DetailView({
           className="text-muted-foreground hover:text-st-error"
         >
           <Trash2 className="size-3.5" /> Excluir
+        </Button>
+        <Button size="padrao" variant="outline" onClick={onDuplicate}>
+          <Copy className="size-3.5" /> Duplicar
         </Button>
         <Button size="padrao" onClick={onEdit}>
           <Pencil className="size-3.5" /> Editar
@@ -235,387 +289,7 @@ function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   )
 }
 
-/** Vista de criar/editar (form à esquerda, preview ao vivo à direita). */
-function CreateView({
-  editing,
-  projectPath,
-  onBack,
-  onSaved,
-}: {
-  /** Persona sendo editada (null = criar novo). */
-  editing: AgentDef | null
-  projectPath: string | null
-  onBack: () => void
-  onSaved: () => void
-}) {
-  const [form, setForm] = useState<CreateFormState>(() =>
-    editing
-      ? {
-          name: editing.name,
-          category: categoriaDe(editing),
-          personalityMd: editing.personalityMd,
-          rubric: editing.rubric,
-          skillsText: editing.skills.join(", "),
-          policy: editing.policy ?? "",
-          backend: editing.backend,
-          model: editing.model ?? "default",
-          effort: editing.effort ?? "default",
-          avatarStyle: editing.avatarStyle,
-          avatarSalt: 0,
-        }
-      : emptyCreateForm(),
-  )
-  const [scope, setScope] = useState<PresetScope>(
-    editing?.scope ?? (projectPath ? "projeto" : "global"),
-  )
-  const [rubDraft, setRubDraft] = useState("")
-  const [saving, setSaving] = useState(false)
 
-  // Editando, a seed original é preservada (salt 0 = seed do arquivo); criando,
-  // a seed vem do nome. O preview usa a mesma regra do que será gravado.
-  const previewDef = useMemo<
-    Pick<AgentDef, "avatarStyle" | "avatarSeed" | "slug" | "name">
-  >(() => {
-    const seed =
-      editing && form.avatarSalt === 0
-        ? editing.avatarSeed
-        : previewSeed(form.name, form.avatarSalt)
-    return {
-      avatarStyle: form.avatarStyle,
-      avatarSeed: seed,
-      slug: editing?.slug ?? previewSeed(form.name, 0),
-      name: form.name,
-    }
-  }, [editing, form.name, form.avatarStyle, form.avatarSalt])
-
-  function set<K extends keyof CreateFormState>(k: K, v: CreateFormState[K]) {
-    setForm((f) => ({ ...f, [k]: v }))
-  }
-
-  function addRubrica() {
-    const t = rubDraft.trim()
-    if (!t) return
-    set("rubric", [...form.rubric, t])
-    setRubDraft("")
-  }
-
-  async function salvar() {
-    if (!canCreate(form) || saving) return
-    setSaving(true)
-    try {
-      const input = buildCreateInput(form)
-      const store = usePresets.getState()
-      // Editando preserva a seed do arquivo quando não variou (buildCreateInput
-      // recomputa do nome; aqui respeitamos o preview já resolvido).
-      input.avatarSeed = previewDef.avatarSeed
-      if (editing) await store.update(editing.id, input)
-      else await store.create(input, scope)
-      onSaved()
-    } finally {
-      setSaving(false)
-    }
-  }
-
-
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="border-b border-border/60 px-6 py-4">
-        <div className="text-[14px] font-semibold text-foreground">
-          {editing ? "Editar especialista" : "Novo especialista"}
-        </div>
-        <div className="text-[12px] text-muted-foreground">
-          Identidade, briefing e rubrica. O card à direita monta ao vivo.
-        </div>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_260px] overflow-hidden">
-        {/* Form */}
-        <div className="flex min-h-0 flex-col gap-3.5 overflow-y-auto px-6 py-4">
-          {/* Escopo (S2.4) — só na criação (mover o arquivo quebraria carimbos). */}
-          {!editing && (
-            <Fld label="Onde vale">
-              <div className="flex w-fit items-center gap-0.5 rounded-lg bg-secondary/70 p-0.5">
-                {(["projeto", "global"] as PresetScope[]).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    disabled={s === "projeto" && !projectPath}
-                    onClick={() => setScope(s)}
-                    className={cn(
-                      "h-6 rounded-md px-2.5 text-[12px] transition-colors disabled:opacity-40",
-                      scope === s
-                        ? "bg-card text-foreground shadow-[var(--shadow-sm)]"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                    title={
-                      s === "projeto"
-                        ? projectPath
-                          ? `Só neste projeto · ${projectPath}/.mycockpit/agents`
-                          : "Abra um projeto para criar uma persona só dele"
-                        : "Em todos os projetos · ~/.mycockpit/agents"
-                    }
-                  >
-                    {s === "projeto" ? "Este projeto" : "Todos os projetos"}
-                  </button>
-                ))}
-              </div>
-            </Fld>
-          )}
-
-          {/* Avatar DERIVADO: a cor vem da categoria, a forma da seed (nome).
-              Nada de picker de estilo cru — o time é sempre uma família. */}
-          <Fld label="Identidade, avatar">
-            <div className="flex items-center gap-3.5">
-              <AgentAvatar
-                style={form.avatarStyle}
-                seed={previewDef.avatarSeed}
-                category={form.category}
-                size={56}
-              />
-              <div className="flex flex-col gap-1.5">
-                <Button
-                  size="padrao"
-                  variant="outline"
-                  onClick={() => set("avatarSalt", form.avatarSalt + 1)}
-                  className="w-fit"
-                >
-                  <RefreshCw className="size-3.5" /> Variar
-                </Button>
-                <span className="text-[11px] leading-snug text-muted-foreground">
-                  A cor vem da categoria; variar muda a forma.
-                </span>
-              </div>
-            </div>
-          </Fld>
-
-          <div className="grid grid-cols-2 gap-3">
-            <Fld label="Nome">
-              <Input
-                value={form.name}
-                onChange={(e) => set("name", e.target.value)}
-                placeholder="ex.: Aline"
-                className="h-8 text-[13px]"
-                aria-label="Nome do especialista"
-              />
-            </Fld>
-            <Fld label="Categoria">
-              <Input
-                value={form.category}
-                onChange={(e) => set("category", e.target.value)}
-                placeholder="ex.: Engenharia"
-                className="h-8 text-[13px]"
-                aria-label="Categoria do especialista"
-              />
-            </Fld>
-          </div>
-
-          <Fld label="Briefing, como ele pensa (vai no parecer/1º turno)">
-            <Textarea
-              value={form.personalityMd}
-              onChange={(e) => set("personalityMd", e.target.value)}
-              placeholder="Você é um arquiteto rigoroso. Antes de aprovar qualquer código, verifica fronteiras, acoplamento e corridas…"
-              className="min-h-[90px] text-[13px]"
-              aria-label="Briefing do especialista"
-            />
-          </Fld>
-
-          <Fld label="Rubrica, o que ele checa">
-            {form.rubric.length > 0 && (
-              <ul className="mb-1.5 flex flex-col gap-1">
-                {form.rubric.map((r, i) => (
-                  <li
-                    key={i}
-                    className="flex items-center gap-2 text-[13px] text-foreground"
-                  >
-                    <span className="text-muted-foreground">•</span>
-                    <span className="min-w-0 flex-1 truncate">{r}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        set(
-                          "rubric",
-                          form.rubric.filter((_, j) => j !== i),
-                        )
-                      }
-                      aria-label={`Remover item ${i + 1} da rubrica`}
-                      className="text-muted-foreground hover:text-st-error"
-                    >
-                      <X className="size-3.5" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="flex gap-2">
-              <Input
-                value={rubDraft}
-                onChange={(e) => setRubDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    addRubrica()
-                  }
-                }}
-                placeholder="Adicionar item da rubrica…"
-                className="h-8 text-[13px]"
-                aria-label="Novo item da rubrica"
-              />
-              <Button
-                size="padrao"
-                variant="outline"
-                onClick={addRubrica}
-                disabled={!rubDraft.trim()}
-              >
-                <Plus className="size-3.5" />
-              </Button>
-            </div>
-          </Fld>
-
-          <Fld label="Skills do projeto (vírgulas; validadas no 1º envio)">
-            <Input
-              value={form.skillsText}
-              onChange={(e) => set("skillsText", e.target.value)}
-              placeholder="revisar-pr, testes"
-              className="h-8 font-mono text-[13px]"
-              aria-label="Skills do especialista"
-            />
-          </Fld>
-
-          <Fld label="Política (opcional)">
-            <Input
-              value={form.policy}
-              onChange={(e) => set("policy", e.target.value)}
-              placeholder="ex.: nunca escreve; só aponta"
-              className="h-8 text-[13px]"
-              aria-label="Política do especialista"
-            />
-          </Fld>
-
-          <div className="grid grid-cols-3 gap-3">
-            <Fld label="Agent">
-              <RichSelect
-                value={form.backend}
-                onValueChange={(v) =>
-                  setForm((f) => ({
-                    ...f,
-                    backend: v,
-                    model: "default",
-                    effort: "default",
-                  }))
-                }
-                options={DESTINATIONS.filter((d) => d.available).map((d) => ({
-                  value: d.id,
-                  label: d.label,
-                }))}
-                triggerClassName={SELECT_TRIGGER}
-                aria-label="Agent do especialista"
-              />
-            </Fld>
-            <Fld label="Modelo">
-              <RichSelect
-                value={
-                  normalizeModelValue(
-                    form.backend,
-                    form.model === "default" ? null : form.model,
-                  ) ?? "default"
-                }
-                onValueChange={(v) => set("model", v)}
-                options={agentModels(form.backend)}
-                triggerClassName={SELECT_TRIGGER}
-                aria-label="Modelo do especialista"
-              />
-            </Fld>
-            <Fld label="Esforço">
-              <RichSelect
-                value={form.effort}
-                onValueChange={(v) => set("effort", v)}
-                options={
-                  agentEfforts(form.backend).length > 0
-                    ? agentEfforts(form.backend)
-                    : [{ value: "default", label: "Padrão" }]
-                }
-                triggerClassName={SELECT_TRIGGER}
-                aria-label="Esforço do especialista"
-              />
-            </Fld>
-          </div>
-        </div>
-
-        {/* Preview ao vivo */}
-        <div className="flex min-h-0 flex-col gap-2.5 overflow-y-auto border-l border-border/60 bg-rail px-4 py-4">
-          <div className="text-[11px] font-medium tracking-wide text-muted-foreground/70 uppercase">
-            Prévia do card
-          </div>
-          <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-card/60 p-3.5">
-            <div className="flex items-center gap-3">
-              <AgentAvatar
-                style={form.avatarStyle}
-                seed={previewDef.avatarSeed}
-                category={form.category}
-                size={40}
-              />
-              <div className="min-w-0">
-                <div className="truncate text-[14px] font-semibold text-foreground">
-                  {form.name || "Sem nome"}
-                </div>
-                <div className="truncate text-[12px] text-muted-foreground">
-                  {form.category.trim() || "Geral"}
-                </div>
-              </div>
-            </div>
-            <p className="min-h-[34px] text-[12px] leading-snug text-muted-foreground">
-              {especialistaResumo(form.personalityMd) ||
-                "O resumo aparece a partir do briefing."}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              <Tag>{form.category.trim() || "Geral"}</Tag>
-              <Tag forte>
-                {form.model === "default"
-                  ? form.backend
-                  : `${form.backend} · ${form.model}`}
-              </Tag>
-            </div>
-            <div className="border-t border-border/60 pt-2.5">
-              {/* editando, o slug é FIXO (= o do arquivo); criando é o slug-base
-                  (o slugLivre pode somar sufixo se já existir no escopo). */}
-              <span className="font-mono text-[11px] text-muted-foreground">
-                @{previewDef.slug}
-                {!editing && " (pode ganhar sufixo se já existir)"}
-              </span>
-            </div>
-          </div>
-          <div className="text-[11px] leading-snug text-muted-foreground">
-            Grava em{" "}
-            <span className="font-mono">
-              {scope === "projeto"
-                ? ".mycockpit/agents"
-                : "~/.mycockpit/agents"}
-            </span>
-            . Editar o arquivo à mão também vale, o app relê.
-          </div>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 border-t border-border/60 px-6 py-3">
-        <Button size="padrao" variant="ghost" onClick={onBack} className="mr-auto">
-          <ArrowLeft className="size-3.5" /> Voltar
-        </Button>
-        <Button size="padrao" onClick={() => void salvar()} disabled={!canCreate(form) || saving}>
-          {editing ? "Salvar versão" : "Criar especialista"}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function Fld({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[12px] text-muted-foreground">{label}</span>
-      {children}
-    </div>
-  )
-}
 
 /** Miolo do marketplace (grid + detalhe + criar), reusável: vai INLINE nas
  *  Configurações e também dentro do Dialog do atalho da conversa. `onClose`
@@ -640,6 +314,15 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
 
   function backToList() {
     setView({ kind: "list" })
+  }
+
+  function duplicate(def: AgentDef) {
+    setView({
+      kind: "create",
+      editId: null,
+      initialForm: duplicateFormState(def),
+      initialScope: def.scope,
+    })
   }
 
   async function remove(def: AgentDef) {
@@ -742,6 +425,8 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
                 key={def.id}
                 def={def}
                 onOpen={() => setView({ kind: "detail", id: def.id })}
+                onEdit={() => setView({ kind: "create", editId: def.id })}
+                onDuplicate={() => duplicate(def)}
               />
             ))}
           </div>
@@ -776,6 +461,7 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
             def={selected}
             onBack={backToList}
             onEdit={() => setView({ kind: "create", editId: selected.id })}
+            onDuplicate={() => duplicate(selected)}
             onRemove={() => void remove(selected)}
           />
         ) : (
@@ -795,6 +481,8 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
           editing={
             view.editId ? list.find((d) => d.id === view.editId) ?? null : null
           }
+          initialForm={view.initialForm}
+          initialScope={view.initialScope}
           projectPath={projectPath}
           onBack={backToList}
           onSaved={backToList}

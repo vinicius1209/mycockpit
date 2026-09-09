@@ -478,6 +478,47 @@
   }
 }
 
+/* PREPARO DO ENVIO (ADR-169) — o spinner do botão de enviar enquanto o turno é
+   montado e o preflight roda.
+   Separado da `.conv-spin` por dois motivos que não são estéticos:
+   1. Ele vive DENTRO do primário (fundo escuro), então a tinta é `currentColor`
+      e não `--st-running`. Azul sobre o botão preto não leria.
+   2. Ele tem ATRASO. O §6 manda feedback proporcional: até 1s só `disabled`,
+      spinner a partir daí. Um preflight quente termina em ~100ms, e um spinner
+      que pisca nesse tempo é pior que nenhum. O atraso mora no CSS, preso à
+      PRESENÇA do elemento — nunca num `setTimeout`, que sobreviveria ao fim do
+      turno e viraria número parado vestido de vivo. */
+@keyframes preparo-surge {
+  to {
+    opacity: 1;
+  }
+}
+.preparo-spin {
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in oklab, currentColor 30%, transparent);
+  border-top-color: currentColor;
+  opacity: 0;
+  animation:
+    conv-spin 0.9s linear infinite,
+    preparo-surge 160ms ease-out 700ms forwards;
+}
+/* Sem movimento: ponto sólido, VISÍVEL na hora. O `opacity: 1` é obrigatório
+   aqui — a revelação era uma animação, e o bloco global de reduced-motion a
+   desliga; sem isto o indicador ficaria invisível para sempre, que é degradar
+   pra ausência de sinal, exatamente o que o §6 proíbe. */
+@media (prefers-reduced-motion: reduce) {
+  .preparo-spin {
+    animation: none !important;
+    opacity: 0.9;
+    width: 8px;
+    height: 8px;
+    border-color: transparent;
+    background: currentColor;
+  }
+}
+
 /* reveal escalonado no load */
 @keyframes cockpit-rise {
   from {

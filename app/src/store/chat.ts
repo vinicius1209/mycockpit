@@ -38,6 +38,12 @@ import { perfSpan } from "@/lib/fleet/perf"
 import type { Enfileirar } from "@/lib/sendOrigin"
 import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
+import { commitTransplantState, stageAgentImpl } from "@/store/chat/revezamento"
+import {
+  bringAdviceToExecutorImpl,
+  removeAdviceImpl,
+  takePendingAdviceImpl,
+} from "@/store/chat/advice"
 import { markNotesSentImpl } from "@/store/chat/notes"
 import { settleOrphanedTool, settleTerminalTools } from "@/store/chat/terminalTools"
 export { pendingDeferred } from "@/store/chat/terminalTools"
@@ -354,7 +360,11 @@ export interface ConvState extends ContextSnapshotState {
     /** Pedido de modelo/effort do destino. Ficam em quarentena até `session`. */
     targetModel?: string | null
     targetEffort?: string | null
+    /** Linha auditável que só entra no fio junto do commit da sessão nova. */
+    commitNotice?: string
   }
+  /** Revezamento de motor engatilhado para o próximo envio deste fio. */
+  stagedAgent?: string | null
   /** Timestamp (ms) de início do run atual, p/ cronômetro ao vivo. */
   startedAt: number | null
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
@@ -476,6 +486,8 @@ export interface ChatState {
   setConversationColor: (id: string, color: string | null) => Promise<void>
   /** Agent escolhido antes do 1º envio (conversa vazia). No-op se já tem itens. */
   setConversationAgent: (convId: string, agent: string) => void
+  /** Engatilha o revezamento de motor para o próximo envio deste fio. */
+  stageAgent: (convId: string, agent: string | null) => void
   /** Isola a conversa num worktree (path) ou volta pra pasta compartilhada (null). */
   setWorktree: (convId: string, path: string | null) => void
   /** S1.2 — drag & drop: move a conversa `dragId` pra posição da `overId`
@@ -603,6 +615,7 @@ export interface ChatState {
     options?: {
       model: string | null
       effort: string | null
+      commitNotice?: string | null
       user?: { text: string; attachments: Attachment[] }
     },
   ) => void
@@ -1431,6 +1444,8 @@ export const useChat = create<ChatState>((set, get) => {
       void get().persist(convId)
     },
 
+    stageAgent: (convId, agent) => stageAgentImpl(get, set, convId, agent),
+
     setWorktree: (convId, path) => {
       void dbSetWorktree(convId, path)
       set((s) => ({
@@ -1696,6 +1711,7 @@ export const useChat = create<ChatState>((set, get) => {
               limitHitThisTurn: false, // e o sinal de limite do turno anterior
               resetHint: null,
               stalledSince: undefined, // e o episódio de turno mudo
+              stagedAgent: undefined,
             },
           },
         }
@@ -1780,14 +1796,7 @@ export const useChat = create<ChatState>((set, get) => {
         const cur = s.byId[convId]
         if (!cur) return {}
         const base = committingTransplant
-          ? {
-              ...cur,
-              agent: pendingTarget,
-              reqModel: pending?.targetModel ?? null,
-              effort: pending?.targetEffort ?? null,
-              ...TRANSPLANT_SESSION_RESET,
-              pendingTransplant: undefined,
-            }
+          ? commitTransplantState(cur, pending!)
           : cur
         // Result/telemetria pode chegar antes do `session` (por exemplo, um
         // limite no startup). O item deve refletir o pedido do destino — ou
@@ -2137,6 +2146,9 @@ export const useChat = create<ChatState>((set, get) => {
                   ? {
                       targetModel: options.model,
                       targetEffort: options.effort,
+                      ...(options.commitNotice
+                        ? { commitNotice: options.commitNotice }
+                        : {}),
                     }
                   : {}),
               },
@@ -2156,6 +2168,7 @@ export const useChat = create<ChatState>((set, get) => {
               // revezar também É agir na conversa: a visita "novas mensagens"
               // acaba aqui, igual ao start (S1.1).
               unseenDividerId: undefined,
+              stagedAgent: undefined,
             },
           },
         }
@@ -2195,19 +2208,10 @@ export const useChat = create<ChatState>((set, get) => {
     // sumiu). advising é indicador visual, NÃO trava o envio nem finge turno.
     setAdvising: (convId, advising) => patch(convId, { advising }),
 
-    bringAdviceToExecutor: (convId, block) => {
-      const cur = get().byId[convId]
-      if (!cur) return
-      const next = cur.pendingAdvice ? `${cur.pendingAdvice}\n\n${block}` : block
-      patch(convId, { pendingAdvice: next })
-    },
+    bringAdviceToExecutor: (convId, block) =>
+      bringAdviceToExecutorImpl(get, patch, convId, block),
 
-    takePendingAdvice: (convId) => {
-      const cur = get().byId[convId]
-      const block = cur?.pendingAdvice ?? null
-      if (block) patch(convId, { pendingAdvice: undefined })
-      return block
-    },
+    takePendingAdvice: (convId) => takePendingAdviceImpl(get, patch, convId),
 
     markNotesSent: (convId, ids) => markNotesSentImpl(get, set, convId, ids),
 
@@ -2218,19 +2222,8 @@ export const useChat = create<ChatState>((set, get) => {
       void get().persist(convId)
     },
 
-    // S3 (E3) — tirar da conversa: remove TODOS os pareceres daquela persona (a
-    // presença é derivada, então some da barra). Mesma escrita do removeThreadItem,
-    // filtrando por personaId em vez de por id do item.
-    removeAdvice: (convId, personaId) => {
-      const cur = get().byId[convId]
-      if (!cur) return
-      patch(convId, {
-        items: cur.items.filter(
-          (it) => !(it.kind === "advice" && it.personaId === personaId),
-        ),
-      })
-      void get().persist(convId)
-    },
+    removeAdvice: (convId, personaId) =>
+      removeAdviceImpl(get, patch, convId, personaId),
 
     enqueue: (convId, text, attachments = []) =>
       set((s) => {

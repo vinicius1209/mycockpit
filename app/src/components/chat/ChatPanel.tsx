@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
-import { contextWindowFor } from "@/lib/contextWindow"
 import { dispatchQueuedNow, drainQueued } from "@/components/chat/drenarFila"
 import { stopActiveConversation } from "@/components/chat/filaComposer"
-import { notaDeTrocaDeModelo } from "@/components/chat/composerIdentity"
+import {
+  notaDeRevezamentoDeMotor,
+  notaDeTrocaDeModelo,
+} from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
@@ -27,7 +29,6 @@ import {
   deferredResumePrompt,
   executorItems,
   needsPersonaReinject,
-  type ChatItem,
 } from "@/store/chat"
 import { allowBlockedDir } from "@/lib/dirGate"
 import { retidoPorTurnoEmVoo } from "@/lib/sendGate"
@@ -48,20 +49,18 @@ import {
 } from "@/components/mission/MissionTimeline"
 import { InlineInteractions } from "@/components/chat/InteractionHost"
 import { runAgent } from "@/lib/agent"
-import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
+import { dispatchBlockReason } from "@/lib/agents"
 import { avisoDeMotorAusente } from "@/lib/detect"
 import { BannersDoComposer } from "@/components/chat/BannersDoComposer"
-import { prepareHybridHandoff } from "@/lib/handoff"
+import { assemblePromptCascade, prepareTurnTransplant } from "@/lib/turnHandoff"
 import { decidePlanGateAndSend } from "@/lib/planGate"
 import { extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
-  renderTranscript,
-  exportConvContext,
-  buildMemoryPrompt,
-  shouldInlineMemory,
-  buildResumeFallback,
-  shouldAttachResumeFallback,
-} from "@/lib/transcript"
+  comMemoriaNoCorpo,
+  fallbackDeResume,
+} from "@/components/chat/memoriaDoTurno"
+import { resolverCanalDoTurno } from "@/components/chat/canalDoTurno"
+import { comRedeDePreparo } from "@/components/chat/redeDePreparo"
 import { resolveSendTarget } from "@/lib/sendTarget"
 import { notifyTurnEnd } from "@/lib/notify"
 import type { Attachment } from "@/lib/attachments"
@@ -79,19 +78,12 @@ import {
 } from "@/lib/work"
 import {
   hasAssistantReply,
-  personaHandoffBlock,
   resolveFirstTurnPersona,
   warnPresetDrift,
 } from "@/lib/presets"
-import {
-  buildDoctrineBlock,
-  decideDoctrine,
-  readDoctrine,
-} from "@/lib/doctrine"
 import { findAppCommand } from "@/lib/slashCommands"
 import {
   expandDraftWithSources,
-  expandEmbeddedDraft,
   finalizeSlashExpansion,
 } from "@/lib/slashDispatch"
 import { runCompactTurn } from "@/lib/compact"
@@ -299,7 +291,14 @@ export function ChatPanel() {
     )
   }
 
-  async function handleSend(
+  /**
+   * O envio de verdade. Ver `handleSend` (logo abaixo) pro porquê de existir um
+   * invólucro: ele é a rede de segurança do carimbo de preparo.
+   */
+  async function despacharEnvio(
+    /** Id DESTE turno. Nasce no invólucro, e não aqui, porque é ele quem
+     *  precisa saber o que apagar se este preparo estourar no meio. */
+    runId: string,
     text: string,
     cfg: AgentRunConfig | undefined,
     attachments: Attachment[],
@@ -420,21 +419,40 @@ export function ChatPanel() {
       })
       return
     }
+    // ── DAQUI PRA BAIXO ESTE ENVIO É UM TURNO DESTA CONVERSA ────────────────
+    // O `runId` nasce aqui, e com ele o carimbo de "existe um envio em preparo"
+    // (ADR-169). Antes o `beginPreparation` só acontecia depois de ~10 `await`
+    // (persona, doutrina, lições, export do transcript) e do preflight do Rust:
+    // a conversa não sabia que havia um envio, então a tela não tinha o que
+    // mostrar, e uma espera de segundos com a interface imóvel lê como
+    // TRAVAMENTO, não como lentidão. O §6 do STYLEGUIDE já mandava spinner a
+    // partir de 1s; sem o carimbo, não havia sequer de onde derivá-lo.
+    //
+    // O lugar é este e não antes: acima ainda se decide se o texto vira PARECER
+    // (`@persona`), FILA (turno em voo) ou COMANDO BUILTIN, e nenhum desses é um
+    // turno desta conversa. Carimbar antes acenderia preparo para gesto que
+    // nunca vai virar run.
+    //
+    // Toda saída daqui pra frente que NÃO nasce turno precisa apagar o carimbo.
+    // São três, e cada uma chama `clearPreparation` explicitamente; o `finally`
+    // do `runAgent` cobre o resto.
+    useChat.getState().beginPreparation(convId, runId)
     // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o
     // seletor. Pareceres de conselheiro (advice) são laterais e NÃO contam como
     // turno de executor — senão uma consulta antes do 1º envio "travaria" a
     // conversa e roubaria a injeção de persona/doutrina do turno inicial (E1).
     const execItems = executorItems(conv.items)
     const locked = execItems.length > 0
-    let agent = locked ? conv.agent : (cfg?.agent ?? "claude-code")
-    let model = locked && !cfg?.modelSwitched ? conv.reqModel : (cfg?.model ?? null)
+    const targetAgent = cfg?.agent ?? conv.stagedAgent ?? conv.agent
+    const isAgentSwitch = locked && targetAgent !== conv.agent
+    let agent = isAgentSwitch ? targetAgent : (locked ? conv.agent : (cfg?.agent ?? "claude-code"))
+    let model = isAgentSwitch ? (cfg?.model ?? null) : (locked && !cfg?.modelSwitched ? conv.reqModel : (cfg?.model ?? null))
     // Trocar de modelo no meio é permitido (a sessão do CLI sobrevive), mas não
     // pode ser MUDO: sem esta linha o histórico passa a dizer que a conversa
     // rodou inteira num modelo só, e o custo por token muda sem aviso.
-    const modelChangeNotice = locked
-      ? notaDeTrocaDeModelo(conv.reqModel, model)
-      : null
-    let effort = locked ? conv.effort : (cfg?.effort ?? null)
+    const modelChangeNotice = !isAgentSwitch && locked ? notaDeTrocaDeModelo(conv.reqModel, model) : null
+    const agentChangeNotice = isAgentSwitch ? notaDeRevezamentoDeMotor(conv.agent, agent) : null
+    let effort = isAgentSwitch ? (cfg?.effort ?? null) : (locked ? conv.effort : (cfg?.effort ?? null))
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
     // ABORTA aqui, ANTES do start — o run não inicia nem gasta turno.
@@ -459,6 +477,7 @@ export function ChatPanel() {
       forceReinject: reinject,
     })
     if (persona.status === "blocked") {
+      useChat.getState().clearPreparation(convId, runId)
       toast.error(persona.error)
       return
     }
@@ -481,10 +500,11 @@ export function ChatPanel() {
     // revezamento. Piloto de MESMO backend mantém o resume nativo:
     // só a nova doutrina é prependida na sessão que continua.
     const wheelSwitch =
-      reinject &&
-      persona.status === "ready" &&
-      agent !== conv.agent &&
-      conv.sessionId != null
+      (reinject &&
+        persona.status === "ready" &&
+        agent !== conv.agent &&
+        conv.sessionId != null) ||
+      isAgentSwitch
     // S3.4 — resume de conversa com preset carimbado: verifica o drift do
     // digest (aviso obrigatório; o turno segue — recusa dura é maturação).
     // Só quando NÃO estamos re-injetando (a re-injeção re-carimba a versão
@@ -501,6 +521,7 @@ export function ChatPanel() {
       useApp.getState().settings.detected ?? {},
     )
     if (dispatchBlock) {
+      useChat.getState().clearPreparation(convId, runId)
       toast.error(dispatchBlock)
       return
     }
@@ -509,6 +530,7 @@ export function ChatPanel() {
     // FRESCO pelo MESMO gate da guarda lá em cima (era código gêmeo, e o gêmeo
     // enfileirava retomada de sistema), nunca um segundo run concorrente.
     if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
+      useChat.getState().clearPreparation(convId, runId)
       onAccepted?.()
       return
     }
@@ -523,7 +545,6 @@ export function ChatPanel() {
     const permissaoDoTurno = permissaoDoSpawn(
       modoEfetivoDoSpawn(conv.sessionMode, project.permissionMode),
     )
-    const runId = crypto.randomUUID()
     // sessão fresca quando o volante trocou de backend (o resume nativo do agent
     // anterior não vale pro novo); senão o resume normal da conversa.
     const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
@@ -560,46 +581,22 @@ export function ChatPanel() {
     // como CONTEXTO deste turno (bloco no prompt, não bolha), acima do pedido.
     // Só é consumido quando o envio é aceito; gate de preflight preserva tudo.
     const broughtAdvice = conv.pendingAdvice ?? null
-    // H1 (prompt-hygiene-plan) — canal por capability: motor com `systemChannel`
-    // recebe persona+doutrina pelo canal SYSTEM do CLI, re-enviadas a cada
-    // spawn (frescor de graça, zero inchaço de histórico); motor sem canal
-    // segue com blocos no corpo (1º turno + frescor H4 pela doutrina).
-    const sysChannel = engineDef(agent)?.systemChannel ?? false
-    // DOUTRINA do projeto (.mycockpit/instructions.md) — a instrução agnóstica:
-    // o app injeta, então vale igual em claude, codex e agy. No corpo, entra
-    // DEPOIS da persona e ANTES das lições na cascata: quem você é → as regras
-    // deste projeto → o que já aprendemos → o pedido. Best-effort: sem arquivo,
-    // ou com falha de disco, o envio segue sem o bloco.
-    const doctrine = decideDoctrine({
+    // Por qual CANAL a instrução viaja (capability `systemChannel`). A regra e
+    // o porquê moram em `canalDoTurno.ts`.
+    const canal = await resolverCanalDoTurno({
       agent,
-      block: buildDoctrineBlock((await readDoctrine(project.path)).content),
+      projectPath: project.path,
       locked,
       hasReply,
-      // S3.2 wheel-switch: sessão FRESCA no backend novo → a doutrina sempre
-      // viaja no envelope (mesma régua do revezamento explícito).
-      freshSession: wheelSwitch,
+      wheelSwitch,
       lastFingerprint: useChat.getState().byId[convId]?.injected?.doctrine,
+      presetId: conv.presetId ?? null,
+      presetDigest: conv.presetDigest ?? null,
+      personaBlock,
     })
-    const doctrineBlock = doctrine.body
-    // Persona pro canal system: a resolvida do 1º turno/reinjeção quando há;
-    // nos turnos seguintes de conversa carimbada, re-deriva do preset (best-
-    // effort — o aviso de drift do S3.4 continua cobrindo divergência).
-    let systemPersona: string | null = null
-    if (sysChannel) {
-      if (personaBlock) {
-        systemPersona = personaBlock
-        personaBlock = null
-      } else if (locked && conv.presetId && conv.presetDigest) {
-        systemPersona = await personaHandoffBlock(
-          conv.presetId,
-          conv.presetDigest,
-          project.path,
-        )
-      }
-    }
-    // identidade primeiro, depois as regras — mesma ordem da cascata do corpo.
-    const systemPrompt =
-      [systemPersona, doctrine.system].filter(Boolean).join("\n\n") || null
+    personaBlock = canal.personaBlock
+    const doctrineBlock = canal.doctrineBlock
+    const systemPrompt = canal.systemPrompt
     // Review gate G2 — os blocos são decididos ANTES da composição: se
     // qualquer um vai prepender, o pedido deixa de ser o prompt INTEIRO e um
     // comando nativo que sobreviveu CRU acima viraria barra morta atrás do
@@ -609,105 +606,49 @@ export function ChatPanel() {
     const embeddedExpansion = await finalizeSlashExpansion(slashExpansion, text, project.path, agent, hasPromptEnvelope)
     let promptText = embeddedExpansion.text
     let instructionSources = embeddedExpansion.instructionSources
-    // cascata (de dentro pra fora): lições → parecer → doutrina → persona.
     promptText = withNotes(convId, conv.items, promptText)
-    if (lessonsBlock) promptText = `${lessonsBlock}\n\n---\n\n${promptText}`
-    if (broughtAdvice) promptText = `${broughtAdvice}\n\n---\n\n${promptText}`
-    if (doctrineBlock) promptText = `${doctrineBlock}\n\n${promptText}`
-    // S3.2 — troca de volante com sessão fresca (backend novo): o fio até aqui
-    // viaja pelo MESMO envelope híbrido do revezamento. O pedido atual ainda
-    // não estava em conv.items no preflight, então entra como item sintético
-    // somente no artefato de handoff (a store já o gravou em start()).
     if (wheelSwitch) {
-      const wheelItems: ChatItem[] = [...conv.items]
-      if (broughtAdvice) {
-        wheelItems.push({
-          kind: "text",
-          id: `wheel-advice-${runId}`,
-          text: `Parecer trazido para o executor:\n${broughtAdvice}`,
-        })
-      }
-      const wheelExpansion = await expandEmbeddedDraft(text, project.path, agent)
-      instructionSources = wheelExpansion.instructionSources
-      wheelItems.push({
-        kind: "user",
-        id: `wheel-request-${runId}`,
-        // o novo agent recebe o pedido já EXPANDIDO (o /comando cru não
-        // significaria nada pra ele). Embutido no envelope de handoff, nem o
-        // comando nativo pode viajar cru (G2.3) — re-expande com embedded.
-        text: wheelExpansion.text,
-      })
-      const prepared = await prepareHybridHandoff({
+      const transplant = await prepareTurnTransplant({
+        conv,
+        convId,
         projectId: project.id,
         cwd,
-        convId,
         sourceAgent: conv.agent,
         targetAgent: agent,
-        items: wheelItems,
-        pendingUserIndex: wheelItems.length - 1,
+        text,
+        projectPath: project.path,
+        runId,
+        broughtAdvice,
         personaBlock,
         doctrineBlock,
         lessonsBlock,
       })
-      promptText = prepared.prompt
-    } else if (personaBlock) {
-      // persona vem ANTES de tudo no prompt (identidade primeiro, depois a
-      // doutrina, as lições e o pedido) — mesmo cano do bloco de lições.
-      promptText = `${personaBlock}\n\n${promptText}`
-    }
-    // Motor SEM resume nativo (capability `sessionResume` false — H5, nunca
-    // por nome): todo turno é sessão fresca → injeta a memória da conversa no
-    // prompt — recap curto (~4k) + exporta o transcript pleno pro arquivo do
-    // projeto e aponta o caminho (o agent PUXA se precisar de mais). Motores
-    // com resume não ganham isso em turno normal (o resume já resolve).
-    // Best-effort de ponta a ponta: falha no export → só o recap.
-    // Regra única em lib/transcript (vivia duplicada aqui e no fleet/send).
-    if (
-      shouldInlineMemory({ agent, items: conv.items, sessionId, hasReply, wheelSwitch })
-    ) {
-      let pointer: string | null = null
-      try {
-        // exporta relativo ao cwd EFETIVO (worktree ou projeto), pro caminho
-        // relativo resolver de onde o agent roda.
-        const md = renderTranscript(conv.items, { agent: conv.agent })
-        pointer = await exportConvContext(cwd, convId, md)
-      } catch {
-        pointer = null
-      }
-      promptText = buildMemoryPrompt(
-        conv.items,
-        pointer,
+      promptText = transplant.promptText
+      instructionSources = transplant.instructionSources
+    } else {
+      promptText = assemblePromptCascade({
         promptText,
-        // Orçamento derivado da janela DESTE modelo (G1). O modelo resolvido
-        // vence o pedido: é o que o CLI de fato abriu.
-        contextWindowFor(conv.model ?? conv.reqModel),
-      )
+        lessonsBlock,
+        broughtAdvice,
+        doctrineBlock,
+        personaBlock,
+      })
     }
-    // MyCockpit resume (claude/codex): a conversa pertence ao cockpit, não à
-    // CLI. Quando o envio VAI tentar resume nativo (conv com itens + sessionId),
-    // exporta o transcript pleno (mesmo caminho do agy) e monta o fallback de
-    // memória (recap ~3k + ponteiro + linha de continuidade). O motor SÓ usa
-    // se o resume nativo falhar — o prompt normal NÃO muda. Best-effort de
-    // ponta a ponta: export falhou → só recap; tudo falhou → envia sem fallback.
-    let memoryFallback: string | null = null
-    if (shouldAttachResumeFallback(agent, conv.items, sessionId)) {
-      try {
-        let pointer: string | null = null
-        try {
-          const md = renderTranscript(conv.items, { agent: conv.agent })
-          pointer = await exportConvContext(cwd, convId, md)
-        } catch {
-          pointer = null
-        }
-        memoryFallback = buildResumeFallback(
-          conv.items,
-          pointer,
-          contextWindowFor(conv.model ?? conv.reqModel),
-        )
-      } catch {
-        memoryFallback = null
-      }
+    // A memória que viaja neste turno (corpo ou fallback, decidido por
+    // CAPABILITY). A regra e o porquê moram em `memoriaDoTurno.ts`.
+    const alvoDaMemoria = {
+      convId,
+      items: conv.items,
+      agent,
+      agentDoFio: conv.agent,
+      cwd,
+      sessionId,
+      hasReply,
+      wheelSwitch,
+      modelo: conv.model ?? conv.reqModel,
     }
+    promptText = await comMemoriaNoCorpo(promptText, alvoDaMemoria)
+    const memoryFallback = await fallbackDeResume(alvoDaMemoria)
     const acceptance = createRunAcceptance({
       onAccept: () => {
         delete preflightRetryRef.current[convId]
@@ -720,16 +661,20 @@ export function ChatPanel() {
           text,
           attachments,
           wheelSwitch,
+          agentChangeNotice,
           modelChangeNotice,
           broughtAdvice,
           lessonIds: acceptedLessonIds,
           recordLessons: (ids) => {
             injectedLessonsRef.current[convId] = ids
           },
-          doctrineFingerprint: doctrine.fingerprint,
+          doctrineFingerprint: canal.doctrineFingerprint,
           personaStamp,
           onAccepted,
         })
+        if (conv.stagedAgent) {
+          useChat.getState().stageAgent(convId, null)
+        }
         if (convId === useChat.getState().activeId) setAtBottom(true)
       },
       onBlocked: (gate) => {
@@ -744,7 +689,6 @@ export function ChatPanel() {
       onEvent: (event) => useChat.getState().handleEvent(convId, event),
     })
 
-    useChat.getState().beginPreparation(convId, runId)
     try {
       await runAgent(
         runId,
@@ -810,6 +754,42 @@ export function ChatPanel() {
         void notifyTurnEnd(convId, agent)
         useChat.getState().scheduleSuggestions(convId)
       }
+    }
+  }
+
+  /** Invólucro do envio: cria o `runId` e passa o despacho pela rede que garante
+   *  que nenhum carimbo de preparo sobreviva a uma exceção (`redeDePreparo.ts`,
+   *  ADR-169). O `runId` nasce AQUI porque é a rede que precisa saber o que
+   *  apagar. */
+  async function handleSend(
+    text: string,
+    cfg: AgentRunConfig | undefined,
+    attachments: Attachment[],
+    origem: OrigemDoEnvio,
+    originConvId?: string,
+    onAccepted?: () => void,
+    mcpRecoveries: McpRunOverride[] = [],
+  ) {
+    const ok = await comRedeDePreparo(
+      crypto.randomUUID(),
+      {
+        conversas: () => Object.keys(useChat.getState().byId),
+        limpar: (id, run) => useChat.getState().clearPreparation(id, run),
+      },
+      (runId) =>
+        despacharEnvio(
+          runId,
+          text,
+          cfg,
+          attachments,
+          origem,
+          originConvId,
+          onAccepted,
+          mcpRecoveries,
+        ),
+    )
+    if (!ok) {
+      toast.error("Não consegui preparar este envio. O pedido segue no composer.")
     }
   }
 

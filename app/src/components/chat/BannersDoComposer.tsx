@@ -1,6 +1,6 @@
 // A PILHA DE AVISOS acima do composer, num lugar só.
 //
-// Os três banners (auto-resume agendado, motor ausente na máquina, pasta
+// Os avisos (auto-resume, revezamento, motor ausente, preflight e pasta
 // barrada) moravam soltos no meio do `ChatPanel`, cada um com o seu bloco de
 // condição e o seu punhado de handlers inline. Saíram daqui por causa da
 // catraca de tamanho, mas o motivo real é melhor que o número: **eles disputam
@@ -20,12 +20,17 @@ import { toast } from "sonner"
 import {
   AutoResumeBanner,
   BlockedDirBanner,
+  CotaEsgotadaBanner,
   MotorAusenteBanner,
   PreflightGateBanner,
+  RevezamentoStagedBanner,
 } from "@/components/chat/ComposerBanners"
 import { agentDef } from "@/lib/agents"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
-import { useChat, type ConvState } from "@/store/chat"
+import { alternativeAgentsFor, checkAgentQuota } from "@/lib/quotaExhausted"
+import { useApp } from "@/store/app"
+import { hasExecutorTurn, useChat, type ConvState } from "@/store/chat"
+import { useUsage } from "@/store/usage"
 
 /** O prompt do "retomar agora": o mesmo do agendamento automático, porque
  *  antecipar o gesto não pode mudar o que é pedido ao agente. */
@@ -61,6 +66,27 @@ export function BannersDoComposer({
   onContinuarSemMcp?: () => void
   onContinuarSoLendo?: () => void
 }) {
+  const limitedAgents = useApp((s) => s.limitedAgents)
+  const detectados = useApp((s) => s.settings.detected)
+  const usageByAgent = useUsage((s) => s.byAgent)
+  const established = !!conv && hasExecutorTurn(conv.items)
+  const quota = conv
+    ? checkAgentQuota(conv.agent, limitedAgents, usageByAgent[conv.agent])
+    : { exhausted: false, resetHint: null }
+  const alternatives =
+    conv && established && quota.exhausted && !conv.stagedAgent
+      ? alternativeAgentsFor(
+          conv.agent,
+          detectados ?? {},
+          limitedAgents,
+          usageByAgent,
+        )
+      : []
+  const sourceLabel = conv ? (agentDef(conv.agent)?.label ?? conv.agent) : ""
+  const targetLabel = conv?.stagedAgent
+    ? (agentDef(conv.stagedAgent)?.label ?? conv.stagedAgent)
+    : ""
+
   return (
     <>
       {conv?.autoResume && (
@@ -86,6 +112,21 @@ export function BannersDoComposer({
           }}
         />
       )}
+
+      {conv?.stagedAgent && activeId ? (
+        <RevezamentoStagedBanner
+          sourceLabel={sourceLabel}
+          targetLabel={targetLabel}
+          onUndo={() => useChat.getState().stageAgent(activeId, null)}
+        />
+      ) : conv && activeId && established && quota.exhausted ? (
+        <CotaEsgotadaBanner
+          agentLabel={sourceLabel}
+          resetHint={quota.resetHint}
+          alternatives={alternatives}
+          onSelect={(agent) => useChat.getState().stageAgent(activeId, agent)}
+        />
+      ) : null}
 
       {conv?.preflightGate && (
         <PreflightGateBanner

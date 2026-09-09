@@ -21,6 +21,7 @@ import { AgentLogo, AGENT_LOGO_LABEL, agentLogoLabel } from "@/components/common
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
 import { problemaNoSlug } from "@/lib/modelSlug"
 import { estadoNaMaquina } from "@/lib/detect"
+import { SELECTED_FILL } from "@/lib/selection"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -47,6 +48,9 @@ export function IdentityPicker({
   onEffortChange,
 }: {
   effectiveDest: string
+  /** Conversa já estabelecida. NÃO desabilita o trilho de motor (o clique
+   *  engatilha revezamento pro próximo envio); muda só o que o controle PROMETE
+   *  no tooltip, e trava modelo e esforço. */
   locked: boolean
   onDestChange: (v: string) => void
   effectiveModel: string
@@ -60,8 +64,13 @@ export function IdentityPicker({
   const [customEditing, setCustomEditing] = useState(false)
   const [customDraft, setCustomDraft] = useState("")
 
+  // O que o cadeado ainda prende. NÃO é mais o agent: desde o revezamento
+  // proativo (ADR-165) o trilho de motor aceita clique numa conversa travada e
+  // engatilha a troca pro PRÓXIMO envio. Esta copy servia aos três eixos e
+  // continuou falando por todos depois que um saiu — dizer "agent fica fixo" ao
+  // lado de um trilho que troca de agent é a UI se contradizendo na mesma tela.
   const lockTitle = locked
-    ? "Agent e modelo ficam fixos a partir do 1º envio desta conversa"
+    ? "Modelo e esforço ficam fixos a partir do 1º envio desta conversa"
     : undefined
   const modelTitle = modelLocked
     ? lockTitle
@@ -145,7 +154,7 @@ export function IdentityPicker({
           <div
             role="group"
             aria-label="Agent"
-            title={locked ? lockTitle : undefined}
+            title={locked ? "Escolha outro motor para revezar no próximo envio" : undefined}
             className="flex w-11 shrink-0 flex-col items-center gap-1 border-r bg-secondary/30 py-2"
           >
             {RAIL_AGENTS.map((d) => {
@@ -161,16 +170,25 @@ export function IdentityPicker({
                 <button
                   key={d.id}
                   type="button"
-                  disabled={locked}
+                  // SEM `disabled`, de propósito. O trilho é sempre clicável
+                  // desde a ADR-165, e nem o motor ausente é desabilitado: o
+                  // `title` é quem explica ("não encontrado nesta máquina"), e
+                  // controle desabilitado não entrega tooltip de forma
+                  // confiável. Quem barra o despacho é `dispatchBlockReason`, na
+                  // hora do envio, com o motivo por extenso.
+                  // (Havia aqui uma prop `disabled` que nenhum call site
+                  // passava: atributo que nunca era verdade.)
                   aria-pressed={isActive}
                   aria-label={d.label}
                   title={[
                     d.label,
-                    isLimited
-                      ? hint
-                        ? `limite atingido, volta ${hint}`
-                        : "limite de uso atingido"
-                      : d.description,
+                    locked && !isActive
+                      ? `Revezar para ${d.label} no próximo envio`
+                      : isLimited
+                        ? hint
+                          ? `limite atingido, volta ${hint}`
+                          : "limite de uso atingido"
+                        : d.description,
                     ausente ? "não encontrado nesta máquina" : null,
                   ]
                     .filter(Boolean)
@@ -179,8 +197,8 @@ export function IdentityPicker({
                   className={cn(
                     "relative grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors",
                     isActive
-                      ? "bg-brass/10 text-brass"
-                      : "hover:bg-accent hover:text-foreground",
+                      ? SELECTED_FILL
+                      : "hover:bg-sel-hover hover:text-foreground",
                   )}
                 >
                   <AgentLogo

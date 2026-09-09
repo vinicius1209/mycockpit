@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest"
 import {
   buildCreateInput,
   canCreate,
+  duplicateFormState,
   emptyCreateForm,
   especialistaResumo,
   filterEspecialistas,
@@ -50,7 +51,6 @@ describe("marketplaceCategories", () => {
     expect(cats).toEqual(["Todos", "Design", "Engenharia", "Geral"])
   })
 })
-
 describe("filterEspecialistas", () => {
   const defs = [
     def({ name: "Aline", slug: "aline", category: "Engenharia", personalityMd: "Trava fronteiras." }),
@@ -172,5 +172,32 @@ describe("canCreate (gate do form)", () => {
     expect(
       canCreate({ ...emptyCreateForm(), name: "Aline", personalityMd: "corpo" }),
     ).toBe(true)
+  })
+})
+
+describe("duplicateFormState", () => {
+  it("copia todos os campos adicionando sufixo de cópia ao nome", () => {
+    const original = def({
+      name: "Marco",
+      category: "Estratégia",
+      personalityMd: "Sou o Marco.",
+      rubric: ["Reversibilidade"],
+      skills: ["audit"],
+      policy: "Só leitura",
+      backend: "agy",
+      model: "gemini-3.8-flash-high",
+      effort: null,
+    })
+    const form = duplicateFormState(original)
+    expect(form.name).toBe("Marco (cópia)")
+    expect(form.category).toBe("Estratégia")
+    expect(form.personalityMd).toBe("Sou o Marco.")
+    expect(form.rubric).toEqual(["Reversibilidade"])
+    expect(form.skillsText).toBe("audit")
+    expect(form.policy).toBe("Só leitura")
+    expect(form.backend).toBe("agy")
+    expect(form.model).toBe("gemini-3.8-flash-high")
+    expect(form.effort).toBe("default")
+    expect(form.avatarSalt).toBe(1)
   })
 })

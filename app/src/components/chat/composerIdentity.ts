@@ -24,8 +24,9 @@ export interface IdentidadeEfetiva {
   /** O humano ESCOLHEU outro modelo numa conversa travada cuja última tentativa
    *  falhou. Sem isto o despacho segue usando o modelo do 1º run. */
   trocouDeModelo: boolean
+  /** Revezamento de motor engatilhado para esta conversa travada. */
+  revezando?: boolean
 }
-
 export interface EntradaDaIdentidade {
   /** A conversa já teve turno de executor (`hasExecutorTurn`). */
   travada: boolean
@@ -39,6 +40,8 @@ export interface EntradaDaIdentidade {
   conversa: { agent: string; reqModel: string | null; effort: string | null }
   /** O que os seletores mostram — estado local que SOBREVIVE à troca de conversa. */
   seletores: { agent: string; model: string; effort: string }
+  /** Revezamento de motor engatilhado para esta conversa. */
+  stagedAgent?: string | null
 }
 
 /**
@@ -76,14 +79,19 @@ export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
       trocouDeModelo: false,
     }
   }
+  const targetAgent = e.stagedAgent ?? e.conversa.agent
+  const revezando = targetAgent !== e.conversa.agent
   // `modeloDestravado` hoje significa "não está em voo" (o motor não aceita
   // trocar o modelo de um processo que já subiu — a flag foi no spawn).
   const escolhido = e.modeloDestravado ? e.escolhaDeEmergencia : null
   return {
-    agent: e.conversa.agent,
-    model: escolhido ?? e.conversa.reqModel ?? "default",
-    effort: e.conversa.effort ?? "default",
+    agent: targetAgent,
+    model: revezando
+      ? (escolhido ?? "default")
+      : (escolhido ?? e.conversa.reqModel ?? "default"),
+    effort: revezando ? "default" : (e.conversa.effort ?? "default"),
     trocouDeModelo: escolhido !== null,
+    ...(revezando ? { revezando: true } : {}),
   }
 }
 
@@ -127,4 +135,19 @@ export function notaDeTrocaDeModelo(
   const para = novo ?? "default"
   if (de === para) return null
   return `Modelo trocado nesta conversa: ${de} → ${para}. Vale deste turno em diante.`
+}
+
+/**
+ * A linha que registra o revezamento de motor NO FIO.
+ *
+ * Exibido quando a conversa passa de um motor para outro (transplante).
+ */
+export function notaDeRevezamentoDeMotor(
+  anterior: string,
+  novo: string,
+): string | null {
+  if (anterior === novo) return null
+  const de = DESTINATIONS.find((d) => d.id === anterior)?.label ?? anterior
+  const para = DESTINATIONS.find((d) => d.id === novo)?.label ?? novo
+  return `Revezamento de motor nesta conversa: ${de} → ${para}. O contexto recente foi transferido e vale deste turno em diante.`
 }

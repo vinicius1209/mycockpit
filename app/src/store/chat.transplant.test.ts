@@ -76,7 +76,11 @@ describe("revezamento transacional", () => {
 
   it("falha antes da sessão descarta a intenção e preserva a origem retomável", () => {
     const chat = useChat.getState()
-    chat.beginTransplant(CONV, "run-codex", "codex")
+    chat.beginTransplant(CONV, "run-codex", "codex", {
+      model: null,
+      effort: null,
+      commitNotice: "Revezamento confirmado",
+    })
     chat.handleEvent(CONV, {
       type: "error",
       message: "Não foi possível iniciar o Codex: configuração MCP inválida",
@@ -90,11 +94,27 @@ describe("revezamento transacional", () => {
     expect(failed.contextTokens).toBe(42_000)
     expect(failed.pendingTransplant).toBeUndefined()
     expect(failed.items.at(-1)).toMatchObject({ kind: "error" })
+    expect(failed.items).not.toContainEqual(
+      expect.objectContaining({
+        kind: "notice",
+        message: "Revezamento confirmado",
+      }),
+    )
   })
 
   it("confirma o novo piloto somente quando o destino emite session", () => {
     const chat = useChat.getState()
-    chat.beginTransplant(CONV, "run-codex", "codex")
+    chat.beginTransplant(CONV, "run-codex", "codex", {
+      model: null,
+      effort: null,
+      commitNotice: "Revezamento confirmado",
+    })
+    expect(useChat.getState().byId[CONV].items).not.toContainEqual(
+      expect.objectContaining({
+        kind: "notice",
+        message: "Revezamento confirmado",
+      }),
+    )
     chat.handleEvent(CONV, {
       type: "session",
       session_id: "codex-thread",
@@ -110,6 +130,12 @@ describe("revezamento transacional", () => {
     expect(committed.effort).toBeNull()
     expect(committed.contextTokens).toBeUndefined()
     expect(committed.pendingTransplant).toBeUndefined()
+    expect(committed.items).toContainEqual(
+      expect.objectContaining({
+        kind: "notice",
+        message: "Revezamento confirmado",
+      }),
+    )
   })
 
   it("mantém modelo da origem fora da telemetria do destino pré-sessão", () => {

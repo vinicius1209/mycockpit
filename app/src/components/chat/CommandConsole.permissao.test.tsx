@@ -101,4 +101,18 @@ describe("quem obedece ao modo é a CLI da conversa", () => {
     }
     expect(await montar()).toContain("Antigravity IGNORA este modo")
   })
+
+  it("revezamento preparado mostra a compatibilidade do motor de destino", async () => {
+    app.projects = [projeto(PROJ_FOCO, "padrao"), projeto(PROJ_DONO, "padrao")]
+    chat.byId = {
+      [CONV]: conversa({
+        agent: "claude-code",
+        stagedAgent: "agy",
+        items: [
+          { id: "u1", kind: "user", text: "continue", ts: 1_755_300_000_000 },
+        ],
+      }),
+    }
+    expect(await montar()).toContain("Antigravity IGNORA este modo")
+  })
 })

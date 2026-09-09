@@ -74,25 +74,25 @@ export function RunCapabilityStrip({
     .join(" · ")
 
   return (
-    <div className="mx-auto mb-2 max-w-[760px] px-8">
-      <div className="overflow-hidden rounded-lg border border-border/40 bg-card">
+    <div className="mx-auto mb-1.5 max-w-[760px] px-8">
+      <div className="overflow-hidden rounded-md border border-border/40 bg-card/40 transition-colors hover:bg-card/70">
         <button
           type="button"
           onClick={() => setOpen((value) => !value)}
           aria-expanded={open}
           aria-label="Detalhar capacidades deste run"
-          className="flex min-h-7 w-full items-center gap-2 px-2.5 text-left"
+          className="flex min-h-6 w-full items-center gap-2 px-2 py-0.5 text-left"
         >
-          <Braces className="size-3.5 shrink-0 text-brass" />
-          <span className="shrink-0 text-[12px] font-medium text-foreground">
+          <Braces className="size-3 shrink-0 text-brass" />
+          <span className="shrink-0 text-[11px] font-medium text-foreground">
             Capacidades deste run
           </span>
-          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground/80">
             {summary}
           </span>
           <ChevronDown
             className={cn(
-              "size-3.5 shrink-0 text-muted-foreground transition-transform",
+              "size-3 shrink-0 text-muted-foreground transition-transform",
               open && "rotate-180",
             )}
           />

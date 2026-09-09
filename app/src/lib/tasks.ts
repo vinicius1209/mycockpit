@@ -4,7 +4,8 @@
 
 import type { ChatItem } from "@/store/chat"
 
-export type AgentTaskStatus = "pending" | "in_progress" | "completed"
+// `unsettled` pertence à leitura, nunca é escrito no transcript do provider.
+export type AgentTaskStatus = "pending" | "in_progress" | "completed" | "unsettled"
 
 export interface AgentTask {
   id: string
@@ -147,7 +148,20 @@ export function deriveTaskPlans(items: ChatItem[]): AgentPlan[] {
       current.updatedAt = it.ts ?? current.updatedAt
     }
   }
+  for (const plan of plans) {
+    if (plan.terminal || plan.turnId !== turnId) {
+      for (const task of plan.tasks) {
+        if (task.status !== "completed") task.status = "unsettled"
+      }
+    }
+  }
   return plans
+}
+
+/** O runtime fecha também o replay sem evento terminal. Conclusão exige
+ * update explícito; um turno parado só prova ausência de execução. */
+export function taskStatusForDisplay(task: AgentTask, live: boolean): AgentTaskStatus {
+  return !live && task.status !== "completed" ? "unsettled" : task.status
 }
 
 /** Leitura completa do plano de um fio: os planos, o turno corrente e o plano

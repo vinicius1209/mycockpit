@@ -10,10 +10,9 @@
 // ficou: renomear obrigaria a mexer nos call sites por estética.
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Lock } from "lucide-react"
+import { ArrowRightLeft, ChevronDown, Lock } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-
 
 /** A porta pra agent/modelo/esforço (e preset, quando existe): UMA pílula de
  *  TEXTO puro (`resumoDaIdentidade`, sem "(alias)" — usa o `pill` curto, não o
@@ -30,10 +29,12 @@ import { cn } from "@/lib/utils"
 export function IdentityDoor({
   label,
   locked,
+  staged,
   children,
 }: {
   label: string
   locked?: boolean
+  staged?: boolean
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -62,11 +63,22 @@ export function IdentityDoor({
         size="padrao"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        title="Agent, modelo e esforço"
-        className="h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title={
+          staged
+            ? "Revezamento preparado para o próximo envio"
+            : "Agent, modelo e esforço"
+        }
+        className={cn(
+          "h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+          staged && "text-foreground",
+        )}
       >
         <span className="max-w-[220px] truncate">{label}</span>
-        {locked && <Lock className="size-3 shrink-0 opacity-70" />}
+        {staged ? (
+          <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground" />
+        ) : locked ? (
+          <Lock className="size-3 shrink-0 opacity-70" />
+        ) : null}
         <ChevronDown
           className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")}
         />

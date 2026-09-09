@@ -8,10 +8,13 @@ import {
   useState,
   type SetStateAction,
 } from "react"
+import { toast } from "sonner"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { ContextRing } from "@/components/chat/ContextRing"
 import { IdentityDoor } from "@/components/chat/ComposerExecutionControls"
 import { resumoDaIdentidade, identidadeEfetiva } from "@/components/chat/composerIdentity"
+import { composerPlaceholder } from "@/components/chat/composerPlaceholder"
+import { avisoDeRevezamento } from "@/store/chat/revezamento"
 import {
   SlashPopover,
   AttachmentChips,
@@ -47,8 +50,7 @@ import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
 import { DESTINATIONS, defaultModelFor, agentCaps, normalizeModelValue } from "@/lib/agents"
-import { FusionLauncher } from "@/components/fusion/FusionLauncher"
-import { MissionLauncher } from "@/components/mission/MissionLauncher"
+import { ComposerLaunchers } from "@/components/chat/ComposerLaunchers"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
@@ -127,34 +129,12 @@ export function CommandConsole({
       "default",
   )
   const [effort, setEffort] = useState(settings.defaultEffort ?? "default")
-  // Mission (beta): dialog do launcher, acionado pelo Rocket do composer.
-  const [missionOpen, setMissionOpen] = useState(false)
-  // Fusion (F3): dialog do launcher da disputa, acionado pelo ⚔️ do composer.
-  const [fusionOpen, setFusionOpen] = useState(false)
-  // Launchpad pede a abertura dos launchers via contador (padrão do
-  // sddCreateRequested): skip do valor inicial, abre a cada bump.
-  const missionReq = useApp((s) => s.missionLaunchRequested)
-  const fusionReq = useApp((s) => s.fusionLaunchRequested)
   // S4 — o que o sandbox do Frota garante NESTA máquina. Lido uma vez: a
   // resposta depende do sistema, não do turno.
   const [confinamento, setConfinamento] = useState(SEM_CONFINAMENTO)
   useEffect(() => {
     void lerConfinamento().then(setConfinamento)
   }, [])
-  const missionReqSeen = useRef(missionReq)
-  const fusionReqSeen = useRef(fusionReq)
-  useEffect(() => {
-    if (missionReq !== missionReqSeen.current) {
-      missionReqSeen.current = missionReq
-      setMissionOpen(true)
-    }
-  }, [missionReq])
-  useEffect(() => {
-    if (fusionReq !== fusionReqSeen.current) {
-      fusionReqSeen.current = fusionReq
-      setFusionOpen(true)
-    }
-  }, [fusionReq])
   // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
   const lexicalFocus = useRef<(() => void) | null>(null)
   // pill de comando "/" presente no editor (SlashPillPresencePlugin): com ele,
@@ -201,13 +181,14 @@ export function CommandConsole({
   // conversa). Zera ao trocar de conversa ou de agent: modelo de um motor não
   // vale no outro.
   const [retryModel, setRetryModel] = useState<string | null>(null)
-  useEffect(() => setRetryModel(null), [activeId, conv.agent])
+  useEffect(() => setRetryModel(null), [activeId, conv.agent, conv.stagedAgent])
   // A regra (o que vale numa conversa nova, o que vale numa travada, e a saída
   // de emergência) é pura e mora em composerIdentity.
   const identidade = identidadeEfetiva({
     travada: locked,
     modeloDestravado: modelUnlocked,
     escolhaDeEmergencia: retryModel,
+    stagedAgent: conv.stagedAgent,
     conversa: { agent: conv.agent, reqModel: conv.reqModel, effort: conv.effort },
     seletores: { agent: destination, model, effort },
   })
@@ -319,7 +300,7 @@ export function CommandConsole({
     DESTINATIONS.find((d) => d.id === effectiveDest) ?? DESTINATIONS[0]
   // agent EFETIVO da conversa — a nota honesta por agent (permissionNote) precisa
   // saber QUEM vai obedecer (ou ignorar) o modo de permissão do projeto.
-  const convAgent = hasExecutorTurn(conv.items) ? conv.agent : effectiveDest
+  const convAgent = effectiveDest
   // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
   const caps = agentCaps(effectiveDest)
   const allSupported = attachments.every((a) =>
@@ -432,19 +413,14 @@ export function CommandConsole({
 
   const canEnqueue = (running || finalizing) && (value.trim().length > 0 || attachments.length > 0)
 
-  // Placeholder por estado. A dica de "/" sai só quando o projeto tem comandos
-  // de fato (senão seria teatro).
-  const placeholder = missionRunning
-    ? "Missão em andamento; pare a missão para enviar manualmente…"
-    : preparing
-      ? "Verificando capacidades…"
-      : running
-        ? "Enter corrige agora · Tab envia no próximo turno…"
-        : finalizing
-          ? "Turno terminando · Tab envia assim que fechar…"
-      : commands.length > 0
-        ? "Peça algo…  ou / para comandos"
-        : "Peça algo ao seu time de agents…"
+  // Placeholder por estado, extraído em helper puro para controle de tamanho.
+  const placeholder = composerPlaceholder({
+    missionRunning,
+    preparing,
+    running,
+    finalizing,
+    hasCommands: commands.length > 0,
+  })
 
   // Comandos "/", paste → anexo e histórico ↑/↓ estilo shell: o LexicalComposer
   // recebe pontes pros hooks (a lógica mora aqui fora, os gestos de teclado nos
@@ -579,7 +555,7 @@ export function CommandConsole({
         footer={
           <ComposerActions
             stopTitle={deferredStopWarning(pendingDeferred(conv.items))}
-            onFusion={() => setFusionOpen(true)}
+            onFusion={() => useApp.getState().requestFusionLaunch()}
             fusionDisabled={
               !activeId || disabled || preparing || running || finalizing || missionRunning
             }
@@ -588,12 +564,13 @@ export function CommandConsole({
                 ? "Disputar entre agents (candidatos read-only); o vencedor continua nesta conversa"
                 : "Sem conversa ativa; a disputa precisa de uma conversa de destino"
             }
-            onMission={() => setMissionOpen(true)}
+            onMission={() => useApp.getState().requestMissionLaunch()}
             missionDisabled={disabled || preparing || running || finalizing || missionRunning}
             onAttach={attach}
             onEspecialistas={onOpenEspecialistas}
             running={running}
             finalizing={finalizing}
+            preparing={preparing}
             onStop={onStop}
             onSubmit={submit}
             canSend={canSend}
@@ -625,7 +602,11 @@ export function CommandConsole({
               />
             }
             identityControls={
-              <IdentityDoor label={resumoDaIdentidade(identidade)} locked={locked}>
+              <IdentityDoor
+                label={resumoDaIdentidade(identidade)}
+                locked={locked}
+                staged={identidade.revezando}
+              >
                 <IdentityControls
                   presetValue={effectivePreset}
                   presetOptions={presetOptions}
@@ -633,6 +614,13 @@ export function CommandConsole({
                   effectiveDest={effectiveDest}
                   locked={locked}
                   onDestChange={(v) => {
+                    if (locked && activeId) {
+                      const nextStaged = v === conv.agent ? null : v
+                      useChat.getState().stageAgent(activeId, nextStaged)
+                      clearPresetOnManualChange()
+                      toast.info(avisoDeRevezamento(nextStaged, conv.agent))
+                      return
+                    }
                     setDestination(v)
                     setModel(defaultModelFor(v))
                     setEffort("default")
@@ -670,24 +658,10 @@ export function CommandConsole({
         }}
       />
 
-      <MissionLauncher
-        open={missionOpen}
-        onOpenChange={setMissionOpen}
-        initialTask={value.trim()}
-        onLaunched={() => {
-          // o rascunho virou a tarefa da missão → limpa o composer
-          setValue("")
-          resetHistory()
-        }}
-      />
-
-      <FusionLauncher
-        open={fusionOpen}
-        onOpenChange={setFusionOpen}
-        initialTask={value.trim()}
+      <ComposerLaunchers
+        task={value.trim()}
         seed={effCfg}
         onLaunched={() => {
-          // o rascunho virou a tarefa da disputa → limpa o composer
           setValue("")
           resetHistory()
         }}

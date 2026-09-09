@@ -96,6 +96,23 @@ export function emptyCreateForm(): CreateFormState {
   }
 }
 
+/** Preenche o estado de formulário a partir de um especialista existente para duplicação. */
+export function duplicateFormState(def: AgentDef): CreateFormState {
+  return {
+    name: `${def.name} (cópia)`,
+    category: categoriaDe(def),
+    personalityMd: def.personalityMd,
+    rubric: [...def.rubric],
+    skillsText: def.skills.join(", "),
+    policy: def.policy ?? "",
+    backend: def.backend,
+    model: def.model ?? "default",
+    effort: def.effort ?? "default",
+    avatarStyle: def.avatarStyle,
+    avatarSalt: 1,
+  }
+}
+
 /** Form → input de persona (o mesmo AgentPresetInput do CRUD existente). PURO:
  *  aplica os defaults (category "Geral", seed = slug quando não variou) e a
  *  sentinela de model/effort. */

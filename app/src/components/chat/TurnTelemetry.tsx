@@ -4,9 +4,13 @@ import { fmtCost, fmtDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { ChatItem } from "@/store/chat"
 
-/** Legenda de fim de turno: estado, duração, tokens, modelo e custo. A peça é
- * compartilhada pelo resultado comum e pelo disclosure do incidente; nenhum
- * cálculo ou dado muda quando a apresentação externa muda. */
+/** Legenda de fim de turno: estado, duração, tokens e, na ponta, custo OU
+ * modelo. A peça é compartilhada pelo resultado comum e pelo disclosure do
+ * incidente; nenhum cálculo ou dado muda quando a apresentação externa muda.
+ *
+ * A ponta é uma só de propósito (a linha é estreita): com custo conhecido ele
+ * vence e o modelo vai pro tooltip; sem custo, o modelo é o que sobra pra
+ * dizer o que rodou. O que não pode acontecer é a ponta ficar vazia. */
 export function TurnTelemetry({
   it,
   incidentTone,
@@ -50,25 +54,28 @@ export function TurnTelemetry({
 
       <TurnoTokens usage={it.usage} />
 
-      {(it.model || it.costUsd != null) && (
-        <span className="flex items-center gap-1.5">
-          {it.model && <span className="truncate">{it.model}</span>}
-          {it.costUsd != null && (
-            <>
-              {it.model && <TelemetrySeparator />}
-              <span
-                className="font-medium tabular-nums"
-                title={
-                  it.costSource === "estimated"
-                    ? "estimado: tokens × tabela de preço"
-                    : undefined
-                }
-              >
-                {fmtCost(it.costUsd, it.costSource)}
-              </span>
-            </>
-          )}
+      {/* Custo é o titular desta ponta, e o modelo viaja no tooltip dele —
+          decluttering deliberado. MAS o modelo NÃO pode depender do custo pra
+          existir: `codex` e `agy` têm `reportsCost: false`, e num turno de
+          `cost_source: "unknown"` o elemento inteiro sumia, levando junto a
+          única menção ao modelo que rodou. Motor que reporta menos não pode
+          contar menos: sem custo, o modelo assume o lugar visível. */}
+      {it.costUsd != null ? (
+        <span
+          className="font-medium tabular-nums"
+          title={
+            [
+              it.model ? `Modelo: ${it.model}` : null,
+              it.costSource === "estimated" ? "estimado: tokens × tabela de preço" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || undefined
+          }
+        >
+          {fmtCost(it.costUsd, it.costSource)}
         </span>
+      ) : (
+        it.model && <span className="truncate">{it.model}</span>
       )}
     </div>
   )

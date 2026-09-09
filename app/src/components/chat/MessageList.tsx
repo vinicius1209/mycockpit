@@ -767,10 +767,7 @@ const ToolGroup = memo(function ToolGroup({
   const wasActive = useRef(executing)
   // Digest do cabeçalho numa passada só, memoizado por grupo: este é o
   // componente mais quente do app — nada de varredura extra por render.
-  const digest = useMemo(
-    () => describeToolGroup(tools, live && activeToolId != null),
-    [tools, live, activeToolId],
-  )
+  const digest = useMemo(() => describeToolGroup(tools, live && activeToolId != null), [tools, live, activeToolId])
   // O cabeçalho é o primeiro dono do nome: a entidade que o `digest.label`
   // apresenta já está nomeada quando a árvore abre (e a posse desce daí).
   const namedWork = useMemo(
@@ -1287,7 +1284,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   return (
-    <div className="rounded-lg border border-border/55 bg-card/35 px-3 py-2.5">
+    <div className="rounded-lg border border-border/40 bg-card/20 px-3 py-1.5">
       {!it.ok && it.text && (
         <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
           <div
@@ -1298,7 +1295,7 @@ const MessageItem = memo(function MessageItem({
           </div>
         </div>
       )}
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
         <TurnTelemetry it={it} />
         {feedback && <TurnActions it={it} feedbackText={feedbackText} api={feedback} />}
       </div>
@@ -1391,7 +1388,7 @@ function PlanMilestone({
       </button>
       {open && (
         <div className="mt-1 ml-[7px] border-l border-border/40 py-1 pl-3">
-          <TaskChecklist tasks={plan.tasks} dense />
+          <TaskChecklist tasks={plan.tasks} dense live={live} />
         </div>
       )}
     </div>
@@ -1688,6 +1685,7 @@ export function MessageList({
                     startedAt={startedAt}
                     deferred={liveDeferred}
                     stalledSince={stalledSince}
+                    nodes={g.nodes}
                     inline
                   />
                 ) : undefined
@@ -1710,8 +1708,8 @@ export function MessageList({
         )
       })}
       {advising && <AdviceArrivalRow advising={advising} />}
-      {(running || finalizing) &&
-        (advising || groups[groups.length - 1]?.author.kind !== "executor") && (
+      {/* Sem `nodes`: é decisão, e o porquê está no contrato da prop. */}
+      {(running || finalizing) && (advising || groups[groups.length - 1]?.author.kind !== "executor") && (
         <WorkingIndicator
           agent={agent}
           presetId={presetId ?? null}

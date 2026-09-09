@@ -63,6 +63,7 @@ export function acceptChatTurn({
   text,
   attachments,
   wheelSwitch,
+  agentChangeNotice,
   modelChangeNotice,
   broughtAdvice,
   lessonIds,
@@ -79,6 +80,7 @@ export function acceptChatTurn({
   text: string
   attachments: Attachment[]
   wheelSwitch: boolean
+  agentChangeNotice?: string | null
   modelChangeNotice?: string | null
   broughtAdvice?: string | null
   lessonIds: string[]
@@ -96,6 +98,7 @@ export function acceptChatTurn({
     chat.beginTransplant(convId, runId, agent, {
       model,
       effort,
+      commitNotice: agentChangeNotice,
       user: { text, attachments },
     })
   } else {

@@ -89,16 +89,21 @@ export function ModeSelect({
         <Button
           variant="ghost"
           size="padrao"
-          className={cn(
-            "h-8 gap-1.5 px-2.5 text-[12px] font-medium transition-colors",
-            perigoso
-              ? "bg-st-warning/15 text-st-warning hover:bg-st-warning/25 hover:text-st-warning"
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
-          )}
+          className="h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           title="Modo de execução do agente"
           aria-label="Modo de execução do agente"
         >
-          <Icon className="size-3.5 shrink-0" />
+          {/* O aviso de "Liberado" vive no ÍCONE, não no botão inteiro
+              (ADR-167). O glifo já muda sozinho (escudo-check → escudo-alerta):
+              a cor só CONFIRMA o que a forma disse, então o sinal sobrevive a
+              daltonismo e não some se a tinta falhar. Pintar o controle todo
+              punha o aviso no mesmo degrau hierárquico do Enviar e dava dois
+              primários ao rodapé; e âmbar aceso o tempo todo vira papel de
+              parede, ainda por cima no MESMO token de "precisa de você"
+              (`st-warning` é `st-queued`). */}
+          <Icon
+            className={cn("size-3.5 shrink-0", perigoso && "text-st-warning")}
+          />
           <span>{atual?.label ?? "Modo"}</span>
         </Button>
       </DropdownMenuTrigger>

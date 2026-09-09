@@ -1,10 +1,25 @@
 import { memo, useState, type KeyboardEvent } from "react"
-import { Check, Circle, ListChecks, Loader2 } from "lucide-react"
+import { Check, Circle, CircleDot, ListChecks, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { AgentTask } from "@/lib/tasks"
+import { taskStatusForDisplay, type AgentTask } from "@/lib/tasks"
 
-function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
+function TaskRow({
+  task,
+  first,
+  live = false,
+}: {
+  task: AgentTask
+  first: boolean
+  live?: boolean
+}) {
   const [open, setOpen] = useState(false)
+  const status = taskStatusForDisplay(task, live)
+  const isExecuting = status === "in_progress"
+  const isUnsettled = status === "unsettled"
+  const tooltip =
+    [isUnsettled ? "Sem conclusão registrada" : null, task.description]
+      .filter(Boolean).join(" · ") || undefined
+
   return (
     <li>
       <button
@@ -16,13 +31,19 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
           "flex w-full items-start gap-1.5 rounded px-1 py-1 text-left text-[12px]",
           task.description && "hover:bg-sel-hover",
         )}
-        title={task.description ?? undefined}
+        title={tooltip}
       >
-        <span className="mt-0.5 grid size-3.5 shrink-0 place-items-center">
+        <span
+          className="mt-0.5 grid size-3.5 shrink-0 place-items-center"
+          role={isUnsettled ? "img" : undefined}
+          aria-label={isUnsettled ? "Sem conclusão registrada" : undefined}
+        >
           {task.status === "completed" ? (
             <Check className="size-3.5 text-muted-foreground/60" />
-          ) : task.status === "in_progress" ? (
+          ) : isExecuting ? (
             <Loader2 className="size-3.5 animate-spin text-muted-foreground" />
+          ) : isUnsettled ? (
+            <CircleDot className="size-3 text-muted-foreground/60" />
           ) : (
             <Circle className="size-2.5 text-muted-foreground/40" />
           )}
@@ -32,12 +53,14 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
             "min-w-0 flex-1 leading-snug break-words",
             task.status === "completed"
               ? "text-muted-foreground"
-              : task.status === "in_progress"
+              : isExecuting
                 ? "text-foreground"
-                : "text-foreground/75",
+                : isUnsettled
+                  ? "text-foreground/85"
+                  : "text-foreground/75",
           )}
         >
-          {task.status === "in_progress" && task.active ? task.active : task.title}
+          {isExecuting && task.active ? task.active : task.title}
         </span>
       </button>
       {open && task.description && (
@@ -55,9 +78,11 @@ function TaskRow({ task, first }: { task: AgentTask; first: boolean }) {
 export const TaskChecklist = memo(function TaskChecklist({
   tasks,
   dense,
+  live = false,
 }: {
   tasks: AgentTask[]
   dense?: boolean
+  live?: boolean
 }) {
   const done = tasks.filter((t) => t.status === "completed").length
   function navigate(e: KeyboardEvent<HTMLOListElement>) {
@@ -102,7 +127,7 @@ export const TaskChecklist = memo(function TaskChecklist({
         onKeyDown={navigate}
       >
         {tasks.map((t, index) => (
-          <TaskRow key={t.id} task={t} first={index === 0} />
+          <TaskRow key={t.id} task={t} first={index === 0} live={live} />
         ))}
       </ol>
     </div>

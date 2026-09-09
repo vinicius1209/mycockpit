@@ -103,7 +103,7 @@ export function LivePlanCard({
                 O agente ainda não informou qual etapa está em andamento.
               </p>
             )}
-            <TaskChecklist tasks={tasks} dense />
+            <TaskChecklist tasks={tasks} dense live={running || finalizing} />
           </div>
         )}
       </div>

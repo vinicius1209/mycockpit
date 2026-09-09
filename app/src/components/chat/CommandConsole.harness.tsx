@@ -161,6 +161,7 @@ vi.mock("@/store/chat", async (orig) => {
   const acoes = {
     setConversationAgent: vi.fn(),
     setConversationPreset: vi.fn(),
+    stageAgent: vi.fn(),
     setPlanFirst: vi.fn(),
     removeQueued: vi.fn(),
   }

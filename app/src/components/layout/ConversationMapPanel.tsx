@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState } from "react"
-import { ArrowRight, CheckCircle2, RotateCw, SlidersHorizontal } from "lucide-react"
+import {
+  ArrowRight,
+  Check,
+  CheckCircle2,
+  Copy,
+  LocateFixed,
+  RotateCw,
+  SlidersHorizontal,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { copyText } from "@/lib/clipboard"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { Section } from "@/components/layout/contextPanelChrome"
@@ -43,7 +52,10 @@ function ClaimLine({
   return (
     <div className="group/claim flex items-start gap-2 py-1">
       <span className="mt-[7px] size-1 shrink-0 rounded-full bg-muted-foreground/55" />
-      <p className="min-w-0 flex-1 text-[12px] leading-relaxed text-foreground/82">
+      <p
+        data-selectable
+        className="min-w-0 flex-1 select-text text-[12px] leading-relaxed text-foreground/82"
+      >
         {claim.text}
       </p>
       {hasEvidence(claim) ? (
@@ -154,6 +166,8 @@ export function ConversationMapPanel({
   const [source, setSource] = useState<ConversationMapSource | null>(null)
   const [editing, setEditing] = useState(false)
   const [manualIssue, setManualIssue] = useState(false)
+  const [copiedInitial, setCopiedInitial] = useState(false)
+
 
   useEffect(() => {
     if (!conversationId) return
@@ -187,6 +201,23 @@ export function ConversationMapPanel({
       }),
     [conversationId, finalizing, items, pendingInteractions, running, title],
   )
+  const initialItem = safeItems.find(
+    (candidate) => candidate.id === facts.initialSubject?.itemId,
+  )
+
+  async function copyInitialPrompt() {
+    const textToCopy =
+      (initialItem && "text" in initialItem ? initialItem.text : null) ||
+      facts.initialSubject?.text ||
+      ""
+    if (!textToCopy) return
+    const ok = await copyText(textToCopy)
+    if (ok) {
+      setCopiedInitial(true)
+      setTimeout(() => setCopiedInitial(false), 1500)
+    }
+  }
+
   const pins = entry?.pins ?? { schemaVersion: 1 as const, revision: 0, constraints: [] }
   const semantic = entry?.stored?.payload ?? null
   const view = composeConversationMapView({
@@ -257,20 +288,46 @@ export function ConversationMapPanel({
   return (
     <>
       <div className="flex min-h-0 flex-1 flex-col">
-        <div className="flex min-h-11 items-center gap-2 px-5">
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
-            {updateLabel}
+        <div className="@container flex min-h-11 items-center gap-1.5 px-5">
+          <span
+            title={
+              entry?.semanticStatus === "unavailable"
+                ? "Fatos do fio · leitura local indisponível"
+                : (updateLabel ?? undefined)
+            }
+            className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+          >
+            {entry?.semanticStatus === "unavailable" ? (
+              <>
+                <span>Fatos do fio</span>
+                <span className="hidden @min-[340px]:inline"> · leitura indisponível</span>
+              </>
+            ) : (
+              updateLabel
+            )}
           </span>
           {(view.provenance.semanticStatus === "stale" ||
             view.provenance.semanticStatus === "unavailable") && (
-            <Button variant="ghost" size="compacto" onClick={() => void updateManually()}>
+            <Button
+              variant="ghost"
+              size="compacto"
+              onClick={() => void updateManually()}
+              title="Atualizar leitura"
+              aria-label="Atualizar leitura"
+            >
               <RotateCw />
-              Atualizar
+              <span className="hidden @min-[340px]:inline">Atualizar</span>
             </Button>
           )}
-          <Button variant="ghost" size="compacto" onClick={() => setEditing(true)}>
+          <Button
+            variant="ghost"
+            size="compacto"
+            onClick={() => setEditing(true)}
+            title="Ajustar leitura"
+            aria-label="Ajustar leitura"
+          >
             <SlidersHorizontal />
-            Ajustar
+            <span className="hidden @min-[340px]:inline">Ajustar</span>
           </Button>
         </div>
         {manualIssue && (
@@ -282,7 +339,10 @@ export function ConversationMapPanel({
           {view.currentFocus ? (
             <Section title="Rumo atual">
               <div className="px-1">
-                <p className="text-[14px] font-semibold leading-snug text-foreground">
+                <p
+                  data-selectable
+                  className="select-text text-[14px] font-semibold leading-snug text-foreground"
+                >
                   {view.currentFocus.text}
                 </p>
                 {hasEvidence(view.currentFocus) && (
@@ -303,26 +363,62 @@ export function ConversationMapPanel({
             </Section>
           ) : facts.initialSubject ? (
             <Section title="Pedido que abriu a conversa">
-              <button
-                type="button"
-                onClick={() =>
-                  setSource({
-                    id: "pedido-inicial",
-                    text: facts.initialSubject!.text,
-                    certainty: "explicit",
-                    evidence: [
-                      {
-                        itemId: facts.initialSubject!.itemId,
-                        role: "user",
-                        channel: "executor",
-                      },
-                    ],
-                  })
-                }
-                className="px-1 text-left text-[13px] leading-relaxed text-foreground/85 hover:text-foreground"
-              >
-                {facts.initialSubject.text}
-              </button>
+              <div className="px-1">
+                <p
+                  data-selectable
+                  className="select-text text-[13px] leading-relaxed text-foreground/85"
+                >
+                  {facts.initialSubject.text}
+                </p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="chip"
+                    onClick={() => void copyInitialPrompt()}
+                    title="Copiar pedido inicial"
+                  >
+                    {copiedInitial ? (
+                      <Check className="size-3 text-muted-foreground" />
+                    ) : (
+                      <Copy className="size-3 text-muted-foreground" />
+                    )}
+                    {copiedInitial ? "Copiado" : "Copiar"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="chip"
+                    onClick={() =>
+                      setSource({
+                        id: "pedido-inicial",
+                        text: facts.initialSubject!.text,
+                        certainty: "explicit",
+                        evidence: [
+                          {
+                            itemId: facts.initialSubject!.itemId,
+                            role: "user",
+                            channel: "executor",
+                          },
+                        ],
+                      })
+                    }
+                    title="Ver fontes do pedido"
+                  >
+                    Fontes
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="chip"
+                    onClick={() => reveal(facts.initialSubject!.itemId)}
+                    title="Mostrar no fio da conversa"
+                  >
+                    <LocateFixed className="size-3 text-muted-foreground" />
+                    Ver no fio
+                  </Button>
+                </div>
+              </div>
             </Section>
           ) : null}
 
@@ -389,7 +485,7 @@ export function ConversationMapPanel({
           )}
           {facts.tasks.length > 0 && (
             <Section title="Etapas">
-              <TaskChecklist tasks={facts.tasks} />
+              <TaskChecklist tasks={facts.tasks} live={running || finalizing} />
             </Section>
           )}
           {facts.background.length > 0 && (

@@ -6,7 +6,16 @@
 // Gate de diretório e motor ausente pedem decisão em âmbar. Auto-resume é
 // estado automático e fica neutro: compartilhar posição não iguala semântica.
 
-import { Copy, FolderGit2, Monitor, PackageX, Timer, X } from "lucide-react"
+import {
+  ArrowRightLeft,
+  Copy,
+  FolderGit2,
+  Gauge,
+  Monitor,
+  PackageX,
+  Timer,
+  X,
+} from "lucide-react"
 import { PENDING_DECISION } from "@/lib/attention"
 import { resumeBannerLabel } from "@/lib/autoResume"
 import { fmtTime } from "@/lib/format"
@@ -14,7 +23,96 @@ import { controle } from "@/components/ui/controle"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
+import type { RevezamentoOpcao } from "@/lib/quotaExhausted"
 import type { McpPreflightGate } from "@/lib/tooling"
+
+function detalheDaCota(resetHint: string | null): string {
+  const hint = resetHint?.trim()
+  if (!hint) return "O horário de retorno ainda não foi informado."
+  if (hint === "100%") return "A leitura mais recente chegou a 100%."
+  if (/^(reseta|volta)\b/i.test(hint)) {
+    return `${hint.charAt(0).toUpperCase()}${hint.slice(1)}.`
+  }
+  return `Volta ${hint}.`
+}
+
+/** Decisão explícita quando o motor atual não tem cota para outro turno. */
+export function CotaEsgotadaBanner({
+  agentLabel,
+  resetHint,
+  alternatives,
+  onSelect,
+}: {
+  agentLabel: string
+  resetHint: string | null
+  alternatives: RevezamentoOpcao[]
+  onSelect: (agent: string) => void
+}) {
+  return (
+    <div
+      className={cn(
+        "mb-2 flex flex-wrap items-center gap-2.5 rounded-lg border px-3 py-2",
+        PENDING_DECISION,
+      )}
+    >
+      <Gauge className="size-4 shrink-0 text-st-warning" />
+      <div className="min-w-[180px] flex-1">
+        <p className="text-[13px] font-medium text-foreground">
+          {agentLabel} chegou ao limite de uso
+        </p>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          {detalheDaCota(resetHint)}{" "}
+          {alternatives.length > 0
+            ? "Prepare outro motor para o próximo envio."
+            : "Nenhum outro motor disponível foi confirmado nesta máquina."}
+        </p>
+      </div>
+      {alternatives.length > 0 && (
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          {alternatives.map((option, index) => (
+            <Button
+              key={option.id}
+              type="button"
+              size="compacto"
+              variant={index === 0 ? "default" : "ghost"}
+              onClick={() => onSelect(option.id)}
+            >
+              Usar {option.label}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** Estado preparado, ainda não confirmado: o `session` do destino é o commit. */
+export function RevezamentoStagedBanner({
+  sourceLabel,
+  targetLabel,
+  onUndo,
+}: {
+  sourceLabel: string
+  targetLabel: string
+  onUndo: () => void
+}) {
+  return (
+    <div className="mb-2 flex items-center gap-2.5 rounded-lg border bg-card px-3 py-2">
+      <ArrowRightLeft className="size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[13px] font-medium text-foreground">
+          Próximo envio: {targetLabel} no lugar de {sourceLabel}
+        </p>
+        <p className="text-[11px] leading-snug text-muted-foreground">
+          A troca só será confirmada quando o novo motor abrir a sessão.
+        </p>
+      </div>
+      <Button type="button" size="compacto" variant="ghost" onClick={onUndo}>
+        Desfazer
+      </Button>
+    </div>
+  )
+}
 
 function gateCopy(gate: McpPreflightGate): { title: string; detail: string } {
   const issue = gate.issues[0]
