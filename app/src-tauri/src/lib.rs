@@ -78,6 +78,7 @@ mod update;
 mod usage_window;
 mod utility;
 mod work_gateway;
+mod work_mcp_setup;
 
 /// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
 /// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
@@ -680,6 +681,7 @@ pub fn run() {
             // efêmera, token por boot). Falha degrada com log, nunca derruba
             // o boot: o medidor de janela ainda funciona por poll (codex).
             hook_gateway::start(app.handle());
+            work_mcp_setup::warm();
 
             Ok(())
         })
@@ -887,6 +889,8 @@ pub fn run() {
             work_gateway::managed_process_stop,
             work_gateway::managed_process_retry,
             work_gateway::managed_process_start,
+            work_mcp_setup::work_mcp_status,
+            work_mcp_setup::set_work_mcp_enabled,
             tray::set_tray_snapshot,
             tray::get_tray_snapshot,
             tray::set_tray_preferences,

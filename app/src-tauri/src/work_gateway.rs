@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command;
 
@@ -26,6 +26,8 @@ pub const SOCK_ENV: &str = "MYCOCKPIT_WORK_SOCK";
 
 const TAIL_LINES: usize = 240;
 const MAX_COMMAND_CHARS: usize = 8_000;
+const MAX_REQUEST_BYTES: u64 = 1_048_576;
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(6);
 
 #[derive(Clone, Debug)]
 pub struct GatewayConfig {
@@ -170,7 +172,13 @@ impl ProcessRegistry {
             .and_then(|map| map.get(id).map(|record| record.view.clone()))
     }
 
-    fn append_output(&self, app: &tauri::AppHandle, id: &str, stream: &str, line: String) {
+    fn append_output<R: tauri::Runtime>(
+        &self,
+        app: &tauri::AppHandle<R>,
+        id: &str,
+        stream: &str,
+        line: String,
+    ) {
         let mut view = None;
         if let Ok(mut map) = self.processes.lock() {
             if let Some(record) = map.get_mut(id) {
@@ -192,7 +200,12 @@ impl ProcessRegistry {
         }
     }
 
-    fn finish(&self, app: &tauri::AppHandle, id: &str, exit_code: Option<i32>) {
+    fn finish<R: tauri::Runtime>(
+        &self,
+        app: &tauri::AppHandle<R>,
+        id: &str,
+        exit_code: Option<i32>,
+    ) {
         let mut view = None;
         if let Ok(mut map) = self.processes.lock() {
             if let Some(record) = map.get_mut(id) {
@@ -218,9 +231,9 @@ impl ProcessRegistry {
 
     /// pub(crate): mesmo substrato para todo processo que o app POSSUI (o
     /// navegador do projeto entra por aqui, com eixo de posse sintético).
-    pub(crate) async fn spawn(
+    pub(crate) async fn spawn<R: tauri::Runtime>(
         &self,
-        app: tauri::AppHandle,
+        app: tauri::AppHandle<R>,
         run_id: String,
         conv_id: String,
         command: String,
@@ -320,9 +333,9 @@ impl ProcessRegistry {
         }
     }
 
-    pub(crate) fn stop(
+    pub(crate) fn stop<R: tauri::Runtime>(
         &self,
-        app: &tauri::AppHandle,
+        app: &tauri::AppHandle<R>,
         id: &str,
     ) -> Result<ManagedProcessView, String> {
         let pid = {
@@ -403,7 +416,7 @@ struct WorkEvent {
 
 /// pub(crate): `work://event` é o canal único de trabalho vivo da UI. O estado
 /// do navegador do projeto (`browser_state`) viaja por ele, sem inventar canal.
-pub(crate) fn emit_work(app: &tauri::AppHandle, kind: &str, data: Value) {
+pub(crate) fn emit_work<R: tauri::Runtime>(app: &tauri::AppHandle<R>, kind: &str, data: Value) {
     let _ = app.emit(
         "work://event",
         WorkEvent {
@@ -441,30 +454,57 @@ fn bind_socket(run_id: &str) -> Option<(PathBuf, UnixListener)> {
 pub struct WorkListener {
     path: PathBuf,
     task: tokio::task::JoinHandle<()>,
+    active: Arc<AtomicBool>,
+}
+
+// O shell do registry pertence ao app, fora do sandbox nativo do provider.
+// Modos restritos continuam publicando etapas, sem ganhar esse caminho de efeito.
+pub fn processes_allowed(permission: crate::adapters::Permission, plan_first: bool) -> bool {
+    !plan_first
+        && matches!(
+            permission,
+            crate::adapters::Permission::Padrao | crate::adapters::Permission::Liberado
+        )
+}
+
+pub fn is_process_tool(name: &str) -> bool {
+    matches!(
+        name,
+        PROCESS_START_TOOL | PROCESS_POLL_TOOL | PROCESS_STOP_TOOL
+    )
 }
 
 impl WorkListener {
-    pub fn spawn(
-        app: tauri::AppHandle,
+    pub fn spawn<R: tauri::Runtime>(
+        app: tauri::AppHandle<R>,
         run_id: String,
         conv_id: String,
         cwd: String,
         registry: Arc<ProcessRegistry>,
+        processes_allowed: bool,
     ) -> Option<Self> {
         let (path, listener) = bind_socket(&run_id)?;
+        use std::os::unix::fs::PermissionsExt;
+        if std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).is_err() {
+            let _ = std::fs::remove_file(&path);
+            return None;
+        }
+        let active = Arc::new(AtomicBool::new(true));
+        let live = active.clone();
         let task = tokio::spawn(async move {
-            while let Ok((stream, _)) = listener.accept().await {
-                let app = app.clone();
-                let run_id = run_id.clone();
-                let conv_id = conv_id.clone();
-                let cwd = cwd.clone();
-                let registry = registry.clone();
-                tokio::spawn(async move {
-                    handle_request(stream, app, run_id, conv_id, cwd, registry).await;
-                });
+            let mut requests = tokio::task::JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((stream, _)) = accepted else { break; };
+                        requests.spawn(handle_request(stream, app.clone(), run_id.clone(),
+                            conv_id.clone(), cwd.clone(), registry.clone(), live.clone(), processes_allowed));
+                    }
+                    _ = requests.join_next(), if !requests.is_empty() => {}
+                }
             }
         });
-        Some(Self { path, task })
+        Some(Self { path, task, active })
     }
 
     pub fn path(&self) -> &Path {
@@ -474,23 +514,31 @@ impl WorkListener {
 
 impl Drop for WorkListener {
     fn drop(&mut self) {
+        self.active.store(false, Ordering::Release);
         self.task.abort();
         let _ = std::fs::remove_file(&self.path);
     }
 }
 
-async fn handle_request(
+async fn handle_request<R: tauri::Runtime>(
     stream: UnixStream,
-    app: tauri::AppHandle,
+    app: tauri::AppHandle<R>,
     run_id: String,
     conv_id: String,
     cwd: String,
     registry: Arc<ProcessRegistry>,
+    active: Arc<AtomicBool>,
+    processes_allowed: bool,
 ) {
     let (rd, mut wr) = stream.into_split();
     let mut line = String::new();
-    let mut reader = BufReader::new(rd);
-    if reader.read_line(&mut line).await.is_err() {
+    let mut reader = BufReader::new(rd.take(MAX_REQUEST_BYTES + 1));
+    if !matches!(
+        tokio::time::timeout(REQUEST_TIMEOUT, reader.read_line(&mut line)).await,
+        Ok(Ok(_))
+    ) || line.len() as u64 > MAX_REQUEST_BYTES
+        || !active.load(Ordering::Acquire)
+    {
         return;
     }
     let request: Value = match serde_json::from_str(line.trim()) {
@@ -500,6 +548,10 @@ async fn handle_request(
     let action = request.get("action").and_then(Value::as_str).unwrap_or("");
     let args = request.get("args").cloned().unwrap_or(Value::Null);
     let answer = match action {
+        "work_ready" => Ok(json!({ "ready": true, "processesAllowed": processes_allowed })),
+        name if is_process_tool(name) && !processes_allowed => {
+            Err("ferramentas de processos indisponíveis neste modo de permissão".into())
+        }
         PROCESS_START_TOOL => {
             let command = args
                 .get("command")
@@ -519,13 +571,20 @@ async fn handle_request(
             .get("process_id")
             .and_then(Value::as_str)
             .and_then(|id| registry.view(id))
+            .filter(|process| process.conv_id == conv_id)
             .map(|process| json!({ "process": process }))
             .ok_or_else(|| "processo não encontrado".to_string()),
         PROCESS_STOP_TOOL => args
             .get("process_id")
             .and_then(Value::as_str)
             .ok_or_else(|| "process_id ausente".to_string())
-            .and_then(|id| registry.stop(&app, id))
+            .and_then(|id| {
+                registry
+                    .view(id)
+                    .filter(|process| process.conv_id == conv_id)
+                    .ok_or_else(|| "processo não encontrado nesta conversa".to_string())?;
+                registry.stop(&app, id)
+            })
             .map(|process| json!({ "process": process })),
         WORK_PLAN_TOOL => {
             emit_work(
@@ -633,7 +692,10 @@ async fn mcp_loop() {
             })),
             "ping" => Some(json!({})),
             "notifications/initialized" | "initialized" => None,
-            "tools/list" => Some(json!({ "tools": tool_specs() })),
+            "tools/list" => {
+                let readiness = request_parent("work_ready", &json!({})).await;
+                Some(json!({ "tools": available_tools(readiness.as_ref()) }))
+            }
             "tools/call" => {
                 if id.as_ref().is_none_or(Value::is_null) {
                     None
@@ -684,6 +746,19 @@ async fn mcp_loop() {
             }
         }
     }
+}
+
+fn available_tools(readiness: Option<&Value>) -> Vec<Value> {
+    let Some(reply) =
+        readiness.filter(|reply| reply["ok"] == true && reply["result"]["ready"] == true)
+    else {
+        return Vec::new();
+    };
+    let processes_allowed = reply["result"]["processesAllowed"] == true;
+    tool_specs()
+        .into_iter()
+        .filter(|tool| processes_allowed || !is_process_tool(tool["name"].as_str().unwrap_or("")))
+        .collect()
 }
 
 fn tool_specs() -> Vec<Value> {
@@ -760,14 +835,29 @@ fn tool_specs() -> Vec<Value> {
 
 async fn request_parent(action: &str, args: &Value) -> Option<Value> {
     let socket = std::env::var(SOCK_ENV).ok()?;
-    let mut stream = UnixStream::connect(socket).await.ok()?;
-    let mut request = json!({ "action": action, "args": args }).to_string();
-    request.push('\n');
-    stream.write_all(request.as_bytes()).await.ok()?;
-    stream.flush().await.ok()?;
-    let mut line = String::new();
-    BufReader::new(stream).read_line(&mut line).await.ok()?;
-    serde_json::from_str(line.trim()).ok()
+    request_socket(Path::new(&socket), action, args).await
+}
+
+async fn request_socket(socket: &Path, action: &str, args: &Value) -> Option<Value> {
+    tokio::time::timeout(REQUEST_TIMEOUT, async {
+        let mut stream = UnixStream::connect(socket).await.ok()?;
+        let mut request = json!({ "action": action, "args": args }).to_string();
+        request.push('\n');
+        stream.write_all(request.as_bytes()).await.ok()?;
+        stream.flush().await.ok()?;
+        let mut line = String::new();
+        BufReader::new(stream.take(MAX_REQUEST_BYTES + 1))
+            .read_line(&mut line)
+            .await
+            .ok()?;
+        if line.len() as u64 > MAX_REQUEST_BYTES {
+            return None;
+        }
+        serde_json::from_str(line.trim()).ok()
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 async fn write_line(stdout: &mut tokio::io::Stdout, value: &Value) {
@@ -817,3 +907,7 @@ mod tests {
         assert!(args.iter().any(|arg| arg.contains(SOCK_ENV)));
     }
 }
+
+#[cfg(test)]
+#[path = "work_gateway_tests.rs"]
+mod channel_tests;

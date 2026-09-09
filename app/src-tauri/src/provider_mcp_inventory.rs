@@ -45,6 +45,52 @@ pub struct ProviderMcpInventory {
     pub detail: Option<String>,
 }
 
+/// Evidência de configuração, nunca de conexão nem equivalência de comandos.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum CliInstallation {
+    Enabled,
+    Disabled,
+    Absent,
+    Unknown,
+}
+
+pub fn cli_installation(
+    inventories: &[ProviderMcpInventory],
+    agent: &str,
+    name: &str,
+    transport: &str,
+) -> CliInstallation {
+    let Some(snapshot) = inventories.iter().find(|item| item.agent == agent) else {
+        return CliInstallation::Unknown;
+    };
+    if !matches!(
+        snapshot.evidence,
+        ProviderMcpInventoryEvidence::Structured | ProviderMcpInventoryEvidence::Summary
+    ) {
+        return CliInstallation::Unknown;
+    }
+    let named: Vec<_> = snapshot
+        .servers
+        .iter()
+        .filter(|server| server.name == name)
+        .collect();
+    match named.as_slice() {
+        [] => CliInstallation::Absent,
+        [server]
+            if server.scope == CapabilityScope::Global
+                && server.transport.as_deref() == Some(transport) =>
+        {
+            if server.enabled {
+                CliInstallation::Enabled
+            } else {
+                CliInstallation::Disabled
+            }
+        }
+        _ => CliInstallation::Unknown,
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Probe {
     Canonical,
@@ -224,14 +270,121 @@ fn opencode_path(project_path: &str) -> Result<Option<PathBuf>, String> {
     }
 }
 
+async fn agy_cli_output(project_path: &str) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(4),
+        tokio::process::Command::new("agy")
+            .args(["mcp", "list"])
+            .current_dir(project_path)
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| "timeout no inventário MCP do CLI".to_string())?
+    .map_err(|error| format!("`agy mcp list` falhou: {error}"))?;
+    if !output.status.success() {
+        return Err(format!(
+            "`agy mcp list` falhou: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 async fn inspect_agy(project_path: &str) -> Result<Vec<ProviderMcpServer>, String> {
-    let cwd = project_path.to_string();
-    let output =
-        tokio::task::spawn_blocking(move || crate::proc::run("agy", &["mcp", "list"], Some(&cwd)))
-            .await
-            .map_err(|error| format!("falha na task de inventário do Agy: {error}"))?
-            .map_err(|error| format!("`agy mcp list` falhou: {error}"))?;
-    Ok(parse_agy_table(&output))
+    checked_agy_table(&agy_cli_output(project_path).await?)
+}
+
+/// Identidade pública de uma entrada global. O resto do app não reconstrói
+/// argv deste resumo; compara apenas com a receita fixa que ele próprio instala.
+pub struct GlobalCliEntry {
+    pub enabled: bool,
+    pub transport: String,
+    pub command_line: String,
+}
+
+fn global_entry(output: &str, name: &str) -> Result<Option<GlobalCliEntry>, String> {
+    checked_agy_table(output)?;
+    let clean = strip_ansi(output);
+    let mut found = None;
+    for line in clean.lines() {
+        let columns: Vec<_> = line.split_whitespace().take(3).collect();
+        if columns.len() != 3 || columns[0] != name {
+            continue;
+        }
+        if found.is_some() {
+            return Err("nome duplicado no inventário global".into());
+        }
+        let mut tail = line.trim_start();
+        for _ in 0..3 {
+            tail = tail
+                .find(char::is_whitespace)
+                .map(|index| tail[index..].trim_start())
+                .unwrap_or("");
+        }
+        found = Some(GlobalCliEntry {
+            enabled: columns[2] == "enabled",
+            transport: columns[1].into(),
+            command_line: tail.trim_end().into(),
+        });
+    }
+    Ok(found)
+}
+
+pub fn global_work_min_version(agent: &str) -> Option<&'static str> {
+    match probe_for(agent).0 {
+        Probe::AgyCliSummary => Some("1.1.27"),
+        _ => None,
+    }
+}
+
+pub async fn inspect_global_entry(
+    agent: &str,
+    name: &str,
+) -> Result<Option<GlobalCliEntry>, String> {
+    if probe_for(agent).0 != Probe::AgyCliSummary {
+        return Err("inventário global sem dialeto conhecido".into());
+    }
+    let output = agy_cli_output(&std::env::temp_dir().to_string_lossy()).await?;
+    global_entry(&output, name)
+}
+
+fn checked_agy_table(output: &str) -> Result<Vec<ProviderMcpServer>, String> {
+    let servers = parse_agy_table(output);
+    // Uma saída nova/incompleta não prova ausência e não libera sobrescrita.
+    let clean = strip_ansi(output);
+    let lines: Vec<_> = clean
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    let header = lines.first().is_some_and(|line| {
+        line.split_whitespace()
+            .take(3)
+            .eq(["NAME", "TYPE", "STATUS"])
+    });
+    if header && servers.len() + 1 == lines.len() {
+        return Ok(servers);
+    }
+    if clean.trim() == "No MCP servers configured." {
+        return Ok(Vec::new());
+    }
+    Err("formato do inventário MCP do CLI não reconhecido".into())
+}
+
+/// Usado pelo gesto de escrita para validar de novo só o CLI de destino.
+pub async fn inspect_cli(agent: &str, project_path: &str) -> Result<ProviderMcpInventory, String> {
+    let (probe, scope) = probe_for(agent);
+    if probe != Probe::AgyCliSummary {
+        return Err("este motor não publica inventário MCP global pelo CLI".into());
+    }
+    Ok(inventory(
+        agent,
+        ProviderMcpInventoryEvidence::Summary,
+        scope,
+        inspect_agy(project_path).await?,
+        None,
+    ))
 }
 
 fn inspect_opencode(project_path: &str) -> Result<Vec<ProviderMcpServer>, String> {
@@ -319,6 +472,92 @@ pub async fn inspect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entrada_global_preserva_caminho_com_espacos_e_nao_inventa_comando() {
+        // Mesma captura do parser de resumo, com caminhos e argumentos intactos.
+        let output = "NAME TYPE STATUS COMMAND/URL\ncomputer-use stdio enabled /App Com Espaços mcp\nplaywright stdio disabled npx pacote\n";
+        let entry = global_entry(output, "computer-use").unwrap().unwrap();
+        assert_eq!(entry.command_line, "/App Com Espaços mcp");
+        assert!(entry.enabled);
+        assert!(global_entry(output, "mc-work").unwrap().is_none());
+        assert_eq!(
+            global_entry(AGY_CAPTURE, "computer-use")
+                .unwrap()
+                .unwrap()
+                .command_line,
+            ""
+        );
+    }
+
+    // Captura de `agy mcp list` em 08/09/2026. Coluna COMMAND/URL omitida:
+    // identidade, transporte e status intactos; comando não participa do match.
+    const AGY_CAPTURE: &str =
+        "NAME TYPE STATUS\ncomputer-use stdio enabled\nplaywright stdio enabled\n";
+
+    #[test]
+    fn linha_global_reconhece_instalacao_sem_inventar_binding_ou_health() {
+        let mut snapshot = inventory(
+            "agy",
+            ProviderMcpInventoryEvidence::Summary,
+            CapabilityScope::Global,
+            checked_agy_table(AGY_CAPTURE).unwrap(),
+            None,
+        );
+        assert_eq!(
+            cli_installation(&[snapshot.clone()], "agy", "computer-use", "stdio"),
+            CliInstallation::Enabled
+        );
+        snapshot.servers[0].enabled = false;
+        assert_eq!(
+            cli_installation(&[snapshot.clone()], "agy", "computer-use", "stdio"),
+            CliInstallation::Disabled
+        );
+        assert_eq!(
+            cli_installation(&[snapshot.clone()], "agy", "ausente", "stdio"),
+            CliInstallation::Absent
+        );
+        assert_eq!(
+            cli_installation(&[snapshot.clone()], "codex", "computer-use", "stdio"),
+            CliInstallation::Unknown
+        );
+        assert_eq!(
+            cli_installation(&[snapshot.clone()], "agy", "computer-use", "http"),
+            CliInstallation::Unknown
+        );
+        snapshot.evidence = ProviderMcpInventoryEvidence::Unavailable;
+        assert_eq!(
+            cli_installation(&[snapshot], "agy", "ausente", "stdio"),
+            CliInstallation::Unknown
+        );
+    }
+
+    #[test]
+    fn inventario_parcial_ou_dialeto_desconhecido_nao_afirma_ausencia() {
+        assert!(checked_agy_table(" ").is_err());
+        assert!(checked_agy_table("Usage: agy mcp list").is_err());
+        assert!(checked_agy_table(
+            &AGY_CAPTURE.replace("playwright stdio enabled", "playwright stdio unknown")
+        )
+        .is_err());
+        assert!(checked_agy_table("NAME TYPE STATUS\n").unwrap().is_empty());
+    }
+
+    #[test]
+    fn homonimos_ambiguos_nao_liberam_efeito() {
+        let mut snapshot = inventory(
+            "agy",
+            ProviderMcpInventoryEvidence::Summary,
+            CapabilityScope::Global,
+            checked_agy_table(AGY_CAPTURE).unwrap(),
+            None,
+        );
+        snapshot.servers.push(snapshot.servers[0].clone());
+        assert_eq!(
+            cli_installation(&[snapshot], "agy", "computer-use", "stdio"),
+            CliInstallation::Unknown
+        );
+    }
 
     #[test]
     fn tabela_do_agy_vira_resumo_sem_reconstruir_command_com_espacos() {

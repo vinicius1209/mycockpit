@@ -113,6 +113,20 @@ pub fn uninstall_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Reativa uma entrada existente sem reescrever sua configuração.
+/// Sintaxe conferida em `agy mcp enable --help`, versão 1.1.27.
+pub fn enable_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
+    match agent {
+        "agy" => Some(vec![
+            "agy".into(),
+            "mcp".into(),
+            "enable".into(),
+            nome.into(),
+        ]),
+        _ => None,
+    }
+}
+
 /// O CLI deste motor autentica um MCP OAuth sozinho?
 ///
 /// Medido em 26/08/2026 nos dois: `opencode mcp` tem `auth`, `logout` e

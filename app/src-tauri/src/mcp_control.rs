@@ -22,6 +22,11 @@ use tokio::time::timeout;
 
 const HEALTH_TTL_MS: i64 = 5 * 60 * 1_000;
 const PROBE_TIMEOUT: Duration = Duration::from_secs(6);
+/// Teto do inventário nativo por CLI. `proc::run` é a camada CRUA e não tem
+/// teto nenhum (ver `app/src-tauri/src/AGENTS.md`), e sem isto uma CLI pendurada
+/// trava o envio pra sempre, sem mensagem. 4s é folgado pro caso são (medido:
+/// `codex mcp list --json` leva ~1,3s nesta máquina) e curto pro patológico.
+const INVENTARIO_TIMEOUT: Duration = Duration::from_secs(4);
 const MAX_TOOL_NAMES: usize = 80;
 const MAX_DETAIL_CHARS: usize = 800;
 
@@ -336,9 +341,10 @@ pub struct McpAgentState {
     pub roteia_mcp_gerenciado: bool,
     /// Escopo de MCP deste motor, em minúsculas ("por-run", "por-projeto",
     /// "global", "nenhum"). A tela precisa dele pra oferecer o gesto certo:
-    /// escopo global não tem interruptor, tem AÇÃO, porque o app não sabe o
-    /// que já está instalado no CLI do usuário e fingir que sabe seria pior.
+    /// escopo global tem ação sobre a configuração persistente do CLI.
     pub escopo: String,
+    /// Só escopo global: evidência da entrada de mesmo nome e transporte.
+    pub cli_installation: Option<crate::provider_mcp_inventory::CliInstallation>,
     pub enabled: bool,
     pub required: bool,
     /// Binding marcado para dirigir o navegador do projeto (B2.2).
@@ -1292,13 +1298,33 @@ fn normalize_codex_launch_in(codex_home: &Path, server_name: &str, launch: &mut 
 }
 
 async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, String> {
-    let cwd = project_path.to_string();
-    let output = tokio::task::spawn_blocking(move || {
-        crate::proc::run("codex", &["mcp", "list", "--json"], Some(&cwd))
-    })
-    .await
-    .map_err(|e| format!("falha na task de discovery do Codex: {e}"))?
-    .map_err(|e| format!("`codex mcp list --json` falhou: {e}"))?;
+    let mut comando = Command::new("codex");
+    comando
+        .args(["mcp", "list", "--json"])
+        .current_dir(project_path)
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    // Teto obrigatório: sem ele, uma CLI que não responde congela o envio sem
+    // nunca dizer por quê. Estourar o teto é ERRO de inventário (a fonte não se
+    // provou), não lista vazia — vazio diria "não tem MCP", que é outra coisa.
+    let saida = timeout(INVENTARIO_TIMEOUT, comando.output())
+        .await
+        .map_err(|_| {
+            format!(
+                "`codex mcp list --json` não respondeu em {}s",
+                INVENTARIO_TIMEOUT.as_secs()
+            )
+        })?
+        .map_err(|e| format!("não consegui rodar `codex mcp list --json`: {e}"))?;
+    if !saida.status.success() {
+        let stderr = String::from_utf8_lossy(&saida.stderr).trim().to_string();
+        return Err(if stderr.is_empty() {
+            format!("`codex mcp list --json` falhou com {}", saida.status)
+        } else {
+            format!("`codex mcp list --json` falhou: {stderr}")
+        });
+    }
+    let output = String::from_utf8_lossy(&saida.stdout);
     let items = serde_json::from_str::<Vec<Value>>(&output)
         .map_err(|e| format!("`codex mcp list --json` devolveu JSON inválido: {e}"))?;
     Ok(items
@@ -1321,23 +1347,94 @@ async fn discover_codex(project_path: &str) -> Result<Vec<DiscoveredServer>, Str
         .collect())
 }
 
+/// As FONTES de inventário MCP e o motor DONO de cada uma.
+///
+/// É a única tabela que liga fonte a fornecedor, e existe justamente pra que o
+/// código genérico não precise dessa ligação: quem decide o que enumerar
+/// consulta esta tabela, nunca escreve `if agent == "codex"`. Ler o config de um
+/// fornecedor é, por natureza, específico do formato dele; o que não pode é a
+/// DECISÃO de enumerar ser específica.
+///
+/// Só as fontes ENUMERÁVEIS entram aqui. Os MCPs internos do app não são
+/// descobertos, são declarados (ver o `out.push` no fim de
+/// `discover_live_with_status`): não pertencem a motor nenhum, não custam nada e
+/// por isso nunca são dispensados.
+const FONTES_DE_INVENTARIO: &[(&str, &str)] = &[("claude", "claude-code"), ("codex", "codex")];
+
+/// Quais fontes enumerar nesta chamada.
+#[derive(Debug, Clone)]
+enum FontesDoInventario {
+    /// Tudo. É o que as superfícies de Configurações querem: quem abriu a tela
+    /// de MCP está perguntando "o que existe na máquina?", e omitir uma fonte
+    /// ali seria esconder servidor que a pessoa pode querer ligar.
+    Todas,
+    /// Só as fontes cujo id aparece no conjunto. É o CAMINHO QUENTE (o preflight
+    /// de um turno), onde enumerar fonte que este run não referencia é pedágio
+    /// puro: medido em 07/09/2026, `codex mcp list --json` custava 1,3s em TODO
+    /// envio, inclusive nos de claude-code, que não usam um único servidor de
+    /// origem Codex.
+    Apenas(HashSet<String>),
+}
+
+impl FontesDoInventario {
+    fn quer(&self, fonte: &str) -> bool {
+        match self {
+            Self::Todas => true,
+            Self::Apenas(ids) => ids.contains(fonte),
+        }
+    }
+
+    /// O que um run daquele agent precisa enumerar: as fontes referenciadas
+    /// pelos vínculos DELE (o prefixo do `server_id` é a fonte) mais a fonte
+    /// PRÓPRIA do motor.
+    ///
+    /// A fonte própria entra mesmo sem vínculo porque o gate de preflight
+    /// pergunta "consigo provar a política efetiva do MEU motor?", e essa prova
+    /// depende de enxergar o config nativo dele. Sem isso, um inventário
+    /// quebrado passaria despercebido — fail-open onde a regra é fail-closed.
+    fn para_run(agent: &str, bindings: &[Binding]) -> Self {
+        let mut ids: HashSet<String> = bindings
+            .iter()
+            .filter_map(|b| b.server_id.split(':').next())
+            .map(str::to_string)
+            .collect();
+        for (fonte, dono) in FONTES_DE_INVENTARIO {
+            if *dono == agent {
+                ids.insert((*fonte).to_string());
+            }
+        }
+        Self::Apenas(ids)
+    }
+}
+
 /// Descoberta ao vivo + erros de inventário POR AGENT (a fonte que falhou se
 /// identifica; o código genérico só pergunta "o inventário do MEU agent está
 /// ok?" — sem comparar nome de fornecedor). Hoje só o Codex enumera via CLI
 /// (pode falhar); as demais fontes são leitura de arquivo, infalível-ish.
+///
+/// `fontes` decide o que é enumerado. Fonte não pedida não é "vazia": ela
+/// simplesmente não foi perguntada, e por isso também não gera erro de
+/// inventário — o gate continua falando só das fontes que este run precisava.
 async fn discover_live_with_status(
     project_path: &str,
+    fontes: &FontesDoInventario,
 ) -> (Vec<DiscoveredServer>, HashMap<String, String>) {
-    let mut out = discover_claude(project_path);
-    let mut inventory_errors = HashMap::new();
-    match discover_codex(project_path).await {
-        Ok(servers) => {
-            out.extend(servers);
-        }
-        Err(error) => {
-            inventory_errors.insert("codex".to_string(), error);
-        }
+    let mut out = if fontes.quer("claude") {
+        discover_claude(project_path)
+    } else {
+        Vec::new()
     };
+    let mut inventory_errors = HashMap::new();
+    if fontes.quer("codex") {
+        match discover_codex(project_path).await {
+            Ok(servers) => {
+                out.extend(servers);
+            }
+            Err(error) => {
+                inventory_errors.insert("codex".to_string(), error);
+            }
+        }
+    }
     out.push(DiscoveredServer {
         id: "internal:run:mc-context".into(),
         name: "mc-context".into(),
@@ -1367,8 +1464,14 @@ async fn discover_live_with_status(
     (out, inventory_errors)
 }
 
+/// Descoberta COMPLETA. É o que as superfícies de Configurações usam: ali a
+/// pergunta é "o que existe nesta máquina?", e omitir fonte esconderia servidor
+/// que a pessoa pode querer ligar. O caminho quente (preflight de turno) NÃO
+/// passa por aqui — ver `FontesDoInventario::para_run`.
 async fn discover_live(project_path: &str) -> Vec<DiscoveredServer> {
-    discover_live_with_status(project_path).await.0
+    discover_live_with_status(project_path, &FontesDoInventario::Todas)
+        .await
+        .0
 }
 
 fn persist_registry(conn: &Connection, servers: &[DiscoveredServer]) -> Result<(), String> {
@@ -1483,6 +1586,7 @@ fn agent_state(
             .map(|caps| caps.mcp_escopo.rotulo().to_string())
             .unwrap_or_else(|| "nenhum".into()),
         enabled: binding.is_some(),
+        cli_installation: None,
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
         fallback: binding
@@ -1536,7 +1640,8 @@ pub async fn discover_mcp_servers(
     let validation = db(&app)?;
     let project_id = project_id_for_path(&validation, &project_path)?;
     drop(validation);
-    let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
+    let (servers, inventory_errors) =
+        discover_live_with_status(&project_path, &FontesDoInventario::Todas).await;
     let mut canonical: HashMap<String, Vec<crate::provider_mcp_inventory::ProviderMcpServer>> =
         HashMap::new();
     for server in &servers {
@@ -1572,6 +1677,18 @@ pub async fn discover_mcp_servers(
         .map(|server| server_view(&conn, &project_id, server))
         .collect();
     annotate_runtime_names(&servers, &mut views);
+    for view in &mut views {
+        for state in &mut view.agent_states {
+            if state.escopo == "global" {
+                state.cli_installation = Some(crate::provider_mcp_inventory::cli_installation(
+                    &provider_inventories,
+                    &state.agent,
+                    &view.name,
+                    &view.transport,
+                ));
+            }
+        }
+    }
     Ok(McpDiscoveryView {
         servers: views,
         provider_inventories,
@@ -1783,6 +1900,26 @@ pub async fn install_mcp_in_agent(
         ));
     }
 
+    if via == crate::mcp_instalacao::McpInstalacao::PeloCli {
+        use crate::provider_mcp_inventory::{cli_installation, inspect_cli, CliInstallation};
+        let inventory = inspect_cli(&agent, &project_path).await?;
+        let transport = server
+            .launch
+            .as_ref()
+            .map(|launch| launch.transport.as_str())
+            .unwrap_or("internal");
+        let observed = cli_installation(&[inventory], &agent, &server.name, transport);
+        match (instalar, observed) {
+            (true, CliInstallation::Absent)
+            | (false, CliInstallation::Enabled | CliInstallation::Disabled) => {}
+            _ => {
+                return Err(
+                    "o inventário do CLI mudou ou não foi confirmado; reverifique antes de alterar"
+                        .into(),
+                )
+            }
+        }
+    }
     let argv = if instalar {
         let launch = server
             .launch
@@ -1796,15 +1933,24 @@ pub async fn install_mcp_in_agent(
     .ok_or_else(|| format!("{agent} não instala MCP por comando de CLI"))?;
 
     let (bin, resto) = argv.split_first().ok_or("comando vazio")?;
-    let saida = tokio::process::Command::new(bin)
-        .args(resto)
-        // stdin fechado: o comando tem de ser não-interativo. Medido que o
-        // `agy mcp add` é; se algum dia pedir input, é melhor falhar na hora
-        // que pendurar o app esperando alguém que não está lá.
-        .stdin(std::process::Stdio::null())
-        .output()
-        .await
-        .map_err(|e| format!("não consegui rodar `{bin}`: {e}"))?;
+    if server.name == crate::work_gateway::MCP_SERVER_NAME {
+        crate::work_mcp_setup::invalidate(&agent);
+    }
+    let saida = timeout(
+        Duration::from_secs(10),
+        tokio::process::Command::new(bin)
+            .args(resto)
+            // stdin fechado: o comando tem de ser não-interativo. Medido que o
+            // `agy mcp add` é; se algum dia pedir input, é melhor falhar na hora
+            // que pendurar o app esperando alguém que não está lá.
+            .stdin(std::process::Stdio::null())
+            .current_dir(&project_path)
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await
+    .map_err(|_| "timeout ao alterar MCP no CLI; reverifique o inventário".to_string())?
+    .map_err(|e| format!("não consegui rodar `{bin}`: {e}"))?;
     let stdout = String::from_utf8_lossy(&saida.stdout).trim().to_string();
     let stderr = String::from_utf8_lossy(&saida.stderr).trim().to_string();
     if !saida.status.success() {
@@ -2282,6 +2428,64 @@ fn bindings_for_run(
     Ok(rows.flatten().collect())
 }
 
+/// Os servidores que este run precisa sondar, e os que já têm saúde fresca.
+///
+/// SÍNCRONA de propósito: ela toca o banco, e `Connection` do rusqlite não é
+/// `Sync`. Segurar essa referência viva por cima de um `await` tornaria o future
+/// do `run_agent` inteiro não-`Send`, e o comando do Tauri exige `Send`. Por
+/// isso a divisão em três tempos: lê o cache (aqui), sonda o resto (sem banco),
+/// grava (aqui de novo).
+///
+/// Servidor repetido em dois vínculos aparece UMA vez: a chave é o servidor,
+/// não o vínculo.
+fn saude_em_cache<'a>(
+    conn: &Connection,
+    project_id: &str,
+    agent: &str,
+    bindings: &[Binding],
+    by_id: &HashMap<&str, &'a DiscoveredServer>,
+) -> (HashMap<String, ProbeOutcome>, Vec<&'a DiscoveredServer>) {
+    let mut fresca: HashMap<String, ProbeOutcome> = HashMap::new();
+    let mut pendentes: Vec<&DiscoveredServer> = Vec::new();
+    for binding in bindings {
+        let Some(server) = by_id.get(binding.server_id.as_str()).copied() else {
+            continue;
+        };
+        if fresca.contains_key(server.id.as_str()) || pendentes.iter().any(|p| p.id == server.id) {
+            continue;
+        }
+        match cached_health(conn, project_id, &server.id, agent) {
+            Some(cached) => {
+                fresca.insert(server.id.clone(), cached);
+            }
+            None => pendentes.push(server),
+        }
+    }
+    (fresca, pendentes)
+}
+
+/// Sonda os pendentes EM PARALELO. Uma sonda não depende da outra, e enfileirá-las
+/// punha cada MCP novo direto no tempo do Enter: medido em 07/09/2026 neste
+/// projeto, duas sondas em fila, ~2s cada, a cada 5 minutos (o TTL de
+/// `mcp_health`).
+///
+/// Cada sonda já tem teto próprio (`PROBE_TIMEOUT`), então o teto do conjunto é
+/// o do MAIS LENTO, não a soma: um servidor doente atrasa só a si mesmo.
+///
+/// Não recebe banco (ver `saude_em_cache`): é I/O puro, e é o que permite este
+/// trecho existir sem tornar o comando do Tauri não-`Send`.
+async fn sondar_pendentes(
+    pendentes: &[&DiscoveredServer],
+    project_path: &str,
+) -> Vec<(String, ProbeOutcome)> {
+    futures_util::future::join_all(
+        pendentes
+            .iter()
+            .map(|server| async move { (server.id.clone(), probe(server, project_path).await) }),
+    )
+    .await
+}
+
 fn cached_health(
     conn: &Connection,
     project_id: &str,
@@ -2414,7 +2618,14 @@ pub async fn plan_for_run(
     if bindings.is_empty() {
         return Ok(McpRunPlan::default());
     }
-    let (servers, inventory_errors) = discover_live_with_status(&project_path).await;
+    // CAMINHO QUENTE: enumera só as fontes que ESTE run referencia (os vínculos
+    // dele) mais a fonte própria do motor. Perguntar às demais é pedágio que não
+    // depende do que a pessoa digitou — ver `app/src-tauri/src/AGENTS.md`.
+    let (servers, inventory_errors) = discover_live_with_status(
+        &project_path,
+        &FontesDoInventario::para_run(agent, &bindings),
+    )
+    .await;
     // Inventário nativo do próprio agent indisponível impede provar a policy
     // efetiva. É gate de preflight, não falha de uma execução inexistente.
     if let Some(error) = inventory_errors.get(agent) {
@@ -2448,12 +2659,29 @@ pub async fn plan_for_run(
             .collect(),
         ..Default::default()
     };
+    // SONDAS EM PARALELO. O laço abaixo é sequencial de propósito (a licença do
+    // navegador é estado que passa de um vínculo pro outro), mas a SONDA de cada
+    // servidor é independente das outras — e enfileirá-las fazia cada MCP novo
+    // somar direto no tempo do Enter. Medido em 07/09/2026 neste projeto: duas
+    // sondas em fila, ~2s cada, a cada 5 minutos (o TTL de `mcp_health`).
+    //
+    // O que roda em paralelo é só o I/O. A escrita da saúde acontece depois, em
+    // ordem, com a MESMA conexão — rusqlite não é compartilhável entre tarefas, e
+    // fazer isso "também em paralelo" trocaria 2s por um bug de concorrência.
+    // Saúde dos vínculos em TRÊS TEMPOS: cache (banco), sondas em paralelo (sem
+    // banco) e gravação (banco). A divisão não é estética — ver `saude_em_cache`
+    // pro porquê de o `Connection` não poder atravessar um `await`.
+    let (mut saude, pendentes) = saude_em_cache(&conn, &project_id, agent, &bindings, &by_id);
+    for (id, outcome) in sondar_pendentes(&pendentes, &project_path).await {
+        let _ = persist_health(&conn, &project_id, &id, agent, &outcome);
+        saude.insert(id, outcome);
+    }
     let mut browser_pilot_acquired = false;
-    for binding in bindings {
+    for binding in &bindings {
         let Some(server) = by_id.get(binding.server_id.as_str()).copied() else {
             if record_unavailable(
                 &mut plan,
-                &binding,
+                binding,
                 &binding.server_id,
                 McpPlanIssueCode::SourceMissing,
                 Some("não existe mais na configuração de origem".into()),
@@ -2469,7 +2697,7 @@ pub async fn plan_for_run(
         if !via_proxy && !server.compatible(agent) {
             if record_unavailable(
                 &mut plan,
-                &binding,
+                binding,
                 &server.name,
                 McpPlanIssueCode::Incompatible,
                 Some(format!("não é portável ou compatível com {agent}")),
@@ -2479,12 +2707,21 @@ pub async fn plan_for_run(
             }
             continue;
         }
-        let outcome = if let Some(cached) = cached_health(&conn, &project_id, &server.id, agent) {
-            cached
-        } else {
-            let outcome = probe(server, &project_path).await;
-            let _ = persist_health(&conn, &project_id, &server.id, agent, &outcome);
-            outcome
+        // Já resolvido por `sondar_vinculos` (cache ou sonda). Ausência aqui é
+        // impossível pelo construtor, mas cair num probe seria fail-open silencioso
+        // — então o ausente vira indisponível declarado, não uma segunda sonda.
+        let Some(outcome) = saude.get(server.id.as_str()) else {
+            if record_unavailable(
+                &mut plan,
+                binding,
+                &server.name,
+                McpPlanIssueCode::HealthUnavailable,
+                Some("a saúde deste servidor não foi resolvida no preflight".into()),
+                overrides,
+            ) {
+                break;
+            }
+            continue;
         };
         // Com proxy, `auth-required` é resultado ESPERADO do preflight: o probe
         // bate no endpoint sem token (o registry não tem credencial) e leva 401.
@@ -2504,7 +2741,7 @@ pub async fn plan_for_run(
                 if endpoint.is_none() {
                     if record_unavailable(
                         &mut plan,
-                        &binding,
+                        binding,
                         &server.name,
                         McpPlanIssueCode::BrowserOffline,
                         Some("o navegador deste projeto está desligado".into()),
@@ -2527,7 +2764,7 @@ pub async fn plan_for_run(
                         Err(message) => {
                             if record_unavailable(
                                 &mut plan,
-                                &binding,
+                                binding,
                                 &server.name,
                                 McpPlanIssueCode::BrowserBusy,
                                 Some(message),
@@ -2547,7 +2784,7 @@ pub async fn plan_for_run(
                     Err(message) => {
                         if record_unavailable(
                             &mut plan,
-                            &binding,
+                            binding,
                             &server.name,
                             McpPlanIssueCode::BrowserUnavailable,
                             Some(message),
@@ -2574,7 +2811,7 @@ pub async fn plan_for_run(
                         // falharia no meio da tarefa).
                         if record_unavailable(
                             &mut plan,
-                            &binding,
+                            binding,
                             &server.name,
                             McpPlanIssueCode::ProxyUnavailable,
                             Some("falha ao abrir o proxy autenticado".into()),
@@ -2603,7 +2840,7 @@ pub async fn plan_for_run(
             .unwrap_or_else(|| outcome.status.clone());
         if record_unavailable(
             &mut plan,
-            &binding,
+            binding,
             &server.name,
             McpPlanIssueCode::HealthUnavailable,
             Some(detail),
@@ -2619,6 +2856,169 @@ pub async fn plan_for_run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn vinculo(server_id: &str) -> Binding {
+        Binding {
+            server_id: server_id.to_string(),
+            required: false,
+            fallback: "ask".into(),
+            browser: false,
+        }
+    }
+
+    fn fontes(f: &FontesDoInventario) -> Vec<String> {
+        match f {
+            FontesDoInventario::Todas => vec!["*".into()],
+            FontesDoInventario::Apenas(ids) => {
+                let mut v: Vec<String> = ids.iter().cloned().collect();
+                v.sort();
+                v
+            }
+        }
+    }
+
+    /// O ACHADO de 07/09/2026: `codex mcp list --json` (1,3s medidos) rodava em
+    /// TODO envio, inclusive nos de claude-code, que aqui não referenciam um
+    /// único servidor de origem Codex. A fonte alheia não entra mais.
+    #[test]
+    fn run_de_claude_nao_levanta_o_inventario_do_codex() {
+        let f = FontesDoInventario::para_run(
+            "claude-code",
+            &[vinculo("claude:user:hostinger-09f67aa4")],
+        );
+        assert_eq!(fontes(&f), vec!["claude"]);
+        assert!(!f.quer("codex"));
+    }
+
+    /// Mas um vínculo PORTADO (servidor de origem Codex usado por outro motor)
+    /// continua sendo enumerado: a decisão vem do DADO do vínculo, não do nome
+    /// do motor.
+    #[test]
+    fn vinculo_portado_traz_a_fonte_de_origem_junto() {
+        let f = FontesDoInventario::para_run(
+            "claude-code",
+            &[vinculo("codex:user:openaideveloperdocs-563a5af6")],
+        );
+        assert!(f.quer("codex"), "a fonte do vínculo tem que ser enumerada");
+        assert!(f.quer("claude"), "a fonte própria do motor também");
+    }
+
+    /// A fonte PRÓPRIA do motor entra mesmo sem vínculo nenhum dela: é ela que
+    /// prova a política efetiva, e o gate de preflight depende dessa prova.
+    /// Sem isto um inventário quebrado passaria batido (fail-open onde a regra
+    /// é fail-closed).
+    #[test]
+    fn a_fonte_propria_do_motor_entra_mesmo_sem_vinculo() {
+        let f = FontesDoInventario::para_run("codex", &[vinculo("claude:user:x-1")]);
+        assert!(f.quer("codex"));
+        assert!(f.quer("claude"));
+    }
+
+    /// Motor fora da tabela não arrasta fonte nenhuma além do que os vínculos
+    /// pedem. É o caso do agy hoje, e é o comportamento certo pro PRÓXIMO motor:
+    /// quem não tem config nativo enumerável não paga por um.
+    #[test]
+    fn motor_sem_fonte_propria_so_enumera_o_que_os_vinculos_pedem() {
+        let f = FontesDoInventario::para_run("agy", &[vinculo("claude:user:x-1")]);
+        assert_eq!(fontes(&f), vec!["claude"]);
+        let vazio = FontesDoInventario::para_run("agy", &[]);
+        assert_eq!(fontes(&vazio), Vec::<String>::new());
+    }
+
+    /// As superfícies de Configurações continuam vendo o mundo inteiro: lá a
+    /// pergunta é "o que existe nesta máquina?", e omitir fonte esconderia
+    /// servidor que a pessoa pode querer ligar.
+    #[test]
+    fn configuracoes_enumeram_todas_as_fontes() {
+        let todas = FontesDoInventario::Todas;
+        for (fonte, _) in FONTES_DE_INVENTARIO {
+            assert!(
+                todas.quer(fonte),
+                "{fonte} tem que aparecer nas Configurações"
+            );
+        }
+    }
+
+    /// Servidor repetido em dois vínculos é sondado UMA vez: a chave é o
+    /// servidor, não o vínculo. Sem isto, ligar o mesmo MCP como obrigatório e
+    /// como navegador pagaria a sonda duas vezes.
+    #[test]
+    fn saude_em_cache_nao_repete_o_mesmo_servidor() {
+        let servidor = DiscoveredServer {
+            id: "claude:user:x-1".into(),
+            name: "x".into(),
+            source: "claude".into(),
+            scope: "user".into(),
+            source_agent: Some("claude-code".into()),
+            enabled: true,
+            managed: true,
+            launch: Some(parse_launch(&json!({"command": "/bin/x"})).unwrap()),
+        };
+        let by_id: HashMap<&str, &DiscoveredServer> =
+            [("claude:user:x-1", &servidor)].into_iter().collect();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mcp_health (project_id TEXT, server_id TEXT, agent TEXT,
+               status TEXT, detail TEXT, tool_names_json TEXT, checked_at INTEGER,
+               PRIMARY KEY (project_id, server_id, agent));",
+        )
+        .unwrap();
+        let (fresca, pendentes) = saude_em_cache(
+            &conn,
+            "p1",
+            "claude-code",
+            &[vinculo("claude:user:x-1"), vinculo("claude:user:x-1")],
+            &by_id,
+        );
+        assert!(fresca.is_empty(), "sem cache, nada está fresco");
+        assert_eq!(pendentes.len(), 1, "o mesmo servidor sonda uma vez só");
+    }
+
+    /// Saúde fresca no banco não vira sonda: é o que faz o segundo envio dentro
+    /// da janela não pagar processo nenhum.
+    #[test]
+    fn saude_fresca_dispensa_a_sonda() {
+        let servidor = DiscoveredServer {
+            id: "claude:user:x-1".into(),
+            name: "x".into(),
+            source: "claude".into(),
+            scope: "user".into(),
+            source_agent: Some("claude-code".into()),
+            enabled: true,
+            managed: true,
+            launch: Some(parse_launch(&json!({"command": "/bin/x"})).unwrap()),
+        };
+        let by_id: HashMap<&str, &DiscoveredServer> =
+            [("claude:user:x-1", &servidor)].into_iter().collect();
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE mcp_health (project_id TEXT, server_id TEXT, agent TEXT,
+               status TEXT, detail TEXT, tool_names_json TEXT, checked_at INTEGER,
+               PRIMARY KEY (project_id, server_id, agent));",
+        )
+        .unwrap();
+        persist_health(
+            &conn,
+            "p1",
+            "claude:user:x-1",
+            "claude-code",
+            &ProbeOutcome {
+                status: "healthy".into(),
+                detail: None,
+                tool_names: vec!["t".into()],
+            },
+        )
+        .unwrap();
+        let (fresca, pendentes) = saude_em_cache(
+            &conn,
+            "p1",
+            "claude-code",
+            &[vinculo("claude:user:x-1")],
+            &by_id,
+        );
+        assert_eq!(fresca.len(), 1);
+        assert!(pendentes.is_empty(), "cache fresco não sonda");
+    }
 
     #[test]
     fn parseia_stdio_e_nunca_expoe_valores_no_fingerprint() {
@@ -3305,6 +3705,7 @@ mod tests {
                 roteavel_pelo_app: false,
                 roteia_mcp_gerenciado: true,
                 escopo: "por-run".into(),
+                cli_installation: None,
                 enabled: bound,
                 required: false,
                 browser: false,

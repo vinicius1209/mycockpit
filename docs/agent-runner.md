@@ -328,6 +328,20 @@ Falha silenciosa dos dois lados — o codex não avisa que descartou a config, e
 app só descobre pela boca do agente. Re-checar a cada bump: se voltar a fazer
 merge, a regra continua válida (antes do subcomando funciona nas duas).
 
+Rechecagem 08/09/2026, **Agy 1.1.27 e mc-work** (ADR-173): o cadastro continua
+global, mas os processos MCP herdam o ambiente do CLI. O Frota agora permite
+conectar esse canal em Configurações > MCPs. A entrada aponta o executável do
+app com `work-server`; cada run fornece seu socket exclusivo por ambiente.
+O envio exige cadastro confirmado na cache aquecida antes do turno e informa
+a idade dessa verificação no manifesto. Fora de um run vivo, o helper declara
+zero tools. Sem cadastro confirmado o app explica a indisponibilidade.
+
+Leitura, Auto e planejamento inicial recebem `work_plan`/`work_update`;
+as tools de processos do app ficam indisponíveis nesses modos porque estão
+fora do sandbox nativo. Padrão/Liberado recebem as cinco tools; FusionRo não
+recebe canal. A sonda real de inicialização e os limites do que foi testado
+estão em [evidência do Agy](evidence/agy-work-mcp-1.1.27.md).
+
 | | Leitura | **Padrão (PEDE)** | Liberado |
 |---|---|---|---|
 | **claude** | `--disallowedTools` de escrita | `acceptEdits` + `--permission-prompt-tool` (MCP) | `bypassPermissions` |
@@ -420,7 +434,7 @@ cadência são por capability, nunca por nome:
   prompt. Zero inchaço de histórico, zero eco, frescor automático (edição da
   doutrina mid-conversa chega no turno seguinte de graça). O anúncio de MCPs e
   a TELEMETRIA do mc-work também moram só lá (o corpo fica limpo).
-- **Motor com resume e sem canal (codex)**: bloco no corpo do **1º turno** (o
+- **Motor com resume e sem canal (Codex e Agy atuais)**: bloco no corpo do **1º turno** (o
   resume carrega dali em diante) **+ re-injeção com prefixo "(doutrina
   atualizada)" quando o arquivo muda mid-conversa** (H4 — fingerprint no
   ledger efêmero `injected.doctrine` da conversa, store do chat; ledger zerado
@@ -431,8 +445,10 @@ cadência são por capability, nunca por nome:
   mid-conversa re-anuncia via fingerprint (`injected.mcp`, evento
   `mcp://announced`, emitido só depois do run nascer) — inclusive N→0
   (bindings todos desligados anunciam "nenhuma" uma vez).
-- **Motor sem resume (agy)**: **todo turno** (sessão fresca, e o recap não
-  carrega o prefixo do prompt) — custo honesto, sem alternativa.
+- **Motor sem resume**: **todo turno** (sessão fresca, e o recap não
+  carrega o prefixo do prompt). O Agy ganhou resume na 1.1.13 e agora segue a
+  regra anterior; seu canal global de trabalho reanuncia ativação/desativação
+  mesmo numa sessão retomada (ADR-173).
 
 | ponto de spawn | quando injeta |
 |---|---|

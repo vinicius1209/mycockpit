@@ -504,7 +504,15 @@ pub struct ContextBundlePaths {
 /// Exporta o markdown (renderizado pelo front) da conversa pra
 /// `.mycockpit/context/<conv_id>.md` (write atômico, sobrescreve re-export).
 /// Devolve o caminho RELATIVO — é o que vai pro prompt do agent.
-#[tauri::command]
+///
+/// `command(async)` NÃO é enfeite: comando Tauri SEM `async` roda na THREAD
+/// PRINCIPAL, que no macOS é a thread da UI. Este aqui escreve o transcript
+/// inteiro (1,66 MB na maior conversa medida em 07/09/2026) e ainda varre o
+/// diretório no `trim_old_exports` — sincronamente, a CADA envio. Não era
+/// "lentidão": era a janela congelando. A função continua síncrona de propósito
+/// (o corpo é I/O de bloqueio, e é exatamente por isso que ele não pode morar na
+/// thread da UI); o atributo é que a tira de lá. Ver `app/src-tauri/src/AGENTS.md`.
+#[tauri::command(async)]
 pub fn export_conv_context(
     project_path: String,
     conv_id: String,
@@ -529,7 +537,10 @@ pub fn export_conv_context(
 ///
 /// O JSON é validado antes de qualquer write e recebe um teto generoso, mas
 /// finito: o manifesto é índice, nunca um segundo transcript disfarçado.
-#[tauri::command]
+///
+/// `command(async)` pelo mesmo motivo do `export_conv_context`: escreve o
+/// transcript inteiro e não pode fazer isso na thread da UI.
+#[tauri::command(async)]
 pub fn export_context_bundle(
     project_path: String,
     conv_id: String,

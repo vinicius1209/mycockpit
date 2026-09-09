@@ -15,6 +15,15 @@ export type McpHealthStatus =
   | "auth-required"
   | "unavailable"
 
+export type McpEscopo = "por-run" | "por-projeto" | "global" | "nenhum"
+export type CliInstallation = "enabled" | "disabled" | "absent" | "unknown"
+
+export {
+  mcpAgentUtilizavel, gestoDaLinha, rotuloDaAcao, consequenciaDaAcao,
+  mcpAgentStatusLabel, CONSEQUENCIA_ESCOPO_GLOBAL, CONSEQUENCIA_ESCOPO_PROJETO,
+  type GestoDaLinha,
+} from "./mcpAgentActions"
+
 export type McpFallback = "ask" | "deny" | "allow-readonly"
 
 /** Espelho da união tipada do Rust (`McpNativeReason`, mcp_control.rs). Motivo
@@ -41,6 +50,8 @@ export interface McpAgentState {
   /** Escopo de MCP do motor. Opcional porque estado gravado antes desta versão
    *  não o tem, e aí a linha não oferece gesto nenhum (em vez de chutar). */
   escopo?: McpEscopo
+  /** Entrada de mesmo nome/transporte no inventário global. Não é health. */
+  cliInstallation?: CliInstallation | null
   enabled: boolean
   required: boolean
   /** Binding marcado para dirigir o navegador do projeto: o plano do run
@@ -305,100 +316,6 @@ export function mcpPortabilityNotices(
     })
   }
   return notices
-}
-
-/** O agent pode usar este servidor? Nativamente OU pelo proxy do app.
- *
- *  É o ÚNICO gate da linha: interruptor e botão de testar saem daqui. Antes o
- *  interruptor lia `compatible` cru enquanto o rótulo já contava com o login,
- *  então a tela dizia "roteado pelo Frota" com o controle preso. Um elemento
- *  dizia uma coisa e o vizinho fazia outra. */
-export function mcpAgentUtilizavel(
-  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp">,
-): boolean {
-  return state.compatible || state.roteavelPeloApp === true
-}
-
-/** Escopo de MCP do motor, espelho de `McpEscopo` (adapters.rs). */
-export type McpEscopo = "por-run" | "por-projeto" | "global" | "nenhum"
-
-/** O gesto que a linha oferece.
- *
- *  `interruptor` = o app controla o estado e sabe qual é (escopo por run).
- *  `acao-no-cli` = o app NÃO sabe o que já está instalado no CLI do usuário,
- *  então oferece uma ação, nunca um interruptor. Interruptor comunica "eu sei
- *  como está e posso ligar/desligar"; oferecer um sem saber é a mesma classe de
- *  mentira do ADR-100, só que na direção oposta.
- *  `nada` = sem receita conhecida; a linha só informa. */
-export type GestoDaLinha =
-  | "interruptor"
-  | "acao-no-cli"
-  | "acao-no-projeto"
-  | "nada"
-
-export function gestoDaLinha(
-  state: Pick<McpAgentState, "compatible" | "roteavelPeloApp" | "escopo">,
-): GestoDaLinha {
-  if (mcpAgentUtilizavel(state)) return "interruptor"
-  if (state.escopo === "global") return "acao-no-cli"
-  if (state.escopo === "por-projeto") return "acao-no-projeto"
-  return "nada"
-}
-
-/** A frase da ação, e a consequência dela, por gesto. São DIFERENTES de
- *  propósito: escrever na config global do CLI e escrever num arquivo do
- *  repositório do usuário não são o mesmo risco, e quem lê decide melhor
- *  sabendo qual dos dois vai acontecer. */
-export function rotuloDaAcao(gesto: GestoDaLinha): string | null {
-  if (gesto === "acao-no-cli") return "Instalar no CLI"
-  if (gesto === "acao-no-projeto") return "Instalar no projeto"
-  return null
-}
-
-export function consequenciaDaAcao(gesto: GestoDaLinha): string | null {
-  if (gesto === "acao-no-cli") return CONSEQUENCIA_ESCOPO_GLOBAL
-  if (gesto === "acao-no-projeto") return CONSEQUENCIA_ESCOPO_PROJETO
-  return null
-}
-
-/** O que muda no mundo quando a pessoa aceita a ação. Aparece ANTES do clique,
- *  porque escopo global não se desfaz sozinho no fim do run. */
-export const CONSEQUENCIA_ESCOPO_GLOBAL =
-  "Vale para todos os projetos e continua depois da missão. Quem escreve é o " +
-  "CLI do agent, no lugar que ele escolher nesta máquina."
-
-/** Escrever aqui mexe num arquivo que é do REPOSITÓRIO de quem usa, e que
- *  pode estar versionado. Isso precisa estar dito antes do clique: o commit
- *  seguinte carrega a mudança junto, e ninguém gosta de descobrir isso no
- *  `git diff`. */
-export const CONSEQUENCIA_ESCOPO_PROJETO =
-  "Escreve no opencode.json deste projeto, que é um arquivo do seu " +
-  "repositório e pode estar versionado. Só a entrada do Frota é tocada."
-
-/** Rótulo da linha por agent. "não suportado" sozinho mente num servidor
- *  nativo-apenas: ele funciona no CLI que o definiu, o que não existe é o
- *  roteamento gerenciado para os outros agents. */
-export function mcpAgentStatusLabel(
-  server: Pick<McpServer, "nativeReason">,
-  state: Pick<
-    McpAgentState,
-    "compatible" | "roteavelPeloApp" | "roteiaMcpGerenciado" | "health"
-  >,
-): string {
-  if (state.compatible) return mcpHealthLabel(state.health)
-  // "roteado pelo Frota" agora sai do MESMO campo que libera o interruptor,
-  // e não de uma regra paralela no front. A antiga olhava só
-  // `nativeReason === "oauth"` + login, sem saber de transporte SSE nem de
-  // segredo literal: dizia "roteado" para casos que o proxy recusa.
-  if (state.roteavelPeloApp) return "roteado pelo Frota"
-  // O motor que não aceita MCP gerenciado NÃO é "não suportado": o CLI dele
-  // fala MCP muito bem, o que falta é o app conseguir escopar por run. Chamar
-  // isso de "não suportado" foi o próprio agy que desmentiu, dizendo ao
-  // usuário que tem suporte completo. A frase agora diz de quem é o limite.
-  if (state.roteiaMcpGerenciado === false) {
-    return "sem roteamento do Frota (configure no CLI)"
-  }
-  return server.nativeReason ? "sem roteamento (nativo do CLI)" : "não suportado"
 }
 
 // ---- login do app (A1) -----------------------------------------------------

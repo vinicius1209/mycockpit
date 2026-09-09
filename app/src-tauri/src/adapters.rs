@@ -431,6 +431,9 @@ pub struct Capabilities {
     pub native_tool_inventory: ToolInventoryEvidence,
     /// Fala MCP e recebe o `mc-work` (processos longos + planos vivos).
     pub work_mcp: bool,
+    /// O servidor precisa de cadastro global, mas recebe o socket pelo ambiente
+    /// de CADA filho. Não altera o escopo dos MCPs externos.
+    pub work_mcp_global_env: bool,
     /// Recebe o `mc-context` (memória read-only por MCP).
     pub context_mcp: bool,
     /// Até ONDE o app consegue instalar um MCP externo neste motor.
@@ -604,6 +607,7 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // O `system/init.tools` traz a contagem real da superfície deste run.
     native_tool_inventory: ToolInventoryEvidence::RuntimeCount,
     work_mcp: true,
+    work_mcp_global_env: false,
     context_mcp: true,
     // claude 2.1.220: config MCP injetada no spawn, morre com o processo.
     mcp_escopo: McpEscopo::PorRun,
@@ -659,6 +663,7 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // `exec`/app-server não publicam catálogo completo das tools nativas.
     native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: true,
+    work_mcp_global_env: false,
     context_mcp: true,
     // codex 0.146: idem, config por run no exec.
     mcp_escopo: McpEscopo::PorRun,
@@ -724,14 +729,17 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // O que NÃO mudou é o que decide este campo: `agy mcp add` não tem flag de
     // escopo, então escreve no config GLOBAL
     // (`~/.gemini/config/mcp_config.json`), e o `agy --help` da 1.1.21 segue
-    // sem qualquer opção de MCP por-run. Injetar servidor nosso exigiria
-    // reescrever (e depois desfazer) a config permanente do usuário, o oposto
-    // de "por-run" e um efeito colateral que a casa não aceita.
+    // sem qualquer opção de MCP por-run. MCP externo continua global. O canal
+    // interno de trabalho usa cadastro explícito estável e env por processo,
+    // comprovada na 1.1.27; não reescreve config a cada turno (ADR-173).
     //
     // Portanto o escopo é `Global`, que significa "o FROTA não escopa MCP
     // aqui", NUNCA "este motor não fala MCP". Quem escreve copy a partir deste
     // campo tem de dizer a primeira frase (ver `mcpAgentStatusLabel`).
-    work_mcp: false,
+    // Agy 1.1.27, 08/09/2026: /credits inicializou o MCP e comprovou a herança
+    // do socket/run ID. Cadastro explícito + env por filho, sem CWD como chave.
+    work_mcp: true,
+    work_mcp_global_env: true,
     context_mcp: false,
     mcp_escopo: McpEscopo::Global,
     mcp_launch_cwd: false,
@@ -959,6 +967,7 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     // ACP anuncia capabilities de protocolo, não a lista completa de tools.
     native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: false,
+    work_mcp_global_env: false,
     context_mcp: false,
     // opencode 1.18.21 (medido 26/08/2026): a chave `mcp` do `opencode.json`
     // do DIRETÓRIO vale. Provado dos dois lados: dentro do projeto o
@@ -1638,7 +1647,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Use mcp__{}__{} para dev servers, watchers, containers e outros processos longos; isso mantém PID, saída e controle na Frota. Publique planos vivos com mcp__{}__{} quando a tarefa tiver várias etapas e marque cada início/conclusão com mcp__{}__{}. Se usar a checklist nativa, atualize os estados equivalentes também.",
+                    "Use mcp__{}__{} para dev servers, watchers, containers e outros processos longos quando disponível neste modo de permissão; isso mantém PID, saída e controle na Frota. Publique planos vivos com mcp__{}__{} quando a tarefa tiver várias etapas e marque cada início/conclusão com mcp__{}__{}. Se usar a checklist nativa, atualize os estados equivalentes também.",
                     crate::work_gateway::MCP_SERVER_NAME,
                     crate::work_gateway::PROCESS_START_TOOL,
                     crate::work_gateway::MCP_SERVER_NAME,
@@ -3054,6 +3063,13 @@ impl AgentAdapter for AgyAdapter {
 
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("agy");
+        // Não herdar canal de um processo que tenha iniciado o próprio app.
+        cmd.env_remove(crate::work_gateway::SOCK_ENV);
+        if !matches!(req.permission, Permission::FusionRo) {
+            if let Some(gateway) = &req.work_gateway {
+                cmd.env(crate::work_gateway::SOCK_ENV, &gateway.socket);
+            }
+        }
         // "Planejar primeiro" no agy é EMULAÇÃO POR PROMPT + --sandbox, sem
         // garantia dura: o `--mode plan` é CONSULTIVO e FUROU no teste de
         // 2026-07 (agy 1.1.2) → NÃO usamos --mode plan.
@@ -5811,6 +5827,40 @@ mod tests {
 
     // ---- registry de capabilities (G1, capability-registry-plan) ----
 
+    #[test]
+    fn matriz_work_mcp_por_agent() {
+        for (agent, work, global) in [
+            ("claude-code", true, false),
+            ("codex", true, false),
+            ("agy", true, true),
+            ("opencode", false, false),
+        ] {
+            let caps = capabilities_of(agent).unwrap();
+            assert_eq!((caps.work_mcp, caps.work_mcp_global_env), (work, global));
+        }
+    }
+
+    #[test]
+    fn canal_global_sem_gateway_ou_em_fusion_nao_herda_socket_ambiental() {
+        for permission in [Permission::Padrao, Permission::FusionRo] {
+            let mut r = req(permission, false);
+            if matches!(permission, Permission::FusionRo) {
+                r.work_gateway = Some(crate::work_gateway::GatewayConfig {
+                    server_bin: "/app/frota".into(),
+                    socket: "/tmp/socket-proibido".into(),
+                });
+            }
+            let command = AgyAdapter::default().build_command(&r).unwrap();
+            assert_eq!(
+                command
+                    .as_std()
+                    .get_envs()
+                    .find(|(name, _)| *name == crate::work_gateway::SOCK_ENV),
+                Some((std::ffi::OsStr::new(crate::work_gateway::SOCK_ENV), None))
+            );
+        }
+    }
+
     /// G1.4 — teste de CONTRATO: para CADA agent registrado, num loop (nunca
     /// um teste copiado por agent), a capability declarada tem que corresponder
     /// ao comportamento do build_command / on_stdout_line. É o teste que impede
@@ -5852,7 +5902,19 @@ mod tests {
                 std::ptr::eq(a.capabilities(), caps),
                 "{agent}: capabilities_of e o adapter têm que apontar pra MESMA declaração"
             );
-            let args = argv(&a.build_command(&r).unwrap());
+            let command = a.build_command(&r).unwrap();
+            let inherited_work = command
+                .as_std()
+                .get_envs()
+                .find(|(name, _)| *name == crate::work_gateway::SOCK_ENV)
+                .and_then(|(_, value)| value);
+            assert_eq!(
+                inherited_work,
+                caps.work_mcp_global_env
+                    .then(|| std::ffi::OsStr::new("/tmp/mc-work-contrato.sock")),
+                "{agent}: socket global precisa chegar exatamente pelo ambiente do filho",
+            );
+            let args = argv(&command);
             // H1 — canal system: o conteúdo de sistema pedido pelo app aparece
             // no argv do canal (--append-system-prompt) SSE o motor declara a
             // capability; e NUNCA vaza pro corpo do prompt. Motor sem canal
@@ -5935,7 +5997,7 @@ mod tests {
                 "{agent}: lists_models declarado sem model_smoke (lista sem como verificar)"
             );
             assert_eq!(
-                blob.contains(crate::work_gateway::MCP_SERVER_NAME),
+                blob.contains(crate::work_gateway::MCP_SERVER_NAME) || inherited_work.is_some(),
                 caps.work_mcp,
                 "{agent}: work_mcp declarado ≠ injeção do mc-work no comando"
             );

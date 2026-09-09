@@ -4,8 +4,9 @@
 // própria linha diz quando o outro lado do elo falta, em vez de exigir que o
 // usuário cruze duas telas de cabeça.
 
-import { AlertTriangle, CheckCircle2, KeyRound, Loader2, RefreshCcw, XCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, KeyRound, Loader2, RefreshCcw, Terminal, XCircle } from "lucide-react"
 import { Switch } from "@/components/ui/switch"
+import { Button } from "@/components/ui/button"
 import {
   consequenciaDaAcao,
   gestoDaLinha,
@@ -64,7 +65,7 @@ export function McpAgentRows({
   instalandoKeys: ReadonlySet<string>
 }) {
   return (
-    <div className="mt-3 divide-y divide-border/40 rounded-lg border border-border/50 bg-background/30">
+    <div className="mt-3 divide-y divide-border/40 rounded-lg border bg-background/30">
       {server.agentStates.map((state) => {
         // A ordem e a presença vêm do registry Rust. O espelho TS só resolve
         // identidade visual; id ainda desconhecido continua aparecendo.
@@ -79,8 +80,7 @@ export function McpAgentRows({
         // saem do MESMO fato. Era a divergência entre eles que fazia a tela
         // prometer "roteado pelo Frota" com o controle travado.
         const utilizavel = mcpAgentUtilizavel(state)
-        // Escopo global não ganha interruptor: o app não sabe o que já existe
-        // no CLI do usuário, e interruptor comunica "eu sei e controlo".
+        // O vínculo do run e a entrada global são fatos diferentes.
         const gesto = gestoDaLinha(state)
         const instalando = instalandoKeys.has(key)
         const acao = rotuloDaAcao(gesto)
@@ -88,12 +88,18 @@ export function McpAgentRows({
         return (
           <div key={state.agent} className="px-2.5 py-1.5">
             <div className="flex min-h-10 items-center gap-2">
-              <Switch
-                checked={state.enabled}
-                onCheckedChange={(enabled) => onUpdate(server, state, { enabled })}
-                disabled={!utilizavel || writeBusy}
-                aria-label={`Usar ${server.name} no ${label}`}
-              />
+              {state.escopo === "global" ? (
+                <span className="grid w-8 shrink-0 place-items-center" title="Configuração global do CLI">
+                  <Terminal className="size-3.5 text-muted-foreground" />
+                </span>
+              ) : (
+                <Switch
+                  checked={state.enabled}
+                  onCheckedChange={(enabled) => onUpdate(server, state, { enabled })}
+                  disabled={!utilizavel || writeBusy}
+                  aria-label={`Usar ${server.name} no ${label}`}
+                />
+              )}
               <span className="w-16 truncate text-[12px] text-foreground" title={label}>
                 {label}
               </span>
@@ -104,14 +110,14 @@ export function McpAgentRows({
                 {verifying ? (
                   <Loader2 className="size-3.5 animate-spin" />
                 ) : (
-                  statusIcon(state.health)
+                  state.escopo === "global" ? null : statusIcon(state.health)
                 )}
                 <span className="truncate">
                   {verifying
                     ? "verificando…"
                     : [
                         mcpAgentStatusLabel(server, state),
-                        state.checkedAt != null && state.toolNames
+                        utilizavel && state.checkedAt != null && state.toolNames
                           ? `${state.toolNames.length} tools`
                           : null,
                       ]
@@ -119,7 +125,7 @@ export function McpAgentRows({
                         .join(" · ")}
                 </span>
               </span>
-              {state.enabled && (
+              {utilizavel && state.enabled && (
                 <>
                   <label className="flex items-center gap-1 text-[11px] text-muted-foreground">
                     <input
@@ -174,18 +180,20 @@ export function McpAgentRows({
                 </>
               )}
               {acao && (
-                <button
+                <Button
+                  size="chip"
+                  variant="ghost"
                   onClick={() => onInstalarNoCli(server, state)}
-                  disabled={instalando}
+                  disabled={instalando || (state.escopo === "global" && state.cliInstallation == null)}
                   title={consequencia ?? undefined}
-                  className="shrink-0 rounded bg-background/60 px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
+                  className="shrink-0"
                 >
                   {instalando ? (
                     <Loader2 className="size-3 animate-spin" />
                   ) : (
                     acao
                   )}
-                </button>
+                </Button>
               )}
               {utilizavel && (
                 <button

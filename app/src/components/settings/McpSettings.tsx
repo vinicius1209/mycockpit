@@ -31,6 +31,7 @@ import {
 import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
 import { McpAgentRows } from "@/components/settings/McpAgentRows"
 import { ProviderMcpInventoryPanel } from "@/components/settings/ProviderMcpInventoryPanel"
+import { WorkMcpSettings } from "@/components/settings/WorkMcpSettings"
 import { cn } from "@/lib/utils"
 
 function toggleKey(
@@ -377,29 +378,50 @@ export function McpSettings() {
     }
   }
 
-  /** Gesto humano do escopo global (F3): roda o comando do CLI do agent.
-   *
-   *  Não há estado otimista aqui de propósito. O app NÃO sabe o que já está
-   *  instalado no CLI do usuário, então não tem o que "aplicar antes e
-   *  confirmar depois": a única verdade é a frase que o CLI devolver, e é ela
-   *  que aparece no toast. */
+  /** A ação usa o inventário observado; a confirmação vem de nova descoberta.
+   * Também reconsulta na falha: um timeout pode ocorrer depois da escrita. */
   async function instalarNoCli(server: McpServer, state: McpAgentState) {
     if (!project) return
     const key = `${server.id}:${state.agent}`
-    if (instalando.has(key)) return
+    const busyKey = `cli:${key}`
+    if (busyKeysRef.current.has(busyKey)) return
+    if (state.escopo === "global" && (!state.cliInstallation || state.cliInstallation === "unknown")) {
+      toast.error("Reverifique o inventário do CLI antes de alterar")
+      return
+    }
+    const path = project.path
+    const instalar = state.cliInstallation !== "enabled" && state.cliInstallation !== "disabled"
+    busyKeysRef.current.add(busyKey)
     setInstalando((s) => new Set(s).add(key))
     try {
       const dito = await invoke<string>("install_mcp_in_agent", {
-        projectPath: project.path,
+        projectPath: path,
         serverId: server.id,
         agent: state.agent,
-        instalar: true,
+        instalar,
       })
       // A voz do CLI é a evidência; o app não reescreve o que ele disse.
-      toast.success(dito || `${server.name} instalado no ${state.agent}`)
+      toast.success(dito || `${server.name} ${instalar ? "instalado" : "removido"} no ${state.agent}`)
     } catch (cause) {
       toast.error(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      try {
+        const found = await discoverMcpServers(path)
+        if (shownPathRef.current === path) {
+          setServers(found.servers)
+          setProviderInventories(found.providerInventories)
+        }
+      } catch (cause) {
+        if (shownPathRef.current === path) {
+          setServers((previous) => previous.map((item) => ({
+            ...item,
+            agentStates: item.agentStates.map((row) => row.escopo === "global"
+              ? { ...row, cliInstallation: "unknown" } : row),
+          })))
+          setError(`Não foi possível confirmar o inventário: ${String(cause)}`)
+        }
+      }
+      busyKeysRef.current.delete(busyKey)
       setInstalando((s) => {
         const n = new Set(s)
         n.delete(key)
@@ -468,6 +490,7 @@ export function McpSettings() {
       </div>
 
       <ProviderMcpInventoryPanel inventories={providerInventories} />
+      <WorkMcpSettings onChanged={load} />
 
       {error && (
         <div className="mt-3 rounded-lg border border-st-error/30 bg-st-error/5 p-3 text-[12px] text-st-error">

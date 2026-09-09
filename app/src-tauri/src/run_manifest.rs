@@ -152,6 +152,21 @@ fn stable_tool_names(names: &[String]) -> Vec<String> {
     names
 }
 
+/// Aplicado antes de publicar: a lista acompanha a restrição efetiva do listener.
+pub fn restrict_work_processes(manifest: &mut EffectiveRunManifest) {
+    if let Some(source) = manifest
+        .sources
+        .iter_mut()
+        .find(|source| source.id == crate::work_gateway::MCP_SERVER_NAME)
+    {
+        source
+            .tool_names
+            .retain(|name| !crate::work_gateway::is_process_tool(name));
+        source.observed_count = Some(source.tool_names.len());
+        source.label = "Planos e etapas".into();
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     agent_id: &str,
@@ -309,6 +324,36 @@ mod tests {
     use super::*;
     use crate::adapters::{ToolMaterializerKind, CLAUDE_CAPS};
     use crate::mcp_control::{McpLaunchConfig, McpRuntimeServer};
+
+    #[test]
+    fn modo_restrito_declara_apenas_as_etapas_que_o_listener_aceita() {
+        let mut manifest = build(
+            "engine",
+            &CLAUDE_CAPS,
+            false,
+            false,
+            true,
+            false,
+            &crate::tool_gateway::ToolCatalogSnapshot::default(),
+            &McpRunPlan::default(),
+            Vec::new(),
+        );
+        restrict_work_processes(&mut manifest);
+        let work = manifest
+            .sources
+            .iter()
+            .find(|source| source.id == crate::work_gateway::MCP_SERVER_NAME)
+            .unwrap();
+        assert_eq!(work.observed_count, Some(2));
+        assert_eq!(
+            work.tool_names,
+            [
+                crate::work_gateway::WORK_PLAN_TOOL,
+                crate::work_gateway::WORK_UPDATE_TOOL
+            ]
+        );
+        assert_eq!(work.label, "Planos e etapas");
+    }
 
     #[test]
     fn manifesto_separa_gateway_exato_mcp_probe_e_superficie_opaca() {

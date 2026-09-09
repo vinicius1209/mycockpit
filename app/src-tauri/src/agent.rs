@@ -552,8 +552,26 @@ pub async fn run_agent(
         };
     // Substrato uniforme de trabalho/processos. O listener vive pelo run inteiro;
     // processos iniciados por ele continuam no registry do app após o turno.
-    let supports_work_mcp = caps.work_mcp && !matches!(permission, adapters::Permission::FusionRo);
+    let global_work = caps
+        .work_mcp_global_env
+        .then(|| crate::work_mcp_setup::cached(&agent))
+        .flatten();
+    let supports_work_mcp = caps.work_mcp
+        && (!caps.work_mcp_global_env
+            || global_work
+                .as_ref()
+                .is_some_and(|setup| setup.state == crate::work_mcp_setup::SetupState::Configured))
+        && !matches!(permission, adapters::Permission::FusionRo);
+    if caps.work_mcp_global_env && !matches!(permission, adapters::Permission::FusionRo) {
+        mcp_plan.notices.push(match global_work {
+            Some(setup) if setup.state == crate::work_mcp_setup::SetupState::Configured => format!(
+                "Ao iniciar este turno, o cadastro do acompanhamento havia sido verificado há {}s. Reverifique em Configurações se alterou o CLI.", setup.age_secs()),
+            _ => "Acompanhamento de etapas indisponível neste motor. Conecte ou reverifique em Configurações > MCPs.".into(),
+        });
+    }
     let mut _work_listener = None;
+    let work_processes_allowed =
+        crate::work_gateway::processes_allowed(permission, plan_first.unwrap_or(false));
     let work_gateway = if supports_work_mcp {
         server_bin.as_ref().and_then(|bin| {
             let listener = crate::work_gateway::WorkListener::spawn(
@@ -562,6 +580,7 @@ pub async fn run_agent(
                 conv_id.clone(),
                 cwd.clone(),
                 process_registry.inner().clone(),
+                work_processes_allowed,
             )?;
             let config = crate::work_gateway::GatewayConfig {
                 server_bin: bin.to_string_lossy().to_string(),
@@ -662,19 +681,21 @@ pub async fn run_agent(
             }
         }
     }
-    let _ = on_event.send(AgentEvent::RunManifest {
-        manifest: crate::run_manifest::build(
-            &agent,
-            caps,
-            approval.is_some(),
-            context_gateway.is_some(),
-            work_gateway.is_some(),
-            tool_gateway.is_some(),
-            &tool_catalog,
-            &mcp_plan,
-            instruction_sources,
-        ),
-    });
+    let mut manifest = crate::run_manifest::build(
+        &agent,
+        caps,
+        approval.is_some(),
+        context_gateway.is_some(),
+        work_gateway.is_some(),
+        tool_gateway.is_some(),
+        &tool_catalog,
+        &mcp_plan,
+        instruction_sources,
+    );
+    if !work_processes_allowed {
+        crate::run_manifest::restrict_work_processes(&mut manifest);
+    }
+    let _ = on_event.send(AgentEvent::RunManifest { manifest });
     // H2 — cadência do preâmbulo por capability: canal system → corpo limpo
     // (o adapter re-envia anúncio+telemetria no canal a cada spawn); motor
     // 1º-turno-só → sem resume leva tudo, com resume só re-anuncia MCP quando
@@ -1019,10 +1040,11 @@ pub async fn run_agent(
 /// Cadência H2 (prompt-hygiene-plan), decidida por capability:
 /// - `system_channel` → corpo SEMPRE limpo (o adapter re-envia anúncio e
 ///   telemetria pelo canal system a cada spawn);
-/// - `session_resume` sem canal (codex) → tudo no 1º turno da sessão; turno
+/// - `session_resume` sem canal → tudo no 1º turno da sessão; turno
 ///   com resume só re-anuncia MCP quando o PLANO mudou (fingerprint ≠ último
 ///   anunciado — devolvido em `.1` pro front carimbar via `mcp://announced`);
-/// - sem resume (agy) → todo turno (custo honesto registrado no plano).
+/// - sem resume → todo turno (custo honesto registrado no plano).
+/// - canal global → reanuncia ativação/desativação pela mesma régua do ledger.
 ///
 /// Fail-open: sem plano gerenciado com servidores selecionados, o texto do 1º
 /// turno é byte a byte o de sempre. Puro de propósito (testável).
@@ -1039,22 +1061,33 @@ fn compose_mcp_preamble(
     }
     // Sem resume, toda sessão é nova: a régua do "1º turno" vale sempre.
     let first_turn = !resuming || !caps.session_resume;
-    let fingerprint = mcp_plan.fingerprint();
-    let announced_servers = mcp_plan.announced_servers();
-    let announce_mcp = match fingerprint.as_deref() {
-        None => false,
-        Some(fp) => {
-            if announced_servers.is_empty() {
-                // Plano gerenciado VAZIO só é notícia na TRANSIÇÃO N→0 (o
-                // modelo já viu um plano diferente nesta conversa e chamaria
-                // tool morta). Sem histórico carimbado (1º turno, restart),
-                // não há o que desmentir — corpo byte-idêntico ao de sempre.
-                last_fingerprint.is_some() && last_fingerprint != Some(fp)
-            } else {
-                first_turn || last_fingerprint != Some(fp)
-            }
-        }
+    let global_work = caps.work_mcp_global_env && !mcp_plan.managed;
+    let work_changed = global_work
+        && (has_work_gateway || last_fingerprint.is_some_and(|fp| fp.starts_with("work-channel:")));
+    let fingerprint = if work_changed {
+        Some(format!(
+            "work-channel:{}",
+            if has_work_gateway { "on" } else { "off" }
+        ))
+    } else {
+        mcp_plan.fingerprint()
     };
+    let announced_servers = mcp_plan.announced_servers();
+    let announce_mcp = !global_work
+        && match fingerprint.as_deref() {
+            None => false,
+            Some(fp) => {
+                if announced_servers.is_empty() {
+                    // Plano gerenciado VAZIO só é notícia na TRANSIÇÃO N→0 (o
+                    // modelo já viu um plano diferente nesta conversa e chamaria
+                    // tool morta). Sem histórico carimbado (1º turno, restart),
+                    // não há o que desmentir — corpo byte-idêntico ao de sempre.
+                    last_fingerprint.is_some() && last_fingerprint != Some(fp)
+                } else {
+                    first_turn || last_fingerprint != Some(fp)
+                }
+            }
+        };
     let mut sections = Vec::new();
     if announce_mcp {
         if announced_servers.is_empty() {
@@ -1079,16 +1112,26 @@ fn compose_mcp_preamble(
             ));
         }
     }
-    if has_work_gateway && first_turn {
+    if has_work_gateway
+        && (first_turn || (global_work && last_fingerprint != fingerprint.as_deref()))
+    {
         sections.push(format!(
-            "TELEMETRIA DE TRABALHO: para processos longos (dev servers, watchers, containers), use o MCP `{}` / `{}` em vez de deixá-los presos numa shell comum. Em tarefas com várias etapas, publique o plano por `{}` e mantenha cada etapa atualizada ao iniciar/concluir por `{}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota.",
+            "TELEMETRIA DE TRABALHO: em tarefas com várias etapas, use o MCP `{}` para publicar e atualizar o plano. Para processos longos (dev servers, watchers, containers), use `{}` quando disponível neste modo de permissão. Publique o plano por `{}` e mantenha cada etapa atualizada ao iniciar/concluir por `{}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota.",
             crate::work_gateway::MCP_SERVER_NAME,
             crate::work_gateway::PROCESS_START_TOOL,
             crate::work_gateway::WORK_PLAN_TOOL,
             crate::work_gateway::WORK_UPDATE_TOOL,
         ));
     }
-    let announced = if announce_mcp { fingerprint } else { None };
+    if global_work && !has_work_gateway && last_fingerprint == Some("work-channel:on") {
+        sections.push("O acompanhamento por mc-work está indisponível neste turno. Não envie atualizações ao canal anunciado anteriormente.".into());
+    }
+    let announced = if announce_mcp || (work_changed && last_fingerprint != fingerprint.as_deref())
+    {
+        fingerprint
+    } else {
+        None
+    };
     if sections.is_empty() {
         return (prompt, announced);
     }
@@ -1656,6 +1699,27 @@ mod tests {
             compose_mcp_preamble("faça X".into(), false, &vazio, caps_corpo(), false, None),
             ("faça X".to_string(), None)
         );
+    }
+
+    #[test]
+    fn cadastro_global_anuncia_ativacao_e_desativacao_em_uma_sessao_retomada() {
+        let plan = crate::mcp_control::McpRunPlan::default();
+        let caps = &crate::adapters::AGY_CAPS;
+        let (first, fp) = compose_mcp_preamble("continue".into(), true, &plan, caps, true, None);
+        assert!(first.contains("TELEMETRIA DE TRABALHO"));
+        assert_eq!(fp.as_deref(), Some("work-channel:on"));
+        let (same, next) =
+            compose_mcp_preamble("continue".into(), true, &plan, caps, true, fp.as_deref());
+        assert_eq!(same, "continue");
+        assert_eq!(next, None);
+        let (off, fp) =
+            compose_mcp_preamble("continue".into(), false, &plan, caps, true, fp.as_deref());
+        assert!(off.contains("mc-work está indisponível"));
+        assert!(!off.contains("MCPs externos"));
+        assert_eq!(fp.as_deref(), Some("work-channel:off"));
+        let (again, _) =
+            compose_mcp_preamble("continue".into(), true, &plan, caps, true, fp.as_deref());
+        assert!(again.contains("TELEMETRIA DE TRABALHO"));
     }
 
     #[test]
