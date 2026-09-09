@@ -37,19 +37,23 @@ export const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão, pode divergir" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
 ]
-// Codex: sem família "-codex" desde o 5.4 (gpt-5.5-codex/5.6-codex NÃO existem);
-// `gpt-5.6` puro é ID de API (rejeitado com auth ChatGPT) — os slugs do CLI são
-// sol/terra/luna. Catálogo enumerável via `codex debug models` (JSON). Contexto
-// DENTRO do Codex = 272k (na API os mesmos modelos têm 1M). gpt-5.3-codex e o3
-// saíram do catálogo (400 com auth ChatGPT) — removidos do picker.
+/** Codex: como o OpenCode, 100% VIVO — além da sentinela, nenhum modelo mora no
+ *  código. O `model/list` do app-server é a fonte (dialeto em model_list.rs,
+ *  cache no banco em db/modelListings), e é ele quem diz o slug, o rótulo, a
+ *  descrição, quem é o default e quais esforços cada modelo aceita.
+ *
+ *  Aqui havia sete linhas escritas à mão, e elas apodreceram exatamente como
+ *  esse tipo de lista apodrece. Em 09/09/2026 o CLI listava `gpt-6-astra` como
+ *  default dele e o app abria em "Sol", oferecendo `gpt-5.4` e `gpt-5.4-mini`,
+ *  que o `model/list` já não conhecia. A lista não estava desatualizada por
+ *  descuido: ela estava desatualizada por DESENHO, porque dependia de alguém
+ *  reeditar um arquivo a cada geração de modelo.
+ *
+ *  Fica o que é nosso e não do fornecedor: a sentinela "Padrão", que não é
+ *  modelo (é "deixa o CLI escolher") e cuja descrição a lista viva completa com
+ *  o nome do default DELE. */
 export const CODEX_MODELS: AgentModelOption[] = [
-  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher (hoje Sol)" },
-  { value: "gpt-5.6-sol", label: "Sol (5.6)", description: "Frontier da família 5.6 · o mais capaz" },
-  { value: "gpt-5.6-terra", label: "Terra (5.6)", description: "Equilíbrio qualidade/custo da 5.6" },
-  { value: "gpt-5.6-luna", label: "Luna (5.6)", description: "Leve e rápido, alto volume" },
-  { value: "gpt-5.5", label: "gpt-5.5", description: "Geração anterior, ainda forte" },
-  { value: "gpt-5.4", label: "gpt-5.4", description: "Equilibrado, metade do preço do 5.5" },
-  { value: "gpt-5.4-mini", label: "gpt-5.4-mini", description: "Pequeno e rápido, alto volume" },
+  { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Codex escolher" },
 ]
 export const CLAUDE_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
@@ -154,9 +158,17 @@ export function normalizeModelValue(
   if (!remapeado || remapeado === "default") return remapeado
   return limparSlug(remapeado)
 }
-// max/ultra são exclusivos da família 5.6 (ultra só Sol/Terra: dispara
-// subagentes e consome quota agressivamente); 5.5/5.4 param em xhigh — o
-// backend rejeita acima disso, o erro aparece no fio (honesto, sem mascarar).
+/** Esforço do Codex: FALLBACK, não catálogo. Quem manda é o
+ *  `supportedReasoningEfforts` que o `model/list` traz POR MODELO, e ele
+ *  diverge de verdade dentro do mesmo CLI (em 09/09/2026 o gpt-6-astra aceitava
+ *  `ultra` e o gpt-5.5 parava em `xhigh`). Uma régua fixa não podia estar certa
+ *  nos dois, e o erro só aparecia quando o turno morria.
+ *
+ *  Esta lista é a união do que já se viu o CLI aceitar, e serve pro caso em que
+ *  não há lista viva (primeiro boot sem sonda, CLI fora do ar). Por isso as
+ *  descrições falam do GRAU, nunca de qual família tem qual teto: essa parte
+ *  quem responde é o CLI. Escolher um degrau que o modelo não aceita faz o
+ *  backend recusar, e o erro aparece no fio (honesto, sem mascarar). */
 export const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "effort", description: "Padrão do modelo" },
   { value: "minimal", label: "minimal", description: "Mínimo" },
@@ -164,8 +176,8 @@ export const CODEX_EFFORTS: AgentModelOption[] = [
   { value: "medium", label: "medium", description: "Equilíbrio" },
   { value: "high", label: "high", description: "Raciocina mais fundo" },
   { value: "xhigh", label: "xhigh", description: "Bem mais fundo" },
-  { value: "max", label: "max", description: "Fundo máximo (só família 5.6)" },
-  { value: "ultra", label: "ultra", description: "Máximo + subagentes (Sol/Terra; pesa na cota)" },
+  { value: "max", label: "max", description: "Fundo máximo" },
+  { value: "ultra", label: "ultra", description: "Máximo + subagentes (pesa na cota)" },
 ]
 
 /** OpenCode é 100% vivo: além da sentinela, nenhum modelo mora no código.

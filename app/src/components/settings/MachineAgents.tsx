@@ -21,8 +21,7 @@ import {
   detectAgents,
   latestLabel,
   notaDeCopias,
-  refreshAgyModels,
-  refreshOpenCodeModels,
+  refreshModelLists,
   toProbeMap,
   updateAvailable,
   UPDATE_COMMANDS,
@@ -70,9 +69,9 @@ export function MachineAgents() {
     if (tools.length > 0)
       setSettings({ detected: toProbeMap(tools, now), lastUpdateCheck: now })
     else setSettings({ lastUpdateCheck: now })
-    // Listas vivas dos motores que sabem se listar: leitura da máquina, sem
-    // quota. As duas em paralelo — uma não deve esperar a outra.
-    await Promise.all([refreshAgyModels(), refreshOpenCodeModels()])
+    // Listas vivas de TODO motor que sabe se listar: leitura da máquina, sem
+    // quota, todas em paralelo (uma não deve esperar a outra).
+    await refreshModelLists()
     setChecking(false)
   }
 

@@ -48,8 +48,8 @@ export function RecoveryCard({
         : agents[0]?.id) ?? "",
   )
   const models = useMemo(() => agentModels(agent), [agent])
-  const efforts = useMemo(() => agentEfforts(agent), [agent])
   const [model, setModel] = useState<string>(() => defaultModelFor(agent))
+  const efforts = useMemo(() => agentEfforts(agent, model), [agent, model])
   const [effort, setEffort] = useState<string>("default")
   // trocar de agent re-semeia modelo/effort (opções e default mudam por agent).
   useEffect(() => {

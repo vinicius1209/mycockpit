@@ -5,6 +5,45 @@
 > para automatizar quase tudo, **mas só se a automação virar empírica** — e uma
 > parte NÃO deve ser automatizada (ver §5).
 
+## Correção de 09/09/2026 — o M1 estava construído e desligado no codex
+
+Manda sobre o texto abaixo. O plano entregou a sonda, a régua e a capability no
+registry, e mesmo assim o seletor do Codex passou uma geração inteira de modelo
+mentindo: o CLI listava `gpt-6-astra` como default DELE, respondia "sou o Codex,
+baseado em GPT-6", e o app abria em "Sol" oferecendo `gpt-5.4` e `gpt-5.4-mini`,
+que aquela versão já não conhecia.
+
+O buraco não era a sonda, era o CONSUMO dela. A ligação entre lista viva e
+seletor tinha sido escrita como uma função POR FORNECEDOR (`refreshAgyModels`,
+`refreshOpenCodeModels`), e a terceira nunca foi escrita — o codex declarava
+`listsModels` desde 14/08/2026 e ninguém perguntava. Capability declarada e não
+consumida não falha: envelhece calada.
+
+O que mudou (ADR-177):
+
+- **Uma regra pra todos.** `refreshModelLists` varre `modelListingAgents()` e
+  `liveModelsFrom` é a única tradução de payload em opção. Motor que entra no
+  registry com fonte viva passa a ser perguntado sem uma linha nova.
+- **`CODEX_MODELS` encolheu pra sentinela**, como o `OPENCODE_MODELS` já era.
+  Nenhum modelo de motor com lista viva mora no bundle.
+- **Ordem, default e esforço saem do CLI.** A ordem é a dele (frontier
+  primeiro), a sentinela cita quem tem `isDefault`, e a régua de esforço vem de
+  `supportedReasoningEfforts` POR MODELO — no mesmo dia, o astra aceitava
+  `ultra` e o `gpt-5.5` parava em `xhigh`.
+- **Cache no banco** (`model_listings`, uma linha por motor): o boot hidrata a
+  última lista boa antes da sonda responder, então o pior caso de uma falha
+  deixa de ser a lista compilada no binário.
+- **Sumiço mudo vira aviso.** O §"nada some do seletor sem aviso" cobria só o
+  que o fornecedor ANUNCIA com `upgrade`. Faltava o slug que some sem dizer
+  nada, que é o pior dos dois — e o `agentModels` deixou de oferecer aprovado
+  que a lista viva não conhece. Ironia registrada: o próprio plano observou que
+  "`gpt-5.6` puro não está no `model/list`", e ele estava no seletor há meses,
+  aprovado no gate humano em 24/08/2026.
+
+Lição pro resto do plano: **capability nova precisa nascer com o consumidor
+genérico**, não com um call site por fornecedor. Um `if` a menos hoje é uma
+lista mentindo daqui a uma geração de modelo.
+
 ## Verificação empírica (14/08/2026, nesta máquina) — a realidade manda
 
 Antes de M1 os três CLIs foram sondados na mão. Versões: **agy 1.1.13**,

@@ -32,6 +32,8 @@ const LISTA_CODEX: ModelListing = {
       isDefault: false,
       supersededBy: null,
       retirementNote: null,
+      efforts: [],
+      defaultEffort: null,
     },
     {
       id: "gpt-5.4",
@@ -42,6 +44,8 @@ const LISTA_CODEX: ModelListing = {
       supersededBy: "gpt-5.6-terra",
       retirementNote:
         "GPT-5.4 will be deprecated soon\n\nCodex now uses GPT-5.6 Terra in place of GPT-5.4. Switch to GPT-5.6 Terra to continue.",
+      efforts: [],
+      defaultEffort: null,
     },
     {
       id: "gpt-5.6-sol-wm",
@@ -51,6 +55,8 @@ const LISTA_CODEX: ModelListing = {
       isDefault: false,
       supersededBy: null,
       retirementNote: null,
+      efforts: [],
+      defaultEffort: null,
     },
   ],
 }
@@ -291,6 +297,49 @@ describe("aposentadoria explicada pelo fornecedor", () => {
 
   it("sem lista viva não se inventa aposentadoria", () => {
     expect(retirementNotices(null, ["gpt-5.4"], [])).toEqual([])
+  })
+
+  // O caso MUDO, que é o pior: o CLI simplesmente para de listar o slug, sem
+  // anúncio nenhum. Em 09/09/2026 o seletor do codex ainda oferecia gpt-5.4,
+  // gpt-5.4-mini, gpt-5.6 e gpt-realtime-2.1, todos fora do `model/list`.
+  it("slug que sumiu da lista vira aviso, mesmo sem o fornecedor anunciar nada", () => {
+    const avisos = retirementNotices(LISTA_CODEX, ["gpt-realtime-2.1"], [])
+    expect(avisos).toHaveLength(1)
+    expect(avisos[0].value).toBe("gpt-realtime-2.1")
+    // Sem sucessor: inventar um seria pôr palavra na boca do fornecedor.
+    expect(avisos[0].successor).toBe("")
+    expect(avisos[0].vendorNote).toBeNull()
+    // A evidência (versão do CLI) vai junto: é o que separa fato de palpite.
+    expect(avisos[0].reason).toContain("0.147.0")
+    expect(avisos[0].reason).toContain("deixou de ser oferecido")
+  })
+
+  it("o sumido também diz onde você está com ele escolhido", () => {
+    const avisos = retirementNotices(
+      LISTA_CODEX,
+      [],
+      [{ agent: "codex", model: "gpt-5.6", where: "conversa Desempenho" }],
+    )
+    expect(avisos.map((a) => a.value)).toEqual(["gpt-5.6"])
+    expect(avisos[0].reason).toContain("conversa Desempenho")
+    expect(avisos[0].reason).toContain("tende a falhar")
+  })
+
+  it("a sentinela e o que o CLI esconde não viram sumiço", () => {
+    // "Padrão" não é modelo, e slug escondido o CLI CONHECE (só não oferece).
+    expect(
+      retirementNotices(LISTA_CODEX, ["default", "gpt-5.6-sol-wm"], []),
+    ).toEqual([])
+  })
+
+  it("uso de OUTRO motor não vira sumiço deste", () => {
+    expect(
+      retirementNotices(
+        LISTA_CODEX,
+        [],
+        [{ agent: "agy", model: "gemini-3.6-flash-low", where: "conversa X" }],
+      ),
+    ).toEqual([])
   })
 })
 

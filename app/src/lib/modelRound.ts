@@ -182,11 +182,19 @@ export async function runModelRound(opts: {
   //    que já se sabia). Isto NÃO mexe no seletor, só explica.
   const usages = await modelUsages()
   for (const [agent, listing] of listings) {
-    const avisos = retirementNotices(
-      listing,
-      agentModels(agent).map((o) => o.value),
-      usages,
-    )
+    // O que é SEU neste motor: o que o seletor oferece hoje MAIS o que está
+    // ativo no ledger. A segunda metade importa justamente quando as duas
+    // divergem: um slug aprovado que o CLI não conhece mais já não aparece no
+    // seletor (o `agentModels` filtra contra a lista viva), e sem ele aqui o
+    // sumiço não viraria aviso nenhum — seria exatamente o desaparecimento
+    // silencioso que este passo existe pra impedir.
+    const meus = [
+      ...agentModels(agent).map((o) => o.value),
+      ...ledger
+        .filter((r) => r.agent === agent && r.status === "active")
+        .map((r) => r.value),
+    ]
+    const avisos = retirementNotices(listing, meus, usages)
     const novas = await replaceModelRetirements(
       agent,
       avisos.map((a) => ({

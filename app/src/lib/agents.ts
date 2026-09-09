@@ -90,7 +90,12 @@ export const AGENTS: AgentDef[] = [
     caps: { image: true, pdf: false },
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
-    defaultModel: "gpt-5.6-sol",
+    // "default" e não um pin: o Codex sabe qual é o modelo dele da vez, e
+    // pinar aqui é assinar um nome que envelhece — este campo dizia
+    // `gpt-5.6-sol` no dia em que o CLI já abria em `gpt-6-astra`. Quem quer um
+    // modelo fixo escolhe no seletor (e a escolha trava na conversa); quem não
+    // escolhe herda o default do CLI, que é o comportamento honesto.
+    defaultModel: "default",
     // `codex exec` NÃO interpreta /prompt (a expansão é nossa, app-side) —
     // mas a convenção de descoberta ~/.codex/prompts existe e entra no "/".
     nativeSlash: false,
@@ -127,7 +132,10 @@ export const AGENTS: AgentDef[] = [
     hookDialect: "codex-hooks-json",
     // codex 0.147: `model/list` no app-server read-only devolveu os 6 visíveis
     // (+2 hidden) e marcou gpt-5.4/gpt-5.4-mini com `upgrade` — aposentadoria
-    // anunciada pelo próprio CLI (capturado 14/08/2026).
+    // anunciada pelo próprio CLI (capturado 14/08/2026). Em 0.153.4 a mesma
+    // chamada trouxe 8 slugs com `gpt-6-astra` como default e a régua de
+    // esforço POR modelo (fixture em src-tauri/fixtures) — é esta lista, e não
+    // o bundle, que monta o seletor do Codex.
     listsModels: "codex-app-server",
     // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
     // de metadata) de recusa do servidor (capturado 14/08/2026).
@@ -334,19 +342,39 @@ export const LEAGUE_DESTINATIONS: Destination[] = DESTINATIONS.filter(
   (d) => d.available && d.kind === "agent",
 )
 
-// Cache module-level de modelos DINÂMICOS (descobertos em runtime, ex.: linhas
-// do `agy models`). Quando presente pra um agent, ganha do registry estático em
-// agentModels(). Setado só em effects/handlers (boot do App, "Verificar agora").
-const DYNAMIC_MODELS = new Map<string, AgentModelOption[]>()
-
-/** Registra (ou limpa, com []) os modelos dinâmicos de um agent. */
-export function setDynamicModels(id: string, options: AgentModelOption[]) {
-  if (options.length === 0) DYNAMIC_MODELS.delete(id)
-  else DYNAMIC_MODELS.set(id, options)
+/** O que a LISTA VIVA de um motor rendeu: os modelos que ele conhece agora e,
+ *  quando o dialeto fala disso, os esforços que cada modelo aceita.
+ *
+ *  As duas metades andam JUNTAS de propósito. São derivadas da mesma resposta,
+ *  e guardá-las em dois caches independentes é convidar o seletor a oferecer o
+ *  esforço de um modelo que não está mais na lista do outro. */
+export interface LiveModels {
+  models: AgentModelOption[]
+  /** Esforços POR modelo. Slug ausente = o dialeto não fala de esforço para
+   *  ele, e a régua estática do registry continua valendo. */
+  efforts: Map<string, AgentModelOption[]>
+  /** TUDO que o CLI declarou conhecer, inclusive o que ele esconde do picker
+   *  dele. "Conhecer" é mais largo que "oferecer" de propósito: um slug
+   *  escondido funciona quando você o escolhe, e não pode ser tratado como
+   *  inexistente. */
+  known: Set<string>
 }
 
-// (`agyModelOptions` mora em `lib/modelList.ts`: converter a lista VIVA de um
-// CLI em opções do picker é trabalho do módulo da lista viva, não do registry.)
+// Cache module-level da lista VIVA (o que o CLI respondeu em runtime). Quando
+// presente pra um agent, ganha do registry estático em agentModels(). Setado só
+// em effects/handlers (boot do App, "Verificar agora"), nunca em render.
+const LIVE = new Map<string, LiveModels>()
+
+/** Registra (ou limpa, com `null`) a lista viva de um agent. */
+export function setLiveModels(id: string, live: LiveModels | null) {
+  if (!live || live.models.length === 0) LIVE.delete(id)
+  else LIVE.set(id, live)
+}
+
+// (A DERIVAÇÃO mora em `lib/modelList.ts`: converter a lista viva de um CLI em
+// opções do picker é trabalho do módulo da lista viva, não do registry. A
+// dependência é só num sentido — registry → catálogo — e é por isso que aqui só
+// mora o cache, nunca o parse.)
 
 // Cache module-level de modelos PROPOSTOS pelo curador e APROVADOS pelo humano
 // (model_proposals status='active'). Entram DEPOIS das opções estáticas/
@@ -392,13 +420,36 @@ export function dedupeModelOptions(options: AgentModelOption[]): AgentModelOptio
 }
 
 export function agentModels(id: string): AgentModelOption[] {
+  const live = LIVE.get(id)
+  const aprovados = APPROVED_MODELS.get(id) ?? []
+  // Slug que a lista viva NÃO conhece deixa de ser oferecido, venha ele de onde
+  // vier. Foi assim que `gpt-5.6` e `gpt-realtime-2.1` (propostos pelo curador
+  // a partir do catálogo de API, aprovados no gate) ficaram meses no seletor
+  // sem o CLI aceitar nenhum dos dois: oferecer o que só produz "model … is not
+  // recognized" é teatro, não oferta.
+  //
+  // A decisão da pessoa NÃO é apagada: a linha segue no ledger com o motivo, e
+  // o aviso do sumiço sai por `retirementNotices`. Sem lista viva (motor sem
+  // fonte, ou sonda que falhou) nada é filtrado — "não sei" nunca rebaixa.
+  const ofertaveis = live
+    ? aprovados.filter((o) => live.known.has(o.value))
+    : aprovados
   return mergeModelOptions(
-    dedupeModelOptions(DYNAMIC_MODELS.get(id) ?? agentDef(id)?.models ?? []),
-    APPROVED_MODELS.get(id) ?? [],
+    dedupeModelOptions(live?.models ?? agentDef(id)?.models ?? []),
+    ofertaveis,
   )
 }
-export function agentEfforts(id: string): AgentModelOption[] {
-  return agentDef(id)?.efforts ?? []
+
+/** A régua de esforço, do modelo quando o CLI a declara e do registry quando
+ *  não. O `model` é opcional porque nem toda superfície tem um escolhido (e
+ *  "Padrão" não é modelo): sem ele, a régua é a do motor, como sempre foi.
+ *
+ *  Por que POR MODELO: em 09/09/2026 o mesmo codex aceitava `ultra` no
+ *  gpt-6-astra e recusava acima de `xhigh` no gpt-5.5. Uma régua só por motor
+ *  não podia estar certa nos dois, e o erro só aparecia quando o turno morria. */
+export function agentEfforts(id: string, model?: string | null): AgentModelOption[] {
+  const vivos = model ? LIVE.get(id)?.efforts.get(model) : undefined
+  return vivos ?? agentDef(id)?.efforts ?? []
 }
 /** Modelo pré-selecionado de um agent ("default" se nenhum). */
 export function defaultModelFor(id: string): string {

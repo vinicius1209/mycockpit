@@ -358,8 +358,8 @@ export function PresetSettings() {
                 value={draft.effort}
                 onValueChange={(v) => setDraft({ ...draft, effort: v })}
                 options={
-                  agentEfforts(draft.backend).length > 0
-                    ? agentEfforts(draft.backend)
+                  agentEfforts(draft.backend, draft.model).length > 0
+                    ? agentEfforts(draft.backend, draft.model)
                     : [{ value: "default", label: "Padrão" }]
                 }
                 triggerClassName={SELECT_TRIGGER}

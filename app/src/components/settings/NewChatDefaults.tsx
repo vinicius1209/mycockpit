@@ -82,14 +82,14 @@ export function NewChatDefaults() {
             aria-label="Modelo default"
           />
         </Field>
-        {agentEfforts(settings.defaultAgent).length > 0 && (
+        {agentEfforts(settings.defaultAgent, settings.defaultModel).length > 0 && (
           <Field label="Esforço">
             <RichSelect
               value={settings.defaultEffort ?? "default"}
               onValueChange={(v) =>
                 setSettings({ defaultEffort: v === "default" ? null : v })
               }
-              options={agentEfforts(settings.defaultAgent)}
+              options={agentEfforts(settings.defaultAgent, settings.defaultModel)}
               triggerClassName={SELECT_TRIGGER}
               aria-label="Effort default"
             />

@@ -43,7 +43,7 @@ import {
 } from "@/components/settings/parts"
 import { sectionDef } from "@/components/settings/sections"
 import { OpenCodeProvidersCard } from "@/components/settings/OpenCodeProvidersCard"
-import { detectAgents, refreshOpenCodeModels, toProbeMap } from "@/lib/detect"
+import { detectAgents, refreshModelLists, toProbeMap } from "@/lib/detect"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -214,7 +214,7 @@ export function ServicosSettings() {
     const [gh, tools] = await Promise.all([lerGhStatus(), detectAgents()])
     setStatus(gh)
     if (tools.length) setSettings({ detected: toProbeMap(tools, Date.now()) })
-    await refreshOpenCodeModels()
+    await refreshModelLists()
     setRefreshToken((value) => value + 1)
     setLendo(false)
   }, [setSettings])

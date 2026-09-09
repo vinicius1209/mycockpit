@@ -68,8 +68,8 @@ import {
   detectAgents,
   toProbeMap,
   updateAvailable,
-  refreshAgyModels,
-  refreshOpenCodeModels,
+  hydrateModelListings,
+  refreshModelLists,
   UPDATE_COMMANDS,
 } from "@/lib/detect"
 import { agentDef } from "@/lib/agents"
@@ -185,9 +185,11 @@ export default function App() {
   // curador semanal, rodada de modelos); a NOTIFICAÇÃO segue com dedupe.
   useEffect(() => {
     if (!isTauri()) return
-    // modelos reais dos CLIs → cache dinâmico (barato, todo boot). OpenCode é
-    // especialmente importante: a lista muda quando uma credencial muda.
-    void Promise.all([refreshAgyModels(), refreshOpenCodeModels()])
+    // Modelos reais dos CLIs. Duas etapas, nesta ordem: a última lista de
+    // cada motor sai do BANCO na hora (o seletor abre certo já no primeiro
+    // frame) e a sonda confirma logo atrás. Barato, todo boot — e o OpenCode
+    // depende disso, que a lista dele muda quando uma credencial muda.
+    void hydrateModelListings().then(() => refreshModelLists())
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0

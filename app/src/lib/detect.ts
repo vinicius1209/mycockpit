@@ -1,10 +1,11 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
-import { setDynamicModels } from "@/lib/agents"
+import { setLiveModels } from "@/lib/agents"
+import { modelListingAgents } from "@/lib/agentRoster"
+import { loadModelListings, saveModelListing } from "@/lib/db/modelListings"
 import {
-  agyModelOptions,
-  openCodeModelOptions,
   fetchModelList,
+  liveModelsFrom,
   toListFailure,
   type ModelListFailure,
 } from "@/lib/modelList"
@@ -240,48 +241,74 @@ export function toProbeMap(
   return out
 }
 
-/** Busca os modelos reais do agy e alimenta o cache dinâmico consultado por
- *  agentModels("agy"). Falha → não mexe (o estático continua valendo).
+/** Falha de UM motor ao se listar, com o motor na cara pra UI poder nomeá-lo. */
+export interface ModelListSetback {
+  agent: string
+  failure: ModelListFailure
+}
+
+/** Pergunta a TODO motor que sabe se listar o que ele conhece agora, alimenta o
+ *  seletor e guarda a resposta no banco.
+ *
+ *  Genérica de propósito. Havia aqui uma função POR FORNECEDOR
+ *  (`refreshAgyModels`, `refreshOpenCodeModels`) e o buraco apareceu sozinho:
+ *  o codex declarava `listsModels` no registry desde o M1, ninguém tinha
+ *  escrito a terceira função, e o seletor dele ficou congelado no bundle até o
+ *  GPT-6 chegar e a lista escrita à mão virar mentira. Agora quem entra no
+ *  registry com uma fonte viva é perguntado no boot, sem uma linha nova.
  *
  *  Usa a MESMA sonda do resto do app (`fetchModelList`, dialeto confinado em
- *  model_list.rs). Havia aqui um segundo caminho (`list_agy_models`) com parse
+ *  model_list.rs). Havia um segundo caminho (`list_agy_models`) com parse
  *  próprio, que devolvia a LINHA INTEIRA do TSV como slug: o seletor passou a
  *  guardar `"gemini-3.7-flash-high\tGemini 3.7 Flash (High)"` e todo envio
  *  morria em "model … is not recognized". Duas leituras da mesma pergunta, e a
  *  que ninguém olhava apodreceu — por isso agora há uma só.
  *
- *  Devolve a falha em vez de engoli-la (ADR-017): quem chama decide se mostra.
- *  `null` = deu certo (ou não há Tauri, onde não há o que perguntar). */
-export async function refreshAgyModels(): Promise<ModelListFailure | null> {
-  if (!isTauri()) return null
-  try {
-    const listing = await fetchModelList("agy")
-    if (listing.models.length > 0)
-      setDynamicModels("agy", agyModelOptions(listing.models))
-    return null
-  } catch (e) {
-    const falha = toListFailure(e)
-    console.warn(`agy models: lista viva indisponível (${falha.kind}) — ${falha.message}`)
-    return falha
-  }
+ *  Lista vazia NÃO apaga o que já valia: sem provedor conectado o `opencode
+ *  models` devolve pouco ou nada, e zerar o seletor seria pior que a lista
+ *  anterior. Falha também não apaga (ADR-017: devolve, não engole) — quem
+ *  chamou decide se mostra, e o cache do banco segue de pé. */
+export async function refreshModelLists(): Promise<ModelListSetback[]> {
+  if (!isTauri()) return []
+  const problemas: ModelListSetback[] = []
+  await Promise.all(
+    modelListingAgents().map(async (def) => {
+      try {
+        const listing = await fetchModelList(def.id)
+        if (listing.models.length === 0) return
+        setLiveModels(def.id, liveModelsFrom(listing))
+        // Só depois de aplicar: gravar uma lista que o app não conseguiu usar
+        // seria guardar um estado que nunca existiu na tela.
+        await saveModelListing(listing)
+      } catch (e) {
+        const failure = toListFailure(e)
+        console.warn(
+          `${def.id}: lista viva indisponível (${failure.kind}) · ${failure.message}`,
+        )
+        problemas.push({ agent: def.id, failure })
+      }
+    }),
+  )
+  return problemas
 }
 
-/** O mesmo para o OpenCode. Vale MAIS aqui que no agy: a lista dele depende de
- *  QUAIS credenciais existem (`opencode providers list`), e isso muda sem o app
- *  saber — conectar o OpenRouter faz modelos aparecerem sem tocar em código.
- *  Lista vazia NÃO apaga a curada: sem provedor conectado o `opencode models`
- *  devolve pouco ou nada, e zerar o seletor seria pior que a lista de casa. */
-export async function refreshOpenCodeModels(): Promise<ModelListFailure | null> {
-  if (!isTauri()) return null
+/** Hidrata o seletor com a ÚLTIMA lista que cada CLI deu, direto do banco.
+ *
+ *  Roda ANTES da sonda no boot, e é o que faz o seletor abrir certo no primeiro
+ *  frame: subir o app-server do codex leva segundos, e até aqui esse intervalo
+ *  era servido pela lista do bundle. A sonda sobrescreve quando responder.
+ *
+ *  Nunca falha pra fora: cache é conveniência, não fonte. Banco fora do ar
+ *  significa "abre com a lista de casa e espera a sonda", não uma tela de erro. */
+export async function hydrateModelListings(): Promise<void> {
+  if (!isTauri()) return
   try {
-    const listing = await fetchModelList("opencode")
-    if (listing.models.length > 0)
-      setDynamicModels("opencode", openCodeModelOptions(listing.models))
-    return null
+    for (const listing of await loadModelListings()) {
+      if (listing.models.length === 0) continue
+      setLiveModels(listing.agent, liveModelsFrom(listing))
+    }
   } catch (e) {
-    const falha = toListFailure(e)
-    console.warn(`opencode models: lista viva indisponível (${falha.kind}) — ${falha.message}`)
-    return falha
+    console.warn("model_listings: não deu pra hidratar do banco", e)
   }
 }
 

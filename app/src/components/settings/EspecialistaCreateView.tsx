@@ -352,8 +352,8 @@ export function CreateView({
                 value={form.effort}
                 onValueChange={(v) => set("effort", v)}
                 options={
-                  agentEfforts(form.backend).length > 0
-                    ? agentEfforts(form.backend)
+                  agentEfforts(form.backend, form.model).length > 0
+                    ? agentEfforts(form.backend, form.model)
                     : [{ value: "default", label: "Padrão" }]
                 }
                 triggerClassName={SELECT_TRIGGER}

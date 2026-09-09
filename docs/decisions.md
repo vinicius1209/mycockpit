@@ -6158,3 +6158,56 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   pedido correto e seus anexos. A sequência de incidente prova que nenhuma
   decisão permanece duplicada no transcript.
 
+### ADR-177 · Seletor de modelo é derivado do CLI, não escrito no bundle
+- **Contexto (09/09/2026):** o Codex passou a listar `gpt-6-astra` como modelo
+  default dele e a responder "sou o Codex, baseado em GPT-6". O seletor da
+  Frota seguiu abrindo em "Sol", com `gpt-5.4` e `gpt-5.4-mini` na oferta,
+  ambos fora do `model/list` daquela versão, e com `gpt-5.6` e
+  `gpt-realtime-2.1` que o CLI nunca conheceu (vieram do catálogo de API pelo
+  curador e foram aprovados no gate). O M1 já tinha a lista viva e o registry
+  já declarava `listsModels: "codex-app-server"` desde 14/08/2026, mas a
+  ligação existia só como função POR FORNECEDOR: havia `refreshAgyModels` e
+  `refreshOpenCodeModels`, e a terceira nunca foi escrita. Uma capability
+  declarada e não consumida não falha, envelhece em silêncio.
+- **Decisão:** o seletor de modelo e a régua de esforço de todo motor que
+  declara `listsModels` são DERIVADOS da lista viva do próprio CLI.
+  `refreshModelLists` varre `modelListingAgents()` do registry, `liveModelsFrom`
+  é a única tradução de payload para opção, e nenhum modelo de motor com fonte
+  viva mora no bundle. `CODEX_MODELS` encolheu para a sentinela "Padrão",
+  seguindo o precedente de `OPENCODE_MODELS`.
+- **Ordem, default e esforço vêm do CLI:** a ordem das opções é a que o CLI
+  entrega (ele ordena por prioridade dele, frontier primeiro), a descrição da
+  sentinela cita o slug com `isDefault` em vez de um nome escrito à mão, e a
+  régua de esforço sai de `supportedReasoningEfforts` POR MODELO. As três
+  divergiam do código no mesmo dia: o astra aceita `ultra`, o `gpt-5.5` para em
+  `xhigh`, e nenhuma lista única podia estar certa nos dois.
+- **Cache no banco:** `model_listings` guarda uma linha por motor com a última
+  resposta boa (source, versão de CLI, carimbo, payload). O boot hidrata dali
+  ANTES da sonda, então o seletor abre certo no primeiro frame, e o pior caso
+  de uma sonda falha deixa de ser "a lista de quando a versão foi compilada" e
+  passa a ser "a última lista que o SEU CLI deu". Sonda que falha não grava e
+  não apaga.
+- **Sumiço mudo vira aviso:** `retirementNotices` passou a cobrir o slug que
+  simplesmente saiu da lista, além do que o fornecedor anuncia com `upgrade`.
+  `agentModels` deixa de oferecer opção aprovada que a lista viva não conhece,
+  e a decisão humana NÃO é apagada: a linha segue no ledger com o motivo, e o
+  aviso sai com a versão do CLI como evidência. Sem lista viva nada é
+  filtrado, mantendo a assimetria do M3: "não sei" não rebaixa.
+- **Trocar de modelo solta o esforço órfão:** com a régua por modelo, mudar de
+  modelo podia deixar escolhido um esforço que o novo não aceita. A régua abria
+  sem nenhum degrau aceso e o envio ia falhar por um valor que a pessoa não
+  escolheu para aquele modelo. `effortFitsModel` é a régua pura, e o gesto no
+  seletor volta para a sentinela quando ela não passa. Régua vazia não derruba
+  escolha nenhuma: sem lista declarada não há o que contestar.
+- **Caminhos que alteram estado:** `refreshModelLists` (boot, "Verificar
+  agora" em Configurações ▸ Agents e em Serviços) escreve o cache de módulo e
+  a tabela `model_listings`; `hydrateModelListings` (boot) escreve só o cache
+  de módulo; a rodada de `modelRound` grava `model_retirements` e
+  `model_proposals` como antes. Nenhum deles escolhe default de conversa,
+  projeto ou agent: entrar como opção é reversível, trocar o motor do seu
+  trabalho não é.
+- **Verificação:** fixture REAL do `model/list` do codex-cli 0.153.4 em
+  `app/src-tauri/fixtures/` (ADR-016), com o dia em que o `isDefault` mudou de
+  mão. Testes fixam ordem do CLI, sentinela derivada, esforço divergente entre
+  dois modelos do mesmo motor, slug sujo descartado, escondido fora da oferta,
+  aposentado explicado, sumiço com evidência e o filtro que não roda sem lista.

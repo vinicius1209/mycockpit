@@ -248,7 +248,8 @@ export interface ModelUsage {
 export interface RetirementNotice {
   agent: string
   value: string
-  /** O sucessor que o FORNECEDOR indica. */
+  /** O sucessor que o FORNECEDOR indica. Vazio = ele não indicou nenhum, que é
+   *  o caso do slug que simplesmente SUMIU da lista (não há anúncio a citar). */
   successor: string
   /** O texto do fornecedor sobre a migração (evidência crua, quando veio). */
   vendorNote: string | null
@@ -267,7 +268,22 @@ export interface RetirementNotice {
  *  sabe: que VOCÊ está usando aquele modelo, e onde.
  *
  *  Slug aposentado que não está no seu seletor nem escolhido em lugar nenhum
- *  não vira aviso: nunca foi seu, não há o que explicar. */
+ *  não vira aviso: nunca foi seu, não há o que explicar.
+ *
+ *  DOIS jeitos de um modelo sair de cena, e os dois passam por aqui:
+ *
+ *   1. **anunciado** — o CLI diz `upgrade: <sucessor>` e ainda oferece o slug.
+ *      Ele CONTINUA no seletor, só ganha a frase: tirar um modelo que funciona
+ *      por causa de um aviso quebraria a conversa de quem está com ele.
+ *   2. **sumido** — o slug não está mais na lista, sem anúncio nenhum. É o
+ *      caso que faltava, e ele é pior justamente por ser mudo: em 09/09/2026 o
+ *      seletor ainda oferecia `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.6` e
+ *      `gpt-realtime-2.1`, que o `model/list` do codex já não conhecia. Aqui
+ *      ele vira aviso; quem decide não oferecer mais é `agentModels`, contra a
+ *      lista viva, e nunca este módulo.
+ *
+ *  `listing` nulo é "não deu pra perguntar" e não gera aviso nenhum: a mesma
+ *  assimetria do resto do M3, onde só veredito rebaixa. */
 export function retirementNotices(
   listing: ModelListing | null,
   /** Os values que o seletor daquele agent oferece hoje. */
@@ -279,9 +295,7 @@ export function retirementNotices(
   const out: RetirementNotice[] = []
   for (const entry of listing.models) {
     if (!entry.supersededBy) continue
-    const usedIn = usages
-      .filter((u) => u.agent === listing.agent && u.model === entry.id)
-      .map((u) => u.where)
+    const usedIn = ondeUsa(listing, entry.id, usages)
     if (!oferecidos.has(entry.id) && usedIn.length === 0) continue
     out.push({
       agent: listing.agent,
@@ -292,7 +306,37 @@ export function retirementNotices(
       usedIn,
     })
   }
+  // Os SUMIDOS: o que você tem à mão e o CLI não conhece mais. A varredura é
+  // sobre o seu lado (seletor + escolhas), porque o outro lado é justamente
+  // uma ausência — não há entrada na lista pra iterar.
+  const conhecidos = new Set(listing.models.map((m) => m.id))
+  const meus = new Set([
+    ...options,
+    ...usages.filter((u) => u.agent === listing.agent).map((u) => u.model),
+  ])
+  for (const value of meus) {
+    if (!value || value === "default" || conhecidos.has(value)) continue
+    const usedIn = ondeUsa(listing, value, usages)
+    out.push({
+      agent: listing.agent,
+      value,
+      successor: "",
+      vendorNote: null,
+      reason: vanishedReason(listing, usedIn),
+      usedIn,
+    })
+  }
   return out
+}
+
+function ondeUsa(
+  listing: ModelListing,
+  value: string,
+  usages: readonly ModelUsage[],
+): string[] {
+  return usages
+    .filter((u) => u.agent === listing.agent && u.model === value)
+    .map((u) => u.where)
 }
 
 function retirementReason(entry: ModelListEntry, usedIn: string[]): string {
@@ -303,6 +347,18 @@ function retirementReason(entry: ModelListEntry, usedIn: string[]): string {
       ? ` Você está com ele escolhido em ${listar(usedIn)}, e a troca é sua: nada muda sozinho.`
       : ""
   return `${base}${doFornecedor}${seu}`
+}
+
+/** A frase do slug que sumiu. Carrega a EVIDÊNCIA (versão do CLI e data), que é
+ *  o que separa "o CLI não conhece mais" de um palpite nosso. */
+function vanishedReason(listing: ModelListing, usedIn: string[]): string {
+  const versao = listing.cliVersion ? ` ${listing.cliVersion}` : ""
+  const base = `Este modelo saiu do catálogo do CLI${versao}, sem anunciar sucessor, então ele deixou de ser oferecido no seletor.`
+  const seu =
+    usedIn.length > 0
+      ? ` Você está com ele escolhido em ${listar(usedIn)}: enviar assim tende a falhar, e a troca é sua.`
+      : ""
+  return `${base}${seu}`
 }
 
 /** "a, b e c" (o "e" antes do último; sem travessão, §7 do STYLEGUIDE). */
@@ -355,7 +411,11 @@ export function modelNews(
       id: `models:retired:${r.agent}:${r.value}:${r.seenAt}`,
       agent: r.agent,
       tone: "retired",
-      title: `${r.value} vai ser aposentado`,
+      // Sem sucessor não houve anúncio: o slug simplesmente saiu do catálogo, e
+      // dizer "vai ser aposentado" ali seria inventar um aviso do fornecedor.
+      title: r.successor
+        ? `${r.value} vai ser aposentado`
+        : `${r.value} saiu do catálogo do ${rotulo(r.agent)}`,
       detail: `${rotulo(r.agent)} · ${r.reason}`,
     })
 

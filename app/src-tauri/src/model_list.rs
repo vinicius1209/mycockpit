@@ -51,9 +51,22 @@ const PROBE_TIMEOUT_SECS: u64 = 20;
 /// que uma paginação futura falhe HONESTA em vez de devolver meia lista.
 const MAX_PAGES: usize = 5;
 
+/// Um esforço de raciocínio que o CLI declara aceitar PARA UM MODELO. O `id` é
+/// o valor exato da flag de esforço; a descrição é do próprio CLI.
+#[derive(Clone, Debug, PartialEq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelEffortOption {
+    pub id: String,
+    pub description: Option<String>,
+}
+
 /// Um modelo que o CLI declara conhecer. Só campos que ALGUM dialeto entrega de
 /// verdade — nada derivado nem inventado (o que não veio fica `None`/`false`).
-#[derive(Clone, Debug, PartialEq, Serialize)]
+///
+/// `Default` existe para que dialeto nenhum precise repetir o campo que ele não
+/// entrega: cada sonda preenche o que sabe e fecha com `..Default::default()`.
+/// Campo novo aqui não vira quatro edições e um esquecimento silencioso.
+#[derive(Clone, Debug, PartialEq, Serialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelListEntry {
     /// O slug EXATO que se passa na flag de modelo do CLI.
@@ -73,6 +86,12 @@ pub struct ModelListEntry {
     pub superseded_by: Option<String>,
     /// O texto do PRÓPRIO CLI sobre a aposentadoria (evidência, não paráfrase).
     pub retirement_note: Option<String>,
+    /// Os esforços de raciocínio que ESTE modelo aceita, na ordem do CLI. Vazio
+    /// = o dialeto não fala de esforço (não é "nenhum esforço serve"): quem lê
+    /// cai na régua estática do registry em vez de esvaziar o seletor.
+    pub efforts: Vec<ModelEffortOption>,
+    /// O esforço que o CLI usa neste modelo quando ninguém escolhe.
+    pub default_effort: Option<String>,
 }
 
 /// A lista viva de um motor, com procedência e carimbo (ADR-016: dado sem
@@ -146,12 +165,10 @@ pub(crate) fn parse_agy_models(stdout: &str) -> Vec<ModelListEntry> {
         out.push(ModelListEntry {
             id: id.to_string(),
             label: label.trim().to_string(),
-            description: None,
-            hidden: false,
-            // `agy models` não marca default nenhum (o default é o do config).
-            is_default: false,
-            superseded_by: None,
-            retirement_note: None,
+            // `agy models` não marca default nenhum (o default é o do
+            // config) e embute o esforço no próprio slug (-high/-medium/-low),
+            // então não há lista de esforço por modelo pra ler.
+            ..Default::default()
         });
     }
     out
@@ -198,6 +215,47 @@ pub(crate) fn parse_codex_model_list(result: &Value) -> Vec<ModelListEntry> {
                 .and_then(|v| v.as_str())
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
+            efforts: parse_codex_efforts(m.get("supportedReasoningEfforts")),
+            default_effort: m
+                .get("defaultReasoningEffort")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+        });
+    }
+    out
+}
+
+/// `supportedReasoningEfforts` do model/list → esforços deste modelo, NA ORDEM
+/// do CLI. Campo ausente = vetor vazio, que quem lê trata como "este dialeto
+/// não fala de esforço" e cai na régua estática — nunca como "nenhum esforço".
+///
+/// A chave é `reasoningEffort`. O `codex debug models` chama o MESMO campo de
+/// `effort`, e são superfícies diferentes do mesmo CLI: aceitar as duas custa
+/// uma linha e evita que uma renomeação apague a régua de esforço inteira.
+pub(crate) fn parse_codex_efforts(value: Option<&Value>) -> Vec<ModelEffortOption> {
+    let Some(items) = value.and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in items {
+        let Some(id) = item
+            .get("reasoningEffort")
+            .or_else(|| item.get("effort"))
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            log::warn!("model_list: esforço de model/list sem id: {item}");
+            continue;
+        };
+        out.push(ModelEffortOption {
+            id: id.to_string(),
+            description: item
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
         });
     }
     out
@@ -245,12 +303,10 @@ pub(crate) fn parse_opencode_models(stdout: &str) -> Vec<ModelListEntry> {
             id: line.to_string(),
             label: model.trim().to_string(),
             description: Some(format!("via {}", provider.trim())),
-            hidden: false,
             // `opencode models` não marca default nem aposentadoria: o default
-            // é do config do usuário, e inventar aqui seria afirmar por ele.
-            is_default: false,
-            superseded_by: None,
-            retirement_note: None,
+            // é do config do usuário, e inventar aqui seria afirmar por ele. O
+            // `--variant` dele também é por provedor, não por modelo.
+            ..Default::default()
         });
     }
     out
@@ -355,10 +411,7 @@ pub(crate) fn parse_opencode_models_verbose(stdout: &str) -> Vec<ModelListEntry>
             id: id.to_string(),
             label: name.to_string(),
             description: Some(facts.join(" · ")),
-            hidden: false,
-            is_default: false,
-            superseded_by: None,
-            retirement_note: None,
+            ..Default::default()
         });
     }
     out
@@ -577,6 +630,62 @@ gpt-oss-120b-medium\tGPT-OSS 120B (Medium)
       ],
       "nextCursor": null
     }"#;
+
+    /// `result` LITERAL de `model/list` do codex-cli **0.153.4**, capturado em
+    /// 09/09/2026 (só os campos que o app lê; os VALORES são os reais). Mora em
+    /// arquivo porque a régua de esforço por modelo é longa e fixture inline
+    /// desse tamanho esconde o teste dentro do dado.
+    ///
+    /// Este é o dia em que o GPT-6 chegou: o `isDefault` mudou de mão sem que
+    /// ninguém tocasse no app, que é exatamente o que a lista viva existe pra
+    /// capturar.
+    const FIXTURE_CODEX_0_153: &str =
+        include_str!("../fixtures/codex-model-list-0.153.4.json");
+
+    #[test]
+    fn codex_entrega_esforco_por_modelo_e_o_default_dele() {
+        let result: Value = serde_json::from_str(FIXTURE_CODEX_0_153).unwrap();
+        let models = parse_codex_model_list(&result);
+        assert_eq!(models.len(), 8, "os 8 slugs reais de 09/09/2026");
+
+        // A ORDEM é do CLI (prioridade dele) e não se reordena: o frontier vem
+        // primeiro, e é isso que faz modelo novo estrear no topo do seletor.
+        assert_eq!(models[0].id, "gpt-6-astra");
+        assert!(models[0].is_default);
+        assert_eq!(models.iter().filter(|m| m.is_default).count(), 1);
+
+        // Esforço é POR MODELO, e os números divergem de verdade: o astra
+        // aceita ultra, o gpt-5.5 para em xhigh. Régua fixa em código mentiria
+        // pra um dos dois.
+        let astra = &models[0];
+        assert_eq!(
+            astra.efforts.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["low", "medium", "high", "xhigh", "max", "ultra"],
+        );
+        assert_eq!(astra.default_effort.as_deref(), Some("medium"));
+        assert!(astra.efforts[5].description.is_some(), "a copy é do CLI");
+        let velho = models.iter().find(|m| m.id == "gpt-5.5").unwrap();
+        assert_eq!(
+            velho.efforts.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+            ["low", "medium", "high", "xhigh"],
+        );
+
+        // `hidden` continua chegando marcado, não filtrado: quem oferece decide.
+        assert!(models.iter().any(|m| m.hidden && m.id == "gpt-reserve"));
+    }
+
+    /// Dialeto que não fala de esforço devolve VAZIO, e vazio é "não sei", não
+    /// "nenhum esforço serve" — é o que autoriza quem lê a cair na régua
+    /// estática em vez de esvaziar o seletor.
+    #[test]
+    fn dialeto_sem_esforco_devolve_vazio_e_nao_zero_opcoes() {
+        assert!(parse_codex_efforts(None).is_empty());
+        assert!(parse_codex_efforts(Some(&json!("nada"))).is_empty());
+        for m in parse_agy_models(FIXTURE_AGY) {
+            assert!(m.efforts.is_empty());
+            assert_eq!(m.default_effort, None);
+        }
+    }
 
     #[test]
     fn agy_tsv_vira_lista_com_slug_e_rotulo_do_proprio_cli() {

@@ -4,13 +4,19 @@ import {
   availability,
   dispatchBlockReason,
   normalizeAgyModel,
+  agentEfforts,
   normalizeModelValue,
-  setDynamicModels,
+  setApprovedModels,
+  setLiveModels,
 } from "@/lib/agents"
-import { agyModelOptions } from "@/lib/modelList"
+import { liveModelOptions, liveModelsFrom } from "@/lib/modelList"
 import type { AgentProbe } from "@/lib/detect"
 
-afterEach(() => setDynamicModels("agy", []))
+afterEach(() => {
+  setLiveModels("agy", null)
+  setLiveModels("codex", null)
+  setApprovedModels("codex", [])
+})
 
 describe("modelos do agy", () => {
   it("normaliza ids legados persistidos para kebab-case", () => {
@@ -41,13 +47,28 @@ describe("modelos do agy", () => {
     expect(normalizeModelValue("codex", null)).toBeNull()
   })
 
-  it("preserva Padrão e não duplica ids da lista dinâmica", () => {
-    const dynamic = agyModelOptions([
-      { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)" },
-      { id: "gemini-3.6-flash-low", label: "Gemini 3.6 Flash (Low)" },
-      { id: "default", label: "Padrão" },
+  it("preserva Padrão e não duplica ids da lista viva", () => {
+    const entrada = (id: string) => ({
+      id,
+      label: "Gemini 3.6 Flash (Low)",
+      description: null,
+      hidden: false,
+      isDefault: false,
+      supersededBy: null,
+      retirementNote: null,
+      efforts: [],
+      defaultEffort: null,
+    })
+    const dynamic = liveModelOptions("agy", [
+      entrada("gemini-3.6-flash-low"),
+      entrada("gemini-3.6-flash-low"),
+      entrada("default"),
     ])
-    setDynamicModels("agy", [...dynamic, dynamic[1]])
+    setLiveModels("agy", {
+      models: [...dynamic, dynamic[1]],
+      efforts: new Map(),
+      known: new Set(["gemini-3.6-flash-low"]),
+    })
     expect(agentModels("agy").map((option) => option.value)).toEqual([
       "default",
       "gemini-3.6-flash-low",
@@ -166,5 +187,91 @@ describe("dispatchBlockReason", () => {
     expect(dispatchBlockReason("claude-code", { "claude-code": probe() })).toBeNull()
     expect(dispatchBlockReason("agy", { agy: probe({ auth: "unknown" }) })).toBeNull()
     expect(dispatchBlockReason("codex", {})).toBeNull()
+  })
+})
+
+describe("régua de esforço por modelo", () => {
+  // O CLI é quem sabe: em 09/09/2026 o codex aceitava `ultra` no gpt-6-astra e
+  // parava em `xhigh` no gpt-5.5. Uma régua só por MOTOR não podia estar certa
+  // nos dois, e o erro só aparecia quando o turno morria.
+  const listing = {
+    agent: "codex",
+    source: "codex-app-server",
+    cliVersion: "0.153.4",
+    fetchedAt: 1_788_000_000_000,
+    models: [
+      {
+        id: "gpt-6-astra",
+        label: "GPT-6-Astra",
+        description: null,
+        hidden: false,
+        isDefault: true,
+        supersededBy: null,
+        retirementNote: null,
+        efforts: [
+          { id: "medium", description: null },
+          { id: "ultra", description: null },
+        ],
+        defaultEffort: "medium",
+      },
+    ],
+  }
+
+  it("com modelo escolhido, a régua é a que o CLI declarou pra ele", () => {
+    setLiveModels("codex", liveModelsFrom(listing))
+    expect(agentEfforts("codex", "gpt-6-astra").map((o) => o.value)).toEqual([
+      "default",
+      "medium",
+      "ultra",
+    ])
+  })
+
+  it("sem lista viva, ou sem modelo, a régua do registry continua valendo", () => {
+    // "Não sei" nunca esvazia o seletor: é a mesma assimetria do M3.
+    setLiveModels("codex", liveModelsFrom(listing))
+    expect(agentEfforts("codex").length).toBeGreaterThan(0)
+    expect(agentEfforts("codex", "modelo-que-o-cli-nao-lista").length).toBeGreaterThan(0)
+    setLiveModels("codex", null)
+    expect(agentEfforts("codex", "gpt-6-astra").length).toBeGreaterThan(0)
+  })
+})
+
+describe("o que a lista viva não conhece não é oferecido", () => {
+  // Regressão de 09/09/2026: `gpt-5.6` e `gpt-realtime-2.1` entraram pelo
+  // curador (catálogo de API) e foram aprovados no gate, mas o `model/list` do
+  // codex nunca conheceu nenhum dos dois. Ficaram meses no seletor produzindo
+  // erro no envio. Oferecer o que não existe é teatro.
+  const vivo = (ids: string[], known = ids) => ({
+    models: ids.map((value) => ({ value, label: value })),
+    efforts: new Map(),
+    known: new Set(known),
+  })
+
+  it("aprovado que o CLI não conhece sai do seletor", () => {
+    setLiveModels(
+      "codex",
+      vivo(["gpt-6-astra"], ["gpt-6-astra", "gpt-5.3-codex-spark"]),
+    )
+    setApprovedModels("codex", [
+      { value: "gpt-realtime-2.1", label: "Rápido Econômico" },
+      { value: "gpt-5.3-codex-spark", label: "Spark" },
+    ])
+    expect(agentModels("codex").map((o) => o.value)).toEqual([
+      "gpt-6-astra",
+      "gpt-5.3-codex-spark",
+    ])
+  })
+
+  it("slug que o CLI conhece mas ESCONDE segue oferecível se você aprovou", () => {
+    // "Conhecer" é mais largo que "oferecer": o escondido funciona quando
+    // escolhido, e tratá-lo como inexistente apagaria um gesto seu.
+    setLiveModels("codex", vivo(["gpt-6-astra"], ["gpt-6-astra", "gpt-reserve"]))
+    setApprovedModels("codex", [{ value: "gpt-reserve", label: "Reserve" }])
+    expect(agentModels("codex").map((o) => o.value)).toContain("gpt-reserve")
+  })
+
+  it("sem lista viva nada é filtrado: 'não sei' nunca rebaixa", () => {
+    setApprovedModels("codex", [{ value: "gpt-realtime-2.1", label: "Rápido" }])
+    expect(agentModels("codex").map((o) => o.value)).toContain("gpt-realtime-2.1")
   })
 })

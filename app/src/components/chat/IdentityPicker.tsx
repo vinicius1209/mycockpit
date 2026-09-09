@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/command"
 import { AgentLogo, AGENT_LOGO_LABEL, agentLogoLabel } from "@/components/common/AgentLogo"
 import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { effortFitsModel, SENTINELA } from "@/lib/modelList"
 import { problemaNoSlug } from "@/lib/modelSlug"
 import { estadoNaMaquina } from "@/lib/detect"
 import { SELECTED_FILL } from "@/lib/selection"
@@ -85,7 +86,9 @@ export function IdentityPicker({
   const modelOptions = isCustomValue
     ? [...baseModels, { value: effectiveModel, label: effectiveModel, description: "Modelo custom" }]
     : baseModels
-  const efforts = agentEfforts(effectiveDest)
+  // A régua de esforço é do MODELO quando o CLI a declara: o mesmo motor
+  // aceita `ultra` num modelo e para em `xhigh` no vizinho.
+  const efforts = agentEfforts(effectiveDest, effectiveModel)
 
   function selectAgent(id: string) {
     setCustomEditing(false)
@@ -98,6 +101,13 @@ export function IdentityPicker({
       return
     }
     onModelChange(v)
+    // A régua de esforço é POR modelo desde a ADR-177, e as réguas divergem
+    // dentro do MESMO motor (o gpt-6-astra aceita `ultra`, o gpt-5.5 para em
+    // `xhigh`). Sem isto, trocar de modelo deixava um esforço escolhido que o
+    // novo não aceita: a régua abria sem nenhum degrau aceso e o envio ia
+    // falhar no backend. Volta pra sentinela, que todo modelo aceita.
+    if (!effortFitsModel(agentEfforts(effectiveDest, v), effectiveEffort))
+      onEffortChange(SENTINELA)
   }
   function confirmCustom() {
     const v = customDraft.trim()

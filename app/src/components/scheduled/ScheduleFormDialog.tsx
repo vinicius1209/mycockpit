@@ -203,7 +203,7 @@ export function ScheduleFormDialog({
   // cada tecla — puro, sem invoke nem estado extra.
   const preview = recurrence ? nextRuns(recurrence, new Date(), 3) : []
   const plano = plans.find((p) => p.id === d.planId) ?? null
-  const efforts = agentEfforts(d.agent)
+  const efforts = agentEfforts(d.agent, d.model)
 
   async function handleSave() {
     if (!input) return

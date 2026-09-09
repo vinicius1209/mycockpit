@@ -76,7 +76,7 @@ export function MissionPhaseRow({
       label: d.label,
       description: d.description,
     }))
-  const efforts = agentEfforts(phase.agent)
+  const efforts = agentEfforts(phase.agent, phase.model)
   return (
     <div className="flex flex-wrap items-center gap-x-2 gap-y-1 py-1">
       <span className="w-4 shrink-0 text-center font-mono text-[11px] tabular-nums text-muted-foreground/70">

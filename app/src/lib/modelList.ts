@@ -10,12 +10,15 @@
 // hoje (lista curada + catálogo) fica intacto.
 
 import { invoke } from "@tauri-apps/api/core"
-import { agentDef, dedupeModelOptions } from "@/lib/agents"
-import {
-  AGY_MODELS,
-  OPENCODE_MODELS,
-  type AgentModelOption,
-} from "@/lib/curatedModels"
+import { agentDef, dedupeModelOptions, type LiveModels } from "@/lib/agents"
+import type { AgentModelOption } from "@/lib/curatedModels"
+
+/** Um esforço que o CLI declara aceitar PARA UM MODELO (espelho de
+ *  `ModelEffortOption`). */
+export interface ModelEffortOption {
+  id: string
+  description: string | null
+}
 
 /** Um modelo que o CLI declara conhecer (espelho de `ModelListEntry`). */
 export interface ModelListEntry {
@@ -30,6 +33,11 @@ export interface ModelListEntry {
   supersededBy: string | null
   /** O texto do PRÓPRIO CLI sobre a aposentadoria (evidência, não paráfrase). */
   retirementNote: string | null
+  /** Esforços que ESTE modelo aceita, na ordem do CLI. Vazio = o dialeto não
+   *  fala de esforço (nunca "nenhum esforço serve"). */
+  efforts: ModelEffortOption[]
+  /** O esforço que o CLI usa neste modelo quando ninguém escolhe. */
+  defaultEffort: string | null
 }
 
 /** A lista de um motor, com procedência e carimbo (espelho de `ModelListing`). */
@@ -96,56 +104,157 @@ export function standingNote(
   }
 }
 
-/** Lista viva do agy → opções do picker. O `value` é o SLUG exato que vai em
- *  `agy --model`, NUNCA a linha da listagem: o `agy models` é TSV
- *  `slug<TAB>Rótulo`, e em 14/08/2026 um parser velho devolveu a linha inteira
- *  como slug — o CLI recusou todo envio ("model … is not recognized as a known
- *  model") e a conversa ficou sem saída. Slug do catálogo curado mantém o
- *  rótulo/descrição de casa; slug novo estreia com o rótulo do PRÓPRIO CLI.
+/** A lista viva de um motor → as opções do seletor. UMA regra pra todos os
+ *  dialetos: quem sabe o que existe é o CLI, e o app só traduz.
  *
- *  Slug com espaço em branco é DESCARTADO: opção que só produz erro não é
- *  oferta (a fronteira no Rust recusa também, mas o seletor não deve exibir o
- *  que já se sabe quebrado). Preserva "Padrão" na frente (sentinela do
- *  composer). */
-export function agyModelOptions(
-  entries: ReadonlyArray<{ id: string; label?: string | null }>,
+ *  Havia aqui uma função POR FORNECEDOR (`agyModelOptions`, `openCodeModel-
+ *  Options`), e o preço apareceu em 09/09/2026: o codex passou a listar o
+ *  `gpt-6-astra` como default DELE e o seletor da Frota seguiu abrindo em
+ *  "Sol", porque ninguém tinha escrito a terceira função. Motor que declara
+ *  `listsModels` no registry passa por aqui sem ganhar código próprio.
+ *
+ *  As regras, todas do transporte e nenhuma de um fornecedor:
+ *
+ *  • **A ORDEM é a do CLI.** Ele já ordena por prioridade dele (no codex o
+ *    frontier vem primeiro), e reordenar seria o app opinando sobre um ranking
+ *    que não é dele. É isso que faz modelo novo estrear no TOPO em vez de
+ *    aparecer no rodapé atrás de dois modelos mortos.
+ *  • **`hidden` não vira oferta.** O CLI esconde do picker dele; oferecer seria
+ *    inventar oferta. Ele continua conhecido (a fumaça e a régua de estado
+ *    enxergam a entrada), só não é sugestão.
+ *  • **Slug com espaço em branco é descartado.** Regressão de 14/08/2026: um
+ *    parser velho devolveu a LINHA do TSV como slug, o valor foi persistido e
+ *    o CLI recusou todo envio ("model … is not recognized"). Opção que só
+ *    produz erro não é oferta.
+ *  • **Rótulo de casa ganha do rótulo do CLI**, quando o slug está no catálogo
+ *    curado: a copy em pt-BR é nossa e diz mais. Slug novo estreia com o texto
+ *    do PRÓPRIO CLI, que é melhor que "gpt-6-astra" cru.
+ *  • **Aposentado fica, explicado.** Sumir com opção sem aviso é a coisa que
+ *    este módulo existe pra impedir; a descrição vira o estado.
+ *
+ *  A sentinela ("Padrão") vem do registry e é preservada na frente, porque ela
+ *  não é modelo: é "deixa o CLI escolher". Quando o CLI diz QUEM é o default
+ *  dele, a descrição passa a dizer o nome — foi a linha "hoje Sol" escrita à
+ *  mão que ficou mentindo por uma geração inteira de modelo. */
+export function liveModelOptions(
+  agent: string,
+  entries: ReadonlyArray<ModelListEntry>,
 ): AgentModelOption[] {
-  const curado = new Map(AGY_MODELS.map((o) => [o.value, o]))
+  const estaticos = agentDef(agent)?.models ?? []
+  const curado = new Map(estaticos.map((o) => [o.value, o]))
   const vivos: AgentModelOption[] = []
-  for (const { id, label } of entries) {
-    const value = (id ?? "").trim()
-    if (!value || /\s/.test(value)) continue
-    vivos.push(curado.get(value) ?? { value, label: (label ?? "").trim() || value })
+  for (const entry of entries) {
+    const value = (entry.id ?? "").trim()
+    if (!value || /\s/.test(value) || entry.hidden) continue
+    const casa = curado.get(value)
+    const nota = entry.supersededBy
+      ? standingNote("retired", entry)
+      : null
+    vivos.push({
+      ...(casa ?? {
+        value,
+        label: (entry.label ?? "").trim() || value,
+        description: (entry.description ?? "").trim() || undefined,
+      }),
+      ...(nota ? { description: nota } : {}),
+    })
   }
-  return dedupeModelOptions([AGY_MODELS[0], ...vivos])
+  return dedupeModelOptions([...sentinela(agent, entries), ...vivos])
 }
 
-/** `opencode models` → opções do seletor.
- *
- *  Diferente do agy: aqui o `id` É o dialeto do `-m` (`provider/model`) e não
- *  há lista curada pra casar rótulo — o CLI não manda rótulo nenhum. O rótulo
- *  vem do Rust já partido (modelo) com o provedor na descrição, porque com 88
- *  modelos em 4 provedores saber DE QUEM é o modelo é metade da escolha.
- *
- *  A lista local preserva somente a sentinela "Padrão": modelos reais nunca
- *  são fixados no bundle. */
-export function openCodeModelOptions(
-  entries: ReadonlyArray<{ id: string; label?: string | null; description?: string | null }>,
+/** A opção "Padrão" do registry, com a descrição atualizada quando o CLI diz
+ *  quem é o default DELE. Sem sentinela no registry não se inventa uma: motor
+ *  que não oferece "deixa o CLI escolher" não passa a oferecer por causa daqui. */
+function sentinela(
+  agent: string,
+  entries: ReadonlyArray<ModelListEntry>,
 ): AgentModelOption[] {
-  const curado = new Map(OPENCODE_MODELS.map((o) => [o.value, o]))
-  const vivos: AgentModelOption[] = []
-  for (const { id, label, description } of entries) {
-    const value = (id ?? "").trim()
-    if (!value || /\s/.test(value)) continue
-    vivos.push(
-      curado.get(value) ?? {
-        value,
-        label: (label ?? "").trim() || value,
-        description: (description ?? "").trim() || undefined,
-      },
-    )
+  const base = (agentDef(agent)?.models ?? []).find((o) => o.value === SENTINELA)
+  if (!base) return []
+  const escolhido = entries.find((e) => e.isDefault)
+  if (!escolhido) return [base]
+  const label = agentDef(agent)?.label ?? agent
+  return [
+    {
+      ...base,
+      description: `Deixa o ${label} escolher (hoje ${escolhido.label || escolhido.id})`,
+    },
+  ]
+}
+
+/** O valor que significa "não escolhi modelo/esforço, deixa o CLI decidir". */
+export const SENTINELA = "default"
+
+/** Os esforços que o CLI declara para ESTE modelo, prontos pro seletor.
+ *
+ *  `null` = o dialeto não fala de esforço para este slug, e quem chama cai na
+ *  régua estática do registry. Nunca devolve lista vazia por omissão: esvaziar
+ *  a régua de esforço tiraria uma escolha que o motor aceita.
+ *
+ *  Existe porque a régua escrita à mão erra por modelo, não por motor: em
+ *  09/09/2026 o mesmo CLI aceitava `ultra` no gpt-6-astra e parava em `xhigh`
+ *  no gpt-5.5, e uma lista só não podia estar certa nos dois. */
+export function liveEffortOptions(
+  listing: ModelListing | null | undefined,
+  model: string | null | undefined,
+  sentinelaDoRegistry?: AgentModelOption,
+): AgentModelOption[] | null {
+  if (!listing || !model || model === SENTINELA) return null
+  const entry = listing.models.find((m) => m.id === model)
+  if (!entry || entry.efforts.length === 0) return null
+  const cabeca = sentinelaDoRegistry ? [sentinelaDoRegistry] : []
+  return [
+    ...cabeca,
+    ...entry.efforts.map((e) => ({
+      value: e.id,
+      label: e.id,
+      description:
+        e.description ??
+        (e.id === entry.defaultEffort ? "Padrão deste modelo" : undefined),
+    })),
+  ]
+}
+
+/** O esforço escolhido ainda cabe na régua DESTE modelo?
+ *
+ *  Existe porque a régua passou a ser por modelo: trocar de modelo dentro do
+ *  mesmo motor pode deixar para trás um esforço que o novo não aceita (o
+ *  `ultra` do gpt-6-astra no gpt-5.5, que para em `xhigh`). O sintoma era duplo
+ *  e os dois lados eram ruins: a régua abria sem NENHUM degrau aceso, e o envio
+ *  ia falhar no backend por um valor que a pessoa não escolheu para aquele
+ *  modelo.
+ *
+ *  Régua vazia devolve `true`: sem lista declarada não há o que contestar, e
+ *  derrubar a escolha da pessoa por falta de informação seria o "não sei"
+ *  rebaixando algo, que é justamente o que este módulo não faz. */
+export function effortFitsModel(
+  regua: readonly AgentModelOption[],
+  effort: string,
+): boolean {
+  if (regua.length === 0) return true
+  return regua.some((o) => o.value === effort)
+}
+
+/** A resposta de UM motor virada nas duas metades que o seletor consome, numa
+ *  passada só. É a fronteira entre "o que o CLI disse" e "o que a pessoa vê":
+ *  daqui pra frente ninguém mais toca no payload cru.
+ *
+ *  Pura de propósito — quem escreve no cache é a camada de efeito (`detect`),
+ *  e é isso que deixa esta regra testável sem Tauri. */
+export function liveModelsFrom(listing: ModelListing): LiveModels {
+  const efforts = new Map<string, AgentModelOption[]>()
+  const padrao = (agentDef(listing.agent)?.efforts ?? []).find(
+    (o) => o.value === SENTINELA,
+  )
+  for (const entry of listing.models) {
+    const opcoes = liveEffortOptions(listing, entry.id, padrao)
+    if (opcoes) efforts.set(entry.id, opcoes)
   }
-  return dedupeModelOptions([OPENCODE_MODELS[0], ...vivos])
+  return {
+    models: liveModelOptions(listing.agent, listing.models),
+    efforts,
+    known: new Set(listing.models.map((m) => m.id)),
+  }
 }
 
 /** Este motor sabe se listar? (espelho puro do registry, sem tocar no backend) */

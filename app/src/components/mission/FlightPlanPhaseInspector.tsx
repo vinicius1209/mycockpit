@@ -42,7 +42,7 @@ export function FlightPlanPhaseInspector({
     )
   }
 
-  const efforts = agentEfforts(phase.agent)
+  const efforts = agentEfforts(phase.agent, phase.model)
 
   return (
     <div className="divide-y divide-border/40">
