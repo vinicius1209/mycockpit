@@ -54,6 +54,17 @@ vi.mock("@/store/editors", () => ({
 }))
 
 describe("Markdown Component", () => {
+  it("abre a saída real do Maclan sem parser e sem montar a linha inteira", () => {
+    const text = Object.values(import.meta.glob("../../test/maclan-test-output.txt", {
+      query: "?raw", import: "default", eager: true,
+    }))[0] as string
+    const html = renderToStaticMarkup(<Markdown text={text} />)
+    expect(html).toContain("data-plain-text")
+    expect(html).toContain("Copiar mensagem completa")
+    expect(html.length).toBeLessThan(10_000)
+    expect(html).not.toContain(text)
+  })
+
   it("renderiza texto simples sem atributos de arquivo", () => {
     const html = renderToStaticMarkup(<Markdown text="Olá mundo" />)
     expect(html).toContain("Olá mundo")

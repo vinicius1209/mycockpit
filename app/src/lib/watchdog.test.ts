@@ -255,13 +255,13 @@ describe("cancelStalledTurn", () => {
   it("cancela o run corrente pela reconciliação linear", async () => {
     useChat.setState({ byId: { c1: conv({ runId: "r9" }) } })
     await cancelStalledTurn("c1")
-    expect(cancelLinearTurn).toHaveBeenCalledWith("c1")
+    expect(cancelLinearTurn).toHaveBeenCalledWith("c1", "parada")
   })
 
   it("delega também o caso sem runId para a decisão única", async () => {
     useChat.setState({ byId: { c1: conv({ runId: null, running: false }) } })
     await cancelStalledTurn("c1")
-    expect(cancelLinearTurn).toHaveBeenCalledWith("c1")
+    expect(cancelLinearTurn).toHaveBeenCalledWith("c1", "parada")
   })
 })
 

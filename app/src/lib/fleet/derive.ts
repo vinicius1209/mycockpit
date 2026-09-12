@@ -27,6 +27,7 @@ import { loadLedger } from "@/lib/db"
 import { aggregateLedgerByProject } from "@/lib/fleet/ledgerAgg"
 import type { ApprovalData } from "@/lib/interaction"
 import type { MissionPersona, MissionRun } from "@/lib/missionTypes"
+import { formatResetBrief } from "@/lib/resetHint"
 import { useApp } from "@/store/app"
 import { useChat, hasExecutorTurn, type ChatItem } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -242,9 +243,8 @@ export function deskBaseState(
     case "installed-auth-unknown":
       if (limited) {
         return {
-          state: "off",
-          label: RATE_LIMIT_LABEL,
-          detail: resetHint ? `volta ${resetHint}` : undefined,
+          state: "off", label: RATE_LIMIT_LABEL,
+          detail: formatResetBrief(resetHint) ?? undefined,
         }
       }
       return { state: "idle", label: "Disponível" }

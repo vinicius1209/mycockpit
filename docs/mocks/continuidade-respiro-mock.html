@@ -1,0 +1,1088 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light" data-view="proposal-a" data-scenario="scheduled">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frota · Continuidade e Respiro Visual (Mock)</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fbfbfa;
+      --rail: #f6f6f4;
+      --foreground: #16181b;
+      --card: #ffffff;
+      --secondary: #f4f4f2;
+      --muted-foreground: #5c6166;
+      --faint: #8a9099;
+      --border: rgba(0, 0, 0, 0.09);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --sel: rgba(0, 0, 0, 0.06);
+      --sel-hover: rgba(0, 0, 0, 0.09);
+      --brass: #a9742b;
+      --warning: #c1861f;
+      --warning-bg: rgba(193, 134, 31, 0.1);
+      --warning-border: rgba(193, 134, 31, 0.25);
+      --error: #df3830;
+      --success: #1f9d6b;
+      --shadow-sm: 0 1px 2px rgba(20, 22, 25, 0.08);
+      --shadow-pop: 0 12px 36px -8px rgba(20, 22, 25, 0.16);
+      --radius: 8px;
+      --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #0a0b0d;
+      --rail: #0c0d10;
+      --foreground: #e7e8ea;
+      --card: #141619;
+      --secondary: #191c20;
+      --muted-foreground: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --sel: rgba(255, 255, 255, 0.07);
+      --sel-hover: rgba(255, 255, 255, 0.1);
+      --brass: #e4a862;
+      --warning: #d99138;
+      --warning-bg: rgba(217, 145, 56, 0.12);
+      --warning-border: rgba(217, 145, 56, 0.3);
+      --error: #f05248;
+      --success: #5bd6a0;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-pop: 0 12px 36px -8px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 20px;
+      background: var(--background);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, summary:focus-visible {
+      outline: 2px solid var(--brass);
+      outline-offset: 2px;
+    }
+    svg { display: block; }
+    .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+    /* Barra Superior de Navegação e Modos do Mock */
+    .mock-header {
+      max-width: 1400px;
+      margin: 0 auto 20px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 16px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .mock-title h1 {
+      margin: 0;
+      font-size: 16px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+    }
+    .mock-title p {
+      margin: 3px 0 0;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+
+    .selector-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--secondary);
+      padding: 3px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .selector-label {
+      font-size: 11px;
+      color: var(--faint);
+      padding-left: 8px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .selector-btn {
+      height: 28px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: all 120ms ease;
+    }
+    .selector-btn:hover { color: var(--foreground); }
+    .selector-btn[aria-pressed="true"], .selector-btn[aria-selected="true"] {
+      background: var(--card);
+      color: var(--foreground);
+      box-shadow: var(--shadow-sm);
+      font-weight: 600;
+    }
+
+    .theme-toggle {
+      margin-left: auto;
+      height: 32px;
+      padding: 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      background: var(--card);
+      color: var(--foreground);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    /* Layout Principal: Cockpit Simulado + Painel de Diagnóstico */
+    .mock-layout {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 340px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    .window {
+      border: 1px solid var(--border-strong);
+      border-radius: 12px;
+      background: var(--card);
+      box-shadow: var(--shadow-pop);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      min-height: 780px;
+    }
+
+    .titlebar {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      background: var(--background);
+      border-bottom: 1px solid var(--border);
+    }
+    .traffic { display: flex; gap: 7px; align-items: center; }
+    .traffic span { width: 11px; height: 11px; border-radius: 50%; }
+    .traffic .t-red { background: #ff5f57; }
+    .traffic .t-yellow { background: #febc2e; }
+    .traffic .t-green { background: #28c840; }
+    .window-title { margin-left: 12px; font-size: 12px; font-weight: 600; }
+    .status-pill { font-size: 11px; color: var(--muted-foreground); background: var(--secondary); padding: 3px 8px; border-radius: 12px; }
+
+    .chat-area {
+      flex: 1;
+      padding: 24px clamp(20px, 5vw, 60px) 16px;
+      display: flex;
+      flex-direction: column;
+      background: var(--background);
+      overflow-y: auto;
+    }
+
+    .message-bubble {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    .message-bubble p { margin: 0 0 10px; }
+    .code-tag {
+      font-family: var(--mono);
+      font-size: 12px;
+      background: var(--secondary);
+      padding: 1px 5px;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+    }
+
+    /* Linha de Ferramenta */
+    .tool-line {
+      max-width: 760px;
+      width: 100%;
+      margin: 8px auto 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--error);
+    }
+    .tool-icon { font-weight: bold; }
+    .tool-sub {
+      margin-left: auto;
+      font-size: 11px;
+      color: var(--faint);
+      font-family: var(--mono);
+    }
+
+    /* Card de Incidente do Transcript (Sessão em Intervalo) */
+    .incident-card {
+      max-width: 760px;
+      width: 100%;
+      margin: 16px auto 24px;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--card);
+    }
+    .incident-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0 0 14px;
+    }
+    .incident-steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      position: relative;
+    }
+    .step-col {
+      position: relative;
+      padding-left: 14px;
+    }
+    .step-col::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+    }
+    .step-1::before { background: var(--warning); }
+    .step-2::before { background: var(--faint); }
+    .step-3::before { border: 1.5px solid var(--faint); background: var(--card); }
+
+    .step-meta {
+      font-size: 10px;
+      font-family: var(--mono);
+      color: var(--faint);
+      margin-bottom: 2px;
+    }
+    .step-col strong {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .step-col span {
+      display: block;
+      font-size: 11px;
+      color: var(--muted-foreground);
+      line-height: 1.4;
+    }
+
+    /* Capacidades / Tools Badge */
+    .caps-line {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto 12px;
+      padding: 6px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--card);
+      font-size: 11px;
+      color: var(--muted-foreground);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* =====================================================================
+       O COMPONENTE CONTINUITY BANNER NAS 3 VERSÕES:
+       1. ANTES (Problemas do print)
+       2. PROPOSTA A (Hierarquia de Decisão Clara)
+       3. PROPOSTA B (Respiro Compacto)
+       ===================================================================== */
+
+    .continuity-container {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto 12px;
+    }
+
+    /* --- VERSÃO 1: ATUAL (PROBLEMAS) --- */
+    .banner-current {
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+    }
+    .banner-current-body {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+    }
+    .current-icon {
+      color: var(--warning);
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .current-content {
+      flex: 1;
+      min-width: 200px;
+    }
+    .current-title {
+      font-size: 13px;
+      font-weight: 600;
+      margin: 0;
+    }
+    .current-sub {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      margin: 2px 0 0;
+    }
+    .current-schedule {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted-foreground);
+      margin-top: 3px;
+    }
+    .buggy-x-btn {
+      border: 0;
+      background: transparent;
+      color: var(--faint);
+      cursor: pointer;
+      padding: 2px;
+      display: inline-flex;
+      align-items: center;
+      border-radius: 4px;
+    }
+    .buggy-x-btn:hover { color: var(--error); background: var(--secondary); }
+
+    .current-pills {
+      display: flex;
+      gap: 2px;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+      flex-shrink: 0;
+    }
+    .current-pills button {
+      height: 26px;
+      padding: 0 9px;
+      border: 0;
+      background: transparent;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+    }
+    .current-pills button.selected {
+      background: var(--sel);
+      color: var(--foreground);
+      font-weight: 600;
+    }
+
+    .banner-current-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-top: 1px solid var(--border);
+      background: var(--background);
+      padding: 6px 12px 6px 36px;
+      font-size: 11px;
+    }
+    .current-footer-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* --- VERSÃO 2: PROPOSTA A (HIERARQUIA CLARA E RESPIRO) --- */
+    .banner-proposal-a {
+      border: 1px solid var(--border-strong);
+      border-radius: 9px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .proposal-a-top {
+      padding: 13px 15px 12px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .proposal-icon {
+      color: var(--warning);
+      margin-top: 2px;
+      flex-shrink: 0;
+    }
+    .proposal-text {
+      flex: 1;
+    }
+    .proposal-title-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .proposal-title {
+      font-size: 13px;
+      font-weight: 650;
+      margin: 0;
+    }
+    .proposal-desc {
+      font-size: 12px;
+      color: var(--muted-foreground);
+      margin: 3px 0 0;
+    }
+
+    /* Bloco destacado de retomada agendada */
+    .schedule-badge-card {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 10px;
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 6px;
+      font-size: 11.5px;
+    }
+    .schedule-badge-info {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--foreground);
+    }
+    .schedule-badge-info svg { color: var(--warning); }
+    .schedule-cancel-btn {
+      height: 24px;
+      padding: 0 8px;
+      border: 1px solid var(--border-strong);
+      border-radius: 4px;
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      transition: all 120ms ease;
+    }
+    .schedule-cancel-btn:hover {
+      color: var(--error);
+      border-color: var(--error);
+      background: var(--background);
+    }
+
+    /* Seção de escolha de motor alternativo */
+    .proposal-choice-row {
+      margin-top: 12px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .choice-label {
+      font-size: 11.5px;
+      color: var(--muted-foreground);
+    }
+    .choice-pills {
+      display: flex;
+      gap: 3px;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+    }
+    .choice-pill {
+      height: 26px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      transition: all 120ms ease;
+    }
+    .choice-pill:hover { color: var(--foreground); }
+    .choice-pill.active {
+      background: var(--card);
+      color: var(--foreground);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .proposal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 14px;
+      background: var(--background);
+      border-top: 1px solid var(--border);
+    }
+    .btn-handoff {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      background: transparent;
+      border: 0;
+      cursor: pointer;
+      padding: 4px 6px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-handoff:hover { color: var(--foreground); background: var(--secondary); }
+
+    .btn-secondary {
+      height: 28px;
+      padding: 0 11px;
+      border: 0;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 6px;
+    }
+    .btn-secondary:hover { color: var(--foreground); background: var(--secondary); }
+
+    .btn-primary {
+      height: 28px;
+      padding: 0 13px;
+      border: 1px solid var(--foreground);
+      background: var(--foreground);
+      color: var(--background);
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      transition: opacity 120ms ease;
+    }
+    .btn-primary:hover { opacity: 0.88; }
+
+    /* --- VERSÃO 3: PROPOSTA B (COMPACTA) --- */
+    .banner-proposal-b {
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+      padding: 10px 14px;
+    }
+    .compact-grid {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .compact-info h3 {
+      margin: 0;
+      font-size: 12.5px;
+      font-weight: 600;
+    }
+    .compact-meta {
+      font-size: 11px;
+      color: var(--muted-foreground);
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .compact-meta .sep { color: var(--border-strong); }
+    .compact-meta button {
+      border: 0;
+      background: transparent;
+      color: var(--brass);
+      cursor: pointer;
+      font-size: 11px;
+      padding: 0;
+      text-decoration: underline;
+    }
+
+    /* Composer */
+    .composer-box {
+      max-width: 760px;
+      width: 100%;
+      margin: 0 auto;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--card);
+      box-shadow: var(--shadow-sm);
+      padding: 12px 14px 10px;
+    }
+    .composer-input {
+      font-size: 13.5px;
+      color: var(--faint);
+      min-height: 40px;
+    }
+    .composer-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 8px;
+      font-size: 12px;
+      color: var(--muted-foreground);
+    }
+    .composer-toolbar .badge {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 5px;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      font-size: 11px;
+    }
+    .send-btn {
+      margin-left: auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: var(--foreground);
+      color: var(--background);
+      border: 0;
+      display: grid;
+      place-items: center;
+      font-weight: bold;
+      font-size: 14px;
+      cursor: pointer;
+    }
+
+    /* Painel Lateral com Análise e Diagnóstico */
+    .diag-panel {
+      position: sticky;
+      top: 24px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      font-size: 12px;
+    }
+    .diag-head {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+      background: var(--secondary);
+    }
+    .diag-head span {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .diag-head h2 {
+      margin: 4px 0 0;
+      font-size: 13px;
+      font-weight: 650;
+    }
+    .diag-body {
+      padding: 14px;
+    }
+    .diag-item {
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .diag-item:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+    .diag-item strong {
+      display: block;
+      font-size: 12px;
+      margin-bottom: 3px;
+    }
+    .diag-item p {
+      margin: 0;
+      color: var(--muted-foreground);
+      line-height: 1.5;
+    }
+    .tag-diff {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 10.5px;
+      margin-top: 4px;
+    }
+    .tag-diff.bad { background: rgba(223, 56, 48, 0.12); color: var(--error); }
+    .tag-diff.good { background: rgba(31, 157, 107, 0.12); color: var(--success); }
+
+    /* Toast */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: var(--card);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-pop);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 12px;
+      max-width: 380px;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all 140ms ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Visibilidade condicional */
+    [data-view="current"] .banner-proposal-a,
+    [data-view="current"] .banner-proposal-b,
+    [data-view="proposal-a"] .banner-current,
+    [data-view="proposal-a"] .banner-proposal-b,
+    [data-view="proposal-b"] .banner-current,
+    [data-view="proposal-b"] .banner-proposal-a {
+      display: none;
+    }
+
+    /* Cenário sem agendamento */
+    [data-scenario="manual"] .schedule-element {
+      display: none !important;
+    }
+    [data-scenario="manual"] .incident-step-3-text::after {
+      content: "Horário não informado";
+    }
+    [data-scenario="scheduled"] .incident-step-3-text::after {
+      content: "Horário informado pelo agente";
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Barra de Controle do Mock -->
+  <header class="mock-header">
+    <div class="mock-title">
+      <h1>Frota · Continuidade e Respiro Visual</h1>
+      <p>Simulação e comparação interativa do banner de limite e retomada</p>
+    </div>
+
+    <div class="selector-group" role="tablist" aria-label="Versão em avaliação">
+      <span class="selector-label">Visual:</span>
+      <button type="button" class="selector-btn" data-set-view="current">1. Como está hoje (Bug)</button>
+      <button type="button" class="selector-btn" data-set-view="proposal-a" aria-selected="true">2. Proposta A (Recomendada)</button>
+      <button type="button" class="selector-btn" data-set-view="proposal-b">3. Proposta B (Compacta)</button>
+    </div>
+
+    <div class="selector-group" role="tablist" aria-label="Cenário de teste">
+      <span class="selector-label">Cenário:</span>
+      <button type="button" class="selector-btn" data-set-scenario="scheduled" aria-selected="true">Com Retomada (14:00)</button>
+      <button type="button" class="selector-btn" data-set-scenario="manual">Sem Retomada (Manual)</button>
+    </div>
+
+    <button type="button" class="theme-toggle" id="themeToggle">Tema escuro</button>
+  </header>
+
+  <!-- Layout Principal -->
+  <div class="mock-layout">
+    
+    <!-- Janela Simulada da Conversa -->
+    <main class="window" aria-label="Cockpit da Conversa">
+      <div class="titlebar">
+        <div class="traffic">
+          <span class="t-red"></span><span class="t-yellow"></span><span class="t-green"></span>
+          <span class="window-title">Frota · mycockpit</span>
+        </div>
+        <div class="status-pill">Claude Code · Opus</div>
+      </div>
+
+      <div class="chat-area">
+        <!-- Balão do Claude Code com o raciocínio -->
+        <article class="message-bubble">
+          <p>Achei o formato real: <span class="code-tag">deriveTaskPlans</span> é O(N×T) com <span class="code-tag">tasks.some()</span> dentro do loop. Preciso saber se T é grande.</p>
+        </article>
+
+        <!-- Linha de falha da ferramenta -->
+        <div class="tool-line">
+          <span class="tool-icon">✕</span>
+          <span>Measure task cardinality and find Map/Set optimizations in commits falhou</span>
+          <span class="tool-sub">1 shell · erro ›</span>
+        </div>
+
+        <!-- Card de Incidente no Transcript (Sessão em intervalo) -->
+        <section class="incident-card" aria-label="Sessão em intervalo">
+          <h2 class="incident-title">Sessão em intervalo</h2>
+          <div class="incident-steps">
+            <div class="step-col step-1">
+              <div class="step-meta">ETAPA 1</div>
+              <strong>Turno encerrado</strong>
+              <span>O limite desta sessão foi atingido.</span>
+            </div>
+            <div class="step-col step-2">
+              <div class="step-meta">ETAPA 2</div>
+              <strong>Conversa preservada</strong>
+              <span>Contexto e arquivos continuam no Frota.</span>
+            </div>
+            <div class="step-col step-3">
+              <!-- No modo 'current', mostrava 2pm (America/Sao_Paulo). Na proposta, mostra 14:00 · horário de São Paulo -->
+              <div class="step-meta mono" id="transcriptClockMeta">
+                14:00 · horário de São Paulo
+              </div>
+              <strong id="transcriptClockTitle">Retorno informado</strong>
+              <span class="incident-step-3-text"></span>
+            </div>
+          </div>
+        </section>
+
+        <!-- Faixa de capacidades (ferramentas) -->
+        <div class="caps-line">
+          <span>{ }</span>
+          <span>Capacidades deste run · 5 fontes · 244 tools confirmadas · 1 capacidade não entrou</span>
+          <span style="margin-left:auto;">⌄</span>
+        </div>
+
+        <!-- =================================================================
+             CONTINUITY BANNER - AS 3 VARIANTES
+             ================================================================= -->
+        <div class="continuity-container">
+
+          <!-- 1. COMO ESTÁ HOJE (REPRODUÇÃO DO BUG DO PRINT) -->
+          <div class="banner-current">
+            <div class="banner-current-body">
+              <svg class="current-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+              <div class="current-content">
+                <h3 class="current-title">Claude Code parou antes de terminar</h3>
+                <p class="current-sub">Escolha quem retoma agora o pedido que ficou pendente.</p>
+                <div class="current-schedule schedule-element">
+                  <span>Retomada no Claude Code às 14:00 · após o reset do limite · tentativa 1 de 5</span>
+                  <button type="button" class="buggy-x-btn" title="Cancelar retomada automática" onclick="toastMsg('O X cancelou a retomada em silêncio!')">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="current-pills" role="group" aria-label="Escolher agente">
+                <button type="button" class="selected">Codex</button>
+                <button type="button">Antigravity</button>
+                <button type="button">OpenCode</button>
+              </div>
+            </div>
+            <div class="banner-current-footer">
+              <span style="color:var(--muted-foreground); cursor:pointer;">› O que vai junto</span>
+              <div class="current-footer-actions">
+                <button type="button" class="btn-secondary schedule-element" onclick="toastMsg('Aguardar só ocultou o card! O agendamento segue ativo.')">Aguardar Claude Code</button>
+                <button type="button" class="btn-primary" onclick="toastMsg('Despachando para Codex agora...')">Continuar agora no Codex</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. PROPOSTA A: HIERARQUIA CLARA E RESPIRO (RECOMENDADA) -->
+          <div class="banner-proposal-a">
+            <div class="proposal-a-top">
+              <svg class="proposal-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+              <div class="proposal-text">
+                <div class="proposal-title-row">
+                  <h3 class="proposal-title">Claude Code parou antes de terminar</h3>
+                </div>
+                <p class="proposal-desc">O limite de uso foi atingido durante a execução. Você pode aguardar o horário de reset ou trocar de agente imediatamente.</p>
+
+                <!-- Bloco Evidente de Retomada Automática -->
+                <div class="schedule-badge-card schedule-element">
+                  <div class="schedule-badge-info">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    <span>Retomada automática agendada para às <strong>14:00</strong> (tentativa 1 de 5)</span>
+                  </div>
+                  <button type="button" class="schedule-cancel-btn" onclick="cancelScheduleProposal()">Cancelar agendamento</button>
+                </div>
+
+                <!-- Seletor com alinhamento e rótulo explícito -->
+                <div class="proposal-choice-row">
+                  <span class="choice-label">Ou retome agora com outro agente:</span>
+                  <div class="choice-pills">
+                    <button type="button" class="choice-pill active" onclick="selectAgent(this, 'Codex')">Codex</button>
+                    <button type="button" class="choice-pill" onclick="selectAgent(this, 'Antigravity')">Antigravity</button>
+                    <button type="button" class="choice-pill" onclick="selectAgent(this, 'OpenCode')">OpenCode</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="proposal-footer">
+              <button type="button" class="btn-handoff">
+                <span>› O que vai junto</span>
+              </button>
+              <div style="display:flex; gap:8px;">
+                <button type="button" class="btn-secondary" onclick="toastMsg('Aviso dispensado. O agendamento para 14:00 continua preservado.')">Dispensar aviso</button>
+                <button type="button" class="btn-primary" id="btnProposalPrimary" onclick="toastMsg('Continuando agora com ' + currentSelectedAgent + '!')">Continuar agora no Codex</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. PROPOSTA B: COMPACTA (MENOS CONSUMO VERTICAL) -->
+          <div class="banner-proposal-b">
+            <div class="compact-grid">
+              <svg style="color:var(--warning)" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>
+              <div class="compact-info">
+                <h3>Claude Code atingiu o limite de uso</h3>
+                <div class="compact-meta">
+                  <span class="schedule-element">Retomada às 14:00</span>
+                  <span class="schedule-element sep">·</span>
+                  <button type="button" class="schedule-element" onclick="cancelScheduleProposal()">Cancelar retomada</button>
+                  <span class="schedule-element sep">·</span>
+                  <span>Trocar por:</span>
+                  <div class="choice-pills" style="display:inline-flex;">
+                    <button type="button" class="choice-pill active" onclick="selectAgent(this, 'Codex')">Codex</button>
+                    <button type="button" class="choice-pill" onclick="selectAgent(this, 'Antigravity')">Antigravity</button>
+                    <button type="button" class="choice-pill" onclick="selectAgent(this, 'OpenCode')">OpenCode</button>
+                  </div>
+                </div>
+              </div>
+              <button type="button" class="btn-primary" onclick="toastMsg('Continuando agora no ' + currentSelectedAgent)">Continuar agora</button>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Composer de Mensagens -->
+        <div class="composer-box">
+          <div class="composer-input">Peça algo... ou / para comandos</div>
+          <div class="composer-toolbar">
+            <span class="badge">📎 Claude Code · Opus</span>
+            <span class="badge">🛡 Liberado</span>
+            <button type="button" class="send-btn" aria-label="Enviar">↑</button>
+          </div>
+        </div>
+
+      </div>
+    </main>
+
+    <!-- Painel Lateral: Diagnóstico e Comparação Técnica -->
+    <aside class="diag-panel">
+      <div class="diag-head">
+        <span>Auditoria Visual</span>
+        <h2>Diagnóstico dos 3 Problemas</h2>
+      </div>
+      <div class="diag-body">
+        
+        <div class="diag-item">
+          <strong>1. Bug de Formatação de Horário</strong>
+          <p>No print original, aparecia <code class="tag-diff bad">2pm (America/Sao_Paulo)</code> no card e <code class="tag-diff good">14:00</code> no banner.</p>
+          <p style="margin-top:4px;"><strong>Solução:</strong> centralização em <code class="code-tag">resetHint.ts</code>, unificando regex 12h/24h e traduzindo o fuso IANA para o padrão civil.</p>
+        </div>
+
+        <div class="diag-item">
+          <strong>2. O botão [✕] perdido inline</strong>
+          <p>No design atual, o botão [✕] parecia fechar o card inteiro, mas na verdade cancelava a retomada automática sem confirmação.</p>
+          <p style="margin-top:4px;"><strong>Solução (Proposta A):</strong> badge explícito com texto claro <code class="code-tag">Cancelar agendamento</code>.</p>
+        </div>
+
+        <div class="diag-item">
+          <strong>3. Ambiguidade entre os CTAs</strong>
+          <p><code class="code-tag">Aguardar Claude Code</code> só fechava o banner (dismiss). Se o usuário clicasse nele ou no [✕], ficava confuso sobre o que aconteceria.</p>
+          <p style="margin-top:4px;"><strong>Solução:</strong> ações separadas e claras: <code class="code-tag">Dispensar aviso</code> (mantém agendado) e <code class="code-tag">Continuar agora no [Motor]</code>.</p>
+        </div>
+
+        <div class="diag-item">
+          <strong>4. Redução de Carga Cognitiva</strong>
+          <p>A Proposta A alinha os seletores horizontalmente e separa a informação de espera do gesto de envio imediato, sem competir com o transcript.</p>
+        </div>
+
+      </div>
+    </aside>
+
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const root = document.documentElement;
+    const viewButtons = [...document.querySelectorAll("[data-set-view]")];
+    const scenarioButtons = [...document.querySelectorAll("[data-set-scenario]")];
+    const themeToggle = document.getElementById("themeToggle");
+    const toast = document.getElementById("toast");
+    const transcriptClockMeta = document.getElementById("transcriptClockMeta");
+    const transcriptClockTitle = document.getElementById("transcriptClockTitle");
+    let currentSelectedAgent = "Codex";
+    let toastTimer;
+
+    function toastMsg(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 3200);
+    }
+
+    // Alternar Visual (Atual vs Proposta A vs Proposta B)
+    viewButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        root.dataset.view = btn.dataset.setView;
+        viewButtons.forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+
+        // No modo atual, simula o bug de horário para comparar com o print
+        if (btn.dataset.setView === "current") {
+          transcriptClockMeta.textContent = "2pm (America/Sao_Paulo)";
+        } else {
+          transcriptClockMeta.textContent = "14:00 · horário de São Paulo";
+        }
+      });
+    });
+
+    // Alternar Cenário (Com Retomada vs Sem Retomada)
+    scenarioButtons.forEach(btn => {
+      btn.addEventListener("click", () => {
+        root.dataset.scenario = btn.dataset.setScenario;
+        scenarioButtons.forEach(b => b.setAttribute("aria-selected", String(b === btn)));
+        if (btn.dataset.setScenario === "manual") {
+          transcriptClockTitle.textContent = "Retorno não informado";
+          transcriptClockMeta.textContent = "—";
+        } else {
+          transcriptClockTitle.textContent = "Retorno informado";
+          transcriptClockMeta.textContent = root.dataset.view === "current" 
+            ? "2pm (America/Sao_Paulo)" 
+            : "14:00 · horário de São Paulo";
+        }
+      });
+    });
+
+    // Tema
+    themeToggle.addEventListener("click", () => {
+      const isDark = root.dataset.theme === "dark";
+      root.dataset.theme = isDark ? "light" : "dark";
+      themeToggle.textContent = isDark ? "Tema escuro" : "Tema claro";
+    });
+
+    function selectAgent(button, agentName) {
+      currentSelectedAgent = agentName;
+      const pills = button.closest(".choice-pills");
+      pills.querySelectorAll(".choice-pill").forEach(p => p.classList.remove("active"));
+      button.classList.add("active");
+      const ctaBtn = document.getElementById("btnProposalPrimary");
+      if (ctaBtn) {
+        ctaBtn.textContent = "Continuar agora no " + agentName;
+      }
+      toastMsg("Selecionado: " + agentName);
+    }
+
+    function cancelScheduleProposal() {
+      toastMsg("Agendamento cancelado com sucesso. A sessão permanecerá pausada.");
+      document.querySelectorAll(".schedule-element").forEach(el => {
+        el.style.display = "none";
+      });
+    }
+  </script>
+</body>
+</html>

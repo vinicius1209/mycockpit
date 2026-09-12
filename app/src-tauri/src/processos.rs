@@ -25,6 +25,7 @@ const MOTORES: [&str; 4] = ["claude", "codex", "agy", "opencode"];
 
 /// A partir de quando "parado" vira sinal. Um dia é o corte honesto: sessão de
 /// ontem que você vai retomar hoje não é lixo; a de uma semana é.
+#[allow(dead_code)]
 pub const PARADO_SEGUNDOS: u64 = 24 * 60 * 60;
 
 #[derive(Debug, Serialize, PartialEq, Clone)]

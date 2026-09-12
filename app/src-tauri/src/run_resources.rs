@@ -18,6 +18,36 @@ pub(crate) const STDERR_TAIL_BYTES: usize = 64 * 1024;
 const MEMORY_WARNING_LEVELS_MB: [u64; 5] = [2 * 1024, 4 * 1024, 8 * 1024, 16 * 1024, 32 * 1024];
 const MEMORY_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
+/// Teto de quota em disco para arquivos de log e tarefas de background (5 GB).
+/// Proteção contra loops infinitos de logs no SSD do usuário (ADR-183).
+pub(crate) const MAX_OUTPUT_FILE_BYTES: u64 = 5 * 1024 * 1024 * 1024;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum DiskQuotaCheck {
+    WithinQuota(u64),
+    Exceeded { size_bytes: u64, limit_bytes: u64 },
+    FileNotFound,
+    IoError(String),
+}
+
+pub(crate) fn check_disk_quota(path: &std::path::Path, limit_bytes: u64) -> DiskQuotaCheck {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            let size = meta.len();
+            if size > limit_bytes {
+                DiskQuotaCheck::Exceeded {
+                    size_bytes: size,
+                    limit_bytes,
+                }
+            } else {
+                DiskQuotaCheck::WithinQuota(size)
+            }
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => DiskQuotaCheck::FileNotFound,
+        Err(err) => DiskQuotaCheck::IoError(err.to_string()),
+    }
+}
+
 pub(crate) fn epoch_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -185,6 +215,7 @@ pub(crate) struct ProcessObservation {
     pub(crate) main_alive: Option<bool>,
     pub(crate) descendants: Option<u32>,
     pub(crate) rss_mb: Option<u64>,
+    pub(crate) root_rss_mb: Option<u64>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -235,12 +266,27 @@ impl ProcessMemoryWatch {
     }
 }
 
+pub(crate) fn format_memory_warning_message(rss_mb: u64, root_rss_mb: Option<u64>) -> String {
+    let root = root_rss_mb.unwrap_or(0);
+    let desc = rss_mb.saturating_sub(root);
+    if desc > root && desc >= 512 {
+        format!(
+            "A árvore de processos deste run atingiu {rss_mb} MB (incluindo {desc} MB em comandos e compiladores filhos; o processo principal consome {root} MB) e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+        )
+    } else {
+        format!(
+            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+        )
+    }
+}
+
 async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
     let Some(root_pid) = root_pid else {
         return ProcessObservation {
             main_alive: None,
             descendants: None,
             rss_mb: None,
+            root_rss_mb: None,
         };
     };
     #[cfg(unix)]
@@ -260,6 +306,7 @@ async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
                 main_alive: None,
                 descendants: None,
                 rss_mb: None,
+                root_rss_mb: None,
             },
         }
     }
@@ -270,6 +317,7 @@ async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
             main_alive: None,
             descendants: None,
             rss_mb: None,
+            root_rss_mb: None,
         }
     }
 }
@@ -291,6 +339,7 @@ fn process_tree_from_ps(table: &str, root_pid: u32) -> ProcessObservation {
             main_alive: Some(false),
             descendants: Some(0),
             rss_mb: Some(0),
+            root_rss_mb: Some(0),
         };
     }
 
@@ -311,6 +360,7 @@ fn process_tree_from_ps(table: &str, root_pid: u32) -> ProcessObservation {
             }
         }
     }
+    let root_rss_kb = rss_by_pid.get(&root_pid).copied().unwrap_or(0);
     let rss_kb = seen
         .iter()
         .filter_map(|pid| rss_by_pid.get(pid))
@@ -319,6 +369,7 @@ fn process_tree_from_ps(table: &str, root_pid: u32) -> ProcessObservation {
         main_alive: Some(true),
         descendants: Some(seen.len().saturating_sub(1) as u32),
         rss_mb: Some(rss_kb / 1024),
+        root_rss_mb: Some(root_rss_kb / 1024),
     }
 }
 
@@ -377,6 +428,7 @@ mod tests {
                 main_alive: Some(true),
                 descendants: Some(2),
                 rss_mb: Some(6),
+                root_rss_mb: Some(1),
             }
         );
     }
@@ -389,7 +441,44 @@ mod tests {
                 main_alive: Some(false),
                 descendants: Some(0),
                 rss_mb: Some(0),
+                root_rss_mb: Some(0),
             }
         );
+    }
+
+    #[test]
+    fn aviso_de_memoria_diferencia_harness_de_filhos_pesados() {
+        let msg = format_memory_warning_message(2048, Some(150));
+        assert!(msg.contains("A árvore de processos deste run atingiu 2048 MB"));
+        assert!(msg.contains("incluindo 1898 MB em comandos e compiladores filhos"));
+        assert!(msg.contains("o processo principal consome 150 MB"));
+
+        let msg_pura = format_memory_warning_message(2048, Some(1900));
+        assert!(msg_pura.contains("Este run chegou a 2048 MB de memória"));
+    }
+
+    #[test]
+    fn check_disk_quota_detecta_limites_e_ausencia() {
+        let temp_dir = std::env::temp_dir();
+        let missing = temp_dir.join("arquivo-que-nao-existe-1234567.log");
+        assert_eq!(
+            super::check_disk_quota(&missing, 1024),
+            super::DiskQuotaCheck::FileNotFound
+        );
+
+        let test_file = temp_dir.join("test_quota_ok.tmp");
+        std::fs::write(&test_file, b"1234567890").unwrap();
+        assert_eq!(
+            super::check_disk_quota(&test_file, 100),
+            super::DiskQuotaCheck::WithinQuota(10)
+        );
+        assert_eq!(
+            super::check_disk_quota(&test_file, 5),
+            super::DiskQuotaCheck::Exceeded {
+                size_bytes: 10,
+                limit_bytes: 5,
+            }
+        );
+        let _ = std::fs::remove_file(test_file);
     }
 }

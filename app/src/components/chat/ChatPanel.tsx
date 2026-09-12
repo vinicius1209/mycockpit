@@ -2,10 +2,7 @@ import { useEffect, useRef, useState } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
 import { dispatchQueuedNow, drainQueued } from "@/components/chat/drenarFila"
 import { stopActiveConversation } from "@/components/chat/filaComposer"
-import {
-  notaDeRevezamentoDeMotor,
-  notaDeTrocaDeModelo,
-} from "@/components/chat/composerIdentity"
+import { identidadeDoDespacho } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
@@ -437,16 +434,11 @@ export function ChatPanel() {
     // conversa e roubaria a injeção de persona/doutrina do turno inicial (E1).
     const execItems = executorItems(conv.items)
     const locked = execItems.length > 0
-    const targetAgent = cfg?.agent ?? conv.stagedAgent ?? conv.agent
-    const isAgentSwitch = locked && targetAgent !== conv.agent
-    let agent = isAgentSwitch ? targetAgent : (locked ? conv.agent : (cfg?.agent ?? "claude-code"))
-    let model = isAgentSwitch ? (cfg?.model ?? null) : (locked && !cfg?.modelSwitched ? conv.reqModel : (cfg?.model ?? null))
-    // Trocar de modelo no meio é permitido (a sessão do CLI sobrevive), mas não
-    // pode ser MUDO: sem esta linha o histórico passa a dizer que a conversa
-    // rodou inteira num modelo só, e o custo por token muda sem aviso.
-    const modelChangeNotice = !isAgentSwitch && locked ? notaDeTrocaDeModelo(conv.reqModel, model) : null
-    const agentChangeNotice = isAgentSwitch ? notaDeRevezamentoDeMotor(conv.agent, agent) : null
-    let effort = isAgentSwitch ? (cfg?.effort ?? null) : (locked ? conv.effort : (cfg?.effort ?? null))
+    // agent/modelo/esforço do turno e as linhas de troca no fio: regra pura em
+    // `identidadeDoDespacho` (composerIdentity).
+    const despacho = identidadeDoDespacho({ locked, conv, cfg })
+    const { isAgentSwitch, agentChangeNotice, modelChangeNotice, effortChangeNotice } = despacho
+    let { agent, model, effort } = despacho
     // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
     // quebrado (apagado, sem personality, skill fora do inventário do projeto)
     // ABORTA aqui, ANTES do start — o run não inicia nem gasta turno.
@@ -644,6 +636,7 @@ export function ChatPanel() {
     promptText = await comMemoriaNoCorpo(promptText, alvoDaMemoria)
     const memoryFallback = await fallbackDeResume(alvoDaMemoria)
     const acceptance = createRunAcceptance({
+      convId,
       onAccept: () => {
         delete preflightRetryRef.current[convId]
         acceptChatTurn({
@@ -657,6 +650,7 @@ export function ChatPanel() {
           wheelSwitch,
           agentChangeNotice,
           modelChangeNotice,
+          effortChangeNotice,
           broughtAdvice,
           lessonIds: acceptedLessonIds,
           recordLessons: (ids) => {
@@ -672,12 +666,7 @@ export function ChatPanel() {
         if (convId === useChat.getState().activeId) setAtBottom(true)
       },
       onBlocked: (gate) => {
-        preflightRetryRef.current[convId] = {
-          text,
-          cfg,
-          attachments,
-          onAccepted,
-        }
+        preflightRetryRef.current[convId] = { text, cfg, attachments, onAccepted }
         useChat.getState().blockPreparation(convId, runId, gate)
       },
       onEvent: (event) => useChat.getState().handleEvent(convId, event),
@@ -891,7 +880,6 @@ export function ChatPanel() {
               presetId={conv.presetId}
               advising={conv.advising}
               stalledSince={conv.stalledSince}
-              runLiveness={conv.runLiveness}
               unseenDividerId={conv.unseenDividerId}
               // Só oferece o gesto quando ele funcionaria: com turno em voo o
               // envio da aprovação seria enfileirado e o cartão mentiria.

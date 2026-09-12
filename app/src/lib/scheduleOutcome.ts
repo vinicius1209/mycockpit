@@ -73,6 +73,54 @@ export function turnOutcome(items: ChatItem[]): {
   return { ok, cost, error }
 }
 
+/** Item de ferramenta, para a régua de "isto produziu trabalho?". */
+type ToolItem = Extract<ChatItem, { kind: "tool" }>
+
+/**
+ * O AMBIENTE barrou este turno, apesar de ele ter terminado bem?
+ *
+ * `null` = não há sinal disto. String = o motivo, pronto pro histórico.
+ *
+ * # O `ok` que mentiu três vezes (04, 06 e 09/09/2026)
+ *
+ * A automação "Pendencias na Prime" rodou com o sandbox duplo: todo comando de
+ * shell morria com `sandbox_apply: Operation not permitted` e a tool do mc-work
+ * voltava "requires approval, but approval policy is never". O Codex não
+ * FALHOU: ele NARROU a impossibilidade e saiu com `is_error: false`. O
+ * `turnOutcome` só olha o item terminal, então leu `ok`, o sino ficou mudo e o
+ * histórico gravou sucesso. US$ 1,16 em três execuções que não produziram nada.
+ *
+ * # Por que a régua é esta, e não "alguma ferramenta falhou"
+ *
+ * "Alguma falhou" condenaria turno legítimo (um `grep` sem resultado é rotina).
+ * E "alguma passou" NÃO salva: no incidente duas passaram —
+ * `list_mcp_resource_templates` e `list_mcp_resources`, as duas com `text: ""`
+ * e `lines: 0`, o agente tateando por uma saída que não existia.
+ *
+ * O sinal honesto é a CONJUNÇÃO: nenhuma ferramenta produziu saída E pelo menos
+ * uma falhou. Aí não é uma tarefa que deu em nada, é um ambiente que não deixou
+ * trabalhar. Turno sem ferramenta nenhuma não entra (responder de cabeça é
+ * desfecho legítimo), e corte seu (`interrupted`) não conta como falha (ADR-180).
+ */
+export function barradoPeloAmbiente(items: ChatItem[]): string | null {
+  const tools = items.filter((i): i is ToolItem => i.kind === "tool")
+  const falhas = tools.filter((t) => t.result?.ok === false && !t.result.interrupted)
+  if (falhas.length === 0) return null
+  const produziu = tools.some(
+    (t) =>
+      t.result?.ok === true &&
+      (t.result.lines > 0 || t.result.text.trim().length > 0),
+  )
+  if (produziu) return null
+  // O motivo REAL, colhido da primeira falha que trouxe texto. Sem texto em
+  // nenhuma, a frase nomeia o que aconteceu em vez de inventar uma causa.
+  const comTexto = falhas.find((t) => t.result!.text.trim().length > 0)
+  const detalhe = comTexto
+    ? `${comTexto.name}: ${oneLine(comTexto.result!.text, 120)}`
+    : falhas.map((t) => t.name).join(", ")
+  return `Terminou sem produzir trabalho: ${falhas.length} de ${tools.length} ferramentas falharam e nenhuma devolveu saída (${detalhe}).`
+}
+
 /** Grava o desfecho: uma linha no histórico (`schedule_runs`, com o motivo) e
  *  o carimbo do último desfecho no próprio schedule. Best-effort de ponta a
  *  ponta — o motor não pode cair aqui. */

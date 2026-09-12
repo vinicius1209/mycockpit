@@ -11,16 +11,36 @@
 // "completa" seria a mentira confortável.
 
 import { invoke } from "@tauri-apps/api/core"
+import { AGENTS, agentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import { PERMISSIVIDADE, type SessionMode } from "@/lib/sessionMode"
 
-export type Selo = "ausente" | "parcial"
+/** `motor` entrou em 11/09/2026 com a rota B: o selo deixou de ser fato da
+ *  MÁQUINA e virou máquina × motor. Sem ele o card diria "parcial" (barra
+ *  escrita no projeto) sobre um motor que barra o disco inteiro — subestimar a
+ *  proteção mente tanto quanto exagerá-la. */
+export type Selo = "ausente" | "parcial" | "motor"
 
 export interface Confinamento {
   selo: Selo
   /** Frase curta pro seletor. Vazia quando ausente: quem não garante nada não
    *  ganha linha na tela. */
   nota: string
+}
+
+/**
+ * Este motor dispensa o envelope `sandbox-exec` da Frota?
+ *
+ * Derivado do REGISTRY (espelho de `SandboxProprio::dispensa_envelope`), nunca
+ * de comparação de nome. Motor desconhecido responde `false`: dispensar por
+ * engano deixa o turno SEM confinamento nenhum, que é pior que um envelope a
+ * mais. Par no Rust: `sandbox.rs::confina`.
+ */
+export function dispensaEnvelopeDaFrota(
+  agent: string | null | undefined,
+): boolean {
+  if (!agent) return false
+  return agentDef(agent)?.sandboxProprio === "sistemaOperacional"
 }
 
 /** Fora do Tauri (teste, SSR) não há sandbox — e fingir que há seria pior que
@@ -51,7 +71,14 @@ export function notaDeQuemSegura(
   confinamento: Confinamento,
   notaDoMotor: string,
 ): string {
-  if (confinamento.selo === "parcial" && ganhaSelo(canonico)) {
+  if (!ganhaSelo(canonico)) return notaDoMotor
+  // O motor que confina sozinho é garantia de SISTEMA também, e mais apertada
+  // que a nossa. Ela não é "parcial": chamar assim descreveria a denylist, que
+  // neste turno nem foi aplicada (e não poderia — os dois perfis colidem).
+  if (confinamento.selo === "motor") {
+    return `confinamento do motor: ${confinamento.nota}`
+  }
+  if (confinamento.selo === "parcial") {
     return `confinamento parcial: ${confinamento.nota}`
   }
   return notaDoMotor
@@ -93,7 +120,12 @@ const ROTULO: Record<SessionMode, string> = {
  * "ganharia selo" apareceria confinado numa máquina que não confina nada.
  */
 export function linhasDeConfinamento(c: Confinamento): LinhaDeConfinamento[] {
-  const temSandbox = c.selo === "parcial"
+  // Os DOIS selos que garantem contam como sandbox, e a nota de cada um diz o
+  // que ele barra. Deliberadamente NÃO afirmamos nada novo sobre os modos de
+  // escrita quando o selo é `motor`: o Codex confina em `workspace-write`
+  // também (escrita presa ao projeto, rede off), mas descrever isso é outra
+  // linha de produto — e a frase de hoje ("o modo escreve") continua verdadeira.
+  const temSandbox = c.selo === "parcial" || c.selo === "motor"
   return (Object.keys(ROTULO) as SessionMode[])
     .sort((a, b) => PERMISSIVIDADE[a] - PERMISSIVIDADE[b])
     .map((modo) => {
@@ -131,18 +163,50 @@ export function resumoDoConfinamento(
   }
 }
 
-let cache: Confinamento | null = null
+/** Cache POR MOTOR, e não um valor só: desde a rota B a resposta depende de
+ *  quem roda (o motor que confina sozinho não recebe o envelope). Um cache
+ *  único devolveria o selo do primeiro motor consultado para todos. */
+const cache = new Map<string, Confinamento>()
 
-/** Lê uma vez por sessão: a resposta depende da máquina, não do turno. */
-export async function lerConfinamento(): Promise<Confinamento> {
-  if (cache) return cache
+/** Lê uma vez por sessão e por motor: a resposta depende da máquina e de quem
+ *  roda, não do turno. `agent` ausente = pergunta só da máquina (fail-closed no
+ *  Rust: cai em `Nenhum`, o mais conservador). */
+export async function lerConfinamento(
+  agent?: string | null,
+): Promise<Confinamento> {
+  const chave = agent ?? ""
+  const guardado = cache.get(chave)
+  if (guardado) return guardado
   if (!isTauri()) return SEM_CONFINAMENTO
   try {
-    cache = await invoke<Confinamento>("sandbox_confinamento")
-    return cache
+    const v = await invoke<Confinamento>("sandbox_confinamento", {
+      agent: agent ?? null,
+    })
+    cache.set(chave, v)
+    return v
   } catch {
     // Fail-closed: não conseguir perguntar NÃO vira "tem sandbox". Um selo
     // otimista é exatamente o defeito que este módulo existe pra impedir.
     return SEM_CONFINAMENTO
   }
+}
+
+/** (testes) zera o cache por motor. */
+export function _resetConfinamento(): void {
+  cache.clear()
+}
+
+/**
+ * Motores cujo confinamento é do PRÓPRIO motor, por rótulo.
+ *
+ * Existe pro quadro de confinamento não implicar que cobre todo mundo: as
+ * linhas dele descrevem o envelope da Frota, e quem está nesta lista não passa
+ * por ele (nem poderia — os dois perfis Seatbelt colidem). Derivado do
+ * registry, então motor novo aparece sozinho.
+ */
+export function motoresComSandboxProprio(): string[] {
+  // Pelo predicado, não pela string: duas cópias de
+  // `=== "sistemaOperacional"` divergiriam no dia em que o eixo ganhar um
+  // quarto valor, e a tela passaria a listar motor que ainda é envelopado.
+  return AGENTS.filter((a) => dispensaEnvelopeDaFrota(a.id)).map((a) => a.label)
 }

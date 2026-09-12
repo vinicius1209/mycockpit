@@ -304,7 +304,20 @@ fn scoped_file_path(
     path: &str,
     attachments: Option<&Path>,
 ) -> Result<std::path::PathBuf, String> {
-    let canon = std::fs::canonicalize(&path).map_err(|e| e.to_string())?;
+    // Caminho RELATIVO se resolve contra a raiz do projeto, nunca contra o cwd
+    // do processo. O agente cita `AGENTS.md` sem diretório o tempo todo; sem
+    // esta junção o `canonicalize` procurava a partir do cwd da .app (`/`), não
+    // achava, e o visualizador de markdown exibia "não foi possível carregar" —
+    // enquanto o mesmo `AGENTS.md` abria no editor, porque `contained()` de
+    // editor.rs sempre juntou a raiz. Duas portas para o mesmo alvo, e só uma
+    // resolvia o caminho. A guarda de escopo abaixo segue valendo: `..` continua
+    // barrado pelo `starts_with`.
+    let alvo = Path::new(path);
+    let canon = if alvo.is_absolute() {
+        std::fs::canonicalize(alvo).map_err(|e| e.to_string())?
+    } else {
+        std::fs::canonicalize(Path::new(root).join(alvo)).map_err(|e| e.to_string())?
+    };
     let mut allowed: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(r) = std::fs::canonicalize(&root) {
         // Também autoriza as pastas extras vinculadas a este projeto (extra_dirs)
@@ -970,6 +983,68 @@ mod tests {
 
         std::fs::remove_dir_all(&tmp).unwrap();
         std::fs::remove_dir_all(&fora).unwrap();
+    }
+
+    #[test]
+    fn read_text_file_resolve_caminho_relativo_contra_a_raiz() {
+        // Incidente real (10/09/2026, conversa "[feat] cliente coleta"): o Codex
+        // citou `AGENTS.md` sem diretório, o visualizador mandou a string crua e
+        // o canonicalize procurou a partir do cwd da .app. O editor abria o
+        // mesmo arquivo; só a leitura falhava.
+        let tmp = std::env::temp_dir().join(format!("mc-rel-{}", std::process::id()));
+        std::fs::create_dir_all(tmp.join("docs")).unwrap();
+        std::fs::write(tmp.join("AGENTS.md"), "# raiz").unwrap();
+        std::fs::write(tmp.join("docs").join("guia.md"), "# aninhado").unwrap();
+
+        let raiz = tmp.to_string_lossy().to_string();
+        assert_eq!(
+            read_text_file_scoped(&raiz, "AGENTS.md", None).unwrap(),
+            "# raiz"
+        );
+        assert_eq!(
+            read_text_file_scoped(&raiz, "docs/guia.md", None).unwrap(),
+            "# aninhado"
+        );
+        assert_eq!(
+            read_text_file_scoped(&raiz, "./AGENTS.md", None).unwrap(),
+            "# raiz"
+        );
+
+        // Relativo que ESCAPA da raiz continua barrado: o `..` é resolvido pelo
+        // canonicalize e a fronteira o rejeita.
+        let fora = std::env::temp_dir().join(format!("mc-rel-fora-{}", std::process::id()));
+        std::fs::create_dir_all(&fora).unwrap();
+        std::fs::write(fora.join("senha.txt"), "segredo").unwrap();
+        let escape = format!(
+            "../{}/senha.txt",
+            fora.file_name().unwrap().to_string_lossy()
+        );
+        assert!(read_text_file_scoped(&raiz, &escape, None).is_err());
+
+        // Relativo inexistente falha com erro, não com leitura fantasma.
+        assert!(read_text_file_scoped(&raiz, "NAO-EXISTE.md", None).is_err());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
+        std::fs::remove_dir_all(&fora).unwrap();
+    }
+
+    #[test]
+    fn read_project_file_bytes_resolve_caminho_relativo_contra_a_raiz() {
+        // Gêmeo do teste acima: os dois comandos compartilham scoped_file_path,
+        // então a regra de resolução tem que valer igual nos dois.
+        let tmp = std::env::temp_dir().join(format!("mc-rel-bytes-{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a];
+        std::fs::write(tmp.join("pixel.png"), png).unwrap();
+
+        let raiz = tmp.to_string_lossy().to_string();
+        assert_eq!(
+            read_project_file_bytes_scoped(&raiz, "pixel.png", None).unwrap(),
+            png
+        );
+        assert!(read_project_file_bytes_scoped(&raiz, "../etc/hosts", None).is_err());
+
+        std::fs::remove_dir_all(&tmp).unwrap();
     }
 
     #[test]

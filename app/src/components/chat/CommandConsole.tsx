@@ -137,9 +137,6 @@ export function CommandConsole({
   // S4 — o que o sandbox do Frota garante NESTA máquina. Lido uma vez: a
   // resposta depende do sistema, não do turno.
   const [confinamento, setConfinamento] = useState(SEM_CONFINAMENTO)
-  useEffect(() => {
-    void lerConfinamento().then(setConfinamento)
-  }, [])
   // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
   const lexicalFocus = useRef<(() => void) | null>(null)
   // pill de comando "/" presente no editor (SlashPillPresencePlugin): com ele,
@@ -186,13 +183,20 @@ export function CommandConsole({
   // conversa). Zera ao trocar de conversa ou de agent: modelo de um motor não
   // vale no outro.
   const [retryModel, setRetryModel] = useState<string | null>(null)
-  useEffect(() => setRetryModel(null), [activeId, conv.agent, conv.stagedAgent])
+  // O esforço segue a mesma regra do modelo (11/09/2026): estado próprio,
+  // zerado nos mesmos gatilhos.
+  const [retryEffort, setRetryEffort] = useState<string | null>(null)
+  useEffect(() => {
+    setRetryModel(null)
+    setRetryEffort(null)
+  }, [activeId, conv.agent, conv.stagedAgent])
   // A regra (o que vale numa conversa nova, o que vale numa travada, e a saída
   // de emergência) é pura e mora em composerIdentity.
   const identidade = identidadeEfetiva({
     travada: locked,
     modeloDestravado: modelUnlocked,
     escolhaDeEmergencia: retryModel,
+    escolhaDeEsforco: retryEffort,
     stagedAgent: conv.stagedAgent,
     conversa: { agent: conv.agent, reqModel: conv.reqModel, effort: conv.effort },
     seletores: { agent: destination, model, effort },
@@ -200,6 +204,21 @@ export function CommandConsole({
   const effectiveDest = identidade.agent
   const effectiveModel = identidade.model
   const effectiveEffort = identidade.effort
+
+  // O selo depende do MOTOR desde a rota B (11/09/2026): quem confina sozinho
+  // não recebe o envelope da Frota, então dizer "o sistema barra escrita no
+  // projeto" ali descreveria um perfil que nem foi aplicado. Relê quando o
+  // destino muda; o `lerConfinamento` cacheia por motor, então trocar de
+  // destino e voltar não refaz o invoke.
+  useEffect(() => {
+    let vivo = true
+    void lerConfinamento(effectiveDest).then((v) => {
+      if (vivo) setConfinamento(v)
+    })
+    return () => {
+      vivo = false
+    }
+  }, [effectiveDest])
 
   // Carimbo do agent numa conversa que ainda NÃO tem um. O destino é estado
   // deste componente e SOBREVIVE à troca de conversa: escolher Antigravity e
@@ -353,6 +372,7 @@ export function CommandConsole({
     // cuja última tentativa falhou. Sem a flag o despacho segue usando o modelo
     // do 1º run, como sempre (ver AgentRunConfig).
     modelSwitched: identidade.trocouDeModelo,
+    effortSwitched: identidade.trocouDeEsforco ?? false,
   }
 
   /** Foca o editor do console (FocusBridgePlugin do Lexical). */
@@ -643,8 +663,10 @@ export function CommandConsole({
                     clearPresetOnManualChange()
                   }}
                   effectiveEffort={effectiveEffort}
+                  effortLocked={locked && !modelUnlocked}
                   onEffortChange={(v) => {
-                    setEffort(v)
+                    if (locked) setRetryEffort(v)
+                    else setEffort(v)
                     clearPresetOnManualChange()
                   }}
                 />

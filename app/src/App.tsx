@@ -61,6 +61,7 @@ import {
   visibleSessions,
 } from "@/lib/externalSessions"
 import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
+import { abortarDisputa } from "@/lib/cancelConversationTurn"
 import { enviarSnapshotDaTray, useLastTurnTrayKey } from "@/lib/traySnapshot"
 import { isTauri, listProjects } from "@/lib/db"
 import {
@@ -467,13 +468,14 @@ export default function App() {
           fusion &&
           (fusion.phase === "running" || fusion.phase === "judging")
         ) {
-          useFusion.getState().abort(convId)
+          // Deixa o marco do corte da disputa no fio (ADR-180).
+          void abortarDisputa(convId)
           void feedback("Disputa interrompida")
         } else if (fusion?.phase === "promoting") {
           // Promoção é one-shot (abort no-opa): não finge que parou.
           void feedback("Disputa promovendo o vencedor, aguarde concluir")
         } else {
-          const disposition = await cancelLinearTurn(convId)
+          const disposition = await cancelLinearTurn(convId, "parada")
           void feedback(
             disposition === "idle" ? "Tarefa já não estava em execução" : "Tarefa interrompida",
           )

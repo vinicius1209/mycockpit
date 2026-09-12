@@ -8,8 +8,10 @@
 import { describe, expect, it } from "vitest"
 import {
   notaDeTrocaDeModelo,
+  notaDeTrocaDeEsforco,
   notaDeRevezamentoDeMotor,
   identidadeEfetiva,
+  identidadeDoDespacho,
   resumoDaIdentidade,
 } from "./composerIdentity"
 
@@ -233,5 +235,121 @@ describe("revezamento de motor (stagedAgent)", () => {
       "Revezamento de motor nesta conversa: Codex → Claude Code. O contexto recente foi transferido e vale deste turno em diante.",
     )
     expect(notaDeRevezamentoDeMotor("codex", "codex")).toBeNull()
+  })
+})
+
+describe("o esforço segue a regra do modelo", () => {
+  it("fora de voo, o esforço escolhido vale no próximo envio e o despacho sabe", () => {
+    const id = identidadeEfetiva({
+      travada: true,
+      modeloDestravado: true,
+      escolhaDeEmergencia: null,
+      escolhaDeEsforco: "low",
+      conversa: CARIMBO,
+      seletores: SELETORES,
+    })
+    expect(id.effort).toBe("low")
+    expect(id.trocouDeEsforco).toBe(true)
+    // trocar o esforço não mexe no modelo carimbado
+    expect(id.model).toBe("claude-opus-5[1m]")
+    expect(id.trocouDeModelo).toBe(false)
+  })
+
+  it("com turno em voo a escolha é ignorada (a flag já foi no spawn)", () => {
+    const id = identidadeEfetiva({
+      travada: true,
+      modeloDestravado: false,
+      escolhaDeEmergencia: null,
+      escolhaDeEsforco: "low",
+      conversa: CARIMBO,
+      seletores: SELETORES,
+    })
+    expect(id.effort).toBe("xhigh")
+    expect(id.trocouDeEsforco).toBeUndefined()
+  })
+
+  it("voltar pra 'default' é troca legítima, não ausência de escolha", () => {
+    // É o que o seletor faz quando o modelo novo não aceita o degrau atual.
+    const id = identidadeEfetiva({
+      travada: true,
+      modeloDestravado: true,
+      escolhaDeEmergencia: "gpt-5.5",
+      escolhaDeEsforco: "default",
+      conversa: CARIMBO,
+      seletores: SELETORES,
+    })
+    expect(id.effort).toBe("default")
+    expect(id.trocouDeEsforco).toBe(true)
+  })
+
+  it("o cru dos seletores continua sem vazar pro esforço de uma conversa travada", () => {
+    const id = identidadeEfetiva({
+      travada: true,
+      modeloDestravado: true,
+      escolhaDeEmergencia: null,
+      conversa: CARIMBO,
+      seletores: SELETORES,
+    })
+    expect(id.effort).toBe("xhigh")
+  })
+})
+
+describe("notaDeTrocaDeEsforco", () => {
+  it("registra a troca com os dois lados, sem travessão", () => {
+    expect(notaDeTrocaDeEsforco("xhigh", "low")).toBe(
+      "Esforço trocado nesta conversa: xhigh → low. Vale deste turno em diante.",
+    )
+  })
+
+  it("mesmo esforço NÃO gera linha, e null vira 'default'", () => {
+    expect(notaDeTrocaDeEsforco("high", "high")).toBeNull()
+    expect(notaDeTrocaDeEsforco(null, null)).toBeNull()
+    expect(notaDeTrocaDeEsforco(null, "high")).toContain("default → high")
+  })
+})
+
+describe("identidadeDoDespacho: o que o envio usa e o que o fio registra", () => {
+  const CONV = { agent: "codex", stagedAgent: null, reqModel: "gpt-5.6-sol", effort: "high" }
+  const PEDIDO = { agent: "codex", model: "gpt-5.5", effort: "low" }
+
+  it("conversa travada sem troca deliberada ignora o pedido e não escreve nada no fio", () => {
+    const d = identidadeDoDespacho({ locked: true, conv: CONV, cfg: PEDIDO })
+    expect([d.model, d.effort]).toEqual(["gpt-5.6-sol", "high"])
+    expect([d.modelChangeNotice, d.effortChangeNotice, d.agentChangeNotice]).toEqual([null, null, null])
+  })
+
+  it("troca só de esforço: vale o novo esforço, o modelo segue o carimbado, e só o esforço vira linha", () => {
+    const d = identidadeDoDespacho({ locked: true, conv: CONV, cfg: { ...PEDIDO, effortSwitched: true } })
+    expect(d.effort).toBe("low")
+    expect(d.model).toBe("gpt-5.6-sol")
+    expect(d.effortChangeNotice).toBe(
+      "Esforço trocado nesta conversa: high → low. Vale deste turno em diante.",
+    )
+    expect(d.modelChangeNotice).toBeNull()
+  })
+
+  it("troca só de modelo continua como antes (o esforço fica)", () => {
+    const d = identidadeDoDespacho({ locked: true, conv: CONV, cfg: { ...PEDIDO, modelSwitched: true } })
+    expect([d.model, d.effort]).toEqual(["gpt-5.5", "high"])
+    expect(d.modelChangeNotice).toContain("gpt-5.6-sol → gpt-5.5")
+    expect(d.effortChangeNotice).toBeNull()
+  })
+
+  it("revezamento de motor leva o pedido inteiro e registra só o revezamento", () => {
+    const d = identidadeDoDespacho({
+      locked: true,
+      conv: CONV,
+      cfg: { agent: "claude-code", model: null, effort: "xhigh" },
+    })
+    expect(d.isAgentSwitch).toBe(true)
+    expect([d.agent, d.model, d.effort]).toEqual(["claude-code", null, "xhigh"])
+    expect(d.agentChangeNotice).toContain("Codex → Claude Code")
+    expect([d.modelChangeNotice, d.effortChangeNotice]).toEqual([null, null])
+  })
+
+  it("conversa nova usa o pedido e não fala de troca", () => {
+    const d = identidadeDoDespacho({ locked: false, conv: CONV, cfg: PEDIDO })
+    expect([d.agent, d.model, d.effort]).toEqual(["codex", "gpt-5.5", "low"])
+    expect([d.modelChangeNotice, d.effortChangeNotice]).toEqual([null, null])
   })
 })

@@ -15,6 +15,10 @@ export default defineConfig({
   // Entries independentes: app principal, instrumento da barra e painel do
   // Navegador do projeto. Janelas auxiliares não bootam o grafo inteiro do App.
   build: {
+    // App desktop Tauri local-first: assets servidos localmente sem latência de rede.
+    // O teto de 500 kB do Vite é voltado para web móvel; o main inclui syntax
+    // highlighting (rehype-highlight/lowlight), editor Lexical e grafos.
+    chunkSizeWarningLimit: 3000,
     rollupOptions: {
       input: {
         main: fileURLToPath(new URL('./index.html', import.meta.url)),

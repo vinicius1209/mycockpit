@@ -6,11 +6,12 @@
 // próximo envio. O transcript registra o incidente, sem repetir a decisão.
 
 import { useState } from "react"
-import { ArrowRightLeft, ChevronRight, RefreshCcw, X } from "lucide-react"
+import { ArrowRightLeft, ChevronRight, Clock, RefreshCcw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { controle } from "@/components/ui/controle"
 import type { RevezamentoOpcao } from "@/lib/quotaExhausted"
+import { formatResetSentence } from "@/lib/resetHint"
 import { SELECTED_FILL, UNSELECTED } from "@/lib/selection"
 import { cn } from "@/lib/utils"
 
@@ -40,16 +41,6 @@ type ContinuityStagedProps = {
 export type ContinuityBannerProps =
   | ContinuityChoiceProps
   | ContinuityStagedProps
-
-function quotaDetail(resetHint: string | null): string {
-  const hint = resetHint?.trim()
-  if (!hint) return "O horário de retorno ainda não foi informado."
-  if (hint === "100%") return "A leitura mais recente chegou a 100%."
-  if (/^(reseta|volta)\b/i.test(hint)) {
-    return `${hint.charAt(0).toUpperCase()}${hint.slice(1)}.`
-  }
-  return `Volta ${hint}.`
-}
 
 function HandoffContents({ mode }: { mode: ContinuityMode }) {
   return (
@@ -103,9 +94,9 @@ function ContinuityChoice({
       data-continuity-mode={mode}
       className="mb-2 rounded-lg border border-border-strong bg-card shadow-[var(--shadow-sm)]"
     >
-      <div className="flex flex-wrap items-start gap-2.5 px-3 py-2.5">
+      <div className="flex items-start gap-2.5 px-3 py-2.5">
         <RefreshCcw className="mt-0.5 size-4 shrink-0 text-st-warning" />
-        <div className="min-w-[210px] flex-1">
+        <div className="min-w-0 flex-1">
           <p className="text-[13px] font-medium text-foreground">
             {immediate
               ? `${sourceLabel} parou antes de terminar`
@@ -117,51 +108,62 @@ function ContinuityChoice({
                 ? "Escolha quem retoma agora o pedido que ficou pendente."
                 : "Nenhum outro agente disponível foi confirmado nesta máquina."
               : hasAlternatives
-                ? `Este turno terminou normalmente. ${quotaDetail(resetHint)} Escolha quem receberá o próximo pedido, sem enviar nada agora.`
-                : `Este turno terminou normalmente. ${quotaDetail(resetHint)} Nenhum outro agente disponível foi confirmado nesta máquina.`}
+                ? `Este turno terminou normalmente. ${formatResetSentence(resetHint)} Escolha quem receberá o próximo pedido, sem enviar nada agora.`
+                : `Este turno terminou normalmente. ${formatResetSentence(resetHint)} Nenhum outro agente disponível foi confirmado nesta máquina.`}
           </p>
+
           {immediate && scheduledResume && (
-            <div className="mt-0.5 flex items-center gap-1 text-[11px] text-muted-foreground">
-              <span>{scheduledResume.detail}</span>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-md border border-st-warning/30 bg-st-warning/10 px-2.5 py-1.5 text-[11px] text-foreground">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <Clock className="size-3.5 shrink-0 text-st-warning" />
+                <span>{scheduledResume.detail}</span>
+              </div>
               <Button
                 type="button"
-                size="icone-compacto"
-                variant="ghost"
-                className="shrink-0 text-muted-foreground"
+                size="chip"
+                variant="outline"
+                className="text-muted-foreground hover:border-destructive hover:text-destructive"
                 title="Cancelar retomada automática"
                 aria-label="Cancelar retomada automática"
                 onClick={scheduledResume.onCancel}
               >
-                <X className="size-3.5" />
+                Cancelar retomada automática
               </Button>
             </div>
           )}
-        </div>
 
-        {hasAlternatives && (
-          <div
-            role="group"
-            aria-label="Escolher agente de destino"
-            className="flex shrink-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
-          >
-            {alternatives.map((alternative) => {
-              const chosen = alternative.id === selected?.id
-              return (
-                <Button
-                  key={alternative.id}
-                  type="button"
-                  size="compacto"
-                  variant="ghost"
-                  aria-pressed={chosen}
-                  className={cn(chosen ? SELECTED_FILL : UNSELECTED)}
-                  onClick={() => setSelectedId(alternative.id)}
-                >
-                  {alternative.label}
-                </Button>
-              )
-            })}
-          </div>
-        )}
+          {hasAlternatives && (
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-2">
+              <span className="text-[11px] text-muted-foreground">
+                {immediate
+                  ? "Ou retome agora com outro agente:"
+                  : "Agente para o próximo envio:"}
+              </span>
+              <div
+                role="group"
+                aria-label="Escolher agente de destino"
+                className="flex shrink-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
+              >
+                {alternatives.map((alternative) => {
+                  const chosen = alternative.id === selected?.id
+                  return (
+                    <Button
+                      key={alternative.id}
+                      type="button"
+                      size="compacto"
+                      variant="ghost"
+                      aria-pressed={chosen}
+                      className={cn(chosen ? SELECTED_FILL : UNSELECTED)}
+                      onClick={() => setSelectedId(alternative.id)}
+                    >
+                      {alternative.label}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {selected && (

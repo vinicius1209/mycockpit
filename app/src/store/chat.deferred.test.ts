@@ -16,6 +16,7 @@ import {
 } from "@/store/chat"
 import type { DeferredWork } from "@/lib/work"
 import type { AgentEvent } from "@/lib/agent"
+import { settleTerminalTools } from "@/store/chat/terminalTools"
 
 const T0 = 1_785_512_000_000
 
@@ -201,6 +202,19 @@ describe("Retomar ≠ repetir (decisão 3 do plano)", () => {
     expect(prompt).toContain("NÃO relance do zero")
   })
 
+  it("interrompido sem suporte a checkpoint (ex.: bash) não promete Workflow nem cache (ADR-182)", () => {
+    const bashWork: DeferredWork = {
+      ...d("interrupted"),
+      kind: "bash",
+      name: "Build test app",
+    }
+    const prompt = deferredResumePrompt(bashWork)
+    expect(prompt).toContain("Build test app")
+    expect(prompt).not.toContain("Workflow")
+    expect(prompt).not.toContain("resumeFromRunId")
+    expect(prompt).toContain("Inspecione o estado atual")
+  })
+
   it("rodando e concluído não têm ação de repetição (null)", () => {
     expect(deferredResumePrompt(d("running"))).toBeNull()
     expect(deferredResumePrompt(d("completed"))).toBeNull()
@@ -293,5 +307,47 @@ describe("meta honesto do turno (D1.3)", () => {
     const results = c.items.filter((i) => i.kind === "result")
     expect(results).toHaveLength(1)
     expect(results[0].kind === "result" && results[0].costUsd).toBe(0.181)
+  })
+
+  it("comando bash background recebe output_file no item de tool e preserva caminho ao ser interrompido", () => {
+    // Cenário do incidente do build:
+    // 1. Tool Bash invocada
+    const toolItem: ChatItem = {
+      kind: "tool",
+      id: "tool-1",
+      toolId: "toolu_01T3cSiZKnzUhyzaVHiNbtMa",
+      name: "Bash",
+      input: { command: "./scripts/build.sh test", run_in_background: true },
+      result: { ok: true, text: "Command running in background with ID: b3pbaal2v", lines: 1 },
+    }
+    const c0 = base([toolItem])
+
+    // 2. Evento deferred_work emitido a partir do tool_result com output_file
+    const bgEvent: AgentEvent = {
+      type: "deferred_work",
+      id: "b3pbaal2v",
+      tool_use_id: "toolu_01T3cSiZKnzUhyzaVHiNbtMa",
+      kind: "bash",
+      name: null,
+      status: "running",
+      summary: null,
+      output_file: "/private/tmp/tasks/b3pbaal2v.output",
+      progress: null,
+    }
+    const c1 = apply(c0, bgEvent, T0)
+    const [runningTool] = deferredItems(c1)
+    expect(runningTool.deferred?.id).toBe("b3pbaal2v")
+    expect(runningTool.deferred?.outputFile).toBe("/private/tmp/tasks/b3pbaal2v.output")
+    expect(runningTool.deferred?.status).toBe("running")
+
+    // 3. Fim do turno (Done): settleTerminalTools encerra o trabalho vivo como interrompido
+    const settled = settleTerminalTools(c1.items, "done", T0 + 1000)
+    const [interruptedTool] = settled.filter(
+      (i): i is Extract<ChatItem, { kind: "tool" }> =>
+        i.kind === "tool" && i.deferred != null,
+    )
+    expect(interruptedTool.deferred?.status).toBe("interrupted")
+    // O caminho do arquivo de saída em disco NUNCA se perde
+    expect(interruptedTool.deferred?.outputFile).toBe("/private/tmp/tasks/b3pbaal2v.output")
   })
 })

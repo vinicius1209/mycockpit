@@ -9,13 +9,13 @@
 // mudar o vocabulário de status do fio mexe aqui, num arquivo de 60 linhas, em
 // vez de caçar três `Loader2` no meio de 2.200.
 
-import { Check, Loader2, X } from "lucide-react"
+import { Check, Circle, Loader2, X } from "lucide-react"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { summarizeToolGroup } from "@/lib/toolGroup"
 
 /** Status de uma ação técnica. `recorded` é histórico antigo/adapter sem
  * resultado: neutro, nunca finge que ainda está pendente. */
-export type StepStatus = "ok" | "error" | "running" | "recorded"
+export type StepStatus = "ok" | "error" | "running" | "recorded" | "stopped"
 
 export function StepDot({
   status,
@@ -35,6 +35,16 @@ export function StepDot({
     return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/45" />
   if (status === "error")
     return <span className="size-[7px] shrink-0 rounded-full bg-st-error" />
+  // Parou por um corte seu (ADR-180): anel VAZADO, não ponto vermelho. Nem
+  // giro congelado, que leria como falha de renderização (rodandoMotion.mjs).
+  if (status === "stopped")
+    return (
+      <Circle
+        className="size-2 shrink-0 text-muted-foreground/60"
+        strokeWidth={3}
+        aria-label="parou"
+      />
+    )
   // UM indicador vivo por linhagem (§2, orçamento de tinta): quem gira é o
   // passo MAIS PROFUNDO em execução, porque é ele o "agora". O ancestral
   // continua dizendo que o ramo está vivo, com o mesmo tom e sem movimento —
@@ -80,6 +90,14 @@ export function ToolGroupStatus({
     return (
       <Check
         className="size-3.5 shrink-0 text-muted-foreground/60"
+        aria-hidden="true"
+      />
+    )
+  if (state === "stopped")
+    return (
+      <Circle
+        className="size-2.5 shrink-0 text-muted-foreground/60"
+        strokeWidth={3}
         aria-hidden="true"
       />
     )

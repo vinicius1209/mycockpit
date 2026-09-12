@@ -39,7 +39,13 @@ import {
 import { Bot, MessageSquareQuote, Terminal, User } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { groupByAuthor, type GroupAuthor, type MessageGroup } from "./messageGroups"
+import {
+  groupByAuthor,
+  grupoDeCorte,
+  type GroupAuthor,
+  type MessageGroup,
+} from "./messageGroups"
+import { rotuloDoCorte } from "@/lib/corte"
 import { type Node } from "./messageNodes"
 import { hiddenNodeCount, useStableNodes } from "./useStableNodes"
 import { CONVERSATION_COLUMN_WIDTH } from "@/lib/conversationScale"
@@ -105,6 +111,8 @@ export interface TurnTick {
   span?: number
   /** Keys dos turnos engolidos pela faixa (só quando `span` > 1). */
   covers?: string[]
+  /** O marcador é um corte (ADR-180): vira emenda de película na régua. */
+  corte?: boolean
 }
 
 /** Passo vertical (px) de cada marcador: conforto no fio curto… */
@@ -180,6 +188,7 @@ function summaryOfNode(node: Node): string {
       if (it.kind === "planGate") return it.text.trim().slice(0, 70)
       if (it.kind === "notice") return it.message.slice(0, 70)
       if (it.kind === "limit") return it.message.slice(0, 70)
+      if (it.kind === "cancelled") return rotuloDoCorte(it.cause)
       return ""
     }
   }
@@ -223,6 +232,7 @@ export function deriveTurnTicks(groups: MessageGroup[]): TurnTick[] {
       summary: summary || label,
       label,
       icon,
+      ...(grupoDeCorte(g) ? { corte: true } : {}),
     }
   })
 }
@@ -376,6 +386,20 @@ export const TurnScrubber = memo(function TurnScrubber({
                     style={{ height: passo }}
                     className="group relative flex items-center justify-center transition-all focus-visible:outline-none"
                   >
+                    {tick.corte ? (
+                      // Emenda de película: o turno foi cortado aqui (ADR-180).
+                      <span className="flex w-3.5 justify-between" aria-hidden="true">
+                        {[0, 1].map((metade) => (
+                          <span
+                            key={metade}
+                            className={cn(
+                              "block h-1 w-1.5 rounded-full",
+                              isActive ? "bg-brass" : "bg-muted-foreground/45",
+                            )}
+                          />
+                        ))}
+                      </span>
+                    ) : (
                     <span
                       className={cn(
                         "block h-1 rounded-full transition-all duration-200",
@@ -386,6 +410,7 @@ export const TurnScrubber = memo(function TurnScrubber({
                             : "w-2.5 bg-muted-foreground/35 hover:w-3.5 hover:bg-muted-foreground/80",
                       )}
                     />
+                    )}
                   </button>
                 </TooltipTrigger>
                 {/* Superfície de cartão SEM hairline: a seta do primitive herda

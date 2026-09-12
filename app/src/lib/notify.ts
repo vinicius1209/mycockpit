@@ -442,3 +442,47 @@ export function notifyCardStalled(
     `${clipTitle(title)} está ${situacao} há ${minutes} min, esperando você.`,
   )
 }
+
+/**
+ * Chamado quando um trabalho em background (DeferredWork) atinge estado terminal
+ * (completed ou interrupted). Deduplicado pelo chamador por tentativa e desfecho (SPEC F4).
+ */
+export function notifyDeferredEnd(o: {
+  convId: string
+  name: string | null
+  status: "completed" | "interrupted"
+  summary?: string | null
+}) {
+  const chat = useChat.getState()
+  const c = chat.byId[o.convId]
+  if (!c) return
+
+  const meta = (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+    (cv) => cv.id === o.convId,
+  )
+  const convTitle = meta?.title ?? "Conversa"
+  const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
+  const workName = o.name || "Trabalho em background"
+  const isOk = o.status === "completed"
+
+  const title = isOk
+    ? "Trabalho em background concluído"
+    : "Trabalho em background parou"
+  const body = isOk
+    ? `${workName} concluído · ${convTitle}`
+    : `${workName} parou antes de concluir · ${convTitle}`
+
+  useNotifs.getState().push({
+    kind: isOk ? "run_done" : "run_error",
+    title,
+    subtitle: proj?.name ?? agentLabel(c.agent),
+    body: o.summary ?? undefined,
+    projectId: c.projectId,
+    convId: o.convId,
+  })
+
+  if (chat.activeId !== o.convId) {
+    void nativeNotify("Frota", body)
+  }
+}
+

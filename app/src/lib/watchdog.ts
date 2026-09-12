@@ -147,7 +147,7 @@ export function stalledTurnEpisodeOpen(convId: string): boolean {
 /** Cancela o turno mudo (ação do toast): mata o auto-resume agendado e o run
  *  corrente — o mesmo par do "stop-activity" da tray (App.tsx). */
 export async function cancelStalledTurn(convId: string): Promise<void> {
-  await cancelLinearTurn(convId)
+  await cancelLinearTurn(convId, "parada")
 }
 
 /** Navega até a conversa muda (padrão openConversation da tray). */

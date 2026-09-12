@@ -113,6 +113,13 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
     ligado no primeiro assinante e desligado no último. Seis avatares não podem
     virar seis assinaturas do mesmo evento, e medir geometria N vezes por quadro
     é layout thrashing por decoração.
+14. **Interromper deixa registro no fio, não no toast.** Com turno rodando, o
+    envio forçado (Enter) e o Parar CORTAM o turno. O gesto carimba a causa em
+    `lib/corte.ts` e o fio grava o marco com autor quando o `cancelled` do
+    runner chega (ADR-180). Toast de sucesso aqui repetiria o fio e sumiria;
+    ele fica só para falha e para superfícies fora do fio (Mesa, bandeja).
+    Nunca desenhe o corte a partir do Enter: com steering nativo o Enter
+    corrige SEM parar, e só o evento pode dizer que houve corte.
 
 ## Os testes que seguram isto
 
@@ -131,6 +138,9 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
   estado do campo por situação.
 - `redeDePreparo.test.ts` — o corolário do item 2: estouro (assíncrono E
   síncrono) apaga o carimbo, e a falha deixa rastro em vez de sumir.
+- `filaComposer.test.ts`, `store/chat.corte.test.ts` e
+  `MarcoDeCorte.test.tsx` — o item 14: sem toast no corte, causa carimbada
+  pelo gesto e consumida pelo `cancelled`, marco com autor.
 - `lib/chatHandoff.test.ts`, `lib/composerContinuity.test.ts` e
   `ContinuityBanner.test.tsx` — o item 5: resposta antes do primeiro `await`,
   pedido/anexos preservados, semântica imediata ou futura e uma única faixa.

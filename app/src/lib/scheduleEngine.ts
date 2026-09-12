@@ -34,6 +34,7 @@ import {
 } from "@/lib/schedules"
 import { dispatchMissionSchedule } from "@/lib/scheduleMission"
 import {
+  barradoPeloAmbiente,
   failureNotice,
   recordScheduleOutcome,
   turnOutcome,
@@ -254,7 +255,13 @@ export async function dispatchSchedule(
 
     const items = useChat.getState().byId[convId]?.items ?? []
     const turn = turnOutcome(items)
-    const ok = invokeFailed == null && turn.ok
+    // R5 — "Estado real, nunca teatro" aplicado ao desfecho. O item terminal
+    // não basta num run DESASSISTIDO: o motor pode narrar a impossibilidade e
+    // sair com sucesso, e foi assim que esta automação gravou `ok` três vezes
+    // sem ter feito nada. Só pergunta quando o turno se declarou bem — turno
+    // que já falhou tem motivo próprio, e sobrescrevê-lo perderia a causa real.
+    const barrado = turn.ok ? barradoPeloAmbiente(items) : null
+    const ok = invokeFailed == null && turn.ok && barrado == null
     await finishWith(s, startedAt, {
       status: preflightBlocked ? "blocked" : ok ? "ok" : "failed",
       cost: turn.cost,
@@ -263,7 +270,7 @@ export async function dispatchSchedule(
         ? "Uma capacidade exigida não está disponível. Revise os MCPs do projeto."
         : ok
           ? null
-          : (invokeFailed ?? turn.error),
+          : (invokeFailed ?? barrado ?? turn.error),
     })
   } catch {
     // fail-soft: uma automação quebrada não derruba o motor nem as próximas.

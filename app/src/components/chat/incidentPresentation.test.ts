@@ -33,6 +33,11 @@ describe("apresentação factual do incidente", () => {
     ])
     expect(view.stages[2].meta).toBe("13:50 · horário de São Paulo")
     expect(JSON.stringify(view)).not.toMatch(/agora|disponível/i)
+
+    const viewWithoutMinutes = incidentPresentation(
+      incident("limit", "2pm (America/Sao_Paulo)"),
+    )
+    expect(viewWithoutMinutes.stages[2].meta).toBe("14:00 · horário de São Paulo")
   })
 
   it("não inventa horário quando o agente não informou retorno", () => {

@@ -10,6 +10,8 @@ import {
 } from "@/components/chat/filaComposer"
 import type { Attachment } from "@/lib/attachments"
 import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
+import { toast } from "sonner"
+import { limparCausasDoCorte, tomarCausaDoCorte } from "@/lib/corte"
 
 vi.mock("sonner", () => ({
   toast: Object.assign(vi.fn(), { error: vi.fn() }),
@@ -30,6 +32,7 @@ const anexoFake: Attachment = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  limparCausasDoCorte()
   useChat.setState({
     activeId: CONV,
     byId: {
@@ -57,7 +60,9 @@ beforeEach(() => {
 describe("stopActiveConversation", () => {
   it("cancela a conversa ativa pelo id capturado no gesto", async () => {
     await stopActiveConversation()
-    expect(cancelConversationTurn).toHaveBeenCalledWith(CONV)
+    expect(cancelConversationTurn).toHaveBeenCalledWith(CONV, "parada")
+    // o marco no fio é o registro; toast repetiria e sumiria (ADR-180)
+    expect(toast).not.toHaveBeenCalled()
   })
 })
 
@@ -145,5 +150,22 @@ describe("forceSendDraft: envio forçado direto do composer", () => {
 
     expect(clearDraft).not.toHaveBeenCalled()
     expect(onDispatch).not.toHaveBeenCalled()
+  })
+})
+
+describe("envio forçado e o corte (ADR-180)", () => {
+  it("com turno rodando não solta toast e carimba a causa para o marco do fio", () => {
+    forceSendDraft(CONV, "na verdade, puxa as configurações de prod", [], vi.fn(), vi.fn(async () => undefined))
+    expect(toast).not.toHaveBeenCalled()
+    expect(tomarCausaDoCorte(CONV)).toBe("correcao")
+  })
+
+  it("sem turno rodando não há corte, e o aviso de envio continua", () => {
+    useChat.setState((s) => ({
+      byId: { ...s.byId, [CONV]: { ...s.byId[CONV], running: false } as any },
+    }))
+    forceSendQueued(CONV, 0, vi.fn(async () => undefined))
+    expect(toast).toHaveBeenCalledWith("Enviando a fila…")
+    expect(tomarCausaDoCorte(CONV)).toBeUndefined()
   })
 })

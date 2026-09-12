@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light" data-view="hoje">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frota · A costura da interrupção (Mock)</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fbfbfa;
+      --foreground: #16181b;
+      --card: #ffffff;
+      --secondary: #f4f4f2;
+      --muted-foreground: #5c6166;
+      --faint: #8a9099;
+      --border: rgba(0, 0, 0, 0.09);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --brass: #a9742b;
+      --brass-soft: rgba(169, 116, 43, 0.09);
+      --warning: #c1861f;
+      --error: #df3830;
+      --success: #1f9d6b;
+      --shadow-sm: 0 1px 2px rgba(20, 22, 25, 0.08);
+      --shadow-pop: 0 12px 36px -8px rgba(20, 22, 25, 0.16);
+      --radius: 8px;
+      --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+    }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #0a0b0d;
+      --foreground: #e7e8ea;
+      --card: #141619;
+      --secondary: #191c20;
+      --muted-foreground: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --brass: #e4a862;
+      --brass-soft: rgba(228, 168, 98, 0.12);
+      --warning: #d99138;
+      --error: #f05248;
+      --success: #5bd6a0;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-pop: 0 12px 36px -8px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 20px 64px;
+      background: var(--background);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, summary { font: inherit; color: inherit; }
+
+    .wrap { max-width: 860px; margin: 0 auto; }
+
+    header.topo {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 4px;
+    }
+
+    h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    .sub { color: var(--muted-foreground); margin: 6px 0 18px; max-width: 60ch; }
+
+    /* ---- barra de variantes (segmented) ---- */
+    .barra {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+    .seg {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+    }
+    .seg button {
+      height: 28px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .seg button[aria-pressed="true"] {
+      background: var(--secondary);
+      color: var(--foreground);
+      font-weight: 500;
+    }
+    .tema {
+      height: 28px;
+      padding: 0 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--card);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      font-size: 12px;
+    }
+
+    /* ---- o fio ---- */
+    .fio {
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      padding: 22px 26px 26px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      position: relative;
+    }
+
+    .grupo { display: flex; gap: 10px; }
+    .avatar {
+      width: 22px; height: 22px; flex: none;
+      border-radius: 6px;
+      background: var(--secondary);
+      border: 1px solid var(--border);
+      display: grid; place-items: center;
+      font-size: 11px; color: var(--muted-foreground);
+      margin-top: 1px;
+    }
+    .corpo { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+    .autor { display: flex; align-items: baseline; gap: 8px; }
+    .autor b { font-size: 13px; font-weight: 600; }
+    .autor time { font-size: 11px; color: var(--faint); }
+    .prosa { font-size: 13px; line-height: 1.55; }
+    .prosa p { margin: 0 0 8px; }
+    .prosa p:last-child { margin-bottom: 0; }
+
+    .balao {
+      align-self: flex-start;
+      background: var(--secondary);
+      border-radius: 10px;
+      padding: 7px 11px;
+      font-size: 13px;
+      max-width: 46ch;
+    }
+
+    .acao {
+      display: flex; align-items: center; gap: 7px;
+      font-size: 12px; color: var(--muted-foreground);
+    }
+    .acao .tick { color: var(--success); }
+    .acao .meta { margin-left: auto; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+
+    /* ---- legenda de fim de turno (TurnTelemetry) ---- */
+    .legenda {
+      display: flex; flex-wrap: wrap; align-items: center;
+      gap: 4px 12px;
+      font-size: 11px; color: var(--muted-foreground);
+      font-variant-numeric: tabular-nums;
+    }
+    .legenda .estado { display: inline-flex; align-items: center; gap: 5px; font-weight: 500; }
+    .legenda .estado.ok { color: var(--success); }
+    .legenda .estado.cortado { color: var(--muted-foreground); }
+    .legenda .ponto { color: color-mix(in srgb, var(--muted-foreground) 35%, transparent); }
+
+    /* ---- HOJE: a linha solta ---- */
+    .interrompido-hoje {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 12px; color: var(--muted-foreground);
+      padding-top: 2px;
+    }
+
+    /* ---- toast ---- */
+    .toast {
+      position: absolute; right: 18px; bottom: 18px;
+      display: flex; align-items: center; gap: 8px;
+      background: var(--card);
+      border: 1px solid var(--border-strong);
+      box-shadow: var(--shadow-pop);
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 12.5px;
+      animation: pisca 3.2s ease-in-out infinite;
+    }
+    @keyframes pisca {
+      0%, 62% { opacity: 1; transform: translateY(0); }
+      82%, 100% { opacity: 0; transform: translateY(6px); }
+    }
+    @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+
+    /* ---- A costura ---- */
+    .costura {
+      display: flex; align-items: center; gap: 12px;
+      color: var(--muted-foreground);
+    }
+    .costura .filete { height: 1px; flex: 1; background: var(--border); }
+    .costura .selo {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px;
+      white-space: nowrap;
+    }
+    .costura .selo .quem { color: var(--foreground); font-weight: 500; }
+    .costura .selo .custo { font-variant-numeric: tabular-nums; }
+
+    /* ---- B: o que ficou de pé ---- */
+    details.deixou > summary {
+      list-style: none; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted-foreground);
+    }
+    details.deixou > summary::-webkit-details-marker { display: none; }
+    details.deixou > summary .chev { transition: transform 160ms ease; display: inline-block; }
+    details.deixou[open] > summary .chev { transform: rotate(90deg); }
+    .deixou-lista {
+      margin-top: 8px;
+      border-left: 2px solid var(--border);
+      padding: 2px 0 2px 12px;
+      display: flex; flex-direction: column; gap: 5px;
+      font-size: 12px; color: var(--muted-foreground);
+    }
+    .deixou-lista code {
+      font-family: var(--mono); font-size: 11.5px;
+      color: var(--brass);
+    }
+
+    /* ---- C: selo preso à sua mensagem ---- */
+    .cabeca-corte {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; color: var(--muted-foreground);
+      margin-bottom: 1px;
+    }
+    .cabeca-corte .marca { color: var(--brass); }
+
+    /* ---- linha viva ---- */
+    .linhaviva {
+      display: flex; align-items: center; gap: 8px;
+      font-size: 13px; color: var(--muted-foreground);
+      border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+      padding-top: 14px;
+    }
+    .dots span {
+      display: inline-block; width: 4px; height: 4px; border-radius: 50%;
+      background: currentColor; opacity: 0.5; margin-right: 3px;
+      animation: pulso 1.4s ease-in-out infinite;
+    }
+    .dots span:nth-child(2) { animation-delay: 0.18s; }
+    .dots span:nth-child(3) { animation-delay: 0.36s; }
+    @keyframes pulso { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+    @media (prefers-reduced-motion: reduce) { .dots span { animation: none; opacity: 0.6; } }
+
+    /* ---- painel de notas ---- */
+    .notas {
+      margin-top: 22px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--card);
+      padding: 18px 22px;
+    }
+    .notas h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+    .notas ul { margin: 0; padding-left: 18px; color: var(--muted-foreground); }
+    .notas li { margin-bottom: 6px; }
+    .notas b { color: var(--foreground); font-weight: 500; }
+    .notas code { font-family: var(--mono); font-size: 11.5px; color: var(--brass); }
+
+    .apenas { display: none; }
+    :root[data-view="hoje"] .v-hoje,
+    :root[data-view="a"] .v-a,
+    :root[data-view="b"] .v-b,
+    :root[data-view="c"] .v-c { display: revert; }
+    :root[data-view="hoje"] .nota-hoje,
+    :root[data-view="a"] .nota-a,
+    :root[data-view="b"] .nota-b,
+    :root[data-view="c"] .nota-c { display: revert; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <header class="topo">
+    <div>
+      <h1>A costura da interrupção</h1>
+      <p class="sub">
+        Cena real: turno do Codex com 14 ações e 5min21s, cortado por uma mensagem
+        sua enquanto ele trabalhava (conversa "[feat] cliente coleta", 09/09).
+        O que o fio guarda disso hoje é uma palavra cinza.
+      </p>
+    </div>
+    <button class="tema" onclick="alternarTema()">tema</button>
+  </header>
+
+  <div class="barra">
+    <div class="seg" role="group" aria-label="Variante">
+      <button aria-pressed="true" onclick="ver('hoje', this)">hoje</button>
+      <button aria-pressed="false" onclick="ver('a', this)">A · costura</button>
+      <button aria-pressed="false" onclick="ver('b', this)">B · o que ficou de pé</button>
+      <button aria-pressed="false" onclick="ver('c', this)">C · costura na sua mensagem</button>
+    </div>
+  </div>
+
+  <div class="fio">
+    <!-- turno do agente, cortado no meio -->
+    <div class="grupo">
+      <div class="avatar">◆</div>
+      <div class="corpo">
+        <div class="autor"><b>Codex</b><time>18:32</time></div>
+        <div class="acao"><span class="tick">✓</span><span>Consultar funis no banco local</span><span class="meta">3 shell · 41s</span></div>
+        <div class="acao"><span class="tick">✓</span><span>Subir servidor de inspeção</span><span class="meta">PID 4812 · rodando</span></div>
+        <div class="prosa">
+          <p>O banco local está disponível, mas as configurações dos funis estão
+          antigas: quase todos os estágios apontam para a régua anterior. Vou
+          comparar com o desenho atual antes de propor a correção.</p>
+        </div>
+
+        <!-- HOJE -->
+        <div class="apenas v-hoje interrompido-hoje">
+          <span>⃠</span><span>interrompido</span>
+        </div>
+
+        <!-- C: a legenda de fim de turno também existe quando o turno foi cortado -->
+        <div class="apenas v-c legenda">
+          <span class="estado cortado">⃠ interrompido</span>
+          <span class="ponto">·</span>
+          <span>5min21s</span>
+          <span class="ponto">·</span>
+          <span>14 ações</span>
+          <span class="ponto">·</span>
+          <span>1,2M ↓ · 8k ↑</span>
+          <span class="ponto">·</span>
+          <span style="font-weight:500">~US$ 0,42</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- A: costura entre os dois grupos -->
+    <div class="apenas v-a costura" role="separator" aria-label="turno interrompido">
+      <span class="filete"></span>
+      <span class="selo">
+        <span class="quem">você interrompeu para corrigir</span>
+        <span class="ponto">·</span>
+        <span>14 ações feitas</span>
+        <span class="ponto">·</span>
+        <span class="custo">5min21s · ~US$ 0,42</span>
+      </span>
+      <span class="filete"></span>
+    </div>
+
+    <!-- B: a mesma costura, com o que ficou de pé -->
+    <div class="apenas v-b" style="display:none">
+      <div class="costura" role="separator" aria-label="turno interrompido">
+        <span class="filete"></span>
+        <span class="selo">
+          <span class="quem">você interrompeu para corrigir</span>
+          <span class="ponto">·</span>
+          <span class="custo">5min21s · ~US$ 0,42</span>
+        </span>
+        <span class="filete"></span>
+      </div>
+      <details class="deixou" style="margin-top:10px">
+        <summary><span class="chev">›</span> o que ficou de pé: 14 ações, 1 processo morto junto</summary>
+        <div class="deixou-lista">
+          <div>✓ 11 ações concluíram e valem: <code>3 shell</code>, <code>1 busca</code>, <code>7 tarefas</code></div>
+          <div>⃠ <code>process_poll</code> parou sem publicar resultado</div>
+          <div>⃠ servidor <code>PID 4812</code> morreu junto com o turno</div>
+          <div>· nenhum arquivo foi alterado neste turno</div>
+        </div>
+      </details>
+    </div>
+
+    <!-- sua mensagem -->
+    <div class="grupo">
+      <div class="avatar">V</div>
+      <div class="corpo">
+        <!-- C: o corte é atributo da SUA mensagem, colado na causa -->
+        <div class="apenas v-c cabeca-corte">
+          <span class="marca">↱</span><span>cortou o turno acima para corrigir</span>
+        </div>
+        <div class="autor"><b>Você</b><time>18:38</time></div>
+        <div class="balao">voce consegue se conectar no banco de prod e aplicar as mesmas configurações aqui no local?</div>
+      </div>
+    </div>
+
+    <!-- resposta nova -->
+    <div class="grupo">
+      <div class="avatar">◆</div>
+      <div class="corpo">
+        <div class="autor"><b>Codex</b><time>18:38</time></div>
+        <div class="prosa"><p>Consigo. Vou consultar produção em modo somente leitura e trazer as configurações para o local.</p></div>
+      </div>
+    </div>
+
+    <!-- linha viva -->
+    <div class="linhaviva">
+      <span class="dots"><span></span><span></span><span></span></span>
+      <span class="apenas v-hoje">está trabalhando…</span>
+      <span class="apenas v-a">está trabalhando…</span>
+      <span class="apenas v-b">está trabalhando…</span>
+      <span class="apenas v-c">está trabalhando…</span>
+      <span style="margin-left:auto; font-size:11px; color:var(--faint); font-variant-numeric:tabular-nums">6s</span>
+    </div>
+
+    <!-- HOJE: o toast, único lugar que diz que houve um corte -->
+    <div class="apenas v-hoje toast">
+      <span style="color:var(--muted-foreground)">◷</span>
+      <span>Interrompendo o turno para enviar a fila…</span>
+    </div>
+  </div>
+
+  <div class="notas">
+    <h2>Notas</h2>
+
+    <ul class="apenas nota-hoje">
+      <li><b>O toast é o único que sabe o porquê</b>, e ele some em 4 segundos.
+        Quem reler a conversa amanhã não descobre se você cortou, se o processo
+        caiu ou se a cota acabou.</li>
+      <li><b>A palavra cinza vem antes da sua mensagem</b>, sem ligação com ela.
+        A causa está uma linha abaixo do efeito e nada costura as duas.</li>
+      <li><b>O turno cortado não presta contas.</b> Turno que termina mostra
+        "concluído · 17min58s · ~US$ 3,45"; turno cortado mostra "interrompido"
+        e mais nada. Foram 14 ações e 5min21s de trabalho real, e
+        <code>turn_costs</code> não tem linha nenhuma para eles.</li>
+      <li><b>Duas vozes para o mesmo instante</b>: a linha viva diz
+        "finalizando…" enquanto o toast diz "Interrompendo o turno…".</li>
+    </ul>
+
+    <ul class="apenas nota-a">
+      <li>Reusa a primitiva que o fio já tem: o divisor de "novas mensagens"
+        (<code>role="separator"</code> com dois filetes e rótulo no meio).
+        Superfície nova para o mesmo gesto seria um segundo idioma.</li>
+      <li><b>Cinza, nunca vermelho.</b> Interromper não é falha, é um gesto de
+        conversa: você cortou porque tinha algo melhor a dizer.</li>
+      <li>O rótulo nomeia a <b>causa</b>. Quatro causas, quatro frases:
+        "você interrompeu para corrigir", "você parou o turno",
+        "o processo do agente encerrou sozinho", "a cota acabou no meio".</li>
+      <li>Custo e duração entram na costura: é o mínimo de prestação de contas
+        do pedaço que rodou.</li>
+    </ul>
+
+    <ul class="apenas nota-b">
+      <li>Responde a pergunta que a pessoa realmente faz ao cortar:
+        <b>"ele chegou a fazer alguma coisa?"</b>. Interrupção não desfaz o que
+        já foi escrito em disco, e fingir o contrário é teatro.</li>
+      <li>Tudo aqui é <b>derivado do que já existe</b> no fio: as tools do turno,
+        o que <code>settleTerminalTools</code> marcou como parado e o
+        <code>managedProcess</code> que morreu junto. Nada de estado novo.</li>
+      <li>Nasce fechado. O fio frio continua com uma linha só; o detalhe é um
+        gesto explícito.</li>
+    </ul>
+
+    <ul class="apenas nota-c">
+      <li><b>O corte vira atributo da sua mensagem</b>, não um item solto: causa
+        e efeito ficam adjacentes, e a leitura fria fica na ordem certa.</li>
+      <li>O turno cortado ganha a <b>mesma legenda de fim de turno</b> do turno
+        que terminou (<code>TurnTelemetry</code> com um terceiro estado). É a
+        correção mais importante das quatro: hoje interromper apaga o custo.</li>
+      <li>Uma linha a menos que A e B: o corte não ocupa altura própria no fio.</li>
+      <li>Depende de algo que hoje não existe: <b>usage parcial no cancelamento</b>.
+        Sem número real, a legenda mostra duração e ações e cala sobre o custo
+        (degradação honesta), nunca um "US$ 0,00" inventado.</li>
+    </ul>
+
+    <ul>
+      <li style="margin-top:10px"><b>Recomendação:</b> C como esqueleto (a
+        legenda honesta + o selo na sua mensagem), com o disclosure de B pendurado
+        nela. A costura de A vira o formato das causas que <em>não</em> são sua
+        mensagem (processo caiu, cota acabou), onde não existe mensagem para
+        costurar. O toast do caminho feliz sai; toast fica só para o que falhou
+        ("Não consegui interromper o turno").</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  function ver(v, botao) {
+    document.documentElement.setAttribute('data-view', v);
+    for (const b of botao.parentElement.children) b.setAttribute('aria-pressed', String(b === botao));
+    // v-b é um bloco: o seletor global usa `revert`, então acerto o display aqui.
+    document.querySelector('.v-b').style.display = v === 'b' ? 'block' : 'none';
+  }
+  function alternarTema() {
+    const r = document.documentElement;
+    r.setAttribute('data-theme', r.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  }
+</script>
+</body>
+</html>

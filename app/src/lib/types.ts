@@ -43,6 +43,11 @@ export interface AgentRunConfig {
    *  turno que falhou (`lastExecutorTurnFailed`, lib/turnOutcome.ts). Ausente =
    *  nada muda — ⌘K, fila coalescida e todo caller antigo seguem travados. */
   modelSwitched?: boolean
+  /** Mesma regra do `modelSwitched`, para o ESFORÇO: este envio carrega uma
+   *  troca deliberada de esforço numa conversa já travada. Como o modelo, é
+   *  flag de spawn do próximo turno e preserva a sessão do CLI. Ausente = o
+   *  despacho segue com o esforço carimbado na conversa. */
+  effortSwitched?: boolean
 }
 
 /** Destino do console de comando: um agent ou (futuro) um modelo direto. */

@@ -14,31 +14,9 @@ export interface IncidentPresentation {
   stages: IncidentStage[]
 }
 
-/** Humaniza somente relógios civis inequívocos. O hint desconhecido volta
- * intacto, porque remover palavras ou inventar interpretação faria o replay
- * dizer algo diferente do que o agente informou. */
-export function formatIncidentReset(hint: string): string {
-  const raw = hint.trim()
-  const candidate = raw.replace(/^reset(?:s|ting)?\s+(?:at\s+)?/i, "")
-  const twelveHour = candidate.match(
-    /\b(\d{1,2}):(\d{2})\s*([ap])\.?m\.?\b/i,
-  )
-  const twentyFourHour = candidate.match(/\b(?:[01]?\d|2[0-3]):[0-5]\d\b/)
-  if (!twelveHour && !twentyFourHour) return raw
+import { formatIncidentReset } from "@/lib/resetHint"
+export { formatIncidentReset }
 
-  let formatted = candidate
-  if (twelveHour) {
-    let hour = Number(twelveHour[1]) % 12
-    if (twelveHour[3].toLowerCase() === "p") hour += 12
-    formatted = formatted.replace(
-      twelveHour[0],
-      `${String(hour).padStart(2, "0")}:${twelveHour[2]}`,
-    )
-  }
-  return formatted
-    .replace(/\s*\(America\/Sao_Paulo\)/i, " · horário de São Paulo")
-    .replace(/America\/Sao_Paulo/i, "horário de São Paulo")
-}
 
 export function incidentPresentation(
   incident: IncidentNode,

@@ -313,6 +313,7 @@ pub enum ModelSmokeDialect {
 ///
 /// A ordem importa e é do mais contido para o mais invasivo: quanto mais
 /// abaixo, mais do estado do usuário o app precisaria tocar para instalar.
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum McpEscopo {
     /// A config vai junto com o spawn e morre com ele. Isolamento perfeito:
@@ -350,14 +351,66 @@ impl McpEscopo {
 
     /// O CLI fala MCP, mesmo que o app não consiga escopar. É a distinção que
     /// faltava: "o Frota não roteia" nunca é "o motor não suporta".
+    #[allow(dead_code)]
     pub fn cli_fala_mcp(self) -> bool {
         !matches!(self, McpEscopo::Nenhum)
+    }
+}
+
+/// O motor confina por conta PRÓPRIA nos modos que prometem escrita zero?
+///
+/// # O bug que este vocabulário existe pra matar (09/09/2026)
+///
+/// O S2 do sandbox-plan passou a envelopar o spawn em `sandbox-exec` sempre que
+/// o modo prometia não escrever. O Codex faz a MESMA coisa por dentro: ele roda
+/// `/usr/bin/sandbox-exec` com política `(deny default)` a cada comando de
+/// shell. macOS recusa aplicar perfil restritivo dentro de perfil já aplicado, e
+/// quem morre é o de dentro — o que executa os comandos. Medido:
+///
+/// ```text
+/// sandbox-exec -f allow-default.sb sandbox-exec -f deny-default.sb sh -c 'echo ok'
+/// → sandbox-exec: sandbox_apply: Operation not permitted   (exit 71)
+/// ```
+///
+/// Resultado real: automação agendada em "Só lê" com Codex ficou CEGA (`pwd` e
+/// `cat` com exit 71), rodou três vezes, gastou US$ 1,16 e gravou `ok` nas três.
+/// "Planejar primeiro" + Codex tinha o mesmo defeito no chat inteiro.
+///
+/// Bool não serve aqui, e é a lição do `managed_mcp: bool` → `McpEscopo` logo
+/// acima: são TRÊS realidades, e colapsá-las em duas faria o agy (que diz
+/// confinar e na verdade emudece) ser tratado como garantia.
+#[allow(dead_code)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SandboxProprio {
+    /// Não confina nada por conta própria. O envelope da Frota é a única
+    /// garantia de sistema que existe, e é ele que vale.
+    Nenhum,
+    /// DIZ confinar, mas a medida da fase 0 mostrou que ele EMUDECE em vez de
+    /// falhar (`exit 0`, stdout vazio, stderr sem assinatura). Não conta como
+    /// garantia: o envelope continua valendo, e é o `SilencioSuspeito` do S3
+    /// que transforma o silêncio em aviso.
+    MelhorEsforco,
+    /// Aplica sandbox de SO, MEDIDO por turno real. Dispensa o envelope da
+    /// Frota — e COLIDE com ele, então dispensar não é otimização, é correção.
+    SistemaOperacional,
+}
+
+impl SandboxProprio {
+    /// O envelope da Frota deve sair de cena para este motor?
+    ///
+    /// Só a garantia medida dispensa. `MelhorEsforco` NÃO dispensa de
+    /// propósito: um motor que emudece em vez de falhar é exatamente o caso que
+    /// o sandbox-plan existe para cobrir.
+    pub fn dispensa_envelope(self) -> bool {
+        matches!(self, SandboxProprio::SistemaOperacional)
     }
 }
 
 /// Como uma fonte torna ferramentas disponíveis ao motor. MCP é só UM dos
 /// transportes; o domínio não pode depender dele para representar tools
 /// nativas, ACP ou uma futura API de provider.
+#[allow(dead_code)]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum ToolTransport {
@@ -446,6 +499,12 @@ pub struct Capabilities {
     /// O config MCP nativo aceita `cwd` no launch (só o Codex documenta; o
     /// schema JSON do Claude não tem o campo — não prometer o que some).
     pub mcp_launch_cwd: bool,
+    /// O motor confina por conta PRÓPRIA nos modos de escrita zero. Decide se o
+    /// envelope `sandbox-exec` da Frota entra ou sai (ver `SandboxProprio`):
+    /// dois perfis Seatbelt aninhados fazem o de dentro falhar, e o de dentro é
+    /// o que executa os comandos. Espelho TS: `sandboxProprio` em
+    /// lib/agents.ts (teste-gêmeo `agents.sandbox.test.ts`).
+    pub sandbox_proprio: SandboxProprio,
     /// Interação inline via `mc-approval` (ask_user + permission-prompt-tool).
     pub inline_interaction: bool,
     /// Emite background tasks que sobrevivem ao turno (`system/task_*`,
@@ -612,6 +671,12 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: config MCP injetada no spawn, morre com o processo.
     mcp_escopo: McpEscopo::PorRun,
     mcp_launch_cwd: false,
+    // claude 2.1.266: NÃO expõe sandbox de SO (o `--help` só cita "sandboxes"
+    // como recomendação de ambiente pro --dangerously-skip-permissions). A
+    // medida da fase 0 confirma que ele conviveu com o envelope da denylist sem
+    // colidir. Se ganhar sandbox de bash no macOS, cai na colisão do Codex e é
+    // ESTE valor que muda — uma linha, não um bug novo.
+    sandbox_proprio: SandboxProprio::Nenhum,
     inline_interaction: true,
     deferred_work: true,
     native_slash: true,
@@ -668,6 +733,18 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // codex 0.146: idem, config por run no exec.
     mcp_escopo: McpEscopo::PorRun,
     mcp_launch_cwd: true,
+    // codex 0.153.2 (medido 10/09/2026, turnos reais): `-s read-only` barra
+    // escrita no cwd, fora do cwd, em pasta de `--add-dir`, pela via NATIVA
+    // (`apply_patch` → "writing is blocked by read-only sandbox"), por
+    // python3/perl/cp e por processo destacado (`nohup &` — o perfil é herdado
+    // pelos filhos). Leitura do disco inteiro segue livre; rede fica off.
+    //
+    // É estritamente MAIS apertado que a denylist da Frota (que libera rede e
+    // só protege o projeto), então dispensar o envelope aperta em vez de
+    // afrouxar. Em Linux o envelope nunca aplicou (`disponivel()` é
+    // macOS-only), e lá isto já era o comportamento: o macOS é que estava com
+    // uma regressão de plataforma.
+    sandbox_proprio: SandboxProprio::SistemaOperacional,
     inline_interaction: false,
     deferred_work: false,
     native_slash: false,
@@ -743,6 +820,13 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     context_mcp: false,
     mcp_escopo: McpEscopo::Global,
     mcp_launch_cwd: false,
+    // agy 1.1.13: tem `--sandbox`, mas ele é "terminal restrictions" e a fase 0
+    // do sandbox-plan MEDIU o que ele faz quando barra: `exit 0`, stdout vazio,
+    // stderr sem assinatura. Ele não falha, FINGE que funcionou. Isso não é
+    // garantia, é o caso que motivou o módulo inteiro — então o envelope da
+    // Frota continua valendo aqui, e é o `SilencioSuspeito` do S3 que dá voz ao
+    // silêncio.
+    sandbox_proprio: SandboxProprio::MelhorEsforco,
     inline_interaction: false,
     // agy 1.1.13: o stream tem `step_type: "tool"`, mas nada que sobreviva ao
     // turno (nenhum evento de task/workflow em background nas sondas de
@@ -976,6 +1060,10 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     // `opencode mcp add`, que é por onde o F2 vai instalar.
     mcp_escopo: McpEscopo::PorProjeto,
     mcp_launch_cwd: false,
+    // opencode 1.18.21: zero menção a sandbox no `--help` (conferido
+    // 11/09/2026). Sem fonte auditada, o valor é o fail-closed do agnosticismo:
+    // assumir confinamento próprio que não existe tiraria a única garantia real.
+    sandbox_proprio: SandboxProprio::Nenhum,
     inline_interaction: false,
     deferred_work: false,
     native_slash: false,
@@ -1445,6 +1533,38 @@ fn parse_task_notification(text: &str) -> Option<AgentEvent> {
         output_file: None,
         progress: None,
     })
+}
+
+/// Parse da mensagem emitida pelo Claude Code ao despachar comando em background
+/// (payload real do incidente: `Command running in background with ID: <id>. Output is being written to: <path>...`).
+/// Extrai deterministamente task_id e output_file para associar ao tool_use_id.
+fn parse_claude_background_task(text: &str) -> Option<(String, String)> {
+    let prefix = "Command running in background with ID: ";
+    let output_marker = ". Output is being written to: ";
+    let p_idx = text.find(prefix)?;
+    let after_prefix = &text[p_idx + prefix.len()..];
+    let m_idx = after_prefix.find(output_marker)?;
+    let task_id = after_prefix[..m_idx].trim();
+    if task_id.is_empty() {
+        return None;
+    }
+    let after_marker = &after_prefix[m_idx + output_marker.len()..];
+    let end_idx = after_marker
+        .find(". You will be notified")
+        .or_else(|| after_marker.find(". "))
+        .or_else(|| after_marker.find('\n'))
+        .unwrap_or_else(|| {
+            if after_marker.ends_with('.') {
+                after_marker.len().saturating_sub(1)
+            } else {
+                after_marker.len()
+            }
+        });
+    let output_file = after_marker[..end_idx].trim();
+    if output_file.is_empty() || !output_file.starts_with('/') {
+        return None;
+    }
+    Some((task_id.to_string(), output_file.to_string()))
 }
 
 // ---------------- Claude Code (porta o map_events 1:1) ----------------
@@ -2108,7 +2228,25 @@ impl AgentAdapter for ClaudeAdapter {
                         if full.chars().count() > 600 {
                             text.push('…');
                         }
-                        out.push(AgentEvent::ToolResult { id, ok, text, lines, images });
+                        out.push(AgentEvent::ToolResult {
+                            id: id.clone(),
+                            ok,
+                            text,
+                            lines,
+                            images,
+                        });
+                        if let Some((task_id, output_file)) = parse_claude_background_task(&full) {
+                            out.push(AgentEvent::DeferredWork {
+                                id: task_id,
+                                tool_use_id: Some(id),
+                                kind: Some("bash".to_string()),
+                                name: None,
+                                status: DeferredStatus::Running,
+                                summary: None,
+                                output_file: Some(output_file),
+                                progress: None,
+                            });
+                        }
                     }
                 }
                 // D1.1: `<task-notification>` injetada pelo harness no
@@ -2992,9 +3130,33 @@ impl AgyAdapter {
                                 .unwrap_or(&serde_json::Value::Null),
                         ),
                     });
+                    if let Some((task_id, output_file)) = parse_claude_background_task(&full) {
+                        out.push(AgentEvent::DeferredWork {
+                            id: task_id,
+                            tool_use_id: Some(id.clone()),
+                            kind: Some("bash".to_string()),
+                            name: None,
+                            status: DeferredStatus::Running,
+                            summary: None,
+                            output_file: Some(output_file),
+                            progress: None,
+                        });
+                    }
                 }
             }
-            // user_input / system_message / checkpoint / unknown: nenhum cartão.
+            "user_input" | "system_message" => {
+                let text = step
+                    .get("text_delta")
+                    .and_then(|x| x.as_str())
+                    .or_else(|| step.get("message").and_then(|x| x.as_str()))
+                    .or_else(|| step.pointer("/message/content").and_then(|x| x.as_str()));
+                if let Some(t) = text {
+                    if let Some(ev) = parse_task_notification(t) {
+                        out.push(ev);
+                    }
+                }
+            }
+            // checkpoint / unknown: nenhum cartão.
             // (O `unknown` aqui é step_type do PRÓPRIO agy, não linha
             // desconhecida — a linha foi entendida, o step é que não pinta nada.)
             _ => {}
@@ -3309,7 +3471,14 @@ impl AgentAdapter for AgyAdapter {
             }
             // `command_result` (resposta de `/comando` nativo, ex. `/credits`)
             // e qualquer evento novo: surfaça em vez de descartar.
-            _ => vec![AgentEvent::Unknown { raw: v.clone() }],
+            _ => {
+                if let Some(text) = user_message_text(v) {
+                    if let Some(ev) = parse_task_notification(&text) {
+                        return vec![ev];
+                    }
+                }
+                vec![AgentEvent::Unknown { raw: v.clone() }]
+            }
         }
     }
 
@@ -4125,6 +4294,63 @@ mod tests {
                 "message": { "content": "<task-notification>\n<task-id>x1</task-id>\n<status>exploded</status>\n</task-notification>" }
             }))
             .is_empty());
+    }
+
+    #[test]
+    fn claude_tool_result_com_background_bash_emite_deferred_work_com_output_file() {
+        let mut a = ClaudeAdapter::default();
+        // Payload REAL do incidente do build test:
+        let raw_output = "Command running in background with ID: b3pbaal2v. Output is being written to: /private/tmp/claude-501/-Users-viniciusmachado-projetos-mycockpit/c03399e2-c987-48b7-bfb3-8d393f14c82a/tasks/b3pbaal2v.output. You will be notified when it completes. To check interim output, use Read on that file path.";
+        let evs = a.map_line(&serde_json::json!({
+            "type": "user",
+            "message": {
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "toolu_01T3cSiZKnzUhyzaVHiNbtMa",
+                        "content": raw_output,
+                        "is_error": false
+                    }
+                ]
+            }
+        }));
+        assert_eq!(evs.len(), 2);
+        match &evs[0] {
+            AgentEvent::ToolResult { id, ok, .. } => {
+                assert_eq!(id, "toolu_01T3cSiZKnzUhyzaVHiNbtMa");
+                assert!(*ok);
+            }
+            _ => panic!("esperava ToolResult"),
+        }
+        match &evs[1] {
+            AgentEvent::DeferredWork {
+                id,
+                tool_use_id,
+                kind,
+                output_file,
+                status,
+                ..
+            } => {
+                assert_eq!(id, "b3pbaal2v");
+                assert_eq!(
+                    tool_use_id.as_deref(),
+                    Some("toolu_01T3cSiZKnzUhyzaVHiNbtMa")
+                );
+                assert_eq!(kind.as_deref(), Some("bash"));
+                assert_eq!(
+                    output_file.as_deref(),
+                    Some("/private/tmp/claude-501/-Users-viniciusmachado-projetos-mycockpit/c03399e2-c987-48b7-bfb3-8d393f14c82a/tasks/b3pbaal2v.output")
+                );
+                assert!(matches!(status, DeferredStatus::Running));
+            }
+            _ => panic!("esperava DeferredWork"),
+        }
+    }
+
+    #[test]
+    fn parse_claude_background_task_rejeita_path_relativo_ou_invalido() {
+        assert!(parse_claude_background_task("Build ok sem background").is_none());
+        assert!(parse_claude_background_task("Command running in background with ID: 123. Output is being written to: rel/path.log").is_none());
     }
 
     // ---- evidência visual de tool_result (browser-plan B1) ----
@@ -5111,6 +5337,44 @@ mod tests {
             "a palavra rachada tem que voltar inteira: {texto}"
         );
         assert_eq!(fechamentos, 1, "um TextStop por step, no fim dele");
+    }
+
+    #[test]
+    fn agy_task_notification_e_background_task_viram_deferred_work() {
+        let mut a = AgyAdapter::default();
+        let tool_line = serde_json::json!({
+            "event": "step_update",
+            "step_update": {
+                "step_index": 10,
+                "step_type": "tool",
+                "state": "DONE",
+                "tool_name": "bash",
+                "tool_info": {
+                    "output": "Command running in background with ID: agy_bg_123. Output is being written to: /tmp/agy_bg.log\n"
+                }
+            }
+        });
+        let evs = a.map_line(&tool_line);
+        assert!(evs.iter().any(|e| matches!(
+            e,
+            AgentEvent::DeferredWork { id, status: DeferredStatus::Running, .. } if id == "agy_bg_123"
+        )));
+
+        let notif_payload = "<task-notification>\n<task-id>agy_bg_123</task-id>\n<status>completed</status>\n<summary>Concluido com sucesso</summary>\n</task-notification>";
+        let user_line = serde_json::json!({
+            "event": "step_update",
+            "step_update": {
+                "step_index": 11,
+                "step_type": "user_input",
+                "state": "DONE",
+                "message": notif_payload
+            }
+        });
+        let evs2 = a.map_line(&user_line);
+        assert!(evs2.iter().any(|e| matches!(
+            e,
+            AgentEvent::DeferredWork { id, status: DeferredStatus::Completed, .. } if id == "agy_bg_123"
+        )));
     }
 
     /// Linha `result` REAL de um desfecho de ERRO do print mode, capturada em
@@ -6120,6 +6384,29 @@ mod tests {
                 caps.mcp_escopo.por_run(),
                 "{agent}: escopo por-run declarado ≠ MCP externo do plano no comando"
             );
+            // O contrato do `sandbox_proprio`: quem declara confinar sozinho
+            // TEM que passar flag de sandbox pro próprio binário. Sem isto a
+            // capability seria uma promessa — e ela é o que TIRA o envelope da
+            // Frota, então uma promessa falsa aqui deixa o turno SEM
+            // confinamento nenhum (fail-open no eixo de segurança).
+            //
+            // É a metade que faltava no incidente de 04–09/09/2026, ao
+            // contrário: lá o problema era o envelope somado ao sandbox do
+            // motor; aqui é o envelope retirado de quem não tem sandbox.
+            let leitura_blob = argv(
+                &resolve(agent)
+                    .unwrap()
+                    .build_command(&req(Permission::Leitura, false))
+                    .unwrap(),
+            )
+            .join(" ");
+            if caps.sandbox_proprio.dispensa_envelope() {
+                assert!(
+                    leitura_blob.contains("read-only") || leitura_blob.contains("--sandbox"),
+                    "{agent}: declara confinar sozinho e não passa flag de sandbox em Leitura — \
+                     a Frota vai TIRAR o envelope e o turno fica sem confinamento: {leitura_blob}"
+                );
+            }
             // G3.1 — a arena do Fusion não renderiza trabalho diferido: motor
             // com `deferred_work` tem a tool Workflow SUPRIMIDA no spawn do
             // candidato (task órfão em silêncio é pior que a tool ausente).

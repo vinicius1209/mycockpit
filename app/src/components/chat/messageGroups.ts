@@ -3,6 +3,7 @@
 // cabeçalho (nome) aparecem uma vez, os demais nós indentam sob o mesmo gutter.
 // Puro e testável: a costura da prosa (messageNodes) já rodou antes; aqui só se
 // decide quem "assina" cada bloco e onde a fita muda de dono.
+import { nasceuAgora } from "@/lib/nascimento"
 import type { Node } from "./messageNodes"
 
 /** Quem assina um bloco. `especialista` carrega a persona (id+nome) pra que
@@ -95,4 +96,24 @@ export function groupByAuthor(nodes: Node[]): MessageGroup[] {
     }
   }
   return groups
+}
+
+/** O grupo é o marco de um corte (ADR-180)? Voz de sistema com um `cancelled`.
+ *  Permanente: é o que a régua desenha como emenda. */
+export function grupoDeCorte(group: MessageGroup | undefined): boolean {
+  if (!group || group.author.kind !== "system") return false
+  return group.nodes.some((n) => n.type === "item" && n.item.kind === "cancelled")
+}
+
+/** O corte deste grupo ACABOU de nascer? É ele que acende a brasa no bloco do
+ *  executor logo acima. Decidido no render, não na montagem: o bloco cortado já
+ *  estava na tela quando o corte chegou. */
+export function corteNasceu(
+  group: MessageGroup | undefined,
+  now: number = Date.now(),
+): boolean {
+  if (!grupoDeCorte(group)) return false
+  return group!.nodes.some(
+    (n) => n.type === "item" && n.item.kind === "cancelled" && nasceuAgora(n.item.ts, now),
+  )
 }

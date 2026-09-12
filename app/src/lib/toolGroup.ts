@@ -9,7 +9,7 @@ import { presentTool, type ToolEmphasis, type ToolView } from "@/lib/toolview"
 export interface ToolActivityInput {
   name: string
   input: unknown
-  result?: { ok: boolean } | null
+  result?: { ok: boolean; interrupted?: true } | null
   /** Nascimento da ação (epoch ms) — alimenta a duração congelada do grupo. */
   ts?: number
   /** Último evento observável da ação. Ausente em histórico antigo. */
@@ -43,7 +43,8 @@ export function workKey(
 export interface ToolGroupView {
   label: string
   emphasis: ToolEmphasis
-  state: "running" | "ok" | "error" | "recorded"
+  /** `stopped`: alguma ação parou por um corte seu (ADR-180), sem falhar. */
+  state: "running" | "ok" | "error" | "recorded" | "stopped"
 }
 
 /** Quantos TRABALHOS distintos o conjunto contém (não quantos nós). Um
@@ -101,6 +102,22 @@ function settledLabel(
   return finished ? `${n} ações concluídas` : `${n} ações registradas`
 }
 
+/** Grupo com ação que PAROU por um corte seu (ADR-180): a mesma gramática da
+ * falha ("1 de 7 parou · Culpada"), sem o tom de falha. null = nada parou. */
+function stoppedLabel(
+  tools: readonly ToolActivityInput[],
+  views: readonly ToolView[],
+): string | null {
+  const idx = tools.findIndex((t) => t.result?.interrupted)
+  if (idx < 0) return null
+  const culprit = views[idx].label
+  if (tools.length === 1) return `${culprit} parou`
+  const stopped = tools.filter((t) => t.result?.interrupted).length
+  return stopped === 1
+    ? `1 de ${tools.length} parou · ${culprit}`
+    : `${stopped} de ${tools.length} pararam`
+}
+
 /** Resume um burst sem olhar o comando cru. O grupo descreve a natureza do
  * trabalho; a lista expandida explica cada ação; o raw fica no nível técnico. */
 export function summarizeToolGroup(
@@ -115,7 +132,7 @@ export function summarizeToolGroup(
     : views.some((v) => v.emphasis === "normal")
       ? "normal"
       : "quiet"
-  const failed = tools.filter((t) => t.result?.ok === false).length
+  const failed = tools.filter((t) => t.result?.ok === false && !t.result.interrupted).length
   if (failed > 0) {
     return {
       label: failed === 1 ? "Uma ação falhou" : `${failed} ações falharam`,
@@ -132,6 +149,8 @@ export function summarizeToolGroup(
     }
   }
   const allFinished = tools.every((t) => t.result != null)
+  const cut = stoppedLabel(tools, views)
+  if (cut) return { label: cut, emphasis, state: "stopped" }
   return {
     label: settledLabel(views, allFinished, countWorks(tools)),
     emphasis,
@@ -194,7 +213,9 @@ export function describeToolGroup(
     : views.some((v) => v.emphasis === "normal")
       ? "normal"
       : "quiet"
-  const failedIdx = tools.flatMap((t, i) => (t.result?.ok === false ? [i] : []))
+  const failedIdx = tools.flatMap((t, i) =>
+    t.result?.ok === false && !t.result.interrupted ? [i] : [],
+  )
   const allFinished = tools.every((t) => t.result != null)
   const total = tools.length
   // Duração congelada: só quando o grupo terminou de verdade (todo mundo com
@@ -249,6 +270,8 @@ export function describeToolGroup(
       state: "running",
     }
   }
+  const cut = stoppedLabel(tools, views)
+  if (cut) return { ...base, label: cut, emphasis, state: "stopped" }
   return {
     ...base,
     label: settledLabel(views, allFinished, works),

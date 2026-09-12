@@ -24,7 +24,7 @@
 import { useEffect, useState } from "react"
 import { Gauge, RefreshCw, X } from "lucide-react"
 import { PainelDaFaixa } from "@/components/layout/statusBarChrome"
-import { controle } from "@/components/ui/controle"
+import { Button } from "@/components/ui/button"
 import { agentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
 import { AgentLogo } from "@/components/common/AgentLogo"
@@ -237,19 +237,18 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
       align={compact ? "start" : "end"}
       largura="w-[460px]"
       acao={
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="chip"
           onClick={handleRefresh}
           disabled={refreshing}
-          className={cn(
-            controle("chip"),
-            "text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-50",
-          )}
+          className="text-muted-foreground hover:bg-secondary hover:text-foreground"
           title="Atualizar leituras agora"
         >
           <RefreshCw className={cn("size-3", refreshing && "animate-spin")} />
           <span>{refreshing ? "Atualizando..." : "Atualizar"}</span>
-        </button>
+        </Button>
       }
       nota={
         <span className="flex items-center justify-between">

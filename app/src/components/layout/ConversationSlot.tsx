@@ -2,6 +2,8 @@ import { useSyncExternalStore } from "react"
 import { fmtAgo } from "@/lib/format"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { minuteNow, subscribeMinute } from "@/lib/minuteTick"
+import { useTrocou } from "@/lib/nascimento"
+import { cn } from "@/lib/utils"
 import {
   fmtQuando,
   slotEstado,
@@ -46,10 +48,15 @@ export function ConversationSlot({
   // `lib/janelaViva.ts` pro que foi descartado com medida antes de chegar aqui.
   const epoca = useEpocaDaJanela()
   const estado = slotEstado({ pede, rodando, falhou })
+  // Montar a linha não anima; TROCAR de estado sim, e a `key` no estado remonta
+  // o slot para a entrada tocar a cada troca (ADR-179). O relógio de minuto não
+  // muda o estado, então "9m" virando "10m" não re-entra.
+  const trocou = useTrocou(estado)
+  const slot = cn(SLOT, trocou && "fio-nasce")
 
   if (estado === "rodando") {
     return (
-      <span className={SLOT} title={TITULO.rodando}>
+      <span key={estado} className={slot} title={TITULO.rodando}>
         {/* `key` na ÉPOCA: quando a janela volta de uma oclusão do macOS, o
             WKWebView pode repintar o último quadro sem retomar a animação — o
             anel fica parado num ângulo qualquer até algo forçar recálculo de
@@ -70,7 +77,7 @@ export function ConversationSlot({
   }
   if (estado === "pede") {
     return (
-      <span className={SLOT} title={TITULO.pede}>
+      <span key={estado} className={slot} title={TITULO.pede}>
         <span
           key={epoca}
           className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning"
@@ -84,7 +91,7 @@ export function ConversationSlot({
     // Falha não pulsa: já aconteceu, não está acontecendo (§6, pretérito no
     // marco). O que pulsa é o que ainda pede ou ainda corre.
     return (
-      <span className={SLOT} title={TITULO.falhou}>
+      <span key={estado} className={slot} title={TITULO.falhou}>
         <span
           className="size-1.5 rounded-full bg-st-error"
           aria-label="turno terminou com erro"
@@ -97,7 +104,8 @@ export function ConversationSlot({
   const rotulo = fmtQuando(updatedAt, agora)
   return (
     <span
-      className={SLOT}
+      key={estado}
+      className={slot}
       title={
         rotulo && updatedAt
           ? `Última atividade ${fmtAgo(agora - updatedAt)}`

@@ -5,6 +5,7 @@ import { UserAvatar } from "@/components/user/UserAvatar"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import { fmtTime } from "@/lib/format"
+import { useNasceuAgora } from "@/lib/nascimento"
 import { cn } from "@/lib/utils"
 import type { GroupAuthor } from "@/components/chat/messageGroups"
 
@@ -22,6 +23,7 @@ export function GroupRow({
   agent,
   presetId,
   ts,
+  brasa,
   children,
   workingTail,
 }: {
@@ -32,12 +34,19 @@ export function GroupRow({
   /** Hora (epoch ms) do 1º item do grupo — vira "HH:MM" ao lado do nome, estilo
    *  Slack. undefined (itens antigos sem carimbo) omite a hora. */
   ts?: number
+  /** O corte deste turno ACABOU de nascer (ADR-180): o bloco recebe a brasa,
+   *  que decai sozinha. Render-time de propósito: o bloco já existia quando o
+   *  corte chegou, então a decisão não pode ser da montagem dele. */
+  brasa?: boolean
   children: ReactNode
   workingTail?: ReactNode
 }) {
   const presets = usePresets((s) => s.list)
   const { userProfile, userPreferences } = useApp((s) => s.settings)
   const time = fmtTime(ts)
+  // A chegada do grupo (ADR-179): a sua mensagem sobe, o agente acende.
+  // Decidido na montagem; reabrir a conversa não reencena.
+  const nasceu = useNasceuAgora(ts)
 
   if (author.kind === "system") {
     return <div className="flex flex-col gap-1.5">{children}</div>
@@ -76,7 +85,17 @@ export function GroupRow({
   }
 
   return (
-    <div id={`msg-group-${groupKey}`} data-turn-key={groupKey} className="flex scroll-mt-6 gap-3">
+    <div
+      id={`msg-group-${groupKey}`}
+      data-turn-key={groupKey}
+      // A brasa pinta um pouco além do conteúdo; margem negativa + padding
+      // iguais mantêm o layout onde estava (nada no fio pula).
+      className={cn(
+        "flex scroll-mt-6 gap-3",
+        brasa && "fio-brasa -mx-2 -my-1 rounded-lg px-2 py-1",
+        !brasa && nasceu && (author.kind === "you" ? "fio-nasce-sobe" : "fio-nasce"),
+      )}
+    >
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-baseline gap-2">

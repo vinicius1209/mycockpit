@@ -1,3 +1,4 @@
+import type { AgentEvent } from "@/lib/agent"
 import type { ChatItem } from "@/store/chat"
 import type { DeferredWork } from "@/lib/work"
 
@@ -25,7 +26,7 @@ export function settleOrphanedTool(item: ChatItem, now: number): ChatItem {
     return {
       ...item,
       deferred: { ...item.deferred, status: "interrupted", updatedAt: now },
-      result: { ok: false, text: message, lines: 1 },
+      result: { ok: false, text: message, lines: 1, interrupted: true },
     }
   }
   if (
@@ -89,9 +90,45 @@ export function settleTerminalTools(
         item.deferred?.status === "running"
           ? { ...item.deferred, status: "interrupted" as const, updatedAt: now }
           : item.deferred,
-      result: { ok: false, text: message, lines: 1 },
+      result: {
+        ok: false,
+        text: message,
+        lines: 1,
+        // Corte seu não é falha: a ação PAROU (ADR-180). Trabalho em background
+        // que encerra com o processo do runner também parou sem desfecho,
+        // não é falha técnica da ferramenta (ADR-182). O fio diz "parou" em
+        // cinza, nunca "erro" em vermelho.
+        ...(terminal === "cancelled" || item.deferred?.status === "running"
+          ? { interrupted: true as const }
+          : {}),
+      },
       activityAt: now,
     }
   })
   return changed ? next : items
+}
+
+/** Os dois terminais do runner sobre os itens. Saíram do `reduceItems` pela
+ *  catraca e porque são uma regra só: nenhum terminal deixa spinner vivo.
+ *  O motor só diz QUE parou; a causa, quando existe, veio do gesto (lib/corte).
+ *  Sem causa, o marco não inventa uma e o item fica sem o campo. */
+export function reduceTerminalEvent(
+  items: ChatItem[],
+  e: Extract<AgentEvent, { type: "cancelled" | "done" }>,
+  now: number,
+): { items?: ChatItem[]; streamingTextId: null } {
+  if (e.type === "cancelled") {
+    const marco: ChatItem = e.cause
+      ? { kind: "cancelled", id: crypto.randomUUID(), ts: now, cause: e.cause }
+      : { kind: "cancelled", id: crypto.randomUUID(), ts: now }
+    return {
+      items: [...settleTerminalTools(items, "cancelled", now), marco],
+      streamingTextId: null,
+    }
+  }
+  // EOF nunca deixa ferramenta ou trabalho diferido com spinner vivo.
+  const settled = settleTerminalTools(items, "done", now)
+  return settled === items
+    ? { streamingTextId: null }
+    : { streamingTextId: null, items: settled }
 }

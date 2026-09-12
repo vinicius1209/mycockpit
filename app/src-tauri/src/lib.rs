@@ -921,6 +921,7 @@ pub fn run() {
             browser::browser_stop,
             browser::browser_status,
             work_gateway::managed_process_stop,
+            work_gateway::managed_process_stop_by_conv,
             work_gateway::managed_process_retry,
             work_gateway::managed_process_start,
             work_mcp_setup::work_mcp_status,

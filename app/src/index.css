@@ -585,6 +585,106 @@
   animation: reveal-down 0.2s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 
+/* ---------- Movimento no fio (ADR-179) ----------
+   Os três tempos do §6 do STYLEGUIDE. Até aqui eles eram CITADOS e não
+   existiam: `var(--dur)` sem definição cai em transição instantânea, sem erro
+   nenhum (era o caso do AgentFace e do SetupGuide). */
+:root {
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+  --ease-sai: cubic-bezier(0.2, 0.8, 0.2, 1);
+  /* Exceção declarada no §6: a brasa da interrupção precisa de tempo para
+     decair, senão vira um piscar. */
+  --dur-brasa: 900ms;
+}
+
+/* Estas classes só vão para quem NASCEU agora (`lib/nascimento.ts`). O que chega
+   pronto (abrir, rolar, voltar de outra conversa) não anima. Com movimento
+   reduzido o bloco global zera a duração e tudo termina no estado final: nada
+   fica invisível, e o significado mora no estado, não na animação. */
+@keyframes fio-surge {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fio-sobe {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fio-desliza {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fio-assenta {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fio-risca {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+/* A brasa: o bloco cortado recebe o mesmo banho do "olha aqui" do fio
+   (`bg-brass-soft`, useTranscriptReveal) e ele se apaga. Nada fica esmaecido
+   depois: é transição, não estado. */
+@keyframes fio-brasa {
+  0% {
+    background-color: transparent;
+  }
+  18% {
+    background-color: var(--brass-soft);
+  }
+  45% {
+    background-color: var(--brass-soft);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+.fio-nasce {
+  animation: fio-surge var(--dur) ease-out both;
+}
+.fio-nasce-sobe {
+  animation: fio-sobe var(--dur-slow) var(--ease-sai) both;
+}
+.fio-nasce-desliza {
+  animation: fio-desliza var(--dur) var(--ease-sai) both;
+}
+.fio-assenta {
+  animation: fio-assenta var(--dur-fast) var(--ease-sai) both;
+}
+.fio-risca {
+  animation: fio-risca var(--dur-slow) var(--ease-sai) both;
+}
+.fio-brasa {
+  animation: fio-brasa var(--dur-brasa) ease-out both;
+}
+
 /* scrollbar discreta */
 * {
   scrollbar-width: thin;

@@ -1155,11 +1155,11 @@ pub async fn run(
                     observed_at: crate::run_resources::epoch_ms(),
                 });
                 if let Some(rss_mb) = resources.warning_rss_mb {
-                    let _ = on_event.send(AgentEvent::Notice {
-                        message: format!(
-                            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
-                        ),
-                    });
+                    let message = crate::run_resources::format_memory_warning_message(
+                        rss_mb,
+                        observation.root_rss_mb,
+                    );
+                    let _ = on_event.send(AgentEvent::Notice { message });
                 }
             }
         }

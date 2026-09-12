@@ -311,6 +311,7 @@ export function IdentityControls({
   modelLocked,
   onModelChange,
   effectiveEffort,
+  effortLocked,
   onEffortChange,
 }: {
   /** S3.6 — seletor de preset (persona), um nível acima da camada crua.
@@ -329,6 +330,9 @@ export function IdentityControls({
   modelLocked: boolean
   onModelChange: (v: string) => void
   effectiveEffort: string
+  /** O ESFORÇO está travado. Mesma regra do `modelLocked`: só enquanto o
+   *  turno está em voo. */
+  effortLocked: boolean
   onEffortChange: (v: string) => void
 }) {
   const lockTitle = locked
@@ -365,6 +369,7 @@ export function IdentityControls({
         modelLocked={modelLocked}
         onModelChange={onModelChange}
         effectiveEffort={effectiveEffort}
+        effortLocked={effortLocked}
         onEffortChange={onEffortChange}
       />
     </>

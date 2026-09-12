@@ -3,6 +3,8 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
+import { needsPlainText } from "./markdownBudget"
+import { PlainTextPages } from "./PlainTextPages"
 import { Check, Copy } from "lucide-react"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
@@ -368,6 +370,7 @@ const mdComponents: Components = {
 /** Render de markdown (GFM + highlight) reusado no chat e no detalhe de contexto.
  *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12). */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
+  if (needsPlainText(text)) return <PlainTextPages text={text} />
   return (
     <div
       data-selectable

@@ -470,6 +470,7 @@ async function sendFromDeskPrepared(
     }
   }
   const acceptance = createRunAcceptance({
+    convId,
     onAccept: () =>
       acceptChatTurn({
         convId,
@@ -486,8 +487,7 @@ async function sendFromDeskPrepared(
         personaStamp,
         onAccepted: () => args.onAccepted?.("started"),
       }),
-    onBlocked: (gate) =>
-      useChat.getState().blockPreparation(convId, runId, gate),
+    onBlocked: (gate) => useChat.getState().blockPreparation(convId, runId, gate),
     onEvent: (event) => useChat.getState().handleEvent(convId, event),
   })
 

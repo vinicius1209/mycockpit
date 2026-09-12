@@ -35,6 +35,7 @@ export interface GuideItem {
   label: string
   state: ItemState
   target: GuideTarget
+  optional: boolean
 }
 
 /** O que a máquina oferece. Um item só entra na lista quando a capacidade
@@ -56,6 +57,7 @@ const CATALOG: {
   id: GuideItemId
   label: string
   target: GuideTarget
+  optional: boolean
   /** null = item incondicional. */
   needs: keyof GuideCapabilities | null
 }[] = [
@@ -63,30 +65,35 @@ const CATALOG: {
     id: "agent",
     label: "Ter uma CLI de agent instalada",
     target: { kind: "settings", section: "machine" },
+    optional: false,
     needs: null,
   },
   {
     id: "project",
     label: "Apontar seu primeiro projeto",
     target: { kind: "add-project" },
+    optional: false,
     needs: null,
   },
   {
     id: "meter",
-    label: "Ver quanto da janela de uso você já queimou",
+    label: "Mostrar a janela de uso na barra",
     target: { kind: "settings", section: "ledger" },
+    optional: true,
     needs: "meter",
   },
   {
     id: "hooks",
-    label: "Enxergar as sessões abertas no terminal",
+    label: "Instalar hooks para enxergar sessões do terminal",
     target: { kind: "settings", section: "hooks" },
+    optional: true,
     needs: "hooks",
   },
   {
     id: "companion",
     label: "Parear o celular para acompanhar de longe",
     target: { kind: "settings", section: "companion" },
+    optional: true,
     needs: "companion",
   },
 ]
@@ -108,7 +115,17 @@ export function buildItems(
     label: c.label,
     state: stateFromProbe(probes[c.id]),
     target: c.target,
+    optional: c.optional,
   }))
+}
+
+/** A saída deixa claro quando a única pendência é uma capacidade opcional.
+ *  "Esconder" descrevia a mecânica da sidebar, não a decisão da pessoa. */
+export function dismissActionLabel(items: readonly GuideItem[]): string {
+  const remaining = items.filter((item) => item.state !== "done")
+  return remaining.length > 0 && remaining.every((item) => item.optional)
+    ? "Concluir sem os opcionais"
+    : "Esconder da barra lateral"
 }
 
 /** Contagem do anel. Só "done" conta: "unknown" nunca vira progresso. */

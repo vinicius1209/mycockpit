@@ -5,6 +5,7 @@
 #   ./scripts/build.sh            build de TESTE (nº sequencial + sha)
 #   ./scripts/build.sh promote    promove o último teste a OFICIAL
 #   ./scripts/build.sh promote 12 promove o teste nº 12
+#   ./scripts/build.sh dmg        empacota o OFICIAL num DMG pessoal arrastável
 #   ./scripts/build.sh list       histórico
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -106,6 +107,78 @@ EOF
     echo "✓ OFICIAL: build #$NUM em /Applications/Frota.app"
     ;;
 
+  dmg)
+    SRC="$BUILDS/official"
+    META="$SRC/meta.json"
+    BUNDLE="$SRC/Frota.app"
+    [[ -f "$META" && -d "$BUNDLE" ]] || {
+      echo "build oficial não encontrado; promova um teste antes de empacotar"
+      exit 1
+    }
+    read -r NUM SHA VERSION < <(meta_of "$META")
+    if python3 -c "import json,sys;sys.exit(0 if not json.load(open(sys.argv[1]))['dirty'] else 1)" "$META"; then
+      :
+    else
+      echo "build oficial #$NUM veio de árvore DIRTY; DMG recusado"
+      exit 1
+    fi
+    git cat-file -e "${SHA}^{commit}" 2>/dev/null || {
+      echo "commit $SHA do build oficial não existe neste checkout"
+      exit 1
+    }
+    TAG_SHA=$(git rev-parse --short "oficial-$NUM^{commit}" 2>/dev/null || true)
+    [[ "$TAG_SHA" == "$SHA" ]] || {
+      echo "tag oficial-$NUM não aponta para $SHA; DMG recusado"
+      exit 1
+    }
+    codesign --verify --deep --strict "$BUNDLE"
+
+    PLIST_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
+      "$BUNDLE/Contents/Info.plist")
+    [[ "$PLIST_VERSION" == "$VERSION" ]] || {
+      echo "versão do bundle ($PLIST_VERSION) difere do meta.json ($VERSION)"
+      exit 1
+    }
+    ARCHS=$(lipo -archs "$BUNDLE/Contents/MacOS/app")
+    ARCH_LABEL=${ARCHS// /-}
+    OUT="$SRC/Frota-$VERSION-$ARCH_LABEL.dmg"
+    DMG_TMP_BASE="${TMPDIR:-/tmp}"
+    STAGE=$(mktemp -d "$DMG_TMP_BASE/frota-dmg.XXXXXX")
+    cleanup_dmg_stage() {
+      if [[ -n "${STAGE:-}" && "$STAGE" == "$DMG_TMP_BASE"/frota-dmg.* && -d "$STAGE" ]]; then
+        rm -rf -- "$STAGE"
+      fi
+    }
+    trap cleanup_dmg_stage EXIT
+
+    ditto "$BUNDLE" "$STAGE/Frota.app"
+    ln -s /Applications "$STAGE/Aplicativos"
+    printf '%s\n' \
+      'Frota, instalação pessoal no macOS' \
+      '' \
+      '1. Arraste Frota.app para Aplicativos.' \
+      '2. Tente abrir o Frota.' \
+      '3. Se o macOS bloquear, abra Ajustes do Sistema, Privacidade e Segurança e escolha Abrir Mesmo Assim.' \
+      '4. Se essa opção não aparecer, use no Terminal:' \
+      '' \
+      '   xattr -dr com.apple.quarantine /Applications/Frota.app' \
+      '' \
+      'Este pacote tem assinatura ad hoc e deve ser usado apenas em Macs do proprietário.' \
+      > "$STAGE/LEIA-ME.txt"
+
+    rm -f "$OUT"
+    hdiutil create -quiet -volname "Frota" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
+    hdiutil verify "$OUT" >/dev/null
+    DMG_SHA=$(shasum -a 256 "$OUT" | awk '{print $1}')
+
+    echo ""
+    echo "✓ DMG pessoal #$NUM pronto: $OUT"
+    echo "  arquitetura: $ARCHS"
+    echo "  SHA-256: $DMG_SHA"
+    echo "  instalação: abrir o DMG e arrastar Frota.app para Aplicativos"
+    echo "  primeiro uso: o Gatekeeper exige uma autorização manual"
+    ;;
+
   list)
     echo "== testes =="
     if ls "$BUILDS"/test/*/meta.json >/dev/null 2>&1; then
@@ -125,7 +198,7 @@ EOF
     ;;
 
   *)
-    echo "uso: ./scripts/build.sh [test|promote [N]|list]"
+    echo "uso: ./scripts/build.sh [test|promote [N]|dmg|list]"
     exit 1
     ;;
 esac

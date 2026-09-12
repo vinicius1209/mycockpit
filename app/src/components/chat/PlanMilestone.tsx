@@ -3,11 +3,15 @@ import { Check, ChevronRight, ListChecks } from "lucide-react"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { controle } from "@/components/ui/controle"
 import type { AgentPlan } from "@/lib/tasks"
+import { useNasceuAgora } from "@/lib/nascimento"
 import { cn } from "@/lib/utils"
 
 /** O transcript registra o plano; a checklist viva mora junto ao composer. */
 export function PlanMilestone({ plan, live }: { plan: AgentPlan; live: boolean }) {
   const [open, setOpen] = useState(false)
+  // Entra só quando o plano NASCE agora (ADR-179). Antes animava a cada
+  // montagem e reencenava a chegada toda vez que a conversa era reaberta.
+  const nasceu = useNasceuAgora(plan.createdAt)
   const done = plan.tasks.filter((task) => task.status === "completed").length
   const complete = plan.tasks.length > 0 && done === plan.tasks.length
   const expandable = !live && plan.tasks.length > 0
@@ -23,7 +27,7 @@ export function PlanMilestone({ plan, live }: { plan: AgentPlan; live: boolean }
     : `${done}/${plan.tasks.length}`
 
   return (
-    <div className="animate-cockpit-rise">
+    <div className={nasceu ? "fio-nasce-desliza" : undefined}>
       <button
         type="button"
         onClick={() => expandable && setOpen((value) => !value)}

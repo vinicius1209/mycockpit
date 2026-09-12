@@ -32,9 +32,20 @@ import {
 import { changedItemPositions } from "@/lib/db/conversationItems"
 import { createItemPersistence } from "@/store/chat/itemPersistence"
 import { createChatNavigation } from "@/store/chat/navigation"
-import type { RunLiveness } from "@/store/chat/runLiveness"
-export type { RunLiveness } from "@/store/chat/runLiveness"
 import { unseenBoundary } from "@/lib/unseen"
+import {
+  applyRunStatusToLiveness, createInitialRunLiveness,
+  selectRunLiveness, type RunLiveness,
+} from "@/store/chat/runLiveness"
+export { selectRunLiveness, type RunLiveness } from "@/store/chat/runLiveness"
+import {
+  deferredLabel, deferredLiveLine, deferredStopWarning,
+  deferredResumePrompt, progressTokens, type LiveWorkLine,
+} from "@/store/chat/deferredLive"
+export {
+  deferredLabel, deferredLiveLine, deferredStopWarning,
+  deferredResumePrompt, progressTokens, type LiveWorkLine,
+}
 import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
 import type { Enfileirar } from "@/lib/sendOrigin"
@@ -47,7 +58,8 @@ import {
   takePendingAdviceImpl,
 } from "@/store/chat/advice"
 import { markNotesSentImpl } from "@/store/chat/notes"
-import { settleOrphanedTool, settleTerminalTools } from "@/store/chat/terminalTools"
+import { reduceTerminalEvent, settleOrphanedTool } from "@/store/chat/terminalTools"
+import { tomarCausaDoCorte, type CausaDoCorte } from "@/lib/corte"
 export { pendingDeferred } from "@/store/chat/terminalTools"
 import { reduceRunManifest } from "@/store/chat/runManifest"
 import { removeConversationImpl } from "@/store/chat/remove"
@@ -105,8 +117,9 @@ type ChatItemBody =
       /** Último evento observável desta ação (resultado/retorno do subagente).
        * `ts` continua sendo o nascimento, usado na cronologia do transcript. */
       activityAt?: number
-      /** Resumo do resultado (texto truncado + nº de linhas do output). */
-      result?: { ok: boolean; text: string; lines: number }
+      /** Resumo do resultado (texto truncado + nº de linhas do output).
+       *  `interrupted`: fechada por um corte seu, não falhou (ADR-180). */
+      result?: { ok: boolean; text: string; lines: number; interrupted?: true }
       /** Evidência VISUAL do resultado (browser-plan B1): paths relativos ao
        *  app_data_dir ("evidence/<convId>/<toolId>-<idx>.<ext>"). Persistem no
        *  snapshot (replay-safe); arquivo sumido do disco vira placeholder na
@@ -140,7 +153,7 @@ type ChatItemBody =
   /** Plano proposto num turno `plan_first`. `decision` ausente = ainda na mesa.
    *  Por que é item e não campo: store/chat/planGate.ts. */
   | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" | "superseded" }
-  | { kind: "cancelled"; id: string }
+  | { kind: "cancelled"; id: string; cause?: CausaDoCorte }
   | { kind: "notice"; id: string; message: string }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
   | { kind: "limit"; id: string; message: string; resetHint?: string }
@@ -173,107 +186,8 @@ export type ChatItem = ChatItemBody & { ts?: number }
  * trabalho DIFERIDO do provider (deferred-work-plan D1.5): ele vivia DENTRO do
  * processo do CLI que morreu junto com a instância anterior — `running` vindo
  * do disco vira `interrupted`, nunca "rodando" falso após restart. */
-export function markOrphanedProcesses(items: ChatItem[]): ChatItem[] {
-  const now = Date.now()
-  return items.map((item) => settleOrphanedTool(item, now))
-}
-
-/** `task_type` do provider → palavra que um humano usa (background-status B2.3:
- *  `local_agent` cru vazava pra tela). Tipo desconhecido segue cru: traduzir o
- *  que não se conhece seria inventar. */
-const DEFERRED_KIND_LABEL: Record<string, string> = {
-  local_workflow: "workflow",
-  local_agent: "subagente",
-}
-
-/** Nome humano de um trabalho diferido pro copy da UI (nunca id cru quando há
- *  alternativa melhor). */
-export function deferredLabel(d: DeferredWork): string {
-  if (d.name) return d.name
-  if (d.kind) return DEFERRED_KIND_LABEL[d.kind] ?? d.kind
-  return d.id
-}
-
-/** Rótulo cortado pro tamanho que cabe na linha viva sem empurrar o cronômetro
- *  (background-status B2.1: quem cede é o NOME, nunca o tempo). O corte é do
- *  texto, além do `truncate` do CSS — a linha viva também vira `title` e
- *  notificação, onde não existe elipse de layout. */
-function clipWorkName(name: string, max: number): string {
-  const clean = name.replace(/\s+/g, " ").trim()
-  return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean
-}
-
-/** O que a LINHA VIVA (rodapé do fio, junto do composer) diz sobre o trabalho em
- *  background (background-status B2.2/B2.5). Um lugar canônico pro "agora":
- *  nada vivo → null (não mente); um → "trabalho em background · <nome>";
- *  N → "N trabalhos em background · <mais recente>" (nome atrás de nome
- *  empilhado quebrou a linha nos builds 181/182).
- *  `since` é o instante do trabalho NOMEADO: o cronômetro pertence ao que está
- *  escrito, e o turno perde o `startedAt` no `result`.
- *  `detail` lista os nomes pro tooltip (o detalhe abre no Fio Vivo). Puro. */
-export interface LiveWorkLine {
-  text: string
-  since: number
-  count: number
-  detail: string
-}
-
-export function deferredLiveLine(
-  works: DeferredWork[],
-  nameMax = 28,
-): LiveWorkLine | null {
-  if (works.length === 0) return null
-  // "mais recente" = o que nasceu por último; empate no nascimento desempata
-  // pela última atividade observada, e depois pela ordem do fio.
-  const latest = works.reduce((a, b) =>
-    b.startedAt > a.startedAt ||
-    (b.startedAt === a.startedAt && b.updatedAt >= a.updatedAt)
-      ? b
-      : a,
-  )
-  const name = clipWorkName(deferredLabel(latest), nameMax)
-  return {
-    text:
-      works.length === 1
-        ? `trabalho em background · ${name}`
-        : `${works.length} trabalhos em background · ${name}`,
-    since: latest.startedAt,
-    count: works.length,
-    detail: works.map(deferredLabel).join(", "),
-  }
-}
-
-/** Aviso do botão de PARAR, na superfície do turno (deferred-work-plan D1.4 ×
- *  background-status B2.4): interromper o turno mata junto o trabalho em
- *  background. É a única superfície com essa ação, então a copy diz o preço, no
- *  plural certo. Sem trabalho vivo → undefined (o Parar comum não precisa de
- *  aviso). */
-export function deferredStopWarning(works: DeferredWork[]): string | undefined {
-  if (works.length === 0) return undefined
-  if (works.length === 1)
-    return "Parar (o trabalho em background do agent morre junto e fica marcado como interrompido)"
-  return `Parar (os ${works.length} trabalhos em background do agent morrem junto e ficam marcados como interrompidos)`
-}
-
-/** Decisão travada 3 do deferred-work-plan: Retomar ≠ repetir. Num nó de
- *  trabalho diferido, a ÚNICA ação de repetição permitida é retomar um
- *  INTERROMPIDO reaproveitando o cache do workflow (a task-notification
- *  injetada no resume traz o resumeFromRunId) — relançar do zero paga os
- *  subagentes todos de novo. `running`/`completed` → nenhuma ação (null). */
-export function deferredResumePrompt(d: DeferredWork): string | null {
-  if (d.status !== "interrupted") return null
-  return `Retome o trabalho em background "${deferredLabel(d)}" de onde parou, reaproveitando o que já foi executado: use a tool Workflow com o resumeFromRunId indicado na task-notification desta conversa (chamadas agent() concluídas voltam do cache). NÃO relance do zero.`
-}
-
-/** Extrai o contador de progresso (usage.total_tokens) do `progress` cru do
- *  task_progress. Tolerante: payload sem usage/total_tokens → null. */
-export function progressTokens(progress: unknown): number | null {
-  if (progress == null || typeof progress !== "object") return null
-  const usage = (progress as Record<string, unknown>).usage
-  if (usage == null || typeof usage !== "object") return null
-  const t = (usage as Record<string, unknown>).total_tokens
-  return typeof t === "number" ? t : null
-}
+export const markOrphanedProcesses = (items: ChatItem[]): ChatItem[] =>
+  items.map((item) => settleOrphanedTool(item, Date.now()))
 
 /** Itens de EXECUTOR de uma conversa: exclui a CONSULTA a um conselheiro — o
  *  parecer (kind "advice") E a fala que o pediu (`user` com `advisorTo`) —, que
@@ -282,17 +196,13 @@ export function progressTokens(progress: unknown): number | null {
  *  ANTES do 1º envio travaria a escolha de agent/preset e roubaria a injeção de
  *  persona/doutrina do turno inicial. Usar em TODO lugar que hoje deriva
  *  "locked" de items.length. */
-export function executorItems(items: ChatItem[]): ChatItem[] {
-  return items.filter(
-    (it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo),
-  )
-}
+export const executorItems = (items: ChatItem[]): ChatItem[] =>
+  items.filter((it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo))
 
 /** A conversa já teve algum turno de EXECUTOR? (ignora a consulta ao conselheiro
  *  inteira: o parecer e a fala endereçada a ele) */
-export function hasExecutorTurn(items: ChatItem[]): boolean {
-  return executorItems(items).length > 0
-}
+export const hasExecutorTurn = (items: ChatItem[]): boolean => executorItems(items).length > 0
+
 
 export {
   conversationPresence,
@@ -454,6 +364,9 @@ export interface ChatState {
   conversationsByProject: Record<string, ConversationMeta[]>
   /** Estado de cada conversa carregada (Sprint 4, runs em background). */
   byId: Record<string, ConvState>
+  /** Diagnóstico efêmero de processo por conversa (ADR-183).
+   *  Isolado de byId para que a telemetria a cada 5s não cause re-render geral de ChatPanel. */
+  runLivenessByConv: Record<string, RunLiveness>
   /** Prompt enfileirado por outra UI (ex.: ⌘K) p/ o ChatPanel disparar. */
   queuedPrompt: string | null
 
@@ -1073,21 +986,10 @@ export function reduceItems(
         ],
         streamingTextId: null,
       }
+    // Terminais do runner (corte e EOF): store/chat/terminalTools.ts.
     case "cancelled":
-      return {
-        items: [
-          ...settleTerminalTools(c.items, "cancelled", now),
-          { kind: "cancelled", id: uid(), ts: now },
-        ],
-        streamingTextId: null,
-      }
-    // EOF nunca deixa ferramenta ou trabalho diferido com spinner vivo.
-    case "done": {
-      const items = settleTerminalTools(c.items, "done", now)
-      return items === c.items
-        ? { streamingTextId: null }
-        : { streamingTextId: null, items }
-    }
+    case "done":
+      return reduceTerminalEvent(c.items, e, now)
     default:
       return {}
   }
@@ -1152,6 +1054,7 @@ export const useChat = create<ChatState>((set, get) => {
     conversations: [],
     conversationsByProject: {},
     byId: {},
+    runLivenessByConv: {},
     queuedPrompt: null,
 
     // a closure ensureLoaded exposta como action (mesma semântica, zero seleção)
@@ -1629,11 +1532,31 @@ export const useChat = create<ChatState>((set, get) => {
               stagedAgent: undefined,
             },
           },
+          runLivenessByConv: {
+            ...s.runLivenessByConv,
+            [convId]: createInitialRunLiveness(),
+          },
         }
       })
     },
 
     handleEvent: (convId, e) => {
+      // O motor diz QUE parou; quem parou vem do gesto que carimbou (ADR-180).
+      if (e.type === "cancelled" && !e.cause) e = { ...e, cause: tomarCausaDoCorte(convId) }
+      // Telemetria efêmera de processo (ADR-183): isolada em runLivenessByConv
+      // para não reconstruir ConvState nem disparar re-render de ChatPanel/MessageList a cada 5s.
+      if (e.type === "run_status") {
+        set((s) => ({
+          runLivenessByConv: {
+            ...s.runLivenessByConv,
+            [convId]: applyRunStatusToLiveness(
+              s.runLivenessByConv[convId] ?? s.byId[convId]?.runLiveness,
+              e,
+            ),
+          },
+        }))
+        return
+      }
       const beforeEvent = get().byId[convId]
       const pending = beforeEvent?.pendingTransplant
       const pendingTarget = pending?.targetAgent
@@ -2123,6 +2046,10 @@ export const useChat = create<ChatState>((set, get) => {
               stagedAgent: undefined,
             },
           },
+          runLivenessByConv: {
+            ...s.runLivenessByConv,
+            [convId]: createInitialRunLiveness(),
+          },
         }
       })
     },
@@ -2299,3 +2226,11 @@ export const useChat = create<ChatState>((set, get) => {
 export function useActiveConv(): ConvState {
   return useChat((s) => (s.activeId ? s.byId[s.activeId] : undefined) ?? EMPTY_CONV)
 }
+
+
+/** Diagnóstico efêmero do processo do run por conversa (ADR-183).
+ *  Consumido exclusivamente por WorkingIndicator via seletor granular para evitar re-render geral de ChatPanel. */
+export function useRunLiveness(convId?: string | null): RunLiveness | undefined {
+  return useChat((s) => selectRunLiveness(s, convId))
+}
+

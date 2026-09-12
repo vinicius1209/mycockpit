@@ -26,6 +26,7 @@ import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 import {
   guideView,
+  dismissActionLabel,
   ringDash,
   type GuideItem,
   type ProbeMap,
@@ -190,7 +191,7 @@ export function SetupGuide() {
         <DropdownMenuItem
           onSelect={() => setSettings({ setupGuideDismissed: true })}
         >
-          Esconder da barra lateral
+          {dismissActionLabel(view.items)}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

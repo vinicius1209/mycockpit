@@ -1,15 +1,15 @@
-# Empacotamento instalável — DMG (macOS) e AppImage/deb (Linux)
+# Empacotamento instalável, DMG (macOS) e AppImage/deb (Linux)
 
-Como transformar o MyCockpit em artefatos instaláveis. Complementa — e não
-substitui — o canal de builds local (`/build`, `scripts/build.sh`), que continua
-gerando só o `.app` de teste/oficial na máquina do dev.
+Como transformar o Frota em artefatos instaláveis. Complementa o canal de
+builds local (`/build`, `scripts/build.sh`), que gera o `.app` de teste/oficial
+e empacota o oficial num DMG pessoal quando ainda não há Developer ID.
 
 **Resumo dos formatos por plataforma** (Linux **não** usa DMG — DMG é um formato
 exclusivo do macOS; no Linux os instaláveis são AppImage e `.deb`):
 
 | Plataforma | Alvos | Artefato |
 |---|---|---|
-| macOS | `app`, `dmg` | `MyCockpit.app` + `MyCockpit_X.Y.Z_aarch64.dmg` |
+| macOS | `app`, `dmg` | `Frota.app` + `Frota-X.Y.Z-arm64.dmg` |
 | Linux | `appimage`, `deb` | `my-cockpit_X.Y.Z_amd64.AppImage` + `.deb` |
 
 O `bundle.targets` do `app/src-tauri/tauri.conf.json` lista os quatro alvos de
@@ -20,6 +20,31 @@ se um dia precisar de rpm: `bun tauri build --bundles rpm`.)
 
 ## 1. DMG local (macOS)
 
+### Canal pessoal, sem Developer ID
+
+O comando abaixo não recompila a árvore atual. Ele empacota somente
+`builds/official/Frota.app`, exige build limpa, tag local correspondente,
+versão coerente e assinatura ad hoc íntegra:
+
+```bash
+./scripts/build.sh dmg
+```
+
+O DMG contém `Frota.app`, o atalho `Aplicativos` e um `LEIA-ME.txt`. A pessoa
+abre a imagem e arrasta o app. Como não há Developer ID, o primeiro lançamento
+ainda exige autorização em Ajustes do Sistema, Privacidade e Segurança. Se o
+macOS não oferecer `Abrir Mesmo Assim`, num Mac do proprietário e para um
+pacote cuja origem foi conferida:
+
+```bash
+xattr -dr com.apple.quarantine /Applications/Frota.app
+```
+
+Esse é o canal pessoal e gratuito. Não deve ser apresentado como distribuição
+pública notarizada.
+
+### Build direto pelo Tauri
+
 ```bash
 cd app
 bun run tauri build        # roda beforeBuildCommand (bun run build) + cargo release + bundling
@@ -27,15 +52,15 @@ bun run tauri build        # roda beforeBuildCommand (bun run build) + cargo rel
 
 Artefatos:
 
-- `app/src-tauri/target/release/bundle/macos/MyCockpit.app`
-- `app/src-tauri/target/release/bundle/dmg/MyCockpit_0.1.0_aarch64.dmg`
+- `app/src-tauri/target/release/bundle/macos/Frota.app`
+- `app/src-tauri/target/release/bundle/dmg/Frota_0.1.0_aarch64.dmg`
 
 O DMG abre com a janela padrão (app à esquerda, atalho `/Applications` à
 direita — posições explicitadas em `bundle.macOS.dmg` no tauri.conf.json).
 Não há imagem de fundo configurada porque não existe asset pra isso no repo;
 se um dia houver, é só apontar `bundle.macOS.dmg.background` pro arquivo.
 
-**Não conflita com a skill `/build`**: `scripts/build.sh` chama
+O build numerado não muda: `scripts/build.sh` chama
 `bun tauri build --bundles app`, e a flag `--bundles` sobrepõe o
 `bundle.targets` do config — os builds de teste continuam gerando só o `.app`
 (rápido, sem o passo de DMG). `bun run tauri dev` também não muda: dev não
@@ -84,11 +109,11 @@ bloqueia (ver "Sem assinatura" abaixo).
 ### Sem assinatura (estado atual)
 
 O bundle sai com assinatura ad-hoc. Localmente abre normal; baixado
-(DMG/zip com quarantine flag), o macOS mostra *"MyCockpit está danificado e não
+(DMG/zip com quarantine flag), o macOS mostra *"Frota está danificado e não
 pode ser aberto"*. Instrução pro usuário que confia no build:
 
 ```bash
-xattr -cr /Applications/MyCockpit.app
+xattr -dr com.apple.quarantine /Applications/Frota.app
 ```
 
 (remove os atributos de quarantine; depois abre normalmente). Documentar isso

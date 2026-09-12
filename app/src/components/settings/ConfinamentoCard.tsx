@@ -21,6 +21,7 @@ import { Check, Loader2, Minus } from "lucide-react"
 import {
   linhasDeConfinamento,
   lerConfinamento,
+  motoresComSandboxProprio,
   resumoDoConfinamento,
   SEM_CONFINAMENTO,
   type Confinamento,
@@ -52,6 +53,13 @@ export function ConfinamentoCard() {
 
   const linhas = linhasDeConfinamento(c)
   const resumo = resumoDoConfinamento(linhas)
+  // Derivado do registry, igual ao resumo é derivado das linhas: motor novo com
+  // sandbox próprio entra aqui sozinho, sem ninguém lembrar de atualizar texto.
+  const comProprio = motoresComSandboxProprio()
+  const motores = comProprio.join(" e ")
+  // Concordância derivada da lista, não chumbada: hoje só o Codex está aqui, e
+  // um motor novo não pode deixar a frase errada na tela.
+  const passam = comProprio.length > 1 ? "passam" : "passa"
 
   return (
     <div>
@@ -115,6 +123,15 @@ export function ConfinamentoCard() {
         Confinamento é do sistema operacional e vale por TURNO, com o modo que
         você escolheu na conversa. Ele não substitui o freio do motor: soma. Hoje
         só macOS; em Linux a leitura é a mesma e a resposta é “sem confinamento”.
+        {comProprio.length > 0 && (
+          <>
+            {" "}
+            As linhas acima descrevem o confinamento da Frota, e {motores} não{" "}
+            {passam} por ele: aplica o próprio, que barra escrita no disco
+            inteiro e corta a rede. Somar os dois não protegia mais, quebrava o
+            turno (os perfis do sistema não se aninham).
+          </>
+        )}
       </Note>
     </div>
   )

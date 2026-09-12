@@ -24,6 +24,9 @@ export interface IdentidadeEfetiva {
   /** O humano ESCOLHEU outro modelo numa conversa travada cuja última tentativa
    *  falhou. Sem isto o despacho segue usando o modelo do 1º run. */
   trocouDeModelo: boolean
+  /** O humano ESCOLHEU outro esforço numa conversa travada. Só aparece quando
+   *  é verdade (como `revezando`). */
+  trocouDeEsforco?: boolean
   /** Revezamento de motor engatilhado para esta conversa travada. */
   revezando?: boolean
 }
@@ -36,6 +39,10 @@ export interface EntradaDaIdentidade {
    *  conversa ou de agent). Antes de 23/08/2026 isto só valia como saída de
    *  emergência; hoje vale sempre — ver `identidadeEfetiva`. */
   escolhaDeEmergencia: string | null
+  /** O esforço escolhido DEPOIS do 1º envio (estado próprio, zerado nos mesmos
+   *  gatilhos da escolha de modelo). Mesma regra do modelo: vale quando nada
+   *  está em voo. */
+  escolhaDeEsforco?: string | null
   /** O que a conversa carimbou no 1º run. */
   conversa: { agent: string; reqModel: string | null; effort: string | null }
   /** O que os seletores mostram — estado local que SOBREVIVE à troca de conversa. */
@@ -69,6 +76,11 @@ export interface EntradaDaIdentidade {
  *
  * O caso de emergência (turno que falhou) continua coberto — ele virou um
  * subcaso de "pode trocar quando não está em voo", não uma regra própria.
+ *
+ * O ESFORÇO segue o modelo desde 11/09/2026: o destrave de 23/08 esqueceu
+ * dele, e a régua ficava apagada numa conversa em que o modelo ao lado
+ * trocava. A razão técnica é a mesma (flag de spawn do próximo turno, sessão
+ * preservada), então a regra também é.
  */
 export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
   if (!e.travada) {
@@ -84,13 +96,17 @@ export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
   // `modeloDestravado` hoje significa "não está em voo" (o motor não aceita
   // trocar o modelo de um processo que já subiu — a flag foi no spawn).
   const escolhido = e.modeloDestravado ? e.escolhaDeEmergencia : null
+  const esforcoEscolhido = e.modeloDestravado ? (e.escolhaDeEsforco ?? null) : null
   return {
     agent: targetAgent,
     model: revezando
       ? (escolhido ?? "default")
       : (escolhido ?? e.conversa.reqModel ?? "default"),
-    effort: revezando ? "default" : (e.conversa.effort ?? "default"),
+    effort: revezando
+      ? (esforcoEscolhido ?? "default")
+      : (esforcoEscolhido ?? e.conversa.effort ?? "default"),
     trocouDeModelo: escolhido !== null,
+    ...(esforcoEscolhido !== null ? { trocouDeEsforco: true } : {}),
     ...(revezando ? { revezando: true } : {}),
   }
 }
@@ -138,6 +154,21 @@ export function notaDeTrocaDeModelo(
 }
 
 /**
+ * A linha que registra a troca de esforço NO FIO. Mesmo motivo da troca de
+ * modelo: sem ela o histórico mente sobre como aquele trecho rodou, e o custo
+ * muda sem aviso.
+ */
+export function notaDeTrocaDeEsforco(
+  anterior: string | null,
+  novo: string | null,
+): string | null {
+  const de = anterior ?? "default"
+  const para = novo ?? "default"
+  if (de === para) return null
+  return `Esforço trocado nesta conversa: ${de} → ${para}. Vale deste turno em diante.`
+}
+
+/**
  * A linha que registra o revezamento de motor NO FIO.
  *
  * Exibido quando a conversa passa de um motor para outro (transplante).
@@ -150,4 +181,48 @@ export function notaDeRevezamentoDeMotor(
   const de = DESTINATIONS.find((d) => d.id === anterior)?.label ?? anterior
   const para = DESTINATIONS.find((d) => d.id === novo)?.label ?? novo
   return `Revezamento de motor nesta conversa: ${de} → ${para}. O contexto recente foi transferido e vale deste turno em diante.`
+}
+
+/**
+ * A identidade que o DESPACHO usa (ChatPanel), com as linhas de troca do fio.
+ *
+ * Conversa travada fica no agent/modelo/esforço carimbados, salvo troca
+ * DELIBERADA (`modelSwitched`/`effortSwitched`, montadas pelo composer) ou
+ * revezamento de motor, em que modelo e esforço saem do pedido. Trocar modelo
+ * ou esforço no meio é permitido (a sessão do CLI sobrevive), mas não pode ser
+ * MUDO: sem a linha o histórico passa a dizer que a conversa rodou inteira
+ * numa configuração só, e o custo por token muda sem aviso.
+ */
+export function identidadeDoDespacho({
+  locked,
+  conv,
+  cfg,
+}: {
+  locked: boolean
+  conv: { agent: string; stagedAgent?: string | null; reqModel: string | null; effort: string | null }
+  cfg?: {
+    agent: string
+    model: string | null
+    effort: string | null
+    modelSwitched?: boolean
+    effortSwitched?: boolean
+  }
+}) {
+  const targetAgent = cfg?.agent ?? conv.stagedAgent ?? conv.agent
+  const isAgentSwitch = locked && targetAgent !== conv.agent
+  const agent = isAgentSwitch ? targetAgent : locked ? conv.agent : (cfg?.agent ?? "claude-code")
+  const pedido = (trocou: boolean | undefined, carimbo: string | null, escolha: string | null | undefined) =>
+    isAgentSwitch ? (escolha ?? null) : locked && !trocou ? carimbo : (escolha ?? null)
+  const model = pedido(cfg?.modelSwitched, conv.reqModel, cfg?.model)
+  const effort = pedido(cfg?.effortSwitched, conv.effort, cfg?.effort)
+  const noMesmoMotor = locked && !isAgentSwitch
+  return {
+    agent,
+    model,
+    effort,
+    isAgentSwitch,
+    agentChangeNotice: isAgentSwitch ? notaDeRevezamentoDeMotor(conv.agent, agent) : null,
+    modelChangeNotice: noMesmoMotor ? notaDeTrocaDeModelo(conv.reqModel, model) : null,
+    effortChangeNotice: noMesmoMotor ? notaDeTrocaDeEsforco(conv.effort, effort) : null,
+  }
 }

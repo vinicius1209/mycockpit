@@ -881,7 +881,8 @@ pub async fn run_agent(
             return Ok(());
         }
     };
-    let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, &run_id, &on_event);
+    let sandbox_proprio = adapter.capabilities().sandbox_proprio;
+    let (cmd, perfil_sb) = confina_se_prometido(cmd, &req, sandbox_proprio, &run_id, &on_event);
     let confinou = perfil_sb.is_some();
     let _limpa = perfil_sb.map(LimpaPerfil);
     let mut outcome = match run_once(
@@ -949,7 +950,13 @@ pub async fn run_agent(
         req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);
         let mut adapter2 = adapters::resolve(&agent)?;
         let cmd2 = adapter2.build_validated_command(&req2)?;
-        let (cmd2, perfil_sb2) = confina_se_prometido(cmd2, &req2, &run_id, &on_event);
+        let (cmd2, perfil_sb2) = confina_se_prometido(
+            cmd2,
+            &req2,
+            adapter2.capabilities().sandbox_proprio,
+            &run_id,
+            &on_event,
+        );
         // O perfil do run reiniciado tem vida própria: o `?` abaixo pode sair
         // antes da limpeza do fim, e um .sb esquecido em /tmp por turno somaria.
         let _limpa2 = perfil_sb2.map(LimpaPerfil);
@@ -1029,6 +1036,7 @@ pub async fn run_agent(
     if let Some(frase) = crate::sandbox::frase(crate::sandbox::classifica(
         confinou,
         &outcome.stderr,
+        outcome.sandbox_runner_hint.as_deref(),
         outcome.success,
         outcome.emitiu_saida,
     )) {
@@ -1194,21 +1202,29 @@ impl Drop for LimpaPerfil {
 fn confina_se_prometido(
     cmd: tokio::process::Command,
     req: &adapters::RunRequest,
+    // Do REGISTRY (`adapter.capabilities()`), nunca do nome do motor. É o que
+    // impede o envelope de colidir com o sandbox de quem já confina sozinho.
+    proprio: adapters::SandboxProprio,
     run_id: &str,
     on_event: &tauri::ipc::Channel<AgentEvent>,
 ) -> (tokio::process::Command, Option<std::path::PathBuf>) {
-    let alvo = crate::sandbox::Alvo {
-        raiz: req.cwd.clone(),
-        worktree: None,
-        // As pastas liberadas por `--add-dir` entram: o usuário pediu "Só lê",
-        // não "só lê o projeto principal". Proteger a raiz e deixar a pasta irmã
-        // aberta seria um buraco exatamente onde ele concedeu acesso de propósito.
-        extras: req.extra_dirs.clone(),
-    };
-    let perfil = match crate::sandbox::perfil_macos(req.permission, req.plan_first, &alvo) {
+    // Canonicaliza ANTES de virar regra: Seatbelt casa `subpath` pelo caminho
+    // real, e um projeto atrás de symlink ganhava um perfil que não negava nada
+    // (medido 10/09/2026 — o arquivo foi destruído com o perfil aplicado).
+    //
+    // As pastas liberadas por `--add-dir` entram: o usuário pediu "Só lê", não
+    // "só lê o projeto principal". Proteger a raiz e deixar a pasta irmã aberta
+    // seria um buraco exatamente onde ele concedeu acesso de propósito.
+    let alvo = crate::sandbox::Alvo::canonicalizado(&req.cwd, None, &req.extra_dirs);
+    let perfil = match crate::sandbox::perfil_macos(req.permission, req.plan_first, proprio, &alvo)
+    {
         Ok(p) => p,
         // Modo de escrita: ausência LEGÍTIMA de sandbox, sem aviso nenhum.
         Err(crate::sandbox::SemPerfil::ModoEscreve) => return (cmd, None),
+        // O motor confina sozinho, com garantia MEDIDA e mais apertada que a
+        // nossa. Também é ausência legítima e também não ganha aviso: somar o
+        // envelope aqui não protegia mais, quebrava o turno inteiro.
+        Err(crate::sandbox::SemPerfil::MotorConfina) => return (cmd, None),
         Err(crate::sandbox::SemPerfil::NadaParaProteger) => {
             let _ = on_event.send(AgentEvent::Notice {
                 message: "Somente-leitura sem confinamento do sistema: não montei o perfil para este diretório. O motor segue segurando sozinho.".to_string(),
@@ -1252,6 +1268,13 @@ struct Outcome {
     /// "confinado e engoliu o bloqueio em silêncio" (o caso agy da fase 0, que
     /// sai com exit 0, stdout vazio e stderr sem assinatura nenhuma).
     emitiu_saida: bool,
+    /// Primeira assinatura de falha do RUNNER de sandbox vista no stream cru
+    /// (`sandbox::assinatura_de_runner`). `None` = o stream não acusou nada.
+    ///
+    /// Campo próprio, e não "mais um pedaço do stderr", porque a origem é o que
+    /// importa: esta veio do stdout estruturado, que é onde o `classifica` não
+    /// olhava quando a automação agendada rodou cega três vezes.
+    sandbox_runner_hint: Option<String>,
     session_not_found: bool,
     /// O stream já publicou uma causa terminal acionável (`Error` ou
     /// `LimitReached`). O exit code continua em `Done`, mas não pode fabricar um
@@ -1357,6 +1380,7 @@ async fn run_once(
         }
     });
     let mut memory_watch = crate::run_resources::ProcessMemoryWatch::new(child_pid);
+    let mut monitored_output_files = std::collections::HashSet::<std::path::PathBuf>::new();
     let _ = on_event.send(AgentEvent::Started);
     let mut last_byte_at = None;
 
@@ -1364,6 +1388,10 @@ async fn run_once(
     // escutamos o sinal. Reusar o MESMO Arc entre as tentativas retém o cancel.
     let mut cancelled = false;
     let mut emitiu_saida = false;
+    // Primeira assinatura de falha do runner de sandbox vista no stream cru. O
+    // stderr não é a única superfície: no sandbox aninhado ela sai no stdout
+    // estruturado, e é ali que o incidente de 04–09/09/2026 se esconde.
+    let mut sandbox_runner_hint: Option<String> = None;
     let mut session_not_found = false;
     let mut terminal_incident = false;
     let mut session_id = None;
@@ -1375,6 +1403,11 @@ async fn run_once(
                 match line {
                     Ok(Some(line)) => {
                         last_byte_at = Some(crate::run_resources::epoch_ms());
+                        // Só a PRIMEIRA: o resto do turno repete a mesma falha a
+                        // cada comando, e a classificação precisa de uma amostra.
+                        if sandbox_runner_hint.is_none() {
+                            sandbox_runner_hint = crate::sandbox::assinatura_de_runner(&line);
+                        }
                         // O adapter decide como tratar a linha crua: estruturados
                         // (Claude/Codex) parseiam JSON → map_line; não-estruturados
                         // (agy) tratam como texto. Default preserva o comportamento
@@ -1392,10 +1425,13 @@ async fn run_once(
                             if let AgentEvent::Session { session_id: id, .. } = &ev {
                                 session_id = Some(id.clone());
                             }
+                            if let AgentEvent::DeferredWork { output_file: Some(ref path), .. } = &ev {
+                                monitored_output_files.insert(std::path::PathBuf::from(path));
+                            }
                             context_reported |= matches!(ev, AgentEvent::ContextUsage { .. });
                             terminal_incident |= is_terminal_incident(&ev);
                             emitiu_saida = true;
-            let _ = on_event.send(ev);
+                            let _ = on_event.send(ev);
                         }
                     }
                     Ok(None) => break, // EOF, processo terminou
@@ -1432,11 +1468,33 @@ async fn run_once(
                     observed_at: crate::run_resources::epoch_ms(),
                 });
                 if let Some(rss_mb) = resources.warning_rss_mb {
-                    let _ = on_event.send(AgentEvent::Notice {
+                    let message = crate::run_resources::format_memory_warning_message(
+                        rss_mb,
+                        observation.root_rss_mb,
+                    );
+                    let _ = on_event.send(AgentEvent::Notice { message });
+                }
+                let mut quota_violation = None;
+                for file_path in &monitored_output_files {
+                    if let crate::run_resources::DiskQuotaCheck::Exceeded { size_bytes, limit_bytes } =
+                        crate::run_resources::check_disk_quota(file_path, crate::run_resources::MAX_OUTPUT_FILE_BYTES)
+                    {
+                        quota_violation = Some((file_path.clone(), size_bytes, limit_bytes));
+                        break;
+                    }
+                }
+                if let Some((path, size, limit)) = quota_violation {
+                    terminal_incident = true;
+                    let limit_gb = limit / (1024 * 1024 * 1024);
+                    let size_mb = size / (1024 * 1024);
+                    let _ = on_event.send(AgentEvent::Error {
                         message: format!(
-                            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+                            "Arquivo de saída em background atingiu {size_mb} MB e excedeu o teto de segurança de {limit_gb} GB ({}); interrompi o processo para proteger o disco.",
+                            path.display()
                         ),
                     });
+                    crate::run_processes::terminate_run(run_id, child_pid);
+                    break;
                 }
             }
         }
@@ -1482,6 +1540,7 @@ async fn run_once(
         stderr: stderr_text,
         stderr_truncated: stderr_capture.truncated,
         emitiu_saida,
+        sandbox_runner_hint,
         session_not_found,
         terminal_incident,
         session_id,
@@ -1941,6 +2000,7 @@ mod tests {
             stderr: "erro secundário do processo".into(),
             stderr_truncated: false,
             emitiu_saida: true,
+            sandbox_runner_hint: None,
             session_not_found: false,
             terminal_incident: true,
             session_id: None,
@@ -1960,6 +2020,7 @@ mod tests {
             stderr: "You've hit your session limit · resets 1:50pm (America/Sao_Paulo)".into(),
             stderr_truncated: false,
             emitiu_saida: true,
+            sandbox_runner_hint: None,
             session_not_found: false,
             terminal_incident: false,
             session_id: None,
@@ -1985,6 +2046,7 @@ mod tests {
             stderr: String::new(),
             stderr_truncated: false,
             emitiu_saida: true,
+            sandbox_runner_hint: None,
             session_not_found: false,
             terminal_incident: false,
             session_id: None,

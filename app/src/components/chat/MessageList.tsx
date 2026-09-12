@@ -16,7 +16,6 @@ import {
 } from "react"
 import {
   AlertCircle,
-  Ban,
   Bot,
   ChevronRight,
   Copy,
@@ -31,6 +30,11 @@ import {
   Wrench,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
+import { MarcoDeCorte } from "@/components/chat/MarcoDeCorte"
+import { NoDoFio } from "@/components/chat/NoDoFio"
+import { DivisorNovasMensagens } from "@/components/chat/DivisorNovasMensagens"
+import { DeferredOutputFile } from "@/components/chat/DeferredOutputFile"
+import { tsDaCauda, useNasceuAgora, useTrocou } from "@/lib/nascimento"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
@@ -83,7 +87,7 @@ import {
   type ToolTreeNode,
 } from "@/components/chat/toolTree"
 import { hiddenNodeCount, useJanelaProgressiva, useStableNodes } from "@/components/chat/useStableNodes"
-import { groupByAuthor, groupTs } from "@/components/chat/messageGroups"
+import { groupByAuthor, groupTs, corteNasceu } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
   turnStartIndex,
@@ -173,14 +177,17 @@ const ToolLine = memo(function ToolLine({
   // explícito revela comando/input/output/diff desta ação.
   const [open, setOpen] = useState(active && children.length > 0)
   const [briefingOpen, setBriefingOpen] = useState(false)
-  const failed = item.result?.ok === false
+  const failed = item.result?.ok === false && !item.result.interrupted
   const status: StepStatus = item.result
     ? item.result.ok
       ? "ok"
-      : "error"
+      : item.result.interrupted
+        ? "stopped"
+        : "error"
     : active
       ? "running"
       : "recorded"
+  const [nasceu, trocou] = [useNasceuAgora(item.ts), useTrocou(status)]
   const res = resultMeta(item.name, item.result)
   const processMeta = item.managedProcess
     ? `PID ${item.managedProcess.pid} · ${item.managedProcess.status}`
@@ -217,7 +224,9 @@ const ToolLine = memo(function ToolLine({
       ? "em execução"
       : status === "ok"
         ? "concluído"
-        : "registrado"
+        : status === "stopped"
+          ? "parou"
+          : "registrado"
   const label = echoesOwner ? (deferredMeta ?? stateWord) : p.label
   const meta = [
     p.meta,
@@ -264,7 +273,7 @@ const ToolLine = memo(function ToolLine({
   }, [active, children.length])
 
   return (
-    <div className="min-w-0">
+    <div className={cn("min-w-0", nasceu && "fio-nasce-desliza")}>
       <div className="flex min-w-0 items-center">
         <button
           onClick={() => expandable && setOpen((o) => !o)}
@@ -286,12 +295,13 @@ const ToolLine = memo(function ToolLine({
           className="grid size-4 shrink-0 place-items-center"
           title={status === "recorded" ? "sem resultado registrado" : undefined}
         >
-          {status === "running" ? (
+          {status === "running" || status === "stopped" ? (
             <StepDot status={status} ancestor={hasRunningDescendant(node, activeToolId)} />
           ) : (
             <Icon
               className={cn(
                 "size-3.5",
+                trocou && "fio-assenta",
                 failed
                   ? "text-st-error"
                   : status === "ok"
@@ -521,45 +531,35 @@ const ToolLine = memo(function ToolLine({
                   </div>
                 </div>
               )}
-              {item.deferred?.outputFile && item.deferred.status !== "running" && (
-                <div className="border-t border-border/40 p-2">
-                  <p className="mb-1 text-[11px] tracking-wide text-muted-foreground/70 uppercase">
-                    Resultado em disco
-                  </p>
-                  <div
-                    data-selectable
-                    className="font-mono text-[11px] leading-relaxed break-words [overflow-wrap:anywhere] text-muted-foreground"
+              {item.deferred?.outputFile && (
+                <DeferredOutputFile
+                  outputFile={item.deferred.outputFile}
+                  status={item.deferred.status}
+                />
+              )}
+              {/* Retomar ≠ repetir (D1, ADR-182): tool pai com diferido associado
+                  não repete p/ não duplicar; só diferido INTERROMPIDO retoma. */}
+              {item.result && onRetry && (!item.deferred
+                ? !children.some((c) => c.item.deferred != null)
+                : item.deferred.status === "interrupted") && (
+                <div className="flex items-center justify-end gap-1.5 border-t border-border/40 px-2 py-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onRetry(item)
+                    }}
+                    title={item.deferred
+                      ? item.deferred.kind === "local_workflow" || item.deferred.kind === "workflow"
+                        ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
+                        : "Retoma a verificação do trabalho em background interrompido"
+                      : undefined}
+                    className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
-                    {item.deferred.outputFile}
-                  </div>
+                    <RotateCcw className="size-3" /> {item.deferred ? "Retomar" : "Repetir etapa"}
+                  </button>
                 </div>
               )}
-              {/* Retomar ≠ repetir (decisão 3 do deferred-work-plan): num nó de
-                  trabalho diferido, "Repetir etapa" relançaria o workflow do
-                  zero pagando tudo de novo — só o INTERROMPIDO ganha ação, e
-                  ela é Retomar (reaproveita o cache via resumeFromRunId). */}
-              {item.result &&
-                onRetry &&
-                (!item.deferred || item.deferred.status === "interrupted") && (
-                  <div className="flex items-center justify-end gap-1.5 border-t border-border/40 px-2 py-1.5">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        onRetry(item)
-                      }}
-                      title={
-                        item.deferred
-                          ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
-                          : undefined
-                      }
-                      className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
-                    >
-                      <RotateCcw className="size-3" />{" "}
-                      {item.deferred ? "Retomar" : "Repetir etapa"}
-                    </button>
-                  </div>
-                )}
             </div>
           )}
           {children.length > 0 && (
@@ -1244,14 +1244,7 @@ const MessageItem = memo(function MessageItem({
     )
   }
 
-  if (it.kind === "cancelled") {
-    return (
-      <div className="flex items-center gap-2 pt-1 text-[12px] text-muted-foreground">
-        <Ban className="size-3.5" />
-        <span>interrompido</span>
-      </div>
-    )
-  }
+  if (it.kind === "cancelled") return <MarcoDeCorte item={it} />
 
   if (it.kind === "notice") {
     return (
@@ -1548,6 +1541,7 @@ export function MessageList({
   // item via a key do 1º nó, que buildNodes deriva do id desse item). Itens
   // antigos sem `ts` → undefined, e o grupo omite a hora.
   const tsById = useMemo(() => tsForGroups(threadItems, groups), [threadItems, groups])
+  const tsCauda = useMemo(() => tsDaCauda(threadItems), [threadItems])
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)
@@ -1584,22 +1578,11 @@ export function MessageList({
                 de um grupo é o id do item que o abriu (buildNodes), e a fronteira
                 vem logo após uma mensagem SUA — troca de autor abre grupo novo,
                 então o divisor cai sempre ENTRE grupos. */}
-            {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && (
-              <div
-                role="separator"
-                aria-label="novas mensagens"
-                className="flex items-center gap-3"
-              >
-                <span className="h-px flex-1 bg-st-warning/40" />
-                <span className="text-[11px] font-medium tracking-wide text-st-warning/90 uppercase">
-                  novas mensagens
-                </span>
-                <span className="h-px flex-1 bg-st-warning/40" />
-              </div>
-            )}
+            {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && <DivisorNovasMensagens />}
             <GroupRow
               groupKey={g.key}
               author={g.author}
+              brasa={g.author.kind === "executor" && corteNasceu(groups[idx + 1])}
               agent={agent}
               presetId={presetId ?? null}
               ts={groupTs(g, tsById)}
@@ -1620,17 +1603,15 @@ export function MessageList({
                 ) : undefined
               }
             >
-              {g.nodes.map((n) => (
-                <div
+              {g.nodes.map((n, i) => (
+                <NoDoFio
                   key={n.key}
-                  data-chat-item-ids={nodeItemIds(n).join(" ")}
-                  className={cn(
-                    "min-w-0 rounded-md transition-colors",
-                    nodeItemIds(n).includes(revealedItemId ?? "") && "bg-brass-soft",
-                  )}
+                  ids={nodeItemIds(n)}
+                  revelado={revealedItemId}
+                  ts={i > 0 && n.type !== "tools" && n.type !== "plan" ? tsCauda.get(n.key) : undefined}
                 >
                   {renderNode(n, { ...ctxBase, isLast: n.key === lastKey })}
-                </div>
+                </NoDoFio>
               ))}
             </GroupRow>
           </Fragment>

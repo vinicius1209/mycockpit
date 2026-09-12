@@ -21,6 +21,8 @@ export interface ManagedProcess {
   status: ManagedProcessStatus
   exitCode: number | null
   output: string
+  /** Caminho do arquivo de saída em disco (direct-to-disk, ADR-183). */
+  outputFile?: string | null
   /** Última linha incremental aplicada; ausente em snapshots legados. */
   outputSeq?: number
   startedAt: number
@@ -102,6 +104,12 @@ export function stopManagedProcess(
   processId: string,
 ): Promise<ManagedProcess> {
   return invoke("managed_process_stop", { processId })
+}
+
+export function stopManagedProcessesByConv(
+  convId: string,
+): Promise<ManagedProcess[]> {
+  return invoke("managed_process_stop_by_conv", { convId })
 }
 
 export function retryManagedProcess(

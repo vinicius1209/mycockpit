@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light" data-reduzido="off" data-lento="off">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frota · Movimento no fio (Mock)</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --background: #fbfbfa;
+      --rail: #f6f6f4;
+      --foreground: #16181b;
+      --card: #ffffff;
+      --secondary: #f4f4f2;
+      --muted-foreground: #5c6166;
+      --faint: #8a9099;
+      --border: rgba(0, 0, 0, 0.09);
+      --border-strong: rgba(0, 0, 0, 0.14);
+      --sel: rgba(0, 0, 0, 0.055);
+      --sel-hover: rgba(0, 0, 0, 0.028);
+      --brass: #a9742b;
+      --brass-soft: rgba(169, 116, 43, 0.12);
+      --st-running: #2f8fbf;
+      --st-success: #1f9d6b;
+      --st-warning: #c1861f;
+      --destructive: #d6483b;
+      --shadow-sm: 0 1px 2px rgba(20, 22, 25, 0.08);
+      --shadow-pop: 0 12px 36px -8px rgba(20, 22, 25, 0.16);
+      --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+      /* Os três tempos do §6. No app eles ainda NÃO existem (ver notas). */
+      --dur-fast: 120ms;
+      --dur: 200ms;
+      --dur-slow: 320ms;
+      --sai: cubic-bezier(0.2, 0.8, 0.2, 1);
+      --esc: 1;
+      --t-fast: calc(var(--dur-fast) * var(--esc));
+      --t: calc(var(--dur) * var(--esc));
+      --t-slow: calc(var(--dur-slow) * var(--esc));
+      --t-pal: calc(180ms * var(--esc));
+      --t-brasa: calc(900ms * var(--esc));
+    }
+    :root[data-lento="on"] { --esc: 3; }
+
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --background: #0a0b0d;
+      --rail: #0c0d10;
+      --foreground: #e7e8ea;
+      --card: #141619;
+      --secondary: #191c20;
+      --muted-foreground: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --sel: rgba(255, 255, 255, 0.07);
+      --sel-hover: rgba(255, 255, 255, 0.035);
+      --brass: #e4a862;
+      --brass-soft: rgba(228, 168, 98, 0.14);
+      --st-running: #5bb8e8;
+      --st-success: #5bd6a0;
+      --st-warning: #d99138;
+      --destructive: #e4574b;
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-pop: 0 12px 36px -8px rgba(0, 0, 0, 0.55);
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 22px 20px 60px;
+      background: color-mix(in srgb, var(--background) 92%, var(--foreground) 8%);
+      color: var(--foreground);
+      font: 13px/1.45 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    button { font: inherit; color: inherit; }
+    .pagina { max-width: 1220px; margin: 0 auto; }
+
+    /* ================= cabeçalho do mock ================= */
+    .cab { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 14px; flex-wrap: wrap; }
+    h1 { font-size: 20px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+    .sub { color: var(--muted-foreground); margin: 5px 0 0; max-width: 70ch; }
+    .controles { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      height: 28px; padding: 0 11px; border-radius: 7px; cursor: pointer; font-size: 12px;
+      border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground);
+    }
+    .btn:hover { color: var(--foreground); }
+    .btn.principal { border-color: var(--brass); color: var(--brass); font-weight: 500; }
+    .btn[aria-pressed="true"] { background: var(--secondary); color: var(--foreground); border-color: var(--border-strong); }
+
+    .roteiro { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; counter-reset: passo; }
+    .roteiro li {
+      counter-increment: passo;
+      font-size: 11px; color: var(--faint);
+      border: 1px solid var(--border); border-radius: 999px;
+      padding: 3px 9px 3px 7px; background: var(--card);
+      transition: color var(--t), border-color var(--t), background var(--t);
+    }
+    .roteiro li::before { content: counter(passo); font-variant-numeric: tabular-nums; margin-right: 6px; color: var(--faint); }
+    .roteiro li.feito { color: var(--muted-foreground); }
+    .roteiro li.agora { color: var(--foreground); border-color: var(--brass); background: var(--brass-soft); }
+    .roteiro li.agora::before { color: var(--brass); }
+
+    /* ================= a janela ================= */
+    .janela {
+      height: 720px;
+      border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden;
+      background: var(--background);
+      box-shadow: var(--shadow-pop);
+      display: grid; grid-template-rows: 44px 1fr 26px;
+    }
+    .titlebar {
+      display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+      padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--rail);
+    }
+    .semaforo { display: flex; gap: 7px; align-items: center; }
+    .semaforo i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+    .semaforo i:nth-child(1) { background: #ff5f57; } .semaforo i:nth-child(2) { background: #febc2e; } .semaforo i:nth-child(3) { background: #28c840; }
+    .semaforo b { margin-left: 14px; font-size: 13px; font-weight: 600; }
+    .abas-topo { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 999px; background: var(--card); }
+    .abas-topo span { font-size: 12px; padding: 3px 12px; border-radius: 999px; color: var(--muted-foreground); }
+    .abas-topo span.sel { background: var(--sel); color: var(--foreground); font-weight: 500; }
+    .topo-dir { display: flex; justify-content: flex-end; gap: 8px; }
+    .topo-dir span { font-size: 12px; color: var(--muted-foreground); border: 1px solid var(--border); background: var(--card); border-radius: 7px; padding: 3px 10px; }
+
+    .app { display: grid; grid-template-columns: 250px 1fr; min-height: 0; }
+
+    /* ---------------- sidebar ---------------- */
+    .sidebar { background: var(--rail); border-right: 1px solid var(--border); padding: 12px 8px; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+    .secao { font-size: 11px; letter-spacing: 0.04em; color: var(--faint); padding: 10px 10px 4px; display: flex; justify-content: space-between; }
+    .item { display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px; border-radius: 7px; color: var(--muted-foreground); font-size: 13px; }
+    .item .n { margin-left: auto; font-size: 11px; color: var(--faint); }
+    .proj { display: flex; align-items: center; gap: 9px; height: 32px; padding: 0 10px; border-radius: 7px; font-size: 13px; font-weight: 500; margin-top: 4px; }
+    .proj .chev { margin-left: auto; color: var(--faint); font-size: 11px; }
+    .conv {
+      display: flex; align-items: center; gap: 9px; height: 30px; padding: 0 10px 0 12px;
+      border-radius: 7px; font-size: 12px; color: var(--muted-foreground);
+      transition: background var(--t), color var(--t);
+      cursor: default;
+    }
+    .conv .ic { width: 14px; text-align: center; font-size: 11px; color: var(--faint); flex: none; }
+    .conv .titulo { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: font-weight var(--t); }
+    .conv.ativo { background: var(--sel); color: var(--foreground); }
+    .conv.ativo .titulo { font-weight: 500; }
+    .conv.naovisto .titulo { color: var(--foreground); font-weight: 600; }
+    .conv.nova { color: var(--faint); }
+
+    .slot { width: 36px; flex: none; display: grid; justify-items: end; align-items: center; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+    .slot > * { grid-area: 1 / 1; transition: opacity var(--t), transform var(--t) var(--sai); }
+    .slot .t { opacity: 1; }
+    .slot .sp {
+      width: 11px; height: 11px; border-radius: 50%;
+      border: 1.5px solid color-mix(in oklab, var(--st-running) 26%, transparent);
+      border-top-color: var(--st-running);
+      animation: gira 0.9s linear infinite;
+      opacity: 0; transform: scale(0.6);
+    }
+    .slot .novo { width: 7px; height: 7px; border-radius: 50%; background: var(--brass); opacity: 0; transform: scale(0.3); }
+    .slot[data-estado="rodando"] .t { opacity: 0; transform: scale(0.8); }
+    .slot[data-estado="rodando"] .sp { opacity: 1; transform: none; }
+    .slot[data-estado="novo"] .t { transform: translateX(-12px); color: var(--foreground); }
+    .slot[data-estado="novo"] .novo { opacity: 1; transform: none; }
+
+    .usuario { margin-top: auto; display: flex; align-items: center; gap: 9px; padding: 8px 10px; font-size: 13px; }
+    .usuario i { width: 22px; height: 22px; border-radius: 50%; background: var(--brass); display: grid; place-items: center; color: #fff; font-style: normal; font-size: 11px; font-weight: 600; }
+
+    /* ---------------- área principal ---------------- */
+    .main { display: grid; grid-template-rows: 36px 1fr auto; min-height: 0; background: var(--card); }
+    .tabs { display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--border); }
+    .tabs span { font-size: 12px; padding: 3px 10px; border-radius: 6px; background: var(--sel); font-weight: 500; }
+    .tabs em { font-style: normal; color: var(--faint); }
+
+    .area-fio { position: relative; min-height: 0; }
+    .rolagem { position: absolute; inset: 0; overflow-y: auto; transition: opacity var(--t-fast) ease; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    .rolagem.trocando { opacity: 0; }
+    .fio { max-width: 640px; margin: 0 auto; padding: 26px 32px 28px; display: flex; flex-direction: column; gap: 18px; }
+
+    /* minimapa (TurnScrubber) */
+    .regua {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 8px 6px;
+      transition: opacity var(--t-fast);
+    }
+    .regua i { display: block; width: 10px; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--muted-foreground) 32%, transparent); transition: width var(--t) var(--sai), background var(--t); }
+    .regua i.eu { background: color-mix(in srgb, var(--brass) 45%, transparent); }
+    .regua i.aqui { width: 18px; background: var(--brass); }
+    .regua i.emenda { background: none; width: 14px; display: flex; justify-content: space-between; }
+    .regua i.emenda::before, .regua i.emenda::after { content: ""; width: 5px; height: 3px; border-radius: 2px; background: color-mix(in srgb, var(--muted-foreground) 45%, transparent); }
+    .regua i.nasce-tick { animation: tick var(--t-slow) var(--sai) both; }
+    .regua i.emenda.abre::before, .regua i.emenda.abre::after { animation: vao var(--t-slow) var(--sai) both; }
+
+    /* ---------------- fio ---------------- */
+    .grupo { display: flex; gap: 10px; }
+    .avatar { width: 22px; height: 22px; flex: none; border-radius: 6px; display: grid; place-items: center; font-size: 9px; margin-top: 1px; }
+    .avatar.agente { background: #1d2024; color: #e7e8ea; font-family: var(--mono); }
+    :root[data-theme="dark"] .avatar.agente { background: #2a2e34; }
+    .avatar.eu { background: var(--brass); color: #fff; border-radius: 50%; font-size: 11px; font-weight: 600; }
+    .corpo { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 7px; border-radius: 8px; margin: -5px -8px; padding: 5px 8px; }
+    .autor { display: flex; align-items: baseline; gap: 8px; }
+    .autor b { font-size: 13px; font-weight: 600; }
+    .autor time { font-size: 11px; color: var(--faint); }
+    .prosa { margin: 0; font-size: 13px; line-height: 1.6; }
+    .balao { align-self: flex-start; background: var(--secondary); border-radius: 10px; padding: 7px 11px; font-size: 13px; max-width: 48ch; }
+
+    .acao { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted-foreground); min-height: 18px; }
+    .acao .ico { width: 12px; height: 12px; display: grid; place-items: center; flex: none; }
+    .acao .ok { color: var(--st-success); display: inline-flex; }
+    .acao .ok svg { width: 12px; height: 12px; }
+    .acao .meta { margin-left: auto; font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+    .acao .rot-acao { transition: color var(--t); }
+    .acao.cortada .rot-acao { color: var(--faint); }
+
+    .spin {
+      width: 11px; height: 11px; border-radius: 50%;
+      border: 1.5px solid color-mix(in oklab, var(--st-running) 26%, transparent);
+      border-top-color: var(--st-running);
+      animation: gira 0.9s linear infinite;
+      transition: border-color var(--t), opacity var(--t);
+    }
+    /* Congela NO ÂNGULO em que estava: o giro para, não volta ao zero. */
+    .spin.congela {
+      animation-play-state: paused;
+      border-color: color-mix(in srgb, var(--muted-foreground) 18%, transparent);
+      border-top-color: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+    }
+
+    .linha-viva { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted-foreground); transition: opacity var(--t-fast); }
+    .linha-viva .rot { transition: opacity var(--t-fast); }
+    .linha-viva .cron { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; min-width: 22px; }
+    .dots { display: inline-flex; gap: 3px; }
+    .dots i { width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.3; animation: pulso 1.4s ease-in-out infinite; }
+    .dots i:nth-child(2) { animation-delay: 0.18s; } .dots i:nth-child(3) { animation-delay: 0.36s; }
+    .linha-viva.saindo { opacity: 0; }
+
+    .legenda { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 11px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; border: 1px solid var(--border); border-radius: 8px; padding: 5px 10px; align-self: stretch; }
+    .legenda .estado { display: inline-flex; align-items: center; gap: 5px; color: var(--st-success); font-weight: 500; }
+    .legenda svg { width: 12px; height: 12px; }
+    .legenda .pt { color: color-mix(in srgb, var(--muted-foreground) 35%, transparent); }
+    .legenda .custo { font-weight: 500; }
+
+    .marco { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted-foreground); padding-top: 2px; }
+    .marco svg { width: 13px; height: 13px; flex: none; }
+
+    .divisor-novas { display: flex; align-items: center; gap: 12px; }
+    .divisor-novas .fil { height: 1px; flex: 1; background: color-mix(in srgb, var(--st-warning) 40%, transparent); animation: risca var(--t-slow) var(--sai) both; }
+    .divisor-novas .fil:first-child { transform-origin: right center; }
+    .divisor-novas .fil:last-child { transform-origin: left center; }
+    .divisor-novas span { font-size: 11px; font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; color: color-mix(in srgb, var(--st-warning) 90%, transparent); animation: surge var(--t) ease-out calc(160ms * var(--esc)) both; }
+
+    /* ---------------- composer ---------------- */
+    .rodape { padding: 0 24px 16px; }
+    .composer {
+      position: relative; max-width: 640px; margin: 0 auto;
+      border: 1px solid var(--border-strong); border-radius: 14px; background: var(--card);
+      box-shadow: var(--shadow-sm); padding: 12px 12px 10px 16px;
+    }
+    .campo { position: relative; min-height: 22px; font-size: 13px; }
+    .campo .ph { position: absolute; inset: 0; color: var(--faint); transition: opacity var(--t-fast); pointer-events: none; }
+    .campo.tem-texto .ph { opacity: 0; }
+    .campo .txt { display: inline-block; transition: opacity var(--t-fast), transform var(--t) var(--sai); }
+    .campo .cursor { display: inline-block; width: 1px; height: 15px; background: var(--foreground); vertical-align: -2px; margin-left: 1px; animation: pisca 1s steps(1) infinite; }
+    .campo.partindo .txt { opacity: 0; transform: translateY(-8px); }
+    .barra-comp { display: flex; align-items: center; gap: 14px; margin-top: 12px; font-size: 12px; color: var(--muted-foreground); }
+    .barra-comp .ag b { font-weight: 500; color: var(--foreground); }
+    .barra-comp .lib { color: var(--st-warning); }
+    .enviar {
+      margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 0;
+      display: grid; place-items: center; color: #fff;
+      background: color-mix(in srgb, var(--muted-foreground) 55%, transparent);
+      transition: background var(--t);
+    }
+    .enviar svg { grid-area: 1 / 1; width: 14px; height: 14px; transition: opacity var(--t-fast), transform var(--t) var(--sai); }
+    .enviar .i-parar { opacity: 0; transform: scale(0.5); }
+    .enviar[data-estado="pronto"] { background: var(--foreground); color: var(--card); }
+    .enviar[data-estado="rodando"] { background: var(--destructive); }
+    .enviar[data-estado="rodando"] .i-seta { opacity: 0; transform: scale(0.5); }
+    .enviar[data-estado="rodando"] .i-parar { opacity: 1; transform: none; }
+    .tecla {
+      position: absolute; right: 54px; top: -12px;
+      font: 500 11px var(--mono); color: var(--foreground);
+      border: 1px solid var(--border-strong); border-bottom-width: 2px; border-radius: 5px;
+      background: var(--card); padding: 1px 6px; opacity: 0; pointer-events: none;
+    }
+    .tecla.aperta { animation: aperta calc(700ms * var(--esc)) ease-out both; }
+    .sugestoes { max-width: 640px; margin: 10px auto 0; display: flex; gap: 6px; }
+    .sugestoes span { font-size: 12px; color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; }
+
+    .statusbar { display: flex; align-items: center; justify-content: space-between; padding: 0 14px; border-top: 1px solid var(--border); background: var(--rail); font: 11px var(--mono); color: var(--faint); }
+    .statusbar .cota { display: inline-block; width: 22px; height: 4px; border-radius: 2px; background: var(--st-warning); vertical-align: 1px; margin: 0 6px; }
+
+    /* ================= o vocabulário de movimento ================= */
+    @keyframes gira { to { transform: rotate(360deg); } }
+    @keyframes pulso { 0%, 100% { opacity: 0.25; } 50% { opacity: 0.9; } }
+    @keyframes pisca { 50% { opacity: 0; } }
+    @keyframes surge { from { opacity: 0; } to { opacity: 1; } }
+    @keyframes sobe { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    @keyframes desliza { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+    @keyframes assenta { from { opacity: 0; transform: scale(0.55); } to { opacity: 1; transform: none; } }
+    @keyframes desenha { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+    @keyframes risca { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @keyframes tick { from { transform: scaleX(0); opacity: 0; } to { transform: none; opacity: 1; } }
+    @keyframes vao { from { width: 7px; } to { width: 5px; } }
+    @keyframes brasa {
+      0% { background: transparent; }
+      18% { background: var(--brass-soft); }
+      45% { background: var(--brass-soft); }
+      100% { background: transparent; }
+    }
+    @keyframes aperta {
+      0% { opacity: 0; transform: translateY(3px); }
+      20% { opacity: 1; transform: none; }
+      35% { transform: translateY(1px); border-bottom-width: 1px; }
+      50% { transform: none; border-bottom-width: 2px; }
+      100% { opacity: 0; }
+    }
+
+    .nasce-grupo { animation: surge var(--t) ease-out both; }
+    .grupo.seu.nasce-grupo { animation: sobe var(--t-slow) var(--sai) both; }
+    .nasce-acao { animation: desliza var(--t) var(--sai) both; }
+    .pal { animation: surge var(--t-pal) ease-out both; }
+    .assenta { animation: assenta var(--t-fast) var(--sai) both; }
+    .acende { animation: surge var(--t) ease-out both; }
+    .nasce-vivo { animation: surge var(--t) ease-out both; }
+    .nasce-marco { animation: surge var(--t-slow) ease-out both; }
+    .nasce-legenda { animation: surge var(--t-slow) ease-out both; }
+    .nasce-legenda svg path { stroke-dasharray: 1; stroke-dashoffset: 1; animation: desenha var(--t-slow) var(--sai) calc(90ms * var(--esc)) forwards; }
+    .brasa { animation: brasa var(--t-brasa) ease-out both; }
+
+    /* movimento reduzido: tudo chega no estado final, nada fica invisível */
+    :root[data-reduzido="on"] *, :root[data-reduzido="on"] *::before, :root[data-reduzido="on"] *::after {
+      animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important;
+    }
+    :root[data-reduzido="on"] .spin:not(.congela), :root[data-reduzido="on"] .slot .sp {
+      animation: none !important; border-color: transparent !important; background: var(--st-running); width: 7px; height: 7px;
+    }
+    :root[data-reduzido="on"] .dots i { animation: none !important; opacity: 0.6; }
+    :root[data-reduzido="on"] .campo .cursor { animation: none !important; }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0s !important; animation-delay: 0s !important; transition-duration: 0s !important; }
+      .spin:not(.congela), .slot .sp { animation: none !important; border-color: transparent !important; background: var(--st-running); width: 7px; height: 7px; }
+      .dots i { animation: none !important; opacity: 0.6; }
+    }
+
+    /* ================= notas ================= */
+    .notas { margin-top: 22px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; }
+    .caixa { border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 16px 20px; }
+    .caixa h2 { font-size: 13px; font-weight: 600; margin: 0 0 10px; }
+    .caixa p, .caixa li { color: var(--muted-foreground); }
+    .caixa b { color: var(--foreground); font-weight: 500; }
+    .caixa code { font-family: var(--mono); font-size: 11.5px; color: var(--brass); }
+    .caixa ol { margin: 0; padding-left: 18px; } .caixa li { margin-bottom: 7px; }
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; font-weight: 500; font-size: 11px; color: var(--faint); padding: 0 8px 6px 0; border-bottom: 1px solid var(--border); }
+    td { padding: 7px 8px 7px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 45%, transparent); color: var(--muted-foreground); vertical-align: top; }
+    td:first-child { color: var(--foreground); }
+    td.n { font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+    .achado { margin-top: 14px; border-left: 2px solid var(--st-warning); padding: 2px 0 2px 12px; }
+  </style>
+</head>
+<body>
+<div class="pagina">
+  <div class="cab">
+    <div>
+      <h1>Movimento no fio</h1>
+      <p class="sub">Uma conversa inteira, do envio à interrupção e à volta. Nada entra
+        de supetão, e nada se repete quando você reabre. Use "câmera lenta" pra
+        enxergar cada gesto e "movimento reduzido" pra ver o que sobra sem animação.</p>
+    </div>
+    <div class="controles">
+      <button class="btn principal" id="b-tocar">▶ tocar</button>
+      <button class="btn" id="b-passo">próximo passo</button>
+      <button class="btn" id="b-reiniciar">reiniciar</button>
+      <button class="btn" id="b-lento" aria-pressed="false">câmera lenta</button>
+      <button class="btn" id="b-reduzido" aria-pressed="false">movimento reduzido</button>
+      <button class="btn" id="b-tema">tema</button>
+    </div>
+  </div>
+
+  <ol class="roteiro" id="roteiro"></ol>
+
+  <div class="janela">
+    <div class="titlebar">
+      <div class="semaforo"><i></i><i></i><i></i><b>Maclan</b></div>
+      <div class="abas-topo"><span>Painel</span><span class="sel">Trabalho</span><span>Features</span></div>
+      <div class="topo-dir"><span>Buscar ⌘K</span><span>Notas</span></div>
+    </div>
+
+    <div class="app">
+      <aside class="sidebar">
+        <div class="secao"><span>GERAL</span></div>
+        <div class="item">◇ Frota</div>
+        <div class="item">◷ Agendamentos <span class="n">14h</span></div>
+        <div class="item">☰ Planos de voo <span class="n">3</span></div>
+        <div class="secao"><span>PROJETOS 4</span><span>+</span></div>
+        <div class="proj">▢ mycockpit <span class="chev">⌄</span></div>
+        <div class="conv"><span class="ic">▪</span><span class="titulo">desempenho</span><span class="slot"><span class="t">2h</span></span></div>
+        <div class="conv"><span class="ic">▪</span><span class="titulo">Consegue vasculhar as conver…</span><span class="slot"><span class="t">7h</span></span></div>
+        <div class="proj">▢ sicredi <span class="chev">›</span></div>
+        <div class="proj">▢ Maclan <span class="chev">⌄</span></div>
+        <div class="conv ativo" id="c-coleta"><span class="ic">&gt;_</span><span class="titulo">[feat] cliente coleta</span><span class="slot" data-estado="tempo"><span class="t">24m</span><span class="sp"></span><span class="novo"></span></span></div>
+        <div class="conv" id="c-estudo"><span class="ic">Λ</span><span class="titulo">Precisamos estudar como fun…</span><span class="slot" data-estado="rodando"><span class="t">6h</span><span class="sp"></span><span class="novo"></span></span></div>
+        <div class="conv nova"><span class="ic">+</span><span class="titulo">Nova tarefa</span></div>
+        <div class="usuario"><i>V</i> Vinicius</div>
+      </aside>
+
+      <main class="main">
+        <div class="tabs"><span>Conversa</span><em>+</em></div>
+        <div class="area-fio">
+          <div class="rolagem" id="rolagem"><div class="fio" id="fio"></div></div>
+          <div class="regua" id="regua"></div>
+        </div>
+        <div class="rodape">
+          <div class="composer">
+            <span class="tecla" id="tecla">Enter</span>
+            <div class="campo" id="campo"><span class="ph" id="ph">Peça algo… ou / para comandos</span><span class="txt" id="txt"></span></div>
+            <div class="barra-comp">
+              <span>📎</span>
+              <span class="ag"><b>Codex</b> · GPT-5.6-Sol ⌄</span>
+              <span class="lib">◈ Liberado</span>
+              <button class="enviar" id="enviar" data-estado="idle" aria-label="Enviar">
+                <svg class="i-seta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+                <svg class="i-parar" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="sugestoes"><span>Explicar o projeto</span><span>Rodar os testes</span><span>Criar uma branch</span></div>
+        </div>
+      </main>
+    </div>
+
+    <div class="statusbar">
+      <span>Codex<span class="cota"></span>78% · sessão ~US$ 72,16</span>
+      <span>local · v0.1.0-t371</span>
+    </div>
+  </div>
+
+  <div class="notas">
+    <div class="caixa">
+      <h2>O vocabulário, evento por evento</h2>
+      <table>
+        <thead><tr><th>evento</th><th>movimento</th><th>tempo</th><th>movimento reduzido</th></tr></thead>
+        <tbody>
+          <tr><td>Texto sai do composer</td><td>sobe e some, no mesmo gesto do envio</td><td class="n">120ms</td><td>limpa</td></tr>
+          <tr><td>Sua mensagem entra no fio</td><td>sobe 6px e acende</td><td class="n">320ms</td><td>aparece</td></tr>
+          <tr><td>Agente assume o turno</td><td>cabeçalho e linha viva acendem</td><td class="n">200ms</td><td>aparecem</td></tr>
+          <tr><td>Texto em streaming</td><td>cada trecho acende no lugar; nada empurra</td><td class="n">180ms</td><td>trecho entra inteiro</td></tr>
+          <tr><td>Ação nasce</td><td>desliza 4px e acende</td><td class="n">200ms</td><td>aparece</td></tr>
+          <tr><td>Ação conclui</td><td>giro vira ✓ que assenta</td><td class="n">120ms</td><td>troca direta</td></tr>
+          <tr><td>Linha viva muda de frase</td><td>crossfade no rótulo</td><td class="n">120ms</td><td>troca direta</td></tr>
+          <tr><td>Turno conclui</td><td>✓ se desenha, legenda acende</td><td class="n">320ms</td><td>aparece desenhado</td></tr>
+          <tr><td>Você interrompe</td><td>ação em voo congela no ângulo em que estava; brasa decai; marco acende; a régua ganha emenda</td><td class="n">900ms</td><td>só o marco e a emenda</td></tr>
+          <tr><td>Estado na lista</td><td>tempo e giro trocam de lugar</td><td class="n">200ms</td><td>troca direta</td></tr>
+          <tr><td>Terminou sem você ver</td><td>ponto surge ao lado do tempo</td><td class="n">200ms</td><td>aparece</td></tr>
+          <tr><td>Trocar de conversa</td><td>o fio faz crossfade; itens chegam prontos</td><td class="n">120ms</td><td>troca direta</td></tr>
+          <tr><td>Novas mensagens</td><td>filete risca do centro pra fora</td><td class="n">320ms</td><td>aparece</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="caixa">
+      <h2>As regras que seguram isso</h2>
+      <ol>
+        <li><b>Movimento conta um evento que acabou de acontecer.</b> Abrir uma
+          conversa não é evento: tudo chega pronto. A única exceção é o divisor
+          de novas mensagens, porque ele é a notícia da visita. (Passos 9 e 10.)</li>
+        <li><b>Uma vez, preso à presença do elemento.</b> Loop só no que está vivo
+          (giro, pontos da linha viva) e ele morre junto com o estado.</li>
+        <li><b>Nada que você já leu se mexe.</b> Entrada é opacidade e poucos
+          pixels, só no que é novo. Texto lido nunca desliza.</li>
+        <li><b>O significado mora no estado, não na animação.</b> Com movimento
+          reduzido tudo aparece na hora e nenhuma informação se perde.</li>
+        <li><b>Três tempos com nome</b> (120 · 200 · 320ms) e uma exceção
+          declarada, a brasa.</li>
+      </ol>
+      <div class="achado">
+        <p><b>Achado ao montar isto:</b> o §6 do STYLEGUIDE diz que as durações
+          vêm de <code>--dur-fast</code>, <code>--dur</code> e <code>--dur-slow</code>,
+          mas esses tokens <b>não estão definidos</b> no <code>index.css</code>. Os
+          três usos que existem (<code>AgentFace.tsx</code> e
+          <code>SetupGuide.tsx</code>) caem hoje em transição instantânea, sem
+          erro nenhum. O resto do app usa tempos soltos (<code>0.42s</code>,
+          <code>0.4s</code>, <code>0.2s</code>). Criar os tokens é o primeiro passo.</p>
+        <p style="margin-top:8px">E um precedente a não seguir: o
+          <code>PlanMilestone</code> anima na montagem, então refaz a entrada
+          toda vez que a conversa é reaberta.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const R = document.documentElement;
+  const $ = (id) => document.getElementById(id);
+  const fio = $("fio"), regua = $("regua"), rolagem = $("rolagem");
+  const campo = $("campo"), txt = $("txt"), ph = $("ph"), enviar = $("enviar");
+  const ABORT = Symbol("abort");
+  let token = 0, idx = 0, ocupado = false, relogio = null, vivo = null;
+  const T = {};
+
+  const AG = "&gt;_";
+  const CHECK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path pathLength="1" d="M20 6 9 17l-5-5"/></svg>';
+  const BAN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="m5.7 5.7 12.6 12.6"/></svg>';
+
+  const esc = () => Number(getComputedStyle(R).getPropertyValue("--esc")) || 1;
+  const reduzido = () => R.dataset.reduzido === "on" || matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function esperar(ms) {
+    const t = token;
+    return new Promise((ok, falha) => setTimeout(() => (t === token ? ok() : falha(ABORT)), ms * esc()));
+  }
+  function el(tag, cls, html) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (html != null) e.innerHTML = html;
+    return e;
+  }
+  function rolarFim() {
+    rolagem.scrollTo({ top: rolagem.scrollHeight, behavior: reduzido() ? "auto" : "smooth" });
+  }
+
+  /* Conteúdo que CHEGA PRONTO (abrir/voltar): passa por um <template>, que não
+     renderiza, e perde as classes de nascimento antes de tocar o DOM. Assim
+     nenhuma animação dispara: é a regra 1 em código. */
+  const NASCIMENTO = ["nasce-grupo", "nasce-acao", "pal", "assenta", "acende", "nasce-vivo", "nasce-marco", "nasce-legenda", "brasa", "nasce-tick", "abre"];
+  function pronto(html) {
+    const tpl = document.createElement("template");
+    tpl.innerHTML = html;
+    tpl.content.querySelectorAll("*").forEach((n) => n.classList.remove(...NASCIMENTO));
+    return tpl.content;
+  }
+
+  /* ---------------- peças do fio ---------------- */
+  function grupo(quem, hora) {
+    const seu = quem === "Você";
+    const g = el("div", "grupo nasce-grupo" + (seu ? " seu" : ""),
+      `<div class="avatar ${seu ? "eu" : "agente"}">${seu ? "V" : AG}</div>` +
+      `<div class="corpo"><div class="autor"><b>${quem}</b><time>${hora}</time></div></div>`);
+    fio.append(g);
+    rolarFim();
+    return g.querySelector(".corpo");
+  }
+  function inserir(corpo, e) {
+    if (vivo && vivo.parentElement === corpo) corpo.insertBefore(e, vivo);
+    else corpo.append(e);
+    rolarFim();
+  }
+  function acao(corpo, rot) {
+    const r = el("div", "acao nasce-acao", `<span class="ico"><span class="spin"></span></span><span class="rot-acao">${rot}</span><span class="meta"></span>`);
+    inserir(corpo, r);
+    return r;
+  }
+  function concluir(r, meta) {
+    r.querySelector(".ico").innerHTML = `<span class="ok assenta">${CHECK}</span>`;
+    const m = r.querySelector(".meta");
+    m.textContent = meta;
+    m.classList.add("acende");
+  }
+  async function fala(corpo, texto) {
+    const p = el("p", "prosa");
+    inserir(corpo, p);
+    const w = texto.match(/\S+\s*/g);
+    for (let i = 0; i < w.length; i += 2) {
+      p.append(el("span", "pal", w.slice(i, i + 2).join("")));
+      if (i % 6 === 0) rolarFim();
+      await esperar(55);
+    }
+    rolarFim();
+  }
+  function legenda(corpo, dur, custo) {
+    inserir(corpo, el("div", "legenda nasce-legenda",
+      `<span class="estado">${CHECK}concluído</span><span class="pt">·</span><span>${dur}</span><span class="pt">·</span><span class="custo">${custo}</span>`));
+  }
+
+  /* linha viva: dona do agora, nunca "0s" */
+  function ligarVivo(corpo) {
+    vivo = el("div", "linha-viva nasce-vivo", `<span class="dots"><i></i><i></i><i></i></span><span class="rot">está trabalhando…</span><span class="cron"></span>`);
+    corpo.append(vivo);
+    let s = 0;
+    clearInterval(relogio);
+    relogio = setInterval(() => { s++; if (vivo) vivo.querySelector(".cron").textContent = `${s}s`; }, 1000);
+    rolarFim();
+  }
+  async function rotuloVivo(frase) {
+    if (!vivo) return;
+    const r = vivo.querySelector(".rot");
+    r.style.opacity = 0;
+    await esperar(120);
+    r.textContent = frase;
+    r.style.opacity = 1;
+  }
+  async function desligarVivo() {
+    if (!vivo) return;
+    clearInterval(relogio);
+    vivo.classList.add("saindo");
+    await esperar(120);
+    vivo.remove();
+    vivo = null;
+  }
+
+  /* régua */
+  function tick(tipo) {
+    regua.querySelectorAll(".aqui").forEach((i) => i.classList.remove("aqui"));
+    regua.append(el("i", `${tipo} aqui nasce-tick`));
+  }
+  function emendar() {
+    const ultimos = [...regua.children].filter((i) => !i.classList.contains("eu"));
+    const alvo = ultimos[ultimos.length - 1];
+    if (alvo) alvo.className = "emenda abre";
+  }
+
+  /* composer */
+  async function digitar(frase) {
+    campo.classList.add("tem-texto");
+    if (!ocupadoRodando()) enviar.dataset.estado = "pronto";
+    const cursor = el("span", "cursor");
+    for (const c of frase) {
+      txt.textContent += c;
+      txt.after(cursor);
+      await esperar(16);
+    }
+    cursor.remove();
+  }
+  const ocupadoRodando = () => enviar.dataset.estado === "rodando";
+  async function tirarDoComposer() {
+    const t = txt.textContent;
+    $("tecla").classList.remove("aperta");
+    void $("tecla").offsetWidth;
+    $("tecla").classList.add("aperta");
+    await esperar(160);
+    campo.classList.add("partindo");
+    await esperar(130);
+    txt.textContent = "";
+    campo.classList.remove("partindo", "tem-texto");
+    if (!ocupadoRodando()) enviar.dataset.estado = "idle";
+    return t;
+  }
+  async function placeholder(frase) {
+    ph.style.opacity = 0;
+    await esperar(120);
+    ph.textContent = frase;
+    ph.style.opacity = "";
+  }
+
+  /* lista de conversas */
+  function slot(id, estado, tempo) {
+    const s = $(id).querySelector(".slot");
+    s.dataset.estado = estado;
+    if (tempo) s.querySelector(".t").textContent = tempo;
+    $(id).classList.toggle("naovisto", estado === "novo");
+  }
+  function ativar(id) {
+    document.querySelectorAll(".conv.ativo").forEach((c) => c.classList.remove("ativo"));
+    $(id).classList.add("ativo");
+  }
+
+  /* ---------------- a interrupção ---------------- */
+  async function interromper(corpo, emVoo) {
+    await rotuloVivo("finalizando…");
+    corpo.classList.add("brasa");
+    emVoo.querySelector(".spin").classList.add("congela");
+    emVoo.classList.add("cortada");
+    emVoo.querySelector(".meta").textContent = "parou";
+    emVoo.querySelector(".meta").classList.add("acende");
+    await esperar(380);
+    await desligarVivo();
+    corpo.append(el("div", "marco nasce-marco", `${BAN}<span>você interrompeu</span>`));
+    emendar();
+    await esperar(260);
+  }
+
+  /* ---------------- troca de conversa ---------------- */
+  const OUTRA = `
+    <div class="grupo seu"><div class="avatar eu">V</div><div class="corpo"><div class="autor"><b>Você</b><time>12:40</time></div>
+      <div class="balao">precisamos estudar como funciona o processo de cotação no ERP antes de mexer no coletor</div></div></div>
+    <div class="grupo"><div class="avatar agente">Λ</div><div class="corpo"><div class="autor"><b>Claude</b><time>18:40</time></div>
+      <div class="acao"><span class="ico"><span class="ok">${CHECK}</span></span><span class="rot-acao">Ler módulo de cotação</span><span class="meta">14 arquivos · 2min</span></div>
+      <p class="prosa">Mapeei o fluxo de cotação: o ERP gera a cotação a partir do pedido, mas o status só volta ao coletor pela rotina noturna. Por isso cotações novas aparecem com até um dia de atraso.</p>
+      <div class="legenda"><span class="estado">${CHECK}concluído</span><span class="pt">·</span><span>6min02s</span><span class="pt">·</span><span class="custo">~US$ 1,12</span></div>
+    </div></div>`;
+  const REGUA_OUTRA = `<i></i><i></i><i class="eu"></i><i></i><i class="eu"></i><i class="aqui"></i>`;
+  let guardado = null;
+
+  async function crossfade(montar) {
+    rolagem.classList.add("trocando");
+    regua.style.opacity = 0;
+    await esperar(120);
+    montar();
+    rolagem.scrollTop = rolagem.scrollHeight;
+    rolagem.classList.remove("trocando");
+    regua.style.opacity = "";
+  }
+  async function abrirOutra() {
+    guardado = { fio: fio.innerHTML, regua: regua.innerHTML };
+    ativar("c-estudo");
+    await crossfade(() => {
+      fio.replaceChildren(pronto(OUTRA));
+      regua.replaceChildren(pronto(REGUA_OUTRA));
+      // O divisor NASCE com a visita: é o único que se desenha ao abrir.
+      const div = el("div", "divisor-novas", `<i class="fil"></i><span>novas mensagens</span><i class="fil"></i>`);
+      fio.insertBefore(div, fio.children[1]);
+    });
+    slot("c-estudo", "tempo", "agora");
+  }
+  async function voltar() {
+    ativar("c-coleta");
+    await crossfade(() => {
+      fio.replaceChildren(pronto(guardado.fio));
+      regua.replaceChildren(pronto(guardado.regua));
+    });
+  }
+
+  /* ---------------- o roteiro ---------------- */
+  const passos = [
+    { t: "você envia", fn: async () => {
+      await esperar(300);
+      await digitar("confere se as configurações de funil do banco local batem com o desenho novo");
+      await esperar(350);
+      const t = await tirarDoComposer();
+      const c = grupo("Você", "18:38");
+      c.append(el("div", "balao", t));
+      tick("eu");
+    } },
+    { t: "o agente assume", fn: async () => {
+      await esperar(220);
+      slot("c-coleta", "rodando");
+      enviar.dataset.estado = "rodando";
+      placeholder("Enter corrige agora · Tab envia no próximo turno…").catch(() => {});
+      await esperar(200);
+      T.c1 = grupo("Codex", "18:38");
+      ligarVivo(T.c1);
+      tick("");
+    } },
+    { t: "uma ação nasce e conclui", fn: async () => {
+      await esperar(700);
+      const r = acao(T.c1, "Consultar funis no banco local");
+      await esperar(1400);
+      concluir(r, "3 shell · 4s");
+    } },
+    { t: "o texto chega em streaming", fn: async () => {
+      await esperar(400);
+      await fala(T.c1, "O banco local está disponível, mas as configurações dos funis estão antigas: quase todos os estágios apontam para a régua anterior. Vou subir um servidor de inspeção para comparar com o desenho atual.");
+    } },
+    { t: "mais ações, uma fica em voo", fn: async () => {
+      await esperar(400);
+      const r = acao(T.c1, "Subir servidor de inspeção");
+      await esperar(1100);
+      concluir(r, "PID 4812");
+      await esperar(300);
+      T.voo = acao(T.c1, "Acompanhar saída do servidor");
+      await rotuloVivo("acompanhando a saída do servidor…");
+    } },
+    { t: "você corrige no meio (Enter)", fn: async () => {
+      await esperar(900);
+      await digitar("na verdade, puxa as configurações de prod em modo leitura e aplica aqui no local");
+      await esperar(400);
+      const t = await tirarDoComposer();
+      await interromper(T.c1, T.voo);
+      const c = grupo("Você", "18:39");
+      c.append(el("div", "balao", t));
+      tick("eu");
+    } },
+    { t: "o novo turno responde e conclui", fn: async () => {
+      await esperar(260);
+      T.c2 = grupo("Codex", "18:39");
+      ligarVivo(T.c2);
+      tick("");
+      await esperar(700);
+      await fala(T.c2, "Consigo. Vou ler produção em modo somente leitura e trazer as configurações para o local.");
+      const r = acao(T.c2, "Ler configurações de produção");
+      await esperar(1200);
+      concluir(r, "somente leitura · 2s");
+      await esperar(350);
+      await fala(T.c2, "Pronto: 6 estágios atualizados no local. Produção não foi alterada.");
+      await rotuloVivo("finalizando…");
+      await esperar(500);
+      await desligarVivo();
+      legenda(T.c2, "14s", "~US$ 0,09");
+      enviar.dataset.estado = "idle";
+      placeholder("Peça algo… ou / para comandos").catch(() => {});
+      slot("c-coleta", "tempo", "agora");
+    } },
+    { t: "outra conversa termina sem você ver", fn: async () => {
+      await esperar(1100);
+      slot("c-estudo", "novo", "agora");
+    } },
+    { t: "você abre essa conversa", fn: async () => { await esperar(700); await abrirOutra(); } },
+    { t: "você volta: nada se repete", fn: async () => { await esperar(1600); await voltar(); } },
+  ];
+
+  const roteiro = $("roteiro");
+  passos.forEach((p) => roteiro.append(el("li", "", p.t)));
+  function marcar(i) {
+    [...roteiro.children].forEach((li, n) => {
+      li.classList.toggle("feito", n < i);
+      li.classList.toggle("agora", n === i && ocupado);
+    });
+  }
+
+  /* estado inicial: conversa já em andamento, chegando PRONTA */
+  const INICIAL = `
+    <div class="grupo seu"><div class="avatar eu">V</div><div class="corpo"><div class="autor"><b>Você</b><time>18:36</time></div>
+      <div class="balao">esse erro é normal?</div></div></div>
+    <div class="grupo"><div class="avatar agente">${AG}</div><div class="corpo"><div class="autor"><b>Codex</b><time>18:37</time></div>
+      <p class="prosa">Não é. O navegador carregou versões diferentes do módulo compartilhado, geralmente por cache de HMR do Vite. O código e o servidor estão corretos; recarregar sem cache resolve.</p>
+      <div class="legenda"><span class="estado">${CHECK}concluído</span><span class="pt">·</span><span>41s</span><span class="pt">·</span><span class="custo">~US$ 0,21</span></div>
+    </div></div>`;
+  const REGUA_INICIAL = `<i></i><i class="eu"></i><i></i><i></i><i class="eu"></i><i class="aqui"></i>`;
+
+  function montar() {
+    token++;
+    clearInterval(relogio);
+    vivo = null; idx = 0; ocupado = false; guardado = null;
+    fio.replaceChildren(pronto(INICIAL));
+    regua.replaceChildren(pronto(REGUA_INICIAL));
+    txt.textContent = ""; campo.className = "campo";
+    ph.textContent = "Peça algo… ou / para comandos"; ph.style.opacity = "";
+    enviar.dataset.estado = "idle";
+    ativar("c-coleta");
+    slot("c-coleta", "tempo", "24m");
+    slot("c-estudo", "rodando", "6h");
+    rolagem.classList.remove("trocando");
+    marcar(0);
+  }
+
+  async function rodar(ate) {
+    if (ocupado || idx >= passos.length) return;
+    ocupado = true;
+    try {
+      do { marcar(idx); await passos[idx].fn(); idx++; } while (idx < ate);
+    } catch (e) {
+      if (e !== ABORT) throw e;
+      return;
+    } finally {
+      ocupado = false;
+      marcar(idx);
+    }
+  }
+
+  $("b-tocar").onclick = () => rodar(passos.length);
+  $("b-passo").onclick = () => rodar(idx + 1);
+  $("b-reiniciar").onclick = montar;
+  $("b-lento").onclick = (e) => { const on = R.dataset.lento !== "on"; R.dataset.lento = on ? "on" : "off"; e.currentTarget.setAttribute("aria-pressed", on); };
+  $("b-reduzido").onclick = (e) => { const on = R.dataset.reduzido !== "on"; R.dataset.reduzido = on ? "on" : "off"; e.currentTarget.setAttribute("aria-pressed", on); };
+  $("b-tema").onclick = () => { R.dataset.theme = R.dataset.theme === "dark" ? "light" : "dark"; };
+
+  montar();
+</script>
+</body>
+</html>

@@ -6,7 +6,8 @@ import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { cn } from "@/lib/utils"
-import { deferredLiveLine, type RunLiveness } from "@/store/chat"
+import { useTrocou } from "@/lib/nascimento"
+import { deferredLiveLine, useRunLiveness, type RunLiveness } from "@/store/chat"
 import type { Node } from "@/components/chat/messageNodes"
 import { usePresets } from "@/store/presets"
 
@@ -51,9 +52,10 @@ export function WorkingIndicator({
   startedAt,
   deferred = [],
   stalledSince,
-  runLiveness,
+  runLiveness: propRunLiveness,
   inline = false,
   nodes,
+  convId,
 }: {
   agent: string
   presetId: string | null
@@ -82,7 +84,11 @@ export function WorkingIndicator({
    *  após N ações…" contando ações do turno ANTERIOR — atividade inventada.
    *  Ausente = rótulo genérico, que é a degradação honesta. */
   nodes?: Node[]
+  /** Identificador opcional da conversa p/ seletor granular de liveness (ADR-183). */
+  convId?: string | null
 }) {
+  const storeLiveness = useRunLiveness(convId)
+  const runLiveness = propRunLiveness ?? storeLiveness
   // ADR-071: os dots voltam a pulsar quando a janela reaparece.
   const epoca = useEpocaDaJanela()
   const presets = usePresets((s) => s.list)
@@ -99,6 +105,16 @@ export function WorkingIndicator({
           ? "sintetizando resposta após 1 ação…"
           : `sintetizando resposta após ${completedToolsCount} ações…`
         : "está trabalhando…"
+  // Crossfade quando a FASE da frase troca, não o número: "após 3 ações" →
+  // "após 4" não re-entra. Montar não anima (ADR-179).
+  const fase = live
+    ? "fundo"
+    : finalizing
+      ? "finalizando"
+      : !hasUnfinishedTool && completedToolsCount > 0
+        ? "sintetizando"
+        : "trabalhando"
+  const trocouFase = useTrocou(fase)
   // O relógio pertence ao que está ESCRITO na linha: com background vivo é o
   // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
   // o cronômetro sumia); sem background, é o turno.
@@ -132,7 +148,11 @@ export function WorkingIndicator({
           )}
         </span>
       ) : (
-        <span className="min-w-0 truncate" title={live ? live.detail : undefined}>
+        <span
+          key={fase}
+          className={cn("min-w-0 truncate", trocouFase && "fio-nasce")}
+          title={live ? live.detail : undefined}
+        >
           {label}
         </span>
       )}

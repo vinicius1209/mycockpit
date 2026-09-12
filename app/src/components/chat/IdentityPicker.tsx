@@ -46,18 +46,21 @@ export function IdentityPicker({
   modelLocked,
   onModelChange,
   effectiveEffort,
+  effortLocked,
   onEffortChange,
 }: {
   effectiveDest: string
   /** Conversa já estabelecida. NÃO desabilita o trilho de motor (o clique
-   *  engatilha revezamento pro próximo envio); muda só o que o controle PROMETE
-   *  no tooltip, e trava modelo e esforço. */
+   *  engatilha revezamento pro próximo envio) nem modelo e esforço (eles têm
+   *  trava própria, `modelLocked`/`effortLocked`, só enquanto há turno em voo);
+   *  muda o que os controles PROMETEM no tooltip. */
   locked: boolean
   onDestChange: (v: string) => void
   effectiveModel: string
   modelLocked: boolean
   onModelChange: (v: string) => void
   effectiveEffort: string
+  effortLocked: boolean
   onEffortChange: (v: string) => void
 }) {
   const limited = useApp((s) => s.limitedAgents)
@@ -70,14 +73,14 @@ export function IdentityPicker({
   // engatilha a troca pro PRÓXIMO envio. Esta copy servia aos três eixos e
   // continuou falando por todos depois que um saiu — dizer "agent fica fixo" ao
   // lado de um trilho que troca de agent é a UI se contradizendo na mesma tela.
-  const lockTitle = locked
-    ? "Modelo e esforço ficam fixos a partir do 1º envio desta conversa"
-    : undefined
-  const modelTitle = modelLocked
-    ? lockTitle
-    : locked
-      ? "O turno anterior falhou, então dá para trocar o modelo e enviar de novo"
-      : undefined
+  //
+  // Desde 11/09/2026 o esforço segue o modelo: os dois só travam com turno em
+  // voo (a flag já foi no spawn) e, fora disso, trocam valendo do próximo envio
+  // sem perder a sessão.
+  const emVooTitle = "Modelo e esforço trocam quando o turno em curso terminar"
+  const trocaTitle = "Vale do próximo envio, na mesma sessão"
+  const modelTitle = modelLocked ? emVooTitle : locked ? trocaTitle : undefined
+  const effortTitle = effortLocked ? emVooTitle : locked ? trocaTitle : undefined
 
   const baseModels = agentModels(effectiveDest)
   const supportsCustom = CUSTOM_MODEL_AGENTS.has(effectiveDest)
@@ -152,7 +155,7 @@ export function IdentityPicker({
             />
           </div>
         ) : (
-          <div title={modelLocked ? modelTitle : undefined}>
+          <div title={modelTitle}>
             <CommandInput
               disabled={modelLocked}
               placeholder={`Buscar modelo do ${agentLogoLabel(effectiveDest)}…`}
@@ -275,7 +278,7 @@ export function IdentityPicker({
           <div
             role="radiogroup"
             aria-label="Esforço de raciocínio"
-            title={locked ? lockTitle : undefined}
+            title={effortTitle}
             className="flex flex-wrap items-center gap-1 border-t bg-secondary/30 p-2"
           >
             <span className="mr-1 font-mono text-[11px] tracking-wide text-muted-foreground/70 uppercase">
@@ -290,7 +293,7 @@ export function IdentityPicker({
                   role="radio"
                   aria-checked={active}
                   aria-label={e.label}
-                  disabled={locked}
+                  disabled={effortLocked}
                   onClick={() => onEffortChange(e.value)}
                   className={cn(
                     "rounded-md px-2 py-1 text-[12px] transition-colors",

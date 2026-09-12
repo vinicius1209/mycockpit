@@ -6,13 +6,16 @@
 import { useChat, type QueuedMsg } from "@/store/chat"
 import type { Attachment } from "@/lib/attachments"
 import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
+import { marcarCausaDoCorte } from "@/lib/corte"
 import { toast } from "sonner"
 
 export async function stopActiveConversation(): Promise<void> {
   const convId = useChat.getState().activeId
   if (!convId) return
   try {
-    if (await cancelConversationTurn(convId)) toast("Disputa cancelada")
+    // Sem toast de sucesso: o marco do corte fica no fio que você está
+    // olhando, e o toast só repetiria o fio e sumiria (ADR-180).
+    await cancelConversationTurn(convId, "parada")
   } catch (error) {
     console.error("falha ao parar a conversa", error)
     toast.error("Não consegui parar o turno.")
@@ -87,14 +90,19 @@ export function enqueueFront(
   })
 }
 
+/** Com turno rodando, o envio forçado CORTA o turno: a causa vai carimbada para
+ *  o marco "você interrompeu" do fio, que é o registro (ADR-180). Toast ali
+ *  repetiria o fio e sumiria. Sem turno rodando não há corte, e o aviso segue. */
 function dispatchNotice(convId: string): void {
   const conv = useChat.getState().byId[convId]
+  if (conv?.running) {
+    marcarCausaDoCorte(convId, "correcao")
+    return
+  }
   toast(
-    conv?.running
-      ? "Interrompendo o turno para enviar a fila…"
-      : conv?.finalizing
-        ? "A fila será enviada assim que o turno fechar."
-        : "Enviando a fila…",
+    conv?.finalizing
+      ? "A fila será enviada assim que o turno fechar."
+      : "Enviando a fila…",
   )
 }
 

@@ -38,7 +38,7 @@
 //! testar sem `sandbox-exec`, sem rede e sem gastar turno de agente. Envolver o
 //! spawn é o S2; distinguir "negou" de "quebrou" é o S3.
 
-use crate::adapters::Permission;
+use crate::adapters::{Permission, SandboxProprio};
 use tokio::process::Command;
 
 /// Modos em que o Frota PROMETE que o agente não escreve. Só eles ganham
@@ -54,7 +54,25 @@ use tokio::process::Command;
 /// Vale mesmo com permissão de escrita (`Liberado` + plano): planejar VENCE a
 /// permissão neste turno — é o que o `adapters.rs` já faz ao substituir o
 /// `--permission-mode`, e o que o `modeFromConversation` do front já devolve.
-pub fn confina(p: Permission, plan_first: bool) -> bool {
+///
+/// # Por que o motor entra nesta decisão (11/09/2026)
+///
+/// A primeira versão só perguntava do MODO, e isso quebrou o Codex por
+/// completo: ele aplica o sandbox dele por dentro, `(deny default)` a cada
+/// comando, e macOS recusa perfil restritivo dentro de perfil já aplicado. O
+/// de dentro é o que executa, então TODO comando morria com
+/// `sandbox_apply: Operation not permitted` (exit 71) — inclusive `pwd` e
+/// `cat`. "Só lê" com Codex virou "não lê", e a automação agendada gastou
+/// US$ 1,16 em três execuções cegas gravadas como `ok`.
+///
+/// Dispensar o envelope onde o motor já confina APERTA: medido turno a turno, o
+/// `read-only` do Codex barra mais que a nossa denylist (disco inteiro, não só
+/// o projeto, e sem rede). E em Linux `disponivel()` já é `false`, então lá esse
+/// sempre foi o comportamento — o macOS é que tinha a regressão.
+pub fn confina(p: Permission, plan_first: bool, proprio: SandboxProprio) -> bool {
+    if proprio.dispensa_envelope() {
+        return false;
+    }
     plan_first || matches!(p, Permission::Leitura | Permission::FusionRo)
 }
 
@@ -85,6 +103,38 @@ fn utilizavel(p: &str) -> bool {
     !p.is_empty() && p.starts_with('/') && !p.contains('"') && !p.contains('\n')
 }
 
+/// Resolve symlinks. `None` = o caminho não existe ou não resolve.
+///
+/// # O perfil decorativo (medido 10/09/2026)
+///
+/// Seatbelt casa `subpath` pelo caminho REAL, não pelo que você escreveu. Com
+/// `(deny file-write* (subpath "/tmp/projeto"))` e `/tmp` sendo symlink de
+/// `/private/tmp`, a regra não casa com nada: o agente escreveu no arquivo e o
+/// conteúdo foi destruído, com o perfil aplicado e sem erro nenhum. Perfil que
+/// parece proteger e não protege é o pior desfecho possível deste módulo.
+///
+/// Mora aqui, e não no `perfil_macos`, porque este toca o disco e aquele é
+/// função PURA de propósito (testável sem `sandbox-exec`, sem rede e sem gastar
+/// turno). Quem monta o alvo canonicaliza; quem gera o texto continua puro.
+pub fn canonicaliza(p: &str) -> Option<String> {
+    std::fs::canonicalize(p)
+        .ok()
+        .map(|c| c.to_string_lossy().into_owned())
+}
+
+impl Alvo {
+    /// O alvo como a PRODUÇÃO deve montá-lo: todo caminho resolvido antes de
+    /// virar regra. Caminho que não resolve é DESCARTADO (fail-closed: melhor
+    /// não ter a regra do que ter uma que protege o lugar errado).
+    pub fn canonicalizado(raiz: &str, worktree: Option<&str>, extras: &[String]) -> Self {
+        Alvo {
+            raiz: canonicaliza(raiz).unwrap_or_default(),
+            worktree: worktree.and_then(canonicaliza),
+            extras: extras.iter().filter_map(|e| canonicaliza(e)).collect(),
+        }
+    }
+}
+
 /// Erro de montagem. Existe como tipo (e não `Option`) porque o S2 precisa
 /// DIZER o que houve: recusar um turno em silêncio é o mesmo fail-open que o
 /// sandbox veio matar.
@@ -92,6 +142,12 @@ fn utilizavel(p: &str) -> bool {
 pub enum SemPerfil {
     /// O modo escreve — não é erro, é ausência legítima de sandbox.
     ModoEscreve,
+    /// O MOTOR já confina por conta própria, com garantia medida. Ausência
+    /// legítima e DESEJADA: envelopar aqui não soma, colide (dois perfis
+    /// Seatbelt aninhados fazem o de dentro falhar). Separado do `ModoEscreve`
+    /// porque o usuário precisa ouvir coisas diferentes: lá não há escrita pra
+    /// barrar, aqui há garantia e ela é de outro dono.
+    MotorConfina,
     /// Nenhum caminho utilizável sobrou. Perfil que não nega nada é perfil que
     /// mente.
     NadaParaProteger,
@@ -102,8 +158,19 @@ pub enum SemPerfil {
 /// `(allow default)` seguido de `(deny file-write* ...)` é a DENYLIST que a
 /// medida exigiu. A ordem importa no Seatbelt: a última regra que casa vence,
 /// então os `deny` vêm depois do `allow default`.
-pub fn perfil_macos(p: Permission, plan_first: bool, alvo: &Alvo) -> Result<String, SemPerfil> {
-    if !confina(p, plan_first) {
+pub fn perfil_macos(
+    p: Permission,
+    plan_first: bool,
+    proprio: SandboxProprio,
+    alvo: &Alvo,
+) -> Result<String, SemPerfil> {
+    // A ordem importa: o motor que já confina vence a leitura do modo, senão um
+    // Codex em "Só lê" cairia em `ModoEscreve` e a frase diria o contrário do
+    // que está acontecendo.
+    if proprio.dispensa_envelope() {
+        return Err(SemPerfil::MotorConfina);
+    }
+    if !confina(p, plan_first, proprio) {
         return Err(SemPerfil::ModoEscreve);
     }
     let mut caminhos: Vec<&str> = Vec::new();
@@ -195,6 +262,14 @@ pub enum Selo {
     /// exata: a denylist não cobre o resto do disco. Chamar isto de "completa"
     /// seria a mentira confortável.
     Parcial,
+    /// O MOTOR aplica sandbox de SO, e ele barra MAIS que a nossa denylist:
+    /// disco inteiro em vez de só o projeto, e sem rede.
+    ///
+    /// Existe porque a rota B fez o selo deixar de ser fato da máquina e virar
+    /// máquina × motor. Sem esta variante o card diria "parcial" para o Codex
+    /// enquanto a garantia dele é total para escrita — subestimar a proteção é
+    /// tão mentiroso quanto exagerá-la, e o S4 existe pra nenhuma das duas.
+    Motor,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -206,8 +281,23 @@ pub struct Confinamento {
     pub nota: &'static str,
 }
 
-/// Estado do confinamento nesta máquina, pro front decidir o que mostrar.
-pub fn confinamento() -> Confinamento {
+/// Estado do confinamento nesta máquina PARA UM MOTOR.
+///
+/// O motor entra na conta porque a garantia depende dele: quem confina sozinho
+/// não recebe o envelope (e não poderia — os dois colidem), então dizer "o
+/// sistema barra escrita no projeto" ali descreveria um perfil que não foi
+/// aplicado.
+pub fn confinamento(proprio: SandboxProprio) -> Confinamento {
+    // O motor vence a máquina: a garantia dele não depende do `sandbox-exec`
+    // existir aqui (em Linux ele nem existe, e o Codex confina igual).
+    if proprio.dispensa_envelope() {
+        return Confinamento {
+            selo: Selo::Motor,
+            // Sem repetir "o motor": quem consome prefixa o dono da garantia
+            // ("confinamento do motor: …"), e a linha do quadro usa a frase crua.
+            nota: "barra escrita no disco inteiro e corta a rede",
+        };
+    }
     if disponivel() {
         Confinamento {
             selo: Selo::Parcial,
@@ -221,9 +311,17 @@ pub fn confinamento() -> Confinamento {
     }
 }
 
+/// `agent` decide a resposta, e ele é resolvido pelo REGISTRY — nunca comparado
+/// por nome aqui. Agent desconhecido cai no fail-closed (`Nenhum`), que é a
+/// resposta mais conservadora: assume que só o envelope protege.
 #[tauri::command]
-pub fn sandbox_confinamento() -> Confinamento {
-    confinamento()
+pub fn sandbox_confinamento(agent: Option<String>) -> Confinamento {
+    let proprio = agent
+        .as_deref()
+        .and_then(|a| crate::adapters::resolve(a).ok())
+        .map(|ad| ad.capabilities().sandbox_proprio)
+        .unwrap_or(SandboxProprio::Nenhum);
+    confinamento(proprio)
 }
 
 // ───────────────────────────────── S3: "o sandbox negou" × "o agente quebrou"
@@ -265,9 +363,54 @@ const SEATBELT_RUNNER: &[&str] = &[
 ];
 const SEATBELT_NEGOU: &[&str] = &["operation not permitted", "os error 1"];
 
+/// Assinaturas seguras de reconhecer no STREAM, que é conteúdo do AGENTE.
+///
+/// # Por que esta lista é menor que a do stderr
+///
+/// O stderr é canal do NOSSO wrapper: ali "failed to compile" só pode ser o
+/// perfil não compilando. No stream é texto do agente, e um agente de código
+/// dizendo "the build failed to compile" é rotina — reconhecer aquela frase ali
+/// faria o app anunciar "não consegui aplicar o confinamento" num turno que
+/// compilou mal um Rust qualquer. Aviso falso recorrente é pior que aviso
+/// nenhum: ensina a pessoa a ignorar o aviso verdadeiro.
+///
+/// Só ficam as duas que NENHUM agente escreve por conta própria, porque são
+/// saída literal do binário `sandbox-exec`.
+const SEATBELT_RUNNER_NO_STREAM: &[&str] = &["sandbox-exec:", "sandbox_apply"];
+
 fn contem(hay: &str, agulhas: &[&str]) -> bool {
     let h = hay.to_lowercase();
     agulhas.iter().any(|a| h.contains(a))
+}
+
+/// Teto do trecho guardado: o hint vai pra classificação e pra uma frase, não
+/// pra tela inteira. Linha de stream pode ter megabytes de JSON.
+const HINT_MAX: usize = 300;
+
+/// Esta linha CRUA do stream carrega assinatura de falha do runner?
+///
+/// # Por que o stderr não bastava (incidente de 04–09/09/2026)
+///
+/// A falha do `sandbox-exec` aninhado não sai no stderr do motor: ela sai
+/// DENTRO do stdout estruturado, no `exec_command_output` de cada comando que o
+/// Codex tentou rodar. O `classifica` só olhava stderr, então o
+/// `RunnerFalhou` nunca disparou: a automação rodou cega três vezes, gravou
+/// `ok`, e a frase "Falha do Frota, não do agente" nunca apareceu.
+///
+/// A rota B tirou o Codex da colisão, mas isto FICA como detector de
+/// regressão: o próximo motor que ganhar sandbox próprio sem alguém atualizar a
+/// capability reproduz o mesmo incidente, e este é o único sintoma que ele dá.
+pub fn assinatura_de_runner(linha: &str) -> Option<String> {
+    // Lista ESTREITA de propósito (ver `SEATBELT_RUNNER_NO_STREAM`): aqui a
+    // linha é conteúdo do agente, não do nosso wrapper.
+    if !contem(linha, SEATBELT_RUNNER_NO_STREAM) {
+        return None;
+    }
+    let limpa = linha.trim();
+    Some(match limpa.char_indices().nth(HINT_MAX) {
+        Some((corte, _)) => format!("{}…", &limpa[..corte]),
+        None => limpa.to_string(),
+    })
 }
 
 /// Classifica o fim de um turno.
@@ -276,13 +419,22 @@ fn contem(hay: &str, agulhas: &[&str]) -> bool {
 /// isso PRIMEIRO evita que um "operation not permitted" vindo do próprio
 /// trabalho do agente (tentar escrever em `/etc`, por exemplo) seja lido como
 /// bloqueio nosso.
-pub fn classifica(confinado: bool, stderr: &str, sucesso: bool, emitiu_saida: bool) -> Veredito {
+pub fn classifica(
+    confinado: bool,
+    stderr: &str,
+    // Assinatura de runner colhida do STREAM (`assinatura_de_runner`). Existe
+    // porque o stderr não é a única superfície: no sandbox aninhado a falha sai
+    // no stdout estruturado, e foi por isso que o incidente passou batido.
+    hint_do_stream: Option<&str>,
+    sucesso: bool,
+    emitiu_saida: bool,
+) -> Veredito {
     if !confinado {
         return Veredito::Irrelevante;
     }
-    // Falha do runner ANTES da negação: as duas podem aparecer no mesmo stderr,
+    // Falha do runner ANTES da negação: as duas podem aparecer na mesma saída,
     // e a do runner é mais específica (e é nossa culpa).
-    if contem(stderr, SEATBELT_RUNNER) {
+    if hint_do_stream.is_some() || contem(stderr, SEATBELT_RUNNER) {
         return Veredito::RunnerFalhou;
     }
     if contem(stderr, SEATBELT_NEGOU) {
@@ -325,11 +477,11 @@ mod tests {
     fn so_os_modos_que_prometem_nao_escrever_sao_confinados() {
         // Sandbox em modo de escrita seria teatro: quebra turno legítimo e não
         // protege nada que o usuário tenha pedido pra proteger.
-        assert!(confina(Permission::Leitura, false));
-        assert!(confina(Permission::FusionRo, false));
-        assert!(!confina(Permission::Padrao, false));
-        assert!(!confina(Permission::Auto, false));
-        assert!(!confina(Permission::Liberado, false));
+        assert!(confina(Permission::Leitura, false, SandboxProprio::Nenhum));
+        assert!(confina(Permission::FusionRo, false, SandboxProprio::Nenhum));
+        assert!(!confina(Permission::Padrao, false, SandboxProprio::Nenhum));
+        assert!(!confina(Permission::Auto, false, SandboxProprio::Nenhum));
+        assert!(!confina(Permission::Liberado, false, SandboxProprio::Nenhum));
     }
 
     #[test]
@@ -337,23 +489,214 @@ mod tests {
         // ADR-061: `agy --mode plan -p "crie o arquivo X"` CRIOU o arquivo. Se o
         // plano ficasse de fora, o sandbox blindaria tudo menos o incidente que
         // originou o trabalho. A primeira versão do `confina` esquecia disto.
-        assert!(confina(Permission::Padrao, true));
+        assert!(confina(Permission::Padrao, true, SandboxProprio::Nenhum));
         // e vale mesmo com permissão de escrita: planejar VENCE a permissão no
         // turno, que é o que o adapters.rs já faz com o --permission-mode.
-        assert!(confina(Permission::Liberado, true));
-        assert!(confina(Permission::Auto, true));
+        assert!(confina(Permission::Liberado, true, SandboxProprio::Nenhum));
+        assert!(confina(Permission::Auto, true, SandboxProprio::Nenhum));
+    }
+
+    // ── R1: a colisão de sandbox (incidente de 04–09/09/2026)
+
+    #[test]
+    fn motor_que_confina_sozinho_NAO_e_envelopado() {
+        // O bug inteiro em uma asserção. Envelopar quem já aplica Seatbelt faz o
+        // perfil de DENTRO falhar (`sandbox_apply: Operation not permitted`), e
+        // o de dentro é o que executa os comandos: `pwd` e `cat` morriam com
+        // exit 71. Se esta linha virar `assert!` um dia, o Codex fica cego de
+        // novo e a automação agendada volta a gravar `ok` sem ter feito nada.
+        assert!(!confina(
+            Permission::Leitura,
+            false,
+            SandboxProprio::SistemaOperacional
+        ));
+        // E o plano também: era ele que sobrescrevia o modo pra read-only, então
+        // "Planejar primeiro" + Codex tinha o mesmo defeito no chat inteiro.
+        assert!(!confina(
+            Permission::Liberado,
+            true,
+            SandboxProprio::SistemaOperacional
+        ));
+    }
+
+    #[test]
+    fn melhor_esforco_NAO_dispensa_o_envelope() {
+        // O agy DIZ confinar e na verdade emudece (fase 0: exit 0, stdout
+        // vazio). Tratá-lo como garantia entregaria um "Só lê" que
+        // silenciosamente não faz nada — a degradação invisível que este módulo
+        // existe pra impedir. Ele é exatamente quem PRECISA do envelope.
+        assert!(confina(
+            Permission::Leitura,
+            false,
+            SandboxProprio::MelhorEsforco
+        ));
+        assert!(confina(
+            Permission::Padrao,
+            true,
+            SandboxProprio::MelhorEsforco
+        ));
+    }
+
+    #[test]
+    fn o_motor_que_confina_tem_ausencia_PROPRIA_nao_ModoEscreve() {
+        // Duas ausências legítimas, motivos opostos, e o usuário ouve frases
+        // diferentes: em `ModoEscreve` não há escrita pra barrar; aqui há
+        // garantia e ela é de outro dono. Colapsar as duas faria o Codex em
+        // "Só lê" ser descrito como modo de escrita.
+        assert_eq!(
+            perfil_macos(
+                Permission::Leitura,
+                false,
+                SandboxProprio::SistemaOperacional,
+                &alvo("/repo")
+            ),
+            Err(SemPerfil::MotorConfina)
+        );
+    }
+
+    // ── R2: o perfil decorativo do symlink (medido 10/09/2026)
+
+    #[test]
+    fn caminho_com_symlink_entra_no_perfil_JA_RESOLVIDO() {
+        // A medida: com `/tmp` sendo symlink de `/private/tmp`, a regra
+        // `(subpath "/tmp/...")` não casa com nada. O agente escreveu, o
+        // conteúdo foi destruído, o perfil estava aplicado e não houve erro.
+        // Perfil que parece proteger é pior que perfil nenhum.
+        //
+        // Toca o disco de propósito: a canonicalização é justamente o passo que
+        // consulta o SO, e um teste que a simulasse não provaria nada.
+        let base = std::env::temp_dir().join("frota-sb-canon");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(base.join("real")).unwrap();
+        let link = base.join("link");
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(base.join("real"), &link).unwrap();
+
+        let real = std::fs::canonicalize(base.join("real")).unwrap();
+        let a = Alvo::canonicalizado(&link.to_string_lossy(), None, &[]);
+        assert_eq!(a.raiz, real.to_string_lossy());
+
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &a).unwrap();
+        assert!(
+            p.contains(&format!("(subpath \"{}\")", real.to_string_lossy())),
+            "o perfil guardou o caminho do symlink em vez do real:\n{p}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn caminho_que_nao_resolve_e_DESCARTADO_do_alvo() {
+        // Fail-closed: melhor não ter a regra do que ter uma que protege o lugar
+        // errado achando que protege o certo. É o mesmo critério do
+        // `utilizavel`, agora aplicado ao que o disco desmente.
+        let a = Alvo::canonicalizado(
+            "/caminho/que/nao/existe/mesmo",
+            None,
+            &["/outro/inexistente".to_string()],
+        );
+        assert_eq!(a.raiz, "");
+        assert!(a.extras.is_empty());
+        assert_eq!(
+            perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &a),
+            Err(SemPerfil::NadaParaProteger)
+        );
+    }
+
+    // ── R3: a assinatura que sai no STREAM, não no stderr
+
+    #[test]
+    fn assinatura_do_incidente_e_reconhecida_na_linha_crua() {
+        // Fixture REAL: a linha que o Codex devolveu dentro do
+        // `exec_command_output` nos três runs de 04–09/09/2026. Era ela que
+        // ninguém via, porque o classificador só olhava stderr.
+        let linha = r#"{"type":"item.completed","item":{"type":"command_execution","aggregated_output":"sandbox-exec: sandbox_apply: Operation not permitted\n","exit_code":71}}"#;
+        assert!(assinatura_de_runner(linha).is_some());
+        // Linha normal de stream não pode virar falso positivo: um aviso a cada
+        // turno ensinaria o usuário a ignorar o aviso.
+        assert!(assinatura_de_runner(r#"{"type":"item.completed","item":{"type":"agent_message","text":"tudo certo"}}"#).is_none());
+    }
+
+    #[test]
+    fn o_hint_do_stream_sozinho_JA_acusa_falha_do_runner() {
+        // O caso Maclan exato: stderr VAZIO, turno com exit 0, e a falha só
+        // existindo no stdout estruturado. Antes disto o veredito era
+        // `Irrelevante` e a automação gravava `ok`.
+        assert_eq!(
+            classifica(
+                true,
+                "",
+                Some("sandbox-exec: sandbox_apply: Operation not permitted"),
+                true,
+                true
+            ),
+            Veredito::RunnerFalhou
+        );
+    }
+
+    #[test]
+    fn agente_falando_de_compilacao_NAO_vira_falha_de_sandbox() {
+        // A lista do stderr tem "failed to compile" porque ali o canal é do
+        // NOSSO wrapper. No stream é texto do agente, e um agente de código
+        // dizendo isso é rotina. Se as duas listas virarem uma só, este turno
+        // passa a anunciar "não consegui aplicar o confinamento" por causa de um
+        // erro de build — e aviso falso recorrente ensina a ignorar o aviso
+        // verdadeiro.
+        assert!(assinatura_de_runner("error: the crate failed to compile").is_none());
+        assert!(assinatura_de_runner("unable to open profile file for the user").is_none());
+        // …mas no STDERR elas continuam valendo, porque lá são inequívocas.
+        assert_eq!(
+            classifica(true, "sandbox-exec: failed to compile profile", None, false, false),
+            Veredito::RunnerFalhou
+        );
+    }
+
+    #[test]
+    fn hint_grande_e_cortado_para_nao_despejar_o_stream() {
+        // Linha de stream tem megabytes de JSON; o hint vai pra classificação e
+        // pra uma frase, não pra tela inteira.
+        let gigante = format!("sandbox_apply: {}", "x".repeat(5_000));
+        let h = assinatura_de_runner(&gigante).unwrap();
+        assert!(h.chars().count() <= HINT_MAX + 1, "hint não foi cortado");
+        assert!(h.ends_with('…'));
+    }
+
+    #[test]
+    fn o_selo_diz_quem_segura_e_nao_subestima_o_motor() {
+        // Com a rota B o selo deixou de ser fato da MÁQUINA e virou máquina ×
+        // motor. Sem a variante `Motor`, o card diria "parcial" (barra escrita
+        // no projeto) sobre um motor que barra o disco inteiro — subestimar a
+        // proteção mente tanto quanto exagerá-la.
+        assert_eq!(
+            confinamento(SandboxProprio::SistemaOperacional).selo,
+            Selo::Motor
+        );
+        // A garantia do motor NÃO depende do sandbox-exec existir aqui: em
+        // Linux ele nem existe e o Codex confina igual.
+        assert!(!confinamento(SandboxProprio::SistemaOperacional)
+            .nota
+            .is_empty());
+        // Quem não confina sozinho segue dependendo da máquina.
+        let sem_motor = confinamento(SandboxProprio::Nenhum).selo;
+        assert_eq!(
+            sem_motor,
+            if disponivel() {
+                Selo::Parcial
+            } else {
+                Selo::Ausente
+            }
+        );
     }
 
     #[test]
     fn plano_gera_perfil_de_verdade_e_nao_so_uma_flag() {
-        let p = perfil_macos(Permission::Padrao, true, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Padrao, true, SandboxProprio::Nenhum, &alvo("/repo")).unwrap();
         assert!(p.contains("(deny file-write* (subpath \"/repo\"))"));
     }
 
     #[test]
     fn modo_de_escrita_nao_gera_perfil() {
         assert_eq!(
-            perfil_macos(Permission::Padrao, false, &alvo("/x/y")),
+            perfil_macos(Permission::Padrao, false, SandboxProprio::Nenhum, &alvo("/x/y")),
             Err(SemPerfil::ModoEscreve)
         );
     }
@@ -362,7 +705,7 @@ mod tests {
     fn o_perfil_e_denylist_nao_allowlist() {
         // A medida mandou: allowlist quebra 2 de 3 motores, e o agy quebra em
         // SILÊNCIO. Se este teste virar allowlist um dia, foi regressão.
-        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("/repo")).unwrap();
         assert!(p.contains("(allow default)"));
         assert!(p.contains("(deny file-write* (subpath \"/repo\"))"));
     }
@@ -371,7 +714,7 @@ mod tests {
     fn o_git_ganha_linha_propria() {
         // Num worktree o `.git` é ARQUIVO apontando pro repo principal, fora do
         // subpath da raiz. Sem esta linha, "Só lê" deixaria reescrever histórico.
-        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("/repo")).unwrap();
         assert!(p.contains("(deny file-write* (subpath \"/repo/.git\"))"));
     }
 
@@ -382,7 +725,7 @@ mod tests {
             worktree: Some("/wt/mycockpit/abc".into()),
             ..Default::default()
         };
-        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &a).unwrap();
         assert!(p.contains("\"/repo\""));
         assert!(p.contains("\"/wt/mycockpit/abc\""));
     }
@@ -394,7 +737,7 @@ mod tests {
             worktree: Some("/repo".into()),
             ..Default::default()
         };
-        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &a).unwrap();
         assert_eq!(p.matches("(subpath \"/repo\")").count(), 1);
     }
 
@@ -403,11 +746,11 @@ mod tests {
         // Fail-closed: melhor não ter perfil do que ter um que protege o lugar
         // errado achando que protege o certo.
         assert_eq!(
-            perfil_macos(Permission::Leitura, false, &alvo("")),
+            perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("")),
             Err(SemPerfil::NadaParaProteger)
         );
         assert_eq!(
-            perfil_macos(Permission::Leitura, false, &alvo("repo/relativo")),
+            perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("repo/relativo")),
             Err(SemPerfil::NadaParaProteger)
         );
     }
@@ -417,7 +760,7 @@ mod tests {
         // Uma aspa fecharia o s-expression e poderia ABRIR o perfil inteiro.
         // Perfil malformado é pior que nenhum: parece que está protegendo.
         assert_eq!(
-            perfil_macos(Permission::Leitura, false, &alvo("/re\"po")),
+            perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("/re\"po")),
             Err(SemPerfil::NadaParaProteger)
         );
     }
@@ -431,7 +774,7 @@ mod tests {
             worktree: Some("/wt/x".into()),
             ..Default::default()
         };
-        let p = perfil_macos(Permission::Leitura, false, &a).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &a).unwrap();
         assert!(p.contains("\"/wt/x\""));
     }
 
@@ -453,7 +796,7 @@ mod tests {
         let alvo_txt = format!("{raiz}/arquivo.txt");
         std::fs::write(&alvo_txt, "original").unwrap();
 
-        let perfil = perfil_macos(Permission::Leitura, false, &alvo(&raiz)).unwrap();
+        let perfil = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo(&raiz)).unwrap();
         let pf = dir.join("perfil.sb");
         let mut f = std::fs::File::create(&pf).unwrap();
         f.write_all(perfil.as_bytes()).unwrap();
@@ -560,7 +903,7 @@ mod tests {
         let raiz = dir.canonicalize().unwrap().to_string_lossy().to_string();
         std::fs::write(format!("{raiz}/alvo.txt"), "original").unwrap();
 
-        let perfil = perfil_macos(Permission::Leitura, false, &alvo(&raiz)).unwrap();
+        let perfil = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo(&raiz)).unwrap();
         let pf = dir.join("p.sb");
         std::fs::write(&pf, &perfil).unwrap();
 
@@ -597,7 +940,7 @@ mod tests {
         // (tentar escrever em /etc). Sem sandbox, ler isso como bloqueio NOSSO
         // poria uma frase errada com toda a confiança.
         assert_eq!(
-            classifica(false, "Operation not permitted", false, true),
+            classifica(false, "Operation not permitted", None, false, true),
             Veredito::Irrelevante
         );
     }
@@ -608,6 +951,7 @@ mod tests {
             classifica(
                 true,
                 "sh: /repo/x.txt: Operation not permitted",
+                None,
                 false,
                 false
             ),
@@ -621,7 +965,7 @@ mod tests {
         // específica E é culpa NOSSA — contá-la como "o agente foi barrado"
         // culparia o inocente e esconderia um defeito do Frota.
         let mix = "sandbox-exec: failed to compile profile\nOperation not permitted";
-        assert_eq!(classifica(true, mix, false, false), Veredito::RunnerFalhou);
+        assert_eq!(classifica(true, mix, None, false, false), Veredito::RunnerFalhou);
     }
 
     #[test]
@@ -629,7 +973,7 @@ mod tests {
         // Medido na fase 0: exit 0, stdout vazio, stderr sem assinatura. Tratar
         // como sucesso entregaria um "Só lê" que silenciosamente não faz nada.
         assert_eq!(
-            classifica(true, "", true, false),
+            classifica(true, "", None, true, false),
             Veredito::SilencioSuspeito
         );
     }
@@ -638,14 +982,14 @@ mod tests {
     fn turno_confinado_que_PRODUZIU_nao_e_suspeito() {
         // O caminho feliz do "Só lê": leu, respondeu, não escreveu. Se este caso
         // virasse aviso, a funcionalidade viraria ruído em todo turno.
-        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
+        assert_eq!(classifica(true, "", None, true, true), Veredito::Irrelevante);
     }
 
     #[test]
     fn falha_comum_confinada_nao_vira_sandbox() {
         // Agente que morreu por erro de rede não pode ganhar a frase do bloqueio.
         assert_eq!(
-            classifica(true, "error: connection reset by peer", false, true),
+            classifica(true, "error: connection reset by peer", None, false, true),
             Veredito::Irrelevante
         );
     }
@@ -675,7 +1019,7 @@ mod tests {
         // informado pelo próprio agente, e uma segunda frase nossa seria eco.
         // Este teste existe pra impedir que alguém "melhore" o classificador
         // fazendo `Negou` disparar aqui — não é omissão, é medida.
-        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
+        assert_eq!(classifica(true, "", None, true, true), Veredito::Irrelevante);
     }
 
     #[test]
@@ -686,23 +1030,23 @@ mod tests {
         // (3 bytes pra "diga apenas OK"). Ou seja: o emudecimento é o sintoma do
         // bloqueio, e é o ÚNICO sintoma que ele dá.
         assert_eq!(
-            classifica(true, "", true, false),
+            classifica(true, "", None, true, false),
             Veredito::SilencioSuspeito
         );
-        assert_eq!(classifica(true, "", true, true), Veredito::Irrelevante);
+        assert_eq!(classifica(true, "", None, true, true), Veredito::Irrelevante);
     }
 
     #[test]
     fn as_assinaturas_sao_case_insensitive() {
         assert_eq!(
-            classifica(true, "OPERATION NOT PERMITTED", false, false),
+            classifica(true, "OPERATION NOT PERMITTED", None, false, false),
             Veredito::Negou
         );
     }
 
     #[test]
     fn o_perfil_e_um_s_expression_balanceado() {
-        let p = perfil_macos(Permission::Leitura, false, &alvo("/repo")).unwrap();
+        let p = perfil_macos(Permission::Leitura, false, SandboxProprio::Nenhum, &alvo("/repo")).unwrap();
         assert_eq!(
             p.matches('(').count(),
             p.matches(')').count(),

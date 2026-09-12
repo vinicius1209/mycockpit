@@ -424,9 +424,10 @@ export function cleanResultText(
 /** Meta do RESULTADO (a metade que faltava): "42 linhas", "erro", "ok". */
 export function resultMeta(
   name: string,
-  result: { ok: boolean; text: string; lines: number } | undefined,
+  result: { ok: boolean; text: string; lines: number; interrupted?: true } | undefined,
 ): string | null {
   if (!result) return null
+  if (result.interrupted) return "parou"
   if (!result.ok) return "erro"
   if (name === "Read") return result.lines > 0 ? `${result.lines} linhas` : null
   if (name === "Grep" || name === "Glob")

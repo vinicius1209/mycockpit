@@ -55,4 +55,16 @@ describe("o idioma do painel da faixa", () => {
     expect(chrome).toContain("PainelDaFaixa")
     expect(chrome).toContain("LinhaDoPainel")
   })
+
+  it("a primeira ação do medidor não expõe o outline nativo do WebView", () => {
+    const medidor = FONTES["./UsagePill.tsx"]
+    expect(medidor).toContain('import { Button } from "@/components/ui/button"')
+
+    const acao = medidor.slice(
+      medidor.indexOf("acao={"),
+      medidor.indexOf("nota={"),
+    )
+    expect(acao).toContain('<Button')
+    expect(acao).not.toContain('<button')
+  })
 })

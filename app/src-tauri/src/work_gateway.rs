@@ -80,19 +80,35 @@ pub struct ManagedProcessView {
     pub status: String,
     pub exit_code: Option<i32>,
     pub output: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_file: Option<String>,
     pub started_at: i64,
     pub updated_at: i64,
 }
 
 #[derive(Clone, Debug)]
-struct ProcessRecord {
-    view: ManagedProcessView,
-    tail: VecDeque<String>,
-    tail_bytes: usize,
-    output_seq: u64,
+pub(crate) struct ProcessRecord {
+    pub(crate) view: ManagedProcessView,
+    pub(crate) tail: VecDeque<String>,
+    pub(crate) tail_bytes: usize,
+    pub(crate) output_seq: u64,
+    pub(crate) output_path: Option<PathBuf>,
+    pub(crate) file_bytes: u64,
 }
 
 impl ProcessRecord {
+    #[cfg(test)]
+    pub(crate) fn new(view: ManagedProcessView) -> Self {
+        Self {
+            view,
+            tail: VecDeque::new(),
+            tail_bytes: 0,
+            output_seq: 0,
+            output_path: None,
+            file_bytes: 0,
+        }
+    }
+
     fn refresh_output(&mut self) {
         self.view.output = self.tail.iter().cloned().collect::<Vec<_>>().join("\n");
     }
@@ -151,6 +167,32 @@ impl ProcessRegistry {
         }
     }
 
+    pub(crate) fn stop_by_conv<R: tauri::Runtime>(
+        &self,
+        app: &tauri::AppHandle<R>,
+        conv_id: &str,
+    ) -> Vec<ManagedProcessView> {
+        let ids = self
+            .processes
+            .lock()
+            .map(|map| {
+                map.iter()
+                    .filter(|(_, record)| {
+                        record.view.conv_id == conv_id && record.view.status == "running"
+                    })
+                    .map(|(id, _)| id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let mut stopped = Vec::new();
+        for id in ids {
+            if let Ok(view) = self.stop(app, &id) {
+                stopped.push(view);
+            }
+        }
+        stopped
+    }
+
     pub fn kill_all(&self) {
         let pids: Vec<u32> = self
             .processes
@@ -184,8 +226,23 @@ impl ProcessRegistry {
         line: String,
     ) {
         let mut delta = None;
+        let mut exceeded_quota_pid = None;
         if let Ok(mut map) = self.processes.lock() {
             if let Some(record) = map.get_mut(id) {
+                // Gravação direta em disco (Direct-to-Disk)
+                if let Some(ref path) = record.output_path {
+                    use std::io::Write;
+                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                        let _ = writeln!(f, "{line}");
+                        record.file_bytes = record.file_bytes.saturating_add(line.len() as u64 + 1);
+                    }
+                }
+                // Watchdog de quota em disco: 5 GB max (ADR-183)
+                if record.file_bytes > crate::run_resources::MAX_OUTPUT_FILE_BYTES {
+                    exceeded_quota_pid = Some(record.view.pid);
+                    record.view.status = "failed".into();
+                }
+
                 // Conta também o separador usado por `refresh_output`; um byte
                 // extra na primeira linha é conservador e mantém o teto real.
                 record.tail_bytes = record.tail_bytes.saturating_add(line.len() + 1);
@@ -204,6 +261,9 @@ impl ProcessRegistry {
                     record.view.updated_at,
                 ));
             }
+        }
+        if let Some(pid) = exceeded_quota_pid {
+            signal_process_group(pid, "-KILL");
         }
         if let Some((conv_id, seq, updated_at)) = delta {
             emit_work(
@@ -290,6 +350,12 @@ impl ProcessRegistry {
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
         let started_at = now_ms();
+        let tasks_dir = std::env::temp_dir().join("mycockpit-tasks");
+        let _ = std::fs::create_dir_all(&tasks_dir);
+        let output_file_path = tasks_dir.join(format!("{id}.output"));
+        let _ = std::fs::File::create(&output_file_path);
+        let output_file_str = output_file_path.to_string_lossy().to_string();
+
         let view = ManagedProcessView {
             id: id.clone(),
             run_id,
@@ -301,6 +367,7 @@ impl ProcessRegistry {
             status: "running".into(),
             exit_code: None,
             output: String::new(),
+            output_file: Some(output_file_str),
             started_at,
             updated_at: started_at,
         };
@@ -312,6 +379,8 @@ impl ProcessRegistry {
                     tail: VecDeque::new(),
                     tail_bytes: 0,
                     output_seq: 0,
+                    output_path: Some(output_file_path),
+                    file_bytes: 0,
                 },
             );
         }
@@ -686,6 +755,15 @@ pub fn managed_process_stop(
     registry: tauri::State<'_, Arc<ProcessRegistry>>,
 ) -> Result<ManagedProcessView, String> {
     registry.stop(&app, &process_id)
+}
+
+#[tauri::command]
+pub fn managed_process_stop_by_conv(
+    app: tauri::AppHandle,
+    conv_id: String,
+    registry: tauri::State<'_, Arc<ProcessRegistry>>,
+) -> Result<Vec<ManagedProcessView>, String> {
+    Ok(registry.stop_by_conv(&app, &conv_id))
 }
 
 #[tauri::command]

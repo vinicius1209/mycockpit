@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Gauge } from "lucide-react"
 import { TurnoTokens } from "@/components/chat/turnoTokens"
+import { useNasceuAgora } from "@/lib/nascimento"
 import { fmtCost, fmtDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
 import type { ChatItem } from "@/store/chat"
@@ -18,6 +19,8 @@ export function TurnTelemetry({
   it: Extract<ChatItem, { kind: "result" }>
   incidentTone?: "limit"
 }) {
+  // O ✓ assenta só quando o turno ACABOU de fechar; relido, chega pronto (ADR-179).
+  const nasceu = useNasceuAgora(it.ts)
   return (
     <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground/80">
       <span className="flex items-center gap-1.5">
@@ -32,7 +35,7 @@ export function TurnTelemetry({
           )}
         >
           {it.ok ? (
-            <Check className="size-3" />
+            <Check className={cn("size-3", nasceu && "fio-assenta")} />
           ) : incidentTone === "limit" ? (
             <Gauge className="size-3" />
           ) : (

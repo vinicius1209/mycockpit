@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import {
   buildItems,
+  dismissActionLabel,
   guideProgress,
   guideView,
   isComplete,
@@ -9,7 +10,7 @@ import {
   stateFromProbe,
   type GuideCapabilities,
 } from "./setupItems"
-import { agentProbe, withTimeout } from "./setupProbes"
+import { agentProbe, meterProbe, withTimeout } from "./setupProbes"
 import type { AgentProbe } from "@/lib/detect"
 
 const TUDO: GuideCapabilities = { meter: true, hooks: true, companion: true }
@@ -67,6 +68,34 @@ describe("lista de itens", () => {
       kind: "settings",
       section: "hooks",
     })
+  })
+
+  it("nomeia a ação necessária em vez de confundir visita com conclusão", () => {
+    const items = buildItems(TUDO, {})
+    expect(items.find((i) => i.id === "meter")?.label).toBe(
+      "Mostrar a janela de uso na barra",
+    )
+    expect(items.find((i) => i.id === "hooks")?.label).toBe(
+      "Instalar hooks para enxergar sessões do terminal",
+    )
+  })
+})
+
+describe("saída do guia", () => {
+  it("assume a decisão quando só restam capacidades opcionais", () => {
+    const items = buildItems(TUDO, {
+      agent: true,
+      project: true,
+      meter: true,
+      hooks: false,
+      companion: false,
+    })
+    expect(dismissActionLabel(items)).toBe("Concluir sem os opcionais")
+  })
+
+  it("continua descrevendo esconder quando falta configuração essencial", () => {
+    const items = buildItems(NADA, { agent: true, project: false })
+    expect(dismissActionLabel(items)).toBe("Esconder da barra lateral")
   })
 })
 
@@ -235,6 +264,14 @@ describe("probe de agent", () => {
 
   it("snapshot sem nenhuma instalada não marca", () => {
     expect(agentProbe({ codex: probe(false), agy: probe(false) })).toBe(false)
+  })
+})
+
+describe("probe da janela de uso", () => {
+  it("Claude com leitura OAuth marca mesmo sem instalar statusline", async () => {
+    await expect(
+      meterProbe({ "claude-code": probe(true) }),
+    ).resolves.toBe(true)
   })
 })
 

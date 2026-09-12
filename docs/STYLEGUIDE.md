@@ -492,9 +492,22 @@ proporcionalidade do Orca:
 - **Feedback proporcional à duração**: 0–100ms → nada; até 1s → só `disabled`
   (pré-reservando a largura do controle, sem trocar o rótulo); 1–3s →
   spinner; 3s+ → estágios nomeados (o que está acontecendo agora).
-- Durações vêm dos tokens (`--dur-fast` 120ms · `--dur` 200ms · `--dur-slow`
-  320ms); `prefers-reduced-motion` desliga pulse/reveal/esteira sempre
-  (`index.css:238,368`).
+- Durações vêm dos tokens do `index.css` (`--dur-fast` 120ms · `--dur` 200ms ·
+  `--dur-slow` 320ms). A única exceção declarada é `--dur-brasa` (900ms), a
+  brasa da interrupção, que precisa de tempo para decair. Até o ADR-179 esses
+  tokens eram citados aqui e não existiam: `var(--dur)` sem definição vira
+  transição instantânea, sem erro nenhum. `prefers-reduced-motion` desliga
+  pulse/reveal/esteira sempre (bloco global de movimento reduzido no
+  `index.css`).
+- **Movimento no fio conta um evento que acabou de nascer** (ADR-179). Entrada
+  só para o que `nasceuAgora` aprova (`lib/nascimento.ts`, carimbo de
+  nascimento do item contra uma janela curta), decidido UMA vez na montagem por
+  `useNasceuAgora`. Abrir uma conversa, rolar ou voltar de outra não é evento:
+  o que chega assim chega pronto. A exceção é o divisor "novas mensagens",
+  porque ele é a notícia da visita. Estado que troca num elemento que já existe
+  (o slot da sidebar) usa `useTrocou`: montar não anima, trocar sim. Nunca
+  anime na montagem crua; o `PlanMilestone` fazia isso e reencenava a chegada a
+  cada reabertura.
 
 ## 7. Copy
 

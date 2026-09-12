@@ -4,18 +4,29 @@ import type { Attachment } from "@/lib/attachments"
 import { markLessonsUsed } from "@/lib/learning"
 import type { McpPreflightGate } from "@/lib/tooling"
 import { useChat } from "@/store/chat"
+import { maybeNotifyDeferredEvent } from "@/lib/notify/deferredWork"
 
 export function createRunAcceptance({
+  convId,
   onAccept,
   onEvent,
   onBlocked,
 }: {
+  convId?: string
   onAccept: () => void
   onEvent: (event: AgentEvent) => void
   onBlocked: (gate: McpPreflightGate) => void
 }) {
   let accepted = false
   const buffered: AgentEvent[] = []
+
+  function dispatch(event: AgentEvent) {
+    onEvent(event)
+    if (convId) {
+      maybeNotifyDeferredEvent(convId, event)
+    }
+  }
+
   return {
     handler(event: AgentEvent) {
       if (event.type === "preflight_blocked") {
@@ -27,12 +38,12 @@ export function createRunAcceptance({
           accepted = true
           onAccept()
         }
-        onEvent(event)
-        for (const pending of buffered) onEvent(pending)
+        dispatch(event)
+        for (const pending of buffered) dispatch(pending)
         buffered.length = 0
         return
       }
-      if (accepted) onEvent(event)
+      if (accepted) dispatch(event)
       else buffered.push(event)
     },
     accepted: () => accepted,
@@ -65,6 +76,7 @@ export function acceptChatTurn({
   wheelSwitch,
   agentChangeNotice,
   modelChangeNotice,
+  effortChangeNotice,
   broughtAdvice,
   lessonIds,
   recordLessons,
@@ -82,6 +94,7 @@ export function acceptChatTurn({
   wheelSwitch: boolean
   agentChangeNotice?: string | null
   modelChangeNotice?: string | null
+  effortChangeNotice?: string | null
   broughtAdvice?: string | null
   lessonIds: string[]
   recordLessons: (ids: string[]) => void
@@ -106,6 +119,9 @@ export function acceptChatTurn({
   }
   if (modelChangeNotice) {
     chat.handleEvent(convId, { type: "notice", message: modelChangeNotice })
+  }
+  if (effortChangeNotice) {
+    chat.handleEvent(convId, { type: "notice", message: effortChangeNotice })
   }
   if (broughtAdvice) chat.takePendingAdvice(convId)
   recordLessons(lessonIds)

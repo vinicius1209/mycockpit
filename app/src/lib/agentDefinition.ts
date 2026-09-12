@@ -51,6 +51,28 @@ export interface AgentDef {
    *  handoff degrada pra ponteiros de ARQUIVO (leitura direta), sem prometer
    *  um MCP que o motor não alcança. */
   contextMcp: boolean
+  /**
+   * O motor confina por conta PRÓPRIA nos modos de escrita zero (espelho de
+   * `sandbox_proprio`). Decide se o envelope `sandbox-exec` da Frota entra, e
+   * decide QUAL frase de garantia a tela mostra.
+   *
+   * # O bug que este campo existe pra matar (04–09/09/2026)
+   *
+   * O Codex aplica Seatbelt por dentro, `(deny default)` a cada comando. Com o
+   * envelope da Frota por fora, macOS recusa o perfil de dentro — e o de dentro
+   * é o que executa. `pwd` e `cat` morriam com `sandbox_apply: Operation not
+   * permitted` (exit 71). Uma automação agendada rodou cega três vezes, gastou
+   * US$ 1,16 e gravou `ok` nas três.
+   *
+   * - `nenhum` → não confina; o envelope da Frota é a única garantia.
+   * - `melhorEsforco` → DIZ confinar e emudece em vez de falhar (agy, fase 0
+   *   do sandbox-plan). Não conta: o envelope continua valendo.
+   * - `sistemaOperacional` → garantia MEDIDA. Dispensa o envelope, e dispensar
+   *   é correção, não otimização.
+   *
+   * Teste-gêmeo: `agents.sandbox.test.ts` ↔ `contrato_capabilities_x_comportamento_por_agent`.
+   */
+  sandboxProprio: "nenhum" | "melhorEsforco" | "sistemaOperacional"
   /** Canal de planos/processos; cadastro global é confirmado pelo backend. */
   workMcp: boolean
   workMcpGlobalEnv: boolean

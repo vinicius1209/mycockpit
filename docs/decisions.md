@@ -6259,3 +6259,281 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   contraprova nos dois sentidos, o empate, o catálogo ganhando do palpite, o
   fallback preservado para slug fora do catálogo, os três degraus de cadência e
   o piso que eles não movem.
+
+### ADR-179 · Movimento no fio conta um evento que acabou de nascer
+- **Contexto (10/09/2026):** a pessoa pediu transições sutis no fio, "para não
+  ser algo sempre brusco". Dois achados tornavam isso arriscado. (1) O §6 do
+  STYLEGUIDE dizia que as durações vêm de `--dur-fast`, `--dur` e `--dur-slow`,
+  e esses tokens não existiam: os três usos (`AgentFace`, `SetupGuide`) caíam em
+  transição instantânea, sem erro. (2) O `PlanMilestone` animava na montagem, e
+  por isso reencenava a chegada toda vez que a conversa era reaberta: o fio frio
+  fingindo que algo acabou de acontecer.
+- **Decisão:** (1) Os três tempos passam a existir no `index.css`, com
+  `--dur-brasa` (900ms) como única exceção declarada. (2) Entrada no fio só para
+  o que NASCEU agora, decidido por `lib/nascimento.ts`: `nasceuAgora(ts, now)`
+  compara o carimbo de nascimento do item com uma janela de 1,5s, e
+  `useNasceuAgora` decide uma vez, na montagem. Abrir, rolar, trocar de conversa
+  e a janela voltar de oclusão chegam prontos. (3) Estado que troca num elemento
+  que já existe usa `useTrocou`: montar não anima, trocar sim. (4) Carimbo e não
+  Set de ids já mostrados: o Set animaria em cascata, na primeira visita, tudo
+  que nasceu enquanto a pessoa estava em outra conversa. (5) Com movimento
+  reduzido o bloco global leva cada entrada ao estado final; nenhuma informação
+  mora só na animação.
+- **Consequência:** as classes `fio-*` só entram por essas duas portas. Item
+  legado sem `ts` não anima. `AgentFace` e `SetupGuide` passam a ter as
+  transições que já declaravam.
+- **Verificação:** `lib/nascimento.test.ts` (carimbo real de um corte colhido do
+  SQLite, limites da janela, legado sem carimbo, relógio que andou para trás,
+  troca) e `PlanMilestone.nascimento.test.tsx` (plano publicado agora entra;
+  reaberto no dia seguinte chega pronto).
+- **Onde a regra entrou:** a mensagem sua sobe (`GroupRow`), o grupo do agente
+  acende, cada nó novo acende sem empurrar o lido (`NoDoFio`, com os carimbos
+  só da CAUDA do fio para o custo por token não crescer com o histórico), a
+  linha de ação desliza e o ícone assenta quando o estado troca, o ✓ da
+  legenda assenta no fim do turno, a linha viva faz crossfade só quando a FASE
+  da frase muda, o slot da sidebar re-entra a cada troca de estado, e o
+  divisor "novas mensagens" (`DivisorNovasMensagens`) risca do centro, a
+  exceção declarada por ser a notícia da visita. A troca de conversa já tinha
+  crossfade (`key` no `activeId`); é justamente essa remontagem que a régua de
+  nascimento impede de virar cascata. Fica fora, de propósito: acender a
+  prosa trecho a trecho no streaming, que brigaria com o Markdown renderizado.
+
+### ADR-180 · A interrupção tem causa, marco e emenda, e o turno cortado presta contas
+- **Contexto (10/09/2026):** interromper um turno deixava no fio uma palavra
+  cinza, "interrompido", sem autor, antes da mensagem que causou o corte e sem
+  ligação com ela. O único lugar que sabia o porquê era um toast que sumia em
+  segundos. A ação em voo virava "erro" vermelho e o grupo dizia "1 de N
+  falhou". A disputa abortada não deixava rastro nenhum no fio. E o turno
+  cortado não prestava contas: na conversa "[feat] cliente coleta" foram 14
+  ações e 5min21s sem uma linha em `turn_costs`, porque o ledger só grava no
+  `result` e o SIGINT mata o turno antes.
+- **Decisão:**
+  1. **O gesto dá a causa, o evento dá o fato.** `lib/corte.ts` guarda a causa
+     (`correcao` no envio forçado, `parada` no Parar do composer, na bandeja,
+     na Mesa e no toast do turno mudo, `disputa` no abort da disputa) até o
+     `cancelled` do runner chegar; `handleEvent` a consome e ela é gravada no
+     item. Sem `cancelled` não há marco, então um motor com steering nativo,
+     que corrige sem parar, nunca exibiria "você interrompeu". É agnóstico por
+     construção: o `cancelled` sai do runner genérico nos três transportes, e
+     nada aqui compara nome de motor.
+  2. **O marco diz quem cortou** (`MarcoDeCorte`), no verbo canônico do §7:
+     "você interrompeu para corrigir", "você interrompeu o turno", "você
+     interrompeu a disputa". Sem causa (reconciliação, histórico), só
+     "interrompido".
+  3. **O que parou não é falha.** `settleTerminalTools` marca
+     `result.interrupted`; o grupo ganha o estado `stopped` com a gramática da
+     falha ("1 de 7 parou · X"), o passo ganha anel vazado e a meta "parou".
+     Falha de verdade continua vencendo.
+  4. **Chegada, sem ficar:** a brasa (`fio-brasa`, a exceção de 900ms do §6)
+     no bloco do executor, decidida no render por `corteNasceu`, porque o bloco
+     já existia quando o corte chegou; o marco acende com `fio-nasce`. A régua
+     desenha a emenda (`grupoDeCorte`), que é permanente e também é navegação.
+  5. **Disputa:** `abortarDisputa` fecha o turno pela mesma sequência local da
+     reconciliação (`fecharTurnoLocalmente`: `cancelled` + `done`), porque
+     `cancelled` sozinho deixa a conversa em `finalizing`.
+  6. **Toast:** sai do caminho feliz onde a pessoa está olhando o fio (Parar do
+     composer, envio forçado). Fica onde o fio não está na tela (Mesa, dock,
+     Companion, bandeja) e em toda falha.
+  7. **Ledger:** `registrarTurnoCortado` grava a linha do turno cortado com
+     custo NULL, via `INSERT OR IGNORE` (o `result` que chegou antes vence; um
+     `result` tardio sobrescreve pelo mesmo `run_id`). O usage parcial de cada
+     motor é frente própria, por capability e com fixture real de
+     cancelamento.
+- **Consequência:** conversa com turno cortado passa a declarar o total como
+  estimado; o valor em dólar só muda com a frente de usage parcial. Cortes
+  gravados antes desta ADR seguem como "interrompido", e a ação que estava em
+  voo neles continua como erro: histórico não é reescrito por casamento de
+  texto.
+- **Caminhos que alteram estado:** `marcarCausaDoCorte` (`dispatchNotice`,
+  `cancelLinearTurn`), `tomarCausaDoCorte` (`handleEvent`, `cancelLinearTurn`
+  sem turno, `abortarDisputa`), `registrarTurnoCortado` (`cancelLinearTurn` com
+  processo no ar), `fecharTurnoLocalmente` (reconciliação e disputa).
+- **Verificação:** `lib/corte.test.ts`, `cancelLinearTurn.test.ts`,
+  `cancelConversationTurn.test.ts`, `store/chat.corte.test.ts`,
+  `terminalTools.test.ts`, `toolGroup.corte.test.ts`,
+  `messageGroups.corte.test.ts` e `MarcoDeCorte.test.tsx`, com os carimbos e a
+  sequência reais do corte de 09/09/2026 colhidos do SQLite do app.
+
+### ADR-181 · O esforço troca no meio da conversa pela mesma regra do modelo
+
+- **Contexto:** a ADR-073 e o destrave de 23/08/2026 liberaram a troca de
+  MODELO numa conversa estabelecida (flag de spawn do próximo turno, sessão do
+  CLI preservada), mas o ESFORÇO ficou na trava antiga em três lugares: a régua
+  do `IdentityPicker` usava `disabled={locked}`, `identidadeEfetiva` sempre
+  devolvia o esforço carimbado e o `ChatPanel` ignorava o pedido. Na tela, a
+  lista de modelos trocava e a régua ao lado ficava apagada, sem motivo técnico:
+  nos motores que orquestramos o esforço também é flag do próximo spawn.
+- **Decisão:** o esforço segue o modelo. Trava só com turno em voo
+  (`effortLocked = locked && !modelUnlocked`); fora disso a escolha fica em
+  estado próprio (`retryEffort`, zerado nos mesmos gatilhos do `retryModel`),
+  sai do composer como `effortSwitched` e o despacho a obedece. A troca escreve
+  uma linha no fio (`notaDeTrocaDeEsforco`), pelo mesmo motivo da troca de
+  modelo: sem ela o histórico mente sobre como o trecho rodou. O AGENT continua
+  sendo handoff (ADR-165).
+- **Consequência:** a regra do despacho saiu do `ChatPanel` para
+  `identidadeDoDespacho` (pura, em `composerIdentity.ts`), que decide
+  agent/modelo/esforço e as três linhas de troca. ⌘K, fila e todo caller que não
+  manda `effortSwitched` seguem com o esforço carimbado. O reset para a
+  sentinela quando o modelo novo não aceita o degrau (ADR-177) continua valendo
+  e, numa conversa travada, conta como troca deliberada para `default`.
+- **Caminhos que alteram estado:** `CommandConsole.onEffortChange`
+  (`setRetryEffort` na conversa travada), `IdentityPicker.selectModel` (reset
+  para sentinela), `ChatPanel.despacharEnvio` via `identidadeDoDespacho`,
+  `acceptChatTurn` (notice no fio) e `useChat.start` (recarimba `effort`).
+- **Verificação:** `composerIdentity.test.ts` (esforço em voo e fora de voo,
+  troca para `default`, só esforço, só modelo, revezamento, conversa nova).
+
+### ADR-182 · Desfecho honesto de trabalho em background e separação entre disparo e execução
+
+- **Contexto (11/09/2026):** no incidente do build de teste (`b3pbaal2v`, sessão
+  `c03399e2-...`), um comando shell longo foi desanexado com sucesso via
+  `run_in_background: true` da tool `Bash` (`is_error: false`). Ao encerrar o run
+  do subprocesso e emitir `Done`, `settleTerminalTools` marcou o nó sintético de
+  trabalho diferido como interrompido com `result: { ok: false }`, mas sem a flag
+  `interrupted: true` da ADR-180. Isso fez o agrupador (`toolGroup.ts`)
+  classificar a interrupção como erro fatal do build (`1 de 3 falhou`) e a UI
+  apresentar `interrompido · erro` com o botão `[Repetir etapa]`, induzindo
+  duplicação de tarefas pesadas. Além disso, `deferredResumePrompt` prometia
+  retomada via `Workflow` e cache (`resumeFromRunId`) para um comando que era `Bash`.
+- **Decisão:**
+  1. **Disparo separado do trabalho:** a tool de origem (ex.: `Bash`) que
+     despachou a tarefa em background preserva seu desfecho factual (`ok: true`),
+     sem ser contaminada pelo ciclo do trabalho filho.
+  2. **Interrupção não é falha técnica:** quando o processo do run encerra sem que
+     a tarefa em background tenha publicado seu desfecho, o `DeferredWork`
+     assentado recebe `result: { ok: false, interrupted: true }` com texto honesto
+     de encerramento/perda de acompanhamento. No agrupador, o nó ganha o estado
+     `stopped` ("parou" em cinza) em vez de `error` ("falhou" em vermelho).
+  3. **Repetição bloqueada:** `[Repetir etapa]` fica oculto tanto no nó filho
+     quanto na tool pai enquanto houver trabalho associado vivo ou em estado
+     interrompido/não reconciliado, prevenindo concorrência desgovernada.
+  4. **Retomada honesta por tipo:** `deferredResumePrompt` só orienta `Workflow` e
+     `resumeFromRunId` quando `d.kind` for `workflow`/`local_workflow`. Para `Bash`
+     e demais tipos sem suporte a checkpoint, orienta o modelo a inspecionar o
+     estado atual antes de decidir os próximos passos.
+- **Consequência:** o Frota não mente mais que o build "falhou" quando o canal foi
+  encerrado, e não induz re-execuções perigosas de comandos pesados. O histórico
+  preserva a distinção entre erro real de execução e perda de acompanhamento do
+  subprocesso.
+- **Caminhos que alteram estado:** `settleTerminalTools` (marcação de `interrupted: true`
+  no `Done` para `DeferredWork`), `describeToolGroup` / `summarizeToolGroup`
+  (tratamento de diferido interrompido como `stopped`), `deferredResumePrompt`
+  (prompt condicional por tipo), `MessageList.tsx` (bloqueio de repetição na tool pai).
+- **Verificação:** `store/chat/terminalTools.test.ts`, `store/chat.deferred.test.ts`,
+  `lib/toolGroup.test.ts`, `components/chat/MessageList.background.test.ts`.
+
+### ADR-183 · Blindagem de telemetria, governança de processos em árvore e execução direta em disco
+
+- **Contexto (11/09/2026):** durante a execução de suítes de teste pesadas sob o
+  motor Agy (`cargo test` e `bun run test`), o Frota emitiu aviso alarmista de
+  memória (>2000 MB) e a interface sofreu lentidão severa próxima do
+  congelamento. A investigação e o benchmarking de engenharia (OpenClaude)
+  revelaram três fragilidades de governança:
+  1. A medição em `run_resources.rs` somava recursivamente o RSS de toda a árvore
+     de processos e atribuía o montante ao harness do agente, sem distinguir a
+     memória do CLI daquela consumida legitimamente por processos filhos (como o
+     compilador `rustc` e workers de teste).
+  2. A cada 5 segundos, o evento de telemetria `RunStatus` reconstruía o objeto
+     `ConvState` da conversa ativa dentro de `byId[convId]` no Zustand. Isso
+     invalidava a referência da conversa e disparava um re-render completo de
+     `ChatPanel` e `MessageList` (com mais de 300 itens montados no DOM), gerando
+     múltiplos recálculos forçados de autoscroll e layout no WebKit.
+  3. No encerramento e cancelamento, processos descendentes podiam sobreviver se
+     não herdassem o marcador de ambiente do run; comandos longos acumulavam logs
+     em memória no gateway, e não havia teto de segurança contra loops infinitos
+     de gravação em disco.
+- **Decisão:**
+  1. **Decomposição do RSS no backend:** a observação de processos passa a
+     distinguir explicitamente o RSS do processo raiz (`root_rss_mb`) do RSS total
+     da árvore (`rss_mb`). O aviso de memória alta (>2048 MB) só é emitido com tom
+     de atenção se o próprio harness estiver inchado; quando a maior parte do
+     consumo decorre de processos filhos (diferença > 512 MB), a mensagem explica
+     com clareza técnica que a memória pertence a ferramentas e testes em execução.
+  2. **Isolamento de telemetria no frontend:** o estado efêmero de processo
+     (`RunLiveness`) foi retirado de `byId[convId]` e isolado em um slice próprio
+     `runLivenessByConv: Record<string, RunLiveness>` em `ChatState`. A recepção
+     do evento `run_status` a cada 5 segundos atualiza exclusivamente esse mapa e
+     retorna de imediato, preservando a identidade estrita de `byId[convId]`.
+  3. **Consumo granular por componente:** a tela principal do chat (`ChatPanel` e
+     `MessageList`) não assina mais a telemetria do processo. O consumo foi
+     confinado ao componente de rodapé `WorkingIndicator` através do hook seletor
+     dedicado `useRunLiveness(convId)`, eliminando mais de 12 re-renders globais
+     por minuto durante tarefas de longa duração.
+  4. **Matança em árvore (`tree-kill`) por PPID e PGID:** `run_processes.rs` varre
+     recursivamente todos os descendentes a partir do processo direto e de processos
+     marcados. O encerramento sinaliza os grupos de processo (`-pgid`) e envia
+     sinal para cada PID descendente individualmente, garantindo que nenhum
+     processo filho ou neto fique rodando como órfão (`PPID=1`).
+  5. **Watchdog de quota de disco (5 GB max):** `run_resources.rs` e `agent.rs`
+     estabelecem o teto de 5 GB para arquivos de saída em background. A cada
+     tick de recursos, arquivos monitorados são avaliados; exceder a quota encerra
+     o processo e emite erro explicativo, protegendo o SSD contra loops infinitos.
+  6. **Pipeline Direct-to-Disk no gateway:** `work_gateway.rs` grava a saída de
+     processos gerenciados diretamente em arquivo `.output` em disco, mantendo na
+     memória apenas um buffer circular de 64 KiB e expondo o caminho `outputFile`
+     no `ManagedProcessView` para interação no frontend via `DeferredOutputFile`.
+  7. **Interrupção de processos gerenciados no cancelamento:** `work_gateway.rs` e
+     `lib/work.ts` introduzem `stop_by_conv` e `managed_process_stop_by_conv`. No
+     cancelamento de turno (`cancelLinearTurn`) ou de disputa (`abortarDisputa`),
+     todos os subprocessos gerenciados vinculados àquela conversa são interrompidos
+     imediatamente, impedindo que processos em background continuem rodando após o
+     gesto de corte.
+  8. **Notificações reativas de background tasks sem polling:** `AgyAdapter` unifica
+     o reconhecimento de comandos em segundo plano e `<task-notification>` injetadas,
+     emitindo `AgentEvent::DeferredWork` com status e arquivo de saída em disco
+     sem exigir loops ativos de polling ou sleep.
+- **Consequência:** fim dos congelamentos e lentidão na interface durante
+  compilações e testes longos, diagnósticos de consumo de memória factuais
+  e honestos, eliminação garantida de processos órfãos no cancelamento e proteção
+  robusta contra saturação de disco.
+- **Caminhos que alteram estado:** `run_resources.rs` (`ProcessObservation`,
+  `format_memory_warning_message`, `check_disk_quota`), `run_processes.rs`
+  (`find_termination_targets`, `terminate_run`), `agent.rs` (monitoramento de
+  quota e aviso de memória), `opencode_acp.rs`, `codex_appserver.rs`, `work_gateway.rs`
+  (`append_output` direto em disco, quota, `stop_by_conv`, `managed_process_stop_by_conv`),
+  `adapters.rs` (`AgyAdapter` tarefas em background e task-notifications),
+  `lib/work.ts` (`stopManagedProcessesByConv`), `lib/cancelLinearTurn.ts`,
+  `lib/cancelConversationTurn.ts`, `store/chat.ts` (`handleEvent` no ramo
+  `run_status`, `start`, `revezar`), `store/chat/runLiveness.ts`
+  (`applyRunStatusToLiveness`, `selectRunLiveness`), `components/chat/WorkingIndicator.tsx`.
+- **Verificação:** `run_resources.rs` (testes de árvore, memória e quota de disco),
+  `run_processes.rs` (árvore recursiva de descendentes e isolamento de PID do app),
+  `work_gateway_tests.rs` (gravação direta em disco e `stop_by_conv`),
+  `adapters.rs` (reconhecimento reativo de background tasks no Agy),
+  `cancelLinearTurn.test.ts` e `cancelConversationTurn.test.ts` (interrupção no cancelamento),
+  `store/chat.liveness.test.ts` (preservação de identidade da conversa),
+  `cargo test`, `bunx tsc -b --force`, `bun run test`, `bun run check`.
+
+
+### ADR-184 · Limite de trabalho por mensagem antes do parser Markdown
+
+- **Contexto (12/09/2026):** uma conversa do Maclan contém um item real de
+  143.638 caracteres com uma linha de 142.976 pontos da saída de Vitest.
+  `remark-parse` + `remark-gfm` levou 32,46 s no item completo. O tokenizer de
+  autolink tenta reconhecer email a partir dos pontos e refaz a varredura do
+  sufixo; a medição cresceu aproximadamente com o quadrado do tamanho. A janela
+  de 40/150 nós não limita trabalho dentro de um nó. O problema precede
+  highlight e layout e pode bloquear a interface mesmo com turno encerrado.
+- **Decisão:** `Markdown` aplica `needsPlainText` ANTES de construir o parser.
+  Acima de 16.384 unidades UTF-16 por mensagem ou 2.048 por linha, usa
+  `PlainTextPages`: texto literal em partes de 4.096 unidades (mais uma quando
+  necessário para preservar um par UTF-16), sem GFM nem highlight. A tela
+  informa a forma de leitura, permite navegar e copiar a mensagem completa.
+  Não existe botão que recoloque o payload integral no parser síncrono.
+- **Integridade:** o transcript persistido, o texto enviado aos motores e os
+  eventos normalizados permanecem integrais. A proteção fica na superfície
+  compartilhada por todos os adapters e também protege históricos antigos.
+  Não se classifica nem remove conteúdo por conter `SYSTEM_MESSAGE`.
+- **Limites:** os números limitam entrada e DOM, não prometem um timeout para
+  todo Markdown possível. Retenção de históricos na store, filas de IPC e
+  memória de processos filhos são problemas diferentes. Este incidente não
+  comprova vazamento, nem a correção comprova que a memória de todo o app foi
+  resolvida. Os ganhos descritos na ADR-183 não dispensam essa verificação.
+- **Estado alterado:** somente a parte selecionada no componente de leitura.
+  Nenhuma migração, alteração do runner ou mudança no estado operacional.
+- **Verificação:** fixture real `maclan-test-output.txt`, regressões de
+  `Markdown.test.tsx` e `markdownBudget.test.ts`, leitura e cópia integrais em
+  Chromium; primeira montagem 12,9 ms e 100 remontagens com máximo de 0,7 ms.
+  WKWebView nativo: primeira montagem 11 ms, máximo de 1 ms em 100 remontagens.
+  Essas medições são do componente com o item completo, não do app instalado.
+  Detalhes e limites em `docs/incidente-maclan-2026-09-12.md`.

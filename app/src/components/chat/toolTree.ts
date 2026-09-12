@@ -63,7 +63,9 @@ export function branchHasLiveDeferred(node: ToolTreeNode): boolean {
  *  (a falha não se esconde — despoluição do fio, mock B ③). */
 export function branchHasFailure(node: ToolTreeNode): boolean {
   return (
-    node.item.result?.ok === false || node.children.some(branchHasFailure)
+    // Ação cortada por você parou, não falhou (ADR-180).
+    (node.item.result?.ok === false && !node.item.result.interrupted) ||
+    node.children.some(branchHasFailure)
   )
 }
 

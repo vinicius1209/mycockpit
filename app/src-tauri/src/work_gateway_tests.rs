@@ -159,18 +159,15 @@ fn saida_emite_delta_numerado_sem_repetir_o_tail_inteiro() {
         status: "running".into(),
         exit_code: None,
         output: String::new(),
+        output_file: None,
         started_at: 1,
         updated_at: 1,
     };
-    registry.processes.lock().unwrap().insert(
-        view.id.clone(),
-        ProcessRecord {
-            view,
-            tail: VecDeque::new(),
-            tail_bytes: 0,
-            output_seq: 0,
-        },
-    );
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert(view.id.clone(), ProcessRecord::new(view));
     registry.append_output(app.handle(), "p1", "stdout", "primeira".into());
     registry.append_output(app.handle(), "p1", "stderr", "segunda".into());
 
@@ -198,18 +195,15 @@ fn tail_de_processo_tem_teto_de_linhas_e_bytes() {
         status: "running".into(),
         exit_code: None,
         output: String::new(),
+        output_file: None,
         started_at: 1,
         updated_at: 1,
     };
-    registry.processes.lock().unwrap().insert(
-        view.id.clone(),
-        ProcessRecord {
-            view,
-            tail: VecDeque::new(),
-            tail_bytes: 0,
-            output_seq: 0,
-        },
-    );
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert(view.id.clone(), ProcessRecord::new(view));
     for index in 0..400 {
         registry.append_output(
             app.handle(),
@@ -285,18 +279,15 @@ async fn processo_de_outra_conversa_nao_pode_ser_lido_nem_interrompido() {
         status: "exited".into(),
         exit_code: Some(0),
         output: "saída privada".into(),
+        output_file: None,
         started_at: 0,
         updated_at: 0,
     };
-    registry.processes.lock().unwrap().insert(
-        view.id.clone(),
-        ProcessRecord {
-            view,
-            tail: VecDeque::new(),
-            tail_bytes: 0,
-            output_seq: 0,
-        },
-    );
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert(view.id.clone(), ProcessRecord::new(view));
     let listener = WorkListener::spawn(
         app.handle().clone(),
         run_id(),
@@ -334,3 +325,102 @@ async fn processo_de_outra_conversa_nao_pode_ser_lido_nem_interrompido() {
         true
     );
 }
+
+#[test]
+fn direct_to_disk_grava_linhas_no_arquivo_e_informa_output_file() {
+    let app = mock_app();
+    let registry = ProcessRegistry::default();
+    let temp_dir = std::env::temp_dir().join("mycockpit-test-disk");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let output_path = temp_dir.join("p-disk.output");
+    let _ = std::fs::File::create(&output_path);
+
+    let view = ManagedProcessView {
+        id: "p-disk".into(),
+        run_id: "r1".into(),
+        conv_id: "c1".into(),
+        label: "DirectToDisk".into(),
+        command: "echo gravando".into(),
+        cwd: temp_dir.to_string_lossy().into_owned(),
+        pid: 1,
+        status: "running".into(),
+        exit_code: None,
+        output: String::new(),
+        output_file: Some(output_path.to_string_lossy().into_owned()),
+        started_at: 1,
+        updated_at: 1,
+    };
+    let mut record = ProcessRecord::new(view.clone());
+    record.output_path = Some(output_path.clone());
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert("p-disk".into(), record);
+
+    registry.append_output(app.handle(), "p-disk", "stdout", "linha 1 gravada".into());
+    registry.append_output(app.handle(), "p-disk", "stdout", "linha 2 gravada".into());
+
+    let content = std::fs::read_to_string(&output_path).unwrap();
+    assert_eq!(content, "linha 1 gravada\nlinha 2 gravada\n");
+    let p = registry.view("p-disk").unwrap();
+    assert_eq!(p.output_file, Some(output_path.to_string_lossy().into_owned()));
+
+    let _ = std::fs::remove_file(output_path);
+}
+
+#[test]
+fn stop_by_conv_interrompe_apenas_processos_daquela_conversa() {
+    let app = mock_app();
+    let registry = ProcessRegistry::default();
+
+    let p1 = ManagedProcessView {
+        id: "p1".into(),
+        run_id: "r1".into(),
+        conv_id: "conv-alvo".into(),
+        label: "P1".into(),
+        command: "true".into(),
+        cwd: ".".into(),
+        pid: 1001,
+        status: "running".into(),
+        exit_code: None,
+        output: String::new(),
+        output_file: None,
+        started_at: 1,
+        updated_at: 1,
+    };
+    let p2 = ManagedProcessView {
+        id: "p2".into(),
+        run_id: "r2".into(),
+        conv_id: "conv-outra".into(),
+        label: "P2".into(),
+        command: "true".into(),
+        cwd: ".".into(),
+        pid: 1002,
+        status: "running".into(),
+        exit_code: None,
+        output: String::new(),
+        output_file: None,
+        started_at: 1,
+        updated_at: 1,
+    };
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert("p1".into(), ProcessRecord::new(p1));
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert("p2".into(), ProcessRecord::new(p2));
+
+    let stopped = registry.stop_by_conv(app.handle(), "conv-alvo");
+    assert_eq!(stopped.len(), 1);
+    assert_eq!(stopped[0].id, "p1");
+    assert_eq!(stopped[0].status, "stopping");
+
+    assert_eq!(registry.view("p1").unwrap().status, "stopping");
+    assert_eq!(registry.view("p2").unwrap().status, "running");
+}
+

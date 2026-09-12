@@ -1,3 +1,4 @@
+import type { CausaDoCorte } from "@/lib/corte"
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
 import { agentDef } from "@/lib/agents"
@@ -92,7 +93,8 @@ export type AgentEvent =
     }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
-  | { type: "cancelled" }
+  /** `cause` é carimbada no app pelo gesto (lib/corte.ts); o runner nunca manda. */
+  | { type: "cancelled"; cause?: CausaDoCorte }
   | { type: "done"; code: number | null }
   | { type: "unknown"; raw: unknown }
 

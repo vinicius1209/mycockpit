@@ -47,6 +47,10 @@ export const AGENTS: AgentDef[] = [
     systemChannel: true,
     sessionResume: true,
     contextMcp: true,
+    // claude 2.1.266: não expõe sandbox de SO. Conviveu com o envelope da
+    // denylist sem colidir (fase 0). Se ganhar sandbox de bash no macOS, é
+    // ESTE valor que muda — uma linha, não um bug novo.
+    sandboxProprio: "nenhum",
     workMcp: true,
     workMcpGlobalEnv: false,
     disputes: true,
@@ -106,6 +110,11 @@ export const AGENTS: AgentDef[] = [
     systemChannel: false,
     sessionResume: true,
     contextMcp: true,
+    // codex 0.153.2 (medido 10/09/2026): `-s read-only` barra escrita no cwd,
+    // fora dele, em `--add-dir`, pela via nativa `apply_patch`, por
+    // python3/perl/cp e por processo destacado. Mais apertado que a nossa
+    // denylist, então dispensar o envelope APERTA em vez de afrouxar.
+    sandboxProprio: "sistemaOperacional",
     workMcp: true,
     workMcpGlobalEnv: false,
     disputes: true,
@@ -167,6 +176,10 @@ export const AGENTS: AgentDef[] = [
     // um step por ação, e o `result.usage` é o acumulado da CONVERSA (ADR-033).
     sessionResume: true,
     contextMcp: false,
+    // agy 1.1.13: tem `--sandbox`, mas a fase 0 mediu o que ele faz quando
+    // barra: exit 0, stdout vazio, stderr mudo. Finge que funcionou. Não é
+    // garantia — é justamente quem PRECISA do envelope.
+    sandboxProprio: "melhorEsforco",
     workMcp: true,
     workMcpGlobalEnv: true,
     disputes: false,
@@ -207,6 +220,9 @@ export const AGENTS: AgentDef[] = [
     systemChannel: false,
     sessionResume: true,
     contextMcp: false,
+    // opencode 1.18.21: zero menção a sandbox no `--help` (11/09/2026).
+    // Sem fonte auditada, fail-closed.
+    sandboxProprio: "nenhum",
     workMcp: false,
     workMcpGlobalEnv: false,
     disputes: false,
@@ -240,6 +256,8 @@ export const AGENTS: AgentDef[] = [
     systemChannel: false,
     sessionResume: false,
     contextMcp: false,
+    // one-shot barato: não roda shell, não escreve, não confina.
+    sandboxProprio: "nenhum",
     workMcp: false,
     workMcpGlobalEnv: false,
     disputes: false,
