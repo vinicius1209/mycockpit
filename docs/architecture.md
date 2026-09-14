@@ -1,6 +1,6 @@
 # Arquitetura atual
 
-> Documento vivo, revisado em 09/09/2026. Para comportamento por agente, as
+> Documento vivo, revisado em 14/09/2026. Para comportamento por agente, as
 > fontes executáveis são `app/src-tauri/src/adapters.rs` e os espelhos
 > `app/src/lib/agents.ts` + `app/src/lib/agentTooling.ts`. Planos e matrizes
 > datadas explicam decisões, mas não substituem esses registries.
@@ -138,7 +138,7 @@ nunca recebem sinal.
   de vida do Chromium isolado, inventário/preview/input CDP e janela própria;
   WebSockets e frames nunca entram no manifesto ou no banco.
 - `app/src-tauri/src/notch.rs` e `hud.rs`: geometria de tela medida e presenter
-  nativo do instrumento, separado do snapshot renderizado.
+  nativo do instrumento, separado do snapshot renderizado (ADR-141 e ADR-188).
 - `app/src-tauri/src/desktop.rs`: sondas reais de Screen Recording e
   Accessibility; permissão não equivale a controller materializado.
 - `app/src-tauri/src/plugin_manifest.rs`: schema fechado, paths contidos,
