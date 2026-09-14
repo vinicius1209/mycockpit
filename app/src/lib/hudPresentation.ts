@@ -123,12 +123,33 @@ export function elapsedLabel(startedAt: number | null, now: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}min`
 }
 
-export function elapsedMetric(startedAt: number | null, now: number): { value: string; unit: string } {
-  if (!startedAt) return { value: "·", unit: "EM VOO" }
+export interface ElapsedMetric {
+  value: string
+  unit: string
+  secondaryValue?: string
+  secondaryUnit?: string
+  label: string
+}
+
+export function elapsedMetric(startedAt: number | null, now: number): ElapsedMetric {
+  if (!startedAt) return { value: "·", unit: "", label: "em voo" }
   const minutes = Math.max(0, Math.floor((now - startedAt) / 60_000))
-  if (minutes < 60) return { value: String(minutes), unit: "MIN" }
+  if (minutes < 60) {
+    return {
+      value: String(minutes),
+      unit: "min",
+      label: "em voo",
+    }
+  }
   const hours = Math.floor(minutes / 60)
-  return { value: `${hours}:${String(minutes % 60).padStart(2, "0")}`, unit: "H" }
+  const remainingMinutes = minutes % 60
+  return {
+    value: String(hours),
+    unit: "h",
+    secondaryValue: String(remainingMinutes),
+    secondaryUnit: "m",
+    label: "em voo",
+  }
 }
 
 export function relativeLabel(at: number, now: number): string {

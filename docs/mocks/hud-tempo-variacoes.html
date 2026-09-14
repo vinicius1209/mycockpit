@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Frota · Módulo de Tempo no HUD Expandido</title>
+  <style>
+    @font-face {
+      font-family: Geist;
+      src: url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    @font-face {
+      font-family: "Geist Mono";
+      src: url("../../app/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2");
+      font-weight: 100 900;
+      font-display: swap;
+    }
+    :root {
+      color-scheme: dark;
+      --page: #0a0c10;
+      --page-raised: #12151c;
+      --hud: #000000;
+      --card: #141619;
+      --foreground: #e7e8ea;
+      --muted: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255, 255, 255, 0.08);
+      --border-strong: rgba(255, 255, 255, 0.14);
+      --hover: #1e2126;
+      --running: #5bb8e8;
+      --brass: #e4a862;
+      --brass-soft: rgba(228, 168, 98, 0.12);
+      --error: #f2766b;
+      --sans: Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      --mono: "Geist Mono", SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      --shadow-pop: 0 24px 64px -12px rgba(0, 0, 0, 0.9);
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--page);
+      color: var(--foreground);
+      font: 13px/1.4 var(--sans);
+      -webkit-font-smoothing: antialiased;
+    }
+    .page {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 32px 24px 64px;
+    }
+    header.header {
+      margin-bottom: 24px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 18px;
+    }
+    .eyebrow {
+      margin: 0 0 6px;
+      color: var(--running);
+      font: 600 11px/1 var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    h1 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.02em;
+      font-weight: 600;
+    }
+    .lede {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+      max-width: 760px;
+    }
+
+    /* CONTROLS */
+    .controls-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+      background: var(--page-raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+    }
+    .control-group-title {
+      font: 600 11px/1 var(--mono);
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .pill-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .pill-btn {
+      appearance: none;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .pill-btn:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--foreground);
+    }
+    .pill-btn.active {
+      background: var(--brass-soft);
+      border-color: var(--brass);
+      color: var(--brass);
+      font-weight: 600;
+    }
+
+    /* STAGE */
+    .stage {
+      position: relative;
+      height: 480px;
+      background: #0f1217;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    }
+    .mac-menu-bar {
+      width: 100%;
+      height: 32px;
+      background: #1a1e26;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.65);
+      position: relative;
+      z-index: 10;
+    }
+    .mac-menu-bar .left {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+    .mac-menu-bar .right {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-variant-numeric: tabular-nums;
+    }
+    .notch-hardware {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 185px;
+      height: 32px;
+      background: #000000;
+      border-radius: 0 0 10px 10px;
+      z-index: 20;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .camera-lens {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: #111;
+      box-shadow: inset 0 0 2px rgba(255,255,255,0.3);
+    }
+
+    /* HUD CONTAINER */
+    .hud-window {
+      position: absolute;
+      top: 32px;
+      width: 540px;
+      height: 320px;
+      background: var(--hud);
+      border: 1px solid var(--border-strong);
+      border-top: 0;
+      border-radius: 0 0 16px 16px;
+      box-shadow: var(--shadow-pop);
+      display: flex;
+      flex-direction: column;
+      z-index: 15;
+      overflow: hidden;
+    }
+
+    /* HUD HEADER */
+    .hud-header {
+      height: 44px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 1fr 185px 1fr;
+      align-items: center;
+      padding: 0 14px;
+      flex-shrink: 0;
+    }
+    .hud-header .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .hud-header .brand svg {
+      width: 14px;
+      height: 14px;
+    }
+    .hud-header .status {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .hud-header .status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--running);
+    }
+    .hud-header .status-text {
+      font: 500 11px/1 var(--mono);
+      color: var(--muted);
+    }
+    .chip-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--foreground);
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+    }
+
+    /* HUD SCENE CONTAINER */
+    .hud-body {
+      flex: 1;
+      position: relative;
+      min-height: 0;
+    }
+
+    /* VARIANT 0: ATUAL (COM BUG) */
+    .scene-current {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 1fr 12px 24px auto;
+      padding: 12px 28px 8px;
+    }
+    .board-current {
+      display: grid;
+      grid-template-columns: 82px 1fr;
+      align-items: center;
+      min-height: 0;
+    }
+    .time-col-current {
+      border-right: 1px solid var(--border);
+      padding-right: 16px;
+    }
+    .time-col-current strong {
+      display: block;
+      font-family: var(--mono);
+      font-size: 30px;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .time-col-current span {
+      display: block;
+      margin-top: 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--faint);
+    }
+
+    /* VARIANT 1: INLINE DURAÇÃO (4h 19m / 16 min) */
+    .scene-v1 {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 1fr 12px 24px;
+      padding: 14px 28px 48px; /* pb-12 compensando footer */
+    }
+    .board-v1 {
+      display: grid;
+      grid-template-columns: 112px 1fr;
+      align-items: center;
+      min-height: 0;
+    }
+    .time-col-v1 {
+      border-right: 1px solid var(--border);
+      padding-right: 18px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    .time-inline-v1 {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    .time-inline-v1 .num {
+      font-size: 26px;
+      font-weight: 650;
+      line-height: 1;
+      letter-spacing: -0.04em;
+      color: var(--foreground);
+    }
+    .time-inline-v1 .unit {
+      font-size: 13px;
+      font-weight: 550;
+      color: var(--faint);
+      margin-right: 2px;
+    }
+    .time-sub-v1 {
+      margin-top: 5px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--faint);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    /* VARIANT 2: INLINE COMPACTO (4:19 h / 16 min) */
+    .scene-v2 {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 1fr 12px 24px;
+      padding: 14px 28px 48px;
+    }
+    .board-v2 {
+      display: grid;
+      grid-template-columns: 96px 1fr;
+      align-items: center;
+      min-height: 0;
+    }
+    .time-col-v2 {
+      border-right: 1px solid var(--border);
+      padding-right: 16px;
+    }
+    .time-inline-v2 {
+      display: flex;
+      align-items: baseline;
+      gap: 4px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .time-inline-v2 .clock {
+      font-size: 28px;
+      font-weight: 650;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .time-inline-v2 .unit {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--faint);
+    }
+    .time-sub-v2 {
+      margin-top: 5px;
+      font-family: var(--mono);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--faint);
+      letter-spacing: 0.05em;
+    }
+
+    /* VARIANT 3: BADGE HORIZONTAL DIRETO (Sem segunda linha na esquerda) */
+    .scene-v3 {
+      height: 100%;
+      display: grid;
+      grid-template-rows: 1fr 12px 24px;
+      padding: 14px 28px 48px;
+    }
+    .board-v3 {
+      display: grid;
+      grid-template-columns: 100px 1fr;
+      align-items: center;
+      min-height: 0;
+    }
+    .time-col-v3 {
+      border-right: 1px solid var(--border);
+      padding-right: 16px;
+      display: flex;
+      align-items: center;
+    }
+    .time-pure-v3 {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+      font-family: var(--mono);
+      font-variant-numeric: tabular-nums;
+    }
+    .time-pure-v3 .major {
+      font-size: 28px;
+      font-weight: 650;
+      line-height: 1;
+      letter-spacing: -0.04em;
+    }
+    .time-pure-v3 .minor {
+      font-size: 13px;
+      font-weight: 550;
+      color: var(--muted);
+    }
+
+    /* RIGHT COPY COMMON */
+    .flight-copy {
+      min-width: 0;
+      padding-left: 20px;
+    }
+    .flight-copy .label {
+      margin: 0 0 6px;
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--running);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .flight-copy h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .flight-copy p {
+      margin: 4px 0 0;
+      font-size: 12px;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    /* RAIL */
+    .hud-live-rail {
+      position: relative;
+      height: 6px;
+      margin-left: 118px; /* dinamico via var */
+      margin-top: 4px;
+    }
+    .hud-live-rail .rail-track {
+      position: absolute;
+      top: 2px;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: var(--border-strong);
+    }
+    .hud-live-rail .rail-fill {
+      position: absolute;
+      top: 2px;
+      left: 0;
+      width: 38%;
+      height: 1px;
+      background: var(--running);
+    }
+    .hud-live-rail .rail-head {
+      position: absolute;
+      top: -1px;
+      left: 38%;
+      width: 7px;
+      height: 7px;
+      margin-left: -3px;
+      border-radius: 50%;
+      background: var(--running);
+      box-shadow: 0 0 0 3px #000;
+      animation: pulse-dot 2.4s ease-in-out infinite alternate;
+    }
+    @keyframes pulse-dot {
+      from { transform: scale(0.9); opacity: 0.8; }
+      to { transform: scale(1.15); opacity: 1; }
+    }
+
+    /* SYSTEM LINE */
+    .system-line {
+      margin-left: 118px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+    .system-line strong {
+      color: var(--foreground);
+      font-weight: 500;
+    }
+
+    /* FOOTER */
+    .hud-footer {
+      position: absolute;
+      inset-x: 0;
+      bottom: 0;
+      height: 48px;
+      border-top: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.02);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 0 14px;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 28px;
+      padding: 0 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background 120ms ease;
+    }
+    .btn-ghost {
+      background: transparent;
+      color: var(--foreground);
+    }
+    .btn-ghost:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .btn-primary {
+      background: var(--brass);
+      color: #111;
+      font-weight: 600;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.08);
+    }
+    .btn-icon {
+      width: 28px;
+      padding: 0;
+      justify-content: center;
+      color: var(--muted);
+    }
+    .btn-icon:hover {
+      color: var(--foreground);
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .hud-footer .btn-settings {
+      position: absolute;
+      right: 12px;
+    }
+
+    /* COMPARISON CARDS */
+    .comparisons-grid {
+      margin-top: 32px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .comp-card {
+      background: var(--page-raised);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      cursor: pointer;
+      transition: all 120ms ease;
+    }
+    .comp-card:hover {
+      border-color: rgba(255,255,255,0.2);
+    }
+    .comp-card.active {
+      border-color: var(--brass);
+      background: rgba(228, 168, 98, 0.04);
+      box-shadow: 0 0 0 1px var(--brass);
+    }
+    .comp-card .tag {
+      font: 600 10px/1 var(--mono);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--faint);
+      margin-bottom: 6px;
+    }
+    .comp-card.active .tag {
+      color: var(--brass);
+    }
+    .comp-card h3 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .comp-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+
+    .badge-alert {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(242, 118, 107, 0.15);
+      color: var(--error);
+      margin-top: 8px;
+    }
+    .badge-rec {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 600;
+      background: rgba(91, 184, 232, 0.15);
+      color: var(--running);
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page">
+    <header class="header">
+      <p class="eyebrow">Cockpit de Decisão · Frota · Variações do HUD</p>
+      <h1>Refinamento do Instrumento de Tempo (Dynamic HUD)</h1>
+      <p class="lede">
+        Compare a exibição atual (onde o caracter "H" quebra linha) com as propostas de leitura na mesma linha. Use os controles abaixo para simular diferentes durações em tempo real.
+      </p>
+    </header>
+
+    <!-- SIMULATOR CONTROLS -->
+    <div class="controls-panel">
+      <div>
+        <div class="control-group-title">1. Selecionar Variação</div>
+        <div class="pill-list" id="variant-pills">
+          <button class="pill-btn" data-variant="current">0 · Atual (com quebra "H")</button>
+          <button class="pill-btn active" data-variant="v1">1 · 4h 19m (Recomendado)</button>
+          <button class="pill-btn" data-variant="v2">2 · 4:19 h (Sufixo baseline)</button>
+          <button class="pill-btn" data-variant="v3">3 · 4h 19m (Métrica direta)</button>
+        </div>
+      </div>
+      <div>
+        <div class="control-group-title">2. Simular Duração da Tarefa</div>
+        <div class="pill-list" id="duration-pills">
+          <button class="pill-btn active" data-duration="4h19">4h 19min (Print real)</button>
+          <button class="pill-btn" data-duration="16m">16 min (Tarefa média)</button>
+          <button class="pill-btn" data-duration="45s">45 seg ("agora")</button>
+          <button class="pill-btn" data-duration="12h45">12h 45min (Longa)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MOCKUP STAGE -->
+    <div class="stage">
+      <!-- MAC MENUBAR & NOTCH -->
+      <div class="mac-menu-bar">
+        <div class="left">
+          <span></span>
+          <strong>Frota</strong>
+          <span>Arquivo</span>
+          <span>Editar</span>
+          <span>Visualizar</span>
+        </div>
+        <div class="right">
+          <span>Qui 14:25</span>
+          <span>🔋 100%</span>
+        </div>
+      </div>
+
+      <div class="notch-hardware">
+        <div class="camera-lens"></div>
+      </div>
+
+      <!-- HUD 540x320 -->
+      <div class="hud-window">
+        <!-- HEADER -->
+        <div class="hud-header">
+          <div class="brand">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 16.5 12 4l7 12.5-7-3.5-7 3.5Z"/>
+            </svg>
+            <span>Frota</span>
+          </div>
+          <div></div> <!-- Vazio pelo notch -->
+          <div class="status">
+            <span class="status-dot"></span>
+            <span class="status-text" id="hud-status-text">1 em voo</span>
+            <button class="chip-btn">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14 5h5v5M11 13l8-8M19 13v6H5V5h6"/>
+              </svg>
+              Abrir
+            </button>
+          </div>
+        </div>
+
+        <!-- SCENE CONTAINER -->
+        <div class="hud-body" id="hud-scene-target">
+          <!-- O conteúdo da cena é renderizado dinamicamente via JS -->
+        </div>
+
+        <!-- FOOTER (Comum a todas) -->
+        <footer class="hud-footer">
+          <button class="btn btn-ghost">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="5" y="5" width="14" height="14" rx="2"/>
+            </svg>
+            Parar tarefa
+          </button>
+          <button class="btn btn-primary">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M12 5v14M5 12h14"/>
+            </svg>
+            Nova tarefa
+          </button>
+          <button class="btn btn-ghost btn-icon btn-settings" title="Configurações">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>
+            </svg>
+          </button>
+        </footer>
+      </div>
+    </div>
+
+    <!-- COMPARISON CARDS / FEEDBACK -->
+    <div class="comparisons-grid">
+      <div class="comp-card" data-select="current">
+        <div class="tag">Estado Atual</div>
+        <h3>0 · Dois Blocos Verticais</h3>
+        <p>Número em 30px e unidade embaixo em 11px. Com minutos (16 / MIN) funciona, mas com horas (4:19 / H) o H fica órfão e parece erro de quebra.</p>
+        <div class="badge-alert">Problema relatado</div>
+      </div>
+
+      <div class="comp-card active" data-select="v1">
+        <div class="tag">Proposta 1</div>
+        <h3>1 · 4h 19m / 16 min</h3>
+        <p>Notação natural de duração. Impossível confundir com horário de relógio (4:19). Números em 26px e letras em 13px alinhadas pelo baseline.</p>
+        <div class="badge-rec">Recomendada</div>
+      </div>
+
+      <div class="comp-card" data-select="v2">
+        <div class="tag">Proposta 2</div>
+        <h3>2 · 4:19 h / 16 min</h3>
+        <p>Mantém o formato de cronômetro digital (4:19), mas coloca o sufixo "h" na mesma linha em 13px colado na base tipográfica.</p>
+      </div>
+
+      <div class="comp-card" data-select="v3">
+        <div class="tag">Proposta 3</div>
+        <h3>3 · 4h 19m Métrica Direta</h3>
+        <p>A coluna da esquerda exibe apenas o valor inline puro sem segundo rótulo embaixo, alinhado verticalmente ao bloco de tarefa.</p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const dataByDuration = {
+      "4h19": {
+        current: { val: "4:19", unit: "H" },
+        v1: { major: "4", unit1: "h", minor: "19", unit2: "m", sub: "TEMPO EM VOO" },
+        v2: { clock: "4:19", unit: "h", sub: "EM VOO" },
+        v3: { major: "4", unit1: "h", minor: "19", unit2: "m" },
+        title: "frota v2 (Core + clientes)",
+        detail: "projetos · Executando comando..."
+      },
+      "16m": {
+        current: { val: "16", unit: "MIN" },
+        v1: { major: "16", unit1: "min", minor: "", unit2: "", sub: "TEMPO EM VOO" },
+        v2: { clock: "16", unit: "min", sub: "EM VOO" },
+        v3: { major: "16", unit1: "min", minor: "", unit2: "" },
+        title: "Revisão de branches",
+        detail: "Maclan · Redigindo resposta"
+      },
+      "45s": {
+        current: { val: "0", unit: "MIN" },
+        v1: { major: "< 1", unit1: "min", minor: "", unit2: "", sub: "INICIADO AGORA" },
+        v2: { clock: "0:45", unit: "s", sub: "AGORA" },
+        v3: { major: "< 1", unit1: "min", minor: "", unit2: "" },
+        title: "Sincronização de regras",
+        detail: "Frota · Verificando lints"
+      },
+      "12h45": {
+        current: { val: "12:45", unit: "H" },
+        v1: { major: "12", unit1: "h", minor: "45", unit2: "m", sub: "TURNO LONGO" },
+        v2: { clock: "12:45", unit: "h", sub: "EM VOO" },
+        v3: { major: "12", unit1: "h", minor: "45", unit2: "m" },
+        title: "Refactor completo de store",
+        detail: "Codex · Compilando módulos"
+      }
+    };
+
+    let activeVariant = "v1";
+    let activeDuration = "4h19";
+
+    function renderScene() {
+      const target = document.getElementById("hud-scene-target");
+      const d = dataByDuration[activeDuration];
+
+      if (activeVariant === "current") {
+        target.innerHTML = `
+          <div class="scene-current">
+            <div class="board-current">
+              <div class="time-col-current">
+                <strong>${d.current.val}</strong>
+                <span>${d.current.unit}</span>
+              </div>
+              <div class="flight-copy">
+                <p class="label">Em voo agora</p>
+                <h2>${d.title}</h2>
+                <p>${d.detail}</p>
+              </div>
+            </div>
+            <div class="hud-live-rail" style="margin-left: 102px;">
+              <span class="rail-track"></span>
+              <span class="rail-fill"></span>
+              <span class="rail-head"></span>
+            </div>
+            <p class="system-line" style="margin-left: 102px;">
+              <strong>Sem automações</strong> · Codex observado, ocioso
+            </p>
+          </div>
+        `;
+      } else if (activeVariant === "v1") {
+        const item = d.v1;
+        const secondPart = item.minor ? `<span class="num" style="margin-left: 3px;">${item.minor}</span><span class="unit">${item.unit2}</span>` : '';
+        target.innerHTML = `
+          <div class="scene-v1">
+            <div class="board-v1">
+              <div class="time-col-v1">
+                <div class="time-inline-v1">
+                  <span class="num">${item.major}</span><span class="unit">${item.unit1}</span>${secondPart}
+                </div>
+                <div class="time-sub-v1">${item.sub}</div>
+              </div>
+              <div class="flight-copy">
+                <p class="label">Em voo agora</p>
+                <h2>${d.title}</h2>
+                <p>${d.detail}</p>
+              </div>
+            </div>
+            <div class="hud-live-rail" style="margin-left: 132px;">
+              <span class="rail-track"></span>
+              <span class="rail-fill"></span>
+              <span class="rail-head"></span>
+            </div>
+            <p class="system-line" style="margin-left: 132px;">
+              <strong>Sem automações</strong> · Codex observado, ocioso
+            </p>
+          </div>
+        `;
+      } else if (activeVariant === "v2") {
+        const item = d.v2;
+        target.innerHTML = `
+          <div class="scene-v2">
+            <div class="board-v2">
+              <div class="time-col-v2">
+                <div class="time-inline-v2">
+                  <span class="clock">${item.clock}</span>
+                  <span class="unit">${item.unit}</span>
+                </div>
+                <div class="time-sub-v2">${item.sub}</div>
+              </div>
+              <div class="flight-copy">
+                <p class="label">Em voo agora</p>
+                <h2>${d.title}</h2>
+                <p>${d.detail}</p>
+              </div>
+            </div>
+            <div class="hud-live-rail" style="margin-left: 116px;">
+              <span class="rail-track"></span>
+              <span class="rail-fill"></span>
+              <span class="rail-head"></span>
+            </div>
+            <p class="system-line" style="margin-left: 116px;">
+              <strong>Sem automações</strong> · Codex observado, ocioso
+            </p>
+          </div>
+        `;
+      } else if (activeVariant === "v3") {
+        const item = d.v3;
+        const secondPart = item.minor ? `<span class="major" style="margin-left: 3px;">${item.minor}</span><span class="minor">${item.unit2}</span>` : '';
+        target.innerHTML = `
+          <div class="scene-v3">
+            <div class="board-v3">
+              <div class="time-col-v3">
+                <div class="time-pure-v3">
+                  <span class="major">${item.major}</span><span class="minor">${item.unit1}</span>${secondPart}
+                </div>
+              </div>
+              <div class="flight-copy">
+                <p class="label">Em voo agora</p>
+                <h2>${d.title}</h2>
+                <p>${d.detail}</p>
+              </div>
+            </div>
+            <div class="hud-live-rail" style="margin-left: 120px;">
+              <span class="rail-track"></span>
+              <span class="rail-fill"></span>
+              <span class="rail-head"></span>
+            </div>
+            <p class="system-line" style="margin-left: 120px;">
+              <strong>Sem automações</strong> · Codex observado, ocioso
+            </p>
+          </div>
+        `;
+      }
+    }
+
+    // EVENT LISTENERS
+    document.querySelectorAll("#variant-pills button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#variant-pills button").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".comp-card").forEach(c => c.classList.remove("active"));
+        btn.classList.add("active");
+        activeVariant = btn.dataset.variant;
+        const card = document.querySelector(`.comp-card[data-select="${activeVariant}"]`);
+        if (card) card.classList.add("active");
+        renderScene();
+      });
+    });
+
+    document.querySelectorAll(".comp-card").forEach(card => {
+      card.addEventListener("click", () => {
+        document.querySelectorAll(".comp-card").forEach(c => c.classList.remove("active"));
+        document.querySelectorAll("#variant-pills button").forEach(b => b.classList.remove("active"));
+        card.classList.add("active");
+        activeVariant = card.dataset.select;
+        const btn = document.querySelector(`#variant-pills button[data-variant="${activeVariant}"]`);
+        if (btn) btn.classList.add("active");
+        renderScene();
+      });
+    });
+
+    document.querySelectorAll("#duration-pills button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("#duration-pills button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        activeDuration = btn.dataset.duration;
+        renderScene();
+      });
+    });
+
+    renderScene();
+  </script>
+</body>
+</html>

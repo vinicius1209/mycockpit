@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   deriveHudPresentation,
+  elapsedMetric,
   hudStatus,
   hudStopReducer,
   type HudSnapshotState,
@@ -115,5 +116,48 @@ describe("hudStopReducer", () => {
       error: "canal fechado",
     })
     expect(hudStopReducer(requested, { type: "cancel" })).toBeNull()
+  })
+})
+
+describe("elapsedMetric", () => {
+  it("trata atividade sem data de início", () => {
+    expect(elapsedMetric(null, 1_000_000)).toEqual({
+      value: "·",
+      unit: "",
+      label: "em voo",
+    })
+  })
+
+  it("formata minutos em linha única com unidade min", () => {
+    const start = 1_000_000
+    expect(elapsedMetric(start, start + 16 * 60_000)).toEqual({
+      value: "16",
+      unit: "min",
+      label: "em voo",
+    })
+  })
+
+  it("decompõe horas e minutos para leitura inline sem quebra órfã de H", () => {
+    const start = 1_000_000
+    // 4h 19min = 259 minutos
+    expect(elapsedMetric(start, start + (4 * 60 + 19) * 60_000)).toEqual({
+      value: "4",
+      unit: "h",
+      secondaryValue: "19",
+      secondaryUnit: "m",
+      label: "em voo",
+    })
+  })
+
+  it("preserva minutos restantes zero de forma explícita", () => {
+    const start = 1_000_000
+    // 2h = 120 minutos
+    expect(elapsedMetric(start, start + 2 * 60 * 60_000)).toEqual({
+      value: "2",
+      unit: "h",
+      secondaryValue: "0",
+      secondaryUnit: "m",
+      label: "em voo",
+    })
   })
 })

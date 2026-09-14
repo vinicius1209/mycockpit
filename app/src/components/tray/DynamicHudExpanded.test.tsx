@@ -104,6 +104,26 @@ describe("DynamicHudExpanded", () => {
     expect(html).not.toMatch(/\b34%\b/)
   })
 
+  it("renderiza duração de horas e minutos inline sem quebra órfã", () => {
+    const running = activity("a", "frota v2 (Core + clientes)")
+    const longRunning: TrayActivity = {
+      ...running,
+      startedAt: 1_778_000_960_000 - (4 * 60 + 19) * 60_000,
+    }
+    const current = snapshot({ running: 1, activities: [longRunning] })
+    const html = render(
+      { kind: "flight", snapshot: current, primary: longRunning, secondary: [] },
+      "flight",
+      "1 em voo",
+    )
+    expect(html).toContain("4")
+    expect(html).toContain("h")
+    expect(html).toContain("19")
+    expect(html).toContain("m")
+    expect(html).toContain("em voo")
+    expect(html).not.toMatch(/>H</)
+  })
+
   it("faz uma decisão real vencer o tempo e aponta para a conversa", () => {
     const current = snapshot({ decisions: 1, blocking: 1, decisionConvId: "a", decisionProjectId: "project-1" })
     const html = render({ kind: "decision", snapshot: current }, "decision", "1 decisão")

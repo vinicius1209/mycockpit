@@ -139,12 +139,25 @@ function FlightScene({
 }) {
   const metric = elapsedMetric(primary.startedAt, now)
   return (
-    <div className="grid h-full min-h-0 grid-rows-[1fr_12px_24px_auto] px-7 pt-3 pb-2">
-      <div className="grid min-h-0 grid-cols-[82px_1fr] items-center">
-        <p className="border-r border-border/40 pr-4">
-          <strong className="block font-mono text-[30px] leading-none tracking-[-0.04em]">{metric.value}</strong>
-          <span className="mt-1.5 block font-mono text-[11px] font-semibold text-muted-foreground">{metric.unit}</span>
-        </p>
+    <div className="grid h-full min-h-0 grid-rows-[1fr_12px_24px_auto] px-7 pt-3 pb-12">
+      <div className="grid min-h-0 grid-cols-[116px_1fr] items-center">
+        <div className="border-r border-border/40 pr-4">
+          <p className="flex items-baseline font-mono tabular-nums leading-none tracking-[-0.04em]">
+            <strong className="text-[30px] font-semibold">{metric.value}</strong>
+            {metric.unit && (
+              <span className="ml-0.5 text-[13px] font-semibold text-muted-foreground">{metric.unit}</span>
+            )}
+            {metric.secondaryValue && (
+              <>
+                <strong className="ml-1.5 text-[30px] font-semibold">{metric.secondaryValue}</strong>
+                <span className="ml-0.5 text-[13px] font-semibold text-muted-foreground">{metric.secondaryUnit}</span>
+              </>
+            )}
+          </p>
+          <span className="mt-1.5 block font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground">
+            {metric.label}
+          </span>
+        </div>
         <div className="min-w-0 pl-5">
           <p className="mb-1.5 font-mono text-[11px] font-semibold uppercase tracking-[0.06em] text-st-running">
             Em voo agora
@@ -155,7 +168,7 @@ function FlightScene({
           </p>
         </div>
       </div>
-      <div className="hud-live-rail ml-[102px]" aria-label="Tarefa em execução">
+      <div className="hud-live-rail ml-[136px]" aria-label="Tarefa em execução">
         <span />
       </div>
       <SystemLine snapshot={snapshot} />
