@@ -311,7 +311,7 @@ etiqueta técnica, número). O display serif do design-system nunca embarcou
 
 | px | Papel | Hoje |
 |---|---|---|
-| **20** | Título de view / métrica de seção | `SddView.tsx`, `MissionControl.tsx` (derivado) e `:327` (título da view) |
+| **20** | Título de view / métrica de seção | `MissionControl.tsx` (derivado e título da view), `FlightPlanLibrary.tsx` |
 | **30** | Métrica de painel (custo, frota) | `CostAudit.tsx`, `MissionControl.tsx` |
 | **38** | Saudação do estado vazio | `ChatPanel.tsx` |
 
@@ -935,3 +935,16 @@ um literal a procurar: é uma relação entre duas caixas que só o olho fecha. 
 mora na rubrica do §8 e no review, e a honestidade sobre isso importa — guarda
 inventada pra parecer rigorosa é pior que ausência de guarda, porque dá
 sensação de cobertura onde não há.
+
+
+## 15. Portas do chrome (ADR-187)
+
+- Geral reúne Painel, Frota, Agendamentos e Planos de voo. Seleção neutra; o
+  Trabalho é o destino de projeto/conversa, sem comutador concorrente no topo.
+- O centro da barra pertence à mesma paleta de comandos, em degrau compacto.
+  Nome de projeto trunca antes de invadir o campo; os painéis ficam nas pontas.
+- Notas fica visível na tira de abas do Trabalho, com o contador real e a mesma
+  gaveta ancorada. A paleta mantém acesso quando uma visão global está aberta.
+- Preferências moram no menu da conta: Perfil, Configurações, Atalhos, Tema e
+  Sobre. Claro, Escuro e Sistema são escolhas explícitas; a barra não duplica
+  a engrenagem nem um botão permanente de tema.

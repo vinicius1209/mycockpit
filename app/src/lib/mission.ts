@@ -1,6 +1,5 @@
 // MOTOR do modo Mission (docs/mission-mode.md §3): orquestração PURA de UMA
-// fase do pipeline heterogêneo. Feature INDEPENDENTE do SDD — nada daqui
-// importa lib/sdd.ts. Modelado nos padrões do Fusion (reduceItems + soma de
+// fase do pipeline heterogêneo. Modelado nos padrões do Fusion (reduceItems + soma de
 // cost_usd dos results). O store (store/mission.ts) encadeia as fases; aqui
 // mora só a lógica de uma fase + montagem de prompt por persona.
 

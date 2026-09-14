@@ -21,6 +21,7 @@ instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 const dark = (() => {
   try {
     const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+    if (persisted?.state?.themePreference === "system") return matchMedia("(prefers-color-scheme: dark)").matches
     return persisted?.state?.theme !== "light"
   } catch {
     return true

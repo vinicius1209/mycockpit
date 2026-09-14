@@ -1,0 +1,225 @@
+[
+  {
+    "type": "started"
+  },
+  {
+    "type": "run_status",
+    "main_alive": true,
+    "descendants": 0,
+    "rss_mb": 0,
+    "last_byte_at": null,
+    "observed_at": 1789338669483
+  },
+  {
+    "type": "session",
+    "session_id": "5dfc954e-266e-4523-b510-8635291b872f",
+    "model": "gemini-3.8-flash-high",
+    "tools": 57
+  },
+  {
+    "type": "run_status",
+    "main_alive": true,
+    "descendants": 3,
+    "rss_mb": 465,
+    "last_byte_at": 1789338671917,
+    "observed_at": 1789338674505
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-2",
+    "name": "run_command",
+    "input": {
+      "CommandLine": "python3 /tmp/frota-agy-e2e-20260913/workspace/workload.py volume"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "run_status",
+    "main_alive": true,
+    "descendants": 4,
+    "rss_mb": 535,
+    "last_byte_at": 1789338675638,
+    "observed_at": 1789338679501
+  },
+  {
+    "type": "run_status",
+    "main_alive": true,
+    "descendants": 4,
+    "rss_mb": 536,
+    "last_byte_at": 1789338675638,
+    "observed_at": 1789338684499
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-2",
+    "ok": true,
+    "text": "<truncated 2 lines>\n{\"mode\": \"volume\", \"dots\": 142976, \"sha256\": \"b3ccbb785193599e4fcef14b9c218b92fe70b18981f525eff0c3f7cf9600147c\", \"pid\": 71325, \"marker\": \"FROTA_E2E_VOLUME_DONE\"}\n",
+    "lines": 2
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-4",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-4",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-6",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-6",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-8",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-8",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-10",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-10",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-12",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-12",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-14",
+    "name": "manage_task",
+    "input": {
+      "Action": "status",
+      "TaskId": "5dfc954e-266e-4523-b510-8635291b872f/task-2"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-14",
+    "ok": true,
+    "text": "Task: 5dfc954e-266e-4523-b510-8635291b872f/task-2\nStatus: RUNNING\nLog: /Users/viniciusmachado/.gemini/antigravity-cli/brain/5dfc954e-266e-4523-b510-8635291b872f/.system_generated/tasks/task-2.log\nLog output:\n<truncated 2 lines>\n....................................................................................................................................................................................................................................................................................................................................................................................\u2026",
+    "lines": 8
+  },
+  {
+    "type": "tool",
+    "id": "agy-step-17",
+    "name": "view_file",
+    "input": {
+      "AbsolutePath": "/tmp/frota-agy-e2e-20260913/workspace/receipt.json"
+    },
+    "parent_tool_id": null
+  },
+  {
+    "type": "tool_result",
+    "id": "agy-step-17",
+    "ok": true,
+    "text": "1 lines, 161 bytes",
+    "lines": 1
+  },
+  {
+    "type": "run_status",
+    "main_alive": true,
+    "descendants": 3,
+    "rss_mb": 493,
+    "last_byte_at": 1789338689376,
+    "observed_at": 1789338689483
+  },
+  {
+    "type": "text_delta",
+    "text": "Marcador: FROTA_E2E_VOLUME_DONE\nDots"
+  },
+  {
+    "type": "text_delta",
+    "text": ": 142976\nSHA256: b3ccbb785193599e4fcef14"
+  },
+  {
+    "type": "text_delta",
+    "text": "b9c218b92fe70b18981f525eff0c3f7cf9600147c"
+  },
+  {
+    "type": "text_delta",
+    "text": "\n"
+  },
+  {
+    "type": "text_stop"
+  },
+  {
+    "type": "context_usage",
+    "tokens": 20270,
+    "window_tokens": null
+  },
+  {
+    "type": "result",
+    "ok": true,
+    "text": null,
+    "cost_usd": null,
+    "cost_source": "unknown",
+    "input_tokens": 162986,
+    "output_tokens": 3308,
+    "cache_read": 105553,
+    "cache_creation": 0,
+    "cumulative_usage": {
+      "input": 162986,
+      "cached_input": 105553,
+      "output": 3308
+    }
+  }
+]

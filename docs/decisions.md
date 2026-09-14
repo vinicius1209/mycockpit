@@ -6537,3 +6537,134 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   WKWebView nativo: primeira montagem 11 ms, máximo de 1 ms em 100 remontagens.
   Essas medições são do componente com o item completo, não do app instalado.
   Detalhes e limites em `docs/incidente-maclan-2026-09-12.md`.
+
+### ADR-185 · A aba Features (SDD) sai do app; o custo histórico dela fica no Painel ✅
+
+- **Contexto (13/09/2026):** decisão de produto do usuário: "remover por
+  COMPLETO essa aba Features, manter apenas Painel e Trabalho". Mesma régua do
+  ADR-035: toda superfície mantida paga seu custo. O modo SDD custava ~4 mil
+  linhas (view, `lib/sdd.ts`, `sdd.rs` com 7 comandos e escrita em
+  `.claude/plans`), uma tabela de marcas e três conceitos de UI que só existiam
+  por ele (lista de features na sidebar, gates "encontrados no projeto",
+  ignorados). Dependia ainda de um fluxo de skills externo com default pessoal
+  (`SEED_REPO`). Frente em `docs/remocao-features-prd.md`.
+- **Decisão 1 (superfície):** saem `components/sdd/`, `lib/sdd.ts`, `sdd.rs`,
+  a entrada `sdd` de `MODES`, a `SddFeatureList` da sidebar e o estado
+  `sddFocusSlug`/`sddCreateRequested`/`sddDataVersion` do store. O tipo
+  `ViewMode` passou a nascer de `VIEW_MODES` em `store/app.ts`, fonte única
+  para a barra e para a migração.
+- **Decisão 2 (caixa de decisões, D1):** os kinds `prd` e `pr` saem de
+  `Decision`. Eles só nasciam de manifest SDD; sem a aba não têm fonte nem
+  destino. Junto saem o card de PR com merge, o enriquecimento via `gh`
+  (`gh_pr_view`, `gh_pr_merge`, `validate_pr_url`, `run_gh_any_account`), a
+  procedência descoberto/ignorado e a tabela `sdd_plan_marks` deixa de ser
+  criada. A fila ordena disputa (0) antes de card e proposta (1), estável
+  dentro do rank. Consequência visível: quem via "PR aberto" ou "PRD por
+  aprovar" no sino, na faixa e no Painel deixa de ver.
+- **Decisão 3 (custo, D2):** `stage_runs` vira histórico somente-leitura e
+  continua no `UNION ALL` do `loadLedger`. Esse dinheiro foi gasto; tirá-lo
+  derrubaria os totais do Painel sem aviso. `db.ledgerHistorico.test.ts`
+  trava as duas metades: a leitura fica, e nenhum código volta a gravar.
+- **Decisão 4 (painel de contexto, D3):** sai a seção "Specs" (lia os mesmos
+  `manifest.json`), com `read_specs`, `Spec` e `StageBadge`. A contagem
+  "Planos" do inventário de `.claude/` fica: é inventário neutro da pasta,
+  como agents e commands.
+- **Decisão 5 (persist, D4):** `mc.app` v5. `fromVersion < 5` com `viewMode`
+  fora de `VIEW_MODES` cai em `"linear"`, e a regra do v4 foi absorvida por
+  ela. Nunca tela branca.
+- **Sem migração destrutiva:** nenhum `DROP TABLE`. As migrações v20/v21 de
+  `stage_runs` ficam (migração não se apaga); `sdd_plan_marks` fica inerte em
+  bancos antigos e não existe em bancos novos. Arquivos do usuário em
+  `.claude/plans` e `.claude/skills` não são tocados.
+- **Ajustes que entraram de carona:** o comutador da barra acendia a aba ativa
+  por baixo da view Frota (o check olhava só Agendado e Planos de voo); o sino
+  não tratava falha da varredura (promise sem `catch`) e congelava a lista
+  quando o último projeto era arquivado.
+- **Testes que sobreviveram ao corte:** disputa e proposta na varredura
+  (`inbox.scan.test.ts`, vindos de `inbox.sdd.test.ts`), o contrato do
+  `hardDeleteProject` (`db.hardDeleteProject.test.ts`, vindo de
+  `db.sddMarks.test.ts`), ordenação estável e agregação da faixa reescritas
+  sobre disputa, card e proposta.
+- **Caminho de volta:** se entrega spec-driven voltar a importar, ela nasce
+  como Plano de voo (missões já têm fases, gates e custo por fase em
+  `turn_costs`), não como terceira superfície lendo manifest de outro fluxo.
+- **Restos deliberados:** comentários históricos citando `SddView` em
+  `scripts/lints/deadTokens.mjs`/`.test.mjs` e no STYLEGUIDE (registro de
+  passadas antigas); `mode: "sdd"` em `permission.test.ts` como valor opaco;
+  `docs/missions/sdd-mode.md` e `docs/sdd-evolution.md` viram histórico.
+
+### ADR-186 · Drenar a cauda do stdout antes de encerrar o turno
+
+- **Contexto (13/09/2026):** no incidente da resposta cortada, a sessão do
+  Claude guardou 2030 caracteres e o transcript da Frota apenas 406. O runner
+  disputava a próxima linha com `child.wait()` e encerrava a leitura quando o
+  processo saía, mesmo havendo bytes no pipe. O replay local reproduziu a perda
+  com esse comportamento. Isso demonstra a corrida, embora não exista captura
+  bruta do stdout do turno original para provar sua trajetória exata.
+- **Decisão:** `run_once` preserva o status de saída e continua consumindo pelo
+  mesmo reader e adapter até EOF, 300 ms sem linha nova ou 3 s de drenagem total.
+  O limite total impede que descendentes escrevendo continuamente prolonguem o
+  turno; cancelamento e monitoramento continuam ativos. A regra é genérica,
+  inclusive na segunda tentativa de um resume degradado.
+- **Proteção do adapter Claude:** durante um bloco de texto aberto, acumula os
+  deltas recebidos. Se o consolidado principal contém esse prefixo exato e mais
+  texto, emite apenas o sufixo como `TextDelta`, antes de `TextStop`. Divergência,
+  bloco fechado e consolidado repetido não reescrevem nem duplicam a resposta.
+  O texto vem do CLI, nunca é sintetizado pela Frota. Subagentes mantêm seu
+  caminho próprio. O contrato de ordenação está na captura de Claude 2.1.266.
+- **Estado alterado e call sites:** `agent.rs::run_once` muda a leitura e o
+  encerramento nas chamadas inicial e de retry de `run_agent`;
+  `adapters.rs::ClaudeAdapter` mantém o texto do bloco e emite a cauda.
+  `store/chat.ts` já acumula `text_delta` e fecha a bolha em `text_stop`, sem
+  mudança no frontend, protocolo ou esquema do banco.
+- **Evidência:** `agent_stream_tail_tests.rs` reproduz stdout cheio seguido de
+  saída imediata em oito rodadas; cobre também pipe herdado silencioso, escrita
+  contínua e cancelamento. `adapters_claude_tail_tests.rs` usa a captura real em
+  `testdata/claude-2.1.266/texto-tool-texto.jsonl`, removendo deltas para testar
+  recuperação, deduplicação e divergência. Na cópia isolada com saída imediata
+  do loop e recomposição desativada, os dois testes de regressão falharam.
+- **Limites:** os prazos são de drenagem, não de execução do modelo. Consolidado
+  ausente, divergente ou recebido após o fechamento do bloco não recupera texto.
+  Esta alteração não repara automaticamente respostas antigas no banco e não
+  comprova o comportamento de um binário instalado sem rebuild e teste nativo.
+
+### ADR-187 · Centro de comando, navegação global e menu da conta
+
+- **Contexto (14/09/2026):** proposta B de `docs/mocks/chrome-botoes.html`
+  aprovada: a busca ganha o centro da barra, o Painel pertence a Geral e Notas
+  mantém uma porta visível no Trabalho. A engrenagem e o tema isolados saem do
+  chrome permanente.
+- **Navegação:** Geral reúne Painel, Frota, Agendamentos e Planos de voo.
+  Selecionar projeto, inclusive o atual, retorna ao Trabalho; selecionar uma
+  conversa conserva seu fluxo existente. A seleção do projeto e da conversa
+  recua quando uma visão global cobre o centro. O antigo teste do comutador
+  passa a verificar a ordem dos destinos de Geral, e o e2e mede o campo de
+  busca no mesmo vão, inclusive a 940px com nome de projeto longo.
+- **Persistência:** preservamos `viewMode: painel|linear` como contrato interno
+  de restauração. Diferentemente da sugestão de migração no mock, não é preciso
+  trocar a representação para mover a porta de navegação. Não há novo booleano
+  concorrente nem migração de banco. O Painel e o chat continuam montados para
+  preservar o custo e o estado do transcript.
+- **Notas:** `StickyNotesToggle` ancora a mesma gaveta, agora no extremo direito
+  de `MainTabs`, em degrau compacto. Escopos, menções, contador e fronteira de
+  colisão continuam os existentes. A paleta abre o Trabalho antes de abrir a
+  gaveta, garantindo acesso também a partir das visões globais.
+- **Conta:** o rodapé abre um `DropdownMenu` com Perfil, Configurações, Atalhos,
+  Tema e Sobre. Configurações mantém acesso pela paleta e por ⌘/Ctrl + vírgula
+  mesmo com a sidebar fechada. O sino conserva contador de bloqueios e ponto
+  de atividade; só o glifo muda.
+- **Tema:** `themePreference` guarda Claro, Escuro ou Sistema; `theme` continua
+  sendo a cor resolvida para todos os consumidores e para o evento da bandeja.
+  Instalações antigas herdam a preferência da cor salva. O listener de sistema
+  só altera a cor quando Sistema está selecionado, com limpeza ao desmontar.
+  Os entries principal e da bandeja resolvem Sistema antes do primeiro render.
+- **Caminhos de estado:** `setActiveProject`/`addProject` retornam ao Trabalho;
+  `setViewMode` e os setters globais mantêm a exclusividade existente;
+  `CommandMenu` abre Trabalho + `setDockOpen(true)`; `AccountMenu` usa
+  `setSettingsOpen` e `setTheme`. `computeContextualSplit` considera todas as
+  coberturas globais para não esconder uma aprovação numa conversa invisível.
+- **Validação:** testes de restauração existentes mantidos; cobertura de tema,
+  retorno ao Trabalho, navegação e acesso a Notas. Playwright verifica cliques,
+  atalhos, Sistema em tempo real e geometria em 940/1024/1280/1600px. Isso valida
+  o frontend no navegador; arraste nativo da janela e binário instalado exigem
+  a etapa de build e teste nativo.

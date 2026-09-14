@@ -2,7 +2,7 @@ import { InteractionHost } from "@/components/chat/InteractionHost"
 
 /** GlobalInteractionHost — montagem GLOBAL do InteractionHost (§6.1 item 4 do
  *  docs/agent-office.md, doc histórico). Antes o host morava dentro do
- *  ChatPanel e sumia quando o painel ficava `hidden` (modo painel/sdd) — um
+ *  ChatPanel e sumia quando o painel ficava `hidden` (modo painel) — um
  *  approval pendente deixava o turno pausado sem NENHUM card na tela.
  *
  *  Aqui ele vira overlay fixo, sempre visível em qualquer viewMode: card

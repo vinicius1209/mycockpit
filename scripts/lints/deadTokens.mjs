@@ -247,8 +247,7 @@ export const DEAD_TOKEN_RULES = [
       // verde novo.
       "components/mission/DoneSummary.tsx": { max: 3, motivo: "marco de missão concluída; +1 pelo `bg-st-success/[0.05]` do fundo do mesmo marco" },
       "components/mission/FlightPlansView.tsx": { max: 2, motivo: "marco de plano de voo concluído" },
-      "components/sdd/SddView.tsx": { max: 8, motivo: "marcos de etapa do SDD (spec/plan/tasks concluídos); +1 pelo `border-st-success/40` do mesmo marco. O `bg-st-success` do stepper NÃO está aqui: virou cinza em 15/08/2026 (§9 item 4)" },
-      "components/layout/InboxBell.tsx": { max: 2, motivo: "marco de item do inbox resolvido" },
+      "components/layout/InboxBell.tsx": { max: 1, motivo: "marco de turno concluído no feed de atividade. Apertado de 2→1 quando o ícone de PR saiu com a aba Features (ADR-185)" },
       // Família "domínio git": `+N` e linha de adição têm cor própria (§2).
       "components/layout/DiffPanel.tsx": { max: 2, motivo: "adições do diff (domínio git tem cor própria); 6→4 quando a linha do hunk foi pra DiffPanel/comments.tsx, 4→2 quando a coluna virou DiffIndex.tsx (F1.3) e levou a barra de totais junto" },
       "components/layout/DiffIndex.tsx": { max: 3, motivo: "mesma família: `+N` do total da barra, `+N` por arquivo da lista, e o `A` de arquivo novo herdado do STATUS_META" },

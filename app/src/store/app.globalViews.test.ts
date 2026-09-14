@@ -66,3 +66,12 @@ describe("workspaces globais", () => {
     expect(useApp.getState().fleetOpen).toBe(false)
   })
 })
+
+describe("Painel em Geral, Trabalho por projeto", () => {
+  it("selecionar o projeto atual também sai do Painel", () => {
+    useApp.getState().setViewMode("painel")
+    useApp.getState().setActiveProject("project-a")
+    expect(useApp.getState().viewMode).toBe("linear")
+    expect(useApp.getState().activeProjectId).toBe("project-a")
+  })
+})

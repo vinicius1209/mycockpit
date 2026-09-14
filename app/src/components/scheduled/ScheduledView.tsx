@@ -1,7 +1,7 @@
 // F6/F7 — view global "Agendado": a coleção cross-projeto de automações
 // estilo CRON (docs/automation-evolution.md). Abre no lugar do conteúdo
 // principal via useApp.scheduledOpen (estado próprio — o switcher
-// Painel|Trabalho|Features não a conhece). Tudo fail-soft: fora do Tauri a
+// Painel|Trabalho não a conhece). Tudo fail-soft: fora do Tauri a
 // lista fica vazia e as ações degradam em silêncio.
 
 import { useEffect, useMemo, useState } from "react"

@@ -31,7 +31,6 @@ function buildVocab(projectName?: string, extra: string[] = []): string[] {
   const base = [
     "Frota",
     "Fusion",
-    "SDD",
     "PRD",
     "worktree",
     "commit",

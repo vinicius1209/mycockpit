@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
-import { emit } from "@tauri-apps/api/event"
+import { applyTheme, currentTheme, type Theme, type ThemePreference } from "@/lib/theme"
 import type { PermissionMode, Project } from "@/lib/types"
 import type { MainTab } from "@/lib/mainTabs"
 import {
@@ -9,7 +9,6 @@ import {
   reconcileMissionPresets,
 } from "@/lib/settings"
 import {
-  isTauri,
   renameProject as dbRenameProject,
   setProjectColor as dbSetProjectColor,
   persistProjectOrder as dbPersistProjectOrder,
@@ -27,23 +26,29 @@ export type {
   TranscriptRevealRequest,
 } from "@/store/appTypes"
 
-type Theme = "dark" | "light"
+
+/** Destinos históricos persistidos. A navegação visível mora em Geral;
+ * preservar estes valores mantém a última tela no boot (ADR-187). */
+export const VIEW_MODES = ["painel", "linear"] as const
+export type ViewMode = (typeof VIEW_MODES)[number]
 
 interface AppState {
   projects: Project[]
   activeProjectId: string | null
   theme: Theme
+  themePreference: ThemePreference
+  setTheme: (preference: ThemePreference) => void
   sidebarOpen: boolean
   contextOpen: boolean
   /** Aba do painel direito. Efêmera, mas compartilhada porque o card de plano
    *  junto ao composer precisa saber quando a checklist já está aberta ali. */
   contextPanelTab: ContextPanelTab
-  /** Superfície do centro (F4): Painel (home cross-projeto), Trabalho (chat
-   *  Linear) ou Features (SDD). A disputa Fusion vive dentro da conversa via
-   *  ⚔️ do composer, não é um modo. Valores persistidos de modos que já
-   *  saíram do produto ("fusion", "office") migram para "linear" no persist
-   *  (v3/v4) — nunca abrimos num modo que não existe. */
-  viewMode: "painel" | "linear" | "sdd"
+  /** Superfície do centro (F4): Painel (home cross-projeto) ou Trabalho (chat
+   *  Linear). A disputa Fusion vive dentro da conversa via ⚔️ do composer, não
+   *  é um modo. Valores persistidos de modos que já saíram do produto
+   *  ("fusion", "office", "sdd") migram para "linear" no persist (v3/v4/v5):
+   *  nunca abrimos num modo que não existe. */
+  viewMode: ViewMode
   /** Aba aberta DENTRO da superfície Trabalho (docs/abas-no-principal-plan.md).
    *  União discriminada, igual à do Paseo, porque ela aguenta ganhar variante
    *  (terminal, PR) sem retrabalho. Hoje conversa, diff e arquivo usam o mesmo
@@ -76,18 +81,10 @@ interface AppState {
   mycockpit: Record<string, ProjectConfig>
   /** Agents com limite de uso atingido (id → hint de reset), cross-conversa. */
   limitedAgents: Record<string, string | null>
-  /** Slug de plano SDD pra focar ao entrar no modo (navegação do inbox). */
-  sddFocusSlug: string | null
-  /** Contador-gatilho: a sidebar pede "Nova feature" e o SddView (dono do form)
-   *  abre a criação ao ver o número mudar. Evita acoplamento direto. */
-  sddCreateRequested: number
   /** Contadores-gatilho dos launchers do composer (Launchpad pede, o
    *  CommandConsole — dono dos dialogs — abre ao ver mudar). */
   missionLaunchRequested: number
   fusionLaunchRequested: number
-  /** Versão dos DADOS do SDD: o SddView bumpa ao criar/recarregar planos e a
-   *  lista da sidebar recarrega ao ver mudar (dois caches, uma verdade). */
-  sddDataVersion: number
   /** P3 — Entrega→diff em 1 clique: intenção "abrir a conversa com o painel de
    *  Alterações já aberto" + o texto da entrega (vira o prefill de correção).
    *  Efêmera (não persiste); o ContextPanel consome quando a conversa bate. */
@@ -124,7 +121,7 @@ interface AppState {
   toggleSidebar: () => void
   toggleContext: () => void
   setContextPanelTab: (tab: ContextPanelTab) => void
-  setViewMode: (m: "painel" | "linear" | "sdd") => void
+  setViewMode: (m: ViewMode) => void
   /** Abre (ou refoca) a aba do diff, opcionalmente já num arquivo. */
   openDiffTab: (focusPath?: string) => void
   /** Abre um arquivo real na aba principal, fora da coluna estreita. */
@@ -147,14 +144,9 @@ interface AppState {
   setReady: (v: boolean) => void
   setAgentLimited: (agent: string, resetHint: string | null) => void
   clearAgentLimited: (agent: string) => void
-  setSddFocus: (slug: string | null) => void
-  /** Pede a abertura do form de Nova feature (bump do contador). */
-  requestSddCreate: () => void
   /** Pedem a abertura dos launchers de missão/disputa no composer. */
   requestMissionLaunch: () => void
   requestFusionLaunch: () => void
-  /** Sinaliza que os planos SDD mudaram no disco (criação/etapa/seed). */
-  bumpSddData: () => void
   /** Pede a abertura do diff de uma entrega (aba Alterações + header de correção). */
   requestDeliveryDiff: (convId: string, text: string) => void
   clearDeliveryDiff: () => void
@@ -174,21 +166,17 @@ interface AppState {
   ) => string | null
 }
 
-function applyTheme(theme: Theme) {
-  document.documentElement.classList.toggle("dark", theme === "dark")
-  // O popover da tray é OUTRO contexto JS (webview próprio) e só lê o tema no
-  // boot — sem este broadcast ele ficaria no tema antigo até reiniciar o app.
-  if (isTauri()) void emit("app://theme", theme).catch(() => {})
-}
-
 /** Migração PURA do estado persistido (mc.app) — exportada p/ teste porque o
  *  risco dela é o pior tipo: viewMode órfão persistido = boot num modo que não
  *  existe (tela branca) pra TODO usuário existente.
  *  - v<2: estado persistido = usuário existente → onboarded=true (instalação
  *    nova não passa por migrate → wizard aparece).
  *  - v<3: modo Fusion dissolvido (F3) → "fusion" vira "linear".
- *  - v<4: Escritório removido (office-removal-plan R2) → "office" e QUALQUER
- *    valor fora da união atual caem em "linear" (Trabalho), nunca tela branca. */
+ *  - v<4: Escritório removido (office-removal-plan R2) → "office" cai em
+ *    "linear" (Trabalho), nunca tela branca.
+ *  - v<5: Features (SDD) removida (remocao-features-prd D4) → "sdd" e QUALQUER
+ *    valor fora de `VIEW_MODES` caem em "linear". A regra do v4 foi absorvida
+ *    aqui: "fora da união atual" já cobre "office". */
 export function migratePersistedApp(
   persisted: unknown,
   fromVersion: number,
@@ -204,9 +192,9 @@ export function migratePersistedApp(
     p.viewMode = "linear"
   }
   if (
-    fromVersion < 4 &&
+    fromVersion < 5 &&
     p.viewMode != null &&
-    !["painel", "linear", "sdd"].includes(p.viewMode)
+    !(VIEW_MODES as readonly string[]).includes(p.viewMode)
   ) {
     p.viewMode = "linear"
   }
@@ -227,6 +215,7 @@ export const useApp = create<AppState>()(
       projects: [],
       activeProjectId: null,
       theme: "dark",
+      themePreference: "dark",
       sidebarOpen: true,
       contextOpen: true,
       contextPanelTab: "conversa",
@@ -241,11 +230,8 @@ export const useApp = create<AppState>()(
       ready: false,
       mycockpit: {},
       limitedAgents: {},
-      sddFocusSlug: null,
-      sddCreateRequested: 0,
       missionLaunchRequested: 0,
       fusionLaunchRequested: 0,
-      sddDataVersion: 0,
       deliveryDiff: null,
       settings: DEFAULT_SETTINGS,
       settingsOpen: false,
@@ -261,6 +247,10 @@ export const useApp = create<AppState>()(
         set((s) => ({
           projects: [p, ...s.projects],
           activeProjectId: p.id,
+          viewMode: "linear",
+          scheduledOpen: false,
+          flightPlansOpen: false,
+          fleetOpen: false,
           mainTab: { kind: "conversa" },
         })),
       setAddProjectOpen: (addProjectOpen) => set({ addProjectOpen }),
@@ -268,6 +258,7 @@ export const useApp = create<AppState>()(
       setActiveProject: (id) =>
         set({
           activeProjectId: id,
+          viewMode: "linear",
           mainTab: { kind: "conversa" },
           branchSplitOpen: false,
           scheduledOpen: false,
@@ -316,11 +307,16 @@ export const useApp = create<AppState>()(
           if (!cur) return {}
           return { mycockpit: { ...s.mycockpit, [id]: { ...cur, ...patch } } }
         }),
+      setTheme: (themePreference) => {
+        const theme = currentTheme(themePreference)
+        applyTheme(theme)
+        set({ theme, themePreference })
+      },
       toggleTheme: () =>
         set((s) => {
           const theme: Theme = s.theme === "dark" ? "light" : "dark"
           applyTheme(theme)
-          return { theme }
+          return { theme, themePreference: theme }
         }),
       toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
       setContextPanelTab: (contextPanelTab) => set({ contextPanelTab }),
@@ -396,15 +392,10 @@ export const useApp = create<AppState>()(
           delete rest[agent]
           return { limitedAgents: rest }
         }),
-      setSddFocus: (sddFocusSlug) => set({ sddFocusSlug }),
-      requestSddCreate: () =>
-        set((s) => ({ sddCreateRequested: s.sddCreateRequested + 1 })),
       requestMissionLaunch: () =>
         set((s) => ({ missionLaunchRequested: s.missionLaunchRequested + 1 })),
       requestFusionLaunch: () =>
         set((s) => ({ fusionLaunchRequested: s.fusionLaunchRequested + 1 })),
-      bumpSddData: () =>
-        set((s) => ({ sddDataVersion: s.sddDataVersion + 1 })),
       requestDeliveryDiff: (convId, text) =>
         set({ deliveryDiff: { convId, text } }),
       clearDeliveryDiff: () => set({ deliveryDiff: null }),
@@ -437,11 +428,12 @@ export const useApp = create<AppState>()(
     }),
     {
       name: "mc.app",
-      version: 4,
+      version: 5,
       // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
       // activeProjectId — esses vêm do banco no boot.
       partialize: (s) => ({
         theme: s.theme,
+        themePreference: s.themePreference,
         sidebarOpen: s.sidebarOpen,
         contextOpen: s.contextOpen,
         viewMode: s.viewMode,
@@ -458,6 +450,7 @@ export const useApp = create<AppState>()(
         return {
           ...current,
           ...p,
+          themePreference: p.themePreference ?? p.theme ?? "dark",
           settings: {
             ...current.settings,
             ...persistedSettings,
@@ -485,7 +478,7 @@ export const useApp = create<AppState>()(
       },
       // DOM ↔ estado ao reidratar (o pre-mount do main.tsx já evitou o flash).
       onRehydrateStorage: () => (state) => {
-        if (state) applyTheme(state.theme)
+        if (state) state.setTheme(state.themePreference)
       },
     },
   ),

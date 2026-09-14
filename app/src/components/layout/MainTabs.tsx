@@ -9,6 +9,7 @@
 // gramática ("qual superfície estou vendo"), e inventar um segundo desenho pra
 // ela seria dois idiomas pro mesmo gesto.
 
+import { StickyNotesToggle } from "@/components/notes/StickyNotesTrigger"
 import { useMemo } from "react"
 import {
   Columns2,
@@ -90,9 +91,9 @@ export function MainTabs({
 
   return (
     <div
-      className="flex shrink-0 items-center gap-1 border-b border-border/60 px-2 py-1"
+      className="flex shrink-0 items-center gap-1 border-b border-border/40 px-2 py-1"
     >
-      <div role="tablist" aria-label="Abas do painel" className="flex items-center gap-1">
+      <div role="tablist" aria-label="Abas do painel" className="flex min-w-0 items-center gap-1 overflow-x-auto">
         {hasBranches && family ? (
           family.branches.map((branch, idx) => {
             const isBranchActive = branch.id === activeId && tab.kind === "conversa"
@@ -187,7 +188,7 @@ export function MainTabs({
         <DropdownMenuContent
           align="start"
           sideOffset={6}
-          className="w-52 border-border/60"
+          className="w-52 border-border/40"
           onCloseAutoFocus={(e) => e.preventDefault()}
         >
           <DropdownMenuLabel className="px-2 py-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
@@ -226,7 +227,7 @@ export function MainTabs({
             <GitFork />
             Bifurcar do último turno
           </DropdownMenuItem>
-          <DropdownMenuSeparator className="bg-border/60" />
+          <DropdownMenuSeparator className="bg-border/40" />
           <DropdownMenuItem onSelect={openCommandMenu} className="text-[12px]">
             <Command />
             Todos os comandos
@@ -236,27 +237,30 @@ export function MainTabs({
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-      {hasBranches && (
-        <button
-          type="button"
-          onClick={toggleBranchSplit}
-          title={
-            branchSplitOpen
-              ? "Fechar visualização dividida de ramos"
-              : "Dividir tela para comparar ramos"
-          }
-          className={cn(
-            controle("chip"),
-            "ml-auto font-normal transition-colors",
-            branchSplitOpen
-              ? "bg-sel text-foreground"
-              : "text-muted-foreground/70 hover:bg-sel-hover hover:text-foreground",
-          )}
-        >
-          <Columns2 className="size-3.5 shrink-0" />
-          <span>Comparar ramos</span>
-        </button>
-      )}
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {hasBranches && (
+          <button
+            type="button"
+            onClick={toggleBranchSplit}
+            title={
+              branchSplitOpen
+                ? "Fechar visualização dividida de ramos"
+                : "Dividir tela para comparar ramos"
+            }
+            className={cn(
+              controle("chip"),
+              "ml-auto font-normal transition-colors",
+              branchSplitOpen
+                ? "bg-sel text-foreground"
+                : "text-muted-foreground/70 hover:bg-sel-hover hover:text-foreground",
+            )}
+          >
+            <Columns2 className="size-3.5 shrink-0" />
+            <span>Comparar ramos</span>
+          </button>
+        )}
+        <StickyNotesToggle />
+      </div>
     </div>
   )
 }

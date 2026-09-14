@@ -12,11 +12,7 @@ import {
   X,
 } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import {
-  ContextPanelTabs,
-  Section,
-  StageBadge,
-} from "@/components/layout/contextPanelChrome"
+import { ContextPanelTabs, Section } from "@/components/layout/contextPanelChrome"
 import { DiffIndex } from "@/components/layout/DiffIndex"
 import { ActiveConversationMapPanel } from "@/components/layout/ActiveConversationMapPanel"
 import { ProjectFilesPanel } from "@/components/layout/ProjectFilesPanel"
@@ -203,7 +199,7 @@ function SkeletonRows() {
 
 type DetailTarget = { title: string; path: string }
 
-/** Detalhe de um item de contexto (persona/spec/memória): lê o arquivo e renderiza. */
+/** Detalhe de um item de contexto (persona/memória): lê o arquivo e renderiza. */
 function DetailDialog({
   root,
   target,
@@ -737,27 +733,6 @@ export function ContextPanel() {
                         {p.description}
                       </p>
                     )}
-                  </button>
-                ))}
-              </div>
-            </Section>
-          )}
-
-          {status === "ready" && sources && sources.specs.length > 0 && (
-            <Section title="Specs">
-              <div className="flex flex-col gap-1">
-                {sources.specs.map((s) => (
-                  <button
-                    key={s.slug}
-                    onClick={() =>
-                      setDetail({ title: s.title ?? s.slug, path: s.path })
-                    }
-                    className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-accent/40"
-                  >
-                    <span className="truncate text-[12px] text-foreground/90">
-                      {s.title ?? s.slug}
-                    </span>
-                    {s.stage && <StageBadge stage={s.stage} />}
                   </button>
                 ))}
               </div>

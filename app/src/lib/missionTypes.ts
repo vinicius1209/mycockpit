@@ -1,5 +1,5 @@
 // CONTRATO de Missões e Planos de voo: fases configuram os agents; o grafo
-// determina a rota serial executada. Feature independente do SDD.
+// determina a rota serial executada.
 // Este arquivo é a fonte de verdade dos tipos — UI, store e settings
 // importam daqui; NÃO importar componentes/stores aqui (sem ciclos).
 // (só `import type` — apagados na compilação, sem ciclo em runtime.)

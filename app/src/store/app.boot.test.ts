@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest"
 import { migratePersistedApp, useApp } from "@/store/app"
-import { MODES } from "@/components/layout/titleBarModes"
+import { GLOBAL_NAVIGATION } from "@/components/layout/globalNavigation"
 
 describe("boot: em que superfície o app abre", () => {
   it("instalação nova abre no Trabalho, não no Painel", () => {
@@ -16,20 +16,20 @@ describe("boot: em que superfície o app abre", () => {
 
   it("usuário existente mantém a última aba que usou, inclusive o Painel", () => {
     // a regra é "abre no Trabalho pra quem nunca escolheu", nunca "força o
-    // Trabalho": a preferência persistida é do usuário, e a v4 não a reescreve.
+    // Trabalho": a preferência persistida é do usuário, e a v5 não a reescreve.
     expect(migratePersistedApp({ viewMode: "painel" }, 4).viewMode).toBe("painel")
-    expect(migratePersistedApp({ viewMode: "sdd" }, 4).viewMode).toBe("sdd")
     expect(migratePersistedApp({ viewMode: "linear" }, 4).viewMode).toBe("linear")
   })
 
   it("modo persistido que não existe mais continua caindo no Trabalho", () => {
     expect(migratePersistedApp({ viewMode: "office" }, 3).viewMode).toBe("linear")
+    expect(migratePersistedApp({ viewMode: "sdd" }, 4).viewMode).toBe("linear")
   })
 
-  it("o Painel segue no switcher (virou retrospectiva, não foi removido)", () => {
-    const painel = MODES.find((m) => m.id === "painel")
-    expect(painel?.available).toBe(true)
-    expect(MODES.map((m) => m.id)).toEqual(["painel", "linear", "sdd"])
+  it("o Painel segue acessível em Geral (retrospectiva global, ADR-187)", () => {
+    const painel = GLOBAL_NAVIGATION.find((m) => m.id === "painel")
+    expect(painel?.label).toBe("Painel")
+    expect(GLOBAL_NAVIGATION.map((m) => m.id)).toEqual(["painel", "fleet", "scheduled", "flightPlans"])
   })
 })
 

@@ -16,7 +16,6 @@ locais.
 |---|---|
 | **Painel** | retrospectiva de custo e entregas, sem fingir atividade |
 | **Trabalho** | conversas, diffs, planos vivos, decisões, notas e execução dos agentes |
-| **Features** | planejamento e entrega spec-driven com gates de verificação |
 
 Planos de voo, Agendamentos e Frota são workspaces globais abertos sobre essas
 superfícies. Especialistas aconselham ou pilotam dentro do mesmo conceito de

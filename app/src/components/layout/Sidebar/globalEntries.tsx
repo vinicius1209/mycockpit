@@ -7,8 +7,9 @@
 // fecha as outras (ver store/app.ts).
 
 import { useEffect, useState } from "react"
-import { Clock, Rocket, Route } from "lucide-react"
+import { Clock, Gauge, Rocket, Route } from "lucide-react"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
+import { controle } from "@/components/ui/controle"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -37,8 +38,10 @@ export function ScheduledEntry() {
       <button
         onClick={() => setScheduledOpen(true)}
         aria-label="Abrir Agendamentos"
+        aria-current={active ? "page" : undefined}
         className={cn(
-          "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
+          controle("padrao"),
+        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
           // Mesma receita única de "selecionado" das linhas da árvore (§2).
           active ? "bg-sel" : "hover:bg-sel-hover",
         )}
@@ -86,8 +89,10 @@ export function FlightPlansEntry() {
     <button
       onClick={() => setFlightPlansOpen(true)}
       aria-label="Abrir Planos de voo"
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
+        controle("padrao"),
+        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
         active ? "bg-sel" : "hover:bg-sel-hover",
       )}
     >
@@ -130,8 +135,10 @@ export function FleetEntry() {
     <button
       onClick={() => setFleetOpen(true)}
       aria-label="Abrir Frota"
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "group relative flex w-full items-center gap-2.5 rounded-md py-2 pr-2 pl-3 text-left transition-colors",
+        controle("padrao"),
+        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
         active ? "bg-sel" : "hover:bg-sel-hover",
       )}
     >
@@ -160,4 +167,13 @@ export function FleetEntry() {
       )}
     </button>
   )
+}
+
+/** Painel pertence à navegação global; Trabalho é o destino de projeto/conversa. */
+export function PanelEntry() {
+  const active = useApp((s) => s.viewMode === "painel" && !s.scheduledOpen && !s.flightPlansOpen && !s.fleetOpen)
+  return <button aria-label="Abrir Painel" aria-current={active ? "page" : undefined} onClick={() => useApp.getState().setViewMode("painel")} className={cn(controle("padrao"), "group flex w-full justify-start gap-2.5 text-left", active ? "bg-sel font-medium text-foreground" : "text-muted-foreground hover:bg-sel-hover hover:text-foreground")}>
+    <span className="grid size-5 shrink-0 place-items-center"><Gauge className="size-4" /></span>
+    <span>Painel</span>
+  </button>
 }

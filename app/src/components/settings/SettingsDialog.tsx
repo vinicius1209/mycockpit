@@ -1,3 +1,4 @@
+import { ThemeChoice } from "@/components/settings/ThemeChoice"
 // Configurações. O rail e o conteúdo leem o MESMO registro (sections.ts):
 // cada seção responde uma pergunta do usuário, e nenhum bloco mora numa seção
 // que não responde a pergunta dele. Foi a correção do build 191, onde "CLIs
@@ -89,8 +90,6 @@ export function SettingsDialog() {
   const setOpen = useApp((s) => s.setSettingsOpen)
   const requested = useApp((s) => s.settingsSection)
   const clearRequested = useApp((s) => s.clearSettingsSection)
-  const theme = useApp((s) => s.theme)
-  const toggleTheme = useApp((s) => s.toggleTheme)
   const settings = useApp((s) => s.settings)
   const setSettings = useApp((s) => s.setSettings)
   const conversationScale = normalizeConversationScale(
@@ -188,14 +187,10 @@ export function SettingsDialog() {
               <Header id="appearance" />
               <div className="divide-y divide-border/50">
                 <Field
-                  label="Tema claro"
-                  hint="Sua escolha agora fica salva entre reinícios."
+                  label="Tema"
+                  hint="Sistema acompanha a aparência do dispositivo. Sua escolha fica salva."
                 >
-                  <Switch
-                    checked={theme === "light"}
-                    onCheckedChange={() => toggleTheme()}
-                    aria-label="Tema claro"
-                  />
+                  <ThemeChoice />
                 </Field>
                 <Field
                   label="Tamanho das conversas"
@@ -269,8 +264,8 @@ export function SettingsDialog() {
                   </div>
                 </Field>
                 <div className="pt-3 text-[12px] leading-snug text-muted-foreground">
-                  Sidebar, painel de contexto e o modo (Linear/SDD) também
-                  são lembrados automaticamente ao reabrir o app.
+                  Sidebar, painel de contexto e a superfície aberta (Painel ou
+                  Trabalho) também são lembrados ao reabrir o app.
                 </div>
               </div>
             </div>

@@ -1,24 +1,17 @@
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useState } from "react"
 import {
   AlertCircle,
-  BellPlus,
   Check,
   CheckCheck,
-  ChevronDown,
-  ChevronRight,
   CircleHelp,
-  EyeOff,
-  FileText,
   Gauge,
-  GitPullRequest,
-  Inbox,
+  Bell,
   Lightbulb,
   MessageCircleQuestion,
   ShieldQuestion,
   SquareKanban,
   Swords,
   Trash2,
-  Undo2,
   X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -34,24 +27,16 @@ import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { openCardConversation, useCards } from "@/store/cards"
 import { useNotifs, type Notification } from "@/store/notifications"
-import { dismissProposal, setSddPlanIgnored } from "@/lib/db"
-import {
-  adoptPlan,
-  cardDecisions,
-  foundDecisions,
-  ignoredDecisions,
-  pendingDecisions,
-  scanDecisions,
-  type Decision,
-} from "@/lib/inbox"
+import { dismissProposal } from "@/lib/db"
+import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
 import {
   ToolsSection,
   useToolsSection,
 } from "@/components/layout/ToolsSection"
 import { cn } from "@/lib/utils"
 
-/** Navega direto pra ONDE a decisão mora: a conversa (Fusion), o card do
- *  board (E1) ou o plano (SDD). */
+/** Navega direto pra ONDE a decisão mora: a conversa (Fusion) ou o card do
+ *  board (E1). A proposta abre a fila da faixa. */
 async function goTo(d: Decision) {
   const app = useApp.getState()
   // "Ver proposta" do sino: o card completo (expansível) mora na fila da FAIXA
@@ -67,14 +52,11 @@ async function goTo(d: Decision) {
     await useChat.getState().openProject(d.projectId)
     await useChat.getState().switchConversation(d.convId)
     app.setViewMode("linear")
-  } else if (d.kind === "card") {
+  } else {
     // Sem conversa ligada o card não tem tela própria (o Board saiu do Painel,
     // ADR-040): o lugar onde ele EXISTE é a fila da faixa. Abrir a fila é o
     // destino honesto; trocar de superfície pra nada seria clique morto.
     if (!(await openCardConversation(d.cardId))) app.setDecisionsOpen(true)
-  } else {
-    app.setSddFocus(d.slug)
-    app.setViewMode("sdd")
   }
 }
 
@@ -97,33 +79,20 @@ function fmtRelative(ts: number): string {
   return `há ${Math.floor(h / 24)} d`
 }
 
-/** Idade a partir de um ISO (created_at do manifest do SDD). null/inválido =
- *  sem idade (mesmo formatador relativo do resto do app). */
-function fmtRelativeIso(iso: string | null): string | null {
-  if (!iso) return null
-  const ts = Date.parse(iso)
-  return Number.isFinite(ts) ? fmtRelative(ts) : null
-}
-
 /** Chave estável por decisão (o índice do array mudaria de dono ao filtrar). */
 function decisionKey(d: Decision): string {
   return d.kind === "fusion"
     ? `fusion:${d.convId}`
     : d.kind === "card"
       ? `card:${d.cardId}`
-      : d.kind === "proposal"
-        ? `proposal:${d.proposalId}`
-        : `${d.kind}:${d.projectId}:${d.slug}`
+      : `proposal:${d.proposalId}`
 }
 
 function DecisionIcon({ d }: { d: Decision }) {
   if (d.kind === "fusion") return <Swords className="size-3.5 shrink-0 text-brass" />
   if (d.kind === "card")
     return <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
-  if (d.kind === "prd") return <FileText className="size-3.5 shrink-0 text-brass" />
-  if (d.kind === "proposal")
-    return <Lightbulb className="size-3.5 shrink-0 text-brass" />
-  return <GitPullRequest className="size-3.5 shrink-0 text-st-success" />
+  return <Lightbulb className="size-3.5 shrink-0 text-brass" />
 }
 
 function decisionTitle(d: Decision): string {
@@ -131,48 +100,28 @@ function decisionTitle(d: Decision): string {
     ? "Escolher o vencedor da disputa"
     : d.kind === "card"
       ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
-      : d.kind === "prd"
-        ? `Aprovar PRD: ${d.planTitle}`
-        : d.kind === "proposal"
-          ? "Ver proposta do lead"
-          : `PR aberto: ${d.planTitle}`
+      : "Ver proposta do lead"
 }
 
 /** Tooltip: mostra o que o truncamento come (disputa/card mostram o título
  *  cru; a proposta explica pra onde o clique leva). */
 function decisionHint(d: Decision): string {
-  return d.kind === "fusion" || d.kind === "card"
-    ? d.title
-    : d.kind === "proposal"
-      ? "Abrir a proposta do lead na fila"
-      : decisionTitle(d)
+  return d.kind === "proposal" ? "Abrir a proposta do lead na fila" : d.title
 }
 
-/** 2ª linha: pros gates do SDD, ORIGEM e IDADE visíveis (de onde o app leu e
- *  quando o plano nasceu) — é o que separa "isso te espera" de "isso estava
- *  aqui desde maio". */
+/** 2ª linha: de qual projeto, e o que o título truncado não diz. */
 function decisionMeta(d: Decision): string {
   if (d.kind === "fusion") return `${d.title} · ${d.projectName}`
   if (d.kind === "proposal")
     return `${d.projectName ?? "board inteiro"} · ${d.excerpt}`
-  if (d.kind === "card")
-    return d.stalledSince != null
-      ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
-        `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
-      : d.projectName
-  const age = fmtRelativeIso(d.createdAt)
-  return [
-    d.projectName,
-    d.origin.path,
-    age ? `criado ${age}` : null,
-    d.kind === "pr" ? "aguardando merge" : null,
-  ]
-    .filter(Boolean)
-    .join(" · ")
+  return d.stalledSince != null
+    ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
+      `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
+    : d.projectName
 }
 
 /** Uma linha do inbox. `action` é o gesto discreto do hover (dispensar a
- *  proposta, ignorar o plano descoberto, restaurar o ignorado). */
+ *  proposta). */
 interface RowAction {
   icon: typeof X
   label: string
@@ -182,12 +131,10 @@ interface RowAction {
 function DecisionRow({
   d,
   actions,
-  muted,
 }: {
   d: Decision
   /** Ações da linha (aparecem no hover, sem navegar). */
   actions?: RowAction[]
-  muted?: boolean
 }) {
   return (
     <DropdownMenuItem
@@ -195,10 +142,7 @@ function DecisionRow({
       className="flex-col items-start gap-0.5 py-2"
     >
       <span
-        className={cn(
-          "group/decision flex w-full items-center gap-2 text-[13px]",
-          muted ? "text-muted-foreground" : "text-foreground",
-        )}
+        className="group/decision flex w-full items-center gap-2 text-[13px] text-foreground"
         title={decisionHint(d)}
       >
         <DecisionIcon d={d} />
@@ -255,65 +199,34 @@ export function InboxBell() {
   const removeNotif = useNotifs((s) => s.remove)
   const clearNotifs = useNotifs((s) => s.clear)
   const [filter, setFilter] = useState<"all" | "unread">("all")
-  const [showIgnored, setShowIgnored] = useState(false)
   const tools = useToolsSection()
   const { reloadModels } = tools
 
   const refresh = useCallback(() => {
     reloadModels()
-    if (projects.length === 0) return
+    // Sem projeto não sobra decisão de ninguém: limpar, e não congelar a lista
+    // do último projeto arquivado.
+    if (projects.length === 0) {
+      setDecisions([])
+      return
+    }
     // E1 (S1.6): cards em review/blocked entram no sino também (D4) — o store
     // é hidratado no boot, então getState() dentro do refresh basta (mesmo
     // ritmo do scan: ao abrir o dropdown e na troca de projetos).
-    // includeIgnored: o sino é o ÚNICO lugar que sabe reverter um "ignorar",
-    // então ele carrega os ignorados junto (fora das duas listas visíveis).
-    void scanDecisions(projects, { includeIgnored: true }).then((d) =>
-      setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
-    )
+    void scanDecisions(projects)
+      .then((d) =>
+        setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
+      )
+      .catch((err) => {
+        // ADR-017: mesma régua da faixa. A lista anterior fica, e o motivo vai
+        // pro console em vez de sumir numa promise sem dono.
+        console.warn("[inbox] varredura de decisões falhou", err)
+      })
   }, [projects, reloadModels])
 
   useEffect(() => {
     refresh()
   }, [refresh])
-
-  // Três listas com semânticas diferentes: o que ESPERA você (badge), o que o
-  // app só ACHOU no seu disco e o que você mandou sumir.
-  const pending = useMemo(() => pendingDecisions(decisions), [decisions])
-  const found = useMemo(() => foundDecisions(decisions), [decisions])
-  const ignored = useMemo(() => ignoredDecisions(decisions), [decisions])
-
-  /** Ignorar/restaurar um gate do SDD. Persistido na tabela do app (o
-   *  .claude/plans do usuário NUNCA é escrito). Falhou (inclusive "sem banco")
-   *  = o item NÃO some. */
-  const setIgnored = useCallback(
-    (d: Extract<Decision, { kind: "prd" | "pr" }>, ignore: boolean) => {
-      void setSddPlanIgnored(d.projectId, d.slug, ignore)
-        .then((saved) => {
-          if (!saved) {
-            console.warn("[inbox] sem banco: o plano não foi ignorado/restaurado")
-            return
-          }
-          refresh()
-        })
-        .catch((err) => {
-          console.warn("[inbox] falha ao ignorar/restaurar o plano", err)
-        })
-    },
-    [refresh],
-  )
-
-  /** Adotar um gate ACHADO no disco: ele sobe pra "Precisam de você" e passa a
-   *  contar no badge. Também é o resgate do plano que nasceu no app e perdeu a
-   *  marca da adoção (banco travado na hora da criação). */
-  const adopt = useCallback(
-    (d: Extract<Decision, { kind: "prd" | "pr" }>) => {
-      void adoptPlan(d.projectId, d.slug).then((ok) => {
-        // adoptPlan já avisou no console; sem gravação, nada muda de seção.
-        if (ok) refresh()
-      })
-    },
-    [refresh],
-  )
 
   const unread = notifs.filter((n) => !n.read).length
   const feed = filter === "unread" ? notifs.filter((n) => !n.read) : notifs
@@ -323,7 +236,7 @@ export function InboxBell() {
   const blockedTools = tools.blockedTools
   const hasToolSection = tools.hasSection
   /** O que o badge conta: decisão pendente + ferramenta que bloqueia. */
-  const blocked = pending.length + blockedTools
+  const blocked = decisions.length + blockedTools
 
   return (
     <DropdownMenu onOpenChange={(o) => o && refresh()}>
@@ -345,7 +258,7 @@ export function InboxBell() {
               tamanho do selo (size-2 → -1; size-4 → -2). O `ring-2 ring-rail`
               recorta o selo do desenho por baixo, nos dois estados. */}
           <span className="relative flex size-4 items-center justify-center">
-            <Inbox className="size-4" />
+            <Bell className="size-4" />
             {/* Decisões BLOQUEIAM você → contador ÂMBAR (§2: âmbar é "precisa
                 de você"; brass é gesto, e um contador não é um gesto). Era
                 brass, e isso partia a trilha no primeiro passo: o ponto do slot
@@ -356,10 +269,7 @@ export function InboxBell() {
                 3,03:1 num dígito de 11px. Só não-lidas
                 → ponto discreto (informativo). Não somar os dois: "3" seria
                 ambíguo entre "3 decisões esperando" e "3 turnos terminaram".
-                O badge conta só o PENDENTE: gate do SDD que o app apenas achou
-                no disco (sem gesto seu por aqui) vive na seção de baixo e não
-                acende alarme, senão dívida de 68 dias vira "precisa de você
-                agora". CLI sem login soma AQUI porque passa no mesmo teste das
+                CLI sem login soma AQUI porque passa no mesmo teste das
                 decisões: bloqueia trabalho e some com um gesto seu. Update
                 disponível NÃO soma (fica na lista, sem gritar): dura dias e não
                 impede nada, e sino permanentemente aceso é o custo que o
@@ -390,17 +300,17 @@ export function InboxBell() {
             bloqueando: com o badge aceso por causa de uma CLI deslogada, abrir
             o sino e ler "Nada esperando você" seria mentira. Nesse caso a seção
             Ferramentas lidera a lista, que é onde está a verdade. */}
-        {(pending.length > 0 || blockedTools === 0) && (
+        {(decisions.length > 0 || blockedTools === 0) && (
           <>
             <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
               Precisam de você
             </DropdownMenuLabel>
-            {pending.length === 0 ? (
+            {decisions.length === 0 ? (
               <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
                 Nada esperando você.
               </div>
             ) : (
-              pending.map((d) => (
+              decisions.map((d) => (
                 <DecisionRow
                   key={decisionKey(d)}
                   d={d}
@@ -422,15 +332,7 @@ export function InboxBell() {
                                 }),
                           },
                         ]
-                      : d.kind === "prd" || d.kind === "pr"
-                        ? [
-                            {
-                              icon: EyeOff,
-                              label: "Ignorar este plano",
-                              run: () => setIgnored(d, true),
-                            },
-                          ]
-                        : undefined
+                      : undefined
                   }
                 />
               ))
@@ -444,77 +346,6 @@ export function InboxBell() {
           state={tools}
           openSettings={(secao) => setSettingsOpen(true, secao)}
         />
-
-        {/* Encontrados no projeto — o app LEU do disco, ninguém te chamou. Não
-            conta no badge; conta a partir do 1º gesto seu pelo app no plano. */}
-        {found.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              Encontrados no projeto ({found.length})
-            </DropdownMenuLabel>
-            {found.map((d) => (
-              <DecisionRow
-                key={decisionKey(d)}
-                d={d}
-                muted
-                actions={
-                  d.kind === "prd" || d.kind === "pr"
-                    ? [
-                        {
-                          icon: BellPlus,
-                          label: "Adotar (passa a contar como pendência)",
-                          run: () => adopt(d),
-                        },
-                        {
-                          icon: EyeOff,
-                          label: "Ignorar este plano",
-                          run: () => setIgnored(d, true),
-                        },
-                      ]
-                    : undefined
-                }
-              />
-            ))}
-          </>
-        )}
-
-        {/* Ignorados — linha discreta que expande, pra ver e desfazer. */}
-        {ignored.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <button
-              onClick={() => setShowIgnored((v) => !v)}
-              className="flex w-full items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {showIgnored ? (
-                <ChevronDown className="size-3 shrink-0" />
-              ) : (
-                <ChevronRight className="size-3 shrink-0" />
-              )}
-              {ignored.length} ignorado{ignored.length > 1 ? "s" : ""}
-            </button>
-            {showIgnored &&
-              ignored.map((d) => (
-                <DecisionRow
-                  key={decisionKey(d)}
-                  d={d}
-                  muted
-                  actions={
-                    d.kind === "prd" || d.kind === "pr"
-                      ? [
-                          {
-                            icon: Undo2,
-                            label: "Trazer de volta",
-                            run: () => setIgnored(d, false),
-                          },
-                        ]
-                      : undefined
-                  }
-                />
-              ))}
-          </>
-        )}
 
         {/* Atividade — feed de eventos (turnos, erros, limites) */}
         {notifs.length > 0 && (

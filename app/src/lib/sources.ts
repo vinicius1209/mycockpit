@@ -8,13 +8,6 @@ export interface Persona {
   path: string
 }
 
-export interface Spec {
-  slug: string
-  stage: string | null
-  title: string | null
-  path: string
-}
-
 export interface MemoryInfo {
   exists: boolean
   count: number
@@ -29,7 +22,6 @@ export interface Drift {
 
 export interface ProjectSources {
   personas: Persona[]
-  specs: Spec[]
   memory: MemoryInfo
   drift: Drift[]
 }
@@ -38,7 +30,7 @@ export async function readProjectSources(path: string): Promise<ProjectSources> 
   return invoke<ProjectSources>("read_project_sources", { path })
 }
 
-/** Lê o conteúdo de um arquivo (persona/spec/memória) p/ o detalhe. `root` =
+/** Lê o conteúdo de um arquivo (persona/memória) p/ o detalhe. `root` =
  *  raiz permitida (pasta do projeto); o backend também aceita ~/.claude. */
 export async function readTextFile(root: string, path: string): Promise<string> {
   return invoke<string>("read_text_file", { root, path })

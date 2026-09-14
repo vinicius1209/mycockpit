@@ -1,5 +1,9 @@
 # MISSÃO — Modo SDD (feature delivery cockpit)
 
+> **Histórico (13/09/2026):** a aba Features (SDD) saiu do app pelo ADR-185
+> (`docs/remocao-features-prd.md`). Este documento fica como memória do
+> desenho; nada aqui descreve o código atual.
+
 > **Status:** em construção (spike validado contra dados reais). Abre 2026-06-29.
 > **Norte:** Linear = perguntar e executar rápido · Fusion = comparar e decidir melhor · **SDD = planejar, contratar, implementar, verificar, revisar e entregar com rastreabilidade.**
 > **Fonte do fluxo:** `vinicius1209/skills` (brief completo do fluxo real) + os 20 planos reais do prime-sales-hub. **Decisão:** seleção≫fusão e PRD-é-o-único-gate continuam valendo.

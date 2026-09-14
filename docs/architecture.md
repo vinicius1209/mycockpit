@@ -8,7 +8,7 @@
 ## Mapa geral
 
 ```text
-React 19 (Painel | Trabalho | Features)
+React 19 (Painel | Trabalho)
         │
         ├── zustand: navegação, transcript, execuções e estado de UI
         ├── SQLite: projetos, conversas, rascunhos, custo e artefatos
@@ -33,16 +33,21 @@ consultam o registry, não comparam ids de agentes.
 
 ## Superfícies e navegação
 
-As três superfícies permanentes estão em
-`app/src/components/layout/titleBarModes.ts`:
+Geral reúne as visões globais, na ordem de
+`app/src/components/layout/globalNavigation.ts`. O Trabalho abre ao selecionar
+um projeto ou conversa (ADR-187):
 
 | Superfície | Objeto principal |
 |---|---|
 | **Painel** | retrospectiva de custo e entregas |
 | **Trabalho** | conversas e execução dos agentes |
-| **Features** | especificação e entrega com gates |
 
-Agendamentos, Planos de voo e Frota são workspaces globais. Conversas podem
+A terceira superfície, Features (SDD), saiu em 13/09/2026: ver ADR-185 e
+`docs/remocao-features-prd.md`.
+
+Painel, Agendamentos, Planos de voo e Frota são visões globais. A barra superior
+centraliza a busca; Notas fica na tira de abas do Trabalho e as preferências
+ficam no menu da conta. Conversas podem
 continuar executando quando outra superfície ou outro projeto está visível; a
 sidebar e a faixa de status exibem o estado real sem transformar seleção em
 atividade.
@@ -201,7 +206,9 @@ Entidades centrais:
   humanas em registros separados;
 - `utility_inference_usage`: observação de fonte, latência, sucesso e custo
   conhecido ou desconhecido por finalidade;
-- `missions`, `deliveries`, `stage_runs`: execução e evidência das Features;
+- `missions`, `deliveries`: execução e evidência das missões;
+- `stage_runs`: histórico somente-leitura das etapas da antiga aba Features,
+  que ainda soma no ledger do Painel (ADR-185);
 - `mcp_servers`, `mcp_bindings`, `mcp_health`: control plane MCP;
 - `plugin_grants`, `plugin_audit_events`: decisão humana atual e trilha recente
   de grants, enablement e chamadas de plugin.

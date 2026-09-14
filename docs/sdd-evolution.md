@@ -1,5 +1,9 @@
 # SDD — avaliação honesta + plano de evolução
 
+> **Histórico (13/09/2026):** a aba Features (SDD) saiu do app pelo ADR-185
+> (`docs/remocao-features-prd.md`). Este documento fica como memória do
+> desenho; nada aqui descreve o código atual.
+
 > Gatilho: features do prime-sales-hub presas em "aguardando /developer" com o
 > trabalho JÁ FEITO. Diagnóstico + pesquisa da comunidade (spec-kit, OpenSpec,
 > Kiro, BMAD, Agent OS, Taskmaster, ccpm, agent-orchestrator) em 2026-07-13.

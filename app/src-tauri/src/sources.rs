@@ -1,6 +1,5 @@
 //! Fase 2, "source resolver": indexa as fontes REAIS do projeto (NÃO copia).
-//! Personas ← .claude/agents · Specs ← .claude/plans/{slug}/manifest.json ·
-//! Memórias ← dir path-encoded do Claude CLI. Sempre lê do disco; zero store paralelo.
+//! Personas ← .claude/agents · Memórias ← dir path-encoded do Claude CLI. Sempre lê do disco; zero store paralelo.
 
 use serde::Serialize;
 use std::io::Read;
@@ -16,14 +15,6 @@ pub struct Persona {
     pub name: String,
     pub description: Option<String>,
     pub model: Option<String>,
-    pub path: String,
-}
-
-#[derive(Serialize)]
-pub struct Spec {
-    pub slug: String,
-    pub stage: Option<String>,
-    pub title: Option<String>,
     pub path: String,
 }
 
@@ -46,7 +37,6 @@ pub struct Drift {
 #[derive(Serialize)]
 pub struct ProjectSources {
     pub personas: Vec<Persona>,
-    pub specs: Vec<Spec>,
     pub memory: MemoryInfo,
     pub drift: Vec<Drift>,
 }
@@ -127,51 +117,6 @@ fn read_personas(claude_dir: &Path) -> Vec<Persona> {
     out
 }
 
-fn read_specs(claude_dir: &Path) -> Vec<Spec> {
-    let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(claude_dir.join("plans")) {
-        for e in rd.filter_map(|e| e.ok()) {
-            let dir = e.path();
-            let manifest = dir.join("manifest.json");
-            if !dir.is_dir() || !manifest.is_file() {
-                continue;
-            }
-            let slug = dir
-                .file_name()
-                .and_then(|s| s.to_str())
-                .unwrap_or("")
-                .to_string();
-            let (stage, title) = std::fs::read_to_string(&manifest)
-                .ok()
-                .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-                .map(|v| {
-                    let get = |k: &str| v.get(k).and_then(|x| x.as_str()).map(str::to_string);
-                    (
-                        get("stage"),
-                        get("title")
-                            .or_else(|| get("name"))
-                            .or_else(|| get("description")),
-                    )
-                })
-                .unwrap_or((None, None));
-            // detalhe: prefere SPEC.md → PRD.md → manifest.json
-            let detail = ["SPEC.md", "PRD.md", "manifest.json"]
-                .iter()
-                .map(|f| dir.join(f))
-                .find(|p| p.is_file())
-                .unwrap_or_else(|| manifest.clone());
-            out.push(Spec {
-                slug,
-                stage,
-                title,
-                path: detail.to_string_lossy().to_string(),
-            });
-        }
-    }
-    out.sort_by(|a, b| a.slug.cmp(&b.slug));
-    out
-}
-
 /// Dir de memória per-projeto do Claude CLI: ~/.claude/projects/<path-encoded>/memory
 /// onde <path-encoded> = caminho absoluto com `/` → `-`.
 fn read_memory(project_path: &str) -> MemoryInfo {
@@ -241,7 +186,6 @@ fn read_project_sources_sync(path: &str) -> ProjectSources {
     let cd = base.join(".claude");
     ProjectSources {
         personas: read_personas(&cd),
-        specs: read_specs(&cd),
         memory: read_memory(path),
         drift: read_drift(base),
     }
@@ -254,7 +198,7 @@ pub async fn read_project_sources(path: String) -> Result<ProjectSources, String
         .map_err(|error| error.to_string())
 }
 
-/// Lê um arquivo de texto (p/ o detalhe de persona/spec/memória e visualizador de markdown). Trunca p/ a UI.
+/// Lê um arquivo de texto (p/ o detalhe de persona/memória e visualizador de markdown). Trunca p/ a UI.
 /// ESCOPADO: só dentro da raiz dada (o projeto), extra_dirs autorizados, ~/.claude, artefatos do brain
 /// ou anexos do app. Markdown renderizado na UI nunca deve virar primitiva de
 /// leitura arbitrária do disco (~/.ssh, /etc etc).

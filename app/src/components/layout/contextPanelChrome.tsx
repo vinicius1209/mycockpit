@@ -30,26 +30,6 @@ export function Section({
   )
 }
 
-/** Estágio do manifest SDD (discovery→…→done).
- *
- *  CINZA NOS DOIS ESTADOS (Fase 5). O não-concluído era `bg-brass/15
- *  text-brass`, e isso é brass-como-ESTADO: o §2 dá ao brass um trabalho só
- *  (gesto — ação primária/sensível, foco, marca), e um estágio não é gesto
- *  nenhum. Também não é nenhuma das cores de status: não é decisão pendente
- *  (âmbar), não roda agora (azul), não falhou (vermelho) e não é marco raro
- *  (verde, que o §9 item 4 já condenou como badge permanente). Sobra a regra
- *  do ambiente: cinza.
- *  E a distinção não se perde, porque ela nunca esteve na tinta — o badge
- *  IMPRIME o nome do estágio ("done" × "discovery"). É a régua do §9 item 4:
- *  quem precisa distinguir dois estados saudáveis usa TEXTO. */
-export function StageBadge({ stage }: { stage: string }) {
-  return (
-    <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
-      {stage}
-    </span>
-  )
-}
-
 /** Aba do painel (Arquivos | Conversa | Alterações | Contexto). Ativa = a MESMA
  *  receita das linhas da árvore (§2, ADR-043): preenchimento neutro `--sel` +
  *  peso, sem tinta. Saiu o sublinhado brass, que era a terceira linguagem de

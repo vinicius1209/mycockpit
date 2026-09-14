@@ -69,7 +69,6 @@ mod run_processes;
 mod run_resources;
 mod sandbox;
 pub mod scope_guidance;
-mod sdd;
 mod skills;
 mod sources;
 mod statusline_install;
@@ -876,13 +875,6 @@ pub fn run() {
             project_files::search_project_files,
             sources::write_mission_state,
             sources::list_mission_files,
-            sdd::read_sdd_plans,
-            sdd::pr_info,
-            sdd::sdd_ready,
-            sdd::seed_sdd,
-            sdd::approve_prd,
-            sdd::create_plan,
-            sdd::set_plan_stage,
             skills::write_skill,
             git::git_diff,
             git::git_worktree_pulse,
@@ -905,8 +897,6 @@ pub fn run() {
             git::git_diff_staged,
             git::git_create_pr,
             git::pr_context,
-            github::gh_pr_view,
-            github::gh_pr_merge,
             github::gh_status,
             github::gh_switch_account,
             mcp_control::discover_mcp_servers,

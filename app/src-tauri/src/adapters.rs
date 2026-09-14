@@ -1574,6 +1574,14 @@ pub struct ClaudeAdapter {
     /// Destino da evidência visual (B1). None = sem gravação (testes/headless
     /// sem app_data_dir): tool_result segue só texto.
     evidence: Option<crate::evidence::EvidenceSink>,
+    /// Texto que os `text_delta` do bloco ABERTO já entregaram. É a régua pra
+    /// completar a cauda quando o `assistant` consolidado chega com mais texto
+    /// do que os deltas trouxeram (ver o arm "assistant").
+    texto_do_bloco: String,
+    /// Existe um bloco de TEXTO aberto (`content_block_start` sem `stop`)? Fora
+    /// dele, o `assistant` nunca completa nada: mensagem cumulativa ou CLI sem
+    /// `--include-partial-messages` repetiriam texto que já está na tela.
+    bloco_de_texto_aberto: bool,
 }
 
 impl AgentAdapter for ClaudeAdapter {
@@ -2089,7 +2097,7 @@ impl AgentAdapter for ClaudeAdapter {
             // H2, streaming por bloco. text_delta → TextDelta; content_block_stop
             // → TextStop (FECHA a bolha do bloco — sem isso, deltas de blocos
             // diferentes colam na mesma bolha, às vezes no meio da palavra). Tool
-            // input deltas e block_start seguem ignorados.
+            // input deltas seguem ignorados; block_start delimita a recomposição.
             "stream_event" => {
                 let ev = v.get("event");
                 let ev_type = ev.and_then(|e| e.get("type")).and_then(|x| x.as_str());
@@ -2100,12 +2108,23 @@ impl AgentAdapter for ClaudeAdapter {
                     if is_text {
                         if let Some(t) = delta.and_then(|d| d.get("text")).and_then(|x| x.as_str())
                         {
+                            if self.bloco_de_texto_aberto {
+                                self.texto_do_bloco.push_str(t);
+                            }
                             return vec![AgentEvent::TextDelta {
                                 text: t.to_string(),
                             }];
                         }
                     }
+                } else if ev_type == Some("content_block_start") {
+                    self.texto_do_bloco.clear();
+                    self.bloco_de_texto_aberto = ev
+                        .and_then(|e| e.pointer("/content_block/type"))
+                        .and_then(|x| x.as_str())
+                        == Some("text");
                 } else if ev_type == Some("content_block_stop") {
+                    self.texto_do_bloco.clear();
+                    self.bloco_de_texto_aberto = false;
                     // fecha a bolha do bloco que acabou (o próximo começa limpo).
                     return vec![AgentEvent::TextStop];
                 }
@@ -2120,13 +2139,44 @@ impl AgentAdapter for ClaudeAdapter {
                 // messages) → o `text` consolidado é REDUNDANTE e, com ≥2 blocos,
                 // criava a bolha duplicada no meio da frase. Então só emitimos o
                 // `Text` consolidado pra SUBAGENT (que chega sem deltas — é a
-                // única fonte dele).
+                // única fonte dele). Pro principal, o consolidado só serve pra
+                // completar a CAUDA que os deltas não trouxeram (logo abaixo).
                 let parent_tool_id = v
                     .get("parent_tool_use_id")
                     .and_then(|x| x.as_str())
                     .filter(|id| !id.is_empty())
                     .map(str::to_string);
                 let is_subagent = parent_tool_id.is_some();
+                // Cauda perdida dos deltas. No stream real (claude 2.1.266,
+                // `testdata/claude-2.1.266`) a ordem de cada bloco é `text_delta`…
+                // → `assistant` com o texto INTEIRO do bloco → `content_block_stop`.
+                // Então o consolidado chega com a bolha ainda aberta, e o que ele
+                // tem além do que os deltas já entregaram é texto que se perdeu no
+                // caminho: vai como delta na MESMA bolha, antes do stop. Só completa
+                // quando os deltas são prefixo exato do consolidado; divergência não
+                // é cauda, e reescrever o que a pessoa já leu seria pior.
+                if !is_subagent && self.bloco_de_texto_aberto {
+                    let ultimo_texto = v
+                        .pointer("/message/content")
+                        .and_then(|x| x.as_array())
+                        .and_then(|blocos| {
+                            blocos
+                                .iter()
+                                .rev()
+                                .find(|b| b.get("type").and_then(|x| x.as_str()) == Some("text"))
+                        })
+                        .and_then(|b| b.get("text"))
+                        .and_then(|x| x.as_str());
+                    if let Some(completo) = ultimo_texto {
+                        if completo.len() > self.texto_do_bloco.len()
+                            && completo.starts_with(self.texto_do_bloco.as_str())
+                        {
+                            let cauda = completo[self.texto_do_bloco.len()..].to_string();
+                            self.texto_do_bloco.push_str(&cauda);
+                            out.push(AgentEvent::TextDelta { text: cauda });
+                        }
+                    }
+                }
                 if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
                     for block in content {
                         match block.get("type").and_then(|x| x.as_str()) {
@@ -3594,6 +3644,10 @@ fn codex_config_model() -> Option<String> {
 pub fn codex_cost_model(requested: Option<&str>) -> Option<String> {
     requested.map(str::to_string).or_else(codex_config_model)
 }
+
+#[cfg(test)]
+#[path = "adapters_claude_tail_tests.rs"]
+mod claude_tail_tests;
 
 #[cfg(test)]
 mod tests {

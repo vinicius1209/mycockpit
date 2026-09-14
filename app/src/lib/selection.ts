@@ -24,8 +24,8 @@
 //    `accent-color`): ligar/desligar UM comportamento não é escolher entre
 //    itens, e o preenchimento do trilho É a afordância — neutro ali deixaria
 //    ligado e desligado com o mesmo pixel. Segue brass.
-//  - **Controle segmentado** (comutador da barra superior — Painel/Trabalho/
-//    Features): exceção já fechada no §2, segue em E1 (`bg-card` +
+//  - **Controle segmentado** (comutador da barra superior, Painel/Trabalho):
+//    exceção já fechada no §2, segue em E1 (`bg-card` +
 //    `--shadow-sm`). A permissão da linha de Execução SAIU desta lista quando
 //    virou lista vertical no painel de colapso: lá ela é `SELECTED_FILL`
 //    normal, como qualquer opção de menu — só "Liberado" segue amber pela

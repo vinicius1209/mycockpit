@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// Deaccent mínimo p/ nomes em pt-BR virarem slug ASCII (espelha sdd::deaccent).
+/// Deaccent mínimo p/ nomes em pt-BR virarem slug ASCII.
 fn deaccent(c: char) -> char {
     match c {
         'á' | 'à' | 'â' | 'ã' | 'ä' => 'a',

@@ -1,0 +1,1 @@
+Retomada do teste de integração. Sem ferramentas e sem executar comandos: diga o código de controle que pedi para lembrar na mensagem anterior, o marcador do recibo e a quantidade de pontos confirmada. Não procure no disco, use o histórico desta conversa. Responda em uma linha.

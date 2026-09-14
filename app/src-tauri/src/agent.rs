@@ -1326,6 +1326,14 @@ fn is_terminal_incident(event: &AgentEvent) -> bool {
     )
 }
 
+/// Quanto a drenagem espera por uma linha nova depois que o processo saiu. O que
+/// o CLI escreveu antes de sair já está no pipe e chega em milissegundos; esperar
+/// mais que isso só serve pra neto em background que herdou o stdout e ficou mudo.
+const DRENAGEM_OCIOSA: std::time::Duration = std::time::Duration::from_millis(300);
+/// Teto da drenagem inteira: um neto que herdou o stdout e NÃO para de escrever
+/// não pode segurar o fim do turno.
+const DRENAGEM_TETO: std::time::Duration = std::time::Duration::from_secs(3);
+
 /// Spawn + loop (streama os eventos) + wait, UMA vez. NÃO emite Cancelled/Error/
 /// Done, quem orquestra (run_agent) decide, p/ poder reexecutar sem resume na
 /// degradação graciosa. Num resume, intercepta SessionNotFound (suprime + marca).
@@ -1397,12 +1405,26 @@ async fn run_once(
     let mut session_id = None;
     let mut context_reported = false;
     let mut exit_status = None;
+    // A cauda do stdout é do turno. Quando o processo sai, o que ele escreveu por
+    // último (os `text_delta` finais, o `assistant`, o `result`) ainda pode estar
+    // no pipe. Sair do loop no instante do `wait` jogava isso fora: foi a resposta
+    // de 2030 caracteres gravada com 406 no incidente de 13/09/2026
+    // (`agent_stream_tail_tests.rs`). Então o `wait` só troca o loop pra modo de
+    // drenagem, e quem encerra é o EOF ou o prazo abaixo.
+    // (início da drenagem, instante da última linha lida)
+    let mut drenagem: Option<(tokio::time::Instant, tokio::time::Instant)> = None;
     loop {
+        let prazo_da_drenagem = drenagem
+            .map(|(inicio, ultima)| (ultima + DRENAGEM_OCIOSA).min(inicio + DRENAGEM_TETO))
+            .unwrap_or_else(tokio::time::Instant::now);
         tokio::select! {
             line = reader.next_line() => {
                 match line {
                     Ok(Some(line)) => {
                         last_byte_at = Some(crate::run_resources::epoch_ms());
+                        if let Some((_, ultima)) = drenagem.as_mut() {
+                            *ultima = tokio::time::Instant::now();
+                        }
                         // Só a PRIMEIRA: o resto do turno repete a mesma falha a
                         // cada comando, e a classificação precisa de uma amostra.
                         if sandbox_runner_hint.is_none() {
@@ -1445,8 +1467,14 @@ async fn run_once(
                     }
                 }
             }
-            status = child.wait() => {
+            status = child.wait(), if exit_status.is_none() => {
                 exit_status = Some(status.map_err(|e| e.to_string())?);
+                let agora = tokio::time::Instant::now();
+                drenagem = Some((agora, agora));
+            }
+            _ = tokio::time::sleep_until(prazo_da_drenagem), if drenagem.is_some() => {
+                // Neto em background segurando o stdout: o turno termina assim
+                // mesmo, e o `terminate_run` abaixo fecha o pipe.
                 break;
             }
             _ = notify.notified() => {
@@ -1547,6 +1575,10 @@ async fn run_once(
         context_reported,
     })
 }
+
+#[cfg(test)]
+#[path = "agent_stream_tail_tests.rs"]
+mod stream_tail_tests;
 
 /// Cancela um run em andamento. `false` permite ao front reconciliar um estado
 /// persistido cujo runner já não existe; descendentes marcados são limpos mesmo
@@ -1673,6 +1705,10 @@ pub async fn suggest(model: String, cwd: String, prompt: String) -> Result<Strin
     }
     Ok(stdout)
 }
+
+#[cfg(test)]
+#[path = "agy_live_tests.rs"]
+mod agy_live_tests;
 
 #[cfg(test)]
 mod tests {

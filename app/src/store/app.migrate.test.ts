@@ -1,7 +1,8 @@
 // Migração do estado persistido (mc.app) — o risco nº 1 do corte do Escritório
 // (office-removal-plan R2): um viewMode órfão persistido abriria o app num modo
 // que não existe (tela branca) pra todo usuário existente. migratePersistedApp
-// é pura de propósito pra travar isto aqui, sem montar o store.
+// é pura de propósito pra travar isto aqui, sem montar o store. O mesmo risco
+// voltou no corte da aba Features (remocao-features-prd D4, v5).
 
 import { describe, expect, it } from "vitest"
 
@@ -25,9 +26,19 @@ describe("migratePersistedApp — viewMode órfão nunca vira modo de boot", () 
   })
 
   it("v3→v4: modos vivos são preservados", () => {
-    expect(viewModeAfter("sdd", 3)).toBe("sdd")
     expect(viewModeAfter("painel", 3)).toBe("painel")
     expect(viewModeAfter("linear", 3)).toBe("linear")
+  })
+
+  it('v4→v5: "sdd" persistido (aba Features removida) cai no Trabalho', () => {
+    expect(viewModeAfter("sdd", 4)).toBe("linear")
+    // quem vinha de antes do v4 com "sdd" também não abre em tela branca
+    expect(viewModeAfter("sdd", 3)).toBe("linear")
+  })
+
+  it("v4→v5: Painel e Trabalho persistidos seguem onde estavam", () => {
+    expect(viewModeAfter("painel", 4)).toBe("painel")
+    expect(viewModeAfter("linear", 4)).toBe("linear")
   })
 
   it("viewMode ausente segue ausente (o merge aplica o default do store)", () => {

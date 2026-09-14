@@ -144,7 +144,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const setActiveProject = useApp((s) => s.setActiveProject)
   // F1 — a seleção só DIRIGE o detalhe no modo linear; nos demais, o item ativo
   // renderiza dimmed (memória preservada, ênfase removida). String estável.
-  const viewMode = useApp((s) => s.viewMode)
+  const viewMode = useApp((s) => s.scheduledOpen || s.flightPlansOpen || s.fleetOpen ? "global" : s.viewMode)
   const running = useRunningConvIds()
   const finished = useFinishedUnseen()
   const defaultAgent = useApp((s) => s.settings.defaultAgent)
@@ -165,7 +165,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
     // mesmo quando o projeto já é o ativo (setActiveProject não roda).
     useApp.getState().setScheduledOpen(false)
     useApp.getState().setBranchSplitOpen(false)
-    // Clicar numa conversa NAVEGA até ela: estando no Painel/Features, troca pro
+    // Clicar numa conversa NAVEGA até ela: estando no Painel, troca pro
     // Trabalho (senão o clique só muda o store e a tela não reage = cara de bug).
     // Mesmo contrato dos outros caminhos (MissionControl, InboxBell, Agendado).
     useApp.getState().setViewMode("linear")

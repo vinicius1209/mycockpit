@@ -1,7 +1,6 @@
 // MOTOR do modo Mission (docs/mission-mode.md §3, M1): pipeline SEQUENCIAL de
 // agents heterogêneos numa conversa. Store IRMÃO do useChat, modelado no
 // store/fusion.ts (set síncrono, guarda anti-duplo-start, custo acumulado).
-// Feature INDEPENDENTE do SDD — nada aqui importa lib/sdd.ts.
 import { create } from "zustand"
 import { cancelAgent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"

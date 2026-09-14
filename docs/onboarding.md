@@ -64,7 +64,7 @@ desenvolveu aparece. Auditoria do que estava fixo:
 | Projetos seed com paths `/Users/viniciusmachado/...` | `App.tsx` SEED | **Alto** — install novo do amigo ganhava 3 projetos-fantasma no banco | ✅ resolvido: seed só em `import.meta.env.DEV`; build distribuído nasce vazio |
 | PATH mínimo da GUI não acha os agents | spawn dos CLIs | **Alto** — nenhum agent roda | ✅ resolvido (build #10, `path.rs`) |
 | `available: true/false` estático no registry | `agents.ts` | **Médio** — app assume claude/codex instalados sem checar a máquina | ⏳ resolve com `detect_agents` + wizard (abaixo) |
-| `SEED_REPO = github.com/vinicius1209/skills` | `sdd.rs` | **Baixo** — repo pessoal de skills como default do SDD | ⏳ avaliar: tornar configurável ou remover o default pessoal |
+| `SEED_REPO = github.com/vinicius1209/skills` | `sdd.rs` | **Baixo** — repo pessoal de skills como default do SDD | ✅ resolvido: o `sdd.rs` saiu com a aba Features (ADR-185), e com ele o seed |
 | Credenciais em texto no chat (chave OpenAI, senha API) | histórico do usuário | n/a (dado do próprio usuário) | ⚠️ não é código; rotacionar |
 
 Itens de DEV que NÃO vão pro amigo (não são risco de distribuição): o helper de

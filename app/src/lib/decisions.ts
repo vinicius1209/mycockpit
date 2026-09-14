@@ -20,11 +20,6 @@ import { fmtAgo } from "@/lib/format"
 export function decisionTs(d: Decision): number | null {
   if (d.kind === "proposal") return d.createdAt
   if (d.kind === "fusion") return d.createdAt ?? null
-  if (d.kind === "prd" || d.kind === "pr") {
-    if (!d.createdAt) return null
-    const ts = Date.parse(d.createdAt)
-    return Number.isFinite(ts) ? ts : null
-  }
   return null
 }
 
@@ -33,10 +28,6 @@ export function decisionNoun(d: Decision, plural: boolean): string {
   switch (d.kind) {
     case "fusion":
       return plural ? "disputas" : "disputa"
-    case "pr":
-      return plural ? "PRs" : "PR"
-    case "prd":
-      return plural ? "PRDs" : "PRD"
     case "card":
       return plural ? "cards" : "card"
     case "proposal":
@@ -50,10 +41,6 @@ export function decisionLine(d: Decision): string {
   switch (d.kind) {
     case "fusion":
       return `Disputa esperando veredito · ${d.projectName}`
-    case "pr":
-      return `PR aberto: ${d.planTitle} · ${d.projectName}`
-    case "prd":
-      return `PRD por aprovar: ${d.planTitle} · ${d.projectName}`
     case "card":
       return `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title} · ${d.projectName}`
     case "proposal":
@@ -62,7 +49,7 @@ export function decisionLine(d: Decision): string {
 }
 
 /** Contagem por tipo, na ordem em que os tipos aparecem na fila (que já vem
- *  ordenada por urgência): "2 disputas, 1 PR". */
+ *  ordenada por urgência): "2 disputas, 1 card". */
 export function decisionBreakdown(pending: Decision[]): string {
   const order: Decision["kind"][] = []
   const byKind = new Map<Decision["kind"], { n: number; d: Decision }>()

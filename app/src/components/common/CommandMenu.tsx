@@ -96,6 +96,9 @@ export function CommandMenu() {
       if (e.key === "k" && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         setOpen((o) => !o)
+      } else if (e.key === "," && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        useApp.getState().setSettingsOpen(true)
       }
     }
     document.addEventListener("keydown", down)
@@ -225,7 +228,10 @@ export function CommandMenu() {
               <CommandItem
                 className={ITEM}
                 onSelect={() =>
-                  run(() => useStickyNotes.getState().toggleDock())
+                  run(() => {
+                    useApp.getState().setViewMode("linear")
+                    useStickyNotes.getState().setDockOpen(true)
+                  })
                 }
               >
                 <StickyNote aria-hidden />
@@ -313,6 +319,9 @@ export function CommandMenu() {
             </CommandGroup>
 
             <CommandGroup heading="Visual">
+              <CommandItem className={ITEM} onSelect={() => run(() => useApp.getState().setViewMode("painel"))}>
+                Painel
+              </CommandItem>
               <CommandItem className={ITEM} onSelect={() => run(toggleTheme)}>
                 <SunMoon aria-hidden />
                 Alternar tema

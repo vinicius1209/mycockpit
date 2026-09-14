@@ -179,22 +179,17 @@ export async function restoreProject(id: string): Promise<void> {
 /** S1.3 — "Excluir de vez" um projeto JÁ ARQUIVADO: apaga a linha do projeto,
  *  as conversas e os agendamentos dele (um schedule apontando pra projeto morto
  *  seguiria disparando automação fantasma). Cards do projeto morrem junto (o
- *  board é por projeto; linha órfã seria lixo invisível). As marcas de plano SDD
- *  (`sdd_plan_marks`) também morrem: são ESTADO VIVO do inbox ("este plano conta
- *  no badge"), não registro histórico — sem isso ficariam linhas ÓRFÃS de um
- *  project_id que não existe mais (re-adicionar a mesma pasta gera id novo, e
- *  nada nunca mais leria nem limparia as antigas). Métricas históricas
- *  (stage_runs, turn_costs, deliveries, lessons)
- *  FICAM — são registro do que aconteceu. Blobs de anexo órfãos caem no GC
+ *  board é por projeto; linha órfã seria lixo invisível). Métricas históricas
+ *  (stage_runs, turn_costs, deliveries, lessons) FICAM: são registro do que
+ *  aconteceu. A tabela inerte `sdd_plan_marks` (da aba Features, removida) não
+ *  é mais criada nem tocada: banco novo nem a tem. Blobs de anexo órfãos caem no GC
  *  (gcAttachments via listConvRefs). Irreversível — o caller SEMPRE confirma. */
 export async function hardDeleteProject(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
   await ensureBoardTables(db)
-  await ensureSddMarkTables(db)
   await deleteSchedulesOfProject(id)
   await db.execute("DELETE FROM cards WHERE project_id = $1", [id])
-  await db.execute("DELETE FROM sdd_plan_marks WHERE project_id = $1", [id])
   await db.execute("DELETE FROM conversations WHERE project_id = $1", [id])
   await db.execute("DELETE FROM projects WHERE id = $1", [id])
 }
@@ -292,129 +287,6 @@ export async function loadPendingFusion(
   } catch {
     return null
   }
-}
-
-// ---------------- Custo por entrega (stage_runs) ----------------
-
-export interface StageRunRow {
-  skill: string
-  agent: string
-  model: string | null
-  ok: boolean
-  costUsd: number | null
-  costSource: string | null
-  createdAt: number
-}
-
-/** Grava uma etapa SDD dirigida pelo cockpit (a matéria-prima do US$/feature). */
-export async function insertStageRun(r: {
-  projectId: string
-  slug: string
-  skill: string
-  agent: string
-  model: string | null
-  ok: boolean
-  costUsd: number | null
-  costSource: string | null
-  durationMs: number | null
-}): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await db.execute(
-    "INSERT INTO stage_runs (id, project_id, slug, skill, agent, model, ok, cost_usd, cost_source, duration_ms, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
-    [
-      crypto.randomUUID(),
-      r.projectId,
-      r.slug,
-      r.skill,
-      r.agent,
-      r.model,
-      r.ok ? 1 : 0,
-      r.costUsd,
-      r.costSource,
-      r.durationMs,
-      Date.now(),
-    ],
-  )
-}
-
-/** Custo agregado por feature (slug) de um projeto: total + nº de runs + se
- *  algum custo é estimado (o "~" honesto na soma). */
-export async function listStageCosts(
-  projectId: string,
-): Promise<Record<string, { total: number; runs: number; estimated: boolean }>> {
-  const db = await getDb()
-  if (!db) return {}
-  try {
-    const rows = await db.select<
-      { slug: string; total: number | null; runs: number; est: number }[]
-    >(
-      "SELECT slug, SUM(cost_usd) AS total, COUNT(*) AS runs, MAX(CASE WHEN cost_source != 'reported' THEN 1 ELSE 0 END) AS est FROM stage_runs WHERE project_id = $1 GROUP BY slug",
-      [projectId],
-    )
-    const out: Record<string, { total: number; runs: number; estimated: boolean }> =
-      {}
-    for (const r of rows) {
-      out[r.slug] = { total: r.total ?? 0, runs: r.runs, estimated: r.est === 1 }
-    }
-    return out
-  } catch {
-    return {}
-  }
-}
-
-/** Runs de uma feature (breakdown por etapa no detalhe do plano). */
-export async function listStageRuns(
-  projectId: string,
-  slug: string,
-): Promise<StageRunRow[]> {
-  const db = await getDb()
-  if (!db) return []
-  try {
-    const rows = await db.select<
-      {
-        skill: string
-        agent: string
-        model: string | null
-        ok: number
-        cost_usd: number | null
-        cost_source: string | null
-        created_at: number
-      }[]
-    >(
-      "SELECT skill, agent, model, ok, cost_usd, cost_source, created_at FROM stage_runs WHERE project_id = $1 AND slug = $2 ORDER BY created_at ASC",
-      [projectId, slug],
-    )
-    return rows.map((r) => ({
-      skill: r.skill,
-      agent: r.agent,
-      model: r.model,
-      ok: r.ok === 1,
-      costUsd: r.cost_usd,
-      costSource: r.cost_source,
-      createdAt: r.created_at,
-    }))
-  } catch {
-    return []
-  }
-}
-
-/** Pares (projeto, slug) com PELO MENOS uma etapa SDD DIRIGIDA pelo cockpit.
- *  `stage_runs` só ganha linha quando o app rodou a etapa, então isso é PROVA
- *  DOCUMENTAL de que o humano encostou no plano por aqui, independente da marca
- *  em `sdd_plan_marks` (que é cache do gesto, não a única fonte). Vale
- *  retroativamente: plano dirigido antes de existir a marca já nasce adotado.
- *  REJEITA em erro real e devolve `null` sem banco, mesmo contrato do
- *  `listSddPlanMarks` — o inbox precisa distinguir "não achei" de "não li". */
-export async function listDrivenPlanKeys(): Promise<
-  { projectId: string; slug: string }[] | null
-> {
-  const db = await getDb()
-  if (!db) return null
-  const rows = await db.select<{ project_id: string; slug: string }[]>(
-    "SELECT DISTINCT project_id, slug FROM stage_runs",
-  )
-  return rows.map((r) => ({ projectId: r.project_id, slug: r.slug }))
 }
 
 /** Disputas pendentes de decisão em TODAS as conversas (pro inbox de decisões),
@@ -992,122 +864,6 @@ export async function dismissProposal(id: string): Promise<void> {
   ])
 }
 
-// ------------- Adoção de planos SDD: sdd_plan_marks (inbox) -------------
-// Um gate do SDD (PRD por aprovar, PR aberto) que o app apenas DESCOBRIU no
-// disco NÃO é interrupção: ele nasceu no terminal do usuário e pode ter 68
-// dias. Só vira pendência (badge/contagem) quando o humano ENCOSTA nele PELO
-// APP. Esta tabela guarda esse gesto por (projeto, slug): `adopted_at` (criou
-// o plano aqui, aprovou o PRD, rodou/marcou/sincronizou etapa) e `ignored_at`
-// (mandou sumir da lista, reversível). Tabela do FRONTEND (CREATE TABLE IF NOT
-// EXISTS, sem migração no lib.rs — mesmo contrato do ensureLeadTables).
-// NUNCA escrevemos essa marca em .claude/plans: o plano é dado do usuário, o
-// app só lê de lá.
-
-let sddMarkReady: Promise<void> | null = null
-
-async function ensureSddMarkTables(db: Database): Promise<void> {
-  if (!sddMarkReady) {
-    const run = (async () => {
-      await db.execute(
-        `CREATE TABLE IF NOT EXISTS sdd_plan_marks (
-           project_id TEXT NOT NULL,
-           slug TEXT NOT NULL,
-           adopted_at INTEGER,
-           ignored_at INTEGER,
-           PRIMARY KEY (project_id, slug)
-         )`,
-      )
-      // ALTER idempotente por simetria com as outras tabelas de frontend: se um
-      // banco antigo já tiver a tabela sem a coluna, ela entra aqui.
-      await addColumn(
-        db,
-        `ALTER TABLE sdd_plan_marks ADD COLUMN ignored_at INTEGER`,
-      )
-    })()
-    // mesmo contrato do ensureLearningTables: o cache só fixa em sucesso.
-    sddMarkReady = run.catch((e) => {
-      sddMarkReady = null
-      throw e
-    })
-  }
-  return sddMarkReady
-}
-
-export interface SddPlanMark {
-  projectId: string
-  slug: string
-  /** epoch ms do 1º gesto do humano PELO APP nesse plano. null = só descoberto. */
-  adoptedAt: number | null
-  /** epoch ms em que o humano mandou o plano sumir da lista. null = visível. */
-  ignoredAt: number | null
-}
-
-/** Todas as marcas (tabela pequena: 1 linha por plano ENCOSTADO, não por plano
- *  existente). REJEITA em erro real e devolve `null` quando não há banco — o
- *  inbox PRECISA distinguir "nenhuma marca" de "não consegui ler" pra não
- *  esconder pendência de verdade por falha de leitura (fail-open). */
-export async function listSddPlanMarks(): Promise<SddPlanMark[] | null> {
-  const db = await getDb()
-  if (!db) return null
-  await ensureSddMarkTables(db)
-  const rows = await db.select<
-    {
-      project_id: string
-      slug: string
-      adopted_at: number | null
-      ignored_at: number | null
-    }[]
-  >("SELECT project_id, slug, adopted_at, ignored_at FROM sdd_plan_marks")
-  return rows.map((r) => ({
-    projectId: r.project_id,
-    slug: r.slug,
-    adoptedAt: r.adopted_at,
-    ignoredAt: r.ignored_at,
-  }))
-}
-
-/** Marca a ADOÇÃO do plano (gesto humano pelo app). Idempotente: mantém o
- *  primeiro `adopted_at`. Adotar LIMPA o ignorado — encostar no plano pelo app
- *  é dizer que ele voltou a importar. */
-export async function adoptSddPlan(
-  projectId: string,
-  slug: string,
-  now = Date.now(),
-): Promise<void> {
-  const db = await getDb()
-  if (!db) return
-  await ensureSddMarkTables(db)
-  await db.execute(
-    `INSERT INTO sdd_plan_marks (project_id, slug, adopted_at, ignored_at)
-     VALUES ($1, $2, $3, NULL)
-     ON CONFLICT(project_id, slug) DO UPDATE SET
-       adopted_at = COALESCE(sdd_plan_marks.adopted_at, excluded.adopted_at),
-       ignored_at = NULL`,
-    [projectId, slug, now],
-  )
-}
-
-/** Liga/desliga o "ignorar este plano" (reversível pela lista de ignorados).
- *  Devolve `false` quando NÃO houve banco pra gravar: sem isso a UI sumia com o
- *  item na base de um no-op (estado real, nunca teatro). */
-export async function setSddPlanIgnored(
-  projectId: string,
-  slug: string,
-  ignored: boolean,
-  now = Date.now(),
-): Promise<boolean> {
-  const db = await getDb()
-  if (!db) return false
-  await ensureSddMarkTables(db)
-  await db.execute(
-    `INSERT INTO sdd_plan_marks (project_id, slug, adopted_at, ignored_at)
-     VALUES ($1, $2, NULL, $3)
-     ON CONFLICT(project_id, slug) DO UPDATE SET ignored_at = excluded.ignored_at`,
-    [projectId, slug, ignored ? now : null],
-  )
-  return true
-}
-
 // ---------------- Ledger de custo por turno (turn_costs) ----------------
 
 /** Uma linha do ledger de custo — turno de chat OU entrega de missão,
@@ -1444,6 +1200,11 @@ export async function recomputeCumulativeLedger(
 /** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa +
  *  fases de missão (todos em turn_costs) + etapas SDD (stage_runs). São
  *  caminhos DISJUNTOS de execução, então a união NÃO conta em dobro.
+ *
+ *  `stage_runs` é HISTÓRICO SOMENTE-LEITURA desde a remoção da aba Features
+ *  (remocao-features-prd D2): ninguém grava mais nela, mas o dinheiro que ela
+ *  registra foi gasto de verdade. Tirar do UNION derrubaria os totais de quem
+ *  usou o SDD sem aviso nenhum.
  *
  *  DIVISÃO (mudou no MH2.1): missão passou a gravar CADA fase em turn_costs
  *  (fonte única de CUSTO — inclusive missão abortada/estourada/falhada, que
@@ -2212,7 +1973,7 @@ export async function deleteCard(id: string): Promise<void> {
 
 /** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas
  *  e, desde o MH2.1, também fases de missão — elas gravam turn_costs com o
- *  conv_id da conversa; SDD segue FORA, stage_runs não tem conv_id).
+ *  conv_id da conversa; o histórico de stage_runs fica FORA, não tem conv_id).
  *  `estimated` = custo sem proveniência 'reported' (COALESCE: NULL conta, o
  *  "~" honesto). `total: null` = tem turno e NENHUM com preço (ADR-047: 0 ali
  *  carimbava "US$ 0,00" medido). Erro PROPAGA: o caller mantém o last-known. */

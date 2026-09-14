@@ -21,7 +21,7 @@ export interface ContextualSplit {
    *  componentes: só a superfície DESSA conversa renderiza os cards. */
   inlineConvId: string | null
   /** O resto — toast global no canto, como sempre (conversa dona não-ativa,
-   *  outros viewModes: painel/sdd/agendado, ou pedido sem dono
+   *  outros viewModes: painel/agendado, ou pedido sem dono
    *  resolvível: run órfão / sem run_id). */
   global: InteractionRequest[]
 }
@@ -29,13 +29,13 @@ export interface ContextualSplit {
 const EMPTY_SPLIT: ContextualSplit = { inline: [], inlineConvId: null, global: [] }
 
 /** Computa o split a partir dos stores (puro sobre getState; exportado p/
- *  teste). Painel/sdd/agendado ⇒ nenhuma conversa visível ⇒ tudo global. */
+ *  teste). Painel/agendado ⇒ nenhuma conversa visível ⇒ tudo global. */
 export function computeContextualSplit(): ContextualSplit {
   const queue = useInteractions.getState().queue
   if (queue.length === 0) return EMPTY_SPLIT
   const app = useApp.getState()
   const visible =
-    app.viewMode === "linear" && !app.scheduledOpen
+    app.viewMode === "linear" && !app.scheduledOpen && !app.flightPlansOpen && !app.fleetOpen
       ? useChat.getState().activeId
       : null
   if (!visible) return { inline: [], inlineConvId: null, global: queue }

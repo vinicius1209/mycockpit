@@ -32,19 +32,6 @@ function card(state: "review" | "blocked" = "blocked"): Decision {
   }
 }
 
-function pr(createdAt: string | null = null): Decision {
-  return {
-    kind: "pr",
-    projectId: "p2",
-    projectName: "maclan",
-    slug: "digest",
-    planTitle: "Digest semanal",
-    prUrl: "https://github.com/x/y/pull/1",
-    createdAt,
-    origin: { path: ".claude/plans/digest", discovered: false, ignored: false },
-  }
-}
-
 describe("faixa de decisão pendente — a regra de existir", () => {
   it("fila vazia não devolve faixa nenhuma (nada de espaço reservado)", () => {
     expect(stripSummary([], AGORA)).toBeNull()
@@ -57,8 +44,8 @@ describe("faixa de decisão pendente — a regra de existir", () => {
   })
 
   it("várias decisões: conta e agrega por tipo, na ordem da fila", () => {
-    const s = stripSummary([disputa(), disputa({ convId: "c2" }), pr()], AGORA)
-    expect(s?.text).toBe("3 esperando você · 2 disputas, 1 PR")
+    const s = stripSummary([disputa(), disputa({ convId: "c2" }), card()], AGORA)
+    expect(s?.text).toBe("3 esperando você · 2 disputas, 1 card")
   })
 })
 
@@ -84,12 +71,17 @@ describe("faixa de decisão pendente — idade da mais antiga", () => {
     expect(s?.ageText).toBeNull()
   })
 
-  it("PRD/PR carregam ISO do manifest; ISO inválido não vira idade", () => {
-    expect(decisionTs(pr("2026-08-10T18:00:00Z"))).toBe(
-      Date.parse("2026-08-10T18:00:00Z"),
-    )
-    expect(decisionTs(pr("ontem de manhã"))).toBeNull()
-    expect(decisionTs(pr(null))).toBeNull()
+  it("proposta do lead entra na conta da idade pelo próprio carimbo", () => {
+    const proposta: Decision = {
+      kind: "proposal",
+      proposalId: "x",
+      excerpt: "revisar backlog",
+      body: "revisar backlog",
+      createdAt: AGORA - 30 * HORA,
+    }
+    expect(decisionTs(proposta)).toBe(AGORA - 30 * HORA)
+    const s = stripSummary([disputa({ createdAt: AGORA - 2 * HORA }), proposta], AGORA)
+    expect(s?.ageText).toBe("a mais antiga há 1 d")
   })
 })
 
@@ -111,7 +103,7 @@ describe("faixa de decisão pendente — copy de cada tipo", () => {
   })
 
   it("plural só entra a partir de dois do mesmo tipo", () => {
-    expect(decisionBreakdown([pr()])).toBe("1 PR")
-    expect(decisionBreakdown([pr(), pr()])).toBe("2 PRs")
+    expect(decisionBreakdown([card()])).toBe("1 card")
+    expect(decisionBreakdown([card(), card("review")])).toBe("2 cards")
   })
 })

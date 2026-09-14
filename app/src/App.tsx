@@ -1,3 +1,4 @@
+import { useSystemTheme } from "@/hooks/useSystemTheme"
 import { useEffect } from "react"
 import { rastrearModalidade } from "@/lib/modalidade"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
@@ -93,6 +94,7 @@ const queryClient = new QueryClient()
 export default function App() {
   const setProjects = useApp((s) => s.setProjects)
   const setReady = useApp((s) => s.setReady)
+  useSystemTheme()
   const theme = useApp((s) => s.theme)
   const onboarded = useApp((s) => s.settings.onboarded)
   const keepInTrayOnClose = useApp((s) => s.settings.keepInTrayOnClose)
@@ -613,14 +615,6 @@ export default function App() {
             host global — MessageList existe em Linear e Painel e o
             overlay é um só. Fechado renderiza null. */}
         <LightboxOverlay />
-        {/* Bloco de notas: NÃO tem mais host aqui. A gaveta virou popover
-            ancorado no chip "Notas" e mora junto do gatilho, na TitleBar
-            (`StickyNotesToggle`). O host global existia porque dentro do
-            ChatPanel a gaveta morria no `hidden` que o AppShell aplica fora do
-            viewMode linear; a TitleBar é chrome e está montada em TODA
-            superfície, então ela cobre o mesmo alcance sem `fixed` por cima do
-            layout. O ⌘K segue abrindo pela store (`dockOpen` controla o
-            popover). */}
         <SettingsDialog />
         <AddProjectDialog />
         <MarkdownViewerDialog />

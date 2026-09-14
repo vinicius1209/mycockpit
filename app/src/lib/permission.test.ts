@@ -86,6 +86,9 @@ describe("setProjectPermissionEverywhere", () => {
           exists: true,
           permission: "padrao",
           helper: null,
+          // Valor OPACO de propósito: não é "linear", que é o default que a
+          // própria escrita de permissão usa, e um default não prova que o
+          // campo foi preservado.
           mode: "sdd",
           extraDirs: ["/outro"],
         },

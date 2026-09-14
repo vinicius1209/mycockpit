@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Frota · onde mora cada botão do chrome</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  /* Tokens copiados de app/src/index.css (claro e escuro), sem arredondar. */
+  :root {
+    --background: #fbfbfa; --rail: #f6f6f4; --foreground: #16181b; --card: #ffffff;
+    --secondary: #f4f4f2; --muted: #f4f4f2; --muted-foreground: #5c6166;
+    --accent: #f1f1ef; --faint: #8a9099; --border: rgba(0,0,0,.09);
+    --border-strong: rgba(0,0,0,.14); --sel: rgba(0,0,0,.055); --sel-hover: rgba(0,0,0,.028);
+    --brass: #a9742b; --brass-soft: rgba(169,116,43,.12); --brass-fg: #fbf6ee;
+    --st-warning: #c98a1b; --st-warning-fg: #1a1306; --st-running: #2f8fbf; --st-error: #cf4a3e;
+    --shadow-sm: 0 1px 2px rgba(20,22,25,.08); --shadow-pop: 0 12px 40px -8px rgba(20,22,25,.18);
+    --radius: 9px;
+    --sans: "Geist Variable", "Geist", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    --mono: "Geist Mono Variable", "Geist Mono", ui-monospace, "SF Mono", monospace;
+    --pin: #2f6fdf; --pin-ok: #1f9d6b;
+  }
+  :root.dark {
+    --background: #0a0b0d; --rail: #0c0d10; --foreground: #e7e8ea; --card: #141619;
+    --secondary: #191c20; --muted: #141619; --muted-foreground: #9aa0a7;
+    --accent: #1e2126; --faint: #687078; --border: rgba(255,255,255,.08);
+    --border-strong: rgba(255,255,255,.13); --sel: rgba(255,255,255,.065); --sel-hover: rgba(255,255,255,.032);
+    --brass: #e4a862; --brass-soft: rgba(228,168,98,.14); --brass-fg: #1a1306;
+    --st-warning: #e0a53a; --st-running: #5bb8e8; --st-error: #f2766b;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,.35); --shadow-pop: 0 12px 40px -8px rgba(0,0,0,.55);
+    --pin: #6ea0ff; --pin-ok: #5bd6a0;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { font-family: var(--sans); color: var(--foreground); background: #e7e7e3; font-size: 13px; -webkit-font-smoothing: antialiased; }
+  :root.dark body { background: #030304; }
+  button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: default; }
+  svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  svg.i.s35 { width: 14px; height: 14px; }
+  svg.i.s3 { width: 12px; height: 12px; }
+
+  /* ---------- página do mock (fora do app) ---------- */
+  .page { max-width: 1240px; margin: 0 auto; padding: 24px 20px 64px; }
+  .top { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+  .top h1 { font-size: 14px; font-weight: 600; margin: 0 12px 0 0; color: var(--foreground); }
+  .seg { display: flex; gap: 2px; padding: 2px; border-radius: 999px; background: var(--secondary); border: 1px solid var(--border); }
+  .seg button { padding: 4px 12px; border-radius: 999px; font-size: 12px; color: var(--muted-foreground); }
+  .seg button.on { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+  .opt { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .lede { font-size: 13px; color: var(--muted-foreground); margin: 0 0 16px; max-width: 900px; line-height: 1.5; }
+
+  /* ---------- janela do app ---------- */
+  .win { width: 1200px; height: 720px; border-radius: 10px; background: var(--rail); overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 30px 80px -20px rgba(0,0,0,.35), 0 0 0 1px var(--border-strong); position: relative; }
+  .bar { height: 56px; flex-shrink: 0; display: flex; align-items: center; position: relative; }
+  .lights { position: absolute; left: 18px; top: 50%; transform: translateY(-50%); display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; display: block; }
+  .zone-l { display: flex; align-items: center; gap: 6px; padding-left: 80px; min-width: 0; }
+  .zone-c { flex: 1; display: flex; justify-content: center; padding: 0 12px; }
+  .zone-r { display: flex; align-items: center; gap: 6px; padding-right: 10px; }
+  .ib { width: 32px; height: 32px; border-radius: 7px; display: grid; place-items: center; color: var(--muted-foreground); position: relative; }
+  .ib:hover { background: var(--accent); color: var(--foreground); }
+  .ib.c28 { width: 28px; height: 28px; }
+  .proj { font-size: 13px; font-weight: 500; padding: 2px 6px; border-radius: 6px; display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .proj:hover { background: var(--accent); }
+  .proj .chev { color: var(--faint); }
+  .divider { width: 1px; height: 16px; background: var(--border); margin: 0 4px; }
+  .modes { display: flex; gap: 2px; padding: 2px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in srgb, var(--secondary) 50%, transparent); }
+  .modes span { padding: 4px 12px; border-radius: 999px; font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+  .modes span.on { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+  .chip { height: 32px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 10px; border-radius: 999px; border: 1px solid var(--border); background: color-mix(in srgb, var(--secondary) 50%, transparent); font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
+  .chip.sq { border-radius: 7px; padding: 0 10px; color: var(--foreground); background: transparent; }
+  .kbd { font-family: var(--mono); font-size: 11px; padding: 0 5px; height: 18px; display: grid; place-items: center; border-radius: 4px; border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); }
+  .count { height: 16px; min-width: 16px; padding: 0 4px; border-radius: 999px; font-size: 11px; font-weight: 500; display: grid; place-items: center; background: color-mix(in srgb, var(--muted-foreground) 15%, transparent); color: var(--foreground); }
+  .badge-dot { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted-foreground); box-shadow: 0 0 0 2px var(--rail); }
+  .badge-n { position: absolute; top: 0; right: 0; height: 16px; min-width: 16px; padding: 0 4px; border-radius: 999px; font-size: 11px; font-weight: 600; display: grid; place-items: center; background: var(--st-warning); color: var(--st-warning-fg); box-shadow: 0 0 0 2px var(--rail); }
+  .cmd { width: 440px; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 10px; border-radius: 7px; border: 1px solid var(--border); background: var(--card); color: var(--muted-foreground); font-size: 12px; box-shadow: var(--shadow-sm); }
+  .cmd .ph { flex: 1; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cmd .where { color: var(--foreground); font-weight: 500; }
+
+  .body { flex: 1; display: flex; min-height: 0; padding-bottom: 8px; }
+  .side { width: 232px; flex-shrink: 0; display: flex; flex-direction: column; }
+  .side .scroll { flex: 1; overflow: hidden; padding: 8px 8px 0; }
+  .label { font-family: var(--mono); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); padding: 4px 4px 6px; display: flex; align-items: center; justify-content: space-between; }
+  .label .n { color: var(--faint); font-family: var(--sans); letter-spacing: 0; margin-left: 6px; }
+  .row { display: flex; align-items: center; gap: 10px; padding: 7px 8px; border-radius: 7px; font-size: 13px; color: var(--muted-foreground); position: relative; }
+  .row:hover { background: var(--sel-hover); color: var(--foreground); }
+  .row.on { background: var(--sel); color: var(--foreground); font-weight: 500; }
+  .row .meta { margin-left: auto; font-size: 11px; color: var(--faint); }
+  .row.proj-row { color: var(--foreground); font-weight: 500; }
+  .row.conv { padding-left: 12px; font-size: 12px; }
+  .row.conv .dot { width: 14px; display: grid; place-items: center; }
+  .row.conv .dot i { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); display: block; }
+  .row.conv .t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .gap8 { height: 8px; }
+  .foot { height: 48px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding: 0 12px; position: relative; }
+  .acct { flex: 1; display: flex; align-items: center; gap: 10px; padding: 4px; margin-left: -4px; border-radius: 7px; min-width: 0; }
+  .acct:hover { background: var(--sel-hover); }
+  .avatar { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(135deg, #6b5a48, #2b2620); color: #f5efe6; font-size: 11px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; }
+  .acct .nm { font-size: 12px; font-weight: 500; flex: 1; text-align: left; }
+  .acct .sub { color: var(--faint); }
+
+  .main { flex: 1; min-width: 0; padding: 8px 8px 0 0; display: flex; gap: 8px; }
+  .card { flex: 1; min-width: 0; border-radius: 13px; border: 1px solid var(--border); background: var(--background); box-shadow: var(--shadow-pop); display: flex; flex-direction: column; overflow: hidden; }
+  .ctx { width: 300px; flex-shrink: 0; border-radius: 13px; border: 1px solid var(--border); background: var(--background); box-shadow: var(--shadow-pop); padding: 10px; }
+  .tabs { height: 40px; display: flex; align-items: center; gap: 2px; padding: 0 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); flex-shrink: 0; }
+  .tab { height: 28px; padding: 0 10px; border-radius: 7px; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted-foreground); }
+  .tab.on { background: var(--sel); color: var(--foreground); font-weight: 500; }
+  .tabs .sp { flex: 1; }
+  .notes-c { height: 28px; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-radius: 7px; font-size: 12px; color: var(--muted-foreground); position: relative; }
+  .notes-c:hover { background: var(--accent); color: var(--foreground); }
+  .fio { flex: 1; padding: 20px 40px; display: flex; flex-direction: column; gap: 14px; overflow: hidden; }
+  .msg-u { align-self: flex-end; max-width: 60%; background: var(--secondary); border: 1px solid var(--border); border-radius: 12px; padding: 8px 12px; font-size: 14px; line-height: 1.5; }
+  .ln { height: 9px; border-radius: 4px; background: color-mix(in srgb, var(--muted-foreground) 14%, transparent); }
+  .composer { margin: 0 32px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); padding: 12px 14px; font-size: 14px; color: var(--faint); height: 84px; box-shadow: var(--shadow-sm); }
+  .retro { padding: 28px 40px; }
+  .retro h2 { font-size: 20px; margin: 0 0 16px; font-weight: 600; letter-spacing: -.01em; }
+  .retro .hero { font-family: var(--mono); font-size: 30px; font-weight: 600; }
+  .retro .hero small { font-size: 11px; color: var(--muted-foreground); font-weight: 400; letter-spacing: .06em; margin-left: 8px; }
+  .heat { margin-top: 24px; display: grid; grid-template-columns: repeat(24, 1fr); gap: 3px; }
+  .heat i { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--muted-foreground) 12%, transparent); display: block; }
+  .heat i.a { background: color-mix(in srgb, var(--muted-foreground) 40%, transparent); }
+  .heat i.b { background: var(--brass); }
+
+  .status { height: 24px; flex-shrink: 0; display: flex; align-items: center; padding: 0 16px; font-family: var(--mono); font-size: 11px; color: var(--muted-foreground); gap: 8px; }
+  .meter { width: 24px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--muted-foreground) 20%, transparent); overflow: hidden; }
+  .meter i { display: block; height: 100%; width: 70%; background: var(--brass); }
+  .status .sp { flex: 1; }
+  .status .bell-sb { display: flex; align-items: center; gap: 4px; }
+
+  /* menus abertos (estado de demonstração) */
+  .menu { position: absolute; z-index: 40; min-width: 232px; background: var(--card); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow-pop); padding: 4px; font-size: 13px; }
+  .menu .it { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; color: var(--foreground); }
+  .menu .it:hover { background: var(--accent); }
+  .menu .it .k { margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .menu .it svg { color: var(--muted-foreground); }
+  .menu .hd { padding: 6px 8px 4px; display: flex; align-items: center; gap: 10px; }
+  .menu .hd .who { font-size: 13px; font-weight: 500; }
+  .menu .hd .mail { font-size: 11px; color: var(--muted-foreground); }
+  .menu .sep { height: 1px; background: color-mix(in srgb, var(--border) 40%, transparent); margin: 4px 0; }
+  .menu .themes { display: flex; gap: 2px; margin-left: auto; padding: 2px; border-radius: 7px; background: var(--secondary); }
+  .menu .themes span { font-size: 11px; padding: 2px 8px; border-radius: 5px; color: var(--muted-foreground); }
+  .menu .themes span.on { background: var(--card); color: var(--foreground); box-shadow: var(--shadow-sm); }
+
+  /* pinos de anotação */
+  .pinned { position: relative; }
+  .pin { position: absolute; top: -7px; right: -7px; z-index: 30; width: 18px; height: 18px; border-radius: 50%; background: var(--pin); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; font-style: normal; box-shadow: 0 0 0 2px var(--rail); pointer-events: none; }
+  .pin.ok { background: var(--pin-ok); }
+  .pin.l { right: auto; left: -7px; }
+  .pin.in { top: 50%; right: 8px; transform: translateY(-50%); }
+  body.no-pins .pin { display: none; }
+
+  /* notas */
+  .notes { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .note { background: var(--card); border: 1px solid var(--border); border-radius: 11px; padding: 12px 14px; display: flex; gap: 10px; }
+  .note .nb { width: 20px; height: 20px; border-radius: 50%; background: var(--pin); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; flex-shrink: 0; }
+  .note .nb.ok { background: var(--pin-ok); }
+  .note h3 { margin: 0 0 4px; font-size: 13px; font-weight: 600; }
+  .note p { margin: 0; font-size: 12px; line-height: 1.55; color: var(--muted-foreground); }
+  .note p b { color: var(--foreground); font-weight: 500; }
+  .tbl { margin-top: 20px; width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--border); border-radius: 11px; overflow: hidden; font-size: 12px; }
+  .tbl th, .tbl td { text-align: left; padding: 8px 12px; border-bottom: 1px solid color-mix(in srgb, var(--border) 40%, transparent); vertical-align: top; }
+  .tbl th { font-family: var(--mono); font-size: 11px; font-weight: 500; letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); }
+  .tbl td:first-child { font-weight: 500; }
+  .tbl td.chg { color: var(--brass); }
+  .h2 { font-size: 14px; font-weight: 600; margin: 28px 0 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="top">
+    <h1>Onde mora cada botão</h1>
+    <div class="seg" id="seg">
+      <button data-v="atual" class="on">Hoje</button>
+      <button data-v="a">A · Arrumação</button>
+      <button data-v="b">B · Centro de comando</button>
+    </div>
+    <div class="seg" id="surf" style="display:none">
+      <button data-s="trabalho" class="on">Trabalho aberto</button>
+      <button data-s="painel">Painel aberto</button>
+    </div>
+    <label class="opt"><input type="checkbox" id="menus" /> Menus abertos</label>
+    <label class="opt"><input type="checkbox" id="pins" checked /> Anotações</label>
+    <label class="opt"><input type="checkbox" id="dark" /> Tema escuro</label>
+  </div>
+  <p class="lede" id="lede"></p>
+  <div id="stage"></div>
+  <div class="notes" id="notes"></div>
+  <div class="h2">Cada botão, pela frequência de uso</div>
+  <table class="tbl" id="tbl"></table>
+</div>
+
+<script>
+const I = {
+  panelL: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+  panelR: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M15 3v18"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  inbox: '<polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>',
+  note: '<path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3Z"/><path d="M15 3v6h6"/>',
+  plus: '<path d="M5 12h14M12 5v14"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  flow: '<rect x="3" y="3" width="8" height="8" rx="2"/><path d="M7 11v4a2 2 0 0 0 2 2h4"/><rect x="13" y="13" width="8" height="8" rx="2"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  chevD: '<path d="m6 9 6 6 6-6"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>',
+  updown: '<path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/>',
+  dash: '<rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/>',
+  kb: '<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  diff: '<path d="M12 3v14M5 10h14M5 21h14"/>',
+  msg: '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
+}
+const ic = (n, cls = "") => `<svg class="i ${cls}" viewBox="0 0 24 24">${I[n]}</svg>`
+const pin = (n, extra = "") => `<i class="pin ${extra}">${n}</i>`
+
+let state = { v: "atual", s: "trabalho", menus: false }
+
+function titleBar(v) {
+  const left = `
+    <div class="zone-l">
+      <button class="ib">${ic("panelL")}</button>
+      <button class="proj pinned">mycockpit${v === "atual" ? "" : ` <span class="chev">${ic("updown", "s3")}</span>`}${v === "atual" ? pin(9) : pin(9, "ok")}</button>
+    </div>`
+  const modes = (on) => `<div class="modes pinned"><span class="${on === "painel" ? "on" : ""}">Painel</span><span class="${on === "trabalho" ? "on" : ""}">Trabalho</span>${pin(1)}</div>`
+  let center, right
+  if (v === "atual") {
+    center = modes("trabalho")
+    right = `
+      <div class="chip pinned">${ic("search", "s35")}<span>Buscar</span><span class="kbd">⌘K</span>${pin(2)}</div>
+      <div class="chip sq pinned">${ic("note", "s35")}<span>Notas</span><span class="count">3</span>${pin(3)}</div>
+      <button class="ib pinned">${ic("inbox")}<i class="badge-dot"></i>${pin(4)}</button>
+      <button class="ib pinned">${ic("gear")}${pin(5)}</button>
+      <span class="divider"></span>
+      <button class="ib pinned">${ic("panelR")}${pin(7, "ok")}</button>`
+  } else if (v === "a") {
+    center = modes("trabalho")
+    right = `
+      <div class="chip pinned">${ic("search", "s35")}<span>Buscar</span><span class="kbd">⌘K</span>${pin(2, "ok")}</div>
+      <button class="ib pinned">${ic("bell")}<i class="badge-n">2</i>${pin(4, "ok")}</button>
+      <span class="divider"></span>
+      <button class="ib pinned">${ic("panelR")}${pin(7, "ok")}</button>`
+  } else {
+    center = `<div class="cmd pinned">${ic("search", "s35")}<span class="ph">Buscar em <span class="where">mycockpit</span>: conversas, projetos e comandos</span><span class="kbd">⌘K</span>${pin(2, "ok")}</div>`
+    right = `
+      <button class="ib pinned">${ic("bell")}<i class="badge-n">2</i>${pin(4, "ok")}</button>
+      <span class="divider"></span>
+      <button class="ib pinned">${ic("panelR")}${pin(7, "ok")}</button>`
+  }
+  return `<div class="bar">
+    <div class="lights"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></div>
+    ${left}<div class="zone-c">${center}</div><div class="zone-r">${right}</div>
+  </div>`
+}
+
+function sidebar(v) {
+  const painelOn = v === "b" && state.s === "painel"
+  const geral = `
+    <div class="label">Geral</div>
+    ${v === "b" ? `<div class="row pinned ${painelOn ? "on" : ""}">${ic("dash")}<span>Painel</span>${pin(1, "ok in")}</div>` : ""}
+    <div class="row">${ic("rocket")}<span>Frota</span></div>
+    <div class="row">${ic("clock")}<span>Agendamentos</span></div>
+    <div class="row">${ic("flow")}<span>Planos de voo</span><span class="meta">3</span></div>`
+  const convOn = !painelOn
+  const projetos = `
+    <div class="gap8"></div>
+    <div class="label"><span>Projetos<span class="n">4</span></span><button class="ib c28" style="width:24px;height:24px">${ic("plus", "s35")}</button></div>
+    <div class="row proj-row ${convOn ? "" : ""}">${ic("folder")}<span>mycockpit</span><span class="meta">${ic("chevD", "s35")}</span></div>
+    <div class="row conv"><span class="dot"><i></i></span><span class="t">https://github.com/akitaon…</span><span class="meta">2d</span></div>
+    <div class="row conv"><span class="dot"><i></i></span><span class="t">essa conversa do Agy dent…</span><span class="meta">1h</span></div>
+    <div class="row conv ${convOn ? "on" : ""}"><span class="dot"><i style="background:var(--brass)"></i></span><span class="t">quero remover por COMPL…</span><span class="meta">1h</span></div>
+    <div class="row conv">${ic("plus", "s35")}<span>Nova tarefa</span></div>
+    <div class="gap8"></div>
+    <div class="row proj-row">${ic("folder")}<span>sicredi</span><span class="meta">${ic("chevR", "s35")}</span></div>
+    <div class="row proj-row">${ic("folder")}<span>projetos</span><span class="meta">${ic("chevR", "s35")}</span></div>
+    <div class="row proj-row">${ic("folder")}<span>Maclan</span><span class="meta">${ic("chevR", "s35")}</span></div>`
+  let foot
+  if (v === "atual") {
+    foot = `<div class="foot">
+      <button class="acct pinned"><span class="avatar">V</span><span class="nm">Vinicius</span>${pin(5, "l")}</button>
+      <button class="ib pinned">${ic("moon")}${pin(6)}</button>
+    </div>`
+  } else {
+    foot = `<div class="foot">
+      <button class="acct pinned"><span class="avatar">V</span><span class="nm">Vinicius</span><span class="sub">${ic("updown", "s35")}</span>${pin(5, "ok")}</button>
+      ${state.menus ? accountMenu() : ""}
+    </div>`
+  }
+  return `<aside class="side"><div class="scroll">${geral}${projetos}</div>${foot}</aside>`
+}
+
+function accountMenu() {
+  const dark = document.documentElement.classList.contains("dark")
+  return `<div class="menu" style="left:10px;bottom:52px">
+    <div class="hd"><span class="avatar">V</span><div><div class="who">Vinicius Machado</div><div class="mail">Perfil e preferências</div></div></div>
+    <div class="sep"></div>
+    <div class="it">${ic("user", "s35")}Perfil</div>
+    <div class="it">${ic("gear", "s35")}Configurações<span class="k">⌘,</span></div>
+    <div class="it">${ic("kb", "s35")}Atalhos de teclado</div>
+    <div class="sep"></div>
+    <div class="it pinned">${ic(dark ? "moon" : "sun", "s35")}Tema
+      <span class="themes"><span class="${dark ? "" : "on"}">Claro</span><span class="${dark ? "on" : ""}">Escuro</span><span>Sistema</span></span>${pin(6, "ok")}
+    </div>
+    <div class="sep"></div>
+    <div class="it">${ic("info", "s35")}Sobre a Frota</div>
+  </div>`
+}
+
+function center(v) {
+  const painelOn = v === "b" && state.s === "painel"
+  if (painelOn) {
+    let cells = ""
+    for (let i = 0; i < 24 * 6; i++) cells += `<i class="${[11, 17, 40, 41, 66, 90, 91, 115, 118].includes(i) ? "a" : [18, 64].includes(i) ? "b" : ""}"></i>`
+    return `<div class="card"><div class="retro">
+      <h2>Retrospectiva</h2>
+      <div class="hero">US$ 1161,06<small>EM 30 DIAS</small></div>
+      <div style="font-size:12px;color:var(--muted-foreground);margin-top:6px">12 conversas · 1 entrega registrada · 6 projetos</div>
+      <div class="heat">${cells}</div>
+    </div></div>`
+  }
+  const tabs = `<div class="tabs">
+      <span class="tab on">${ic("msg", "s35")}Conversa</span>
+      <span class="tab">${ic("diff", "s35")}Alterações</span>
+      <span class="sp"></span>
+      ${v === "atual" ? "" : `<button class="notes-c pinned">${ic("note", "s35")}Notas<span class="count">3</span>${pin(3, "ok")}</button>`}
+    </div>`
+  const card = `<div class="card">
+    ${tabs}
+    <div class="fio">
+      <div class="msg-u">quero remover por COMPLETO essa aba Features</div>
+      <div class="ln" style="width:72%"></div><div class="ln" style="width:88%"></div><div class="ln" style="width:64%"></div>
+      <div class="ln" style="width:80%;margin-top:10px"></div><div class="ln" style="width:52%"></div>
+    </div>
+    <div class="composer">Peça algo ao agente, @ para mencionar, / para comandos</div>
+  </div>`
+  const ctx = `<div class="ctx">
+    <div class="label">Contexto</div>
+    <div class="ln" style="width:70%;margin:8px 4px"></div><div class="ln" style="width:50%;margin:8px 4px"></div><div class="ln" style="width:62%;margin:8px 4px"></div>
+  </div>`
+  return card + ctx
+}
+
+function statusBar(v) {
+  return `<div class="status pinned" style="position:relative">
+    <span>Claude</span><span class="meter"><i></i></span><span style="color:var(--brass)">70%</span>
+    <span class="sp"></span><span class="pinned">local · v0.1.0-t375${pin(8, "ok l")}</span>
+  </div>`
+}
+
+function bellMenu() {
+  return `<div class="menu" style="right:10px;top:50px;width:280px">
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:6px 8px 4px">Precisam de você</div>
+    <div class="it">${ic("flow", "s35")}Escolher o vencedor da disputa</div>
+    <div class="it">${ic("note", "s35")}Card em revisão: import do CRM</div>
+    <div class="sep"></div>
+    <div style="font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);padding:6px 8px 4px">Atividade</div>
+    <div class="it" style="color:var(--muted-foreground)">Turno concluído · mycockpit</div>
+  </div>`
+}
+
+const LEDE = {
+  atual: "O chrome como está depois da remoção da aba Features. Os números azuis são problemas; os verdes são acertos que as propostas preservam.",
+  a: "Arrumação sem mexer na navegação: cada controle vai para o dono do gesto. O comutador fica, a barra de cima perde três botões, e as preferências ganham uma porta só.",
+  b: "Recomendada. O Painel vira workspace global ao lado da Frota (a família dele, pelo ADR-040: consulta, não sessão), o comutador some e o centro da barra vira o centro de comando, como VS Code, Zed e Cursor.",
+}
+
+const NOTES = {
+  atual: [
+    [1, "", "Duas navegações para o mesmo gesto", "O <b>Painel</b> mora no comutador; <b>Frota, Agendamentos e Planos de voo</b>, que também são visões gerais e não sessão, moram na sidebar. Quando um deles abre, o comutador fica sem aba acesa. O bug corrigido no ADR-185 (aba acesa por baixo da Frota) nasceu dessa convivência. Pela lei do CLAUDE.md, duas superfícies com o mesmo papel semântico e gramáticas diferentes significam que uma está errada."],
+    [2, "", "Buscar mora no canto das ferramentas", "É o gesto de navegação mais frequente da janela (⌘K troca projeto, conversa e roda comando), e está espremido entre ícones à direita. VS Code, Zed e Cursor dão o centro da barra para ele. Aqui o centro é de um comutador de duas opções."],
+    [3, "", "Notas pesa mais que o Buscar", "Único chip com rótulo, borda e contador no cluster da direita. A nota tem três escopos (desta conversa, deste projeto, de todos os projetos) e vira endereço mencionável (@nota/slug), então merece porta visível; o problema é o peso relativo, não a presença."],
+    [4, "", "Bandeja ao lado da engrenagem", "Dois glifos monocromáticos, mesmo tamanho, lado a lado. O title diz \"Notificações\", o desenho diz \"caixa de entrada\" (lê como download). E o ponto cinza de não lida some contra a engrenagem vizinha."],
+    [5, "", "Preferências com três portas em dois cantos", "Engrenagem no topo direito abre Configurações; avatar no rodapé esquerdo abre Configurações na seção Perfil; tema no rodapé esquerdo. VS Code e Orca juntam conta e gerenciar num lugar só, no rodapé esquerdo (no Orca, <b>SidebarSettingsHelpMenu</b> no toolbar da sidebar)."],
+    [6, "", "Tema com botão permanente", "Gesto de uma vez por mês ocupando chrome fixo. O §1 do STYLEGUIDE manda recuar o que não é estado nem decisão. O Orca deixa o tema só em Configurações e no onboarding."],
+    [7, "ok", "Alternar painéis na ponta de cada lado", "Cada controle mora do lado do que controla. Correto, e igual ao VS Code. Fica nas duas propostas."],
+    [8, "ok", "Status bar com medidor e versão", "Telemetria ambiente em 24px, medidor à esquerda, versão à direita: padrão VS Code e Orca. Fica."],
+    [9, "", "Nome do projeto sem cara de trocar", "Clicar abre a paleta de projetos, mas nada no desenho diz isso. Um ⇅ discreto resolve sem virar botão novo."],
+  ],
+  a: [
+    [1, "", "O problema 1 continua", "A proposta A não mexe na navegação: o Painel segue no comutador e Frota, Agendamentos e Planos de voo seguem na sidebar. É o preço de ser barata. Se a dupla navegação voltar a gerar bug, a saída é a B."],
+    [2, "ok", "Buscar fica, agora sem vizinho competindo", "Sai Notas e sai a engrenagem: o Buscar passa a ser o único controle com rótulo à direita, e a hierarquia fica óbvia."],
+    [3, "ok", "Notas desce para a tira de abas do Trabalho", "Na ponta direita de Conversa · Alterações, degrau compacto (28px). Continua ancorando a gaveta no cartão do centro (a fronteira de colisão já é esse cartão) e some sozinha no Painel e na Frota. Custo: nota de todos os projetos fica sem porta visível fora do Trabalho (⌘K cobre)."],
+    [4, "ok", "Sino com contador âmbar", "Glifo de sino casa com o title \"Notificações\". O contador âmbar só conta o que bloqueia (regra do ADR-040, já no código); não lida continua como ponto cinza."],
+    [5, "ok", "Uma porta para preferências: o menu da conta", "Avatar vira menu: Perfil, Configurações (⌘,), Atalhos, Tema, Sobre. Com a sidebar fechada, ⌘, e ⌘K seguem funcionando; se isso incomodar, a engrenagem volta à barra só enquanto a sidebar está fechada."],
+    [6, "ok", "Tema vira segmento dentro do menu", "Claro · Escuro · Sistema, onde se decide uma vez. \"Sistema\" hoje nem existe como opção."],
+    [9, "ok", "Projeto com ⇅", "A mesma paleta de sempre, agora com affordance."],
+    [7, "ok", "Painéis nas pontas", "Sem mudança."],
+    [8, "ok", "Status bar", "Sem mudança."],
+  ],
+  b: [
+    [1, "ok", "Painel entra em Geral", "Painel, Frota, Agendamentos e Planos de voo passam a ter a mesma gramática: item na sidebar, seleção neutra (§2), cobre o centro. O Trabalho deixa de ser um modo e vira o estado natural de clicar num projeto ou numa conversa. Use o seletor \"Painel aberto\" acima para ver a seleção andar sem nenhuma aba órfã."],
+    [2, "ok", "Centro de comando no meio da barra", "Campo de 440px no degrau compacto (28px), com o escopo impresso (\"Buscar em mycockpit\"). Abre a mesma paleta ⌘K de hoje: nenhum mecanismo novo, só a porta certa no lugar mais visível."],
+    [3, "ok", "Notas na tira de abas", "Igual à proposta A."],
+    [4, "ok", "Sino e painel direito, e nada mais", "A direita fica com atenção e layout. Dois controles, uma divisória."],
+    [5, "ok", "Menu da conta", "Igual à proposta A. Marque \"Menus abertos\" para ver."],
+    [6, "ok", "Tema dentro do menu", "Igual à proposta A."],
+    [9, "ok", "Projeto com ⇅", "Igual à proposta A."],
+    [7, "ok", "Custo real desta proposta", "Precisa de ADR: o Painel deixa de ser viewMode (persist v6 leva \"painel\" para um workspace aberto no boot), o teste \"o Painel segue no switcher\" muda por decisão escrita e a e2e de centralização do comutador vira e2e do campo. É mais caro que A e é a que para de gerar bug de navegação."],
+  ],
+}
+
+const TBL = [
+  ["Buscar ⌘K", "várias por hora", "topo, direita", "topo, direita (sozinho)", "topo, centro"],
+  ["Sino / decisões", "quando acende", "topo, direita (bandeja)", "topo, direita (sino)", "topo, direita (sino)"],
+  ["Alternar painéis", "várias por dia", "pontas do topo", "pontas do topo", "pontas do topo"],
+  ["Painel", "algumas por semana", "comutador central", "comutador central", "sidebar, Geral"],
+  ["Notas", "algumas por dia, dentro da conversa", "topo, direita", "tira de abas do Trabalho", "tira de abas do Trabalho"],
+  ["Configurações", "semanal", "topo, direita + avatar", "menu da conta", "menu da conta"],
+  ["Tema", "raro", "rodapé da sidebar", "menu da conta", "menu da conta"],
+  ["Perfil", "raro", "avatar", "menu da conta", "menu da conta"],
+]
+
+function render() {
+  const v = state.v
+  document.getElementById("surf").style.display = v === "b" ? "flex" : "none"
+  document.getElementById("lede").textContent = LEDE[v]
+  document.getElementById("stage").innerHTML = `<div class="win">
+    ${titleBar(v)}
+    <div class="body">${sidebar(v)}<div class="main">${center(v)}</div></div>
+    ${statusBar(v)}
+    ${state.menus && v !== "atual" ? bellMenu() : ""}
+  </div>`
+  document.getElementById("notes").innerHTML = NOTES[v].map(([n, k, h, p]) =>
+    `<div class="note"><span class="nb ${k}">${n}</span><div><h3>${h}</h3><p>${p}</p></div></div>`).join("")
+  const col = { atual: 2, a: 3, b: 4 }[v]
+  document.getElementById("tbl").innerHTML =
+    `<tr><th>Botão</th><th>Frequência</th><th>Hoje</th><th>A</th><th>B</th></tr>` +
+    TBL.map((r) => `<tr>${r.map((c, i) => `<td class="${i >= 3 && c !== r[2] ? "chg" : ""}" style="${i === col ? "background:var(--sel-hover)" : ""}">${c}</td>`).join("")}</tr>`).join("")
+}
+
+document.getElementById("seg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return
+  state.v = b.dataset.v
+  document.querySelectorAll("#seg button").forEach((x) => x.classList.toggle("on", x === b))
+  render()
+})
+document.getElementById("surf").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return
+  state.s = b.dataset.s
+  document.querySelectorAll("#surf button").forEach((x) => x.classList.toggle("on", x === b))
+  render()
+})
+document.getElementById("menus").addEventListener("change", (e) => { state.menus = e.target.checked; render() })
+document.getElementById("pins").addEventListener("change", (e) => document.body.classList.toggle("no-pins", !e.target.checked))
+document.getElementById("dark").addEventListener("change", (e) => { document.documentElement.classList.toggle("dark", e.target.checked); render() })
+render()
+</script>
+</body>
+</html>

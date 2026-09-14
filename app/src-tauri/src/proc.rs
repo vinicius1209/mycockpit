@@ -1,5 +1,5 @@
-//! Camada ÚNICA de subprocess síncrono. Antes cada módulo (git.rs, sdd.rs,
-//! sources.rs) re-decidia semântica de erro/encoding do seu jeito (5 estilos);
+//! Camada ÚNICA de subprocess síncrono. Antes cada módulo (git.rs, o
+//! ex-sdd.rs, sources.rs) re-decidia semântica de erro/encoding do seu jeito (5 estilos);
 //! aqui um lugar só decide. Rodar DENTRO de spawn_blocking nos comandos async.
 
 use std::process::Command;

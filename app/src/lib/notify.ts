@@ -85,7 +85,7 @@ function helperModelDe(projectId: string): string | null {
 /** Chamado UMA vez quando um GATE humano abre (a missão pausou aguardando as
  *  suas decisões). Empilha no feed e dispara a nativa SEMPRE — diferente do
  *  notifyTurnEnd, o gate segura a missão inteira, então avisa em qualquer
- *  modo (Painel/Trabalho/Features) e com o app em background. Sem spam: o store só
+ *  modo (Painel/Trabalho) e com o app em background. Sem spam: o store só
  *  chama no momento em que o gate abre (1 por gate). */
 export function notifyGate(
   convId: string,

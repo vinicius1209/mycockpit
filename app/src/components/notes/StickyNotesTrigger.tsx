@@ -1,5 +1,5 @@
 /**
- * O GATILHO da gaveta: o chip "Notas" da barra de título e o popover que ele
+ * O GATILHO da gaveta: o controle "Notas" da tira de abas e o popover que ele
  * ancora.
  *
  * Separado do conteúdo da gaveta (`StickyNotesDock.tsx`) porque são duas
@@ -51,8 +51,8 @@ export function StickyNotesToggleView({
       // gatilho morriam aqui e a gaveta não abria.
       {...resto}
       className={cn(
-        controle("padrao"),
-        "relative gap-1.5 border transition-colors",
+        controle("compacto"),
+        "relative gap-1.5 transition-colors",
         open ? SELECTED_FILL : UNSELECTED,
         className,
       )}
@@ -84,8 +84,8 @@ export function StickyNotesToggleView({
  * versão anterior só fechava no ✕ e no próprio gatilho). O ⌘K continua abrindo
  * pela store, porque `open` é controlado por ela, não pelo Radix.
  *
- * A gaveta pôde descer do host global do `App` porque a TitleBar é chrome: ela
- * está montada em TODA superfície, que era exatamente a razão do host.
+ * O comando global abre o Trabalho antes de pedir a gaveta, para que o
+ * gatilho exista também quando o gesto começa numa visão global.
  */
 export function StickyNotesToggle({ className }: { className?: string }) {
   const dockOpen = useStickyNotes((s) => s.dockOpen)

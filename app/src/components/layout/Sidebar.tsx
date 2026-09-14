@@ -1,16 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import {
   Plus,
-  Moon,
-  Sun,
   FolderGit2,
-  X,
   ChevronRight,
-  Loader2,
   Trash2,
   Archive,
   ArchiveRestore,
-  Search,
 } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -25,12 +20,14 @@ import {
 } from "@/components/ui/context-menu"
 import { ConversationList } from "@/components/layout/ConversationList"
 import {
+  PanelEntry,
   FleetEntry,
   FlightPlansEntry,
   ScheduledEntry,
 } from "@/components/layout/Sidebar/globalEntries"
+import { GLOBAL_NAVIGATION } from "@/components/layout/globalNavigation"
 import { ProjectRow } from "@/components/layout/Sidebar/ProjectRow"
-import { UserAvatar } from "@/components/user/UserAvatar"
+import { AccountMenu } from "@/components/layout/AccountMenu"
 import { useApp } from "@/store/app"
 import {
   COPY_DA_PASTA,
@@ -40,12 +37,6 @@ import {
 import { useChat } from "@/store/chat"
 import { useAwaiting } from "@/store/interactions"
 import { useSchedules } from "@/store/schedules"
-import {
-  loadSddPlans,
-  stageLabel,
-  effectiveStage,
-  type SddPlan,
-} from "@/lib/sdd"
 import {
   archiveProject,
   restoreProject,
@@ -100,176 +91,6 @@ function confirmDeleteProject(project: Project) {
 }
 
 
-/** F2 — modo SDD: no projeto ATIVO, a sidebar lista FEATURES (o objeto da
- *  superfície) no lugar das conversas. Carrega via loadSddPlans (async/invoke)
- *  em useEffect com cancelamento — NUNCA em selector — e cacheia em estado
- *  local, recarregando ao trocar de projeto (dep = project.path). */
-function SddFeatureList({ project }: { project: Project }) {
-  // Selectors devolvem primitivos/refs do store (estáveis) — nunca objeto novo.
-  const focusSlug = useApp((s) => s.sddFocusSlug)
-  const setSddFocus = useApp((s) => s.setSddFocus)
-  const requestSddCreate = useApp((s) => s.requestSddCreate)
-  // versão dos dados: o SddView bumpa ao criar/recarregar → esta lista recarrega.
-  const dataVersion = useApp((s) => s.sddDataVersion)
-  const [plans, setPlans] = useState<SddPlan[] | null>(null) // null = carregando
-  const [query, setQuery] = useState("")
-
-  // query só reseta ao TROCAR de projeto (não a cada bump de dados — senão a
-  // busca digitada sumia quando uma etapa concluía no fundo).
-  useEffect(() => {
-    setQuery("")
-    setPlans(null) // projeto novo → loader (bump de dados NÃO passa por aqui)
-  }, [project.path])
-
-  useEffect(() => {
-    let cancelled = false
-    // recarga por bump mantém a lista atual na tela (sem flash de loading);
-    // só a PRIMEIRA carga do projeto mostra o loader (plans === null).
-    loadSddPlans(project.path)
-      .then((p) => {
-        if (!cancelled) setPlans(p)
-      })
-      .catch(() => {
-        if (!cancelled) setPlans([])
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [project.path, dataVersion])
-
-  // Busca local (título/slug) + ordenação: em andamento primeiro, depois
-  // concluídas; dentro de cada grupo, por título. Stage EFETIVO (sem PR aqui).
-  const rows = useMemo(() => {
-    if (!plans) return []
-    const q = query.trim().toLowerCase()
-    return plans
-      .filter(
-        (p) =>
-          !q ||
-          p.title.toLowerCase().includes(q) ||
-          p.slug.toLowerCase().includes(q),
-      )
-      .map((p) => ({ plan: p, stage: effectiveStage(p, null) }))
-      .sort((a, b) => {
-        const ad = a.stage === "done" ? 1 : 0
-        const bd = b.stage === "done" ? 1 : 0
-        if (ad !== bd) return ad - bd
-        return a.plan.title.localeCompare(b.plan.title)
-      })
-  }, [plans, query])
-
-  const newFeatureBtn = (
-    <button
-      onClick={() => requestSddCreate()}
-      className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sel-hover hover:text-foreground"
-    >
-      {/* Mesmo padrão visual do "+ Nova tarefa": ação primária da superfície. */}
-      <span className="grid size-5 shrink-0 place-items-center">
-        <Plus className="size-3.5" />
-      </span>
-      Nova feature
-    </button>
-  )
-
-  if (plans === null) {
-    return (
-      <div className="animate-reveal-down mt-0.5 mb-1 flex items-center gap-2 py-2 pl-10 text-[12px] text-muted-foreground/70">
-        <Loader2 className="size-3 animate-spin" aria-label="carregando" />
-        Carregando features…
-      </div>
-    )
-  }
-
-  if (plans.length === 0) {
-    return (
-      <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
-        <p className="py-2 pl-10 text-[12px] text-muted-foreground/70">
-          Nenhuma feature ainda
-        </p>
-        {newFeatureBtn}
-      </div>
-    )
-  }
-
-  return (
-    <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
-      {/* Busca compacta, alinhada à coluna de texto (pl-10) das linhas. */}
-      <div className="mr-2 mb-0.5 ml-10 flex items-center gap-1.5 rounded-md border border-border/70 bg-background/60 px-1.5 py-1">
-        <Search className="size-3 shrink-0 text-muted-foreground/60" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar feature…"
-          aria-label="Buscar feature"
-          className="min-w-0 flex-1 bg-transparent text-[12px] text-foreground outline-none placeholder:text-muted-foreground/60"
-        />
-        {query && (
-          <button
-            onClick={() => setQuery("")}
-            className="shrink-0 rounded p-0.5 text-muted-foreground/60 hover:text-foreground"
-            title="Limpar busca"
-            aria-label="Limpar busca"
-          >
-            <X className="size-3" />
-          </button>
-        )}
-      </div>
-      {rows.length === 0 ? (
-        <p className="py-2 pl-10 text-[12px] text-muted-foreground/70">
-          Nenhuma feature encontrada
-        </p>
-      ) : (
-        rows.map(({ plan, stage }) => {
-          const selected = plan.slug === focusSlug
-          return (
-            <div
-              key={plan.slug}
-              className={cn(
-                "group/f relative flex items-center rounded-md transition-colors",
-                // Mesma receita única de "selecionado" (§2, ADR-043).
-                selected ? "bg-sel" : "hover:bg-sel-hover",
-              )}
-            >
-              <button
-                onClick={() => setSddFocus(plan.slug)}
-                title={plan.slug}
-                className={cn(
-                  "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 pl-10 text-left text-[12px]",
-                  // S3.6 — mesmo motivo da lista de conversas: brass 12px sobre
-                  // a superfície de seleção reprova AA no claro (3.56:1). Ativo
-                  // = foreground + peso 500 (o segundo canal da receita).
-                  selected
-                    ? "font-medium text-foreground"
-                    : "font-normal text-muted-foreground group-hover/f:text-foreground",
-                )}
-              >
-                <span className="min-w-0 flex-1 truncate">{plan.title}</span>
-                {/* Badge compacto do estágio EFETIVO. "done" é estado
-                    ambiente permanente na sidebar, então é CINZA (STYLEGUIDE
-                    §2: verde é marco, não decoração que fica na tela).
-                    Sem uppercase+tracking à mão (§3 proíbe etiqueta de
-                    instrumento improvisada): além de virar regra, o caixa-alta
-                    espremia o título ao lado. "IMPLEMENTAÇÃO" com tracking
-                    custava ~92px dos 142px úteis da sidebar no mínimo (190px);
-                    "Implementação" custa ~74px, menos do que o badge gastava
-                    ANTES da migração pra 11px. O rótulo canônico fica inteiro
-                    (§7: não inventar sinônimo curto pra caber). */}
-                {/* Cinza nos dois estados, igual ao `StageBadge` do painel:
-                    estágio não é gesto nem status, e quem distingue "done" de
-                    "discovery" é o TEXTO (§9 item 4). */}
-                <span className="shrink-0 rounded-sm bg-muted px-1 py-px text-[11px] leading-4 text-muted-foreground">
-                  {stageLabel(stage)}
-                </span>
-              </button>
-            </div>
-          )
-        })
-      )}
-      {newFeatureBtn}
-    </div>
-  )
-}
-
 function GlobalEntries() {
   return (
     <div className="px-2 pt-2">
@@ -277,9 +98,10 @@ function GlobalEntries() {
         <span className="label-mono">Geral</span>
       </div>
       <div className="space-y-0.5">
-        <FleetEntry />
-        <ScheduledEntry />
-        <FlightPlansEntry />
+        {GLOBAL_NAVIGATION.map((entry) => {
+          const Entry = { painel: PanelEntry, fleet: FleetEntry, scheduled: ScheduledEntry, flightPlans: FlightPlansEntry }[entry.id]
+          return <Entry key={entry.id} />
+        })}
       </div>
     </div>
   )
@@ -412,16 +234,10 @@ function ArchivedSection() {
 
 export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   const projects = useApp((s) => s.projects)
+  const workVisible = useApp((s) => s.viewMode === "linear" && !s.scheduledOpen && !s.flightPlansOpen && !s.fleetOpen)
   const activeId = useApp((s) => s.activeProjectId)
   const setActive = useApp((s) => s.setActiveProject)
-  // Superfície ativa decide o OBJETO listado sob cada projeto (F2): linear =
-  // conversas (as disputas ⚔️ ancoram nelas); sdd = features do projeto ATIVO
-  // (não-ativos ficam só com a linha do projeto).
-  const viewMode = useApp((s) => s.viewMode)
-  const theme = useApp((s) => s.theme)
-  const toggleTheme = useApp((s) => s.toggleTheme)
-  const userProfile = useApp((s) => s.settings.userProfile)
-  const setSettingsOpen = useApp((s) => s.setSettingsOpen)
+
 
   // A pasta de cada projeto ainda existe? Confere no boot e quando a lista de
   // CAMINHOS muda (adicionar/arquivar) — não a cada render, e nunca em laço:
@@ -538,7 +354,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                   <div key={p.id} className="flex flex-col">
                     <ProjectRow
                       project={p}
-                      active={p.id === activeId}
+                      active={workVisible && p.id === activeId}
                       expanded={expanded.has(p.id)}
                       status={
                         runningProjects.has(p.id) ? "running" : (p.status ?? "idle")
@@ -558,12 +374,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                       onToggle={() => toggleExpand(p.id)}
                       onDelete={() => confirmDeleteProject(p)}
                     />
-                    {expanded.has(p.id) &&
-                      (viewMode === "sdd" ? (
-                        p.id === activeId && <SddFeatureList project={p} />
-                      ) : (
-                        <ConversationList projectId={p.id} />
-                      ))}
+                    {expanded.has(p.id) && <ConversationList projectId={p.id} />}
                   </div>
                 ))
               )}
@@ -581,32 +392,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
           Duas linhas empilhadas a 24px foi o que o usuário leu como "cortado".
           O avatar saiu do brass junto: brass é gesto, avatar é identidade. */}
       <footer className="flex h-12 shrink-0 items-center gap-1.5 px-3">
-        <button
-          type="button"
-          onClick={() => setSettingsOpen(true, "profile")}
-          className="group flex min-w-0 flex-1 items-center gap-2.5 rounded-md p-1 -ml-1 text-left transition-colors hover:bg-sel-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-          title="Abrir perfil e preferências"
-          aria-label="Perfil do usuário e preferências"
-        >
-          <UserAvatar size={24} profile={userProfile} alt="" />
-          <div className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground">
-            {userProfile?.name.trim() || "Você"}
-          </div>
-        </button>
-        <Button
-          variant="ghost"
-          size="icone-padrao"
-          className="text-muted-foreground hover:text-foreground"
-          onClick={toggleTheme}
-          title="Alternar tema"
-          aria-label="Alternar tema"
-        >
-          {theme === "dark" ? (
-            <Sun className="size-4" />
-          ) : (
-            <Moon className="size-4" />
-          )}
-        </Button>
+        <AccountMenu />
       </footer>
     </aside>
   )

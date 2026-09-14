@@ -146,7 +146,7 @@ beforeEach(() => {
     queuedPrompt: null,
   })
   useMission.setState({ byConv: {} })
-  useApp.setState({ viewMode: "linear", scheduledOpen: false })
+  useApp.setState({ viewMode: "linear", scheduledOpen: false, fleetOpen: false, flightPlansOpen: false })
   vi.mocked(answerInteraction).mockClear()
 })
 
@@ -271,6 +271,20 @@ describe("computeContextualSplit", () => {
     useInteractions.setState({ queue: [req] })
     const split = computeContextualSplit()
     expect(split.inline).toEqual([])
+    expect(split.global).toEqual([req])
+  })
+
+  it.each(["fleetOpen", "flightPlansOpen"] as const)("%s mantém a aprovação global enquanto cobre a conversa", (workspace) => {
+    useApp.setState({ [workspace]: true })
+    useChat.setState({
+      activeId: "c1",
+      byId: { c1: conversa("p1", { runId: "r-1", running: true }) },
+    })
+    const req = aprovacao("i1", "r-1")
+    useInteractions.setState({ queue: [req] })
+    const split = computeContextualSplit()
+    expect(split.inline).toEqual([])
+    expect(split.inlineConvId).toBeNull()
     expect(split.global).toEqual([req])
   })
 

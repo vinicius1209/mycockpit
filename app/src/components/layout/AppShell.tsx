@@ -11,7 +11,6 @@ import { DiffTab } from "@/components/layout/DiffTab"
 import { FileTab } from "@/components/layout/FileTab"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
-import { SddView } from "@/components/sdd/SddView"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { FleetView } from "@/components/fleet/FleetView"
 import { BranchSplitView } from "@/components/layout/BranchSplitView"
@@ -82,8 +81,6 @@ export function AppShell() {
     <ScheduledView />
   ) : fleetOpen ? (
     <FleetView />
-  ) : viewMode === "sdd" ? (
-    <SddView />
   ) : null
 
   return (
@@ -143,7 +140,7 @@ export function AppShell() {
                 {/* Tira de abas do Trabalho (F1.1). Conversa é a âncora fixa e
                     hospeda o + de ações; Alterações entra e sai sem levar a
                     navegação junto. `viewMode` ainda decide, senão a tira
-                    apareceria por cima do Painel e das Features. */}
+                    apareceria por cima do Painel. */}
                 {viewMode === "linear" && !coberto && (
                   <MainTabs
                     tab={mainTab}
@@ -159,9 +156,8 @@ export function AppShell() {
                     Painel e Trabalho ficam SEMPRE MONTADOS (toggle por CSS):
                     desmontar/remontar a árvore do chat (markdown gigante) a
                     cada troca de aba travava o main thread — o memo dos itens
-                    não sobrevive a remount. SDD/Agendado seguem condicionais
-                    (menos frequentes, e o SddView recarrega planos ao montar
-                    de propósito). */}
+                    não sobrevive a remount. As views globais seguem
+                    condicionais (menos frequentes). */}
                 <div
                   className={cn(
                     HOST_SUPERFICIE,
