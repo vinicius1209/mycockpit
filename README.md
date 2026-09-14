@@ -1,40 +1,57 @@
-# Frota
+<div align="center">
+  <img src="assets/brand/frota-icon.svg" width="92" height="92" alt="Frota Icon" />
+  <h1>Frota</h1>
+  <p><strong>Cockpit desktop local-first para conduzir agentes de código com o estado real do trabalho à vista.</strong></p>
 
-Frota é um cockpit desktop, local-first, para conduzir agentes de código com o
-estado real do trabalho à vista. O app organiza conversas, decisões pendentes,
-alterações, custo, missões e evidências sem esconder o gesto humano que inicia
-ou aprova uma ação.
+  <p>
+    <img src="https://img.shields.io/badge/Tauri_2-React_19-blue?style=flat-square" alt="Tauri 2 + React 19" />
+    <img src="https://img.shields.io/badge/Rust-TypeScript-orange?style=flat-square" alt="Rust + TypeScript" />
+    <img src="https://img.shields.io/badge/SQLite-Local--First-141619?style=flat-square" alt="SQLite Local First" />
+    <img src="https://img.shields.io/badge/macOS-Linux-22262c?style=flat-square" alt="Plataformas" />
+  </p>
+</div>
 
-O produto é Tauri 2 + React 19 + TypeScript, com backend Rust, estado de UI em
-zustand e persistência SQLite via `@tauri-apps/plugin-sql`. Ele usa as CLIs já
-instaladas e autenticadas na máquina; credenciais e histórico permanecem
-locais.
+<br />
 
-## Superfícies atuais
+Frota é um cockpit desktop para orquestrar agentes autônomos de desenvolvimento com transparência total: a interface reflete o estado real da frota e pede a próxima decisão humana, sem despachos ocultos, sem teatro e sem atividade inventada.
 
-| Superfície | Papel |
+Construído com **Tauri 2 + React 19 + TypeScript + Rust**, com estado em **zustand** e persistência local em **SQLite**. O app consome as CLIs dos agentes já instaladas e autenticadas na sua máquina: credenciais, chaves e histórico permanecem 100% locais.
+
+---
+
+## As Três Leis da Frota
+
+1. **Estado real, nunca teatro.** Nada de atividade inventada. "Rodando" falso é proibido; custo e estado derivam de fontes únicas. O app nunca sintetiza uma resposta que o motor não deu.
+2. **A decisão é humana.** Nada de despacho automático ou delegação desgovernada. O agente pode pedir o gesto; quem confirma e autoriza é a pessoa.
+3. **Agnosticismo por capacidade.** Código genérico nunca compara o nome do motor. O comportamento é derivado estritamente do registry de `Capabilities`.
+
+---
+
+## Superfícies Principais
+
+| Superfície | Descrição |
 |---|---|
-| **Painel** | retrospectiva de custo e entregas, sem fingir atividade |
-| **Trabalho** | conversas, diffs, planos vivos, decisões, notas e execução dos agentes |
+| **Trabalho** | Conversas, diffs atômicos, planos vivos, gestão de contexto, notas e execução dos agentes em tempo real |
+| **Painel** | Retrospectiva factual de custo, sessões e entregas consolidadas, sem simulação |
+| **Dynamic HUD** | Instrumento de voo flutuante integrado ao notch físico e Dynamic Island no macOS, com telemetria viva e controle de parada |
+| **Workspaces Globais** | Planos de voo, Agendamentos e Gestão da Frota com visões unificadas |
 
-Planos de voo, Agendamentos e Frota são workspaces globais abertos sobre essas
-superfícies. Especialistas aconselham ou pilotam dentro do mesmo conceito de
-agente; a decisão final continua sendo humana.
+---
 
-## Agentes
+## Agentes Suportados
 
-O registry atual oferece adapters para:
+O registry atual oferece suporte e adapters tipados para:
 
-- Claude Code
-- Codex
-- Antigravity (`agy`)
-- OpenCode
+- **Claude Code**
+- **Codex**
+- **Google Antigravity (`agy`)**
+- **OpenCode**
 
-Capacidade nunca é inferida pelo nome do fornecedor. O backend declara o
-contrato em `app/src-tauri/src/adapters.rs`, a UI mantém o espelho em
-`app/src/lib/agents.ts`, e testes de contrato impedem divergência silenciosa.
+O contrato dos adapters é declarado em Rust em [`app/src-tauri/src/adapters.rs`](app/src-tauri/src/adapters.rs) e espelhado em TypeScript em [`app/src/lib/agents.ts`](app/src/lib/agents.ts), garantido por suítes de testes de contrato.
 
-## Arquitetura em um minuto
+---
+
+## Arquitetura em um Minuto
 
 ```mermaid
 flowchart LR
@@ -47,53 +64,63 @@ flowchart LR
     RUN --> MCP["MCP Control Plane"]
 ```
 
-A UI renderiza eventos normalizados e degrada de forma honesta quando um
-adapter não oferece determinada capacidade. Conversas persistem o transcript;
-rascunhos não enviados são uma entidade separada, por conversa, e nunca entram
-no prompt antes do envio.
+- **Fail-open no render, fail-closed no efeito:** eventos desconhecidos preservam a estabilidade da UI como `Unknown`; efeitos sem pré-condições validadas abortam imediatamente.
+- **Rascunhos desacoplados:** o transcript pertence à sessão; rascunhos não enviados residem em `useComposerDrafts` persistidos separadamente por conversa, prevenindo perda acidental de prompts.
 
-O mapa detalhado e os donos de estado estão em
-[`docs/architecture.md`](./docs/architecture.md). O contrato dos adapters está
-em [`docs/agent-runner.md`](./docs/agent-runner.md).
+O mapa completo de arquitetura está detalhado em [`docs/architecture.md`](./docs/architecture.md).
 
-## Desenvolvimento
+---
 
-Pré-requisitos: Bun, toolchain Rust e Xcode Command Line Tools no macOS. Para
-usar um agente, a CLI correspondente precisa estar instalada e autenticada.
+## Desenvolvimento Local
+
+### Pré-requisitos
+- [Bun](https://bun.sh)
+- Toolchain [Rust](https://rustup.rs/) (cargo)
+- macOS (Xcode Command Line Tools) ou Linux com dependências webkit2gtk
+
+### Rodando em Desenvolvimento
 
 ```bash
+# Entrar na pasta do frontend e instalar dependências
 cd app
 bun install
+
+# Iniciar em modo desenvolvimento com Tauri
 bun run tauri dev
 ```
 
-Validação completa exigida pelo repositório:
+### Validação e Qualidade
+
+O repositório cobra integridade rigorosa com guardas automáticas de design, geometria e tipografia:
 
 ```bash
+# Frontend: testes vitest, typecheck estrito e lints do guia de estilo
 cd app
 bun run test
 bunx tsc -b --force
 bun run check
 
+# Backend: testes unitários e de integração Rust
 cd src-tauri
 cargo test
 ```
 
-O build de pacote pode ser feito com `cd app && bun run tauri build`. O canal
-numerado e a promoção para `/Applications/Frota.app` vivem em
-`scripts/build.sh` e na skill `/build`.
+### Build e Empacotamento
 
-## Para agentes e contribuidores
+```bash
+cd app
+bun run tauri build
+```
 
-Leia [`AGENTS.md`](./AGENTS.md) inteiro antes de editar. Ele é a fonte única das
-leis do repositório e aponta os documentos canônicos por assunto:
+---
 
-- [`docs/STYLEGUIDE.md`](./docs/STYLEGUIDE.md), linguagem visual;
-- [`docs/decisions.md`](./docs/decisions.md), decisões estruturais;
-- [`docs/architecture.md`](./docs/architecture.md), arquitetura atual;
-- `docs/*-plan.md`, histórico e plano de cada frente, sempre respeitando os
-  blocos de correção/status no topo.
+## Documentação Canônica
 
-O nome público é Frota. Identificadores persistidos como `mycockpit.db`,
-`.mycockpit/`, `mc.app` e `dev.vinicius.mycockpit` são contratos legados
-intencionais e não devem ser renomeados sem uma migração de compatibilidade.
+Antes de contribuir ou alterar código, consulte a documentação canônica:
+
+- [`AGENTS.md`](./AGENTS.md): fonte única das leis do repositório;
+- [`docs/STYLEGUIDE.md`](./docs/STYLEGUIDE.md): guia de design, escala tipográfica e paleta;
+- [`docs/decisions.md`](./docs/decisions.md): histórico de todas as ADRs de arquitetura;
+- [`docs/architecture.md`](./docs/architecture.md): mapa vivo de donos de estado e contratos.
+
+> **Nota de marca:** O nome público e visível do produto é **Frota**. Nomes persistidos como `mycockpit.db`, `.mycockpit/`, `mc.app` e `dev.vinicius.mycockpit` são identificadores de sistema intencionalmente mantidos por compatibilidade.
