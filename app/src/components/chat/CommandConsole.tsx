@@ -15,8 +15,8 @@ import { IdentityDoor } from "@/components/chat/ComposerExecutionControls"
 import { resumoDaIdentidade, identidadeEfetiva } from "@/components/chat/composerIdentity"
 import { composerPlaceholder } from "@/components/chat/composerPlaceholder"
 import { avisoDeRevezamento } from "@/store/chat/revezamento"
+import { SlashPopover } from "@/components/chat/SlashPopover"
 import {
-  SlashPopover,
   AttachmentChips,
   QueuedChips,
   ComposerActions,
@@ -34,8 +34,8 @@ import { itensDeNota } from "@/components/notes/noteMention"
 import { arquivosTocados } from "@/lib/mentionRank"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
+import { useConvDoComposer } from "@/components/chat/convDoComposer"
 import {
-  useActiveConv,
   useChat,
   deferredStopWarning,
   hasExecutorTurn,
@@ -144,7 +144,7 @@ export function CommandConsole({
   // e o pill já é ele. (Digitar "/" no meio nunca abriu o popover; isto cobre
   // a borda em que o texto serializado volta a ser só "/nome".)
   const [hasCommandPill, setHasCommandPill] = useState(false)
-  const conv = useActiveConv()
+  const conv = useConvDoComposer()
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
   const project = useActiveProject()
@@ -530,7 +530,9 @@ export function CommandConsole({
       {slashOpen && (
         <SlashPopover
           project={project}
-          matches={slashMatches}
+          agent={effectiveDest}
+          sections={slash.slashSectionList}
+          inventory={slash.inventory}
           idx={slashIdx}
           setIdx={setSlashIdx}
           onPick={insertCommand}

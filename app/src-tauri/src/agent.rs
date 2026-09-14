@@ -209,6 +209,12 @@ pub enum AgentEvent {
         model: Option<String>,
         tools: usize,
     },
+    /// Inventário de comandos/skills/plugins anunciado pelo motor no início do
+    /// run (ADR-189). O loop do runner guarda por projeto e NÃO repassa ao
+    /// frontend: é evidência para o composer, não item do fio.
+    EngineInventory {
+        inventory: crate::command_inventory::ObservedInventory,
+    },
     /// Texto completo de um bloco assistant (fallback p/ CLIs sem partial messages).
     Text {
         text: String,
@@ -893,6 +899,7 @@ pub async fn run_agent(
         &notify,
         registry.inner(),
         &run_id,
+        (adapters::canonical_agent(&agent), &req.cwd),
     )
     .await
     {
@@ -968,6 +975,7 @@ pub async fn run_agent(
             &notify,
             registry.inner(),
             &run_id,
+            (adapters::canonical_agent(&agent), &req2.cwd),
         )
         .await
         {
@@ -1337,6 +1345,7 @@ const DRENAGEM_TETO: std::time::Duration = std::time::Duration::from_secs(3);
 /// Spawn + loop (streama os eventos) + wait, UMA vez. NÃO emite Cancelled/Error/
 /// Done, quem orquestra (run_agent) decide, p/ poder reexecutar sem resume na
 /// degradação graciosa. Num resume, intercepta SessionNotFound (suprime + marca).
+#[allow(clippy::too_many_arguments)]
 async fn run_once(
     mut cmd: Command,
     resume_is_some: bool,
@@ -1345,6 +1354,8 @@ async fn run_once(
     notify: &Arc<Notify>,
     registry: &RunRegistry,
     run_id: &str,
+    // (agent canônico, cwd do pedido): chave do inventário anunciado (ADR-189).
+    inventory_key: (&str, &str),
 ) -> Result<Outcome, String> {
     // stdin null é OBRIGATÓRIO: sem isso o `codex exec` trava lendo stdin
     // (verificado). Inofensivo p/ o Claude (que não lê stdin em -p).
@@ -1435,6 +1446,11 @@ async fn run_once(
                         // (agy) tratam como texto. Default preserva o comportamento
                         // antigo (JSON→map_line, senão Unknown; regra de ouro).
                         for ev in adapter.on_stdout_line(&line) {
+                            if let AgentEvent::EngineInventory { inventory } = ev {
+                                let (agent, cwd) = inventory_key;
+                                crate::command_inventory::observe(agent, cwd, inventory);
+                                continue;
+                            }
                             if matches!(ev, AgentEvent::SessionNotFound { .. }) {
                                 if resume_is_some {
                                     session_not_found = true; // suprime + retry

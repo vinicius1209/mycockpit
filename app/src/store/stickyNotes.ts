@@ -5,7 +5,7 @@ import {
   ALVO_QUALQUER,
   normalizarAlvo,
 } from "@/components/notes/noteTargets"
-import { comporNotasNoPrompt } from "@/components/notes/noteMention"
+import { comporNotasNoPrompt, type PromptComNotas } from "@/components/notes/noteMention"
 import type { StickyNote, StickyNoteTarget } from "@/components/notes/types"
 
 interface StickyNotesState {
@@ -156,10 +156,10 @@ export function selectNotesFor(
 export function withNotasDoBloco(
   texto: string,
   escopo: EscopoDeBusca,
-): string {
+): PromptComNotas {
   // Sem "@" no texto não há o que resolver: o caso comum (envio normal) sai
   // daqui sem tocar na lista de notas.
-  if (!texto.includes("@nota/")) return texto
+  if (!texto.includes("@nota/")) return { prompt: texto, ids: [], anexos: [] }
   const visiveis = selectNotesFor(useStickyNotes.getState().notes, escopo)
-  return comporNotasNoPrompt(texto, visiveis).prompt
+  return comporNotasNoPrompt(texto, visiveis)
 }

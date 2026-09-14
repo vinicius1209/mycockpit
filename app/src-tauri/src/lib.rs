@@ -17,6 +17,7 @@ mod browser;
 mod browser_cdp;
 mod browser_panel;
 mod catalog;
+mod command_inventory;
 mod claude_usage;
 mod codex_appserver;
 mod codex_resume_guard;
@@ -71,6 +72,7 @@ mod sandbox;
 pub mod scope_guidance;
 mod skills;
 mod sources;
+mod provider_commands;
 mod statusline_install;
 mod stt;
 mod tool_gateway;
@@ -680,6 +682,7 @@ pub fn run() {
             // Catálogo de preços (models.dev): registra onde fica o cache em
             // disco p/ o pricing achar preços dinâmicos já na 1ª consulta.
             catalog::init(app.handle());
+            command_inventory::init(app.handle());
 
             // Titlebar overlay (decorum): visual unificado + traffic lights encaixados +
             // drag funcionando (sem o bug do Overlay nativo).
@@ -871,6 +874,7 @@ pub fn run() {
             sources::read_text_file,
             sources::read_project_file_bytes,
             sources::read_project_commands,
+            command_inventory::read_command_inventory,
             project_files::list_dir_children,
             project_files::search_project_files,
             sources::write_mission_state,

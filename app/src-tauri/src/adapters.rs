@@ -149,7 +149,68 @@ pub enum CommandSource {
     ClaudeDirs,
     /// `~/.codex/prompts` (custom prompts; a convenção do Codex é SÓ global).
     CodexPrompts,
+    /// Plugins habilitados do Claude Code: `installed_plugins.json` +
+    /// `enabledPlugins` dos settings, e dentro de cada um `commands/` e
+    /// `skills/`, invocados como `/plugin:nome` (claude 2.1.270).
+    ClaudePlugins,
+    /// Skills do Codex em `~/.codex/skills` (inclui `.system`). Plugins do
+    /// Codex só aparecem pelo inventário consultado (`CodexSkillsList`).
+    CodexSkills,
 }
+
+/// Canal pelo qual o PRÓPRIO motor publica o inventário de comandos e skills
+/// (ADR-189). O disco (`CommandSource`) é o fallback; isto é a verdade do motor
+/// quando existe. Mesmo padrão do `CommandSource`: o dialeto mora no enum, o
+/// código genérico só pergunta a capability.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CommandInventory {
+    /// O `system/init` de todo run traz `slash_commands`, `skills`, `plugins`
+    /// e `terminal_slash_commands` (claude 2.1.270). Guardado por projeto, com
+    /// horário: é evidência do último run, não do presente.
+    ClaudeRunInit,
+    /// `codex app-server` responde `skills/list` sem turno de modelo
+    /// (codex 0.154.0), com descrição, caminho do SKILL.md e plugin de origem.
+    CodexSkillsList,
+}
+
+/// Comando do PRÓPRIO CLI que a Frota oferece no "/". Só entra aqui o que foi
+/// auditado no headless (`num_turns=0`, custo zero, sem efeito fora do run);
+/// o resto dos builtins fica fora por padrão (fail-closed, ADR-189).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct BuiltinCommand {
+    pub name: &'static str,
+    /// Rótulo de fonte nativa do motor (o mesmo de `nativeCommandSource` no
+    /// TS): é por ele que a expansão sabe que o `/nome` viaja cru.
+    pub source: &'static str,
+    /// Descrição em pt-BR para o popover (o CLI não publica descrição).
+    pub description: &'static str,
+}
+
+/// Builtins do Claude Code auditados em 14/09/2026 (claude 2.1.270,
+/// `docs/composer-extensoes-plan.md`). `/model`, `/effort`, `/mcp` e `/config`
+/// ficaram de fora de propósito: são controles que a Frota já tem.
+pub const CLAUDE_BUILTINS: &[BuiltinCommand] = &[
+    BuiltinCommand {
+        source: "claude",
+        name: "context",
+        description: "Mostra quanto da janela de contexto cada parte ocupa",
+    },
+    BuiltinCommand {
+        source: "claude",
+        name: "usage",
+        description: "Uso da assinatura e quando a janela renova",
+    },
+    BuiltinCommand {
+        source: "claude",
+        name: "skill-doctor",
+        description: "Skills carregadas, quanto contexto ocupam e quantas vezes foram usadas",
+    },
+    BuiltinCommand {
+        source: "claude",
+        name: "list-agents",
+        description: "Sessões do Claude Code abertas nesta máquina",
+    },
+];
 
 /// Fonte da JANELA DE USO do plano (rate limit: % usado + quando reseta) de um
 /// motor. Mesmo padrão do `CommandSource`: o enum confina o "como" (dialeto,
@@ -515,6 +576,11 @@ pub struct Capabilities {
     pub native_slash: bool,
     /// Convenções nativas de descoberta de comando "/" (além da casa).
     pub command_sources: &'static [CommandSource],
+    /// Canal em que o motor publica o próprio inventário (None = só disco).
+    /// Espelho TS: `commandInventory` em lib/agentCommands.ts.
+    pub command_inventory: Option<CommandInventory>,
+    /// Builtins do CLI auditados no headless e oferecidos no "/".
+    pub builtin_commands: &'static [BuiltinCommand],
     /// Retoma sessão nativa (`--resume` / `exec resume`).
     pub session_resume: bool,
     /// O CLI tem canal SYSTEM são pra instrução por-run (H1 do
@@ -680,7 +746,9 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     inline_interaction: true,
     deferred_work: true,
     native_slash: true,
-    command_sources: &[CommandSource::ClaudeDirs],
+    command_sources: &[CommandSource::ClaudeDirs, CommandSource::ClaudePlugins],
+    command_inventory: Some(CommandInventory::ClaudeRunInit),
+    builtin_commands: CLAUDE_BUILTINS,
     session_resume: true,
     system_channel: true,
     structured_output: true,
@@ -748,7 +816,10 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     inline_interaction: false,
     deferred_work: false,
     native_slash: false,
-    command_sources: &[CommandSource::CodexPrompts],
+    command_sources: &[CommandSource::CodexPrompts, CommandSource::CodexSkills],
+    command_inventory: Some(CommandInventory::CodexSkillsList),
+    // Builtins do Codex no headless ainda não foram auditados.
+    builtin_commands: &[],
     session_resume: true,
     // `-c developer_instructions` funciona só em sessão nova; no resume a
     // instrução antiga vence (empírico 0.146) → sem canal são, `false`.
@@ -845,6 +916,8 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // (`.mycockpit/commands`) o agy não conhece e segue expandindo app-side.
     native_slash: false,
     command_sources: &[],
+    command_inventory: None,
+    builtin_commands: &[],
     // agy 1.1.13: `--conversation <ID>` retoma de verdade — o `conversation_id`
     // sai no `init` de TODO run e, no resume, o `step_index` CONTINUA de onde
     // parou (6→8 em vez de recomeçar em 0) e o modelo lembra o turno anterior
@@ -1008,9 +1081,27 @@ pub struct LimitHit {
 /// expressões são deliberadamente estreitas: a decisão de que a mensagem é um
 /// limite continua dentro de cada adapter; esta função só lê o horário depois
 /// que o adapter já classificou o incidente.
+/// Pastas distintas dos anexos, na ordem em que aparecem. O anexo da nota mora
+/// em outra pasta que o da conversa; liberar só a do primeiro deixava o resto
+/// ilegível para o agente (ADR-192).
+pub(crate) fn pastas_dos_anexos(atts: &[Attachment]) -> Vec<&std::path::Path> {
+    let mut pastas: Vec<&std::path::Path> = Vec::new();
+    for a in atts {
+        if let Some(dir) = std::path::Path::new(&a.path).parent() {
+            if !pastas.contains(&dir) {
+                pastas.push(dir);
+            }
+        }
+    }
+    pastas
+}
+
 fn extract_reset_hint(msg: &str) -> Option<String> {
     let lower = msg.to_ascii_lowercase();
-    let (start, marker) = ["resets at ", "reset at ", "resets "]
+    // "resets …" é o formato do Claude; "try again at …" é o do Codex 0.154.0
+    // ("try again at Sep 19th, 2026 10:12 AM."), colhido do fio em 14/09/2026.
+    // Sem ele o hint vinha vazio e a retomada caía no backoff cego.
+    let (start, marker) = ["resets at ", "reset at ", "resets ", "try again at "]
         .into_iter()
         .filter_map(|marker| lower.find(marker).map(|start| (start, marker)))
         .min_by_key(|(start, _)| *start)?;
@@ -1068,6 +1159,8 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     deferred_work: false,
     native_slash: false,
     command_sources: &[],
+    command_inventory: None,
+    builtin_commands: &[],
     // `-s <id>` / `--continue` / `--fork`, medidos no --help.
     session_resume: true,
     system_channel: false,
@@ -1582,6 +1675,10 @@ pub struct ClaudeAdapter {
     /// dele, o `assistant` nunca completa nada: mensagem cumulativa ou CLI sem
     /// `--include-partial-messages` repetiriam texto que já está na tela.
     bloco_de_texto_aberto: bool,
+    /// Ids de mensagem que tiveram `message_start` no stream. Mensagem que
+    /// nunca streamou (builtin local: modelo `<synthetic>`, sem deltas, claude
+    /// 2.1.270) só existe no `assistant` consolidado, e é ele que vai pro fio.
+    mensagens_streamadas: std::collections::HashSet<String>,
 }
 
 impl AgentAdapter for ClaudeAdapter {
@@ -1899,8 +1996,10 @@ impl AgentAdapter for ClaudeAdapter {
         if atts.is_empty() {
             return;
         }
-        // concede ao Read tool acesso à pasta da conversa (verificado: --add-dir)
-        if let Some(dir) = std::path::Path::new(&atts[0].path).parent() {
+        // concede ao Read tool acesso às pastas dos anexos (verificado: --add-dir,
+        // repetível). Uma por pasta: anexo da nota mora em `attachments/notes/`,
+        // o da conversa em `attachments/<conv>/` (ADR-192).
+        for dir in pastas_dos_anexos(atts) {
             cmd.arg("--add-dir").arg(dir);
         }
         prompt.push_str("\n\nArquivos anexados (use o Read tool para abri-los):\n");
@@ -1913,19 +2012,30 @@ impl AgentAdapter for ClaudeAdapter {
     fn map_line(&mut self, v: &serde_json::Value) -> Vec<AgentEvent> {
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
             "system" => match v.get("subtype").and_then(|x| x.as_str()) {
-                Some("init") => vec![AgentEvent::Session {
-                    session_id: v
-                        .get("session_id")
-                        .and_then(|x| x.as_str())
-                        .unwrap_or_default()
-                        .to_string(),
-                    model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
-                    tools: v
-                        .get("tools")
-                        .and_then(|x| x.as_array())
-                        .map(Vec::len)
-                        .unwrap_or(0),
-                }],
+                Some("init") => {
+                    let mut events = vec![AgentEvent::Session {
+                        session_id: v
+                            .get("session_id")
+                            .and_then(|x| x.as_str())
+                            .unwrap_or_default()
+                            .to_string(),
+                        model: v.get("model").and_then(|x| x.as_str()).map(str::to_string),
+                        tools: v
+                            .get("tools")
+                            .and_then(|x| x.as_array())
+                            .map(Vec::len)
+                            .unwrap_or(0),
+                    }];
+                    // claude 2.1.270: o init traz slash_commands/skills/plugins
+                    // (ADR-189). Sem esses campos, nada se afirma.
+                    if let Some(inventory) = crate::command_inventory::parse_claude_init(
+                        v,
+                        crate::run_resources::epoch_ms(),
+                    ) {
+                        events.push(AgentEvent::EngineInventory { inventory });
+                    }
+                    events
+                }
                 // AUTO-COMPACT do CLI (verificado no binário 2.1.219: as chaves
                 // autoCompactEnabled/Window/Threshold existem e o default é
                 // ligado). Quando a janela enche, o claude resume a conversa
@@ -2116,6 +2226,13 @@ impl AgentAdapter for ClaudeAdapter {
                             }];
                         }
                     }
+                } else if ev_type == Some("message_start") {
+                    if let Some(id) = ev
+                        .and_then(|e| e.pointer("/message/id"))
+                        .and_then(|x| x.as_str())
+                    {
+                        self.mensagens_streamadas.insert(id.to_string());
+                    }
                 } else if ev_type == Some("content_block_start") {
                     self.texto_do_bloco.clear();
                     self.bloco_de_texto_aberto = ev
@@ -2177,9 +2294,23 @@ impl AgentAdapter for ClaudeAdapter {
                         }
                     }
                 }
+                // Mensagem do executor que NUNCA streamou: o consolidado é a
+                // única fonte do texto (resposta de builtin como `/usage`).
+                // Sem isto o builtin rodava, custava zero e não aparecia.
+                let nunca_streamou = !is_subagent
+                    && v.pointer("/message/id")
+                        .and_then(|x| x.as_str())
+                        .is_some_and(|id| !self.mensagens_streamadas.contains(id));
                 if let Some(content) = v.pointer("/message/content").and_then(|x| x.as_array()) {
                     for block in content {
                         match block.get("type").and_then(|x| x.as_str()) {
+                            Some("text") if nunca_streamou => {
+                                if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
+                                    if !t.trim().is_empty() {
+                                        out.push(AgentEvent::Text { text: t.to_string() });
+                                    }
+                                }
+                            }
                             Some("text") if is_subagent => {
                                 if let Some(t) = block.get("text").and_then(|x| x.as_str()) {
                                     if !t.trim().is_empty() {
@@ -3558,8 +3689,8 @@ impl AgentAdapter for AgyAdapter {
             return;
         }
         // `--add-dir` é repetível (verificado no --help), então este soma aos
-        // extra_dirs sem conflito.
-        if let Some(dir) = std::path::Path::new(&atts[0].path).parent() {
+        // extra_dirs sem conflito. Uma por pasta de anexo (ADR-192).
+        for dir in pastas_dos_anexos(atts) {
             cmd.arg("--add-dir").arg(dir);
         }
         prompt.push_str("\n\nArquivos anexados (abra-os antes de responder):\n");
@@ -3648,6 +3779,9 @@ pub fn codex_cost_model(requested: Option<&str>) -> Option<String> {
 #[cfg(test)]
 #[path = "adapters_claude_tail_tests.rs"]
 mod claude_tail_tests;
+#[cfg(test)]
+#[path = "adapters_claude_inventory_tests.rs"]
+mod claude_inventory_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4072,6 +4206,17 @@ mod tests {
             } if message == payload && reset == "1:50pm (America/Sao_Paulo)"
         ));
         assert!(!evs.iter().any(|ev| matches!(ev, AgentEvent::Error { .. })));
+    }
+
+    #[test]
+    fn codex_limite_de_uso_real_traz_o_horario_de_volta() {
+        // Payload REAL do fio (conversa do Codex, 14/09/2026 13:50).
+        let msg = "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 19th, 2026 10:12 AM.";
+        let hit = codex_limit(msg).expect("é limite de uso");
+        assert_eq!(hit.reset_hint.as_deref(), Some("Sep 19th, 2026 10:12 AM"));
+        // O formato do Claude segue igual.
+        let claude = extract_reset_hint("You've hit your session limit · resets 2:10pm (America/Sao_Paulo)");
+        assert_eq!(claude.as_deref(), Some("2:10pm (America/Sao_Paulo)"));
     }
 
     #[test]
@@ -5213,6 +5358,35 @@ mod tests {
         r
     }
 
+    /// Anexo do composer e anexo de nota moram em pastas diferentes; o agente
+    /// precisa de leitura nas duas. Paths no formato real de app_data.
+    #[test]
+    fn anexos_de_pastas_diferentes_liberam_cada_pasta() {
+        let base = "/Users/x/Library/Application Support/dev.vinicius.mycockpit/attachments";
+        let mut r = req_com_anexo(AttachmentKind::Image, &format!("{base}/conv-1/a.png"), "image/png");
+        for path in [format!("{base}/notes/nota-1/b.png"), format!("{base}/conv-1/c.png")] {
+            r.attachments.push(Attachment {
+                path,
+                name: "anexo".into(),
+                kind: AttachmentKind::Image,
+                mime: "image/png".into(),
+                bytes: 10,
+            });
+        }
+        let dirs_de = |args: Vec<String>| -> Vec<String> {
+            args.windows(2)
+                .filter(|w| w[0] == "--add-dir")
+                .map(|w| w[1].clone())
+                .filter(|d| d.starts_with(base))
+                .collect()
+        };
+        let esperado = vec![format!("{base}/conv-1"), format!("{base}/notes/nota-1")];
+        let claude = argv(&ClaudeAdapter::default().build_command(&r).unwrap());
+        assert_eq!(dirs_de(claude), esperado, "claude");
+        let agy = argv(&AgyAdapter::default().build_command(&r).unwrap());
+        assert_eq!(dirs_de(agy), esperado, "agy");
+    }
+
     /// O agy LÊ imagem e PDF (provado na máquina via `view_file`). Ficava em
     /// `false` só porque não há flag de imagem — "sem flag" ≠ "não vê".
     #[test]
@@ -5930,17 +6104,34 @@ mod tests {
             claude.native_slash,
             "claude-code interpreta /comando nativo"
         );
-        assert_eq!(claude.command_sources, &[CommandSource::ClaudeDirs]);
+        assert_eq!(
+            claude.command_sources,
+            &[CommandSource::ClaudeDirs, CommandSource::ClaudePlugins]
+        );
+        // claude 2.1.270: o `system/init` anuncia o inventário (ADR-189).
+        assert_eq!(claude.command_inventory, Some(CommandInventory::ClaudeRunInit));
+        let builtins: Vec<&str> = claude.builtin_commands.iter().map(|b| b.name).collect();
+        assert_eq!(builtins, vec!["context", "usage", "skill-doctor", "list-agents"]);
+        assert!(claude.builtin_commands.iter().all(|b| b.source == "claude"));
 
         let codex = capabilities_of("codex").unwrap();
         // `codex exec` NÃO interpreta /prompt — a expansão é app-side; a
         // convenção ~/.codex/prompts segue existindo pro inventário do "/".
         assert!(!codex.native_slash);
-        assert_eq!(codex.command_sources, &[CommandSource::CodexPrompts]);
+        assert_eq!(
+            codex.command_sources,
+            &[CommandSource::CodexPrompts, CommandSource::CodexSkills]
+        );
+        // codex 0.154.0: `skills/list` no app-server, sem turno (ADR-189).
+        assert_eq!(codex.command_inventory, Some(CommandInventory::CodexSkillsList));
+        assert!(codex.builtin_commands.is_empty(), "builtins do codex não auditados");
 
         let agy = capabilities_of("agy").unwrap();
         assert!(!agy.native_slash);
         assert!(agy.command_sources.is_empty(), "agy só enxerga a casa");
+        // agy 1.2.2: o `init` só traz cwd/permission_mode/tools; sem canal.
+        assert_eq!(agy.command_inventory, None);
+        assert!(agy.builtin_commands.is_empty());
     }
 
     /// Teste-GÊMEO do espelho TS (src/lib/agents.channels.test.ts) — mesma

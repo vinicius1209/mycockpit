@@ -1,0 +1,677 @@
+{
+ "id": 3,
+ "result": {
+  "marketplaces": [
+   {
+    "name": "openai-primary-runtime",
+    "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/.agents/plugins/marketplace.json",
+    "interface": null,
+    "plugins": [
+     {
+      "id": "documents@openai-primary-runtime",
+      "name": "documents",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/documents"
+      },
+      "interface": {
+       "displayName": "Documents",
+       "shortDescription": "Create and edit documents",
+       "longDescription": "Create, edit, inspect, render, verify, and export DOCX document artifacts locally. Use Documents when the durable output or target is a document, doc, docs, Word file, Google Doc, Google Docs document, memo, report, or writing artifact.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/terms-of-use/",
+       "defaultPrompt": [
+        "Draft a project memo as a document",
+        "Create a document from this outline",
+        "Write a polished doc for this plan"
+       ],
+       "brandColor": "#2563EB",
+       "composerIcon": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/documents/assets/icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/documents/assets/logo.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "pdf@openai-primary-runtime",
+      "name": "pdf",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf"
+      },
+      "interface": {
+       "displayName": "PDF",
+       "shortDescription": "Read, create, and verify PDFs",
+       "longDescription": "Read, create, inspect, render, verify, and extract content from PDF files locally. Use PDF when the durable output or target is a PDF file and visual layout fidelity matters.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/terms-of-use/",
+       "defaultPrompt": [
+        "Review this PDF and verify its layout",
+        "Create a polished PDF from this content",
+        "Extract tables and text from this PDF"
+       ],
+       "brandColor": "#DC2626",
+       "composerIcon": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf/assets/icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/pdf/assets/logo.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "spreadsheets@openai-primary-runtime",
+      "name": "spreadsheets",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/spreadsheets"
+      },
+      "interface": {
+       "displayName": "Spreadsheets",
+       "shortDescription": "Create and edit spreadsheets",
+       "longDescription": "Create, edit, inspect, render, verify, and export XLSX, CSV, and TSV spreadsheets locally, including local XLSX authoring for native Google Sheets handoff. Use Spreadsheets when the durable output or target is a spreadsheet, workbook, sheet, Google Sheet, or CSV file. Use Excel Live Control for working on a spreadsheet open in Microsoft Excel app, through the ChatGPT add-in.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/terms-of-use/",
+       "defaultPrompt": [
+        "Create a spreadsheet to analyze this company's financials",
+        "Create a corporate expense report template for my company",
+        "Take this bank statement CSV and create a full spreadsheet to analyze my transactions"
+       ],
+       "brandColor": "#107C41",
+       "composerIcon": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/spreadsheets/assets/icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/spreadsheets/assets/logo.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "presentations@openai-primary-runtime",
+      "name": "presentations",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/presentations"
+      },
+      "interface": {
+       "displayName": "Presentations",
+       "shortDescription": "Create and edit presentations",
+       "longDescription": "Create, edit, inspect, render, verify, and export presentation slide decks locally, including PPTX authoring and native Google Slides handoff guidance. Use Presentations when the durable output or target is a deck, slidedeck, presentation deck, slide deck, slides, PowerPoint, Google Slides, presentation, speaker notes, or visual deck repair.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/terms-of-use/",
+       "defaultPrompt": [
+        "Create a slide deck about the solar system",
+        "Research this company's latest earnings and create a slide deck on the company's financial performance",
+        "Create a visually stunning slide deck about the latest AI trends"
+       ],
+       "brandColor": "#C43E1C",
+       "composerIcon": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/presentations/assets/icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/presentations/assets/logo.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "template-creator@openai-primary-runtime",
+      "name": "template-creator",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/template-creator"
+      },
+      "interface": {
+       "displayName": "Template Creator",
+       "shortDescription": "Create or update reusable templates from reference content",
+       "longDescription": "Use Template Creator to create reusable templates from documents, spreadsheets, presentations, Google Docs, Slides, and Sheets links, ImageGen or Product Design images, emails, Slack messages, and Site projects. Template Creator preserves the structure, voice, layout, and style of your reference so you can quickly create new versions whenever you need them.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Create a reusable template from a document, presentation, spreadsheet, Google Workspace link, or Site project",
+        "Turn this ImageGen or Product Design image into a reusable template",
+        "Save this email or Slack message as a reusable text template"
+       ],
+       "brandColor": "#10A37F",
+       "composerIcon": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/template-creator/assets/icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.cache/codex-runtimes/codex-primary-runtime/plugins/openai-primary-runtime/plugins/template-creator/assets/logo.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     }
+    ]
+   },
+   {
+    "name": "openai-bundled",
+    "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/.agents/plugins/marketplace.json",
+    "interface": {
+     "displayName": "OpenAI Bundled"
+    },
+    "plugins": [
+     {
+      "id": "codex-app-tools@openai-bundled",
+      "name": "codex-app-tools",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/codex-app-tools"
+      },
+      "interface": {
+       "displayName": null,
+       "shortDescription": null,
+       "longDescription": null,
+       "developerName": null,
+       "category": "Developer Tools",
+       "capabilities": [],
+       "websiteUrl": null,
+       "privacyPolicyUrl": null,
+       "termsOfServiceUrl": null,
+       "defaultPrompt": null,
+       "brandColor": null,
+       "composerIcon": null,
+       "composerIconUrl": null,
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "sites@openai-bundled",
+      "name": "sites",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/sites"
+      },
+      "interface": {
+       "displayName": "Sites",
+       "shortDescription": "Build and deploy websites",
+       "longDescription": "Build, save, deploy, and inspect websites such as landing pages, portfolios, dashboards, portals, trackers, hubs, games, and internal tools with Sites. Use of Sites is subject to the ChatGPT Sites Terms (https://openai.com/policies/chatgpt-sites-terms/), and you are responsible for your website content.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/chatgpt-sites-terms/",
+       "defaultPrompt": [
+        "Build a new-hire portal for my company",
+        "Create a daily sudoku game with a leaderboard",
+        "Build a dashboard to track customer support trends"
+       ],
+       "brandColor": "#0C79D8",
+       "composerIcon": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/sites/assets/icon.svg",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/sites/assets/logo.svg",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "browser@openai-bundled",
+      "name": "browser",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/browser"
+      },
+      "interface": {
+       "displayName": "Browser",
+       "shortDescription": "Control the in-app browser",
+       "longDescription": "Browser lets ChatGPT open and control the in-app browser, mainly for local development pages and files. Use it to navigate, inspect, click, type, and take screenshots while testing pages inside ChatGPT.",
+       "developerName": "OpenAI",
+       "category": "Engineering",
+       "capabilities": [
+        "Interactive",
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Test my checkout flow on localhost"
+       ],
+       "brandColor": "#013B7B",
+       "composerIcon": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/browser/assets/composer-icon.png",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/browser/assets/browser.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "unified-computer-use@openai-bundled",
+      "name": "unified-computer-use",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/unified-computer-use"
+      },
+      "interface": {
+       "displayName": null,
+       "shortDescription": null,
+       "longDescription": null,
+       "developerName": null,
+       "category": "Engineering",
+       "capabilities": [],
+       "websiteUrl": null,
+       "privacyPolicyUrl": null,
+       "termsOfServiceUrl": null,
+       "defaultPrompt": null,
+       "brandColor": null,
+       "composerIcon": null,
+       "composerIconUrl": null,
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "computer-use@openai-bundled",
+      "name": "computer-use",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/computer-use"
+      },
+      "interface": {
+       "displayName": "Computer Use",
+       "shortDescription": "Control Mac apps from ChatGPT",
+       "longDescription": "Mac Computer Use lets ChatGPT use any app on your computer, including your web browsers and files you allow it to access. It may take screenshots or page content while working. You stay in control: you choose which apps to allow ChatGPT to access, you can stop actions at any time, and control whether we use screenshots for training.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Play a playlist to help me lock in",
+        "Open my calendar and find a good time for a focus block this week",
+        "Play a game in Chess.app"
+       ],
+       "brandColor": "#0F172A",
+       "composerIcon": null,
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/computer-use/assets/app-icon.png",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "visualize@openai-bundled",
+      "name": "visualize",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/visualize"
+      },
+      "interface": {
+       "displayName": "Visualize",
+       "shortDescription": "Create interactive visuals",
+       "longDescription": "Create interactive charts, maps, diagrams, simulations, 3D models, data explorers, and UI previews directly in your conversation. Filter data, select details, compare scenarios, and adjust inputs to see how the result changes.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Turn this dataset into an interactive explorer with filters and selectable details",
+        "Show how a spinning gyroscope works in an adjustable 3D simulation",
+        "Visualize this database schema as an interactive relationship graph"
+       ],
+       "brandColor": "#0169CC",
+       "composerIcon": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/visualize/assets/visualize.svg",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/visualize/assets/visualize.svg",
+       "logoDark": "/Users/viniciusmachado/.codex/.tmp/bundled-marketplaces/openai-bundled/plugins/visualize/assets/visualize-dark.svg",
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     }
+    ]
+   },
+   {
+    "name": "claude-plugins-official",
+    "path": "/Users/viniciusmachado/.codex/.tmp/marketplaces/claude-plugins-official/.claude-plugin/marketplace.json",
+    "interface": null,
+    "plugins": [
+     {
+      "id": "frontend-design@claude-plugins-official",
+      "name": "frontend-design",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/marketplaces/claude-plugins-official/plugins/frontend-design"
+      },
+      "interface": {
+       "displayName": null,
+       "shortDescription": null,
+       "longDescription": null,
+       "developerName": null,
+       "category": "development",
+       "capabilities": [],
+       "websiteUrl": null,
+       "privacyPolicyUrl": null,
+       "termsOfServiceUrl": null,
+       "defaultPrompt": null,
+       "brandColor": null,
+       "composerIcon": null,
+       "composerIconUrl": null,
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "supabase@claude-plugins-official",
+      "name": "supabase",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "git",
+       "url": "https://github.com/supabase-community/supabase-plugin.git",
+       "path": null,
+       "refName": null,
+       "sha": "f3f332e0164c34a8392772811737fda0cb972d06"
+      },
+      "interface": {
+       "displayName": "Supabase",
+       "shortDescription": "Supabase skills and MCP tools for Codex",
+       "longDescription": "Official Supabase plugin for Codex. Includes agent skills for Supabase development and Postgres best practices, plus MCP server integration for managing your Supabase projects directly from Codex.",
+       "developerName": "Supabase",
+       "category": "database",
+       "capabilities": [
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://supabase.com",
+       "privacyPolicyUrl": "https://supabase.com/privacy",
+       "termsOfServiceUrl": "https://supabase.com/terms",
+       "defaultPrompt": [
+        "Use Supabase to set up Auth and protected routes for my app.",
+        "Review my Supabase schema and RLS policies for security issues.",
+        "Optimize my Postgres queries and indexes using Supabase best practices."
+       ],
+       "brandColor": "#0D8351",
+       "composerIcon": null,
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/plugins/cache/claude-plugins-official/supabase/0.1.15/assets/logo.svg",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     }
+    ]
+   },
+   {
+    "name": "paper",
+    "path": "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/.agents/plugins/marketplace.json",
+    "interface": {
+     "displayName": "Paper"
+    },
+    "plugins": [
+     {
+      "id": "paper-desktop@paper",
+      "name": "paper-desktop",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "local",
+       "path": "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop"
+      },
+      "interface": {
+       "displayName": "Paper Desktop",
+       "shortDescription": "Design on a canvas that Codex can read and write to.",
+       "longDescription": "Paper is a professional design tool built on HTML and CSS. With this plugin, Codex can read your designs — structure, styles, screenshots, and text — and write back to the canvas in real time. Use it to turn designs into code, generate UI from your codebase, pull in real content from connected data sources, and keep your designs in sync with the tools your team already uses.",
+       "developerName": "Paper",
+       "category": "Design",
+       "capabilities": [
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://paper.design",
+       "privacyPolicyUrl": "https://paper.design/privacy",
+       "termsOfServiceUrl": null,
+       "defaultPrompt": [
+        "Use the CSS styles from my repo and design a settings page in Paper",
+        "Implement my design from Paper in my codebase, using my code conventions",
+        "Grab my tokens from Figma and create a design system on the canvas in Paper"
+       ],
+       "brandColor": "#81ADEC",
+       "composerIcon": "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop/assets/logo.svg",
+       "composerIconUrl": null,
+       "logo": "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop/assets/logo.svg",
+       "logoDark": null,
+       "logoUrl": null,
+       "logoUrlDark": null,
+       "screenshots": [
+        "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop/assets/barley-layout.png",
+        "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop/assets/barley-feedback.png",
+        "/Users/viniciusmachado/.codex/.tmp/marketplaces/paper/plugins/paper-desktop/assets/barley-responsive-frames.png"
+       ],
+       "screenshotUrls": []
+      }
+     }
+    ]
+   },
+   {
+    "name": "openai-curated-remote",
+    "path": null,
+    "interface": {
+     "displayName": "OpenAI Curated Remote"
+    },
+    "plugins": [
+     {
+      "id": "deep-research-work@openai-curated-remote",
+      "name": "deep-research-work",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "remote"
+      },
+      "interface": {
+       "displayName": "Deep Research",
+       "shortDescription": "Deep research",
+       "longDescription": "Investigate complex questions through broad discovery, targeted follow-up, source reconciliation, and evidence-backed synthesis within your current Work or Codex conversation, tools, workspace, and permissions.",
+       "developerName": "OpenAI",
+       "category": "Education & Research",
+       "capabilities": [
+        "Interactive",
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/terms-of-use/",
+       "defaultPrompt": [
+        "Create an investment memo analyzing a company’s diversification beyond its core business. Research the evidence for each bet.",
+        "What does the evidence actually say about a popular health or wellness claim? Help me separate credible findings from hype.",
+        "Help me understand a major historical turning point. Why did it happen, and where do historians disagree?"
+       ],
+       "brandColor": "#4F46E5",
+       "composerIcon": null,
+       "composerIconUrl": "https://files.openai.com/content?id=file_0000000012c081f5b06e39f79c862b7a&cdn=1&cp=pi&ma=30672000&ts=0&p=pi&cid=8&sig=91ad09ad34c761d7e9e144f3c6ea13f06b345e0069c3ca4374f388c14952c6c3&v=0",
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": "https://files.openai.com/content?id=file_000000006b48820cbf91817f9a06df35&cdn=1&cp=pi&ma=31968000&ts=0&p=pi&cid=8&sig=4fdc2056fa3ea0af3af366f9a8d641c26849eab8cf01bfab3bf6e5c9f9947135&v=0",
+       "logoUrlDark": "https://files.openai.com/content?id=file_00000000b1f881f6bd909088ba409b96&cdn=1&cp=pi&ma=32745600&ts=0&p=pi&cid=8&sig=b1c42dfc84c1e686276eb2990dd3d9b748d13c58bde1474767905ff1a5d3f6df&v=0",
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "openai-templates@openai-curated-remote",
+      "name": "openai-templates",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "remote"
+      },
+      "interface": {
+       "displayName": "Default templates",
+       "shortDescription": "Default templates for documents, spreadsheets, and presentations",
+       "longDescription": "Create documents, presentations, and spreadsheets from OpenAI-provided reference templates.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Create a document using the Minimal Letterhead template",
+        "Create an Analytics Dashboard spreadsheet using the Analytics Dashboard template",
+        "Create a planning presentation with the Team Alignment template"
+       ],
+       "brandColor": "#10A37F",
+       "composerIcon": null,
+       "composerIconUrl": "https://files.openai.com/content?id=file_000000003ff881f7a0f373c6706ad6c4&cdn=1&cp=pi&ma=32054400&ts=0&p=pi&cid=8&sig=31691355d47842d6c69192acd5fc1b96e37419dd2ee82403ce5c1cb89a4fc514&v=0",
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": "https://files.openai.com/content?id=file_000000006f0881f7920f68ea73090c9e&cdn=1&cp=pi&ma=30931200&ts=0&p=pi&cid=8&sig=e148b243e9b564cdd436c55acf99dcf76c498bc03721b8ba76a35fead5221cd9&v=0",
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     },
+     {
+      "id": "plugin-management@openai-curated-remote",
+      "name": "plugin-management",
+      "installed": true,
+      "enabled": true,
+      "source": {
+       "type": "remote"
+      },
+      "interface": {
+       "displayName": "Plugin Management",
+       "shortDescription": "Discover and manage plugins",
+       "longDescription": "Find relevant integrations for external apps and services, suggest useful plugins, and manage plugin permissions, dependencies, and connections.",
+       "developerName": "OpenAI",
+       "category": "Productivity",
+       "capabilities": [
+        "Interactive",
+        "Read",
+        "Write"
+       ],
+       "websiteUrl": "https://openai.com/",
+       "privacyPolicyUrl": "https://openai.com/policies/row-privacy-policy/",
+       "termsOfServiceUrl": "https://openai.com/policies/row-terms-of-use/",
+       "defaultPrompt": [
+        "Find a plugin that can help with my task",
+        "Show the permissions for one of my plugins",
+        "Check which apps a plugin needs"
+       ],
+       "brandColor": "#0F766E",
+       "composerIcon": null,
+       "composerIconUrl": "https://files.openai.com/content?id=file_00000000a62081f7b4f6043a2177fec0&cdn=1&cp=pi&ma=30153600&ts=0&p=pi&cid=8&sig=43e8b2d92a5cfecaab0a18729af00e44c0e72ca6e64db2bebb9d6fff0123ea9a&v=0",
+       "logo": null,
+       "logoDark": null,
+       "logoUrl": "https://files.openai.com/content?id=file_00000000493c81f791eead7add4bd1d0&cdn=1&cp=pi&ma=30412800&ts=0&p=pi&cid=8&sig=14d22c8206d3ce6eaf3452748b348b8bc1dcbb23d88fcb9ec783e59d14caae08&v=0",
+       "logoUrlDark": null,
+       "screenshots": [],
+       "screenshotUrls": []
+      }
+     }
+    ]
+   }
+  ],
+  "marketplaceLoadErrors": []
+ }
+}

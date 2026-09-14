@@ -134,6 +134,19 @@ describe("comporNotasNoPrompt", () => {
   it("lista vazia não emite moldura vazia", () => {
     expect(blocoDeNotas([])).toBeNull()
   })
+
+  it("nota com anexo devolve os anexos e cita os nomes dentro da moldura", () => {
+    const comPrint = {
+      ...nota("n2", "Print do limite"),
+      attachments: [{ path: "attachments/notes/n2/a.png", name: "limite.png", kind: "image" as const, mime: "image/png", bytes: 1 }],
+    }
+    const r = comporNotasNoPrompt("olha @nota/print-do-limite", [comPrint])
+    expect(r.anexos.map((a) => a.path)).toEqual(["attachments/notes/n2/a.png"])
+    expect(r.prompt).toContain("Anexos desta nota (enviados com este turno): limite.png")
+    expect(r.prompt.indexOf("limite.png")).toBeLessThan(r.prompt.indexOf("</notas-do-usuario>"))
+    // sem menção, nada de anexo
+    expect(comporNotasNoPrompt("sem nota", [comPrint]).anexos).toEqual([])
+  })
 })
 
 describe("o que o menu e o botão inserem", () => {

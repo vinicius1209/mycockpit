@@ -28,6 +28,7 @@
  */
 
 import { tituloEPreview } from "@/components/notes/noteText"
+import type { Attachment } from "@/lib/attachments"
 import type { StickyNote } from "@/components/notes/types"
 
 /** O prefixo que separa nota de arquivo no menu do "@". */
@@ -158,7 +159,11 @@ export function blocoDeNotas(notas: readonly StickyNote[]): string | null {
   if (notas.length === 0) return null
   const corpos = notas.map((n) => {
     const { titulo } = tituloEPreview(n.content)
-    return `- ${titulo}\n  ${n.content.trim().split("\n").join("\n  ")}`
+    const corpo = `- ${titulo}\n  ${n.content.trim().split("\n").join("\n  ")}`
+    const anexos = n.attachments ?? []
+    if (anexos.length === 0) return corpo
+    // Os arquivos vão anexados ao turno; a linha só amarra quais são desta nota.
+    return `${corpo}\n  Anexos desta nota (enviados com este turno): ${anexos.map((a) => a.name).join(", ")}`
   })
   return [
     "<notas-do-usuario>",
@@ -174,6 +179,9 @@ export interface PromptComNotas {
   /** Ids entregues — quem chama carimba o estado (uma nota entregue não volta
    *  sozinha no turno seguinte). */
   ids: string[]
+  /** Anexos das notas entregues. Viajam como anexo do run, não como texto: a
+   *  imagem da nota é parte da nota (ADR-192). */
+  anexos: Attachment[]
 }
 
 /**
@@ -189,9 +197,10 @@ export function comporNotasNoPrompt(
 ): PromptComNotas {
   const mencionadas = notasMencionadas(texto, notas)
   const bloco = blocoDeNotas(mencionadas)
-  if (!bloco) return { prompt: texto, ids: [] }
+  if (!bloco) return { prompt: texto, ids: [], anexos: [] }
   return {
     prompt: `${bloco}\n\n---\n\n${texto}`,
     ids: mencionadas.map((n) => n.id),
+    anexos: mencionadas.flatMap((n) => n.attachments ?? []),
   }
 }

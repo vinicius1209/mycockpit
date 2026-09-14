@@ -15,11 +15,9 @@ import { IdentityPicker } from "@/components/chat/IdentityPicker"
 import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
-import type { SlashCommand } from "@/lib/sources"
-import { commandBadges } from "@/lib/slashCommands"
 import type { Attachment } from "@/lib/attachments"
 import type { QueuedMsg } from "@/store/chat"
-import type { Destination, Project } from "@/lib/types"
+import type { Destination } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
 const CHIPS = [
@@ -27,65 +25,6 @@ const CHIPS = [
   { label: "Rodar os testes", prompt: "Rode a suíte de testes e me mostre o resultado." },
   { label: "Criar uma branch", prompt: "Crie uma branch nova a partir da main para esta tarefa." },
 ]
-
-/** Popover do "/", comandos/skills do projeto (e globais). */
-export function SlashPopover({
-  project,
-  matches,
-  idx,
-  setIdx,
-  onPick,
-}: {
-  project: Project | null
-  matches: SlashCommand[]
-  idx: number
-  setIdx: (i: number) => void
-  onPick: (name: string) => void
-}) {
-  return (
-    <div className="absolute bottom-full left-0 z-20 mb-2 w-full overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
-      <div className="border-b px-3 py-1.5 text-[11px] tracking-wide text-muted-foreground uppercase">
-        Comandos{project ? ` · ${project.name}` : ""}
-      </div>
-      <div className="max-h-64 overflow-auto p-1">
-        {matches.map((c, i) => (
-          <button
-            key={`${c.kind}:${c.name}`}
-            onMouseEnter={() => setIdx(i)}
-            onClick={() => onPick(c.name)}
-            className={cn(
-              "flex w-full flex-col items-start gap-0.5 rounded-lg px-3 py-1.5 text-left",
-              i === idx ? "bg-accent" : "hover:bg-accent/50",
-            )}
-          >
-            <span className="flex w-full items-center justify-between gap-2">
-              <span className="font-mono text-[13px] text-foreground">
-                /{c.name}
-              </span>
-              {/* chips de origem HONESTOS (fonte · escopo · tipo): o usuário
-                  vê de onde o comando vem e, portanto, quem o executa. */}
-              <span className="flex shrink-0 items-center gap-1.5">
-                {commandBadges(c).map((chip) => (
-                  <span
-                    key={chip}
-                    className="rounded border px-1 py-px text-[11px] tracking-wide text-muted-foreground uppercase"
-                  >
-                    {chip}
-                  </span>
-                ))}
-              </span>
-            </span>
-            {c.description && (
-              <span className="line-clamp-1 text-[12px] text-muted-foreground">
-                {c.description}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
 
 /** Faixa de chips dos anexos pendentes (acima do input). */
 export function AttachmentChips({

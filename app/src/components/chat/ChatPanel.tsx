@@ -6,7 +6,7 @@ import { identidadeDoDespacho } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
-import { withNotes } from "@/lib/notes"
+import { withNotasDoTurno } from "@/lib/fleet/promptCascade"
 import { RunStatusStack } from "@/components/chat/RunStatusStack"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
@@ -592,7 +592,7 @@ export function ChatPanel() {
     const embeddedExpansion = await finalizeSlashExpansion(slashExpansion, text, project.path, agent, hasPromptEnvelope)
     let promptText = embeddedExpansion.text
     let instructionSources = embeddedExpansion.instructionSources
-    promptText = withNotes(convId, conv.items, promptText)
+    ;({ prompt: promptText, attachments } = withNotasDoTurno(convId, project.id, conv.items, promptText, attachments))
     if (wheelSwitch) {
       const transplant = await prepareTurnTransplant({
         conv,

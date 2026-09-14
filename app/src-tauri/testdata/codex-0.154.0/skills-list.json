@@ -1,0 +1,287 @@
+{
+ "data": [
+  {
+   "cwd": "/Users/viniciusmachado/projetos/mycockpit",
+   "skills": [
+    {
+     "name": "documents:documents",
+     "description": "Create, edit, redline, and comment on `.docx`, Word, and Google Docs-targeted document artifacts inside the container, with a strict render-and-verify workflow. Use `render_docx.py` to generate page PNGs (and optional PDF) for visual QA, then iterate until layout is flawless before delivering the final document.",
+     "interface": {
+      "displayName": "Documents",
+      "shortDescription": "Create and edit Word and Google Docs files",
+      "iconSmall": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/documents/26.905.11957/skills/documents/assets/file-document.png",
+      "iconLarge": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/documents/26.905.11957/skills/documents/assets/file-document.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": "#2563EB",
+      "defaultPrompt": "Use $documents to create, edit, redline, or review a Word file or Google Doc."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/documents/26.905.11957/skills/documents/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "documents@openai-primary-runtime"
+    },
+    {
+     "name": "frontend-design:frontend-design",
+     "description": "Guidance for distinctive, intentional visual design when building new UI or reshaping an existing one. Helps with aesthetic direction, typography, and making choices that don't read as templated defaults.",
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/claude-plugins-official/frontend-design/local/skills/frontend-design/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "frontend-design@claude-plugins-official"
+    },
+    {
+     "name": "pdf:pdf",
+     "description": "Read, create, inspect, render, and verify PDF files where visual layout matters, including fillable AcroForms. Use Poppler rendering plus Python tools such as reportlab, pdfplumber, and pypdf for generation and extraction.",
+     "interface": {
+      "displayName": "PDF",
+      "shortDescription": "Read, create, render, and verify PDF files",
+      "iconSmall": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/pdf/26.905.11957/skills/pdf/assets/file-document.png",
+      "iconLarge": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/pdf/26.905.11957/skills/pdf/assets/file-document.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": "#DC2626",
+      "defaultPrompt": "Use $pdf to read, create, render, or visually verify a PDF file."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/pdf/26.905.11957/skills/pdf/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "pdf@openai-primary-runtime"
+    },
+    {
+     "name": "presentations:Presentations",
+     "description": "Read, create or edit PowerPoint or Google Slides decks. Use for presentation, slide deck, PowerPoint, PPT, PPTX, or Google Slides requests.",
+     "interface": {
+      "displayName": "Presentations",
+      "shortDescription": "Create polished PowerPoint and Google Slides decks",
+      "iconSmall": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/presentations/26.905.11957/skills/presentations/assets/file-presentation.png",
+      "iconLarge": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/presentations/26.905.11957/skills/presentations/assets/file-presentation.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": "#C43E1C",
+      "defaultPrompt": "Create a presentation slide deck with $Presentations."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/presentations/26.905.11957/skills/presentations/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "presentations@openai-primary-runtime"
+    },
+    {
+     "name": "sites:sites-building",
+     "description": "Use Sites to build websites, including landing pages, portfolios, dashboards, portals, trackers, hubs, and internal tools. Always use Sites when the project contains `.openai/hosting.json`.",
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-bundled/sites/0.1.66/skills/sites-building/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "sites@openai-bundled"
+    },
+    {
+     "name": "sites:sites-hosting",
+     "description": "Host websites with Sites. Always use after `sites-building`, and use for website publishing, deployment, hosting management, or projects containing `.openai/hosting.json`.",
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-bundled/sites/0.1.66/skills/sites-hosting/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "sites@openai-bundled"
+    },
+    {
+     "name": "spreadsheets:Spreadsheets",
+     "description": "Use skill when user requests to create, modify, analyze, visualize, or work with spreadsheet files (`.xlsx`, `.xls`, `.csv`, `.tsv`) or Google Sheets with formulas, formatting, charts, tables, and recalculation. Do not use for live controlling Microsoft Excel app or a live Excel session.",
+     "interface": {
+      "displayName": "Spreadsheets",
+      "shortDescription": "Create and edit spreadsheet or Google Sheets-ready files",
+      "iconSmall": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/spreadsheets/26.905.11957/skills/spreadsheets/assets/file-spreadsheet.png",
+      "iconLarge": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/spreadsheets/26.905.11957/skills/spreadsheets/assets/file-spreadsheet.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": "#107C41",
+      "defaultPrompt": "Use $Spreadsheets to build or update a spreadsheet artifact with formulas, formatting, and verification."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/spreadsheets/26.905.11957/skills/spreadsheets/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "spreadsheets@openai-primary-runtime"
+    },
+    {
+     "name": "spreadsheets:excel-live-control",
+     "description": "Control an open or active Microsoft Excel workbook through the ChatGPT add-in or connected session. Use when the user tags the Microsoft Excel app in Codex or follows up on an established live Excel task. Do not use for standalone spreadsheet files or Google Sheets.",
+     "interface": {
+      "displayName": "Excel Live Control",
+      "shortDescription": "Control an open Microsoft Excel workbook using Microsoft Excel desktop app live control",
+      "iconSmall": null,
+      "iconLarge": null,
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": "#107C41",
+      "defaultPrompt": "Use $excel-live-control to update and verify my open Microsoft Excel workbook."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/spreadsheets/26.905.11957/skills/excel-live-control/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "spreadsheets@openai-primary-runtime"
+    },
+    {
+     "name": "supabase:supabase",
+     "description": "Use when doing ANY task involving Supabase. Triggers: Supabase products (Database, Auth, Edge Functions, Realtime, Storage, Vectors, Cron, Queues); client libraries and SSR integrations (supabase-js, @supabase/ssr) in Next.js, React, SvelteKit, Astro, Remix; auth issues (login, logout, sessions, JWT, cookies, getSession, getUser, getClaims, RLS); Supabase CLI or MCP server; schema changes, migrations, declarative schemas, security audits, Postgres extensions (pg_graphql, pg_cron, pg_vector); debugging and troubleshooting errors or unexpected behavior on Supabase projects (HTTP errors, Postgres errors, RLS surprises, permission denied, schema cache issues, timeouts, Edge Function crashes, Realtime drops, Storage failures) and reading or querying logs (Logs Explorer, ClickHouse).",
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/claude-plugins-official/supabase/0.1.15/skills/supabase/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "supabase@claude-plugins-official"
+    },
+    {
+     "name": "supabase:supabase-postgres-best-practices",
+     "description": "Postgres best practices maintained by Supabase, for Postgres running anywhere. Load this skill BEFORE writing or changing anything that lives in a Postgres database: creating or altering tables and columns (including choosing column types), schema design, migrations and declarative schema files, RLS policies and the tests that verify them, indexes, triggers, database functions, queues and scheduled jobs (pg_cron, pgmq), vector/semantic search (pgvector), and restoring dumps (pg_restore) or importing data. Also load it when diagnosing slow queries, high CPU, timeouts, EXPLAIN plans, connection exhaustion, locking, bloat, or rows visible to the wrong user or tenant. This is not just a performance guide — schema, migration, security, and SQL authoring tasks need these rules too, even for a one-column change or a single query.",
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/claude-plugins-official/supabase/0.1.15/skills/supabase-postgres-best-practices/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "supabase@claude-plugins-official"
+    },
+    {
+     "name": "template-creator:template-creator",
+     "description": "Create or update a reusable personal Codex artifact-template skill. Use when the user invokes $template-creator or asks in natural language to create a reusable template from a reference document, presentation, spreadsheet, Google Docs, Slides, or Sheets link, ImageGen or Product Design image, email, Slack message, or Site project, or explicitly asks to edit or update a passed artifact-template skill. Do not use for one-off creation from an existing template.",
+     "interface": {
+      "displayName": "Template Creator",
+      "shortDescription": "Create or update personal reference-backed templates",
+      "iconSmall": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/template-creator/26.905.11957/assets/icon.png",
+      "iconLarge": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/template-creator/26.905.11957/assets/logo.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use $template-creator to create a template from my documents, presentations, spreadsheets, Google Docs, Slides, or Sheets links, ImageGen or Product Design images, emails, Slack messages, and Site projects or update the artifact template skill I pass."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-primary-runtime/template-creator/26.905.11957/skills/template-creator/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "template-creator@openai-primary-runtime"
+    },
+    {
+     "name": "visualize:visualize",
+     "description": "Create visualizations and interactive tools directly in conversation. Proactively use to show how something works; explore 'what happens when', 'what changes', or 'help me understand'; compare or inspect; create simulations, maps, charts, graphs, and mockups. Use standard tools for static scientific figures.",
+     "interface": {
+      "displayName": "Visualize",
+      "shortDescription": "Turn ideas and data into interactive visuals",
+      "iconSmall": null,
+      "iconLarge": null,
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use $visualize to create an interactive visual when a chart, map, diagram, simulation, 3D model, data explorer, or UI preview would make the result easier to understand or adjust."
+     },
+     "path": "/Users/viniciusmachado/.codex/plugins/cache/openai-bundled/visualize/1.0.32/skills/visualize/SKILL.md",
+     "scope": "user",
+     "enabled": true,
+     "pluginId": "visualize@openai-bundled"
+    },
+    {
+     "name": "imagegen",
+     "description": "Generate or edit raster images when the task benefits from AI-created bitmap visuals such as photos, illustrations, textures, sprites, mockups, or transparent-background cutouts. Use when Codex should create a brand-new image, transform an existing image, or derive visual variants from references, and the output should be a bitmap asset rather than repo-native code or vector. Do not use when the task is better handled by editing existing SVG/vector/code-native assets, extending an established icon or logo system, or building the visual directly in HTML/CSS/canvas.",
+     "interface": {
+      "displayName": "Image Gen",
+      "shortDescription": "Generate or edit images for websites, games, and more",
+      "iconSmall": "/Users/viniciusmachado/.codex/skills/.system/imagegen/assets/imagegen-small.svg",
+      "iconLarge": "/Users/viniciusmachado/.codex/skills/.system/imagegen/assets/imagegen.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use $imagegen to make or edit an image for this project."
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/imagegen/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    },
+    {
+     "name": "openai-docs",
+     "description": "Use for Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, customization, automations, and self-knowledge—including 'you,' 'your,' 'this app,' or 'this coding agent' when they refer to Codex—and for OpenAI APIs/products and ChatGPT Work. Also use for model choice/migration, prompting, SDKs, Responses, Realtime, agents, evals, and Chat/Work/Codex comparisons. Do not use for generic app/software tasks that merely mention Codex.",
+     "shortDescription": "Codex models/pricing, scheduled tasks, skills, settings, setup, troubleshooting, and self-knowledge; OpenAI APIs and ChatGPT Work. 'You'/'this app' means Codex only.",
+     "interface": {
+      "displayName": "OpenAI Docs",
+      "shortDescription": "OpenAI and Codex docs for models, skills, tasks, and setup",
+      "iconSmall": "/Users/viniciusmachado/.codex/skills/.system/openai-docs/assets/openai-small.svg",
+      "iconLarge": "/Users/viniciusmachado/.codex/skills/.system/openai-docs/assets/openai.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use OpenAI Docs for official docs lookup, questions about Codex itself or Codex surfaces, model selection, model migration, and prompt-upgrade work."
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/openai-docs/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    },
+    {
+     "name": "plugin-creator",
+     "description": "Create and scaffold plugin directories for Codex with a required `.codex-plugin/plugin.json`, optional plugin folders/files, valid manifest defaults, and personal-marketplace entries by default. Use when Codex needs to create a new personal plugin, add optional plugin structure, generate or update marketplace entries for plugin ordering and availability metadata, or update an existing local plugin during development with the CLI-driven cachebuster and reinstall flow.",
+     "interface": {
+      "displayName": "Plugin Creator",
+      "shortDescription": "Scaffold plugins and marketplace entries",
+      "iconSmall": "/Users/viniciusmachado/.codex/skills/.system/plugin-creator/assets/plugin-creator-small.svg",
+      "iconLarge": "/Users/viniciusmachado/.codex/skills/.system/plugin-creator/assets/plugin-creator.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use $plugin-creator to scaffold a valid plugin in the personal marketplace, then validate it before handing it back."
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/plugin-creator/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    },
+    {
+     "name": "review-agent",
+     "description": "Perform a read-only, defect-first review of a specified code change and return every actionable finding. Use when another agent delegates review of uncommitted changes, a base-branch diff, a commit, or custom review instructions.",
+     "interface": {
+      "displayName": "Review Agent",
+      "shortDescription": "Find actionable bugs in code changes",
+      "iconSmall": null,
+      "iconLarge": null,
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": "Use $review-agent to review the requested code changes and return actionable findings."
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/review-agent/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    },
+    {
+     "name": "skill-creator",
+     "description": "Create or update a Codex skill with appropriately scoped instructions and any needed supporting resources.",
+     "shortDescription": "Create or update a skill",
+     "interface": {
+      "displayName": "Skill Creator",
+      "shortDescription": "Create or update a skill",
+      "iconSmall": "/Users/viniciusmachado/.codex/skills/.system/skill-creator/assets/skill-creator-small.svg",
+      "iconLarge": "/Users/viniciusmachado/.codex/skills/.system/skill-creator/assets/skill-creator.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": null
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/skill-creator/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    },
+    {
+     "name": "skill-installer",
+     "description": "Install Codex skills into $CODEX_HOME/skills from a curated list or a GitHub repo path. Use when a user asks to list installable skills, install a curated skill, or install a skill from another repo (including private repos).",
+     "shortDescription": "Install curated skills from openai/skills or other repos",
+     "interface": {
+      "displayName": "Skill Installer",
+      "shortDescription": "Install curated skills from openai/skills or other repos",
+      "iconSmall": "/Users/viniciusmachado/.codex/skills/.system/skill-installer/assets/skill-installer-small.svg",
+      "iconLarge": "/Users/viniciusmachado/.codex/skills/.system/skill-installer/assets/skill-installer.png",
+      "iconSmallUrl": null,
+      "iconLargeUrl": null,
+      "brandColor": null,
+      "defaultPrompt": null
+     },
+     "path": "/Users/viniciusmachado/.codex/skills/.system/skill-installer/SKILL.md",
+     "scope": "system",
+     "enabled": true,
+     "pluginId": null
+    }
+   ],
+   "errors": []
+  }
+ ]
+}

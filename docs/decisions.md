@@ -6627,6 +6627,10 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   ausente, divergente ou recebido após o fechamento do bloco não recupera texto.
   Esta alteração não repara automaticamente respostas antigas no banco e não
   comprova o comportamento de um binário instalado sem rebuild e teste nativo.
+- **Correção (14/09/2026, ADR-190):** o sintoma voltou com esta ADR já no
+  binário instalado. A causa dominante estava no frontend: um `React error #185`
+  dentro do handler do `Channel` congelava o turno. A drenagem continua correta
+  e fica; ela só não era o que cortava a resposta.
 
 ### ADR-187 · Centro de comando, navegação global e menu da conta
 
@@ -6691,3 +6695,158 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   unitários em `hudPresentation.test.ts` e `DynamicHudExpanded.test.tsx` cobrindo
   tempo sem início, minutos, horas e minutos compostos e regressão contra `>H<`.
 
+
+### ADR-189 · O "/" pergunta ao motor o que ele tem, e diz de onde veio a lista
+
+- **Contexto (14/09/2026):** com Claude Code no mycockpit, o popover do "/"
+  oferecia dois itens (`/compactar` e `/build`) enquanto o `system/init` do
+  claude 2.1.270 anunciava 57 comandos, 22 skills e 7 plugins, e o
+  `codex app-server` 0.154.0 respondia 18 skills em `skills/list`. A descoberta
+  era só por pasta: não lia plugins de provider, lia `~/.codex/prompts` (o
+  formato antigo) e descartava em silêncio seis skills globais que eram links
+  quebrados. Estudo, sondas e payloads em `docs/composer-extensoes-plan.md` e
+  `docs/evidence/composer-inventario/`.
+- **Capability `command_inventory`** (Rust `adapters.rs`, espelho TS
+  `lib/agentCommands.ts`, gêmeos `matriz_native_slash_e_fontes_por_agent` e
+  `agents.commands.test.ts`): `ClaudeRunInit`, `CodexSkillsList` ou nenhum.
+  O código genérico pergunta a capability; o dialeto mora no enum.
+  - **Claude:** o adapter emite `AgentEvent::EngineInventory` no `init`; o
+    runner guarda por (agent, cwd) com horário em `command-inventory.json` e
+    não repassa ao fio. Regrava só quando o conteúdo muda ou a evidência
+    envelhece: custo por run, nunca por mensagem.
+  - **Codex:** `skills/list` pelo `probe_once` do app-server, sem turno de
+    modelo, cache de 2 minutos. Só o popover consulta; o envio usa cache ou disco.
+  - **agy e opencode:** sem canal (o `init` do agy 1.2.2 só traz cwd,
+    permission_mode e tools). O rodapé diz isso em vez de parecer vazio.
+- **Disco continua como fallback declarado:** `CommandSource::ClaudePlugins`
+  (`installed_plugins.json` cruzado com `enabledPlugins` de usuário, projeto e
+  local) e `CommandSource::CodexSkills` (`~/.codex/skills` e `.system`). Com
+  evidência do motor, as pastas de plugin vêm do `init` e as skills do Codex vêm
+  da consulta. Link de skill quebrado vira diagnóstico visível no popover.
+- **Builtins do CLI, fail-closed:** só entra o que foi auditado no headless com
+  `num_turns=0` e custo zero, declarado em `builtin_commands`. Claude:
+  `/context`, `/usage`, `/skill-doctor`, `/list-agents`. `/model`, `/effort`,
+  `/mcp` e `/config` ficam fora porque a Frota já tem esses controles; comandos
+  de terminal (`terminal_slash_commands`) nunca aparecem. Com evidência do
+  motor, builtin que a versão deixou de anunciar some.
+- **Invocação não muda de contrato:** fonte nativa com `nativeSlash` viaja crua
+  (plugin, skill embutida e builtin do Claude); skill do Codex expande o
+  `SKILL.md` app-side, como os prompts já expandiam. O uso de `$nome` ou do item
+  `skill` do `turn/start` fica pendente de sonda (a conta bateu no limite em
+  14/09). Item sem corpo em contexto embutido segue fail-open como texto.
+- **Resposta de builtin no fio:** a sonda mostrou que builtin não streama
+  (`assistant` com modelo `<synthetic>`, sem `message_start`), e o adapter só
+  usava o consolidado para completar cauda de delta, então a resposta sumia. O
+  adapter agora emite `Text` para mensagem do executor cujo id nunca teve
+  `message_start`. Fixture real `testdata/claude-2.1.270/builtin-usage.jsonl`.
+- **Popover:** seções na ordem do dedup (Frota · Projeto · Plugins · motor),
+  busca por nome, plugin e descrição, um chip por item e rodapé com a
+  procedência ("anunciado pelo Claude Code no último turno, às 17:02" ou "lido
+  das pastas"). O teto passou de 8 para 60 itens com rolagem; o `@` segue com 8.
+- **Fora desta decisão:** instalar plugin da Frota (`frota-plugin.json`) pela
+  interface é frente separada. MCP de plugin do provider continua cortado quando
+  o plano MCP do run é gerenciado (`--strict-mcp-config`); marcar isso no item
+  do plugin é a próxima dívida.
+
+### ADR-190 · Resposta cortada: o composer não re-renderiza por token e o canal do run não trava
+
+- **Contexto (14/09/2026):** duas respostas seguidas pararam no fio com 465 e
+  455 caracteres, enquanto a sessão do Claude gravou 3046 e 3268
+  (`stop_reason: end_turn`). Nenhum `result` chegou: a conversa não tinha linha
+  em `turn_costs`. O binário instalado (t376) já trazia a drenagem da ADR-186.
+  O `Frota.log` registrou `React error #185` no mesmo segundo em que cada bolha
+  de texto nasceu, e o erro aparece no log desde 04/09.
+- **Mecanismo, provado:** a pilha resolvida pelo sourcemap do bundle instalado
+  (mesmo hash) mostra o erro nascendo em `store/chat.ts` (`handleEvent`), chamado
+  pelo `onmessage` do `Channel`. O `Channel` do Tauri 2 só entrega a mensagem N
+  depois da N-1 e avança o índice depois que o handler retorna. A exceção
+  deixou todo evento seguinte do turno na fila para sempre, sem erro visível.
+  O `#185` não era um loop infinito: o React 19.2 conta commits que deixam
+  atualização síncrona pendente. A cada delta, o `CommandConsole` (que lia a
+  conversa inteira) re-renderizava. `mentionNames={presets.map(...)}` recriava
+  o `onSearch` do `lexical-beautiful-mentions`, cujo efeito chamava
+  `setResults([])` e gerava mais um commit. Com os deltas enfileirados, o
+  51º estourava. Reprodução no navegador com os 175 itens reais da conversa
+  e o texto real: sem correção, o contador chega a 51 e o `handleEvent` lança
+  no delta nº 52 (52 × 9 caracteres ≈ o corte gravado). Com correção, o
+  máximo foi 1 e nada lançou, com CPU normal e 6× mais lenta.
+- **Decisão, em três camadas:**
+  - `LexicalComposer` compara `mentionNames` por conteúdo, não por identidade.
+  - `useConvDoComposer` (`components/chat/convDoComposer.ts`) dá ao composer a
+    mesma referência da conversa enquanto só crescer o texto da bolha em
+    streaming ou mudar `runLiveness`. Item novo, ferramenta ou diferido mudando
+    e qualquer outro campo da conversa trocam a referência.
+  - `entregarSemTravar` (`lib/entregaDeEvento.ts`) envolve o `onmessage` do
+    canal: a falha ao aplicar um evento vai para o log com o tipo, e os
+    próximos continuam chegando. Fail-open no render; nada é re-tentado nem
+    sintetizado.
+  - `relatoVisivel` põe UM aviso por run no fio ("Um evento deste turno falhou
+    ao ser exibido, e pode faltar conteúdo acima…"), numa task nova, fora da
+    pilha que acabou de lançar. Só log não bastava: o `#185` estava no log
+    desde 04/09 e ninguém soube.
+- **Evidência:** `entregaDeEvento.test.ts` replica a regra de índice do
+  `Channel` e mostra o turno congelando sem a proteção e chegando ao `result`
+  com ela. `convDoComposer.test.ts` usa o fio real de `src/test/fio-real.json`
+  e passa pelo `handleEvent` de verdade (foi assim que `runLiveness` apareceu).
+- **Limites:** respostas já gravadas cortadas não se reparam. O `Popper` do
+  menu de modo ainda atualiza por delta, por callback assíncrono fora da fase de
+  commit, e não alimenta o contador. `SessionCostItem` e `WorkingIndicator`
+  continuam re-renderizando por token. O reprodutor de navegador foi uma sonda
+  descartável, não virou teste e2e.
+
+### ADR-191 · Retomada por limite só promete reset quando leu o horário, e a nota endereçada chega pelo composer
+
+- **Contexto (14/09/2026):** uma conversa do Codex bateu o limite semanal com
+  a mensagem real *"try again at Sep 19th, 2026 10:12 AM"*. O `reset_hint` veio
+  vazio, porque `extract_reset_hint` só reconhecia `resets …` (formato do
+  Claude). A retomada caiu no backoff cego (13:51, 13:53, 13:57, 14:05) e o
+  banner dizia "após o reset do limite", enquanto o incidente dizia "retorno
+  não informado" e a janela de uso mostrava 4d 20h. Não houve mistura com a
+  sessão do Claude: a conversa do Claude tinha o próprio limite, lido certo, e
+  retomou às 14:10. Na mesma hora, uma pergunta enviada só como `@nota/…` pelo
+  composer chegou ao agente como endereço cru.
+- **Decisão:**
+  - `extract_reset_hint` aceita também `try again at …`; `parseResetHint` lê
+    `Mês dia(st|nd|rd|th), ano hh:mm AM/PM` no relógio local.
+  - Limite sem horário legível tem motivo próprio
+    (`RESUME_REASON_LIMIT_SEM_RESET`). O banner diz "nova tentativa, sem
+    horário de reset informado", e o reenvio não afirma que o limite resetou.
+    O backoff não muda.
+  - `withNotasDoTurno` (`lib/fleet/promptCascade.ts`) resolve as duas portas
+    de nota e é chamado pelos dois envios. O `ChatPanel` chamava só `withNotes`.
+- **Evidência:** teste Rust e TS com a mensagem real do Codex; teste da nota com
+  o conteúdo e o escopo reais da nota do incidente, mais uma guarda que lê o
+  `ChatPanel` e exige a mesma porta da mesa.
+- **Limites:** os anexos da nota ficaram de fora nesta decisão e foram
+  resolvidos na ADR-192. A retomada de dias continua sendo um `setTimeout` em memória, que não
+  sobrevive a reiniciar o app.
+
+### ADR-192 · A nota endereçada chega com os anexos, como anexo de verdade do run
+
+- **Contexto (14/09/2026):** a nota do incidente da ADR-191 tinha dois prints,
+  e eram eles o assunto da pergunta. O bloco `<notas-do-usuario>` levava só o
+  texto; o agente só viu as imagens porque abriu os arquivos do disco por conta
+  própria. Havia um segundo buraco no caminho: Claude e agy liberavam leitura
+  (`--add-dir`) só na pasta do PRIMEIRO anexo, e o anexo da nota mora em
+  `attachments/notes/<id>/`, não em `attachments/<conv>/`.
+- **Decisão:**
+  - `comporNotasNoPrompt` devolve também os anexos das notas entregues, e o bloco
+    cita os nomes dentro da moldura ("Anexos desta nota (enviados com este
+    turno): …"), para o agente amarrar arquivo e nota.
+  - `withNotasDoTurno(…, attachments)` devolve prompt e a lista do run: os
+    anexos do composer primeiro, depois os das notas, sem repetir caminho.
+    Composer (`ChatPanel`) e mesa (`send.ts`, via `comporCascata`) usam a mesma
+    função; os anexos entram no run e na bolha do fio, que mostra o que foi
+    de fato enviado.
+  - `pastas_dos_anexos` (Rust) emite um `--add-dir` por pasta distinta, no
+    Claude e no agy. O Codex já passava `-i` por arquivo.
+  - Nada muda na fronteira de segurança: `resolve_live` continua exigindo
+    caminho sob a raiz de anexos (a pasta de notas está sob ela) e a
+    capability por motor continua filtrando o que não é suportado, com aviso.
+- **Evidência:** teste com a nota real e os dois prints dela; teste do
+  `resolve_live` com o caminho real da nota e uma travessia barrada; teste de
+  argv do Claude e do agy com anexo de conversa mais anexo de nota.
+- **Limites:** apagar a nota apaga os arquivos, e a bolha antiga passa a mostrar
+  o anexo como expirado. O limite de 8 anexos vale só na hora de anexar no
+  composer; a soma com os da nota não é cortada, porque cortar em silêncio
+  seria pior.

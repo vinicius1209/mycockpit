@@ -18,6 +18,43 @@ import { withNotes } from "@/lib/notes"
 import { withNotasDoBloco } from "@/store/stickyNotes"
 import { finalizeSlashExpansion } from "@/lib/slashDispatch"
 import type { SlashExpansion } from "@/lib/slashCommands"
+import type { Attachment } from "@/lib/attachments"
+
+/** Anexos do turno somados aos das notas, sem repetir arquivo (mesma nota
+ *  citada duas vezes, ou reenvio do mesmo pedido). A ordem do composer vem
+ *  primeiro. */
+export function juntarAnexos(
+  base: readonly Attachment[],
+  extras: readonly Attachment[],
+): Attachment[] {
+  const vistos = new Set(base.map((a) => a.path))
+  const out = [...base]
+  for (const a of extras) {
+    if (vistos.has(a.path)) continue
+    vistos.add(a.path)
+    out.push(a)
+  }
+  return out
+}
+
+/**
+ * As DUAS portas de nota, na ordem da cascata: a do fio e depois a do bloco
+ * (`@nota/…`). Fonte única dos dois envios, o da mesa (`comporCascata`) e o do
+ * composer (`ChatPanel`). O composer chamava só `withNotes`, então `@nota/slug`
+ * saía como endereço cru e o agente nunca via o texto (14/09/2026). Os anexos
+ * da nota entram na lista do run: sem eles a nota chegava sem os prints que
+ * eram o assunto dela (ADR-192).
+ */
+export function withNotasDoTurno(
+  convId: string,
+  projectId: string,
+  items: readonly import("@/store/chat").ChatItem[],
+  texto: string,
+  attachments: readonly Attachment[] = [],
+): { prompt: string; attachments: Attachment[] } {
+  const bloco = withNotasDoBloco(withNotes(convId, items, texto), { projectId, convId })
+  return { prompt: bloco.prompt, attachments: juntarAnexos(attachments, bloco.anexos) }
+}
 
 export interface CamadasDoPrompt {
   convId: string
@@ -45,7 +82,7 @@ export interface CamadasDoPrompt {
  */
 export async function comporCascata(
   c: CamadasDoPrompt,
-): Promise<SlashExpansion> {
+): Promise<SlashExpansion & { anexosDeNota: Attachment[] }> {
   const expansion = await finalizeSlashExpansion(
     c.slashExpansion,
     c.text,
@@ -53,9 +90,13 @@ export async function comporCascata(
     c.agent,
     !!c.lessonsBlock || !!c.doctrineBlock || !!c.personaBlock,
   )
-  let out = withNotes(c.convId, c.items, expansion.text)
-  out = withNotasDoBloco(out, { projectId: c.projectId, convId: c.convId })
+  const notas = withNotasDoTurno(c.convId, c.projectId, c.items, expansion.text)
+  let out = notas.prompt
   if (c.lessonsBlock) out = `${c.lessonsBlock}\n\n---\n\n${out}`
   if (c.doctrineBlock) out = `${c.doctrineBlock}\n\n${out}`
-  return { text: out, instructionSources: expansion.instructionSources }
+  return {
+    text: out,
+    instructionSources: expansion.instructionSources,
+    anexosDeNota: notas.attachments,
+  }
 }

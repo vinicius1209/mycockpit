@@ -56,6 +56,11 @@ export function matchesResumePattern(text: string): boolean {
  *  e o prompt dizia ao agente que ele "parou num limite" mesmo quando o gatilho
  *  tinha sido texto. Mentira barata de manter, cara de depurar. */
 export const RESUME_REASON_LIMIT = "limite da CLI atingido"
+/** Limite sem horário de reset que o app consiga ler: a espera é backoff
+ *  estimado, então nem o banner nem o reenvio podem afirmar que o limite
+ *  resetou (incidente de 14/09/2026: "após o reset do limite" num Codex que
+ *  só voltava dali a 4 dias). */
+export const RESUME_REASON_LIMIT_SEM_RESET = "limite da CLI sem horário de reset"
 export const RESUME_REASON_TEXT = "texto do turno pede retry"
 
 export interface AutoResumeVerdict {
@@ -70,16 +75,18 @@ export interface AutoResumeVerdict {
 /** O que o reenvio automático diz ao agente. Fonte ÚNICA das duas superfícies
  *  de envio (ChatPanel e fleet/send) — o texto tem que caber no gatilho. */
 export function resumePrompt(reason: string): string {
-  return reason === RESUME_REASON_LIMIT
-    ? "O turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito)."
-    : "O turno anterior indicou que continuaria depois. Se ficou alguma tarefa pendente, continue de onde parou (não repita o que já foi feito); se não ficou nada pendente, diga isso em uma linha."
+  if (reason === RESUME_REASON_LIMIT)
+    return "O turno anterior parou num limite de uso/espera. O limite já deve ter resetado: continue a tarefa pendente de onde parou (não repita o que já foi feito)."
+  if (reason === RESUME_REASON_LIMIT_SEM_RESET)
+    return "O turno anterior parou num limite de uso, sem horário de reset informado. Continue a tarefa pendente de onde parou (não repita o que já foi feito)."
+  return "O turno anterior indicou que continuaria depois. Se ficou alguma tarefa pendente, continue de onde parou (não repita o que já foi feito); se não ficou nada pendente, diga isso em uma linha."
 }
 
 /** O que o banner mostra enquanto o resume está agendado. */
 export function resumeBannerLabel(reason: string): string {
-  return reason === RESUME_REASON_LIMIT
-    ? "após o reset do limite"
-    : "porque o turno pediu continuação"
+  if (reason === RESUME_REASON_LIMIT) return "após o reset do limite"
+  if (reason === RESUME_REASON_LIMIT_SEM_RESET) return "nova tentativa, sem horário de reset informado"
+  return "porque o turno pediu continuação"
 }
 
 /** Backoff exponencial pela tentativa (0-based): 0→60s, 1→120s… cap 15min. */
@@ -203,6 +210,28 @@ function clockWithZoneDelay(hint: string, now: number): number | null {
   return target - now
 }
 
+const MESES = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+
+/** Data e hora civis sem fuso, formato real do Codex 0.154.0:
+ *  `Sep 19th, 2026 10:12 AM`. Sem fuso no texto, vale o relógio local, que é o
+ *  mesmo em que o CLI formatou a mensagem nesta máquina. */
+function monthDayClockDelay(hint: string, now: number): number | null {
+  const m = hint.match(
+    /\b([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4}),?\s+(\d{1,2}):(\d{2})\s*([ap])\.?m\.?/i,
+  )
+  if (!m) return null
+  const month = MESES.indexOf(m[1].toLowerCase())
+  const day = Number(m[2])
+  const rawHour = Number(m[4])
+  const minute = Number(m[5])
+  if (month < 0 || day < 1 || day > 31 || rawHour < 1 || rawHour > 12 || minute > 59) return null
+  const hour = (rawHour % 12) + (m[6].toLowerCase() === "p" ? 12 : 0)
+  const target = new Date(Number(m[3]), month, day, hour, minute).getTime()
+  if (!Number.isFinite(target)) return null
+  const delta = target - now
+  return delta > 0 ? delta : 0
+}
+
 function delayAfterReset(parsedDelay: number): number {
   return Math.min(Math.max(0, parsedDelay) + RESET_SAFETY_MS, MAX_TIMER_DELAY_MS)
 }
@@ -232,6 +261,9 @@ export function parseResetHint(hint: string | undefined, now = Date.now()): numb
 
   const clockDelay = clockWithZoneDelay(h, now)
   if (clockDelay != null) return clockDelay
+
+  const dateDelay = monthDayClockDelay(h, now)
+  if (dateDelay != null) return dateDelay
 
   // duração relativa: "90s", "2m", "in 5 minutes", "3 h".
   const dur = h.match(
@@ -299,9 +331,9 @@ export function wantsAutoResume(
     // hint costuma marcar o instante EXATO do reset; +2s de folga pra não cair cedo.
     // O teto de 15min pertence ao backoff sem fonte. Aplicá-lo ao relógio do
     // provider antecipa uma retomada paga, que foi o incidente de 31/08/2026.
-    const delayMs = fromHint != null
-      ? Math.max(delayAfterReset(fromHint), backoff)
-      : backoff
+    if (fromHint == null)
+      return { resume: true, delayMs: backoff, reason: RESUME_REASON_LIMIT_SEM_RESET }
+    const delayMs = Math.max(delayAfterReset(fromHint), backoff)
     return { resume: true, delayMs, reason: RESUME_REASON_LIMIT }
   }
 

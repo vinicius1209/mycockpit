@@ -151,6 +151,10 @@ nunca recebem sinal.
   da proveniência invocada, sem escrever em diretórios de provider.
 - `app/src-tauri/src/plugin_mcp.rs`: definições MCP por run, health e launcher
   stdio supervisionado com descriptor efêmero.
+- `app/src-tauri/src/command_inventory.rs` e `provider_commands.rs`: inventário
+  do "/" que o próprio motor publica (`init` do Claude, `skills/list` do Codex),
+  guardado com horário, e o fallback em disco de plugins e skills de provider
+  (ADR-189). O popover em `components/chat/SlashPopover.tsx` mostra a procedência.
 - `app/src-tauri/src/tool_gateway.rs`: Tool Catalog por run, hoje materializado
   como o MCP interno `mc-tools` para adapters com essa capability.
 - `app/src-tauri/src/work_gateway.rs`: processos longos iniciados por ferramenta
