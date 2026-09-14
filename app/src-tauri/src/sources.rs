@@ -348,7 +348,7 @@ fn read_project_file_bytes_scoped(
 /// (.claude/skills). `body` é o markdown INTEIRO do arquivo (frontmatter
 /// incluso) — o front expande app-side quando o motor da conversa não
 /// interpreta `/comando` nativamente (codex/agy, ou comando da casa).
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Default, Serialize)]
 pub struct SlashCommand {
     pub name: String,
     pub description: Option<String>,
@@ -368,9 +368,14 @@ pub struct SlashCommand {
     pub plugin_fingerprint: Option<String>,
     #[serde(rename = "contributionId", skip_serializing_if = "Option::is_none")]
     pub contribution_id: Option<String>,
+    /// Plugin DO PROVIDER que publicou o item (ex. `vercel` no Claude Code,
+    /// `documents` no Codex). Diferente de `pluginKey`: não há grant nem
+    /// fingerprint da Frota; quem executa e responde pelo plugin é o motor.
+    #[serde(rename = "providerPlugin", skip_serializing_if = "Option::is_none")]
+    pub provider_plugin: Option<String>,
 }
 
-fn collect_commands(
+pub(crate) fn collect_commands(
     dir: &Path,
     prefix: &str,
     origin: &str,
@@ -410,6 +415,7 @@ fn collect_commands(
                 plugin_name: None,
                 plugin_fingerprint: None,
                 contribution_id: None,
+                provider_plugin: None,
             });
         }
     }
@@ -441,6 +447,7 @@ fn collect_skills(dir: &Path, origin: &str, out: &mut Vec<SlashCommand>) {
             plugin_name: None,
             plugin_fingerprint: None,
             contribution_id: None,
+            provider_plugin: None,
         });
     }
 }
@@ -460,6 +467,7 @@ fn collect_plugin_skills(
         plugin_name: Some(skill.plugin_name.clone()),
         plugin_fingerprint: Some(skill.fingerprint.clone()),
         contribution_id: Some(skill.contribution_id.clone()),
+        provider_plugin: None,
     }));
 }
 
@@ -471,16 +479,28 @@ fn collect_plugin_skills(
 /// casa é canônica) e projeto antes de global. `home` injetável p/ teste.
 #[cfg(test)]
 fn collect_agent_commands(project: &Path, home: Option<&Path>, agent: &str) -> Vec<SlashCommand> {
-    collect_agent_commands_with_plugins(project, home, agent, &[])
+    collect_agent_inventory(
+        project,
+        home,
+        agent,
+        &[],
+        &crate::command_inventory::NativeEvidence::default(),
+    )
+    .0
 }
 
-fn collect_agent_commands_with_plugins(
+/// Inventário de disco de um agent, mais o que o motor já anunciou sobre
+/// pastas de plugin (`native`). Devolve também os diagnósticos de itens que
+/// sumiriam em silêncio (link de skill quebrado). ADR-189.
+pub(crate) fn collect_agent_inventory(
     project: &Path,
     home: Option<&Path>,
     agent: &str,
     plugin_skills: &[crate::plugin_contributions::PluginSkillSpec],
-) -> Vec<SlashCommand> {
+    native: &crate::command_inventory::NativeEvidence<'_>,
+) -> (Vec<SlashCommand>, Vec<String>) {
     let mut out = Vec::new();
+    let mut diagnostics = Vec::new();
     // casa agnóstica primeiro (projeto, depois global): vence o dedup.
     collect_commands(
         &project.join(".mycockpit").join("commands"),
@@ -513,10 +533,19 @@ fn collect_agent_commands_with_plugins(
                 let cd = project.join(".claude");
                 collect_commands(&cd.join("commands"), "", "project", "claude", &mut out);
                 collect_skills(&cd.join("skills"), "project", &mut out);
+                let mut broken = crate::provider_commands::broken_skill_links(&cd.join("skills"));
                 if let Some(h) = home {
                     let gd = h.join(".claude");
                     collect_commands(&gd.join("commands"), "", "global", "claude", &mut out);
                     collect_skills(&gd.join("skills"), "global", &mut out);
+                    broken.extend(crate::provider_commands::broken_skill_links(&gd.join("skills")));
+                }
+                if !broken.is_empty() {
+                    diagnostics.push(format!(
+                        "{} skill(s) com link quebrado em .claude/skills: {}",
+                        broken.len(),
+                        broken.join(", ")
+                    ));
                 }
             }
             crate::adapters::CommandSource::CodexPrompts => {
@@ -530,28 +559,55 @@ fn collect_agent_commands_with_plugins(
                     );
                 }
             }
+            crate::adapters::CommandSource::ClaudePlugins => {
+                // Com evidência do motor, as pastas vêm do `init` (a versão
+                // realmente carregada); sem ela, do installed_plugins.json.
+                let plugins = match native.observed {
+                    Some(inv) => inv
+                        .plugins
+                        .iter()
+                        .map(|p| crate::provider_commands::ProviderPlugin {
+                            name: p.name.clone(),
+                            path: std::path::PathBuf::from(&p.path),
+                            origin: "global",
+                        })
+                        .collect(),
+                    None => home
+                        .map(|h| crate::provider_commands::claude_enabled_plugins(project, h))
+                        .unwrap_or_default(),
+                };
+                for plugin in &plugins {
+                    crate::provider_commands::collect_plugin_dir(plugin, "claude", &mut out);
+                }
+            }
+            crate::adapters::CommandSource::CodexSkills => match native.queried_skills {
+                Some(skills) => out.extend(skills.iter().cloned()),
+                None => {
+                    if let Some(h) = home {
+                        crate::provider_commands::codex_disk_skills(h, &mut out);
+                    }
+                }
+            },
         }
     }
     let mut seen = std::collections::HashSet::new();
     out.retain(|c| seen.insert(c.name.clone()));
     out.sort_by(|a, b| a.name.cmp(&b.name));
-    out
+    (out, diagnostics)
 }
 
+/// Inventário usado pelo ENVIO (expansão app-side). Nunca sobe consulta
+/// lateral: usa o que o motor já anunciou e o disco. Fora da thread principal
+/// (ADR-170).
 #[tauri::command]
-pub fn read_project_commands(
+pub async fn read_project_commands(
     app: tauri::AppHandle,
     path: String,
     agent: String,
 ) -> Result<Vec<SlashCommand>, String> {
-    let home = std::env::var("HOME").ok().map(std::path::PathBuf::from);
-    let plugin_skills = crate::plugin_contributions::skills(&app)?;
-    Ok(collect_agent_commands_with_plugins(
-        Path::new(&path),
-        home.as_deref(),
-        &agent,
-        &plugin_skills,
-    ))
+    Ok(crate::command_inventory::build(&app, &path, &agent, false)
+        .await?
+        .commands)
 }
 
 /// Walk de fallback (projeto sem git): pula pastas pesadas, cap embutido.
@@ -794,6 +850,78 @@ mod tests {
                 "{agent}: ~/.codex/prompts ↔ capability CodexPrompts"
             );
         }
+        let _ = std::fs::remove_dir_all(proj.parent().unwrap());
+    }
+
+    /// ADR-189 — CONTRATO das convenções de plugin/skill de provider, no mesmo
+    /// loop sobre todos os agents: o plugin habilitado do Claude só aparece com
+    /// `ClaudePlugins`, a skill em ~/.codex/skills só com `CodexSkills`.
+    #[test]
+    fn contrato_fontes_de_plugin_e_skill_por_agent_registrado() {
+        use crate::adapters::{capabilities_of, registered_agents, CommandSource};
+        let base = std::env::temp_dir().join(format!("mc-slash-plugins-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let (proj, home) = (base.join("proj"), base.join("home"));
+        let plugin = base.join("cache/vercel");
+        std::fs::create_dir_all(plugin.join("commands")).unwrap();
+        std::fs::write(plugin.join("commands/deploy.md"), "deploy\n").unwrap();
+        std::fs::create_dir_all(home.join(".claude/plugins")).unwrap();
+        std::fs::write(
+            home.join(".claude/plugins/installed_plugins.json"),
+            serde_json::json!({"version": 2, "plugins": {"vercel@oficial": [
+                {"scope": "user", "installPath": plugin}
+            ]}})
+            .to_string(),
+        )
+        .unwrap();
+        std::fs::write(
+            home.join(".claude/settings.json"),
+            r#"{"enabledPlugins":{"vercel@oficial":true}}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(home.join(".codex/skills/triagem")).unwrap();
+        std::fs::write(home.join(".codex/skills/triagem/SKILL.md"), "passos\n").unwrap();
+        std::fs::create_dir_all(&proj).unwrap();
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            let out = collect_agent_commands(&proj, Some(&home), agent);
+            let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+            assert_eq!(
+                nomes.contains(&"vercel:deploy"),
+                caps.command_sources.contains(&CommandSource::ClaudePlugins),
+                "{agent}: plugin do Claude ↔ capability ClaudePlugins"
+            );
+            assert_eq!(
+                nomes.contains(&"triagem"),
+                caps.command_sources.contains(&CommandSource::CodexSkills),
+                "{agent}: ~/.codex/skills ↔ capability CodexSkills"
+            );
+        }
+        let _ = std::fs::remove_dir_all(base);
+    }
+
+    #[test]
+    fn inventario_consultado_substitui_as_skills_de_disco_do_codex() {
+        let (proj, home) = slash_fixture("consultado");
+        std::fs::create_dir_all(home.join(".codex/skills/so-disco")).unwrap();
+        std::fs::write(home.join(".codex/skills/so-disco/SKILL.md"), "x\n").unwrap();
+        let consultadas = vec![SlashCommand {
+            name: "documents:documents".into(),
+            kind: "skill".into(),
+            origin: "global".into(),
+            source: "codex".into(),
+            provider_plugin: Some("documents".into()),
+            ..SlashCommand::default()
+        }];
+        let evidencia = crate::command_inventory::NativeEvidence {
+            observed: None,
+            queried_skills: Some(&consultadas),
+        };
+        let (out, _) = collect_agent_inventory(&proj, Some(&home), "codex", &[], &evidencia);
+        let nomes: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
+        assert!(nomes.contains(&"documents:documents"));
+        assert!(!nomes.contains(&"so-disco"), "a consulta é a verdade do motor");
+        assert!(nomes.contains(&"triage"), "prompts continuam vindo do disco");
         let _ = std::fs::remove_dir_all(proj.parent().unwrap());
     }
 

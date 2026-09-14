@@ -131,6 +131,7 @@ async fn runner_real_transmite_eventos_e_encerra_processos() {
         &notify,
         &registry,
         &run_id,
+        ("agy", "/tmp/frota-teste-inventario"),
     )
     .await
     .unwrap();

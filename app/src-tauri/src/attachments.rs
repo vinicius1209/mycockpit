@@ -406,13 +406,20 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
         Ok(b) => b,
         Err(_) => return (Vec::new(), atts.len()),
     };
+    let root = match attachments_root(app) {
+        Ok(r) => r,
+        Err(_) => return (Vec::new(), atts.len()),
+    };
+    resolve_live_em(&base, &root, atts)
+}
+
+/// Núcleo puro do `resolve_live`: `base` é o app_data, `root` a raiz de anexos.
+/// Vale para anexo de conversa e de nota (`attachments/notes/<id>/`, ADR-192).
+fn resolve_live_em(base: &Path, root: &Path, atts: Vec<Attachment>) -> (Vec<Attachment>, usize) {
     // Raiz canônica dos anexos: TODO path resolvido (este é o único caminho que
     // entrega path ao CLI) precisa morar sob ela, mesma checagem anti-traversal de
     // read_attachment/delete_attachment. Um path forjado (`../../etc/passwd`) cai em missing.
-    let canon_root = match attachments_root(app) {
-        Ok(r) => r.canonicalize().unwrap_or(r),
-        Err(_) => return (Vec::new(), atts.len()),
-    };
+    let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let mut live = Vec::new();
     let mut missing = 0usize;
     for mut a in atts {
@@ -803,6 +810,37 @@ mod tests {
         assert!(root.join(NOTA_MORTA).exists());
         assert_eq!(s.removed_dirs, 0);
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn anexo_de_nota_resolve_para_o_run_e_travessia_continua_barrada() {
+        let base = std::env::temp_dir().join(format!("mc-resolve-nota-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let root = base.join("attachments");
+        let nota = root.join("notes").join("4160d4c8-bfa3-4347-83e5-e1f296aee8a9");
+        std::fs::create_dir_all(&nota).unwrap();
+        std::fs::write(nota.join("0db7fa79806c9a70.png"), b"png").unwrap();
+        std::fs::write(base.join("segredo.txt"), b"x").unwrap();
+        let anexo = |path: &str| Attachment {
+            path: path.into(),
+            name: "image.png".into(),
+            kind: AttachmentKind::Image,
+            mime: "image/png".into(),
+            bytes: 3,
+        };
+        let (vivos, sumidos) = resolve_live_em(
+            &base,
+            &root,
+            vec![
+                anexo("attachments/notes/4160d4c8-bfa3-4347-83e5-e1f296aee8a9/0db7fa79806c9a70.png"),
+                anexo("attachments/notes/../../segredo.txt"),
+            ],
+        );
+        assert_eq!(vivos.len(), 1);
+        assert!(std::path::Path::new(&vivos[0].path).is_absolute());
+        assert!(vivos[0].path.ends_with("notes/4160d4c8-bfa3-4347-83e5-e1f296aee8a9/0db7fa79806c9a70.png"));
+        assert_eq!(sumidos, 1, "travessia para fora da raiz não vira anexo");
+        let _ = std::fs::remove_dir_all(base);
     }
 
     #[test]

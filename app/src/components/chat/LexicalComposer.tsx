@@ -562,9 +562,16 @@ export function LexicalComposer({
     () => [...new Set([...(mentionPersisted ?? []), ...(mentionTouched ?? [])])],
     [mentionPersisted, mentionTouched],
   )
+  // Nomes por CONTEÚDO: o dono recria a lista a cada render, e ele re-renderiza
+  // por delta de texto. Por identidade, `onSearch` mudava, a lib zerava os
+  // resultados num efeito e cada delta ganhava um commit extra; no 51º o React
+  // desistia (#185) e congelava o canal do run (ADR-190).
+  const nomesChave = mentionNames.join("\n")
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const nomes = useMemo(() => mentionNames, [nomesChave])
   const atItems = useMemo(
-    () => buildLexicalAtItems(mentionNames, localFiles, mentionNotes ?? []),
-    [mentionNames, localFiles, mentionNotes],
+    () => buildLexicalAtItems(nomes, localFiles, mentionNotes ?? []),
+    [nomes, localFiles, mentionNotes],
   )
   const buscarMencoes = useMentionSearch(atItems, mentionTouched, mentionProjectRoot)
   // Tudo que pode virar pill (persona OU caminho) — é o vocabulário que o

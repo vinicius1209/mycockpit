@@ -1,9 +1,14 @@
-import { useEffect, useState } from "react"
-import { readProjectCommands } from "@/lib/sources"
-import type { SlashCommand } from "@/lib/sources"
+import { useEffect, useRef, useState } from "react"
+import { readCommandInventory } from "@/lib/sources"
+import type { CommandInventoryView, SlashCommand } from "@/lib/sources"
 import { withAppCommands } from "@/lib/slashCommands"
+import { slashSections } from "@/lib/slashSections"
+import { agentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 import type { Project } from "@/lib/types"
+
+/** Procedência do inventário mostrado (ADR-189), sem os itens. */
+export type SlashInventoryMeta = Omit<CommandInventoryView, "commands">
 
 /** Máx. de itens mostrados nos popovers de "/" (comandos) e "@" (referências). */
 export const MAX_POPOVER_ITEMS = 8
@@ -38,35 +43,54 @@ export function useSlashCommands({
   focus?: () => void
 }) {
   const [commands, setCommands] = useState<SlashCommand[]>([])
+  const [inventory, setInventory] = useState<SlashInventoryMeta | null>(null)
   const [slashIdx, setSlashIdx] = useState(0)
   const [slashDismissed, setSlashDismissed] = useState(false)
 
-  // comandos do projeto p/ o "/" — por agent da conversa (.mycockpit/commands
-  // sempre; .claude/* só em conversa claude; ~/.codex/prompts só em codex).
-  // Os BUILTINS do app (source "app", ex. /compactar) entram na frente em TODA
-  // conversa — não dependem do disco, então a falha da leitura não os apaga.
+  // "/" no início do input (sem espaço) → modo slash
+  const slashQuery = slashQueryOf(value)
+  // Cada ABERTURA do "/" relê o inventário: o turno que acabou de terminar pode
+  // ter anunciado plugins novos (ADR-189). Custo por gesto, não por tecla.
+  const [aberturas, setAberturas] = useState(0)
+  const estavaAberto = useRef(false)
+  useEffect(() => {
+    const aberto = slashQuery !== null
+    if (aberto && !estavaAberto.current) setAberturas((n) => n + 1)
+    estavaAberto.current = aberto
+  }, [slashQuery])
+
+  // Inventário por agent da conversa: casa e plugins da Frota sempre; o que o
+  // motor anunciou (ou as pastas dele) conforme a capability. Os BUILTINS do
+  // app (source "app", ex. /compactar) entram na frente em TODA conversa, não
+  // dependem do disco, então a falha da leitura não os apaga.
   useEffect(() => {
     if (!project || !isTauri()) {
       setCommands([])
+      setInventory(null)
       return
     }
     let cancelled = false
-    readProjectCommands(project.path, agent)
-      .then((c) => !cancelled && setCommands(withAppCommands(c)))
-      .catch(() => !cancelled && setCommands(withAppCommands([])))
+    readCommandInventory(project.path, agent)
+      .then(({ commands: c, ...meta }) => {
+        if (cancelled) return
+        setCommands(withAppCommands(c))
+        setInventory(meta)
+      })
+      .catch((error) => {
+        if (cancelled) return
+        console.warn("inventário do / indisponível", error)
+        setCommands(withAppCommands([]))
+        setInventory(null)
+      })
     return () => {
       cancelled = true
     }
-  }, [project?.path, agent])
+  }, [project?.path, agent, aberturas])
 
-  // "/" no início do input (sem espaço) → modo slash
-  const slashQuery = slashQueryOf(value)
-  const slashMatches =
+  const { sections: slashSectionList, flat: slashMatches } =
     slashQuery !== null
-      ? commands
-          .filter((c) => c.name.toLowerCase().includes(slashQuery.toLowerCase()))
-          .slice(0, MAX_POPOVER_ITEMS)
-      : []
+      ? slashSections(commands, slashQuery, agentDef(agent)?.label ?? agent)
+      : { sections: [], flat: [] }
   const showSlash = !slashDismissed && slashMatches.length > 0
 
   useEffect(() => {
@@ -80,6 +104,8 @@ export function useSlashCommands({
 
   return {
     commands,
+    inventory,
+    slashSectionList,
     slashMatches,
     showSlash,
     slashIdx,

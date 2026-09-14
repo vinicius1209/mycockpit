@@ -1,0 +1,185 @@
+{
+ "type": "system",
+ "subtype": "init",
+ "claude_code_version": "2.1.270",
+ "slash_commands": [
+  "vercel:deploy",
+  "vercel:logs",
+  "vercel:setup",
+  "frontend-design:frontend-design",
+  "paper-desktop:code-to-design",
+  "paper-desktop:design-to-code",
+  "design",
+  "design-sync",
+  "dataviz",
+  "update-config",
+  "verify",
+  "debug",
+  "code-review",
+  "simplify",
+  "batch",
+  "fewer-permission-prompts",
+  "doctor",
+  "loop",
+  "schedule",
+  "claude-api",
+  "run",
+  "run-skill-generator",
+  "advisor",
+  "agents",
+  "auto-mode-setup",
+  "autocompact",
+  "clear",
+  "color",
+  "compact",
+  "config",
+  "output-style",
+  "context",
+  "effort",
+  "fast",
+  "heapdump",
+  "init",
+  "mcp",
+  "import",
+  "model",
+  "__remote-workflow",
+  "workflow-launch-exec",
+  "reload-plugins",
+  "reload-skills",
+  "rename",
+  "ultrareview",
+  "security-review",
+  "usage-credits",
+  "extra-usage",
+  "usage",
+  "insights",
+  "recap",
+  "skill-doctor",
+  "goal",
+  "design-consent",
+  "design-revoke",
+  "list-agents",
+  "team-onboarding"
+ ],
+ "terminal_slash_commands": [
+  "doctor",
+  "color",
+  "reload-plugins"
+ ],
+ "skills": [
+  "frontend-design:frontend-design",
+  "paper-desktop:code-to-design",
+  "paper-desktop:design-to-code",
+  "vercel:deploy",
+  "vercel:logs",
+  "vercel:setup",
+  "design",
+  "design-sync",
+  "dataviz",
+  "update-config",
+  "verify",
+  "debug",
+  "code-review",
+  "simplify",
+  "batch",
+  "fewer-permission-prompts",
+  "doctor",
+  "loop",
+  "schedule",
+  "claude-api",
+  "run",
+  "run-skill-generator"
+ ],
+ "plugins": [
+  {
+   "name": "frontend-design",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-plugins-official/frontend-design/55b58ec6e564",
+   "source": "frontend-design@claude-plugins-official"
+  },
+  {
+   "name": "paper-desktop",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/paper/paper-desktop/0.1.0",
+   "source": "paper-desktop@paper",
+   "version": "0.1.0"
+  },
+  {
+   "name": "supabase",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-plugins-official/supabase/55b58ec6e564",
+   "source": "supabase@claude-plugins-official"
+  },
+  {
+   "name": "swift-lsp",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-plugins-official/swift-lsp/1.0.0",
+   "source": "swift-lsp@claude-plugins-official",
+   "version": "1.0.0"
+  },
+  {
+   "name": "typescript-lsp",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-plugins-official/typescript-lsp/1.0.0",
+   "source": "typescript-lsp@claude-plugins-official",
+   "version": "1.0.0"
+  },
+  {
+   "name": "vercel",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-plugins-official/vercel/1.0.0",
+   "source": "vercel@claude-plugins-official",
+   "version": "1.0.0"
+  },
+  {
+   "name": "warp",
+   "path": "/Users/viniciusmachado/.claude/plugins/cache/claude-code-warp/warp/2.1.0",
+   "source": "warp@claude-code-warp",
+   "version": "2.1.0"
+  }
+ ],
+ "agents": [
+  "claude",
+  "Explore",
+  "general-purpose",
+  "Plan",
+  "statusline-setup"
+ ],
+ "capabilities": [
+  "interrupt_receipt_v1",
+  "interrupt_cancel_queued_v1",
+  "msg_lifecycle_v1"
+ ],
+ "mcp_servers": [
+  {
+   "name": "plugin:paper-desktop:paper",
+   "status": "failed"
+  },
+  {
+   "name": "plugin:supabase:supabase",
+   "status": "needs-auth"
+  },
+  {
+   "name": "<omitido>",
+   "status": "connected"
+  },
+  {
+   "name": "<omitido>",
+   "status": "connected"
+  },
+  {
+   "name": "<omitido>",
+   "status": "pending"
+  },
+  {
+   "name": "<omitido>",
+   "status": "connected"
+  },
+  {
+   "name": "<omitido>",
+   "status": "connected"
+  },
+  {
+   "name": "<omitido>",
+   "status": "needs-auth"
+  },
+  {
+   "name": "<omitido>",
+   "status": "connected"
+  }
+ ]
+}

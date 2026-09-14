@@ -64,6 +64,7 @@ async fn rodar_replay(saida: &std::path::Path) -> (Vec<serde_json::Value>, Outco
         &notify,
         &registry,
         &run_id,
+        ("claude-code", "/tmp/frota-teste-inventario"),
     )
     .await
     .unwrap();
@@ -155,6 +156,7 @@ async fn neto_que_segura_o_pipe_nao_pendura_o_fim_do_turno() {
             &notify,
             &registry,
             &run_id,
+            ("claude-code", "/tmp/frota-teste-inventario"),
         ),
     )
     .await
@@ -197,6 +199,7 @@ async fn verificar_neto_ativo(cancelar: bool) {
             &notify,
             &registry,
             &run_id,
+            ("claude-code", "/tmp/frota-teste-inventario"),
         ),
     )
     .await

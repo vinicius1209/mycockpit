@@ -9,6 +9,7 @@ import {
   turnClosedOk,
   BACKOFF_CAP_MS,
   RESUME_REASON_LIMIT,
+  RESUME_REASON_LIMIT_SEM_RESET,
   RESUME_REASON_TEXT,
 } from "./autoResume"
 
@@ -249,5 +250,39 @@ describe("o app conta o gatilho real (nada de limite inventado)", () => {
   it("banner não jura reset de limite quando ninguém bateu limite", () => {
     expect(resumeBannerLabel(RESUME_REASON_LIMIT)).toBe("após o reset do limite")
     expect(resumeBannerLabel(RESUME_REASON_TEXT)).not.toMatch(/limite/i)
+  })
+})
+
+describe("limite do Codex: horário real ou honestidade sobre não ter horário", () => {
+  // Payload REAL do fio (conversa do Codex, 14/09/2026 13:50:09). O Rust passa a
+  // extrair o trecho depois de "try again at"; antes vinha vazio e a retomada
+  // agendava 60s, 120s, 240s, 480s dizendo "após o reset do limite".
+  const MENSAGEM =
+    "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits or try again at Sep 19th, 2026 10:12 AM."
+  const incidente = new Date(2026, 8, 14, 13, 50, 9).getTime()
+  const volta = new Date(2026, 8, 19, 10, 12).getTime()
+
+  it("lê a data do Codex e agenda para quando o limite volta de fato", () => {
+    expect(parseResetHint("Sep 19th, 2026 10:12 AM", incidente)).toBe(volta - incidente)
+    const v = wantsAutoResume([limitItem(MENSAGEM)], { hit: true, resetHint: "Sep 19th, 2026 10:12 AM" }, 3, incidente)
+    expect(v.reason).toBe(RESUME_REASON_LIMIT)
+    expect(v.delayMs).toBe(volta - incidente + 2_000)
+  })
+
+  it("aceita as outras variações de dia e de meia-noite e meio-dia", () => {
+    const base = new Date(2026, 8, 14, 9, 0).getTime()
+    expect(parseResetHint("Sep 1st, 2027 12:05 AM", base)).toBe(new Date(2027, 8, 1, 0, 5).getTime() - base)
+    expect(parseResetHint("October 2nd, 2026 12:30 PM", base)).toBe(new Date(2026, 9, 2, 12, 30).getTime() - base)
+    expect(parseResetHint("Foo 19th, 2026 10:12 AM", base)).toBeNull()
+  })
+
+  it("sem horário legível, o motivo diz que é estimativa e ninguém jura reset", () => {
+    const v = wantsAutoResume([limitItem(MENSAGEM)], { hit: true, resetHint: null }, 3, incidente)
+    expect(v.reason).toBe(RESUME_REASON_LIMIT_SEM_RESET)
+    expect(v.delayMs).toBe(480_000)
+    expect(resumeBannerLabel(v.reason)).not.toContain("após o reset")
+    expect(resumeBannerLabel(v.reason)).toContain("sem horário de reset")
+    expect(resumePrompt(v.reason)).toContain("limite de uso")
+    expect(resumePrompt(v.reason)).not.toContain("já deve ter resetado")
   })
 })

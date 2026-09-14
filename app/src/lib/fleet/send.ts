@@ -11,7 +11,7 @@ import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
-import { comporCascata } from "@/lib/fleet/promptCascade"
+import { comporCascata, juntarAnexos } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
 import { listConversations } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
@@ -479,7 +479,7 @@ async function sendFromDeskPrepared(
         model,
         effort,
         text,
-        attachments,
+        attachments: juntarAnexos(attachments, preparedPrompt.anexosDeNota),
         wheelSwitch,
         lessonIds: acceptedLessonIds,
         recordLessons: (ids) => recordInjectedLessons(convId, ids),
@@ -503,7 +503,7 @@ async function sendFromDeskPrepared(
       cwd,
       sessionId,
       permission,
-      attachments,
+      juntarAnexos(attachments, preparedPrompt.anexosDeNota),
       acceptance.handler,
       planFirst,
       memoryFallback,

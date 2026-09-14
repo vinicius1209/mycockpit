@@ -121,6 +121,37 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
     Nunca desenhe o corte a partir do Enter: com steering nativo o Enter
     corrige SEM parar, e só o evento pode dizer que houve corte.
 
+## O inventário do "/"
+
+15. **O envio nunca consulta o motor.** `readProjectCommands` (expansão no
+    `despacharEnvio`) usa só o que o motor já anunciou e o disco; a consulta
+    lateral (Codex `skills/list`) é do popover, `readCommandInventory`, e relê
+    por ABERTURA do "/", nunca por tecla (ADR-189, item 10 acima).
+16. **Lista sem procedência é teatro.** O popover diz se o inventário veio do
+    motor (com horário) ou das pastas, e mostra o que sumiria em silêncio (link
+    de skill quebrado). Builtin do CLI só entra auditado em `builtin_commands`.
+
+## O caminho quente do streaming
+
+17. **O composer não re-renderiza por token.** Ele lê a conversa por
+    `useConvDoComposer`, nunca por `useActiveConv`. Render por delta recria
+    props de filhos, e efeito de terceiro que grava estado vira um commit extra
+    por token. Numa conversa longa o React desiste no 51º (`#185`), e isso já
+    cortou resposta no fio duas vezes (ADR-190).
+18. **Prop para plugin de terceiro é estável por conteúdo.** Array ou função
+    recriados a cada render (`presets.map(...)` inline) reacendem os efeitos
+    da lib. Estabilize no ponto de entrada, não confie no chamador.
+19. **O handler do canal do run nunca pode lançar.** O `Channel` do Tauri só
+    entrega o próximo evento depois que o atual retorna: uma exceção congela o
+    turno inteiro, sem erro. `entregarSemTravar` fica em volta do `onmessage`.
+
+## A nota que vai junto
+
+20. **Nota endereçada leva texto E anexos.** `withNotasDoTurno` é a única porta,
+    para composer e mesa, e a lista que ela devolve é a do run e a da bolha do
+    fio. Nota mencionada sem os prints chegava ao agente sem o assunto
+    (ADR-192).
+
 ## Os testes que seguram isto
 
 - `ComposerActions.preparo.test.tsx` — fixa os itens 1 e 3: o círculo no
@@ -144,6 +175,14 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
 - `lib/chatHandoff.test.ts`, `lib/composerContinuity.test.ts` e
   `ContinuityBanner.test.tsx` — o item 5: resposta antes do primeiro `await`,
   pedido/anexos preservados, semântica imediata ou futura e uma única faixa.
+- `lib/fleet/promptCascade.notas.test.ts` — item 20: texto e anexos da nota
+  real, sem duplicar no reenvio, e as duas portas de envio usando a mesma função.
+- `lib/entregaDeEvento.test.ts` e `convDoComposer.test.ts` — itens 17 a 19:
+  o canal segue depois de um evento que falha, e delta de texto pelo reducer
+  real não troca a conversa do composer.
+- `lib/slashSections.test.ts`, `lib/agents.commands.test.ts` e, no Rust,
+  `command_inventory` e `adapters_claude_inventory_tests.rs` — itens 15 e 16:
+  seções na ordem de navegação, rodapé de procedência e builtin auditado.
 
 Falta ainda um teste que fixe a ORDEM do item 2 — que o carimbo aconteça antes
 do primeiro `await` DENTRO do `despacharEnvio`. Hoje isso está garantido por

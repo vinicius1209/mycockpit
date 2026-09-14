@@ -54,7 +54,8 @@ export async function readProjectFileBytes(
 export interface SlashCommand {
   name: string
   description: string | null
-  kind: string // "command" | "skill"
+  /** "command" | "skill" | "builtin" (comando do próprio CLI, auditado). */
+  kind: string
   origin: string // "project" | "global"
   /** De onde o comando veio: "mycockpit" | "claude" | "codex" | "plugin". */
   source: string
@@ -66,6 +67,9 @@ export interface SlashCommand {
   pluginName?: string
   pluginFingerprint?: string
   contributionId?: string
+  /** Plugin DO PROVIDER que publicou o item (sem grant da Frota; quem executa
+   *  e responde por ele é o motor). ADR-189. */
+  providerPlugin?: string
 }
 
 /** Inventário de comandos "/" POR AGENT da conversa: casa e skills de plugin
@@ -75,6 +79,24 @@ export async function readProjectCommands(
   agent: string,
 ): Promise<SlashCommand[]> {
   return invoke<SlashCommand[]>("read_project_commands", { path, agent })
+}
+
+/** Inventário do "/" com a PROCEDÊNCIA (ADR-189): "motor" quando o próprio
+ *  CLI anunciou ou respondeu, "disco" quando só houve leitura de pasta. */
+export interface CommandInventoryView {
+  commands: SlashCommand[]
+  origin: "motor" | "disco"
+  observedAt: number | null
+  diagnostics: string[]
+}
+
+/** Inventário para o popover. Pode consultar o motor (Codex sobe o app-server
+ *  sem turno, com cache); o envio usa `readProjectCommands`, que nunca consulta. */
+export async function readCommandInventory(
+  path: string,
+  agent: string,
+): Promise<CommandInventoryView> {
+  return invoke<CommandInventoryView>("read_command_inventory", { path, agent })
 }
 
 export interface ProjectDirEntry {

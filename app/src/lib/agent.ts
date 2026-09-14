@@ -11,6 +11,7 @@ import type {
   McpPreflightGate,
   McpRunOverride,
 } from "@/lib/tooling"
+import { entregarSemTravar, relatoVisivel } from "@/lib/entregaDeEvento"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
 export type CostSource = "reported" | "estimated" | "unknown"
@@ -171,13 +172,15 @@ export async function runAgent(
   // desmente, quando o resume falhou e o CLI abriu outra).
   let threadId = resume
   const channel = new Channel<AgentEvent>()
-  channel.onmessage = (e) => {
+  // Falha ao aplicar um evento não pode congelar o resto do turno, e precisa
+  // aparecer no fio, não só no log (ADR-190).
+  channel.onmessage = entregarSemTravar((e) => {
     if (e.type === "session" && e.session_id) threadId = e.session_id
     if (e.type === "result" && e.cumulative_usage && threadId) {
       void saveUsageBaseline(threadId, convId, nextBaseline(e.cumulative_usage))
     }
     onEvent(e)
-  }
+  }, relatoVisivel((message) => onEvent({ type: "notice", message })))
   await invoke("run_agent", {
     runId,
     convId,
