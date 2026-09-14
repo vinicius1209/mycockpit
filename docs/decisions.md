@@ -6668,3 +6668,26 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   atalhos, Sistema em tempo real e geometria em 940/1024/1280/1600px. Isso valida
   o frontend no navegador; arraste nativo da janela e binário instalado exigem
   a etapa de build e teste nativo.
+
+### ADR-188 · Leitura inline de duração e geometria no instrumento expandido
+
+- **Contexto (14/09/2026):** no HUD flutuante expandido (`FlightScene`), durações
+  acima de uma hora exibiam o tempo particionado verticalmente em dois blocos
+  (`4:19` em 30px e `H` em 11px abaixo). O "H" isolado dava a impressão visual de
+  quebra de linha acidental de texto, além da ambiguidade de `4:19` com horário de
+  parede. Além disso, a cena de voo usava `pb-2` enquanto o rodapé absoluto de 48px
+  exigia `pb-12`, descompensando o respiro vertical do miolo.
+- **Decisão:** a leitura de tempo decorrido no instrumento passa a ser em linha
+  única, alinhada pelo baseline tipográfico (§14). Para minutos, exibe `16 min`;
+  para horas e minutos, decompõe em notação canônica de duração (`4h 19m`), com
+  dígitos em 30px mono e unidades em 13px mono coladas à base. A coluna esquerda
+  passa de 82px para 116px, acomodando dois dígitos de hora com folga, e o trilho
+  vivo (`hud-live-rail`) alinha seu início em `ml-[136px]` com o início do bloco
+  de texto da tarefa.
+- **Respiro:** `FlightScene` ganha `pb-12` consistente com as demais cenas
+  (`DecisionScene`, `StopScene`, `SettledScene`), descontando a altura do rodapé
+  fixo.
+- **Validação:** mock interativo em `docs/mocks/hud-tempo-variacoes.html`; testes
+  unitários em `hudPresentation.test.ts` e `DynamicHudExpanded.test.tsx` cobrindo
+  tempo sem início, minutos, horas e minutos compostos e regressão contra `>H<`.
+
