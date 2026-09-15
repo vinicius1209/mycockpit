@@ -76,9 +76,13 @@ export const UTILITY_PROFILES: Record<UtilityTaskKind, UtilityTaskProfile> = {
   },
   commit_message: {
     task: "commit_message",
-    promptVersion: 1,
+    promptVersion: 2,
     priority: "low",
-    defaultDeadlineMs: 8_000,
+    // Gesto da pessoa, com spinner no botão. 8s nunca bastou: medido em
+    // 15/09/2026 com o diff real de 17 mil caracteres, o helper levou 11,5s
+    // mesmo sem raciocínio e sem hooks (a única chamada do dia deu 8,4s e
+    // estourou). O gateway limita tudo a 45s.
+    defaultDeadlineMs: 30_000,
     maxInputBytes: 64 * 1024,
     requiresStructuredOutput: false,
     canPersist: false,

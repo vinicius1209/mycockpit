@@ -3,6 +3,7 @@ import { Check, ChevronDown, FileText, Loader2, Sparkles } from "lucide-react"
 import { toast } from "sonner"
 import { gitCommit } from "@/lib/git"
 import { generateCommitMessage } from "@/lib/commitAi"
+import { mensagemDaFalhaUtilitaria } from "@/lib/utility/falha"
 import { useApp } from "@/store/app"
 import { Button } from "@/components/ui/button"
 import {
@@ -58,7 +59,7 @@ export function CommitComposer({
         toast.error("Não foi possível sugerir a mensagem de commit")
       }
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao sugerir a mensagem")
+      toast.error(mensagemDaFalhaUtilitaria(e, "Falha ao sugerir a mensagem"))
     } finally {
       setGenerating(false)
     }

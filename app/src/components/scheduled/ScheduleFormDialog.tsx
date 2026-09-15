@@ -439,7 +439,10 @@ export function ScheduleFormDialog({
                 ? "O que o time deve entregar nesta rodada"
                 : "Resuma as PRs abertas e as falhas de CI. Não altere nada."
             }
-            className="min-h-[72px] rounded-md border bg-transparent px-3 py-2 text-[13px]"
+            // Teto de altura com rolagem própria: o campo cresce com o prompt, e
+            // um prompt de 120 linhas esticava o modal a 3113px com o botão de
+            // criar 2425px abaixo da janela (nota de 03/09, medida em 14/09).
+            className="max-h-[40vh] min-h-[72px] overflow-y-auto rounded-md border bg-transparent px-3 py-2 text-[13px]"
           />
         </div>
 

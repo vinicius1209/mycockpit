@@ -305,6 +305,18 @@ function ScheduleRow({
       </div>
       {open && (
         <div className="border-t border-border/60 px-4 py-2">
+          {/* O que ela roda, legível sem abrir a edição: antes o prompt só
+              aparecia dentro do formulário (nota de 03/09). */}
+          {s.prompt.trim() && (
+            <div className="mb-2 flex flex-col gap-0.5 border-b border-border/40 pb-2">
+              <span className="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+                {s.kind === "mission" ? "Pedido da missão" : "Prompt"}
+              </span>
+              <p className="line-clamp-6 text-[12px] whitespace-pre-wrap text-foreground/85 [overflow-wrap:anywhere]">
+                {s.prompt}
+              </p>
+            </div>
+          )}
           {runs.length === 0 ? (
             <p className="py-1.5 text-[12px] text-muted-foreground/80">
               Nunca rodou.

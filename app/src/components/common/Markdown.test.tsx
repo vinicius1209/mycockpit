@@ -78,9 +78,8 @@ describe("Markdown Component", () => {
 
     expect(html).toContain('data-ctx-arquivo="src/lib/cacheDoTurno.ts"')
     expect(html).toContain('data-ctx-arquivo-linha="42"')
-    expect(html).toContain(
-      'title="Abrir src/lib/cacheDoTurno.ts no VS Code (linha 42)"',
-    )
+    // o clique abre numa aba do Frota, a mesma do explorador (não no editor externo)
+    expect(html).toContain('title="Abrir src/lib/cacheDoTurno.ts numa aba"')
     expect(html).toContain("cacheDoTurno.ts")
   })
 
@@ -99,9 +98,7 @@ describe("Markdown Component", () => {
 
     expect(html).toContain('data-ctx-arquivo="src/lib/agents.ts"')
     expect(html).toContain('data-ctx-arquivo-linha="15"')
-    expect(html).toContain(
-      'title="Abrir src/lib/agents.ts no VS Code (linha 15)"',
-    )
+    expect(html).toContain('title="Abrir src/lib/agents.ts numa aba"')
     expect(html).toContain("text-brass")
   })
 
