@@ -4,14 +4,15 @@
 // palco lê, "Abrir no editor" fica como ação secundária do visualizador. Antes o
 // fio mandava direto para o editor externo, e o explorador abria no palco: dois
 // idiomas para o mesmo gesto. Markdown externo autorizado (fora do projeto)
-// segue no visualizador de Markdown, que é o único que lê fora da raiz.
+// segue no visualizador de Markdown; imagem externa autorizada (a captura que o
+// agente salvou no brain dele) abre na mesma aba, pelo caminho absoluto.
 //
 // Nome solto (`dialog-centralizado.spec.ts`) é procurado em vez de ser tratado
 // como arquivo da raiz: primeiro nos arquivos que a conversa tocou, depois no
 // índice do projeto. Mais de um candidato não vira chute: a pessoa lê quais são.
 
 import { toast } from "sonner"
-import { caminhosComONome, type FileTarget } from "@/lib/fileLink"
+import { caminhosComONome, isImagePath, type FileTarget } from "@/lib/fileLink"
 import { arquivosTocados } from "@/lib/mentionRank"
 import { searchProjectFileIndex } from "@/lib/projectFilesService"
 import { useApp } from "@/store/app"
@@ -32,6 +33,10 @@ export async function abrirMencaoDeArquivo(
 ): Promise<void> {
   const raizDoProjeto = projectPath?.replace(/\/+$/, "") ?? ""
   const externo = target.abs && (!raizDoProjeto || !target.abs.startsWith(`${raizDoProjeto}/`))
+  if (externo && isImagePath(target.abs)) {
+    useApp.getState().openFileTab(target.abs!)
+    return
+  }
   if (externo) {
     useMarkdownViewer.getState().openViewer(target.abs!, target.rel, projectPath)
     return

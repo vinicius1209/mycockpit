@@ -1,4 +1,5 @@
-// Overlay ÚNICO de imagem do fio (evidência de tool B1 + anexo do usuário):
+// Overlay ÚNICO de imagem do fio (evidência de tool B1, anexo do usuário e
+// imagem citada por link):
 // thumbnail clicado → imagem em tamanho real. Fecha por Esc/clique fora,
 // navega por ←/→ quando a galeria tem várias, e "Abrir no app padrão" delega
 // pro SO (comando Rust com contenção de path). Monta UMA vez no App; fechado
@@ -11,11 +12,13 @@ import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { attachmentUrl, type Attachment } from "@/lib/attachments"
 import { evidenceUrl, openConvImage } from "@/lib/evidence"
+import { imagemCitadaUrl } from "@/lib/imagemCitada"
 import { missingLabel, useLightbox, type LightboxImage } from "@/store/lightbox"
 
 /** Bytes → object URL pela origem (os DOIS caches por path já existem). */
 async function imageUrl(img: LightboxImage): Promise<string> {
   if (img.source === "evidencia") return evidenceUrl(img.path)
+  if (img.source === "arquivo") return imagemCitadaUrl(img.root ?? "", img.path)
   return attachmentUrl({
     path: img.path,
     name: img.name,
@@ -66,6 +69,10 @@ export function LightboxOverlay() {
 
   if (!current || !img) return null
   const many = current.images.length > 1
+  // "Abrir no app padrão" e "Mostrar na pasta" resolvem path RELATIVO ao
+  // app_data_dir. O arquivo citado mora fora dele: sem o gesto, em vez de um
+  // botão que falha (a pasta segue no clique direito do próprio link).
+  const doFio = img.source !== "arquivo"
 
   return (
     <div
@@ -92,7 +99,7 @@ export function LightboxOverlay() {
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {!missing && (
+          {!missing && doFio && (
             <button
               type="button"
               onClick={() => {
@@ -151,7 +158,7 @@ export function LightboxOverlay() {
             // Path RELATIVO contido (o mesmo que o Rust resolve): é ele que
             // habilita "Abrir no app padrão" e "Mostrar na pasta" no menu de
             // contexto (ADR-042). Sem o marcador, o menu só copia os pixels.
-            data-ctx-imagem={img.path}
+            data-ctx-imagem={doFio ? img.path : ""}
             onClick={(e) => e.stopPropagation()}
             className="max-h-full max-w-full rounded-md object-contain shadow-[var(--shadow-pop)]"
           />

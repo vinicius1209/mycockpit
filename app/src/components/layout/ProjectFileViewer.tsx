@@ -27,7 +27,11 @@ type PreviewState =
       bytes: number
     }
 
+/** Caminho absoluto chega quando o fio cita um arquivo fora do projeto, numa
+ *  raiz que o Rust autoriza (a captura no brain do agy). Ele segue como está;
+ *  a contenção continua no `scoped_file_path`. */
 function absolutePath(root: string, path: string): string {
+  if (path.startsWith("/")) return path
   return `${root.replace(/\/$/, "")}/${path}`
 }
 
@@ -75,6 +79,9 @@ function CodePreview({ path, content }: { path: string; content: string }) {
 
 export function ProjectFileViewer({ root, path }: { root: string; path: string }) {
   const kind = projectFilePreviewKind(path)
+  // O editor abre por caminho relativo ao projeto; fora dele não há o que
+  // prometer, então o botão não existe (degradação honesta).
+  const externo = path.startsWith("/")
   const [state, setState] = useState<PreviewState>(() =>
     kind === "unsupported" ? { status: "unsupported" } : { status: "loading" },
   )
@@ -147,7 +154,7 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
         >
           <Copy className="size-3.5" />
         </Button>
-        <OpenInEditor projectPath={root} rel={path} alvo="o arquivo" />
+        {!externo && <OpenInEditor projectPath={root} rel={path} alvo="o arquivo" />}
       </div>
 
       {state.status === "loading" ? (

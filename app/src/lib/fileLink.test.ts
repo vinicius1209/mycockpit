@@ -3,6 +3,7 @@ import {
   caminhosComONome,
   formatFileTooltip,
   isFileMention,
+  isImagePath,
   isWebUrl,
   parseFileTarget,
 } from "./fileLink"
@@ -119,6 +120,32 @@ describe("parseFileTarget", () => {
     expect(parseFileTarget("file:///etc/doc.md", PROJETO)).toBeNull()
   })
 
+  it("aceita a captura que o agy salvou no brain e citou por file:// (link real de 15/09/2026)", () => {
+    const alvo = parseFileTarget(
+      "file:///Users/viniciusmachado/.gemini/antigravity-cli/brain/904ca29f-13c5-4602-811d-dd808a237137/screenshot_tiny_pedido_21_full.png",
+      "/Users/viniciusmachado/projetos/prime/prime-sales-hub",
+    )
+    expect(alvo).toEqual({
+      rel: "screenshot_tiny_pedido_21_full.png",
+      abs: "/Users/viniciusmachado/.gemini/antigravity-cli/brain/904ca29f-13c5-4602-811d-dd808a237137/screenshot_tiny_pedido_21_full.png",
+      line: null,
+    })
+  })
+
+  it("imagem externa fora das raízes autorizadas segue recusada", () => {
+    expect(parseFileTarget("file:///Users/vinicius/Desktop/captura.png", PROJETO)).toBeNull()
+    expect(parseFileTarget("file:///etc/captura.jpg", PROJETO)).toBeNull()
+  })
+
+  it("externo que o app não sabe mostrar segue recusado mesmo em raiz autorizada", () => {
+    expect(
+      parseFileTarget("file:///Users/vinicius/.gemini/antigravity-cli/brain/1/relatorio.pdf", PROJETO),
+    ).toBeNull()
+    expect(
+      parseFileTarget("file:///Users/vinicius/.gemini/antigravity-cli/brain/1/script.ts", PROJETO),
+    ).toBeNull()
+  })
+
   it("recusa markdown externo fora das raízes autorizadas", () => {
     expect(
       parseFileTarget("file:///Users/vinicius/.ssh/anotacoes.md", PROJETO),
@@ -208,5 +235,20 @@ describe("caminhosComONome", () => {
   it("nome com pasta ou vazio não é nome solto", () => {
     expect(caminhosComONome("e2e/x.ts", ["app/e2e/x.ts"])).toEqual([])
     expect(caminhosComONome("  ", ["a.ts"])).toEqual([])
+  })
+})
+
+describe("isImagePath", () => {
+  it("reconhece as imagens raster que o visualizador mostra, sem ligar pra caixa", () => {
+    expect(isImagePath("/x/captura.PNG")).toBe(true)
+    expect(isImagePath("docs/mocks/tela.webp")).toBe(true)
+    expect(isImagePath("foto.jpeg")).toBe(true)
+  })
+
+  it("SVG, texto e nome sem extensão não são imagem", () => {
+    expect(isImagePath("icone.svg")).toBe(false)
+    expect(isImagePath("notas.md")).toBe(false)
+    expect(isImagePath("png")).toBe(false)
+    expect(isImagePath(null)).toBe(false)
   })
 })

@@ -6895,3 +6895,32 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   segue sem chance e `composer_suggestions` (4s) fica no limite; mudar esses
   prazos é decisão de produto pendente. O diff enviado ao helper não inclui
   arquivos novos ainda não rastreados pelo git.
+
+### ADR-195 · Imagem citada por link no fio abre na aba e ganha miniatura
+
+- **Contexto (15/09/2026):** numa conversa com o agy, o motor salvou a captura
+  do Playwright em `~/.gemini/antigravity-cli/brain/<id>/` e escreveu o link
+  `file://` na resposta. O link parecia clicável e o clique não fazia nada:
+  `parseFileTarget` só aceitava arquivo externo terminado em `.md`, e o
+  `MarkdownLink` cancelava a navegação sem ter o que abrir. A leitura já estava
+  autorizada no Rust (`scoped_file_path` libera o brain do agy, `~/.claude` e os
+  anexos) e o `ProjectFileViewer` já mostrava imagem. Faltava ligar os dois.
+- **Decisão:**
+  - Arquivo externo, nas mesmas raízes autorizadas, passa a valer como alvo
+    quando é Markdown ou imagem. A lista de imagem é a do visualizador
+    (`imageMimeType`), para o link não prometer o que a aba não mostra.
+  - O clique numa imagem externa abre a aba de arquivo (ADR-193) pelo caminho
+    absoluto. O visualizador lê o absoluto como veio e esconde "Abrir no
+    editor", que só funciona com caminho relativo ao projeto.
+  - Link de imagem com caminho concreto ganha miniatura logo abaixo, com a
+    moldura da evidência de tool, e abre no mesmo Lightbox, que ganha a origem
+    `arquivo`. Nome solto não ganha miniatura, porque seria chute.
+  - Essa origem é a primeira do Lightbox que vem de texto do modelo. Por isso a
+    leitura passa só pelo `read_project_file_bytes`, com contenção no Rust e
+    `assertSafeRasterImage` antes de virar URL. Os gestos "Abrir no app padrão"
+    e "Mostrar na pasta" do Lightbox resolvem caminho relativo ao app_data_dir,
+    então não aparecem para essa origem. A pasta continua no clique direito do
+    link.
+- **Limites:** caminho relativo ao cwd do motor (`.playwright-mcp/x.png`) só
+  resolve se estiver dentro do projeto. Captura fora das raízes autorizadas
+  segue sem link, e alargar essas raízes é decisão do Rust, não do fio.

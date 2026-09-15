@@ -4,6 +4,8 @@
 // Converte URIs file://, caminhos relativos/absolutos e sufixos de linha
 // (#L10, :42) em alvos navegáveis para o editor do usuário.
 
+import { imageMimeType } from "@/lib/projectFilePreview"
+
 const EXTENSOES_ARQUIVO = new Set([
   "ts",
   "tsx",
@@ -103,9 +105,9 @@ function normalizarSeparadores(p: string): string {
 }
 
 /** Raízes externas que o backend também autoriza para leitura. Manter esta
- * lista estreita evita transformar qualquer `.md` citado por um agent em uma
- * promessa de abertura que a fronteira Rust recusará depois. */
-function markdownExternoAutorizado(path: string): boolean {
+ * lista estreita evita transformar qualquer arquivo citado por um agent em uma
+ * promessa de abertura que a fronteira Rust (`scoped_file_path`) recusará. */
+function raizExternaAutorizada(path: string): boolean {
   return (
     /\/\.claude(?:\/|$)/.test(path) ||
     /\/\.gemini\/antigravity-cli\/brain(?:\/|$)/.test(path) ||
@@ -113,6 +115,20 @@ function markdownExternoAutorizado(path: string): boolean {
       path,
     )
   )
+}
+
+/** O caminho aponta para uma imagem que o visualizador sabe mostrar? A lista é
+ *  a do próprio visualizador, para a promessa do link não divergir dele. */
+export function isImagePath(path: string | null | undefined): boolean {
+  return Boolean(path) && imageMimeType(path!) !== null
+}
+
+/** Externo só abre o que o app tem superfície para ler: Markdown (visualizador
+ *  de documento) e imagem (aba de arquivo e miniatura no fio). Caso real de
+ *  15/09/2026: o agy salvou a captura do Playwright no brain dele e citou o
+ *  `file://`; o link parecia clicável e o clique não fazia nada. */
+function externoLegivel(path: string): boolean {
+  return path.toLowerCase().endsWith(".md") || isImagePath(path)
 }
 
 /**
@@ -170,11 +186,8 @@ export function parseFileTarget(
     if (projNorm && (limpo === projNorm || limpo.startsWith(`${projNorm}/`))) {
       abs = limpo
       limpo = limpo.slice(projNorm.length)
-    } else if (
-      limpo.toLowerCase().endsWith(".md") &&
-      markdownExternoAutorizado(limpo)
-    ) {
-      // Markdown externo com raiz autorizada também no backend.
+    } else if (externoLegivel(limpo) && raizExternaAutorizada(limpo)) {
+      // Markdown ou imagem externos, em raiz autorizada também no backend.
       abs = limpo
       const lastSlash = limpo.lastIndexOf("/")
       limpo = lastSlash >= 0 ? limpo.slice(lastSlash + 1) : limpo

@@ -84,5 +84,6 @@ describe("missingLabel", () => {
   it("placeholder honesto por origem quando o arquivo saiu do disco", () => {
     expect(missingLabel("evidencia")).toBe("evidência removida")
     expect(missingLabel("anexo")).toBe("anexo expirado")
+    expect(missingLabel("arquivo")).toBe("arquivo não encontrado")
   })
 })

@@ -92,6 +92,14 @@ describe("clique numa menção de arquivo abre dentro do Frota", () => {
     expect(abertos).toEqual([])
   })
 
+  it("imagem fora do projeto abre na aba de arquivo pelo caminho absoluto", async () => {
+    useMarkdownViewer.getState().closeViewer()
+    const abs = "/Users/viniciusmachado/.gemini/antigravity-cli/brain/904ca29f-13c5-4602-811d-dd808a237137/screenshot_tiny_pedido_21_full.png"
+    await abrirMencaoDeArquivo({ rel: "screenshot_tiny_pedido_21_full.png", abs, line: null }, PROJETO)
+    expect(abertos).toEqual([abs])
+    expect(useMarkdownViewer.getState().open).toBe(false)
+  })
+
   it("markdown fora do projeto segue no visualizador de markdown", async () => {
     const abs = "/Users/viniciusmachado/.claude/projects/x/memory/MEMORY.md"
     await abrirMencaoDeArquivo({ rel: "MEMORY.md", abs, line: null }, PROJETO)

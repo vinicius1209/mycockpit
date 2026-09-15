@@ -19,4 +19,9 @@ describe("o leitor principal de arquivos", () => {
     expect(source).toContain("assertSafeRasterImage(bytes, mime)")
     expect(source).toContain("URL.revokeObjectURL(objectUrl)")
   })
+
+  it("arquivo citado fora do projeto é lido pelo caminho absoluto e sem prometer o editor", () => {
+    expect(source).toContain('if (path.startsWith("/")) return path')
+    expect(source).toContain("{!externo && <OpenInEditor")
+  })
 })

@@ -7,16 +7,21 @@
 import { create } from "zustand"
 
 export interface LightboxImage {
-  /** Path RELATIVO ao app_data_dir ("evidence/…" ou "attachments/…") — vem
-   *  SEMPRE do item do fio (backend/anexo original), nunca de texto do modelo. */
+  /** Evidência e anexo: path RELATIVO ao app_data_dir ("evidence/…" ou
+   *  "attachments/…"), vindo do item do fio, nunca de texto do modelo.
+   *  Arquivo citado: path ABSOLUTO tirado do link que o agente escreveu; por
+   *  isso ele só é lido pelo `read_project_file_bytes`, cuja contenção
+   *  (projeto, pastas vinculadas e raízes autorizadas) mora no Rust. */
   path: string
   /** Nome p/ alt/título e para o rodapé do overlay. */
   name: string
   /** Origem: define o loader (read_evidence × read_attachment) e o texto do
    *  placeholder quando o arquivo saiu do disco. */
-  source: "evidencia" | "anexo"
+  source: "evidencia" | "anexo" | "arquivo"
   /** MIME do anexo original (evidência deriva da extensão). */
   mime?: string
+  /** Raiz do projeto contra a qual o Rust contém a leitura do arquivo citado. */
+  root?: string
 }
 
 export interface LightboxState {
@@ -50,6 +55,7 @@ export function stepLightbox(
 /** Placeholder honesto por origem quando o arquivo não está mais no disco
  *  (mesma copy do chip de anexo expirado; evidência tem a sua). */
 export function missingLabel(source: LightboxImage["source"]): string {
+  if (source === "arquivo") return "arquivo não encontrado"
   return source === "anexo" ? "anexo expirado" : "evidência removida"
 }
 

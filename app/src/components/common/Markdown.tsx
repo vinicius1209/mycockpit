@@ -13,11 +13,13 @@ import { copyText } from "@/lib/clipboard"
 import {
   formatFileOpenTooltip,
   isFileMention,
+  isImagePath,
   isWebUrl,
   parseFileTarget,
 } from "@/lib/fileLink"
 import { useActiveProject } from "@/store/app"
 import { abrirMencaoDeArquivo } from "@/components/common/abrirMencaoDeArquivo"
+import { ImagemCitadaThumb } from "@/components/common/ImagemCitadaThumb"
 
 /** Botão de copiar no canto, aparece no hover. `group` = classe do grupo pai
  *  (group/code, group/table…) pra só aparecer no hover DAQUELE bloco. */
@@ -172,20 +174,30 @@ function MarkdownLink({
       ? `Abrir ${href} no navegador`
       : undefined
 
+  // Imagem com caminho concreto ganha miniatura logo abaixo do link. Nome
+  // solto (`captura.png`) não: sem pasta seria chute, e o clique já resolve.
+  const imagem =
+    target && isImagePath(target.rel) && (target.abs || target.rel.includes("/"))
+      ? (target.abs ?? target.rel)
+      : null
+
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      onClick={handleClick}
-      title={title}
-      data-ctx-arquivo={target?.rel}
-      data-ctx-arquivo-abs={target?.abs}
-      data-ctx-arquivo-linha={target?.line ?? undefined}
-      className="cursor-pointer text-brass underline underline-offset-2 transition-opacity hover:opacity-80"
-    >
-      {children}
-    </a>
+    <>
+      <a
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        onClick={handleClick}
+        title={title}
+        data-ctx-arquivo={target?.rel}
+        data-ctx-arquivo-abs={target?.abs}
+        data-ctx-arquivo-linha={target?.line ?? undefined}
+        className="cursor-pointer text-brass underline underline-offset-2 transition-opacity hover:opacity-80"
+      >
+        {children}
+      </a>
+      {imagem && <ImagemCitadaThumb root={project?.path ?? ""} path={imagem} />}
+    </>
   )
 }
 
