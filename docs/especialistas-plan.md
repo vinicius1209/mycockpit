@@ -266,3 +266,24 @@ A conversa só é genuína quando cada especialista (1) SABE coisas diferentes e
 **Invariantes que NÃO mudam (ADR-026):** um pilota por vez; especialista
 opina, humano age; auto-pitaco é opt-in por persona×projeto, jamais modo;
 read-only fail-closed.
+
+## Os Especialistas DESTE projeto (15/09/2026)
+
+A equipe inicial (`lib/marketplace.STARTER_TEAM`) é global e genérica. A Frota
+passa a ter também os seus, versionados em `.mycockpit/agents/`, que viajam no
+clone e são revisáveis em PR:
+
+| Persona | Domínio | O que ela cobra |
+|---|---|---|
+| Régua | Design | as escalas fechadas, a primitiva única e a copy do STYLEGUIDE |
+| Fronteira | Engenharia | capability nos dois lados, nada de nome de motor em código genérico |
+| Cronômetro | Ops | custo proporcional ao gesto, nunca ao histórico |
+| Prova | Qualidade | fixture real, teste que morde, suítes rodadas de verdade |
+
+Cada uma tem `policy` de só apontar: a mão no código continua sendo de quem
+entrega. A rubrica do frontmatter é o que aparece no parecer, então ela é curta
+e verificável, não um manifesto.
+
+Guarda: `lib/agentDefs.projeto.test.ts` lê os arquivos REAIS pelo mesmo parser
+da UI. Frontmatter torto não quebra a tela em silêncio (a persona chegaria sem
+voz, sem rubrica e com a cor de "Geral"); quebra o teste.
