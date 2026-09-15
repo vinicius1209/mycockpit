@@ -718,13 +718,23 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
         cancellations.remove(&request.attempt_id);
     }
     match run {
-        UtilityRun::TimedOut => finish(
+        UtilityRun::TimedOut => {
+            // Estouro de prazo também é falha, e era a única sem registro: o
+            // helper passou semanas com 0 sucessos sem uma linha no log.
+            log::warn!(
+                "fonte de inferência estourou o prazo: source={} task={:?} deadline_ms={}",
+                source_for(selected).id,
+                request.task,
+                request.deadline_ms,
+            );
+            finish(
             started_at,
             "timed_out",
             None,
             Some(source_for(selected)),
             Some("deadline_exceeded"),
-        ),
+            )
+        }
         UtilityRun::Cancelled => finish(
             started_at,
             "cancelled",

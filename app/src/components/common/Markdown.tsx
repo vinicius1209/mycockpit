@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react"
+import { memo, useRef, useState, type ReactNode } from "react"
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
@@ -10,16 +10,14 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
-import { openInEditor, pickEditor } from "@/lib/editors"
 import {
-  formatFileTooltip,
+  formatFileOpenTooltip,
   isFileMention,
   isWebUrl,
   parseFileTarget,
 } from "@/lib/fileLink"
-import { useEditors } from "@/store/editors"
-import { useActiveProject, useApp } from "@/store/app"
-import { useMarkdownViewer } from "@/store/markdownViewer"
+import { useActiveProject } from "@/store/app"
+import { abrirMencaoDeArquivo } from "@/components/common/abrirMencaoDeArquivo"
 
 /** Botão de copiar no canto, aparece no hover. `group` = classe do grupo pai
  *  (group/code, group/table…) pra só aparecer no hover DAQUELE bloco. */
@@ -133,17 +131,8 @@ function MarkdownLink({
   href?: string
 }) {
   const project = useActiveProject()
-  const detected = useEditors((s) => s.detected)
-  const ensure = useEditors((s) => s.ensure)
-  const preferred = useApp((s) => s.settings.preferredEditor)
-
-  useEffect(() => {
-    ensure()
-  }, [ensure])
-
   const target = parseFileTarget(href, project?.path)
   const isWeb = isWebUrl(href)
-  const editor = pickEditor(detected ?? [], preferred)
 
   const handleClick = (e: React.MouseEvent) => {
     // Guarda de seleção: se o usuário estava arrastando pra selecionar texto, não navega
@@ -173,40 +162,12 @@ function MarkdownLink({
 
     if (target) {
       e.preventDefault()
-      const isMd =
-        target.rel.toLowerCase().endsWith(".md") ||
-        (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
-      if (isMd) {
-        useMarkdownViewer
-          .getState()
-          .openViewer(target.abs || target.rel, target.rel, project?.path)
-        return
-      }
-
-      if (!editor) {
-        toast.error("Nenhum editor de código detectado nesta máquina")
-        return
-      }
-      void openInEditor({
-        editor: editor.id,
-        projectPath: project?.path ?? "",
-        rel: target.rel,
-        line: target.line,
-      }).catch((err) => {
-        console.error("[markdown] não consegui abrir no editor", err)
-        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
-      })
+      void abrirMencaoDeArquivo(target, project?.path)
     }
   }
 
-  const isMd =
-    target?.rel.toLowerCase().endsWith(".md") ||
-    (target?.abs ? target.abs.toLowerCase().endsWith(".md") : false)
-
   const title = target
-    ? isMd
-      ? `Visualizar ${target.rel} no app`
-      : formatFileTooltip(target.rel, target.line, editor?.label)
+    ? formatFileOpenTooltip(target.rel)
     : isWeb
       ? `Abrir ${href} no navegador`
       : undefined
@@ -238,15 +199,6 @@ function MarkdownInlineCode({
   const text = typeof children === "string" ? children : String(children ?? "")
   const isFile = isFileMention(text)
   const project = useActiveProject()
-  const detected = useEditors((s) => s.detected)
-  const ensure = useEditors((s) => s.ensure)
-  const preferred = useApp((s) => s.settings.preferredEditor)
-
-  useEffect(() => {
-    if (isFile) ensure()
-  }, [isFile, ensure])
-
-  const editor = pickEditor(detected ?? [], preferred)
   const target = isFile ? parseFileTarget(text, project?.path) : null
 
   if (target) {
@@ -254,38 +206,10 @@ function MarkdownInlineCode({
       const sel = window.getSelection()?.toString()
       if (sel && sel.trim().length > 0) return
       e.preventDefault()
-      const isMd =
-        target.rel.toLowerCase().endsWith(".md") ||
-        (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
-      if (isMd) {
-        useMarkdownViewer
-          .getState()
-          .openViewer(target.abs || target.rel, target.rel, project?.path)
-        return
-      }
-
-      if (!editor) {
-        toast.error("Nenhum editor de código detectado nesta máquina")
-        return
-      }
-      void openInEditor({
-        editor: editor.id,
-        projectPath: project?.path ?? "",
-        rel: target.rel,
-        line: target.line,
-      }).catch((err) => {
-        console.error("[markdown] não consegui abrir no editor", err)
-        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
-      })
+      void abrirMencaoDeArquivo(target, project?.path)
     }
 
-    const isMd =
-      target.rel.toLowerCase().endsWith(".md") ||
-      (target.abs ? target.abs.toLowerCase().endsWith(".md") : false)
-
-    const title = isMd
-      ? `Visualizar ${target.rel} no app`
-      : formatFileTooltip(target.rel, target.line, editor?.label)
+    const title = formatFileOpenTooltip(target.rel)
 
     return (
       <code

@@ -6850,3 +6850,48 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   o anexo como expirado. O limite de 8 anexos vale só na hora de anexar no
   composer; a soma com os da nota não é cortada, porque cortar em silêncio
   seria pior.
+
+### ADR-193 · Arquivo citado no fio abre na mesma aba do explorador
+
+- **Contexto (14/09/2026):** clicar em `dialog-centralizado.spec.ts` numa
+  resposta deu "não achei … no projeto". Dois defeitos somados: o nome solto
+  era tratado como arquivo da raiz (o real está em `app/e2e/`), e o clique no
+  fio mandava para o editor externo, enquanto o explorador abre no palco
+  (ADR-157). O mesmo gesto tinha dois idiomas.
+- **Decisão:** link e código inline de arquivo no fio chamam
+  `abrirMencaoDeArquivo`, que usa `openFileTab`, a mesma aba do explorador.
+  "Abrir no editor" continua como ação secundária do visualizador e no menu de
+  clique direito. Markdown fora do projeto, nas raízes autorizadas, segue no
+  visualizador de Markdown. Nome solto é resolvido pelos arquivos que a
+  conversa tocou e, depois, pela busca do índice do projeto; com mais de um
+  candidato, o aviso lista quais são, sem abrir um no chute. O tooltip passa a
+  dizer "Abrir X numa aba".
+- **Limites:** o visualizador ainda não posiciona na linha citada (`:42`), por
+  isso a linha saiu do tooltip. O "Abrir no editor" do menu de clique direito
+  ainda não resolve nome solto.
+
+### ADR-194 · O helper utilitário cabe no prazo: sem hooks, sem raciocínio, e o erro diz o motivo
+
+- **Contexto (15/09/2026):** "Sugerir mensagem" do painel de Alterações falhava
+  com "Falha ao sugerir a mensagem". `utility_usage_daily` mostrou o quadro
+  maior: o helper (`claude -p` com haiku) tinha 0 sucessos em semanas, em
+  `composer_suggestions` (48 chamadas num dia), `turn_receipt` e
+  `commit_message`. Estouro de prazo não gerava log. Medido: cada one-shot
+  pagava os hooks globais do usuário (quatro apps, um tocando som no `Stop`;
+  "ok" em 4,97s com hooks e 3,0s sem) e, no commit, o haiku raciocinava: 1902
+  dos 2035 tokens de saída eram thinking e o diff real de 17 mil caracteres
+  levou 19,6s a 43,7s, contra um prazo de 8s. `--effort low` não reduziu.
+- **Decisão:**
+  - Todo one-shot de meta-tarefa passa `--settings {"disableAllHooks":true}`.
+    `--setting-sources ""` foi descartado: ganharia 0,4s, mas descartaria o
+    `env` do settings do usuário, de que a autenticação pode depender.
+  - `utility_helper_command` roda com `MAX_THINKING_TOKENS=0`. O juiz do
+    Fusion não passa por ele e mantém o raciocínio.
+  - `commit_message` ganha 30s de prazo (gesto com spinner) e o prompt limita o
+    corpo a 5 tópicos. Três rodadas com o diff real: 4,7s, 12,3s e 11,3s.
+  - Estouro de prazo vai para o log. `mensagemDaFalhaUtilitaria` traduz o
+    código do gateway ("O modelo auxiliar não respondeu a tempo.").
+- **Limites:** com prompt curto o helper fica em 3,6 a 4s. `turn_receipt` (3s)
+  segue sem chance e `composer_suggestions` (4s) fica no limite; mudar esses
+  prazos é decisão de produto pendente. O diff enviado ao helper não inclui
+  arquivos novos ainda não rastreados pelo git.

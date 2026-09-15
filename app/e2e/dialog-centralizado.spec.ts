@@ -91,3 +91,41 @@ test("dialog mais alto que a janela ROLA em vez de ser cortado", async ({
   // E o que passa do fim é ALCANÇÁVEL — a parte que antes não existia.
   expect(m.viewportRola).toBe(true)
 })
+
+// Nota de 03/09/2026: "criei um agendamento com prompt relativamente grande, o
+// modal cresceu ao ponto de quebrar nas extremidades". Medido em 14/09: 120
+// linhas mais uma URL longa esticavam o campo a 3251×2438px num modal de 512px,
+// com o botão de criar 2425px abaixo da janela. O campo cresce com
+// `field-sizing-content`; o que faltava era teto de altura e quebra de token
+// longo dentro da largura.
+test("prompt grande não estoura o modal de automação", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await abrirModalAlto(page)
+  const prompt =
+    Array.from(
+      { length: 120 },
+      (_, i) => `${i + 1}. Verifique o módulo de pagamentos, rode os testes e relate as diferenças.`,
+    ).join("\n") + `\nhttps://exemplo.com/${"a".repeat(400)}`
+  await page.locator('[data-slot="dialog-content"] textarea').fill(prompt)
+  await page.waitForTimeout(300)
+  const m = await page.evaluate(() => {
+    const el = document.querySelector('[data-slot="dialog-content"]') as HTMLElement
+    const ta = el.querySelector("textarea") as HTMLTextAreaElement
+    const viewport = document.querySelector('[data-slot="dialog-viewport"]') as HTMLElement
+    return {
+      vazaNaLargura: el.scrollWidth - el.clientWidth,
+      larguraDoCampo: ta.getBoundingClientRect().width,
+      larguraDoModal: el.getBoundingClientRect().width,
+      alturaDoCampo: ta.getBoundingClientRect().height,
+      campoRolaDentro: ta.scrollHeight > ta.clientHeight,
+      rolagemAteORodape: viewport.scrollHeight - viewport.clientHeight,
+    }
+  })
+  expect(m.vazaNaLargura).toBe(0)
+  expect(m.larguraDoCampo).toBeLessThanOrEqual(m.larguraDoModal)
+  // o campo para num teto (40vh da janela de 720px) e rola por dentro
+  expect(m.alturaDoCampo).toBeLessThanOrEqual(720 * 0.4 + 1)
+  expect(m.campoRolaDentro).toBe(true)
+  // o rodapé fica a uma rolagem curta, não a milhares de pixels
+  expect(m.rolagemAteORodape).toBeLessThan(720)
+})

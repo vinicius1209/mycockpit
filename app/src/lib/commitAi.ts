@@ -30,7 +30,7 @@ export function buildCommitPrompt(diff: string): string {
 Regras fundamentais:
 1. Primeira linha (título): <tipo>(<escopo opcional>): <resumo no imperativo em pt-BR>, com no máximo 72 caracteres (idealmente <= 50). Exemplos de tipo: feat, fix, refactor, chore, docs, test, style, perf.
 2. Deixe uma linha em branco após o título.
-3. Se houver mais detalhes relevantes, adicione uma lista de tópicos (bullets com "- ") concisa explicando o que mudou e o porquê.
+3. Se houver mais detalhes relevantes, adicione no máximo 5 tópicos curtos (bullets com "- ") explicando o que mudou e o porquê.
 4. Não use blocos de formatação markdown (\`\`\`) em volta da resposta.
 5. Não adicione saudações ou preâmbulos como "Aqui está a mensagem:". Devolva apenas o texto cru do commit.
 

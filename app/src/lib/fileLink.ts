@@ -253,3 +253,30 @@ export function formatFileTooltip(
   const sufixoLinha = line ? ` (linha ${line})` : ""
   return `Abrir ${rel} ${alvo}${sufixoLinha}`
 }
+
+/** Tooltip do clique numa menção de arquivo no fio: abre numa aba do Frota,
+ *  a mesma do explorador (ADR-157). O visualizador ainda não posiciona na
+ *  linha, então a linha não entra na promessa. */
+export function formatFileOpenTooltip(rel: string): string {
+  return `Abrir ${rel} numa aba`
+}
+
+/**
+ * Caminhos cujo NOME de arquivo é exatamente `nome` (sem pasta). O agente
+ * costuma citar só `dialog-centralizado.spec.ts`; tratado como caminho da raiz,
+ * o clique procurava `<projeto>/dialog-centralizado.spec.ts` e morria em "não
+ * achei" (14/09/2026). Pura; ordem de entrada preservada, sem repetição.
+ */
+export function caminhosComONome(
+  nome: string,
+  caminhos: Iterable<string>,
+): string[] {
+  const alvo = nome.trim()
+  if (!alvo || alvo.includes("/")) return []
+  const out: string[] = []
+  for (const caminho of caminhos) {
+    const base = caminho.split("/").pop()
+    if (base === alvo && !out.includes(caminho)) out.push(caminho)
+  }
+  return out
+}

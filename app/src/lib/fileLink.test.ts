@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  caminhosComONome,
   formatFileTooltip,
   isFileMention,
   isWebUrl,
@@ -186,5 +187,26 @@ describe("formatFileTooltip", () => {
     expect(formatFileTooltip("cacheDoTurno.ts", null, null)).toBe(
       "Abrir cacheDoTurno.ts no editor",
     )
+  })
+})
+
+describe("caminhosComONome", () => {
+  it("casa só o nome exato do arquivo, em qualquer pasta, sem repetir", () => {
+    const caminhos = [
+      "app/e2e/dialog-centralizado.spec.ts",
+      "app/e2e/dialog-centralizado.spec.ts.snap",
+      "docs/dialog-centralizado.spec.ts.md",
+      "app/e2e/dialog-centralizado.spec.ts",
+      "dialog-centralizado.spec.ts",
+    ]
+    expect(caminhosComONome("dialog-centralizado.spec.ts", caminhos)).toEqual([
+      "app/e2e/dialog-centralizado.spec.ts",
+      "dialog-centralizado.spec.ts",
+    ])
+  })
+
+  it("nome com pasta ou vazio não é nome solto", () => {
+    expect(caminhosComONome("e2e/x.ts", ["app/e2e/x.ts"])).toEqual([])
+    expect(caminhosComONome("  ", ["a.ts"])).toEqual([])
   })
 })

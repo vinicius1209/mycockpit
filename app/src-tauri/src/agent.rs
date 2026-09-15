@@ -1647,6 +1647,12 @@ fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bo
     // fantasma "No terminal · trabalhando" na pasta do projeto. "oneshot" é a
     // sentinela (o gateway só exige NÃO-VAZIO).
     crate::hook_sessions::correlate_run(&mut cmd, "oneshot");
+    // Meta-tarefa não dispara os hooks globais do usuário. Medido em 15/09/2026
+    // (claude 2.1.270): hooks de quatro apps, um deles tocando som no `Stop`,
+    // somavam ~2s a CADA one-shot ("ok" em 4,97s com hooks, 3,0s sem). Com
+    // prazos de 3 a 8s, o helper utilitário estourava sempre. `--settings`
+    // soma à configuração do usuário; `env` e credenciais continuam valendo.
+    cmd.arg("--settings").arg("{\"disableAllHooks\":true}");
     if no_mcp {
         cmd.arg("--strict-mcp-config")
             .arg("--mcp-config")
@@ -1659,7 +1665,14 @@ fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bo
 /// do CLI permanece aqui, junto do runner do fornecedor; o gateway recebe um
 /// comando pronto e nunca conhece flags, posição do prompt ou MCP.
 pub(crate) fn utility_helper_command(model: &str, cwd: &str, prompt: &str) -> Command {
-    claude_oneshot(model, cwd, prompt, "text", true)
+    let mut cmd = claude_oneshot(model, cwd, prompt, "text", true);
+    // Texto curto de apoio (commit, sugestão, recibo) não precisa de raciocínio.
+    // Medido em 15/09/2026 no diff real de 17 mil caracteres: 1902 dos 2035
+    // tokens de saída eram thinking e o haiku levou 19,6s; com
+    // MAX_THINKING_TOKENS=0, 11,5s e zero thinking. `--effort low` não reduziu.
+    // O juiz do Fusion não passa por aqui e mantém o raciocínio.
+    cmd.env("MAX_THINKING_TOKENS", "0");
+    cmd
 }
 
 /// Juiz do Fusion: roda um modelo forte SEM tools e SEM MCP, com `--output-format
@@ -1785,6 +1798,32 @@ mod tests {
                 "meta-tarefa {format} sem RUN_ENV vira fantasma no Painel"
             );
         }
+    }
+
+    /// 15/09/2026: o helper utilitário tinha 0 sucessos em semanas porque cada
+    /// one-shot pagava os hooks globais do usuário e, no helper, o raciocínio do
+    /// modelo. Todo one-shot desliga hooks; só o helper desliga o raciocínio.
+    #[test]
+    fn oneshot_sem_hooks_e_helper_sem_raciocinio() {
+        let args_de = |cmd: &tokio::process::Command| -> Vec<String> {
+            cmd.as_std().get_args().map(|a| a.to_string_lossy().into_owned()).collect()
+        };
+        let env_de = |cmd: &tokio::process::Command, chave: &str| -> Option<String> {
+            cmd.as_std()
+                .get_envs()
+                .find(|(k, _)| *k == std::ffi::OsStr::new(chave))
+                .and_then(|(_, v)| v)
+                .map(|v| v.to_string_lossy().into_owned())
+        };
+        let juiz = claude_oneshot("opus", "/tmp", "decida", "json", true);
+        let args = args_de(&juiz);
+        let pos = args.iter().position(|a| a == "--settings").expect("one-shot sem hooks");
+        assert_eq!(args[pos + 1], "{\"disableAllHooks\":true}");
+        assert_eq!(env_de(&juiz, "MAX_THINKING_TOKENS"), None, "o juiz mantém o raciocínio");
+
+        let helper = crate::agent::utility_helper_command("haiku", "/tmp", "commit");
+        assert!(args_de(&helper).iter().any(|a| a == "--settings"));
+        assert_eq!(env_de(&helper, "MAX_THINKING_TOKENS").as_deref(), Some("0"));
     }
 
     /// Caps de um motor 1º-turno-só (corpo do prompt, com resume): o codex.
