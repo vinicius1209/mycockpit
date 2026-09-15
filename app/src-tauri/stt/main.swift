@@ -839,22 +839,29 @@ emit([
 ])
 
 let center = NotificationCenter.default
+// Nomes pelo valor bruto, e não por `AVCaptureDevice.wasDisconnectedNotification`
+// e irmãos: esses aliases Swift só existem nos SDKs novos, e o runner da CI
+// (macos-14) quebrava o `cargo check` desde 05/09/2026. A constante do sistema é
+// a mesma em qualquer SDK (valores conferidos com o SDK 26.5 em 15/09/2026).
+let deviceDisconnected = Notification.Name("AVCaptureDeviceWasDisconnectedNotification")
+let sessionInterrupted = Notification.Name("AVCaptureSessionWasInterruptedNotification")
+let sessionRuntimeError = Notification.Name("AVCaptureSessionRuntimeErrorNotification")
 captureObservers.append(center.addObserver(
-    forName: AVCaptureDevice.wasDisconnectedNotification,
+    forName: deviceDisconnected,
     object: captureInput.device,
     queue: nil
 ) { _ in
     captureWasLost("O microfone “\(captureInput.device.localizedName)” foi desconectado.")
 })
 captureObservers.append(center.addObserver(
-    forName: AVCaptureSession.wasInterruptedNotification,
+    forName: sessionInterrupted,
     object: captureSession,
     queue: nil
 ) { _ in
     captureWasLost("A captura do microfone “\(captureInput.device.localizedName)” foi interrompida.")
 })
 captureObservers.append(center.addObserver(
-    forName: AVCaptureSession.runtimeErrorNotification,
+    forName: sessionRuntimeError,
     object: captureSession,
     queue: nil
 ) { _ in
