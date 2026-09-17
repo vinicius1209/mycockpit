@@ -16,7 +16,8 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -41,8 +42,15 @@ const CALLBACK_TIMEOUT_SECS: u64 = 300;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OauthConfig {
-    pub client_id: String,
-    pub callback_port: u16,
+    /// Cliente PRÉ-REGISTRADO, vindo do arquivo. `None` = o app registra um
+    /// cliente dinamicamente no login (RFC 7591) e guarda o id junto do token.
+    #[serde(default)]
+    pub client_id: Option<String>,
+    /// Porta fixa do callback, quando o arquivo a declara (o cliente
+    /// pré-registrado costuma ter o `redirect_uri` amarrado a ela). `None` =
+    /// porta livre escolhida na hora e registrada junto com o cliente.
+    #[serde(default)]
+    pub callback_port: Option<u16>,
     /// Atalho explícito do usuário para o metadata do AS. Quando ausente, a
     /// descoberta segue a cadeia normativa a partir do 401 do próprio MCP.
     pub auth_server_metadata_url: Option<String>,
@@ -71,11 +79,26 @@ pub fn parse_oauth_config(raw: &Value, server_url: &str) -> Option<OauthConfig> 
         .and_then(Value::as_str)
         .map(str::to_string);
     Some(OauthConfig {
-        client_id,
-        callback_port,
+        client_id: Some(client_id),
+        callback_port: Some(callback_port),
         auth_server_metadata_url,
         resource: canonical_resource(server_url),
     })
+}
+
+/// Configuração de login para um MCP HTTP que NÃO declara bloco `oauth`.
+///
+/// É o caso dos servidores adicionados pelo CLI do agent (`claude mcp add
+/// --transport http`): o arquivo só tem a URL. A descoberta segue a cadeia
+/// normativa a partir do 401 e o cliente é registrado dinamicamente; se o AS
+/// não oferecer registro, o login recusa com motivo legível (ADR-201).
+pub fn login_dinamico(server_url: &str) -> OauthConfig {
+    OauthConfig {
+        client_id: None,
+        callback_port: None,
+        auth_server_metadata_url: None,
+        resource: canonical_resource(server_url),
+    }
 }
 
 /// Canonical URI do RFC 8707: sem fragment, sem barra final.
@@ -273,6 +296,8 @@ pub struct AsMetadata {
     pub authorization_endpoint: String,
     pub token_endpoint: String,
     pub revocation_endpoint: Option<String>,
+    /// RFC 7591. Presente no AS do Vercel (`vercel.com`), ausente no do prime.
+    pub registration_endpoint: Option<String>,
     pub scopes_supported: Vec<String>,
     pub code_challenge_methods_supported: Vec<String>,
     pub authorization_response_iss_parameter_supported: bool,
@@ -331,6 +356,7 @@ pub fn parse_as_metadata(json: &Value, issuer_esperado: &str) -> Result<AsMetada
         authorization_endpoint,
         token_endpoint,
         revocation_endpoint: texto("revocation_endpoint"),
+        registration_endpoint: texto("registration_endpoint"),
         scopes_supported: lista("scopes_supported"),
         code_challenge_methods_supported,
         authorization_response_iss_parameter_supported: json
@@ -380,16 +406,17 @@ fn query_string(pares: &[(&str, &str)]) -> String {
 pub fn build_authorize_url(
     metadata: &AsMetadata,
     config: &OauthConfig,
+    client_id: &str,
+    redirect: &str,
     state: &str,
     challenge: &str,
     escopos: &[String],
 ) -> String {
-    let redirect = redirect_uri(config.callback_port);
     let escopo = escopos.join(" ");
     let query = query_string(&[
         ("response_type", "code"),
-        ("client_id", &config.client_id),
-        ("redirect_uri", &redirect),
+        ("client_id", client_id),
+        ("redirect_uri", redirect),
         ("scope", &escopo),
         ("state", state),
         ("code_challenge", challenge),
@@ -403,6 +430,58 @@ pub fn build_authorize_url(
         '?'
     };
     format!("{}{separador}{query}", metadata.authorization_endpoint)
+}
+
+/// Pedido de registro dinâmico (RFC 7591) de um cliente PÚBLICO.
+///
+/// `token_endpoint_auth_method: none` porque o app é um cliente nativo sem
+/// segredo guardável; PKCE é a proteção. O `redirect_uri` registrado é o
+/// mesmo que vai no authorize, então a porta precisa estar decidida antes.
+pub fn build_registration_request(redirect: &str) -> Value {
+    serde_json::json!({
+        "client_name": "Frota",
+        "redirect_uris": [redirect],
+        "grant_types": ["authorization_code", "refresh_token"],
+        "response_types": ["code"],
+        "token_endpoint_auth_method": "none",
+    })
+}
+
+/// Lê a resposta do registro. Só o `client_id` interessa: cliente público não
+/// recebe segredo, e se o AS mandar um, ele é ignorado de propósito (não há
+/// onde guardá-lo com honestidade fora do Keychain, e o fluxo não o usa).
+pub fn parse_registration_response(status: u16, corpo: &str) -> Result<String, String> {
+    let json: Value = serde_json::from_str(corpo)
+        .map_err(|_| format!("registro de cliente falhou (HTTP {status})"))?;
+    if !(200..300).contains(&status) {
+        return Err(format!(
+            "o servidor de autorização recusou o registro do cliente: {}",
+            token_error_message(status, corpo)
+        ));
+    }
+    json.get("client_id")
+        .and_then(Value::as_str)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string)
+        .ok_or("resposta do registro de cliente sem `client_id`".into())
+}
+
+async fn registrar_cliente(metadata: &AsMetadata, redirect: &str) -> Result<String, String> {
+    let endpoint = metadata.registration_endpoint.as_deref().ok_or(
+        "este servidor exige login, mas a configuração não traz `clientId` e o servidor de autorização não oferece registro dinâmico de cliente; adicione o bloco `oauth` na configuração de origem",
+    )?;
+    let corpo = build_registration_request(redirect).to_string();
+    let resposta = curl_json(endpoint, &corpo, &[]).await?;
+    parse_registration_response(resposta.status, &resposta.corpo)
+}
+
+/// O `client_id` que vale para esta credencial: o registrado no login (viaja
+/// no Keychain junto do token) ou o pré-registrado do arquivo.
+fn client_id_efetivo(config: &OauthConfig, tokens: Option<&StoredTokens>) -> Result<String, String> {
+    tokens
+        .and_then(|t| t.client_id.clone())
+        .or_else(|| config.client_id.clone())
+        .ok_or_else(|| "a credencial guardada não tem client_id; faça login de novo".to_string())
 }
 
 pub fn redirect_uri(porta: u16) -> String {
@@ -476,6 +555,10 @@ pub struct StoredTokens {
     pub issuer: String,
     #[serde(default)]
     pub scope: Option<String>,
+    /// `client_id` obtido por registro dinâmico no login. `None` quando o
+    /// cliente veio pré-registrado do arquivo (credenciais antigas também).
+    #[serde(default)]
+    pub client_id: Option<String>,
 }
 
 impl StoredTokens {
@@ -521,6 +604,7 @@ pub fn parse_token_response(
             .get("scope")
             .and_then(Value::as_str)
             .map(str::to_string),
+        client_id: None,
     })
 }
 
@@ -605,13 +689,48 @@ fn entry(server_id: &str) -> Result<keyring::Entry, String> {
         .map_err(|e| format!("Keychain indisponível: {e}"))
 }
 
-pub fn load_tokens(server_id: &str) -> Result<Option<StoredTokens>, String> {
+/// Cópia em memória do que está no Keychain, por `server_id`.
+///
+/// Cada leitura do Keychain pode virar um prompt de senha (quando a ACL do item
+/// não reconhece o build, ADR-201). Antes, uma abertura da tela de MCPs fazia
+/// uma leitura por servidor × agent na descoberta, mais uma por servidor no
+/// status, mais outras no plano do turno: prompts em fila. Agora o Keychain é
+/// lido UMA vez por servidor por processo; gravar e apagar passam por aqui e
+/// mantêm a cópia igual ao disco. O plano já admite "Keychain + memória do
+/// processo" como os dois únicos lugares da credencial.
+fn cache() -> &'static Mutex<HashMap<String, Option<StoredTokens>>> {
+    static CACHE: OnceLock<Mutex<HashMap<String, Option<StoredTokens>>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+fn ler_keychain(server_id: &str) -> Result<Option<StoredTokens>, String> {
     match entry(server_id)?.get_password() {
         Ok(blob) => serde_json::from_str(&blob)
             .map(Some)
             .map_err(|e| format!("credencial guardada ilegível (faça login de novo): {e}")),
         Err(keyring::Error::NoEntry) => Ok(None),
         Err(e) => Err(format!("falha ao ler o Keychain: {e}")),
+    }
+}
+
+pub fn load_tokens(server_id: &str) -> Result<Option<StoredTokens>, String> {
+    if let Ok(guard) = cache().lock() {
+        if let Some(tokens) = guard.get(server_id) {
+            return Ok(tokens.clone());
+        }
+    }
+    let lido = ler_keychain(server_id)?;
+    // Só a leitura que DEU CERTO entra no cache: erro de Keychain (recusa,
+    // item ilegível) precisa ser tentado de novo na próxima, não congelado.
+    if let Ok(mut guard) = cache().lock() {
+        guard.insert(server_id.to_string(), lido.clone());
+    }
+    Ok(lido)
+}
+
+fn lembrar(server_id: &str, tokens: Option<StoredTokens>) {
+    if let Ok(mut guard) = cache().lock() {
+        guard.insert(server_id.to_string(), tokens);
     }
 }
 
@@ -629,12 +748,17 @@ pub fn save_tokens(server_id: &str, tokens: &StoredTokens) -> Result<(), String>
         .map_err(|e| format!("falha ao serializar credencial: {e}"))?;
     entry(server_id)?
         .set_password(&blob)
-        .map_err(|e| format!("falha ao gravar no Keychain: {e}"))
+        .map_err(|e| format!("falha ao gravar no Keychain: {e}"))?;
+    lembrar(server_id, Some(tokens.clone()));
+    Ok(())
 }
 
 pub fn delete_tokens(server_id: &str) -> Result<(), String> {
     match entry(server_id)?.delete_credential() {
-        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Ok(()) | Err(keyring::Error::NoEntry) => {
+            lembrar(server_id, None);
+            Ok(())
+        }
         Err(e) => Err(format!("falha ao apagar do Keychain: {e}")),
     }
 }
@@ -801,10 +925,22 @@ fn percent_decode(valor: &str) -> String {
 
 /// Escuta UMA resposta de autorização em `127.0.0.1:<porta>` e devolve os
 /// parâmetros. Fecha o listener em seguida — nada fica escutando depois.
-async fn esperar_callback(porta: u16) -> Result<BTreeMap<String, String>, String> {
-    let listener = TcpListener::bind(("127.0.0.1", porta)).await.map_err(|e| {
-        format!("não consegui escutar em 127.0.0.1:{porta} para receber o login ({e}); feche quem estiver usando a porta e tente de novo")
+/// Sobe o listener do callback. Porta fixa quando o arquivo a declara (o
+/// cliente pré-registrado está amarrado a ela); senão uma porta livre, que
+/// vai para o registro dinâmico junto do cliente.
+async fn abrir_callback(porta: Option<u16>) -> Result<(TcpListener, u16), String> {
+    let pedida = porta.unwrap_or(0);
+    let listener = TcpListener::bind(("127.0.0.1", pedida)).await.map_err(|e| {
+        format!("não consegui escutar em 127.0.0.1:{pedida} para receber o login ({e}); feche quem estiver usando a porta e tente de novo")
     })?;
+    let porta = listener
+        .local_addr()
+        .map_err(|e| format!("não consegui descobrir a porta do callback: {e}"))?
+        .port();
+    Ok((listener, porta))
+}
+
+async fn esperar_callback(listener: TcpListener) -> Result<BTreeMap<String, String>, String> {
     let aceitar = async {
         loop {
             let (mut stream, _) = listener
@@ -954,15 +1090,28 @@ pub async fn login(
     config: &OauthConfig,
 ) -> Result<McpAuthStatus, String> {
     let metadata = descobrir_as(config).await?;
+    // O listener sobe ANTES de tudo: a porta precisa existir para entrar no
+    // registro do cliente e no authorize, e para o retorno do login não bater
+    // numa porta fechada.
+    let (listener, porta) = abrir_callback(config.callback_port).await?;
+    let redirect = redirect_uri(porta);
+    // Cliente pré-registrado no arquivo vence; sem ele, registro dinâmico.
+    let (client_id, registrado) = match &config.client_id {
+        Some(id) => (id.clone(), None),
+        None => {
+            let id = registrar_cliente(&metadata, &redirect).await?;
+            (id.clone(), Some(id))
+        }
+    };
     let verifier = novo_verifier();
     let challenge = code_challenge_s256(&verifier);
     let state = novo_state();
     let escopos = escopos_do_login(&[], &metadata.scopes_supported);
-    let url = build_authorize_url(&metadata, config, &state, &challenge, &escopos);
+    let url = build_authorize_url(
+        &metadata, config, &client_id, &redirect, &state, &challenge, &escopos,
+    );
 
-    // O listener sobe ANTES de abrir o navegador: sem isso o retorno do login
-    // pode bater numa porta fechada.
-    let espera = tokio::spawn(esperar_callback(config.callback_port));
+    let espera = tokio::spawn(esperar_callback(listener));
     tokio::time::sleep(std::time::Duration::from_millis(80)).await;
     if let Err(erro) = abrir_navegador(app, &url) {
         espera.abort();
@@ -978,14 +1127,13 @@ pub async fn login(
         metadata.authorization_response_iss_parameter_supported,
     )?;
 
-    let redirect = redirect_uri(config.callback_port);
     let resposta = curl_form(
         &metadata.token_endpoint,
         &[
             ("grant_type", "authorization_code"),
             ("code", &code),
             ("redirect_uri", &redirect),
-            ("client_id", &config.client_id),
+            ("client_id", &client_id),
             ("code_verifier", &verifier),
             ("resource", &config.resource),
         ],
@@ -997,7 +1145,10 @@ pub async fn login(
     }
     let json: Value = serde_json::from_str(&resposta.corpo)
         .map_err(|e| format!("resposta do token endpoint ilegível: {e}"))?;
-    let tokens = parse_token_response(&json, &metadata.issuer, None, agora_secs())?;
+    let mut tokens = parse_token_response(&json, &metadata.issuer, None, agora_secs())?;
+    // O cliente registrado viaja com a credencial: o refresh e o logout
+    // precisam dele, e o arquivo de origem não o conhece.
+    tokens.client_id = registrado;
     save_tokens(server_id, &tokens)?;
     Ok(status_de(server_id, Some(&tokens), &metadata))
 }
@@ -1043,12 +1194,13 @@ pub async fn refresh(
             tokens.issuer, metadata.issuer
         ));
     }
+    let client_id = client_id_efetivo(config, Some(tokens))?;
     let resposta = curl_form(
         &metadata.token_endpoint,
         &[
             ("grant_type", "refresh_token"),
             ("refresh_token", refresh_token),
-            ("client_id", &config.client_id),
+            ("client_id", &client_id),
             ("resource", &config.resource),
         ],
         &[],
@@ -1065,12 +1217,13 @@ pub async fn refresh(
     }
     let json: Value = serde_json::from_str(&resposta.corpo)
         .map_err(|e| format!("resposta do token endpoint ilegível: {e}"))?;
-    let novos = parse_token_response(
+    let mut novos = parse_token_response(
         &json,
         &metadata.issuer,
         tokens.refresh_token.as_deref(),
         agora_secs(),
     )?;
+    novos.client_id = tokens.client_id.clone();
     save_tokens(server_id, &novos)?;
     Ok(novos)
 }
@@ -1081,7 +1234,7 @@ async fn config_de(project_path: &str, server_id: &str) -> Result<OauthConfig, S
     crate::mcp_control::oauth_config_for_server(project_path, server_id)
         .await
         .ok_or_else(|| {
-            "este servidor MCP não declara bloco `oauth` na configuração de origem".to_string()
+            "este servidor MCP não aceita login do app: não é HTTP, ou carrega credencial literal na configuração de origem".to_string()
         })
 }
 
@@ -1167,12 +1320,13 @@ pub async fn mcp_oauth_logout(project_path: String, server_id: String) -> Result
                         } else {
                             "access_token"
                         };
+                        let client_id = client_id_efetivo(&config, Some(tokens)).unwrap_or_default();
                         match curl_form(
                             endpoint,
                             &[
                                 ("token", alvo),
                                 ("token_type_hint", tipo),
-                                ("client_id", &config.client_id),
+                                ("client_id", &client_id),
                             ],
                             &[],
                         )
@@ -1230,8 +1384,8 @@ mod tests {
 
     fn config_prime() -> OauthConfig {
         OauthConfig {
-            client_id: "c19d2b4a-1006-4564-8925-4bfe6156d147".into(),
-            callback_port: 8976,
+            client_id: Some("c19d2b4a-1006-4564-8925-4bfe6156d147".into()),
+            callback_port: Some(8976),
             auth_server_metadata_url: Some(
                 "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1/.well-known/oauth-authorization-server".into(),
             ),
@@ -1258,6 +1412,121 @@ mod tests {
     fn entrada_sem_bloco_oauth_nao_vira_login_do_app() {
         let raw = json!({ "type": "http", "url": "https://exemplo/mcp" });
         assert!(parse_oauth_config(&raw, "https://exemplo/mcp").is_none());
+    }
+
+    /// Metadata REAL do servidor de autorização do Vercel
+    /// (`https://mcp.vercel.com/.well-known/oauth-authorization-server`,
+    /// colhida em 16/09/2026). Diferente do prime, expõe registro dinâmico.
+    fn as_metadata_vercel() -> Value {
+        json!({
+            "issuer": "https://vercel.com",
+            "authorization_endpoint": "https://vercel.com/oauth/authorize",
+            "token_endpoint": "https://vercel.com/api/login/oauth/token",
+            "registration_endpoint": "https://vercel.com/api/login/oauth/register",
+            "code_challenge_methods_supported": ["S256"],
+            "token_endpoint_auth_methods_supported": ["none", "client_secret_post"],
+            "scopes_supported": ["openid"]
+        })
+    }
+
+    #[test]
+    fn metadata_do_vercel_declara_registro_dinamico_e_a_do_prime_nao() {
+        let vercel = parse_as_metadata(&as_metadata_vercel(), "https://vercel.com").unwrap();
+        assert_eq!(
+            vercel.registration_endpoint.as_deref(),
+            Some("https://vercel.com/api/login/oauth/register")
+        );
+        let prime = parse_as_metadata(
+            &as_metadata_prime(),
+            "https://tsxtyuyjmouuyzkzwdtz.supabase.co/auth/v1",
+        )
+        .unwrap();
+        assert_eq!(prime.registration_endpoint, None);
+    }
+
+    #[test]
+    fn registro_dinamico_pede_cliente_publico_com_o_redirect_da_porta_escolhida() {
+        let pedido = build_registration_request("http://127.0.0.1:53211/callback");
+        assert_eq!(pedido["client_name"], "Frota");
+        assert_eq!(pedido["redirect_uris"][0], "http://127.0.0.1:53211/callback");
+        assert_eq!(pedido["token_endpoint_auth_method"], "none");
+        assert!(pedido["grant_types"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|g| g == "refresh_token"));
+    }
+
+    #[test]
+    fn resposta_do_registro_devolve_so_o_client_id_e_recusa_erro() {
+        let ok = parse_registration_response(
+            201,
+            r#"{"client_id":"cli_abc","client_name":"Frota","redirect_uris":["http://127.0.0.1:53211/callback"]}"#,
+        );
+        assert_eq!(ok.unwrap(), "cli_abc");
+        let sem_id = parse_registration_response(201, r#"{"client_name":"Frota"}"#);
+        assert!(sem_id.unwrap_err().contains("client_id"));
+        let recusado = parse_registration_response(
+            400,
+            r#"{"error":"invalid_redirect_uri","error_description":"redirect_uri não permitido"}"#,
+        );
+        assert!(recusado.unwrap_err().contains("redirect_uri não permitido"));
+    }
+
+    #[test]
+    fn login_dinamico_nasce_sem_cliente_e_sem_porta_mas_com_resource_canonico() {
+        let cfg = login_dinamico("https://mcp.vercel.com/");
+        assert_eq!(cfg.client_id, None);
+        assert_eq!(cfg.callback_port, None);
+        assert_eq!(cfg.resource, "https://mcp.vercel.com");
+    }
+
+    #[test]
+    fn client_id_efetivo_prefere_o_registrado_no_login_e_recusa_quando_nao_ha_nenhum() {
+        let config = login_dinamico("https://mcp.vercel.com");
+        let mut tokens = StoredTokens {
+            access_token: "a".into(),
+            refresh_token: None,
+            expires_at: None,
+            issuer: "https://vercel.com".into(),
+            scope: None,
+            client_id: Some("cli_abc".into()),
+        };
+        assert_eq!(client_id_efetivo(&config, Some(&tokens)).unwrap(), "cli_abc");
+        tokens.client_id = None;
+        assert!(client_id_efetivo(&config, Some(&tokens)).is_err());
+        assert_eq!(client_id_efetivo(&config_prime(), Some(&tokens)).unwrap(), "c19d2b4a-1006-4564-8925-4bfe6156d147");
+    }
+
+    #[test]
+    fn credencial_antiga_sem_client_id_continua_legivel() {
+        // Blob gravado antes da ADR-201 não tem o campo: não pode virar
+        // "credencial ilegível, faça login de novo".
+        let blob = r#"{"access_token":"a","refresh_token":"r","expires_at":1,"issuer":"https://x","scope":null}"#;
+        let tokens: StoredTokens = serde_json::from_str(blob).unwrap();
+        assert_eq!(tokens.client_id, None);
+    }
+
+    #[test]
+    fn a_copia_em_memoria_segue_gravar_e_apagar() {
+        // Não toca o Keychain real: só o cache. `lembrar` é o que save/delete
+        // chamam depois de falar com o disco.
+        let id = "teste-cache-adr-201";
+        lembrar(id, None);
+        assert_eq!(load_tokens(id).unwrap(), None);
+        let tokens = StoredTokens {
+            access_token: "a".into(),
+            refresh_token: None,
+            expires_at: None,
+            issuer: "https://x".into(),
+            scope: None,
+            client_id: None,
+        };
+        lembrar(id, Some(tokens.clone()));
+        assert_eq!(load_tokens(id).unwrap(), Some(tokens));
+        assert!(tem_credencial(id));
+        lembrar(id, None);
+        assert!(!tem_credencial(id));
     }
 
     #[test]
@@ -1380,6 +1649,8 @@ mod tests {
         let url = build_authorize_url(
             &metadata,
             &config,
+            config.client_id.as_deref().unwrap(),
+            &redirect_uri(config.callback_port.unwrap()),
             "estado-1",
             "desafio-1",
             &["openid".into()],
@@ -1526,6 +1797,7 @@ mod tests {
             expires_at: Some(1_000),
             issuer: "https://as".into(),
             scope: None,
+            client_id: None,
         };
         assert_eq!(estado_de(Some(&vencido), 2_000), McpAuthState::Expirado);
         // Ter refresh token é PROMESSA de renovação, não renovação feita: o
@@ -1553,6 +1825,7 @@ mod tests {
             expires_at: Some(1_000),
             issuer: "https://as".into(),
             scope: None,
+            client_id: None,
         };
         // Ainda não venceu pelo relógio, mas vence dentro da margem.
         assert!(tokens.expirado(1_000 - EXPIRY_SKEW_SECS + 1));
@@ -1567,6 +1840,7 @@ mod tests {
             expires_at: Some(10),
             issuer: "https://as".into(),
             scope: Some("openid".into()),
+            client_id: None,
         };
         let blob = serde_json::to_string(&tokens).unwrap();
         let volta: StoredTokens = serde_json::from_str(&blob).unwrap();

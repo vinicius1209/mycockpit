@@ -100,7 +100,7 @@ export function McpAgentRows({
                   aria-label={`Usar ${server.name} no ${label}`}
                 />
               )}
-              <span className="w-16 truncate text-[12px] text-foreground" title={label}>
+              <span className="w-20 truncate text-[12px] text-foreground" title={label}>
                 {label}
               </span>
               <span
@@ -211,11 +211,6 @@ export function McpAgentRows({
                 </button>
               )}
             </div>
-            {consequencia && (
-              <div className="pb-1 pl-[3.25rem] text-[11px] leading-snug text-muted-foreground">
-                {consequencia}
-              </div>
-            )}
             {browserNotice && (
               <div
                 className={cn(

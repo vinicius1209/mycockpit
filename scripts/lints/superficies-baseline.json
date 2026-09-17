@@ -6,7 +6,7 @@
   "components/settings/HooksSettings.tsx": 1,
   "components/settings/MachineAgents.tsx": 1,
   "components/settings/McpAgentRows.tsx": 1,
-  "components/settings/McpSettings.tsx": 7,
+  "components/settings/McpSettings.tsx": 4,
   "components/settings/MissionSettings.tsx": 1,
   "components/settings/ModelsSettings.tsx": 1,
   "components/settings/PresetSettings.tsx": 4,

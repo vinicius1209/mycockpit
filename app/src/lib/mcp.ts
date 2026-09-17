@@ -84,6 +84,11 @@ export interface McpServer {
   /** A config carrega valor literal (env/header/argv/URL) ou expansão do CLI
    *  de origem. Independente de `nativeReason`: pode haver os dois. */
   literalSecret: boolean
+  /** O app consegue fazer o login deste servidor: bloco `oauth` declarado OU
+   *  HTTP sem credencial na configuração (registro dinâmico, ADR-201). Decide
+   *  se o cartão mostra "Entrar". Opcional porque snapshot serializado antes
+   *  desta versão não tem o campo, e ausência significa "não sei, não ofereço". */
+  loginPeloApp?: boolean
   /** Nome que o servidor assume dentro de um run gerenciado (o que o usuário
    *  cita no prompt). Só vem preenchido quando há binding ativo. */
   runtimeName: string | null
@@ -362,9 +367,11 @@ export async function mcpOauthLogout(
   return invoke<string>("mcp_oauth_logout", { projectPath, serverId })
 }
 
+// Sem "pelo Frota": dentro do Frota isso é implícito, e repetido em cada
+// linha virava ruído (pedido do usuário, 16/09/2026).
 const AUTH_LABEL: Record<McpAuthState, string> = {
-  "sem-login": "sem login do Frota",
-  conectado: "conectado pelo Frota",
+  "sem-login": "sem login",
+  conectado: "conectado",
   expirado: "sessão expirada",
 }
 
@@ -387,7 +394,7 @@ export function mcpAuthHint(
   now: number = Date.now(),
 ): string {
   if (status.state === "sem-login") {
-    return "O Frota pode fazer o login deste MCP e guardar o token no Keychain deste Mac."
+    return "O Frota faz o login e guarda o token no Keychain deste Mac. O agent recebe um proxy local, nunca a credencial."
   }
   if (status.state === "expirado") {
     return "A sessão venceu e não foi possível renovar. Entre de novo."
@@ -415,3 +422,8 @@ export function mcpHealthLabel(status: McpHealthStatus): string {
       return "não testado"
   }
 }
+
+// Quem autentica, elegibilidade do login e o resumo do painel moram em
+// mcpAuthView.ts (a catraca de tamanho deste arquivo). Mesmo padrão de
+// mcpAgentActions.ts: re-export aqui, uma porta só para quem consome.
+export { mcpOfereceLogin, mcpQuemAutentica, mcpResumo, type McpResumo } from "./mcpAuthView"

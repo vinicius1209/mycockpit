@@ -37,6 +37,7 @@ import { Note, SectionHeader } from "@/components/settings/parts"
 import { fmtCheckedAt } from "@/components/settings/format"
 import { sectionDef } from "@/components/settings/sections"
 import { cn, formatDisplayPath } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 /** Agents que a seção lista (na ordem), com o rótulo do checklist. */
 const AGENT_TOOLS: { id: string; label: string; sub: string }[] = [
@@ -92,14 +93,10 @@ export function MachineAgents() {
         title={sectionDef("machine").title}
         description={sectionDef("machine").question}
         action={
-          <button
-            onClick={() => void checkNow()}
-            disabled={checking}
-            className="flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          >
+          <Button size="compacto" variant="ghost" onClick={() => void checkNow()} disabled={checking}>
             <RotateCcw className={cn("size-3.5", checking && "animate-spin")} />
             Verificar agora
-          </button>
+          </Button>
         }
       />
       <ul className="flex flex-col gap-1.5">

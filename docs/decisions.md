@@ -7182,6 +7182,73 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   raciocínio.
 
 
+### ADR-201 · MCP com login: assinatura estável, uma leitura do Keychain, registro dinâmico e a tela que responde "quem autentica"
+
+- **Contexto (16/09/2026):** três queixas do usuário na mesma tela. (1) Toda
+  abertura de Configurações → MCPs pedia a senha do Keychain, várias vezes em
+  fila. (2) O `vercel`, adicionado por `claude mcp add --transport http`,
+  mostrava "requer autenticação · 0 tools" com o interruptor ligado e nenhum
+  botão de login. (3) A tela em si: cabeçalho que rola, X translúcido, três
+  painéis de contexto antes do primeiro MCP, cada MCP um cartão de ~250px com
+  quatro linhas de agent abertas e a mesma prosa repetida, "roteado pelo
+  Frota" quatro vezes por cartão. Mock aprovado em `docs/mocks/config-mcps.html`.
+- **Achado 1, medido na máquina, não deduzido:** a ACL do item
+  `dev.vinicius.mycockpit.mcp-oauth` no login.keychain tinha **nove cdhashes**,
+  um por build em que o usuário clicou "Permitir sempre". O app era assinado
+  ad hoc (`--sign -`), e o requisito designado de um binário ad hoc é o
+  próprio cdhash, que muda a cada compilação. Para o Keychain cada build era um
+  app estranho. A correção de terreno do `mcp-auth-plan.md` (item 5) dizia que
+  "sobrevive a rebuild sem prompt": **estava errada**, e a ACL prova.
+- **Achado 2:** o Frota lia o Keychain muitas vezes por abertura: a descoberta
+  chamava `tem_credencial` por servidor × agent, o painel pedia o status por
+  servidor, e o plano do turno lia de novo. Por isso os prompts vinham em fila.
+- **Achado 3:** o login do app exigia `oauth.clientId` pré-registrado no
+  `.mcp.json` (o plano tirou o registro dinâmico porque o AS do prime não o
+  expõe). MCPs adicionados pelo CLI não têm o bloco. O AS do Vercel
+  (`vercel.com`) **expõe `registration_endpoint`**, e o Claude logou exatamente
+  por registro dinâmico: o Keychain dele tem `mcpOAuth` com `clientId` próprio
+  para vercel, prime-mcp e supabase. A sonda do Frota bate sem token, leva 401
+  e chamava de "requer autenticação" algo que funciona no turno do Claude.
+- **Decisão 1, assinatura:** `scripts/build.sh` assina com a identidade
+  `Frota Dev Signing` (certificado de code signing auto-assinado, criado nesta
+  máquina; `FROTA_SIGN_IDENTITY` troca o nome) e só cai no ad hoc, avisando,
+  quando ela não existe. Verificado: dois binários diferentes assinados com
+  ela têm o mesmo requisito designado, `identifier "dev.vinicius.mycockpit"
+  and certificate root = H"28d4…"`. O Keychain vai pedir **uma** última vez
+  ("Permitir sempre") e depois nunca mais entre builds. Developer ID continua
+  sendo o conserto para distribuição (mesma causa raiz do ADR-013).
+- **Decisão 2, uma leitura por processo:** `mcp_auth` guarda em memória a cópia
+  do que está no Keychain, por `server_id`; gravar e apagar passam por lá.
+  Erro de leitura não entra no cache (é tentado de novo). O plano já admitia
+  "Keychain + memória do processo" como os dois únicos lugares da credencial.
+- **Decisão 3, registro dinâmico volta (revoga o item 2 da correção do plano):**
+  `OauthConfig.client_id` e `callback_port` viram opcionais. Sem bloco `oauth`,
+  um MCP HTTP sem credencial nenhuma na configuração é **elegível ao login do
+  app** (`login_pelo_app_possivel`): descoberta pela cadeia normativa a partir
+  do 401, porta de callback livre escolhida na hora, cliente público registrado
+  (RFC 7591, `token_endpoint_auth_method: none`), `client_id` guardado junto
+  do token para refresh e logout. AS sem `registration_endpoint` e config sem
+  `clientId` recusa com motivo legível. Cliente pré-registrado no arquivo
+  continua vencendo. Header ou bearer por env NÃO é elegível (quem autentica é
+  a variável), segredo literal barra sempre, stdio não tem endpoint.
+  `native_reason` não muda: o `vercel` segue portável nativamente, e passa a
+  ir pelo proxy do app assim que o app tem token. `mcp_instalacao` segue
+  olhando só o bloco declarado.
+- **Decisão 4, a tela:** cabeçalho opaco e fixo (título, escopo do projeto,
+  Redescobrir) dentro do painel; uma linha de resumo (total, ativos, pedem
+  login, só no CLI); **uma linha por MCP**, fechada por padrão, com chips por
+  motor; o cartão aberto começa por "Quem autentica" com três respostas
+  honestas (o Frota; o CLI de origem; "no próprio CLI, não verificado", porque
+  o login do CLI não é observado) e a ação ao lado; prosa dos gestos vai para
+  o `title`; contexto (acompanhamento, inventário, garantia do Keychain) vem
+  DEPOIS da lista. Copy: **"pelo Frota" sai** de todos os rótulos (dentro do
+  app é implícito; o ponto de estado já diz).
+- **Verificado:** `cargo test` 839, `vitest` 4249, `tsc -b` 0, guardas do guia
+  verdes. Fixture nova: metadata real do AS do Vercel (16/09/2026).
+- **Segue fora:** SSE/WS pelo proxy (A3), Client ID Metadata Document (quando
+  algum servidor real exigir), e ler o inventário de login dos CLIs para
+  afirmar "conectado" em vez de "não verificado".
+
 ### ADR-202 · Imagem na aba Alterações mostra a versão do disco e abre no Lightbox
 
 - **Contexto (16/09/2026):** o estudo do Maestri deixou 22 quadros `.jpg` e um
@@ -7206,3 +7273,32 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Limites:** imagem removida e vídeo seguem com a frase de binário. Antes e
   depois lado a lado pede um comando Rust que leia o blob do `HEAD`, com o
   mesmo teto de 32 MB, e fica para quando houver imagem modificada a comparar.
+
+### ADR-202 · Configurações: um chrome só, e a seção entrega apenas o conteúdo
+
+- **Contexto (16/09/2026):** depois da ADR-201 a aba de MCPs ganhou uma barra
+  fixa própria e ficou "num padrão diferente das demais": as outras seções
+  desenhavam o título dentro do conteúdo, cada uma com a sua margem, a sua
+  ação (três delas com `<button>` cru, duas com `<Button compacto>`), o seu
+  seletor de projeto ("Projeto:" solto em Extensões, pílula no MCP), e o X do
+  dialog flutuava num chip translúcido por cima do scroll. Pedido do usuário:
+  *"o modal de configurações seja algo genérico, componentizado: o top bar, os
+  botões de ações, para que tudo tenha os mesmos espaços, as mesmas margens.
+  Só o conteúdo efetivamente muda."*
+- **Decisão:** o chrome pertence ao `SettingsDialog`. Uma barra fixa de 48px
+  no topo do painel, com título à esquerda, seletor de escopo ao lado, ações à
+  direita e o X no fim do mesmo trilho. Abaixo, uma área de rolagem com as
+  mesmas margens para toda seção. A seção só entrega o conteúdo; o que vai na
+  barra ela declara pelo `SectionHeader` (mesmo componente de antes, mais o
+  prop `escopo`), que monta na barra por **portal** (`settingsChrome.tsx`).
+  Portal, não store: os botões continuam com as closures da própria seção e
+  não há estado a sincronizar. Seção que não desenha cabeçalho (Especialistas
+  antes desta ADR) recebe o título do registro na barra. Fora do dialog
+  (teste com `renderToStaticMarkup`) o `SectionHeader` renderiza inline.
+- **Consequências:** o X deixa de ser chip translúcido e vira um ícone no
+  trilho; `pr-9` deixa de ser necessário no conteúdo. As três ações cruas
+  (Modelos, Máquina, Serviços) viraram `<Button size="compacto"
+  variant="ghost">`, o único idioma de ação de barra. O seletor de projeto de
+  Extensões saiu do corpo e foi para o escopo da barra, como o do MCP. A
+  descrição da seção fica como primeira linha do conteúdo, com margem fixa.
+- **Verificado:** `vitest` 4257, `tsc -b` 0, guardas do guia verdes.

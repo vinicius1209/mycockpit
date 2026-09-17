@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
-import { Boxes, Loader2, RefreshCcw, Sparkles } from "lucide-react"
+import { Boxes, RefreshCcw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PillSelect } from "@/components/ui/PillSelect"
 import {
@@ -202,6 +202,18 @@ export function ExtensionsSettings() {
       <SectionHeader
         title="Skills e plugins"
         description="Quais extensões existem, para quais agents valem e que código a Frota se recusa a executar sem consentimento."
+        escopo={
+          project ? (
+            <PillSelect
+              value={project.id}
+              onValueChange={setSelectedProjectId}
+              options={projects.map((item) => ({ value: item.id, label: item.name }))}
+              triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
+              title="Escopo deste painel; não muda o projeto ativo do app"
+              aria-label="Projeto das skills"
+            />
+          ) : null
+        }
         action={
           <Button
             type="button"
@@ -216,23 +228,6 @@ export function ExtensionsSettings() {
         }
       />
 
-      {project && (
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <span className="text-[12px] font-medium text-foreground">Projeto:</span>
-          <PillSelect
-            value={project.id}
-            onValueChange={setSelectedProjectId}
-            options={projects.map((item) => ({
-              value: item.id,
-              label: item.name,
-            }))}
-            triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
-            title="Escopo deste painel; não muda o projeto ativo do app"
-            aria-label="Projeto das skills"
-          />
-          {loading && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
-        </div>
-      )}
 
       <BlockTitle hint="O inventário é calculado por adapter; a mesma skill compartilhada aparece uma vez com todos os destinos que a recebem.">
         Skills e comandos efetivos

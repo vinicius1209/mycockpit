@@ -45,9 +45,24 @@ case "${1:-test}" in
 
     BUNDLE="$APP_DIR/src-tauri/target/release/bundle/macos/Frota.app"
     # O linker assina apenas o Mach-O. Sem selar o bundle, `codesign --verify`
-    # acusa recursos ausentes mesmo com o app local abrindo. A assinatura ad
-    # hoc fecha também helper, Info.plist e ícone, sem identidade de distribuição.
-    codesign --force --deep --sign - "$BUNDLE"
+    # acusa recursos ausentes mesmo com o app local abrindo.
+    #
+    # Identidade ESTÁVEL, não ad hoc (ADR-201). Com `--sign -` o requisito
+    # designado do app é o próprio cdhash, que muda a cada build: o Keychain
+    # tratava cada build como um app estranho e pedia a senha do usuário para
+    # ler o token OAuth dos MCPs (a ACL do item chegou a 9 cdhashes). Com um
+    # certificado de code signing (auto-assinado serve; Developer ID quando
+    # houver) o requisito vira `identifier + certificate root`, igual em todos
+    # os builds. Sem identidade disponível cai no ad hoc e AVISA.
+    SIGN_IDENTITY="${FROTA_SIGN_IDENTITY:-Frota Dev Signing}"
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$SIGN_IDENTITY\""; then
+      codesign --force --deep --sign "$SIGN_IDENTITY" "$BUNDLE"
+      echo "  assinatura: $SIGN_IDENTITY (requisito estável entre builds)"
+    else
+      codesign --force --deep --sign - "$BUNDLE"
+      echo "  aviso: identidade '$SIGN_IDENTITY' não encontrada; assinatura ad hoc."
+      echo "         O Keychain vai pedir senha a cada build novo. Veja docs/decisions.md, ADR-201."
+    fi
     codesign --verify --deep --strict "$BUNDLE"
 
     cp -R "$BUNDLE" "$OUT/"

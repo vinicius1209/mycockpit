@@ -117,6 +117,36 @@ impl McpLaunchConfig {
     ///
     /// Motivo INDEPENDENTE de `native_reason`: um servidor pode ter os dois,
     /// um, ou nenhum. A UI mostra cada um com a sua própria copy.
+    /// O app consegue fazer login neste servidor?
+    ///
+    /// Sim quando o arquivo declara o bloco `oauth` (cliente pré-registrado)
+    /// OU quando é um MCP HTTP sem credencial nenhuma na configuração: aí a
+    /// descoberta segue a cadeia normativa a partir do 401 e o cliente é
+    /// registrado dinamicamente (ADR-201). Header/bearer por env significa que
+    /// quem autentica é a variável, não o app; segredo literal barra sempre.
+    pub fn login_pelo_app_possivel(&self) -> bool {
+        if self.oauth.is_some() {
+            return true;
+        }
+        self.transport == "http"
+            && self.url.is_some()
+            && self.bearer_token_env_var.is_none()
+            && self.http_headers.is_empty()
+            && self.env_http_headers.is_empty()
+            && !self.has_literal_secret()
+    }
+
+    /// A configuração do login: a declarada no arquivo ou a dinâmica.
+    pub fn oauth_config_para_login(&self) -> Option<crate::mcp_auth::OauthConfig> {
+        if let Some(oauth) = &self.oauth {
+            return Some(oauth.clone());
+        }
+        if !self.login_pelo_app_possivel() {
+            return None;
+        }
+        self.url.as_deref().map(crate::mcp_auth::login_dinamico)
+    }
+
     fn has_literal_secret(&self) -> bool {
         !(self.env.is_empty()
             && self.http_headers.is_empty()
@@ -404,6 +434,11 @@ pub struct McpServerView {
     /// A config carrega valor literal de env/header/argv/URL ou expansão do
     /// CLI de origem. Independente de `native_reason`.
     pub literal_secret: bool,
+    /// O app consegue fazer o login deste servidor (bloco `oauth` declarado ou
+    /// HTTP sem credencial na configuração, com registro dinâmico). É o que
+    /// decide se a tela mostra "Entrar"; antes só o bloco declarado mostrava,
+    /// e um MCP adicionado pelo CLI ficava em "requer autenticação" sem saída.
+    pub login_pelo_app: bool,
     /// Nome que o servidor assume dentro de um run gerenciado deste projeto
     /// (o que o usuário cita no prompt). Só existe com binding ativo.
     pub runtime_name: Option<String>,
@@ -1089,7 +1124,7 @@ fn subir_proxy(
     crate::mcp_proxy::ProxyListener,
 )> {
     let endpoint = launch.url.clone()?;
-    let oauth = launch.oauth.clone()?;
+    let oauth = launch.oauth_config_para_login()?;
     let server_bin = std::env::current_exe().ok()?;
     let listener = crate::mcp_proxy::ProxyListener::spawn(server_id.to_string(), endpoint, oauth)?;
     let config = crate::mcp_proxy::ProxyConfig {
@@ -1139,10 +1174,10 @@ fn roteavel_por_proxy_com(
         return false;
     };
     // Só HTTP: o proxy fala JSON-RPC sobre POST. SSE/WS segue fora (A3).
-    if launch.transport != "http" || launch.oauth.is_none() {
+    // Servidor com credencial literal no arquivo também não passa por aqui.
+    if launch.transport != "http" || !launch.login_pelo_app_possivel() {
         return false;
     }
-    // Credencial literal no arquivo é outro problema, e continua barrando.
     if launch.has_literal_secret() {
         return false;
     }
@@ -1162,7 +1197,7 @@ pub async fn oauth_config_for_server(
         .into_iter()
         .find(|server| server.id == server_id)
         .and_then(|server| server.launch)
-        .and_then(|launch| launch.oauth)
+        .and_then(|launch| launch.oauth_config_para_login())
 }
 
 fn string_array(v: Option<&Value>) -> Vec<String> {
@@ -1741,6 +1776,7 @@ fn server_view(conn: &Connection, project_id: &str, server: &DiscoveredServer) -
         portable: server.portable(),
         native_reason: launch.and_then(|c| c.native_reason),
         literal_secret: launch.is_some_and(McpLaunchConfig::has_literal_secret),
+        login_pelo_app: server.managed && launch.is_some_and(McpLaunchConfig::login_pelo_app_possivel),
         runtime_name: None,
         agent_states: crate::adapters::registered_agents()
             .map(|agent| agent_state(conn, project_id, server, agent))
@@ -3380,13 +3416,20 @@ mod tests {
         };
         assert!(!roteavel_por_proxy_com(&stdio, "claude-code", || true));
 
-        // HTTP sem bloco `oauth`: não há o que autenticar, segue o caminho
-        // normal (não passa a ser problema do proxy).
+        // HTTP sem bloco `oauth`: SEM credencial do app segue o caminho normal
+        // (nativo, cada CLI autentica sozinho). Até a ADR-201 isso valia mesmo
+        // com credencial; agora o login dinâmico torna o servidor roteável
+        // pelo proxy assim que o app tem token (caso real: `vercel`).
         let http_sem_oauth = DiscoveredServer {
             launch: parse_launch(&json!({ "type": "http", "url": "https://x/mcp" })),
             ..stdio.clone()
         };
         assert!(!roteavel_por_proxy_com(
+            &http_sem_oauth,
+            "claude-code",
+            || false
+        ));
+        assert!(roteavel_por_proxy_com(
             &http_sem_oauth,
             "claude-code",
             || true
@@ -3415,6 +3458,61 @@ mod tests {
         assert!(!roteavel_por_proxy_com(&com_literal, "claude-code", || {
             true
         }));
+    }
+
+    /// ADR-201. Caso REAL: `vercel` adicionado por `claude mcp add --transport
+    /// http vercel https://mcp.vercel.com` (config do usuário, 16/09/2026).
+    /// Sem bloco `oauth`, o servidor ficava em "requer autenticação" sem botão
+    /// de login. Agora é elegível ao login dinâmico, e o `native_reason` segue
+    /// `None`: nativamente ele continua portável (cada CLI faz o próprio OAuth).
+    #[test]
+    fn mcp_http_sem_credencial_e_elegivel_ao_login_dinamico() {
+        let cfg = parse_launch(&json!({ "type": "http", "url": "https://mcp.vercel.com" })).unwrap();
+        assert!(cfg.login_pelo_app_possivel());
+        assert_eq!(cfg.native_reason, None);
+        assert!(cfg.portable());
+        let login = cfg.oauth_config_para_login().unwrap();
+        assert_eq!(login.client_id, None);
+        assert_eq!(login.callback_port, None);
+        assert_eq!(login.resource, "https://mcp.vercel.com");
+        // Sem credencial do app, o roteamento por proxy NÃO liga: o servidor
+        // vai nativo, como sempre. Com credencial, liga.
+        let server = DiscoveredServer {
+            id: "vercel".into(),
+            name: "vercel".into(),
+            source: "claude".into(),
+            scope: "user".into(),
+            source_agent: Some("claude-code".into()),
+            enabled: true,
+            managed: true,
+            launch: Some(cfg),
+        };
+        assert!(!roteavel_por_proxy_com(&server, "claude-code", || false));
+        assert!(roteavel_por_proxy_com(&server, "claude-code", || true));
+    }
+
+    #[test]
+    fn mcp_http_com_header_por_env_ou_stdio_nao_oferece_login_do_app() {
+        // Quem autentica é a variável de ambiente, não o app.
+        let por_env = parse_launch(&json!({
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "headers": { "Authorization": "Bearer ${MCP_TOKEN}" }
+        }))
+        .unwrap();
+        assert!(!por_env.login_pelo_app_possivel());
+        assert!(por_env.oauth_config_para_login().is_none());
+        // stdio não tem endpoint para descobrir servidor de autorização.
+        let stdio = parse_launch(&json!({ "command": "npx", "args": ["@playwright/mcp@latest"] })).unwrap();
+        assert!(!stdio.login_pelo_app_possivel());
+        // Segredo literal barra, mesmo em HTTP.
+        let literal = parse_launch(&json!({
+            "type": "http",
+            "url": "https://mcp.example.com/mcp",
+            "headers": { "X-Api-Key": "segredo" }
+        }))
+        .unwrap();
+        assert!(!literal.login_pelo_app_possivel());
     }
 
     #[test]
@@ -3853,6 +3951,7 @@ mod tests {
             portable: server.portable(),
             native_reason: None,
             literal_secret: false,
+            login_pelo_app: false,
             runtime_name: None,
             agent_states: vec![McpAgentState {
                 agent: "codex".into(),

@@ -10,32 +10,59 @@
 // Elevação: a seção é E0 (plano). Linha de lista é E1 (bg-card/borda hairline)
 // e NÃO ganha outro cartão dentro — detalhe interno se separa por hairline.
 
-import type { ReactNode } from "react"
+import { useEffect, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
+import { useChromeSlot } from "@/components/settings/settingsChrome"
 
-/** Cabeçalho da seção: título + a pergunta que ela responde + ação opcional.
- *  `pr-9` reserva o canto do X do dialog (regra do DialogCloseX). */
+/** Cabeçalho da seção. Título, escopo e ação vão para a BARRA fixa do
+ *  SettingsDialog (portal, ver settingsChrome.tsx); a descrição fica inline,
+ *  como primeira linha do conteúdo, com a mesma margem em toda seção. Fora do
+ *  dialog (teste com renderToStaticMarkup, storybook) renderiza tudo inline. */
 export function SectionHeader({
   title,
   description,
   action,
+  escopo,
 }: {
   title: string
   description?: string | null
+  /** Uma ação, no máximo. Use `<Button size="compacto" variant="ghost">`. */
   action?: ReactNode
+  /** Seletor de escopo (projeto) quando a seção é por-projeto: fica ao lado
+   *  do título, na barra, nunca herdado em silêncio. */
+  escopo?: ReactNode
 }) {
-  return (
-    <div className="mb-3 flex items-start justify-between gap-3 pr-9">
-      <div className="min-w-0">
-        <h2 className="text-[14px] font-semibold text-foreground">{title}</h2>
-        {description && (
-          <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-            {description}
-          </p>
-        )}
+  const slot = useChromeSlot()
+  useEffect(() => {
+    if (!slot) return
+    slot.ocupar(true)
+    return () => slot.ocupar(false)
+  }, [slot])
+  const barra = (
+    <>
+      <h2 className="shrink-0 text-[14px] font-semibold text-foreground">{title}</h2>
+      {escopo}
+      <span className="flex-1" />
+      {action}
+    </>
+  )
+  const descricao = description ? (
+    <p className="mb-3 text-[12px] leading-snug text-muted-foreground">{description}</p>
+  ) : null
+  if (!slot?.alvo) {
+    return (
+      <div className="mb-3">
+        <div className="flex items-center gap-3">{barra}</div>
+        {descricao}
       </div>
-      {action && <div className="shrink-0">{action}</div>}
-    </div>
+    )
+  }
+  return (
+    <>
+      {createPortal(barra, slot.alvo)}
+      {descricao}
+    </>
   )
 }
 

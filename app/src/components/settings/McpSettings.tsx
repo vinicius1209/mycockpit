@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { Loader2, RefreshCcw, Server, ShieldCheck } from "lucide-react"
+import { Loader2, LockKeyhole, RefreshCcw } from "lucide-react"
 import { toast } from "sonner"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
@@ -11,15 +11,13 @@ import {
   discoverMcpServers,
   initialMcpProjectId,
   mcpBindingsSummary,
-  mcpAuthActionLabel,
-  mcpAuthHint,
-  mcpAuthLabel,
   mcpHealthLabel,
   mcpOauthLogin,
   mcpOauthLogout,
   mcpOauthStatus,
-  mcpPortabilityNotices,
+  mcpOfereceLogin,
   mcpProjectOptionLabel,
+  mcpResumo,
   optimisticBindingUpdate,
   setMcpBinding,
   type McpAgentState,
@@ -29,9 +27,10 @@ import {
   type ProviderMcpInventory,
 } from "@/lib/mcp"
 import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
-import { McpAgentRows } from "@/components/settings/McpAgentRows"
+import { McpServerRow } from "@/components/settings/McpServerRow"
 import { ProviderMcpInventoryPanel } from "@/components/settings/ProviderMcpInventoryPanel"
 import { WorkMcpSettings } from "@/components/settings/WorkMcpSettings"
+import { SectionHeader } from "@/components/settings/parts"
 import { cn } from "@/lib/utils"
 
 function toggleKey(
@@ -43,12 +42,6 @@ function toggleKey(
   if (on) next.add(key)
   else next.delete(key)
   return next
-}
-
-function sourceLabel(server: McpServer): string {
-  if (server.source === "mycockpit") return "interno"
-  if (server.source === "project") return ".mcp.json"
-  return `${server.source} · ${server.scope}`
 }
 
 export function McpSettings() {
@@ -96,6 +89,9 @@ export function McpSettings() {
     Record<string, McpAuthStatus>
   >({})
   const [authBusy, setAuthBusy] = useState<ReadonlySet<string>>(new Set())
+  // Linhas abertas. Fechadas por padrão: a lista responde "o que está
+  // funcionando?" sem rolagem, e só o que a pessoa toca mostra os controles.
+  const [abertos, setAbertos] = useState<ReadonlySet<string>>(new Set())
 
   const setKeyBusy = useCallback((key: string, on: boolean) => {
     if (on) busyKeysRef.current.add(key)
@@ -172,7 +168,7 @@ export function McpSettings() {
       return
     }
     let vivo = true
-    const alvos = servers.filter((server) => server.nativeReason === "oauth")
+    const alvos = servers.filter((server) => mcpOfereceLogin(server))
     void Promise.all(
       alvos.map(async (server) => {
         try {
@@ -432,68 +428,43 @@ export function McpSettings() {
 
   if (!project) {
     return (
-      <div className="rounded-lg border border-border/60 bg-secondary/20 p-4 text-[13px] text-muted-foreground">
+      <div className="rounded-lg border bg-secondary/20 p-4 text-[13px] text-muted-foreground">
         Selecione um projeto para gerenciar seus MCPs.
       </div>
     )
   }
 
+  const resumo = mcpResumo(servers, authByServer, servers.map((s) => s.id))
+  const toggleAberto = (id: string) =>
+    setAbertos((atual) => toggleKey(atual, id, !atual.has(id)))
+
   return (
     <div>
-      <div className="mb-1 flex items-start justify-between gap-3 pr-9">
-        <div>
-          <h2 className="text-[14px] font-semibold text-foreground">
-            MCPs
-          </h2>
-          <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
-            Descubra, teste e entregue tools externas aos agents deste projeto.
-            Sem binding, o CLI mantém o comportamento nativo.
-          </p>
-        </div>
-        <Button
-          size="padrao"
-          variant="ghost"
-          onClick={() => void load(true)}
-          disabled={loading}
-          className="h-7 gap-1.5 px-2 text-[12px]"
-        >
-          <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
-          Redescobrir
-        </Button>
-      </div>
-
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <span className="text-[12px] font-medium text-foreground">
-          Bindings do projeto:
-        </span>
-        <PillSelect
-          value={project.id}
-          onValueChange={setSelectedProjectId}
-          options={projects.map((item) => ({
-            value: item.id,
-            label: mcpProjectOptionLabel(
-              item.name,
-              bindingCounts[item.id] ?? 0,
-            ),
-          }))}
-          triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
-          title="Escopo deste painel; não muda o projeto ativo do app"
-          aria-label="Projeto dos bindings MCP"
-        />
-      </div>
-
-      <div className="mt-3 rounded-lg border border-brass/20 bg-brass/5 px-3 py-2 text-[12px] leading-snug text-muted-foreground">
-        <ShieldCheck className="mr-1 inline size-3.5 text-brass" />
-        Valores de tokens e headers nunca são persistidos. Configurações com
-        credencial literal precisam usar Keychain, wrapper ou referência de env
-        antes de poderem ser roteadas.
-      </div>
-
-      <ProviderMcpInventoryPanel inventories={providerInventories} />
-      <WorkMcpSettings onChanged={load} />
+      <SectionHeader
+        title="MCPs"
+        escopo={
+          <PillSelect
+            value={project.id}
+            onValueChange={setSelectedProjectId}
+            options={projects.map((item) => ({
+              value: item.id,
+              label: mcpProjectOptionLabel(item.name, bindingCounts[item.id] ?? 0),
+            }))}
+            triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
+            title="Escopo deste painel; não muda o projeto ativo do app"
+            aria-label="Projeto dos bindings MCP"
+          />
+        }
+        action={
+          <Button size="compacto" variant="ghost" onClick={() => void load(true)} disabled={loading}>
+            <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
+            Redescobrir
+          </Button>
+        }
+      />
 
       {error && (
-        <div className="mt-3 rounded-lg border border-st-error/30 bg-st-error/5 p-3 text-[12px] text-st-error">
+        <div className="mb-3 rounded-lg border border-st-error/30 bg-st-error/5 p-3 text-[12px] text-st-error">
           {error}
         </div>
       )}
@@ -503,144 +474,80 @@ export function McpSettings() {
           <div className="flex flex-col items-center gap-2 text-[12px]">
             <Loader2 className="size-5 animate-spin" />
             <span>
-              Descobrindo os MCPs de{" "}
-              <span className="text-foreground/80">{project.name}</span>…
+              Descobrindo os MCPs de <span className="text-foreground/80">{project.name}</span>…
             </span>
           </div>
         </div>
       ) : servers.length === 0 ? (
-        <div className="mt-3 rounded-lg border border-dashed border-border/60 p-5 text-center text-[12px] text-muted-foreground">
-          Nenhum MCP portável foi encontrado nas fontes deste projeto.
+        <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-[12px] text-muted-foreground">
+          Nenhum MCP foi encontrado nas fontes deste projeto.
         </div>
       ) : (
-        <div className="mt-3 space-y-2.5">
-          {servers.map((server) => (
-            <article
-              key={server.id}
-              className="rounded-xl border border-border/60 bg-secondary/15 p-3"
-            >
-              <div className="flex items-start gap-2.5">
-                <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-lg border border-border/60 bg-background/60">
-                  <Server className="size-3.5 text-brass" />
-                </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[13px] font-medium text-foreground">
-                      {server.name}
-                    </span>
-                    <span className="rounded border border-border/60 bg-background/50 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                      {sourceLabel(server)}
-                    </span>
-                    <span className="rounded border border-border/60 px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground">
-                      {server.transport}
-                    </span>
-                  </div>
-                  <div
-                    className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground/75"
-                    title={server.locator}
-                  >
-                    {server.locator}
-                  </div>
-                  {server.runtimeName && (
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      nome na sessão:{" "}
-                      <span className="rounded border border-border/60 bg-background/50 px-1 py-0.5 font-mono text-[11px] text-foreground/80">
-                        {server.runtimeName}
-                      </span>{" "}
-                      (cite este nome no prompt)
-                    </div>
-                  )}
-                  {server.envKeys.length > 0 && (
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      env refs: {server.envKeys.join(", ")}
-                    </div>
-                  )}
-                  {server.nativeReason === "oauth" && (
-                    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-border/50 bg-background/40 px-2.5 py-1.5">
-                      <span className="text-[11px] text-foreground">
-                        {mcpAuthLabel(
-                          authByServer[server.id]?.state ?? "sem-login",
-                        )}
-                      </span>
-                      <span className="flex-1 text-[11px] leading-snug text-muted-foreground">
-                        {mcpAuthHint(
-                          authByServer[server.id] ?? {
-                            state: "sem-login",
-                            expiresAt: null,
-                          },
-                        )}
-                      </span>
-                      <Button
-                        size="padrao"
-                        variant={
-                          authByServer[server.id]?.state === "conectado"
-                            ? "ghost"
-                            : "secondary"
-                        }
-                        disabled={authBusy.has(server.id)}
-                        onClick={() =>
-                          void (authByServer[server.id]?.state === "conectado"
-                            ? doLogout(server)
-                            : doLogin(server))
-                        }
-                        className="h-7 shrink-0 px-2.5 text-[12px]"
-                      >
-                        {authBusy.has(server.id) && (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
-                        )}
-                        {mcpAuthActionLabel(
-                          authByServer[server.id]?.state ?? "sem-login",
-                        )}
-                      </Button>
-                    </div>
-                  )}
-                  {mcpPortabilityNotices(
-                    server,
-                    authByServer[server.id]?.state === "conectado",
-                  ).map((notice) => (
-                    <div
-                      key={notice.kind}
-                      className={cn(
-                        "mt-1 text-[11px] leading-snug",
-                        // Fato estrutural em tom neutro; pendência que o
-                        // usuário resolve (segredo literal) em aviso.
-                        notice.kind === "native-only"
-                          ? "text-muted-foreground"
-                          : "text-st-warning",
-                      )}
-                    >
-                      {notice.text}
-                    </div>
-                  ))}
-                  {!server.sourceEnabled && server.managed && (
-                    <div className="mt-1 text-[11px] text-muted-foreground">
-                      Desativado na origem; um binding explícito o ativa somente
-                      no run gerenciado.
-                    </div>
-                  )}
-                </div>
-              </div>
+        <>
+          {/* A linha de resumo responde a primeira pergunta antes de qualquer
+              cartão. Cada número só aparece quando é maior que zero. */}
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-muted-foreground">
+            <span>
+              <span className="font-medium text-foreground">{resumo.total}</span>{" "}
+              {resumo.total === 1 ? "MCP" : "MCPs"} neste projeto
+            </span>
+            {resumo.ativos > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-foreground/70" />
+                <span className="font-medium text-foreground">{resumo.ativos}</span>{" "}
+                {resumo.ativos === 1 ? "ativo" : "ativos"}
+              </span>
+            )}
+            {resumo.pedemLogin > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full bg-st-warning" />
+                <span className="font-medium text-foreground">{resumo.pedemLogin}</span>{" "}
+                {resumo.pedemLogin === 1 ? "pede login" : "pedem login"}
+              </span>
+            )}
+            {resumo.soNoCli > 0 && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="size-1.5 rounded-full ring-1 ring-inset ring-muted-foreground/60" />
+                <span className="font-medium text-foreground">{resumo.soNoCli}</span> só no CLI de origem
+              </span>
+            )}
+          </div>
 
-              {server.managed ? (
-                <McpAgentRows
-                  server={server}
-                  browser={browser.status}
-                  busyKeys={busyKeys}
-                  checkingKeys={checkingKeys}
-                  onUpdate={(s, st, patch) => void update(s, st, patch)}
-                  onInstalarNoCli={(s, st) => void instalarNoCli(s, st)}
-                  instalandoKeys={instalando}
-                  onCheck={(s, st) => void check(s, st)}
-                />
-              ) : (
-                <div className="mt-2 text-[11px] text-muted-foreground">
-                  MCP interno, criado e limitado por run pelo Frota.
-                </div>
-              )}
-            </article>
-          ))}
-        </div>
+          <div className="mt-2.5 overflow-hidden rounded-lg border">
+            {servers.map((server) => (
+              <McpServerRow
+                key={server.id}
+                server={server}
+                aberto={abertos.has(server.id)}
+                onToggle={() => toggleAberto(server.id)}
+                auth={authByServer[server.id]}
+                authBusy={authBusy.has(server.id)}
+                onLogin={() => void doLogin(server)}
+                onLogout={() => void doLogout(server)}
+                browser={browser.status}
+                busyKeys={busyKeys}
+                checkingKeys={checkingKeys}
+                instalandoKeys={instalando}
+                onUpdate={(s, st, patch) => void update(s, st, patch)}
+                onCheck={(s, st) => void check(s, st)}
+                onInstalarNoCli={(s, st) => void instalarNoCli(s, st)}
+              />
+            ))}
+          </div>
+        </>
       )}
+
+      {/* Contexto vem DEPOIS da lista: acompanhamento do Frota, o que já vive
+          nos CLIs, e a garantia do Keychain em uma linha. */}
+      <WorkMcpSettings onChanged={load} />
+      <ProviderMcpInventoryPanel inventories={providerInventories} />
+      <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
+        <LockKeyhole className="mt-px size-3 shrink-0" />
+        <span>
+          Tokens e headers nunca são persistidos fora do Keychain deste Mac. Configuração com
+          credencial literal fica no CLI de origem.
+        </span>
+      </p>
     </div>
   )
 }

@@ -7,6 +7,7 @@
 // verdade continua o arquivo .mycockpit/agents/*.md. Referência: o mock
 // docs/mocks/marketplace.html.
 
+import { SectionHeader } from "@/components/settings/parts"
 import { useMemo, useState } from "react"
 import {
   ArrowLeft,
@@ -344,14 +345,11 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
     <div className="flex min-h-0 flex-1 flex-col">
       {view.kind === "list" && (
         <>
-          <div className="px-6 pt-5 pb-3">
-            <h2 className="text-[14px] font-semibold text-foreground">
-              Especialistas
-            </h2>
-            <p className="mt-1 text-[13px] text-muted-foreground">
-              Personas do projeto e globais. Mencione uma com @ na conversa,
-              ela lê o contexto e opina. Você supervisiona.
-            </p>
+          <div className="px-6 pt-4">
+            <SectionHeader
+              title="Especialistas"
+              description="Personas do projeto e globais. Mencione uma com @ na conversa, ela lê o contexto e opina. Você supervisiona."
+            />
           </div>
           <div className="flex flex-wrap items-center gap-2 px-6 pb-3">
             <div className="flex min-w-[160px] flex-1 items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-1.5">

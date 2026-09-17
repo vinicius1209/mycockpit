@@ -12,11 +12,16 @@ import { getVersion } from "@tauri-apps/api/app"
 import { Minus, Plus, RotateCcw } from "lucide-react"
 import {
   Dialog,
+  DialogCloseX,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  SettingsChromeProvider,
+  useSettingsChrome,
+} from "@/components/settings/settingsChrome"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Switch } from "@/components/ui/switch"
 import { Input } from "@/components/ui/input"
@@ -121,6 +126,10 @@ export function SettingsDialog() {
     resolveSection(null, available),
   )
   const [version, setVersion] = useState("")
+  // O chrome (barra fixa: título, escopo, ações, X) é do dialog. As seções
+  // alimentam a barra pelo SectionHeader (portal); quando uma seção não
+  // desenha cabeçalho, a barra mostra o título do registro (ADR-202).
+  const chrome = useSettingsChrome()
   // Enquanto um deep link ainda não foi consumido pelo efeito, o rail já abre
   // o grupo certo. Assim o alvo existe no DOM quando o Radix pede o foco.
   const railSection = open && requested
@@ -143,12 +152,15 @@ export function SettingsDialog() {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        // X: o DialogCloseX PADRÃO do dialog base (canto do dialog, z alto,
-        // chip) — nada de X custom dentro do scroll (era o bug recorrente).
+        // X: o DialogCloseX vive na BARRA fixa do painel (ADR-202), fora do
+        // scroll, no mesmo trilho das ações. Nada de X dentro do scroll.
         // mais largo E mais alto: a área de conteúdo estava com ~456px (o form
         // de preset de 3 colunas truncava tudo). Agora ~700px de conteúdo, com
         // teto por viewport pra não estourar telas baixas.
         className="flex h-[min(88vh,640px)] w-[92vw] max-w-[900px] gap-0 overflow-hidden rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)] sm:max-w-[900px]"
+        // O X mora na barra fixa do painel (fora do scroll), não solto no
+        // canto: mesma altura, mesma margem e mesmo trilho das ações.
+        showCloseButton={false}
         onOpenAutoFocus={(e) => {
           // Foco padrão do Radix vai pro 1º botão do rail (Aparência) — errado
           // num deep link (guia de setup, tray, medidor, paleta): o dialog abre
@@ -177,9 +189,22 @@ export function SettingsDialog() {
           onSelect={setSection}
         />
 
-        {/* Conteúdo — o X padrão do dialog base flutua no canto sup-direito;
-            o SectionHeader reserva pr-9 pra nada passar por baixo dele. */}
-        <div className="relative flex-1 overflow-y-auto p-5">
+        {/* Painel: barra fixa (chrome único) + conteúdo que rola. Toda seção
+            tem o mesmo topo, as mesmas margens e o mesmo trilho de ações; só o
+            que está abaixo da barra muda. */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border/40 bg-background px-5">
+            <div ref={chrome.setAlvo} className="flex min-w-0 flex-1 items-center gap-3">
+              {!chrome.ocupado && (
+                <h2 className="text-[14px] font-semibold text-foreground">
+                  {sectionDef(section).title}
+                </h2>
+              )}
+            </div>
+            <DialogCloseX className="static shrink-0 border-transparent bg-transparent shadow-none backdrop-blur-none" />
+          </header>
+          <SettingsChromeProvider slot={chrome.slot}>
+          <div className="relative flex-1 overflow-y-auto px-5 pt-4 pb-5">
           {section === "profile" && <ProfileSettings />}
 
           {section === "appearance" && (
@@ -521,6 +546,8 @@ export function SettingsDialog() {
               </div>
             </div>
           )}
+          </div>
+          </SettingsChromeProvider>
         </div>
       </DialogContent>
     </Dialog>

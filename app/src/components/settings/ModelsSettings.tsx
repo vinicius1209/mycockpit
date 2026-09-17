@@ -200,14 +200,10 @@ export function ModelsSettings() {
         title={sectionDef("models").title}
         description={sectionDef("models").question}
         action={
-          <button
-            onClick={() => void checkNow()}
-            disabled={checking}
-            className="flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          >
+          <Button size="compacto" variant="ghost" onClick={() => void checkNow()} disabled={checking}>
             <RotateCcw className={cn("size-3.5", checking && "animate-spin")} />
             {checking ? "Verificando..." : "Verificar agora"}
-          </button>
+          </Button>
         }
       />
 

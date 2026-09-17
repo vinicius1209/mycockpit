@@ -88,7 +88,9 @@ export function mcpAgentStatusLabel(
   // e não de uma regra paralela no front. A antiga olhava só
   // `nativeReason === "oauth"` + login, sem saber de transporte SSE nem de
   // segredo literal: dizia "roteado" para casos que o proxy recusa.
-  if (state.roteavelPeloApp) return "roteado pelo Frota"
+  // Sem "pelo Frota" (dentro do app é implícito) e sem repetir a saúde: a
+  // sonda bate no endpoint sem token e leva 401, que aqui é o esperado.
+  if (state.roteavelPeloApp) return "roteado"
   if (state.cliInstallation === "enabled") return "habilitado no CLI (global)"
   if (state.cliInstallation === "disabled") return "instalado no CLI, desabilitado (global)"
   if (state.cliInstallation === "absent") return "não instalado no CLI"

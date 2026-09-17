@@ -1,5 +1,19 @@
 # MCP com autenticação — plano (o app faz o login, não o arquivo)
 
+> ## Status (16/09/2026, ADR-201)
+>
+> Dois itens da correção de terreno abaixo caíram, com evidência:
+> - **Item 2 (registro dinâmico fora): revogado.** MCPs adicionados pelo CLI
+>   não têm `clientId` no arquivo, e o AS do Vercel expõe
+>   `registration_endpoint`. O login agora registra cliente público
+>   dinamicamente quando a config não traz `clientId`.
+> - **Item 5 ("sobrevive a rebuild sem prompt"): estava errado.** Com build ad
+>   hoc o requisito designado é o cdhash, e a ACL do item acumulou um cdhash
+>   por build. O `build.sh` passou a assinar com identidade estável, e o
+>   Keychain é lido uma vez por servidor por processo.
+> A3 (quem autenticou) entrou na tela: "o Frota", "o CLI de origem" ou "no
+> próprio CLI, não verificado".
+
 > ## Correção de terreno (07/08/2026, validada contra o endpoint real)
 >
 > Verificação empírica contra o `prime-mcp`

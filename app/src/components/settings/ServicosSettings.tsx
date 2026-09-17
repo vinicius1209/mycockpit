@@ -46,6 +46,7 @@ import { OpenCodeProvidersCard } from "@/components/settings/OpenCodeProvidersCa
 import { detectAgents, refreshModelLists, toProbeMap } from "@/lib/detect"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 
 /** Comando copiável. O app mostra e copia; quem roda é você — instalar e logar
  *  seguem sendo gesto seu no terminal (trocar de conta, não: essa o app faz). */
@@ -229,14 +230,10 @@ export function ServicosSettings() {
         title={def.title}
         description={def.question}
         action={
-          <button
-            onClick={() => void verificar()}
-            disabled={lendo}
-            className="flex items-center gap-1.5 text-[12px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-          >
+          <Button size="compacto" variant="ghost" onClick={() => void verificar()} disabled={lendo}>
             <RotateCcw className={cn("size-3.5", lendo && "animate-spin")} />
             Verificar agora
-          </button>
+          </Button>
         }
       />
 

@@ -704,8 +704,8 @@ mod tests {
         let mut l = launch("http");
         l.url = Some("https://x/mcp".into());
         l.oauth = Some(crate::mcp_auth::OauthConfig {
-            client_id: "c1".into(),
-            callback_port: 8976,
+            client_id: Some("c1".into()),
+            callback_port: Some(8976),
             auth_server_metadata_url: None,
             resource: "https://x/mcp".into(),
         });

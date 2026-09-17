@@ -13,6 +13,9 @@ import {
   mcpAuthHint,
   mcpAuthLabel,
   mcpHealthLabel,
+  mcpOfereceLogin,
+  mcpQuemAutentica,
+  mcpResumo,
   mcpPortabilityNotices,
   mcpProjectOptionLabel,
   optimisticBindingUpdate,
@@ -305,8 +308,9 @@ describe("optimisticBindingUpdate", () => {
 
 describe("login do Frota no MCP (A1)", () => {
   it("cada estado tem a sua copy, e nenhuma promete conexão que não existe", () => {
-    expect(mcpAuthLabel("sem-login")).toBe("sem login do Frota")
-    expect(mcpAuthLabel("conectado")).toBe("conectado pelo Frota")
+    // Sem "pelo Frota": dentro do app é implícito e poluía cada linha.
+    expect(mcpAuthLabel("sem-login")).toBe("sem login")
+    expect(mcpAuthLabel("conectado")).toBe("conectado")
     expect(mcpAuthLabel("expirado")).toBe("sessão expirada")
   })
 
@@ -388,7 +392,7 @@ describe("proxy MCP autenticado (A2)", () => {
         roteavelPeloApp: true,
         health,
       }),
-    ).toBe("roteado pelo Frota")
+    ).toBe("roteado")
   })
 
   it("o interruptor segue o MESMO fato que o rótulo", () => {
@@ -400,7 +404,7 @@ describe("proxy MCP autenticado (A2)", () => {
       roteavelPeloApp: true,
       health: "auth-required" as const,
     }
-    expect(mcpAgentStatusLabel(oauthServer, roteado)).toBe("roteado pelo Frota")
+    expect(mcpAgentStatusLabel(oauthServer, roteado)).toBe("roteado")
     expect(mcpAgentUtilizavel(roteado)).toBe(true)
   })
 
@@ -512,5 +516,57 @@ describe("proxy MCP autenticado (A2)", () => {
     // tem de significar "não sei, então não libera", nunca `true` por descuido.
     expect(mcpAgentUtilizavel({ compatible: false })).toBe(false)
     expect(mcpAgentUtilizavel({ compatible: true })).toBe(true)
+  })
+})
+
+describe("quem autentica e o resumo do painel (ADR-201)", () => {
+  const semLogin = { state: "sem-login" as const, expiresAt: null }
+
+  it("oferece login pelo bloco oauth declarado OU pela elegibilidade do backend", () => {
+    expect(mcpOfereceLogin({ managed: true, nativeReason: "oauth", loginPeloApp: undefined })).toBe(true)
+    // Caso real: `vercel` adicionado pelo CLI, sem bloco oauth.
+    expect(mcpOfereceLogin({ managed: true, nativeReason: null, loginPeloApp: true })).toBe(true)
+    // Snapshot antigo sem o campo: não inventa botão.
+    expect(mcpOfereceLogin({ managed: true, nativeReason: null })).toBe(false)
+    expect(mcpOfereceLogin({ managed: false, nativeReason: null, loginPeloApp: true })).toBe(false)
+  })
+
+  it("nunca afirma que o CLI de origem está logado: isso não é observado", () => {
+    const vercel = { nativeReason: null, sourceAgent: "claude-code" }
+    const resposta = mcpQuemAutentica(vercel, semLogin, "Claude")
+    expect(resposta.titulo).toBe("o Claude, no próprio CLI (não verificado)")
+    expect(resposta.titulo).not.toContain("conectado")
+    // Bloco oauth declarado pelo CLI: o login É dele, e vale só para ele.
+    const prime = { nativeReason: "oauth" as const, sourceAgent: "claude-code" }
+    expect(mcpQuemAutentica(prime, semLogin, "Claude").titulo).toBe("o Claude, no próprio CLI")
+    // .mcp.json do projeto, sem CLI de origem e sem login: ninguém.
+    expect(mcpQuemAutentica({ nativeReason: "oauth", sourceAgent: null }, semLogin, null).titulo).toBe("ninguém ainda")
+  })
+
+  it("com sessão do app a resposta é o Frota, com o prazo", () => {
+    const agora = 1_700_000_000_000
+    const conectado = { state: "conectado" as const, expiresAt: agora / 1000 + 6 * 3600 }
+    const r = mcpQuemAutentica({ nativeReason: null, sourceAgent: "claude-code" }, conectado, "Claude", agora)
+    expect(r.titulo).toBe("o Frota")
+    expect(r.detalhe).toContain("6 h")
+    expect(mcpQuemAutentica({ nativeReason: null, sourceAgent: null }, { state: "expirado", expiresAt: null }, null).titulo)
+      .toBe("o Frota, sessão expirada")
+  })
+
+  it("o resumo conta ativos, pedidos de login e os que ficam só no CLI", () => {
+    const ligado = { enabled: true, compatible: true }
+    const desligado = { enabled: false, compatible: true }
+    const servers = [
+      // roteado e ativo
+      { managed: true, portable: true, nativeReason: null, loginPeloApp: false, agentStates: [ligado, desligado] },
+      // pede login (vercel)
+      { managed: true, portable: true, nativeReason: null, loginPeloApp: true, agentStates: [ligado] },
+      // oauth declarado, já conectado pelo app: nem pede login nem é só-CLI
+      { managed: true, portable: false, nativeReason: "oauth" as const, loginPeloApp: true, agentStates: [{ enabled: true, compatible: false, roteavelPeloApp: true }] },
+      // não portável, sem saída
+      { managed: true, portable: false, nativeReason: null, loginPeloApp: false, literalSecret: true, agentStates: [desligado] },
+    ]
+    const resumo = mcpResumo(servers, { c: { state: "conectado" } }, ["a", "b", "c", "d"])
+    expect(resumo).toEqual({ total: 4, ativos: 3, pedemLogin: 1, soNoCli: 1 })
   })
 })
