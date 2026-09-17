@@ -1,0 +1,42 @@
+// Geometria da janela flutuante do navegador (navegador PRD R2): regras puras,
+// testadas sem DOM. A janela mora DENTRO do cartão central e nunca sai dele;
+// por padrão não cobre o composer.
+
+export interface Geometria {
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
+/** Menor janela que ainda mostra barra e quadro legíveis. */
+export const MINIMO = { w: 320, h: 220 }
+/** Folga até a borda do cartão. */
+export const MARGEM = 12
+/** Tira de abas no topo do cartão: a janela nasce abaixo dela. */
+export const TOPO = 44
+/** Faixa de baixo reservada ao composer na posição padrão. */
+export const RESERVA_DO_COMPOSER = 190
+
+/** Onde a janela nasce: canto superior direito, sem descer até o composer. */
+export function geometriaInicial(largura: number, altura: number): Geometria {
+  const w = Math.min(520, largura - 2 * MARGEM)
+  const h = Math.min(340, altura - TOPO - RESERVA_DO_COMPOSER)
+  return encaixarNoCartao(
+    { x: largura - w - MARGEM, y: TOPO, w, h },
+    largura,
+    altura,
+  )
+}
+
+/** Prende a janela ao cartão: tamanho entre o mínimo e o cartão, posição sem
+ *  vazar. Cartão menor que o mínimo vence o mínimo (a janela encolhe junto). */
+export function encaixarNoCartao(g: Geometria, largura: number, altura: number): Geometria {
+  const maxW = Math.max(0, largura - 2 * MARGEM)
+  const maxH = Math.max(0, altura - 2 * MARGEM)
+  const w = Math.min(Math.max(g.w, Math.min(MINIMO.w, maxW)), maxW)
+  const h = Math.min(Math.max(g.h, Math.min(MINIMO.h, maxH)), maxH)
+  const x = Math.min(Math.max(g.x, MARGEM), largura - MARGEM - w)
+  const y = Math.min(Math.max(g.y, MARGEM), altura - MARGEM - h)
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) }
+}

@@ -1,6 +1,7 @@
 # Sprint "Ecossistema e capricho" (proposta revisada, 17/09/2026)
 
-> Status: **em andamento**. Correções K1 a K4 entregues em 17/09 (K4 dentro do
+> Status: **em andamento**. Épico B: R1 a R3 do PRD entregues em 17/09 (B1 aba,
+> B1b flutuante, B2 anexar e copiar). Correções K1 a K4 entregues em 17/09 (K4 dentro do
 > R1 do Companion). Épico A: R1 a R5 do PRD entregues em 17/09 (A1, A4
 > sem modo "só Tailscale", A7 e A8 do jeito simples, um atalho por Mac); o resto
 > segue como proposta para decisão. Revisão 2: incorpora as

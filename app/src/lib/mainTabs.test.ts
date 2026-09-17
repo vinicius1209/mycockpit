@@ -11,6 +11,7 @@ import { latestCompletedTurnId, mainTabEntries, type MainTab } from "./mainTabs"
 const conversa: MainTab = { kind: "conversa" }
 const diff: MainTab = { kind: "diff" }
 const arquivo: MainTab = { kind: "arquivo", path: "src/components/App.tsx" }
+const navegador: MainTab = { kind: "navegador" }
 
 describe("mainTabEntries", () => {
   it("a conversa está sempre lá: ela é o fundo, não um item que entra e sai", () => {
@@ -37,6 +38,13 @@ describe("mainTabEntries", () => {
       closable: true,
     })
     expect(arquivo).toEqual({ kind: "arquivo", path: "src/components/App.tsx" })
+  })
+
+  it("o navegador entra como aba que fecha, depois da conversa", () => {
+    expect(mainTabEntries(navegador)).toEqual([
+      { kind: "conversa", label: "Conversa", closable: false },
+      { kind: "navegador", label: "Navegador", closable: true },
+    ])
   })
 
   it("focusPath não muda a lista de abas (é estado DENTRO da aba)", () => {

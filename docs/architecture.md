@@ -135,10 +135,12 @@ nunca recebem sinal.
   evidência e resolução fail-closed do navegador do projeto.
 - `app/src-tauri/src/experience_broker.rs`: uma lease de piloto por navegador
   de projeto, compartilhada por runs, plugins e takeover humano.
-- `app/src-tauri/src/browser.rs`, `browser_cdp.rs` e `browser_panel.rs`: ciclo
-  de vida do Chromium isolado, inventário/preview/input CDP e janela própria;
-  WebSockets e frames nunca entram no manifesto ou no banco. Próxima fase (aba e
-  flutuante dentro do app): `docs/navegador-na-frota-prd.md`.
+- `app/src-tauri/src/browser.rs`, `browser_cdp.rs`, `browser_capture.rs` e
+  `browser_panel.rs`: ciclo de vida do Chromium isolado, inventário/preview/input
+  CDP, captura da página em PNG (anexo e clipboard) e a janela separada, que
+  deixou de ser a entrada padrão. WebSockets e frames nunca entram no manifesto
+  ou no banco. A pessoa vê o navegador na aba principal "Navegador" ou flutuando
+  sobre a conversa (`app/src/components/browser/`, ADR-204).
 - `app/src-tauri/src/context_probe.rs`: lê onde cada motor compacta (ADR-196/198),
   por capability `context_ceiling`, sem turno.
 - `app/src-tauri/src/bastidores.rs`: tail só-leitura do arquivo de saída de

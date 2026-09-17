@@ -164,7 +164,7 @@ fn sanitize_tool_id(id: &str) -> String {
 /// Decodifica base64 padrão (tolerante a whitespace/quebras de linha, que
 /// alguns transportes inserem). Sem crate novo: a tabela é fixa e o payload é
 /// nosso conhecido (data URI-less, padding opcional).
-fn decode_base64(s: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_base64(s: &str) -> Option<Vec<u8>> {
     fn val(c: u8) -> Option<u32> {
         match c {
             b'A'..=b'Z' => Some((c - b'A') as u32),

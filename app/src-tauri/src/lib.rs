@@ -14,6 +14,7 @@ mod agy_recovery;
 mod approval;
 mod attachments;
 mod browser;
+mod browser_capture;
 mod browser_cdp;
 mod browser_panel;
 mod catalog;
@@ -948,6 +949,8 @@ pub fn run() {
             browser_cdp::browser_preview_frame,
             browser_cdp::browser_preview_stop,
             browser_cdp::browser_input,
+            browser_capture::browser_capture_attach,
+            browser_capture::browser_capture_copy,
             browser_panel::browser_panel_open,
             browser_panel::browser_panel_context,
             despertador::set_keep_awake,

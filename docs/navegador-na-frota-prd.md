@@ -2,7 +2,37 @@
 
 ## Status (17/09/2026)
 
-**Proposta, não implementada.** Épico B de `docs/sprint-ecossistema-2026-09.md`.
+**R1 a R3 entregues (17/09/2026, ADR-204).** R4 a R6 seguem para a próxima sprint.
+Épico B de `docs/sprint-ecossistema-2026-09.md`.
+
+O que foi feito, e onde divergiu do texto abaixo:
+- R1: `MainTab` ganhou `navegador`; a aba abre pelo "+" ("Abrir navegador") e por
+  "Observar e pilotar" em Configurações, que agora leva ao projeto e fecha o
+  dialog em vez de abrir a janela do sistema. `BrowserPanel.tsx` virou
+  `useNavegadorDoProjeto` (lógica) + `NavegadorVista` (só props) + contêineres
+  (`NavegadorTab`, `NavegadorFlutuante` e a própria janela, que continua
+  existindo sem entrada na UI). Páginas abertas saíram da coluna lateral para um
+  seletor na barra. Desligado, a aba oferece "Ligar navegador" sem janela.
+  "Recarregar" reenvia a navegação para a URL da página (não há `Page.reload` no
+  input). Aba estreita: controle vira ícone.
+- R2: janela dentro do cartão central, arrastável pela barra e redimensionável
+  pelo canto, presa ao cartão (`lib/navegadorFlutuante.ts`, testado). Nasce no
+  canto de cima sem cobrir o composer; posição e tamanho lembrados por projeto
+  (`store/navegadorFlutuante.ts`, só a geometria persiste). Divergência da
+  decisão 3: em vez de "sendo exibido em outro lugar · trazer para cá", o AppShell
+  nunca monta as duas; abrir a aba esconde a flutuante e fechar a aba a traz de
+  volta. Para a troca não cortar o stream, a parada do preview espera 400 ms e
+  desiste se outra vista do projeto montou.
+- R3: `browser_capture.rs` com `browser_capture_attach` (anexo pelo mesmo núcleo
+  do colar, mais a linha `Página "título" (url):` no rascunho) e
+  `browser_capture_copy` (clipboard pelo Rust, sem mudar permissão do front).
+  Teto de anexos respeitado. Fixture real de `Page.captureScreenshot` em
+  `testdata/chromium-cdp/`.
+- Verificado: testes puros e de Rust; vista, aba estreita, menu de páginas, erro,
+  flutuante (arrastar para fora, redimensionar além do cartão, geometria salva,
+  parada do preview ao fechar) num harness com Tauri simulado no Chromium. Não
+  verificado no app de verdade (precisa de build): quadro ao vivo na aba,
+  captura e clipboard contra o Chromium do projeto, CPU com a aba aberta.
 Já entregue (17/09, K3): "Ligar navegador" do bloqueio do composer liga sem
 janela, como Configurações (`mcpPreflightRetry.ts`, teste ao lado); a evidência
 de `mcpPreflightRetry.ts:35` abaixo é do estado anterior. K5 segue no B4.

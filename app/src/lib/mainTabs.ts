@@ -28,6 +28,8 @@ export type MainTab =
        *  mudava nada e quem rolou pra longe não voltava. */
       focusSeq?: number
     }
+  /** O navegador do projeto ativo, ao vivo (navegador PRD R1). */
+  | { kind: "navegador" }
 
 export interface MainTabEntry {
   kind: MainTab["kind"]
@@ -46,6 +48,8 @@ export function mainTabEntries(tab: MainTab): MainTabEntry[] {
   ]
   if (tab.kind === "diff") {
     base.push({ kind: "diff", label: "Alterações", closable: true })
+  } else if (tab.kind === "navegador") {
+    base.push({ kind: "navegador", label: "Navegador", closable: true })
   } else if (tab.kind === "arquivo") {
     base.push({
       kind: "arquivo",

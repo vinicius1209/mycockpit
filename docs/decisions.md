@@ -7334,3 +7334,29 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Verificado:** captura real reproduzida em replay (resposta sem duplicar,
   aviso uma vez, batida quando o transcript atrasa, parar sem repetir),
   `collect_stderr_tail_live` com a linha real em pedaços, `cargo test` 864.
+
+### ADR-204 · O navegador do projeto mora dentro do app: aba principal e janela flutuante
+
+- **Contexto (17/09/2026):** o Chromium do projeto já era da Frota e já chegava
+  como screencast, mas só se via numa janela separada do sistema, aberta por
+  Configurações. Pedido do usuário: "um navegador DENTRO do Frota, não uma janela
+  separada", ou um stream ao vivo estilo pop-up. PRD em
+  `docs/navegador-na-frota-prd.md`.
+- **Decisão:** o mesmo stream ganha duas apresentações dentro do app: a aba
+  principal "Navegador" e uma janela flutuante presa ao cartão central. A lógica
+  sai do `BrowserPanel` para `useNavegadorDoProjeto`, a cara para
+  `NavegadorVista` (só props), e cada lugar (aba, flutuante, janela separada) é
+  um contêiner. Nada de webview nativo ou iframe (o racional de
+  `browser-plan.md` segue valendo).
+- **Um stream por projeto:** o preview do backend é indexado por projeto, então
+  aba e flutuante nunca montam juntas, e parar o preview espera 400 ms para a
+  troca de vista não cortar a vista nova.
+- **Captura é observação:** `browser_capture.rs` pede `Page.captureScreenshot`
+  em PNG e manda os bytes direto para o anexo (mesmo núcleo do colar) ou para o
+  clipboard pelo Rust, sem base64 no Channel e sem exigir o piloto.
+- **Consequências:** "Observar e pilotar" em Configurações leva à aba. A janela
+  separada continua compilando, sem entrada na UI; sai quando nada mais depender
+  dela. Marcar e enviar (R4), qualquer MCP de navegador (R5) e vigia (R6) ficam
+  para a próxima sprint.
+- **Verificado:** vitest 4296, `tsc -b` 0, guardas verdes, `cargo test` 869;
+  vista e flutuante num harness com Tauri simulado. Falta a verificação no app.

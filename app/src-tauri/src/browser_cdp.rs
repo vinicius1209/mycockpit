@@ -23,16 +23,16 @@ const PREVIEW_NOTICE_INTERVAL_MS: i64 = 100;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct RawPage {
+pub(crate) struct RawPage {
     id: String,
     #[serde(default)]
-    title: String,
+    pub(crate) title: String,
     #[serde(default)]
-    url: String,
+    pub(crate) url: String,
     #[serde(rename = "type")]
     kind: String,
     #[serde(rename = "webSocketDebuggerUrl")]
-    websocket_url: Option<String>,
+    pub(crate) websocket_url: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -130,7 +130,7 @@ fn should_notify_preview(last_notice_at: i64, captured_at: i64) -> bool {
     last_notice_at == 0 || captured_at.saturating_sub(last_notice_at) >= PREVIEW_NOTICE_INTERVAL_MS
 }
 
-fn sanitize_page_url(raw: &str) -> String {
+pub(crate) fn sanitize_page_url(raw: &str) -> String {
     let Ok(mut parsed) = url::Url::parse(raw) else {
         return "Endereço indisponível".into();
     };
@@ -196,7 +196,7 @@ async fn project_session(
     Ok((project_id, session))
 }
 
-async fn target_for(
+pub(crate) async fn target_for(
     app: &tauri::AppHandle,
     project_path: &str,
     target_id: &str,

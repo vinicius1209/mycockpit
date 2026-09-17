@@ -18,6 +18,7 @@ import {
   File,
   FileDiff,
   GitFork,
+  Globe,
   MessageSquare,
   MessageSquarePlus,
   Plus,
@@ -63,6 +64,7 @@ export function MainTabs({
       activeProjectId ? s.conversationsByProject[activeProjectId] : undefined,
     ) ?? EMPTY_CONVERSATIONS
   const branchSplitOpen = useApp((s) => s.branchSplitOpen)
+  const openBrowserTab = useApp((s) => s.openBrowserTab)
   const toggleBranchSplit = useApp((s) => s.toggleBranchSplit)
 
   const forkTargetId = useChat((s) => {
@@ -80,7 +82,9 @@ export function MainTabs({
   const transient =
     tab.kind === "diff"
       ? { kind: tab.kind, label: "Alterações", title: "Alterações", Icon: FileDiff }
-      : tab.kind === "arquivo"
+      : tab.kind === "navegador"
+        ? { kind: tab.kind, label: "Navegador", title: "Navegador do projeto", Icon: Globe }
+        : tab.kind === "arquivo"
         ? {
             kind: tab.kind,
             label: tab.path.split("/").pop() || tab.path,
@@ -228,6 +232,14 @@ export function MainTabs({
             Bifurcar do último turno
           </DropdownMenuItem>
           <DropdownMenuSeparator className="bg-border/40" />
+          <DropdownMenuItem
+            disabled={!activeProjectId}
+            onSelect={openBrowserTab}
+            className="text-[12px]"
+          >
+            <Globe />
+            Abrir navegador
+          </DropdownMenuItem>
           <DropdownMenuItem onSelect={openCommandMenu} className="text-[12px]">
             <Command />
             Todos os comandos

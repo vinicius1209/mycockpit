@@ -174,14 +174,21 @@ navegador (`experience_broker.rs`): run, plugin ou pessoa; observar é livre.
 
 - **Não troque por webview nativo nem iframe.** WKWebView não fala CDP (o agente
   não pilotaria) e a view nativa cobre menus e modais. O racional está em
-  `docs/browser-plan.md`; a evolução para aba e janela flutuante dentro do app
-  está em `docs/navegador-na-frota-prd.md`.
+  `docs/browser-plan.md`; aba e janela flutuante dentro do app estão em
+  `docs/navegador-na-frota-prd.md` (ADR-204).
+- A pessoa vê o navegador na aba principal "Navegador" ou flutuando sobre a
+  conversa (`components/browser/`): a lógica é `useNavegadorDoProjeto`, a cara é
+  `NavegadorVista` (só props), e cada lugar é um contêiner. Vista nova usa os
+  dois; não copie o `BrowserPanel`.
 - O preview é indexado por projeto (`BrowserPreviewRegistry`): duas vistas do
-  mesmo projeto disputam a mesma sessão. Decida quem assiste antes de abrir a
-  segunda.
-- Ligar o navegador por gate ou por Configurações deve ser headless; janela
-  visível só por gesto explícito. Hoje `mcpPreflightRetry.ts` liga com janela:
-  divergência conhecida, registrada no PRD.
+  mesmo projeto disputam a mesma sessão. O AppShell nunca monta aba e flutuante
+  juntas, e a parada do preview espera um instante (`sairDaVista`) para a troca
+  de vista não cortar o stream da vista nova.
+- Ligar o navegador por gate ou por Configurações é headless; janela visível só
+  por gesto explícito.
+- Capturar a página (`browser_capture.rs`) é observação, não pilotagem: PNG real
+  por `Page.captureScreenshot`, bytes direto para anexo ou clipboard, URL limpa
+  por `sanitize_page_url`. Nunca base64 no Channel.
 - A injeção do endpoint no MCP usa `--cdp-endpoint` (`mcp_control.rs`), que só o
   Playwright MCP entende. Outro MCP de navegador precisa de forma de conexão
   declarada no binding, não de `if` por nome.

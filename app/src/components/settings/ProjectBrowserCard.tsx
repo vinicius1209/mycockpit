@@ -19,7 +19,6 @@ import {
   browserPilotStatus,
   browserStateLabel,
   browserStatus,
-  openBrowserPanel,
   startProjectBrowser,
   stopProjectBrowser,
   type BrowserStatus,
@@ -28,6 +27,7 @@ import {
 import { listenWorkEvents } from "@/lib/work"
 import type { McpServer } from "@/lib/mcp"
 import { cn } from "@/lib/utils"
+import { useApp } from "@/store/app"
 
 export interface ProjectBrowser {
   status: BrowserStatus | null
@@ -222,9 +222,14 @@ export function ProjectBrowserCard({
             variant="outline"
             className="mt-2"
             onClick={() => {
-              void openBrowserPanel(status.session!.projectPath).catch((cause) =>
-                toast.error(cause instanceof Error ? cause.message : String(cause)),
-              )
+              // O navegador mora na aba principal (navegador PRD R1), não mais
+              // numa janela do sistema: leva a pessoa ao projeto dele e fecha
+              // Configurações para a aba aparecer.
+              const app = useApp.getState()
+              const projectId = status.session!.projectId
+              if (app.activeProjectId !== projectId) app.setActiveProject(projectId)
+              app.openBrowserTab()
+              app.setSettingsOpen(false)
             }}
           >
             <Eye className="size-3.5" />

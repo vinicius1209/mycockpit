@@ -126,6 +126,8 @@ interface AppState {
   openDiffTab: (focusPath?: string) => void
   /** Abre um arquivo real na aba principal, fora da coluna estreita. */
   openFileTab: (path: string) => void
+  /** Abre o navegador do projeto ativo na aba principal. */
+  openBrowserTab: () => void
   /** Volta pra conversa. A aba transitória deixa de existir. */
   closeMainTab: () => void
   revealTranscriptItem: (conversationId: string, itemId: string) => void
@@ -345,6 +347,7 @@ export const useApp = create<AppState>()(
         })),
       openFileTab: (path) =>
         set({ branchSplitOpen: false, mainTab: { kind: "arquivo", path } }),
+      openBrowserTab: () => set({ branchSplitOpen: false, mainTab: { kind: "navegador" } }),
       closeMainTab: () => set({ mainTab: { kind: "conversa" } }),
       revealTranscriptItem: (conversationId, itemId) =>
         set((state) => ({

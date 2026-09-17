@@ -9,6 +9,8 @@ import { ContextPanel } from "@/components/layout/ContextPanel"
 import { MainTabs } from "@/components/layout/MainTabs"
 import { DiffTab } from "@/components/layout/DiffTab"
 import { FileTab } from "@/components/layout/FileTab"
+import { NavegadorTab } from "@/components/browser/NavegadorTab"
+import { NavegadorFlutuante } from "@/components/browser/NavegadorFlutuante"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
@@ -66,6 +68,7 @@ export function AppShell() {
   const branchSplitOpen = useApp((s) => s.branchSplitOpen)
   const openDiffTab = useApp((s) => s.openDiffTab)
   const closeMainTab = useApp((s) => s.closeMainTab)
+  const openBrowserTab = useApp((s) => s.openBrowserTab)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const fleetOpen = useApp((s) => s.fleetOpen)
@@ -157,7 +160,7 @@ export function AppShell() {
                 // ocupa o painel inteiro e o grupo corta em `clip`: a sombra longa
                 // (`--shadow-pop`, 40px de blur) só sobrava nos quatro cantos,
                 // entre a curva e o retângulo, e virava uma cunha cinza.
-                className="flex h-full flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-sm),var(--lift)]"
+                className="relative flex h-full flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-sm),var(--lift)]"
               >
                 {/* Tira de abas do Trabalho (F1.1). Conversa é a âncora fixa e
                     hospeda o + de ações; Alterações entra e sai sem levar a
@@ -168,6 +171,7 @@ export function AppShell() {
                     tab={mainTab}
                     onSelect={(kind) => {
                       if (kind === "diff") openDiffTab(undefined)
+                      else if (kind === "navegador") openBrowserTab()
                       else if (kind === "conversa") closeMainTab()
                     }}
                     onClose={() => closeMainTab()}
@@ -217,6 +221,11 @@ export function AppShell() {
                     <DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} />
                   </div>
                 )}
+                {viewMode === "linear" && !coberto && mainTab.kind === "navegador" && (
+                  <div className={HOST_SUPERFICIE}>
+                    <NavegadorTab />
+                  </div>
+                )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "arquivo" && (
                   <div className={HOST_SUPERFICIE}>
                     <FileTab path={mainTab.path} />
@@ -224,6 +233,11 @@ export function AppShell() {
                 )}
                 {cobertura && (
                   <div className={HOST_SUPERFICIE}>{cobertura}</div>
+                )}
+                {/* R2 do navegador: flutua sobre a conversa, nunca junto da aba
+                    Navegador (um stream por vez). */}
+                {viewMode === "linear" && !coberto && mainTab.kind !== "navegador" && (
+                  <NavegadorFlutuante />
                 )}
               </div>
             </ResizablePanel>
