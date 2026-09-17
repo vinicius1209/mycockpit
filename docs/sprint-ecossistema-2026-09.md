@@ -4,7 +4,8 @@
 > C-Q3 (↳ leva à original), C-T2 (seleção de tabela como planilha, clique duplo) e
 > B6 (vigia do navegador e navegador órfão no boot), C-D2 (colagem grande vira
 > pílula), B4 (qualquer MCP de navegador, corrige K5) e B3 (marcar e enviar ao
-> agente). Épico D: R1, R2 e R4 do PRD entregues em 17/09 (D2, D4). Épico C: R1, R3, R4 e R6 do PRD entregues em 17/09
+> agente). Correções K6 e K7 entregues em 17/09 (aba do navegador que fechava
+> sozinha, mensagem longa que vinha paginada sem formatação). Épico D: R1, R2 e R4 do PRD entregues em 17/09 (D2, D4). Épico C: R1, R3, R4 e R6 do PRD entregues em 17/09
 > (C-T1, C-Q1 e C-Q2, C-D1). Épico B: R1 a R3 do PRD entregues em 17/09 (B1 aba,
 > B1b flutuante, B2 anexar e copiar). Correções K1 a K4 entregues em 17/09 (K4 dentro do
 > R1 do Companion). Épico A: R1 a R5 do PRD entregues em 17/09 (A1, A4
@@ -119,7 +120,9 @@ na política de TI, e o Android só mantém uma VPN ativa por vez.
 | K2 | Comparação por nome de motor no seletor de identidade vira capability · **entregue**: `modelo_livre` / `modeloLivre` com teste-gêmeo | P |
 | K3 | Gate do composer liga o navegador com janela visível, contra a ADR-131 · **entregue**: liga sem janela, como Configurações | P |
 | K4 | Arquivo de aparelhos do Companion nasce com permissão padrão antes do 0600 · **entregue** no R1 (`escrever_privado`) | P |
-| K5 | Injeção do navegador só entende Playwright (Chrome DevTools MCP não conecta) | M (B4) |
+| K6 | Voltar para a conversa fechava a aba do navegador e perdia o trabalho em andamento · **entregue**: pastilha do navegador fica na tira, com "×" próprio; endereço sem esquema passa a navegar | P |
+| K7 | Mensagem acima de 16 KB virava texto cru paginado, mesmo sendo normal · **entregue**: só o trecho com linha pesada perde formatação, a mensagem sai inteira e em ordem (ADR-210) | P |
+| K5 | Injeção do navegador só entende Playwright (Chrome DevTools MCP não conecta) · **entregue** no B4: forma de conexão no binding (`cdp-endpoint`, `browser-url`, `ws-endpoint`) | M (B4) |
 
 ## 5. Spikes de 30 minutos (antes de estimar em definitivo)
 
