@@ -68,4 +68,25 @@ describe("imagemCitadaUrl", () => {
     await expect(imagemCitadaUrl(PROJETO, "/x/.gemini/antigravity-cli/brain/1/a.svg")).rejects.toThrow()
     expect(h.reads).toEqual([])
   })
+
+  it("esquecer a raiz faz a próxima montagem reler o disco e revoga a URL velha", async () => {
+    // Aba Alterações: o agente regravou a captura e a pessoa clicou Atualizar.
+    const REL = "docs/assets/captura.png"
+    h.files.set(REL, PNG_1X1)
+    h.files.set(CAPTURA, PNG_1X1)
+    const revogar = vi.spyOn(URL, "revokeObjectURL")
+    const mod = await import("@/lib/imagemCitada")
+    const velha = await mod.imagemCitadaUrl(PROJETO, REL)
+    const deOutraRaiz = await mod.imagemCitadaUrl("/outro/projeto", CAPTURA)
+    mod.esquecerImagensCitadas(PROJETO)
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(revogar).toHaveBeenCalledWith(velha)
+    expect(revogar).not.toHaveBeenCalledWith(deOutraRaiz)
+    const nova = await mod.imagemCitadaUrl(PROJETO, REL)
+    expect(nova).not.toBe(velha)
+    expect(await mod.imagemCitadaUrl("/outro/projeto", CAPTURA)).toBe(deOutraRaiz)
+    expect(h.reads.filter((r) => r.path === REL)).toHaveLength(2)
+    revogar.mockRestore()
+  })
 })

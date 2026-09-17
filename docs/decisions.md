@@ -7182,3 +7182,27 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   raciocínio.
 
 
+### ADR-202 · Imagem na aba Alterações mostra a versão do disco e abre no Lightbox
+
+- **Contexto (16/09/2026):** o estudo do Maestri deixou 22 quadros `.jpg` e um
+  `.mp4` na working tree. Expandir qualquer um na aba Alterações dizia só
+  "Arquivo binário, sem diff de texto.", e o clique na coluna levava à mesma
+  frase. O visualizador de arquivo (ADR-193), o Lightbox com origem `arquivo` e
+  a leitura contida `read_project_file_bytes` (ADR-195) já existiam.
+- **Decisão:**
+  - Binário cuja extensão está na lista do visualizador (`imageMimeType`) e que
+    não foi removido ganha, ao expandir, a miniatura da versão do disco e o
+    botão "Abrir na aba". A leitura usa o mesmo cache e a mesma porta da
+    imagem citada no fio, pela raiz do diff (worktree quando a conversa está
+    isolada).
+  - O clique na miniatura abre o Lightbox com a galeria de TODAS as imagens
+    visíveis do diff, na ordem da lista: quadros de uma sequência se percorrem
+    com ←/→.
+  - Imagem modificada diz "Versão atual. A anterior ainda não aparece aqui."
+    Mostrar só a atual sem dizer seria teatro de comparação.
+  - Cada recarga do diff esquece as URLs lidas sob aquela raiz
+    (`esquecerImagensCitadas`) e relê o disco. No fio a captura não muda; no
+    diff o agente regrava o arquivo, e o cache eterno mostraria pixels velhos.
+- **Limites:** imagem removida e vídeo seguem com a frase de binário. Antes e
+  depois lado a lado pede um comando Rust que leia o blob do `HEAD`, com o
+  mesmo teto de 32 MB, e fica para quando houver imagem modificada a comparar.

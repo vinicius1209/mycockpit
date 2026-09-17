@@ -7,6 +7,9 @@ import {
   type GitDiff,
 } from "@/lib/git"
 import { composeDiffComments, staleComments } from "@/lib/deliveryDiff"
+import { galeriaDoDiff, imagemDoDiffVisivel } from "@/lib/diffImagem"
+import { esquecerImagensCitadas } from "@/lib/imagemCitada"
+import type { LightboxImage } from "@/store/lightbox"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { copyText } from "@/lib/clipboard"
 import { cn } from "@/lib/utils"
@@ -14,6 +17,7 @@ import { DiffLineRow, useDiffComments, type DiffCommentApi } from "./DiffPanel/c
 import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 import { detectLanguage } from "@/lib/syntaxHighlight"
 import { DiffCommentsFooter } from "./DiffPanel/sendBar"
+import { DiffImagem } from "./DiffPanel/imagem"
 
 // (M1) O "abrir no editor" vive no CABEÇALHO, um por painel, e abre o PROJETO.
 // Nasceu como ícone por linha de arquivo, revertido em 20/08/2026: o hover
@@ -44,6 +48,8 @@ export function DiffPanel({
 }) {
   const [diff, setDiff] = useState<GitDiff | null>(null)
   const [loading, setLoading] = useState(true)
+  // Selo da recarga: a imagem expandida relê o disco quando ele muda.
+  const [versao, setVersao] = useState(0)
   const [open, setOpen] = useState<Set<string>>(
     () => new Set(focusPath ? [focusPath] : []),
   )
@@ -55,7 +61,9 @@ export function DiffPanel({
   function reload() {
     setLoading(true)
     void loadGitDiff(cwd).then((d) => {
+      esquecerImagensCitadas(cwd)
       setDiff(d)
+      setVersao((v) => v + 1)
       setLoading(false)
     })
   }
@@ -91,6 +99,7 @@ export function DiffPanel({
   // Comentários que perderam a linha (o agente mexeu no arquivo e o reload
   // trouxe outro conteúdo): não somem, vão pra tira de órfãos do rodapé.
   const stale = staleComments(Object.values(commentApi.comments), files)
+  const galeria = galeriaDoDiff(files, cwd)
 
   // Barra STICKY (branch + stat + refresh): fica no topo enquanto a lista rola.
   // bg sólido (sem backdrop-blur, que custa por-frame e travaria o scroll longo).
@@ -156,6 +165,8 @@ export function DiffPanel({
                   key={f.path}
                   file={f}
                   cwd={cwd}
+                  galeria={galeria}
+                  versao={versao}
                   open={open.has(f.path)}
                   onToggle={() =>
                     setOpen((s) => {
@@ -244,6 +255,8 @@ function DiffCortado({
 function FileBlock({
   file,
   cwd,
+  galeria,
+  versao,
   open,
   onToggle,
   commentApi,
@@ -251,8 +264,10 @@ function FileBlock({
   onSendToComposer,
 }: {
   file: DiffFile
-  /** Raiz do projeto — só o arquivo CORTADO usa, pra oferecer a saída. */
+  /** Raiz do projeto: o arquivo CORTADO oferece a saída, a imagem lê por ela. */
   cwd: string
+  galeria: LightboxImage[]
+  versao: number
   open: boolean
   onToggle: () => void
   commentApi: DiffCommentApi
@@ -316,7 +331,9 @@ function FileBlock({
         </span>
       </div>
       {open &&
-        (file.binary ? (
+        (imagemDoDiffVisivel(file) ? (
+          <DiffImagem cwd={cwd} file={file} galeria={galeria} versao={versao} />
+        ) : file.binary ? (
           <p className="border-t border-border/60 bg-background/40 px-4 py-2 text-[12px] text-muted-foreground">
             Arquivo binário, sem diff de texto.
           </p>

@@ -29,3 +29,17 @@ export function imagemCitadaUrl(root: string, path: string): Promise<string> {
   pendente.catch(() => urlCache.delete(chave))
   return pendente
 }
+
+/** Esquece as URLs lidas sob `root`. O fio cita captura que não muda; a aba
+ *  Alterações mostra arquivo que o agente regrava, e sem isto o "Atualizar"
+ *  seguiria mostrando os pixels de antes. Revogar não apaga a `<img>` que já
+ *  carregou: ela guarda o decodificado, e a próxima montagem lê de novo. */
+export function esquecerImagensCitadas(root: string): void {
+  const prefixo = `${root}\n`
+  for (const [chave, pendente] of urlCache) {
+    if (!chave.startsWith(prefixo)) continue
+    urlCache.delete(chave)
+    // Leitura que falhou já avisou quem pediu; aqui não há URL a revogar.
+    pendente.then((url) => URL.revokeObjectURL(url)).catch(() => {})
+  }
+}
