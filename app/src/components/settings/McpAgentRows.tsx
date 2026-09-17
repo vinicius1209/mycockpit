@@ -16,8 +16,7 @@ import {
   type McpAgentState,
   type McpFallback,
   type McpHealthStatus,
-  type McpServer,
-} from "@/lib/mcp"
+  type McpServer, CONEXOES_DO_NAVEGADOR, type BrowserConexao} from "@/lib/mcp"
 import { browserRowNotice, type BrowserStatus } from "@/lib/browser"
 import { agentDef } from "@/lib/agents"
 import { cn } from "@/lib/utils"
@@ -56,7 +55,7 @@ export function McpAgentRows({
     server: McpServer,
     state: McpAgentState,
     patch: Partial<
-      Pick<McpAgentState, "enabled" | "required" | "browser" | "fallback">
+      Pick<McpAgentState, "enabled" | "required" | "browser" | "browserConexao" | "fallback">
     >,
   ) => void
   onCheck: (server: McpServer, state: McpAgentState) => void
@@ -158,6 +157,26 @@ export function McpAgentRows({
                     />
                     usar navegador
                   </label>
+                  {state.browser && (
+                    <select
+                      value={state.browserConexao ?? "cdp-endpoint"}
+                      onChange={(event) =>
+                        onUpdate(server, state, {
+                          browserConexao: event.target.value as BrowserConexao,
+                        })
+                      }
+                      disabled={writeBusy}
+                      title="Como este MCP recebe o navegador do projeto"
+                      className="h-6 rounded border bg-background px-1 font-mono text-[11px] text-foreground"
+                      aria-label={`Como ${server.name} se conecta ao navegador no ${label}`}
+                    >
+                      {CONEXOES_DO_NAVEGADOR.map((item) => (
+                        <option key={item.value} value={item.value} title={item.title}>
+                          {item.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {state.required && (
                     <select
                       value={state.fallback}

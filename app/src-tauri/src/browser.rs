@@ -285,6 +285,32 @@ pub(crate) fn parse_browser_version(raw: &str) -> Option<String> {
         .map(str::to_string)
 }
 
+/// `/json/version` → WebSocket do browser (`webSocketDebuggerUrl`), para MCP que
+/// conecta por `--wsEndpoint` (B4).
+pub(crate) fn parse_browser_ws_url(raw: &str) -> Option<String> {
+    serde_json::from_str::<Value>(raw)
+        .ok()?
+        .get("webSocketDebuggerUrl")?
+        .as_str()
+        .filter(|url| url.starts_with("ws://127.0.0.1:"))
+        .map(str::to_string)
+}
+
+/// O WebSocket do browser AGORA, lido do endpoint vivo. `None` quando não responde.
+pub(crate) async fn browser_ws_url(endpoint: &str) -> Option<String> {
+    let response = timeout(
+        HEALTH_TIMEOUT,
+        reqwest::Client::new()
+            .get(format!("{endpoint}/json/version"))
+            .send(),
+    )
+    .await
+    .ok()?
+    .ok()?;
+    let body = timeout(HEALTH_TIMEOUT, response.text()).await.ok()?.ok()?;
+    parse_browser_ws_url(&body)
+}
+
 /// Health real do endpoint. `Some(browser)` = vivo; `None` = morto/indisponível
 /// (o app nunca declara vivo sem esta resposta). A requisição vive no processo
 /// da Frota; disponibilidade de um `curl` externo não vira pré-condição oculta.
@@ -660,6 +686,15 @@ mod tests {
         assert_eq!(
             parse_browser_version(fixture).as_deref(),
             Some("Chrome/149.0.7827.55")
+        );
+        // B4: o WebSocket do browser sai do MESMO /json/version, só em loopback.
+        assert_eq!(
+            parse_browser_ws_url(fixture).as_deref(),
+            Some("ws://127.0.0.1:62934/devtools/browser/f6645add-0357-4628-bdb6-06bd6c83bd65")
+        );
+        assert_eq!(
+            parse_browser_ws_url(r#"{"webSocketDebuggerUrl":"ws://10.0.0.8:9222/devtools/browser/x"}"#),
+            None
         );
         // Resposta que não é o /json/version (endpoint errado) não vira vida.
         assert_eq!(parse_browser_version("<html>404</html>"), None);

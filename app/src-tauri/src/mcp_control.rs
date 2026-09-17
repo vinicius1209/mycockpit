@@ -404,6 +404,8 @@ pub struct McpAgentState {
     pub required: bool,
     /// Binding marcado para dirigir o navegador do projeto (B2.2).
     pub browser: bool,
+    /// Forma de conexão ao navegador ("cdp-endpoint", "browser-url", "ws-endpoint").
+    pub browser_conexao: String,
     pub fallback: String,
     pub health: String,
     pub detail: Option<String>,
@@ -708,6 +710,9 @@ struct Binding {
     /// É propriedade do BINDING, nunca do nome do fornecedor: qualquer MCP que
     /// aceite a flag pode ser marcado, e nenhum é marcado por padrão.
     browser: bool,
+    /// Como este MCP se conecta ao navegador do projeto (B4): `cdp-endpoint`
+    /// (padrão, Playwright), `browser-url` ou `ws-endpoint`.
+    browser_conexao: crate::browser_conexao::ConexaoDoNavegador,
 }
 
 const CDP_FLAG: &str = "--cdp-endpoint";
@@ -720,7 +725,7 @@ const CDP_CONFLICTS: [(&str, bool); 2] = [("--browser", true), ("--headless", fa
 /// Remove uma flag conflitante (nas duas formas) dos args do plano efêmero.
 /// Devolve se removeu algo. Não toca a configuração de ORIGEM do usuário: o
 /// plano é uma cópia por run.
-fn strip_flag(args: &mut Vec<String>, flag: &str, takes_value: bool) -> bool {
+pub(crate) fn strip_flag(args: &mut Vec<String>, flag: &str, takes_value: bool) -> bool {
     let mut out: Vec<String> = Vec::with_capacity(args.len());
     let mut removed = false;
     let mut skip_value = false;
@@ -1697,7 +1702,7 @@ fn agent_state(
 ) -> McpAgentState {
     let binding = conn
         .query_row(
-            "SELECT required, fallback, browser FROM mcp_bindings
+            "SELECT required, fallback, browser, browser_conexao FROM mcp_bindings
              WHERE project_id = ?1 AND server_id = ?2 AND agent = ?3",
             params![project_id, server.id, agent],
             |row| {
@@ -1705,6 +1710,7 @@ fn agent_state(
                     row.get::<_, i64>(0)? != 0,
                     row.get::<_, String>(1)?,
                     row.get::<_, i64>(2)? != 0,
+                    row.get::<_, String>(3)?,
                 ))
             },
         )
@@ -1742,6 +1748,10 @@ fn agent_state(
         cli_installation: None,
         required: binding.as_ref().is_some_and(|b| b.0),
         browser: binding.as_ref().is_some_and(|b| b.2),
+        browser_conexao: binding
+            .as_ref()
+            .map(|b| b.3.clone())
+            .unwrap_or_else(|| "cdp-endpoint".into()),
         fallback: binding
             .as_ref()
             .map(|b| b.1.clone())
@@ -1982,14 +1992,16 @@ fn upsert_binding(
     required: bool,
     fallback: &str,
     browser: bool,
+    browser_conexao: crate::browser_conexao::ConexaoDoNavegador,
 ) -> Result<(), String> {
     conn.execute(
         "INSERT INTO mcp_bindings
-           (project_id, server_id, agent, required, fallback, browser, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+           (project_id, server_id, agent, required, fallback, browser, browser_conexao, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
          ON CONFLICT(project_id, server_id, agent) DO UPDATE SET
            required=excluded.required, fallback=excluded.fallback,
-           browser=excluded.browser, updated_at=excluded.updated_at",
+           browser=excluded.browser, browser_conexao=excluded.browser_conexao,
+           updated_at=excluded.updated_at",
         params![
             project_id,
             server_id,
@@ -1997,6 +2009,7 @@ fn upsert_binding(
             required as i64,
             fallback,
             browser as i64,
+            browser_conexao.como_texto(),
             now_ms()
         ],
     )
@@ -2136,12 +2149,19 @@ pub async fn set_mcp_binding(
     required: bool,
     fallback: String,
     browser: Option<bool>,
+    browser_conexao: Option<String>,
 ) -> Result<(), String> {
     validate_agent(&agent)?;
     validate_fallback(&fallback)?;
     // `None` = chamador antigo/sem o campo: preserva o default de mecanismo
     // desligado (o navegador do projeto nunca entra sem gesto explícito).
     let browser = browser.unwrap_or(false);
+    // Sem forma informada, a do Playwright (o comportamento de antes do B4).
+    let browser_conexao = match browser_conexao.as_deref() {
+        None => crate::browser_conexao::ConexaoDoNavegador::default(),
+        Some(valor) => crate::browser_conexao::ConexaoDoNavegador::de_texto(valor)
+            .ok_or_else(|| format!("forma de conexão ao navegador desconhecida: {valor}"))?,
+    };
     {
         let conn = db(&app)?;
         let project_id = project_id_for_path(&conn, &project_path)?;
@@ -2168,6 +2188,7 @@ pub async fn set_mcp_binding(
                 required,
                 &fallback,
                 browser,
+                browser_conexao,
             );
         }
     }
@@ -2196,6 +2217,7 @@ pub async fn set_mcp_binding(
         required,
         &fallback,
         browser,
+        browser_conexao,
     )
 }
 
@@ -2571,7 +2593,7 @@ fn bindings_for_run(
 ) -> Result<Vec<Binding>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT server_id, required, fallback, browser FROM mcp_bindings
+            "SELECT server_id, required, fallback, browser, browser_conexao FROM mcp_bindings
              WHERE project_id = ?1 AND agent = ?2 ORDER BY server_id",
         )
         .map_err(|e| e.to_string())?;
@@ -2582,6 +2604,10 @@ fn bindings_for_run(
                 required: row.get::<_, i64>(1)? != 0,
                 fallback: row.get(2)?,
                 browser: row.get::<_, i64>(3)? != 0,
+                browser_conexao: crate::browser_conexao::ConexaoDoNavegador::de_texto(
+                    &row.get::<_, String>(4)?,
+                )
+                .unwrap_or_default(),
             })
         })
         .map_err(|e| e.to_string())?;
@@ -2939,7 +2965,38 @@ pub async fn plan_for_run(
                         }
                     }
                 }
-                match apply_cdp_endpoint(&mut launch, endpoint.as_deref(), &server.name) {
+                // B4: a forma de conexão é do binding. `cdp-endpoint` segue o
+                // caminho original; as formas do DevTools MCP recebem a URL http
+                // ou o WebSocket do browser (`/json/version`).
+                let conectado = match binding.browser_conexao {
+                    crate::browser_conexao::ConexaoDoNavegador::CdpEndpoint => {
+                        apply_cdp_endpoint(&mut launch, endpoint.as_deref(), &server.name)
+                    }
+                    conexao => {
+                        let valor = match (conexao, endpoint.as_deref()) {
+                            (crate::browser_conexao::ConexaoDoNavegador::WsEndpoint, Some(http)) => {
+                                crate::browser::browser_ws_url(http).await
+                            }
+                            (_, http) => http.map(str::to_string),
+                        };
+                        valor
+                            .map(|v| {
+                                crate::browser_conexao::aplicar_conexao_devtools(
+                                    &mut launch.args,
+                                    conexao,
+                                    &v,
+                                    &server.name,
+                                )
+                            })
+                            .ok_or_else(|| {
+                                format!(
+                                    "MCP {}: o navegador do projeto não informou o endereço de conexão.",
+                                    server.name
+                                )
+                            })
+                    }
+                };
+                match conectado {
                     Ok(notices) => {
                         resolved_resource = Some(resource);
                         plan.notices.extend(notices);
@@ -3026,6 +3083,7 @@ mod tests {
             required: false,
             fallback: "ask".into(),
             browser: false,
+            browser_conexao: Default::default(),
         }
     }
 
@@ -3964,6 +4022,7 @@ mod tests {
                 enabled: bound,
                 required: false,
                 browser: false,
+                browser_conexao: "cdp-endpoint".into(),
                 fallback: "ask".into(),
                 health: "unchecked".into(),
                 detail: None,
@@ -4171,6 +4230,7 @@ mod tests {
             required,
             fallback: fallback.into(),
             browser: false,
+            browser_conexao: Default::default(),
         };
         // Fixture fiel ao incidente: required=0, fallback=ask, browser=1.
         let incidente = Binding {
@@ -4210,6 +4270,7 @@ mod tests {
             required: false,
             fallback: "ask".into(),
             browser: true,
+            browser_conexao: Default::default(),
         };
         let mut plan = McpRunPlan::default();
         assert!(!record_unavailable(

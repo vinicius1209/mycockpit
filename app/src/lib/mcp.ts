@@ -55,8 +55,10 @@ export interface McpAgentState {
   enabled: boolean
   required: boolean
   /** Binding marcado para dirigir o navegador do projeto: o plano do run
-   *  injeta `--cdp-endpoint` apontando pro Chromium que o app possui (B2.2). */
+   *  injeta o endpoint do Chromium que o app possui (B2.2). */
   browser: boolean
+  /** Como o MCP recebe o navegador (B4). Ausente em estado gravado antes. */
+  browserConexao?: BrowserConexao
   fallback: McpFallback
   health: McpHealthStatus
   detail: string | null
@@ -148,6 +150,16 @@ export async function discoverMcpServers(
   })
 }
 
+/** Formas de um MCP se conectar ao navegador do projeto (espelho de
+ *  `browser_conexao.rs`). A flag é o que diferencia, não o nome do MCP. */
+export type BrowserConexao = "cdp-endpoint" | "browser-url" | "ws-endpoint"
+
+export const CONEXOES_DO_NAVEGADOR: { value: BrowserConexao; label: string; title: string }[] = [
+  { value: "cdp-endpoint", label: "--cdp-endpoint", title: "Endereço http do navegador em --cdp-endpoint" },
+  { value: "browser-url", label: "--browserUrl", title: "Endereço http do navegador em --browserUrl" },
+  { value: "ws-endpoint", label: "--wsEndpoint", title: "WebSocket do navegador em --wsEndpoint" },
+]
+
 export async function setMcpBinding(input: {
   projectPath: string
   serverId: string
@@ -156,6 +168,7 @@ export async function setMcpBinding(input: {
   required: boolean
   fallback: McpFallback
   browser: boolean
+  browserConexao?: BrowserConexao
 }): Promise<void> {
   if (!isTauri()) return
   await invoke("set_mcp_binding", input)
@@ -210,6 +223,7 @@ export function applyAgentPatch(
       | "enabled"
       | "required"
       | "browser"
+      | "browserConexao"
       | "fallback"
       | "health"
       | "detail"

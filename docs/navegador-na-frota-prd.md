@@ -2,8 +2,17 @@
 
 ## Status (17/09/2026)
 
-**R1 a R3 entregues (17/09/2026, ADR-204). R6 entregue (17/09/2026, ADR-207).** R4 e
-R5 seguem para a próxima sprint.
+**R1 a R3 entregues (17/09/2026, ADR-204). R6 (ADR-207) e R5 (ADR-208) entregues em
+seguida.** R4 (marcar e enviar) segue para a próxima sprint.
+
+R5: migração 50 (`mcp_bindings.browser_conexao`, padrão `cdp-endpoint`, então o
+Playwright segue idêntico e os testes dele não mudaram). `browser_conexao.rs` aplica
+`--browserUrl <http>` ou `--wsEndpoint <ws>` (o WebSocket vem do `/json/version`, só
+em loopback) e tira da origem o que abriria outro navegador; as flags vieram do
+`--help` do chrome-devtools-mcp 1.9.0 (`testdata/chrome-devtools-mcp/`).
+Configurações → MCPs mostra a forma ao lado de "usar navegador". Provado de ponta a
+ponta: o chrome-devtools-mcp 1.9.0 conectado por `--browserUrl` e por `--wsEndpoint`
+a um Chromium lançado com as flags da Frota listou a página dele pelo MCP.
 
 R6, e onde divergiu: a queda NÃO é sondada no ticker do `watchdog.ts`; o
 `ProcessRegistry` já emite `process_exited`, e o vigia (`lib/vigiaDoNavegador.ts`)

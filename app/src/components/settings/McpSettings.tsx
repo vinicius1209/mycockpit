@@ -281,7 +281,7 @@ export function McpSettings() {
     server: McpServer,
     state: McpAgentState,
     patch: Partial<
-      Pick<McpAgentState, "enabled" | "required" | "browser" | "fallback">
+      Pick<McpAgentState, "enabled" | "required" | "browser" | "browserConexao" | "fallback">
     >,
   ) {
     if (!project) return
@@ -303,6 +303,7 @@ export function McpSettings() {
             enabled: state.enabled,
             required: state.required,
             browser: state.browser,
+            browserConexao: state.browserConexao,
             fallback: state.fallback,
           }),
         ),
@@ -315,6 +316,7 @@ export function McpSettings() {
           required: next.required,
           fallback: next.fallback,
           browser: next.browser,
+          browserConexao: next.browserConexao,
         }),
       onError: (message) => toast.error(message),
     })

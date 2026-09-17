@@ -192,9 +192,10 @@ navegador (`experience_broker.rs`): run, plugin ou pessoa; observar é livre.
 - Capturar a página (`browser_capture.rs`) é observação, não pilotagem: PNG real
   por `Page.captureScreenshot`, bytes direto para anexo ou clipboard, URL limpa
   por `sanitize_page_url`. Nunca base64 no Channel.
-- A injeção do endpoint no MCP usa `--cdp-endpoint` (`mcp_control.rs`), que só o
-  Playwright MCP entende. Outro MCP de navegador precisa de forma de conexão
-  declarada no binding, não de `if` por nome.
+- A injeção do endpoint segue a forma de conexão do binding (`browser_conexao`,
+  migração 50): `cdp-endpoint`, `browser-url` ou `ws-endpoint`
+  (`browser_conexao.rs`). MCP de navegador novo ganha forma nova ali, nunca `if`
+  por nome; as flags saem do `--help` real do MCP, guardado em `testdata/`.
 
 ## Mantenha este arquivo verdadeiro
 

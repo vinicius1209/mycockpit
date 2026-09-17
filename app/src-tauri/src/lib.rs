@@ -15,6 +15,7 @@ mod approval;
 mod attachments;
 mod browser;
 mod browser_capture;
+mod browser_conexao;
 mod browser_orfaos;
 mod browser_cdp;
 mod browser_panel;
@@ -663,6 +664,14 @@ pub fn run() {
                     conversation_id TEXT PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE, \
                     revision INTEGER NOT NULL, item_count INTEGER NOT NULL, updated_at INTEGER NOT NULL \
                   );",
+            kind: MigrationKind::Up,
+        },
+        // B4 (navegador PRD R5): como o MCP marcado como navegador se conecta ao
+        // Chromium do projeto. Padrão = a forma do Playwright, que era a única.
+        Migration {
+            version: 50,
+            description: "mcp_bindings_browser_conexao",
+            sql: "ALTER TABLE mcp_bindings ADD COLUMN browser_conexao TEXT NOT NULL DEFAULT 'cdp-endpoint';",
             kind: MigrationKind::Up,
         },
     ];

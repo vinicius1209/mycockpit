@@ -7426,3 +7426,19 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   desligar direito.
 - **Verificado:** fixture real de `ps` (Chrome for Testing 151 lançado por `zsh
   -lc` com as flags do app), testes do vigia; vitest 4351, `cargo test` 874.
+
+### ADR-208 · MCP de navegador escolhe a forma de conexão no binding
+
+- **Contexto (17/09/2026):** o plano do run injetava sempre `--cdp-endpoint`, que
+  só o Playwright MCP entende; o Chrome DevTools MCP ficava de fora do navegador do
+  projeto (K5).
+- **Decisão:** a forma de conexão vira coluna do binding (`browser_conexao`,
+  migração 50, padrão `cdp-endpoint`): `browser-url` passa `--browserUrl` com o
+  endpoint http e `ws-endpoint` passa `--wsEndpoint` com o WebSocket lido do
+  `/json/version` (recusado fora de loopback). As flags que abririam outro
+  navegador saem do plano efêmero, com aviso no fio. Nada compara nome de MCP; a
+  pessoa escolhe a forma em Configurações.
+- **Verificado:** flags conferidas no `--help` do chrome-devtools-mcp 1.9.0
+  (fixture), testes das formas e do parse do WebSocket, testes do Playwright
+  intactos; prova real com o MCP conectado pelas duas formas a um Chromium lançado
+  com as flags da Frota, listando a página dele. `cargo test` 878, vitest 4361.

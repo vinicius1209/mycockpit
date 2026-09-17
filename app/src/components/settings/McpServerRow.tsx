@@ -136,7 +136,7 @@ export function McpServerRow({
     server: McpServer,
     state: McpAgentState,
     patch: Partial<
-      Pick<McpAgentState, "enabled" | "required" | "browser" | "fallback">
+      Pick<McpAgentState, "enabled" | "required" | "browser" | "browserConexao" | "fallback">
     >,
   ) => void;
   onCheck: (server: McpServer, state: McpAgentState) => void;
