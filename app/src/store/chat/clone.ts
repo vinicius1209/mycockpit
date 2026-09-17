@@ -25,7 +25,7 @@ import {
   setConversationParent as dbSetParent,
   type ConversationMeta,
 } from "@/lib/db/conversations"
-import { normalizeModelValue } from "@/lib/agents"
+import { agentDef, normalizeModelValue } from "@/lib/agents"
 import { createWorktree } from "@/lib/git"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
@@ -214,11 +214,26 @@ export async function duplicateConversationImpl(
   )
 }
 
+/** A nota que o ramo carrega desde o nascimento (revezamento PRD R3): quem vai
+ *  pilotar aqui e o que continua valendo lá. Fica no fio do RAMO, nunca no da
+ *  original, que é a conversa que ninguém pediu para mexer. */
+export function notaDoRamo(destino: string, origem: string): string {
+  return `Ramo aberto com ${rotuloDoMotor(destino)}. A conversa original continua com ${rotuloDoMotor(origem)}.`
+}
+
+function rotuloDoMotor(agent: string): string {
+  return agentDef(agent)?.label ?? agent
+}
+
 export async function forkConversationAtImpl(
   get: Get,
   set: Set,
   id: string,
   uptoItemId: string,
+  /** Motor do ramo (revezamento R3). O ramo nasce com o revezamento preparado;
+   *  o transplante da memória acontece no primeiro envio dele, como em
+   *  qualquer revezamento. */
+  targetAgent?: string,
 ): Promise<boolean> {
   const before = get()
   const owner = projectOfConv(before.conversationsByProject, id) ?? before.projectId
@@ -228,7 +243,19 @@ export async function forkConversationAtImpl(
   if (!conv) return false
   const cut = conv.items.findIndex((it) => it.id === uptoItemId)
   if (cut === -1) return false // turno não está no fio carregado → não força nada
-  const items = markOrphanedProcesses(conv.items.slice(0, cut + 1))
+  const cortados = markOrphanedProcesses(conv.items.slice(0, cut + 1))
+  const comOutroMotor = Boolean(targetAgent && targetAgent !== conv.agent)
+  const items = comOutroMotor
+    ? [
+        ...cortados,
+        {
+          kind: "notice" as const,
+          id: crypto.randomUUID(),
+          message: notaDoRamo(targetAgent as string, conv.agent),
+          ts: Date.now(),
+        },
+      ]
+    : cortados
   const reqModel = normalizeModelValue(conv.agent, conv.reqModel)
   const siblings = (before.conversationsByProject[owner] ?? []).flatMap((c) => (c.title ? [c.title] : []))
   const parentId = src?.parentId ?? id
@@ -248,6 +275,15 @@ export async function forkConversationAtImpl(
   // do `duplicateConversation`, que é "quero outra igual" e não pede pasta
   // própria — fork é "quero seguir OUTRO caminho a partir daqui", e caminho
   // paralelo sem pasta paralela é dois agentes brigando pelo mesmo arquivo.
+  // O ramo nasce no motor da original e com o revezamento PREPARADO: é o mesmo
+  // caminho do "revezar aqui", então memória, custo estimado e nota de commit
+  // continuam sendo os do transplante, sem segunda implementação.
+  if (comOutroMotor) {
+    get().stageAgent(newId, targetAgent as string)
+    // A preparação mudou de casa: a original volta ao estado de quem não ia
+    // revezar coisa nenhuma.
+    if (before.byId[id]?.stagedAgent === targetAgent) get().stageAgent(id, null)
+  }
   await isolateFork(get, newId, owner)
   return true
 }

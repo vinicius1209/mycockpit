@@ -31,6 +31,7 @@ import { resumeBannerLabel } from "@/lib/autoResume"
 import { deriveComposerContinuity } from "@/lib/composerContinuity"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
 import { fmtTime } from "@/lib/format"
+import { latestCompletedTurnId } from "@/lib/mainTabs"
 import { checkAgentQuota, eligibleHandoffTargets } from "@/lib/quotaExhausted"
 import { useApp } from "@/store/app"
 import { useChat, type ConvState } from "@/store/chat"
@@ -114,6 +115,8 @@ export function BannersDoComposer({
     () => (stagedAgent && itens ? rotuloDaEstimativa(estimativaDoHandoff(itens, stagedAgent)) : undefined),
     [stagedAgent, itens],
   )
+  // Turno concluído mais recente: o ponto de corte do ramo.
+  const ramoAPartirDe = conv && !busy ? latestCompletedTurnId(conv.items) : null
   const targetLabel = conv?.stagedAgent
     ? (agentDef(conv.stagedAgent)?.label ?? conv.stagedAgent)
     : ""
@@ -152,6 +155,17 @@ export function BannersDoComposer({
           estimativa={estimativa}
           busy={busy}
           onUndo={() => useChat.getState().stageAgent(activeId, null)}
+          onRamo={
+            // Só há ramo a partir de um turno CONCLUÍDO: é o mesmo alvo do
+            // "Bifurcar do último turno" (revezamento R3).
+            ramoAPartirDe && conv.stagedAgent
+              ? () => {
+                  void useChat
+                    .getState()
+                    .forkConversationAt(activeId, ramoAPartirDe, stagedAgent ?? undefined)
+                }
+              : undefined
+          }
         />
       ) : conv && activeId && continuityMode && continuity ? (
         <ContinuityBanner

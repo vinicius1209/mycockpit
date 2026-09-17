@@ -4,7 +4,7 @@
 > C-Q3 (↳ leva à original), C-T2 (seleção de tabela como planilha, clique duplo) e
 > B6 (vigia do navegador e navegador órfão no boot), C-D2 (colagem grande vira
 > pílula), B4 (qualquer MCP de navegador, corrige K5) e B3 (marcar e enviar ao
-> agente). Correções K6 e K7 entregues em 17/09 (aba do navegador que fechava
+> agente) e D1/R3 (ramo com outro motor, com o spike S4 rodado). Correções K6 e K7 entregues em 17/09 (aba do navegador que fechava
 > sozinha, mensagem longa que vinha paginada sem formatação). Épico D: R1, R2 e R4 do PRD entregues em 17/09 (D2, D4). Épico C: R1, R3, R4 e R6 do PRD entregues em 17/09
 > (C-T1, C-Q1 e C-Q2, C-D1). Épico B: R1 a R3 do PRD entregues em 17/09 (B1 aba,
 > B1b flutuante, B2 anexar e copiar). Correções K1 a K4 entregues em 17/09 (K4 dentro do

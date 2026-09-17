@@ -6,7 +6,7 @@
 // próximo envio. O transcript registra o incidente, sem repetir a decisão.
 
 import { useState } from "react"
-import { ArrowRightLeft, ChevronRight, Clock, RefreshCcw } from "lucide-react"
+import { ArrowRightLeft, ChevronRight, Clock, GitFork, RefreshCcw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { controle } from "@/components/ui/controle"
@@ -38,6 +38,10 @@ type ContinuityStagedProps = {
   estimativa?: string
   busy?: boolean
   onUndo: () => void
+  /** Revezamento R3: em vez de trocar o motor AQUI, abre um ramo com ele e
+   *  deixa esta conversa intacta. Ausente quando não há turno concluído para
+   *  ramificar. */
+  onRamo?: () => void
 }
 
 export type ContinuityBannerProps =
@@ -207,6 +211,7 @@ function ContinuityStaged({
   estimativa,
   busy = false,
   onUndo,
+  onRamo,
 }: Omit<ContinuityStagedProps, "state">) {
   return (
     <section
@@ -223,6 +228,19 @@ function ContinuityStaged({
           {estimativa && <span className="tabular-nums"> Sessão nova com a memória desta: {estimativa}.</span>}
         </p>
       </div>
+      {onRamo && (
+        <Button
+          type="button"
+          size="compacto"
+          variant="ghost"
+          disabled={busy}
+          onClick={onRamo}
+          title={`Cria uma conversa nova com ${targetLabel} a partir do último turno concluído, em pasta isolada. Esta conversa fica intacta, com a sessão do ${sourceLabel}. O ramo parte do último commit: mudança não commitada não vai junto.`}
+        >
+          <GitFork className="size-3.5" />
+          Abrir ramo
+        </Button>
+      )}
       <Button
         type="button"
         size="compacto"
@@ -245,6 +263,7 @@ export function ContinuityBanner(props: ContinuityBannerProps) {
         estimativa={props.estimativa}
         busy={props.busy}
         onUndo={props.onUndo}
+        onRamo={props.onRamo}
       />
     )
   }

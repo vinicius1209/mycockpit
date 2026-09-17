@@ -239,3 +239,48 @@ describe("fork isolado em worktree (F2 — paralelo de verdade)", () => {
     expect(forkMeta?.parentId).toBe(CONV)
   })
 })
+
+describe("ramo com outro motor (revezamento R3)", () => {
+  it("o ramo nasce com o revezamento preparado e a nota de quem pilota cada lado", async () => {
+    expect(await useChat.getState().forkConversationAt(CONV, "r1", "codex")).toBe(true)
+    const s = useChat.getState()
+    const ramo = s.byId[s.activeId!]
+    expect(s.activeId).not.toBe(CONV)
+    // O ramo continua no motor da original: quem troca é o transplante, no
+    // primeiro envio, como em qualquer revezamento.
+    expect(ramo.agent).toBe("claude-code")
+    expect(ramo.stagedAgent).toBe("codex")
+    expect(ramo.items.map((it) => it.id)).toEqual(["u1", "r1", ramo.items[2].id])
+    expect(ramo.items[2]).toMatchObject({
+      kind: "notice",
+      message: "Ramo aberto com Codex. A conversa original continua com Claude Code.",
+    })
+  })
+
+  it("a original fica intocada: motor, sessão, itens e o revezamento que mudou de casa", async () => {
+    useChat.setState({
+      byId: { [CONV]: { ...sourceConv(), stagedAgent: "codex" } },
+    })
+    await useChat.getState().forkConversationAt(CONV, "r1", "codex")
+    const original = useChat.getState().byId[CONV]
+    expect(original.agent).toBe("claude-code")
+    expect(original.sessionId).toBe("sess-1")
+    expect(original.model).toBe("claude-opus-5")
+    expect(original.items.map((it) => it.id)).toEqual(["u1", "r1", "u2", "r2"])
+    expect(original.stagedAgent).toBeUndefined()
+  })
+
+  it("mesmo motor não vira ramo com nota nem revezamento pendente", async () => {
+    await useChat.getState().forkConversationAt(CONV, "r1", "claude-code")
+    const ramo = useChat.getState().byId[useChat.getState().activeId!]
+    expect(ramo.stagedAgent).toBeUndefined()
+    expect(ramo.items.map((it) => it.id)).toEqual(["u1", "r1"])
+  })
+
+  it("fork sem motor de destino continua sendo o fork de sempre", async () => {
+    await useChat.getState().forkConversationAt(CONV, "r1")
+    const ramo = useChat.getState().byId[useChat.getState().activeId!]
+    expect(ramo.stagedAgent).toBeUndefined()
+    expect(ramo.items).toHaveLength(2)
+  })
+})

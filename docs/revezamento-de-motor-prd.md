@@ -129,9 +129,15 @@ memória.
   não-commitada não veio junto"). Levar as alterações é gesto explícito,
   oferecido só quando `git status` não está limpo, e com o aviso de que
   arquivo ignorado não vai junto.
-- `forkConversationAtImpl` aceita `targetAgent` opcional e deixa o ramo com o
-  revezamento preparado; nota no ramo "Ramo aberto com X. A conversa original
-  continua com Y."
+- **Entregue em 17/09/2026.** `forkConversationAtImpl` aceita `targetAgent`
+  opcional: o ramo nasce no motor da original, com o revezamento PREPARADO e a
+  nota "Ramo aberto com X. A conversa original continua com Y." no fio dele. O
+  transplante da memória acontece no primeiro envio do ramo, pelo mesmo caminho
+  do "revezar aqui", sem segunda implementação. A preparação muda de casa: se a
+  original estava com o revezamento engatilhado, ela volta ao estado de quem não
+  ia revezar. O gesto mora na faixa de revezamento ("Abrir ramo"), só aparece
+  com turno concluído para ramificar, e o título avisa ANTES que o ramo parte do
+  último commit.
 - Ramo e original comparáveis no `BranchSplitView` que já existe.
 - **Aceite:** sessão, itens e motor da original intocados (teste); ramo nasce com
   `parent_id` e revezamento preparado; primeiro envio do ramo faz o transplante e

@@ -459,7 +459,7 @@ export interface ChatState {
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
   /** Fork CURADO até `uptoItemId`; false no no-op, sem anunciar gesto vazio. */
-  forkConversationAt: (id: string, uptoItemId: string) => Promise<boolean>
+  forkConversationAt: (id: string, uptoItemId: string, targetAgent?: string) => Promise<boolean>
   persist: (convId: string) => Promise<void>
   /** Confirma somente a cauda incremental pendente antes de um novo envio. */
   flushItems: (convId: string) => Promise<void>
@@ -1372,8 +1372,8 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     duplicateConversation: (id) => duplicateConversationImpl(get, set, id),
-    forkConversationAt: (id, uptoItemId) =>
-      forkConversationAtImpl(get, set, id, uptoItemId),
+    forkConversationAt: (id, uptoItemId, targetAgent) =>
+      forkConversationAtImpl(get, set, id, uptoItemId, targetAgent),
 
     persist: async (convId) => {
       const c = get().byId[convId]

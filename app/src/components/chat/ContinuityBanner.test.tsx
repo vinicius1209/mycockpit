@@ -147,4 +147,26 @@ describe("continuidade unificada acima do composer", () => {
     expect(html).toContain("Sessão nova com a memória desta: leva ~12 mil tokens do histórico (estimativa).")
     expect(html).toContain("Desfazer")
   })
+
+  it("oferece abrir ramo, dizendo que a original fica intacta e que parte do último commit", () => {
+    const html = renderToStaticMarkup(
+      <ContinuityBanner
+        state="staged"
+        sourceLabel="Claude Code"
+        targetLabel="Codex"
+        onUndo={() => {}}
+        onRamo={() => {}}
+      />,
+    )
+    expect(html).toContain("Abrir ramo")
+    expect(html).toContain("Esta conversa fica intacta, com a sessão do Claude Code")
+    expect(html).toContain("mudança não commitada não vai junto")
+  })
+
+  it("sem turno concluído para ramificar, o botão de ramo não aparece", () => {
+    const html = renderToStaticMarkup(
+      <ContinuityBanner state="staged" sourceLabel="Codex" targetLabel="Claude Code" onUndo={() => {}} />,
+    )
+    expect(html).not.toContain("Abrir ramo")
+  })
 })
