@@ -80,6 +80,7 @@ export interface RegiaoNoQuadro {
 }
 
 export interface Marcacao extends PaginaAnexada {
+  regiao: { x: number; y: number; largura: number; altura: number }
   descricao: string
   elementos: { papel: string; nome: string; seletor: string; tag: string }[]
 }
@@ -119,7 +120,17 @@ export async function marcarRegiaoNoRascunho(
       marcacao.attachment,
     )
     drafts.setAttachments(convId, anexos)
-    drafts.appendText(convId, marcacao.descricao)
+    // A descrição é material do pedido, não texto que a pessoa escreveu: vira
+    // pílula no rascunho, como a citação e a colagem (relato de 17/09/2026).
+    drafts.addMarcacao(convId, {
+      tipo: "marcacao",
+      id: crypto.randomUUID(),
+      pagina: marcacao.title,
+      url: marcacao.url,
+      largura: marcacao.regiao.largura,
+      altura: marcacao.regiao.altura,
+      descricao: marcacao.descricao,
+    })
     if (aviso) toast(aviso)
     else toast.success("Marcação no rascunho da conversa.")
     return true

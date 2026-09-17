@@ -32,6 +32,7 @@
 
 import { textoComCitacoes, type BlocoDoRascunho } from "@/lib/citacao"
 import { textoComColagens, type BlocoColagem } from "@/lib/colagem"
+import { textoComMarcacoes, type BlocoMarcacao } from "@/lib/marcacao"
 
 export function textoDoEnvio(
   override: unknown,
@@ -41,5 +42,8 @@ export function textoDoEnvio(
   const texto = textoComCitacoes((typeof override === "string" ? override : value).trim(), blocos)
   // Colagens grandes (capricho R7) vão no fim, depois do que foi escrito.
   const colagens = (blocos ?? []).filter((b): b is BlocoColagem => b.tipo === "colagem")
-  return textoComColagens(texto, colagens)
+  const marcacoes = (blocos ?? []).filter((b): b is BlocoMarcacao => b.tipo === "marcacao")
+  // Marcação de região (navegador R4) fecha a fila: a descrição é o material
+  // mais específico do pedido, e a imagem dela já vai como anexo.
+  return textoComMarcacoes(textoComColagens(texto, colagens), marcacoes)
 }

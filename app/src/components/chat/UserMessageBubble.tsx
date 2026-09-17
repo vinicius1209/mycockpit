@@ -12,6 +12,12 @@ import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { blocoDaCitacaoNoTexto, itemDaCitacao, separarCitacoes } from "@/lib/citacao"
 import { rotuloDaColagem, separarColagens } from "@/lib/colagem"
+import {
+  blocoDaMarcacaoNoTexto,
+  dadosDaMarcacaoNoTexto,
+  rotuloDaMarcacao,
+  separarMarcacoes,
+} from "@/lib/marcacao"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -50,11 +56,13 @@ export function UserMessageBubble({
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
   // Citação enviada (capricho R4) vira linha ↳ acima do texto, nunca o formato cru.
-  const { citacoes, corpo, colagens } = useMemo(() => {
+  const { citacoes, corpo, colagens, marcacoes } = useMemo(() => {
     const semCitacoes = separarCitacoes(text)
-    // Colagem grande (capricho R7) mora no fim do texto; vira bloco recolhido.
-    const { corpo, colagens } = separarColagens(semCitacoes.corpo)
-    return { citacoes: semCitacoes.citacoes, corpo, colagens }
+    // Colagem grande (capricho R7) e região marcada (navegador R4) moram no fim
+    // do texto; viram bloco recolhido, nunca o formato cru.
+    const semMarcacoes = separarMarcacoes(semCitacoes.corpo)
+    const { corpo, colagens } = separarColagens(semMarcacoes.corpo)
+    return { citacoes: semCitacoes.citacoes, corpo, colagens, marcacoes: semMarcacoes.marcacoes }
   }, [text])
 
   function handleEdit() {
@@ -63,10 +71,11 @@ export function UserMessageBubble({
 
     const drafts = useComposerDrafts.getState()
     drafts.setText(convId, corpo)
-    if (citacoes.length > 0 || colagens.length > 0) {
+    if (citacoes.length > 0 || colagens.length > 0 || marcacoes.length > 0) {
       drafts.setBlocos(convId, [
         ...citacoes.map((c) => blocoDaCitacaoNoTexto(c)),
         ...colagens.map((texto) => ({ tipo: "colagem" as const, id: crypto.randomUUID(), texto })),
+        ...marcacoes.map((descricao) => blocoDaMarcacaoNoTexto(descricao)),
       ])
     }
     const inputEl = document.querySelector<HTMLElement>('[data-composer="console"]')
@@ -136,6 +145,19 @@ export function UserMessageBubble({
       >
         <MentionText text={corpo} />
       </div>
+      {marcacoes.map((descricao, i) => (
+        <details key={`marcacao:${i}`} className="mt-1 max-w-full">
+          <summary className="w-max cursor-pointer list-none text-[12px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            {rotuloDaMarcacao(dadosDaMarcacaoNoTexto(descricao))}
+          </summary>
+          <pre
+            data-selectable
+            className="mt-1 max-h-72 max-w-full overflow-auto rounded-md border bg-card p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/85"
+          >
+            {descricao}
+          </pre>
+        </details>
+      ))}
       {colagens.map((c, i) => (
         <details key={i} className="group/colado mt-1 max-w-full">
           <summary className="w-max cursor-pointer list-none text-[12px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">

@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { toast } from "sonner"
 import type { Attachment } from "@/lib/attachments"
 import { comNovaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/citacao"
+import type { BlocoMarcacao } from "@/lib/marcacao"
 import {
   deleteComposerDraft,
   loadComposerDraft,
@@ -49,6 +50,8 @@ interface ComposerDraftState {
   appendText: (conversationId: string, text: string) => void
   /** Acrescenta uma citação; `false` quando o teto de citações recusou. */
   addCitacao: (conversationId: string, citacao: BlocoCitacao) => boolean
+  /** Região marcada no navegador vira bloco (navegador R4). */
+  addMarcacao: (conversationId: string, marcacao: BlocoMarcacao) => void
   /** Colagem grande vira bloco (capricho R7). */
   addColagem: (conversationId: string, texto: string) => void
   removeBloco: (conversationId: string, index: number) => void
@@ -150,6 +153,10 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
       const { blocos, coube } = comNovaCitacao(current.blocos ?? [], citacao)
       if (coube) patch(conversationId, { ...current, blocos })
       return coube
+    },
+    addMarcacao: (conversationId, marcacao) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      patch(conversationId, { ...current, blocos: [...(current.blocos ?? []), marcacao] })
     },
     addColagem: (conversationId, texto) => {
       const current = get().byConv[conversationId] ?? EMPTY

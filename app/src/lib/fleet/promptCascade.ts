@@ -17,6 +17,7 @@
 import { withNotes } from "@/lib/notes"
 import { emoldurarCitacoes } from "@/lib/citacao"
 import { emoldurarColagens } from "@/lib/colagem"
+import { emoldurarMarcacoes } from "@/lib/marcacao"
 import { withNotasDoBloco } from "@/store/stickyNotes"
 import { finalizeSlashExpansion } from "@/lib/slashDispatch"
 import type { SlashExpansion } from "@/lib/slashCommands"
@@ -55,7 +56,7 @@ export function withNotasDoTurno(
   attachments: readonly Attachment[] = [],
 ): { prompt: string; attachments: Attachment[] } {
   // Citações (capricho R4) e colagens grandes (R7) viram moldura de dado antes das notas.
-  const bloco = withNotasDoBloco(withNotes(convId, items, emoldurarColagens(emoldurarCitacoes(texto))), { projectId, convId })
+  const bloco = withNotasDoBloco(withNotes(convId, items, emoldurarMarcacoes(emoldurarColagens(emoldurarCitacoes(texto)))), { projectId, convId })
   return { prompt: bloco.prompt, attachments: juntarAnexos(attachments, bloco.anexos) }
 }
 

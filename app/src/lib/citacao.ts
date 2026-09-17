@@ -12,6 +12,7 @@
 //   o que a pessoa escreveu
 
 import type { BlocoColagem } from "@/lib/colagem"
+import type { BlocoMarcacao } from "@/lib/marcacao"
 
 export interface BlocoCitacao {
   tipo: "citacao"
@@ -23,7 +24,7 @@ export interface BlocoCitacao {
   trecho: string
 }
 
-export type BlocoDoRascunho = BlocoCitacao | BlocoColagem
+export type BlocoDoRascunho = BlocoCitacao | BlocoColagem | BlocoMarcacao
 
 /** Teto do trecho: citação é apontar, não recolar a resposta inteira. */
 export const TETO_DO_TRECHO = 600

@@ -354,6 +354,9 @@ pub struct Marcacao {
     pub attachment: crate::attachments::Attachment,
     pub url: String,
     pub title: String,
+    /// A região em pixels da página: o rascunho mostra o tamanho na pílula sem
+    /// ter que reler a descrição.
+    pub regiao: Caixa,
     pub descricao: String,
     pub elementos: Vec<ElementoMarcado>,
 }
@@ -382,7 +385,7 @@ pub async fn browser_marcar(
         active.inner(),
     )?;
     let descricao = descricao_da_marcacao(&title, &url, &recorte.viewport, &recorte.regiao, &recorte.elementos);
-    Ok(Marcacao { attachment, url, title, descricao, elementos: recorte.elementos })
+    Ok(Marcacao { attachment, url, title, regiao: recorte.regiao, descricao, elementos: recorte.elementos })
 }
 
 #[cfg(test)]

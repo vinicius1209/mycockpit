@@ -85,6 +85,15 @@ Já entregue (17/09, depois do R4): duas coisas que o uso real mostrou.
    exemplo no texto.
 Mock aprovado: aba "Navegador", "Flutuar sobre a conversa" e "Marcar e enviar ao
 agente" em `docs/mocks/sprint-ecossistema.html`. Double check na seção final.
+3. **A marcação vira pílula, não texto solto no composer.** A descrição que o
+   `browser_marcar` monta (página, viewport, região, elementos) era despejada no
+   editor e tomava o composer inteiro ("fica no composer esse texto jogado
+   assim?", 17/09). Agora ela é bloco do rascunho, como a citação e a colagem:
+   pílula "Região · página · 529×241" com prévia e "Inserir como texto"
+   (`lib/marcacao.ts`), envelope no fim do texto enviado e moldura de dado na
+   porta do prompt. O envelope de colagem e marcação virou um só
+   (`lib/envelopeDeBloco.ts`), porque é o mesmo gesto. A resposta do comando
+   passou a trazer `regiao`, então a pílula diz o tamanho sem reler a descrição.
 
 Continua `docs/browser-plan.md` (B1 e B2.1 a B2.4 entregues em 30/08) e respeita
 ADR-131 (um piloto por navegador, observadores livres), ADR-147 (preflight não é
