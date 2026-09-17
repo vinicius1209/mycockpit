@@ -1,6 +1,17 @@
 # Continuidade híbrida entre code agents
 
-> Status: implementado em 2026-07-29. Contrato v1.
+> Status: implementado em 2026-07-29. **Contrato v2 desde 17/09/2026**
+> (revezamento PRD R1, `docs/revezamento-de-motor-prd.md`): o envelope ganha
+> `conversation_memory`, a memória por significado do `/compactar`
+> (`memoriaDaConversa`), orçada pela janela do motor de destino com a régua
+> `transplante` (`orcamentoDoHandoff`: 10% da janela em caracteres, teto de
+> 60.000, piso de 6.000, que era o orçamento inteiro do v1). `recent_history`
+> continua, com 25% do orçamento, só para as últimas mensagens literais. Sem
+> janela informada, usa a do modelo padrão do motor no registry; desconhecida,
+> o piso. O prompt fala o rótulo do motor ("Claude Code"), não o id.
+> `conversation_memory` fica no manifesto SEM moldura; o prompt junta memória e
+> últimas mensagens numa única moldura H3 (`Histórico da conversa:`), porque
+> duas molduras seguidas deixariam texto do fio fora delas (`trust.test.ts`).
 
 ## Objetivo
 
@@ -30,7 +41,8 @@ Os arquivos são locais/ignorados pelo git. O manifesto contém:
 - provider de origem e destino;
 - pedido pendente integral;
 - falha/limite que encerrou o provider anterior;
-- histórico recente tail-biased;
+- memória da conversa por significado (pedidos, decisões, falhas em aberto,
+  onde parou; v2) e as últimas mensagens literais;
 - branch e referências leves dos arquivos alterados;
 - lições ativas do projeto;
 - ponteiros para transcript, manifesto e, quando suportado, conversa SQLite;
@@ -43,7 +55,7 @@ fica no transcript/SQLite e só entra na janela quando o agent o pede.
 
 | Camada | Teto |
 |---|---:|
-| Histórico recente no prompt | 6.000 chars (~1,5k tokens) |
+| Memória da conversa + últimas mensagens no prompt (v2) | 10% da janela do destino em chars, entre 6.000 e 60.000; 25% disso para as últimas mensagens |
 | Lições no handoff | 2.500 chars, máx. 8 regras |
 | Arquivos alterados no índice | 40 |
 | Manifesto no disco | 256 KiB |

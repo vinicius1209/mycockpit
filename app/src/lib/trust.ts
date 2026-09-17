@@ -25,3 +25,14 @@ export const HISTORY_NOTE =
 export function frameHistory(content: string): string {
   return [HISTORY_OPEN, content, HISTORY_CLOSE, HISTORY_NOTE].join("\n")
 }
+
+/** O inverso de `frameHistory`: o conteúdo de dentro da moldura. Texto que não
+ *  veio de `frameHistory` volta como está. Existe para quem JUNTA duas partes
+ *  já emolduradas num bloco só: uma moldura por bloco, nunca duas seguidas. */
+export function conteudoDaMoldura(texto: string): string {
+  const prefixo = `${HISTORY_OPEN}\n`
+  const sufixo = `\n${HISTORY_CLOSE}\n${HISTORY_NOTE}`
+  return texto.startsWith(prefixo) && texto.endsWith(sufixo)
+    ? texto.slice(prefixo.length, texto.length - sufixo.length)
+    : texto
+}

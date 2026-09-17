@@ -5,15 +5,23 @@
 // e expandir somente as referências necessárias.
 
 import { invoke } from "@tauri-apps/api/core"
-import { agentDef } from "@/lib/agents"
+import { agentDef, defaultModelFor } from "@/lib/agents"
+import { contextWindowFor } from "@/lib/contextWindow"
+import { memoriaDaConversa } from "@/lib/memoriaDaConversa"
+import { CHARS_POR_TOKEN, orcamentoDaMemoria } from "@/lib/orcamentoDaMemoria"
 import { loadGitDiff, type GitDiff } from "@/lib/git"
 import { toolDigest } from "@/lib/fusion"
 import { renderTranscript } from "@/lib/transcript"
-import { frameHistory } from "@/lib/trust"
+import { conteudoDaMoldura, frameHistory } from "@/lib/trust"
 import type { ChatItem } from "@/store/chat"
 
-/** ~1,5k tokens de histórico recente. O restante fica no transcript/SQLite. */
+/** Piso do que o revezamento leva do fio (~2k tokens). Era o orçamento inteiro
+ *  do contrato v1; no v2 é o mínimo, para janela desconhecida não levar MENOS
+ *  do que já levava. O restante fica no transcript/SQLite. */
 export const HANDOFF_RECENT_BUDGET_CHARS = 6_000
+/** Parte do orçamento que vai para as últimas mensagens literais; o resto é a
+ *  memória por significado (a mesma do `/compactar`). */
+export const HANDOFF_FRACAO_DA_CAUDA = 0.25
 /** Lições são importantes, mas não podem virar um segundo arquivo de doutrina. */
 export const HANDOFF_LESSONS_BUDGET_CHARS = 2_500
 export const HANDOFF_MAX_CHANGED_FILES = 40
@@ -33,7 +41,7 @@ export interface ChangedFilePointer {
 }
 
 export interface ContextEnvelope {
-  version: 1
+  version: 2
   generated_at: string
   conversation_id: string
   source_agent: string
@@ -42,12 +50,18 @@ export interface ContextEnvelope {
   /** Inteiro no manifesto, mas aparece uma única vez no prompt: no final. */
   pending_request: string
   source_failure: string | null
+  /** Contrato v2: memória por significado (pedidos, decisões, falhas, onde
+   *  parou), orçada pela janela do motor de destino. Sem moldura: quem
+   *  renderiza emoldura memória e últimas mensagens juntas, num bloco só. */
+  conversation_memory: string
+  /** As últimas mensagens literais, com uma fração do orçamento. */
   recent_history: string
   changed_files: ChangedFilePointer[]
   branch: string | null
   lessons: string[]
   references: ContextReference[]
   truncation: {
+    conversation_memory: boolean
     recent_history: boolean
     changed_files: boolean
   }
@@ -69,6 +83,9 @@ export interface PrepareHybridHandoffInput {
   personaBlock?: string | null
   doctrineBlock?: string | null
   lessonsBlock?: string | null
+  /** Janela do motor de destino em tokens. Ausente: a do modelo padrão dele;
+   *  desconhecida, o piso. */
+  janelaDoDestino?: number | null
   /** Injetável para golden tests. */
   date?: Date
   /** Injetável para testes das superfícies sem Tauri/git real. */
@@ -134,6 +151,46 @@ export function recentHistory(
   return { text: kept.join("\n\n"), truncated }
 }
 
+/** Quanto o revezamento leva do fio para esta janela: a régua do `/compactar`
+ *  (`transplante`), nunca abaixo do piso do contrato v1. */
+export function orcamentoDoHandoff(janelaTokens: number | null): number {
+  return Math.max(HANDOFF_RECENT_BUDGET_CHARS, orcamentoDaMemoria(janelaTokens, "transplante"))
+}
+
+/** Janela do motor de destino quando o chamador não sabe o modelo: a do modelo
+ *  padrão do registry. `null` quando nem isso se conhece. */
+export function janelaPadraoDoMotor(agent: string): number | null {
+  return contextWindowFor(defaultModelFor(agent))
+}
+
+/** Quantos tokens do fio o revezamento para `targetAgent` levaria agora, pela
+ *  MESMA montagem do envelope v2 e a mesma régua de caracteres por token do
+ *  orçamento (que superestima de propósito). É estimativa, e a UI diz isso. */
+export function estimativaDoHandoff(
+  items: ChatItem[],
+  targetAgent: string,
+  janelaDoDestino: number | null = janelaPadraoDoMotor(targetAgent),
+): number {
+  if (items.length === 0) return 0
+  const orcamento = orcamentoDoHandoff(janelaDoDestino)
+  const cauda = Math.floor(orcamento * HANDOFF_FRACAO_DA_CAUDA)
+  const memoria = memoriaDaConversa(items, orcamento - cauda).texto.length
+  const recentes = Math.min(recentHistory(items, cauda).text.length, cauda)
+  return Math.ceil((memoria + recentes) / CHARS_POR_TOKEN)
+}
+
+/** "leva ~12 mil tokens do histórico (estimativa)". */
+export function rotuloDaEstimativa(tokens: number): string {
+  if (tokens <= 0) return "sem histórico para levar"
+  if (tokens < 1_000) return "leva menos de mil tokens do histórico (estimativa)"
+  return `leva ~${Math.round(tokens / 1_000)} mil tokens do histórico (estimativa)`
+}
+
+/** Rótulo humano do motor para o prompt ("Claude Code", não "claude-code"). */
+function rotuloDoMotor(agent: string): string {
+  return agentDef(agent)?.label ?? agent
+}
+
 function failureAfter(items: ChatItem[], pendingUserIndex: number): string | null {
   for (let i = items.length - 1; i > pendingUserIndex; i--) {
     const it = items[i]
@@ -180,15 +237,25 @@ export function buildContextEnvelope(input: {
   lessonsBlock?: string | null
   references: ContextReference[]
   date?: Date
+  janelaDoDestino?: number | null
 }): ContextEnvelope {
   const pending = input.items[input.pendingUserIndex]
   if (!pending || pending.kind !== "user") {
     throw new Error("handoff sem pedido pendente")
   }
-  const history = recentHistory(input.items.slice(0, input.pendingUserIndex))
+  const anteriores = input.items.slice(0, input.pendingUserIndex)
+  const janela =
+    input.janelaDoDestino === undefined ? janelaPadraoDoMotor(input.targetAgent) : input.janelaDoDestino
+  const orcamento = orcamentoDoHandoff(janela)
+  const cauda = Math.floor(orcamento * HANDOFF_FRACAO_DA_CAUDA)
+  const memoria = anteriores.length > 0 ? memoriaDaConversa(anteriores, orcamento - cauda) : null
+  const history = recentHistory(anteriores, cauda)
+  const cortesDaMemoria = memoria
+    ? memoria.cortes.ferramentas + memoria.cortes.respostas + memoria.cortes.outros
+    : 0
   const changed = changedFiles(input.diff)
   return {
-    version: 1,
+    version: 2,
     generated_at: (input.date ?? new Date()).toISOString(),
     conversation_id: input.convId,
     source_agent: input.sourceAgent,
@@ -196,13 +263,15 @@ export function buildContextEnvelope(input: {
     objective: cap(pending.text, 1_000),
     pending_request: pending.text,
     source_failure: failureAfter(input.items, input.pendingUserIndex),
-    recent_history: history.text,
+    conversation_memory: memoria ? conteudoDaMoldura(memoria.texto) : "",
+    recent_history: cap(history.text, cauda),
     changed_files: changed.files,
     branch: input.diff.branch,
     lessons: lessonLines(input.lessonsBlock),
     references: input.references,
     truncation: {
-      recent_history: history.truncated,
+      conversation_memory: cortesDaMemoria > 0,
+      recent_history: history.truncated || history.text.length > cauda,
       changed_files: changed.truncated,
     },
   }
@@ -220,7 +289,7 @@ export function renderHybridHandoff(
   const state = [
     "## Continuidade Frota",
     "",
-    `Você está assumindo no ${envelope.target_agent} uma conversa iniciada no ${envelope.source_agent}, no MESMO diretório/worktree.`,
+    `Você está assumindo no ${rotuloDoMotor(envelope.target_agent)} uma conversa iniciada no ${rotuloDoMotor(envelope.source_agent)}, no MESMO diretório/worktree.`,
     "Os arquivos no disco são a fonte de verdade. Não refaça trabalho já materializado.",
   ]
   if (envelope.source_failure) {
@@ -237,10 +306,16 @@ export function renderHybridHandoff(
       state.push("- … outros arquivos estão no manifesto/git")
     }
   }
-  if (envelope.recent_history) {
-    // H3 — histórico serializado reinjetado viaja EMOLDURADO: instrução
-    // plantada num turno antigo é dado, nunca pedido (frameHistory).
-    state.push("", "Histórico recente:", "", frameHistory(envelope.recent_history))
+  // H3 — histórico serializado reinjetado viaja EMOLDURADO: instrução plantada
+  // num turno antigo é dado, nunca pedido (frameHistory). Memória e últimas
+  // mensagens entram na MESMA moldura: duas molduras seguidas deixariam texto
+  // do fio entre um fechamento e a próxima abertura.
+  const historico = [
+    envelope.conversation_memory && `MEMÓRIA DA CONVERSA:\n${envelope.conversation_memory}`,
+    envelope.recent_history && `ÚLTIMAS MENSAGENS:\n${envelope.recent_history}`,
+  ].filter(Boolean)
+  if (historico.length) {
+    state.push("", "Histórico da conversa:", "", frameHistory(historico.join("\n\n")))
   }
   if (envelope.lessons.length) {
     state.push("", "Lições relevantes deste projeto:")
@@ -336,6 +411,7 @@ export async function prepareHybridHandoff(
     lessonsBlock: input.lessonsBlock,
     references: durableRefs,
     date: input.date,
+    janelaDoDestino: input.janelaDoDestino,
   })
   const transcript = renderTranscript(input.items, {
     agent: input.sourceAgent,

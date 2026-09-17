@@ -15,6 +15,7 @@
 // Nenhum deles interrompe. Aviso acima do composer é ambiente; decisão que
 // precisa parar o app é dialog (§12).
 
+import { useMemo } from "react"
 import { toast } from "sonner"
 
 import {
@@ -25,6 +26,7 @@ import {
 } from "@/components/chat/ComposerBanners"
 import { ContinuityBanner, type ContinuityMode } from "@/components/chat/ContinuityBanner"
 import { agentDef } from "@/lib/agents"
+import { estimativaDoHandoff, rotuloDaEstimativa } from "@/lib/handoff"
 import { resumeBannerLabel } from "@/lib/autoResume"
 import { deriveComposerContinuity } from "@/lib/composerContinuity"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
@@ -104,6 +106,14 @@ export function BannersDoComposer({
         })
       : []
   const sourceLabel = conv ? (agentDef(conv.agent)?.label ?? conv.agent) : ""
+  // Revezamento R2: quanto a sessão nova leva do fio, pela montagem real do
+  // envelope. Só recalcula quando muda o destino ou o fio.
+  const stagedAgent = conv?.stagedAgent ?? null
+  const itens = conv?.items
+  const estimativa = useMemo(
+    () => (stagedAgent && itens ? rotuloDaEstimativa(estimativaDoHandoff(itens, stagedAgent)) : undefined),
+    [stagedAgent, itens],
+  )
   const targetLabel = conv?.stagedAgent
     ? (agentDef(conv.stagedAgent)?.label ?? conv.stagedAgent)
     : ""
@@ -139,6 +149,7 @@ export function BannersDoComposer({
           state="staged"
           sourceLabel={sourceLabel}
           targetLabel={targetLabel}
+          estimativa={estimativa}
           busy={busy}
           onUndo={() => useChat.getState().stageAgent(activeId, null)}
         />

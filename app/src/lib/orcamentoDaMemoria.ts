@@ -50,7 +50,7 @@
 // chars sai menor que o teto em tokens. Errar pro lado apertado é o lado seguro.
 
 /** Conservador de propósito — ver o cabeçalho. */
-const CHARS_POR_TOKEN = 3
+export const CHARS_POR_TOKEN = 3
 
 /**
  * Quando a memória é montada. Não é enfeite: decide a fração.

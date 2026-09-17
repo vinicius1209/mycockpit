@@ -7388,3 +7388,24 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   apertada), `cargo test` 871; harness no Chromium para pílula, chip, bolha,
   prompt, menu da tabela, clipboard e arrasto simulado. Falta WebKit e arrasto
   real no app.
+
+### ADR-206 · Revezamento de motor leva a memória do /compactar e diz o custo antes
+
+- **Contexto (17/09/2026):** trocar de motor numa conversa já existia
+  (revezamento, ADR-165), mas levava só os últimos 6.000 caracteres do fio, o
+  gesto não dizia o custo e o trilho oferecia motores que não podiam receber.
+  PRD em `docs/revezamento-de-motor-prd.md`.
+- **Decisão:** o envelope de handoff passa ao contrato v2. A conversa viaja pela
+  mesma memória por significado do `/compactar` (`memoriaDaConversa`), orçada
+  pela janela do motor de destino com a régua `transplante`, mais as últimas
+  mensagens literais com 25% do orçamento. O piso é o orçamento inteiro do v1
+  (6.000), para janela desconhecida nunca levar menos do que já levava. O prompt
+  fala o rótulo do motor. Memória e últimas mensagens dividem uma moldura H3.
+- **Gesto:** a faixa do revezamento preparado mostra o custo estimado pela mesma
+  montagem do envelope e a régua de caracteres por token do orçamento, rotulado
+  como estimativa. O seletor separa "mesmo motor, mantém a sessão" de "outro
+  motor, sessão nova" e só oferece destino elegível.
+- **Não fizemos agora:** ramo com outro motor (depende do spike S4) e voltar ao
+  motor anterior retomando a sessão.
+- **Verificado:** vitest 4342, `tsc -b` 0, guardas verdes; golden test de 100
+  itens; H3 (`trust.test.ts`) e os testes v1 do handoff sem alteração.

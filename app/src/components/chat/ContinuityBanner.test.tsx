@@ -133,4 +133,18 @@ describe("continuidade unificada acima do composer", () => {
     expect(html).toContain("disabled")
     expect(html).toContain("Desfazer")
   })
+
+  it("diz quanto a sessão nova leva do fio, como estimativa", () => {
+    const html = renderToStaticMarkup(
+      <ContinuityBanner
+        state="staged"
+        sourceLabel="Codex"
+        targetLabel="Claude Code"
+        estimativa="leva ~12 mil tokens do histórico (estimativa)"
+        onUndo={() => {}}
+      />,
+    )
+    expect(html).toContain("Sessão nova com a memória desta: leva ~12 mil tokens do histórico (estimativa).")
+    expect(html).toContain("Desfazer")
+  })
 })

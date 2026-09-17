@@ -2,11 +2,36 @@
 
 ## Status (17/09/2026)
 
-**Proposta, não implementada.** Épico D de `docs/sprint-ecossistema-2026-09.md`.
+**R1, R2 e R4 entregues (17/09/2026, ADR-206).** Spike S4, R3 (ramo com outro
+motor) e R5 (voltar retomando a sessão) seguem para a próxima sprint.
+Épico D de `docs/sprint-ecossistema-2026-09.md`.
+
+O que foi feito, e onde divergiu do texto abaixo:
+- R1: envelope v2 com `conversation_memory` (`memoriaDaConversa`, a memória do
+  `/compactar`) orçada por `orcamentoDoHandoff`: 10% da janela do destino em
+  caracteres, teto 60.000, **piso 6.000** (não o piso de 3.000 do orçamento):
+  janela desconhecida nunca leva menos que o contrato v1 levava. 25% do orçamento
+  continua para as últimas mensagens literais, porque uma mensagem gigante
+  derrubava o bloco "onde a conversa parou" da memória (o teste v1 do "gateway"
+  pegou isso). Sem janela informada, a do modelo padrão do motor no registry. O
+  prompt usa o rótulo do motor. Memória e últimas mensagens vão numa moldura H3
+  só. Os três chamadores (composer, mesa, faixa de continuidade) herdam sem
+  mudança.
+- R2: a faixa de revezamento preparado já existia com "Desfazer"; ganhou "Sessão
+  nova com a memória desta: leva ~N mil tokens do histórico (estimativa)",
+  calculado pela montagem real do envelope. No seletor, com a conversa iniciada,
+  a lista de modelos se chama "Mesmo motor · mantém a sessão" e o trilho mostra o
+  motor atual e só os destinos elegíveis (`eligibleHandoffTargets`). Divergência:
+  não virou menu com duas seções de texto; o trilho de ícones continua, filtrado
+  e com o rótulo "Outro motor · sessão nova com a memória desta" no título.
+- Verificado: golden test com fio de 100 itens (pedido e plano do meio presentes,
+  teto respeitado, "Claude Code" no prompt), estimativa e faixa com testes, os
+  testes v1 do handoff e o H3 do `trust.test.ts` intactos; seletor e faixa num
+  harness no Chromium.
 Já entregue (17/09, K2/D4): "Modelo custom…" no seletor vem da capability
 `modelo_livre` (Rust) / `modeloLivre` (TS), com teste-gêmeo; o `Set` com nomes de
 motor em `IdentityPicker.tsx:33` citado abaixo não existe mais. O id cru do motor
-no prompt do handoff (`handoff.ts:223`) continua para o D2.
+no prompt do handoff (`handoff.ts:223`) saiu no R1.
 Mock aprovado: seletor de identidade com "Revezar aqui" e "Abrir ramo com…",
 faixa com custo estimado e "Desfazer", em `docs/mocks/sprint-ecossistema.html`.
 Double check na seção final.

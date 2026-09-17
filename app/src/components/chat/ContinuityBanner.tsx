@@ -34,6 +34,8 @@ type ContinuityStagedProps = {
   state: "staged"
   sourceLabel: string
   targetLabel: string
+  /** Custo do que vai junto, já rotulado como estimativa (revezamento R2). */
+  estimativa?: string
   busy?: boolean
   onUndo: () => void
 }
@@ -60,7 +62,7 @@ function HandoffContents({ mode }: { mode: ContinuityMode }) {
         </p>
         <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
           <li>{mode === "continue-now" ? "O pedido pendente integral" : "O pedido do próximo envio"}</li>
-          <li>Histórico recente e decisões</li>
+          <li>Memória da conversa: pedidos, decisões e onde parou</li>
           <li>Branch e arquivos alterados</li>
           <li>Regras ativas do projeto</li>
         </ul>
@@ -202,6 +204,7 @@ function ContinuityChoice({
 function ContinuityStaged({
   sourceLabel,
   targetLabel,
+  estimativa,
   busy = false,
   onUndo,
 }: Omit<ContinuityStagedProps, "state">) {
@@ -217,6 +220,7 @@ function ContinuityStaged({
         </p>
         <p className="text-[11px] leading-snug text-muted-foreground">
           {sourceLabel} permanece nesta conversa até {targetLabel} abrir a nova sessão.
+          {estimativa && <span className="tabular-nums"> Sessão nova com a memória desta: {estimativa}.</span>}
         </p>
       </div>
       <Button
@@ -238,6 +242,7 @@ export function ContinuityBanner(props: ContinuityBannerProps) {
       <ContinuityStaged
         sourceLabel={props.sourceLabel}
         targetLabel={props.targetLabel}
+        estimativa={props.estimativa}
         busy={props.busy}
         onUndo={props.onUndo}
       />

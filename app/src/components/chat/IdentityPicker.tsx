@@ -22,6 +22,9 @@ import { DESTINATIONS, agentDef, agentModels, agentEfforts } from "@/lib/agents"
 import { effortFitsModel, SENTINELA } from "@/lib/modelList"
 import { problemaNoSlug } from "@/lib/modelSlug"
 import { estadoNaMaquina } from "@/lib/detect"
+import { eligibleHandoffTargets } from "@/lib/quotaExhausted"
+import { motoresDoTrilho, ROTULO_MESMO_MOTOR, ROTULO_OUTRO_MOTOR } from "@/lib/trilhoDeMotores"
+import { useUsage } from "@/store/usage"
 import { SELECTED_FILL } from "@/lib/selection"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
@@ -64,6 +67,8 @@ export function IdentityPicker({
 }) {
   const limited = useApp((s) => s.limitedAgents)
   const detectados = useApp((s) => s.settings.detected)
+  const usageByAgent = useUsage((s) => s.byAgent)
+  const lastSuccessByAgent = useUsage((s) => s.lastSuccessAt)
   const [customEditing, setCustomEditing] = useState(false)
   const [customDraft, setCustomDraft] = useState("")
 
@@ -81,6 +86,24 @@ export function IdentityPicker({
   const modelTitle = modelLocked ? emVooTitle : locked ? trocaTitle : undefined
   const effortTitle = effortLocked ? emVooTitle : locked ? trocaTitle : undefined
 
+  // Revezamento R2: com a conversa iniciada, o trilho só oferece destino
+  // elegível (mesma regra da faixa de continuidade).
+  const trilho = motoresDoTrilho(
+    RAIL_AGENTS.map((d) => d.id),
+    {
+      locked,
+      ativo: effectiveDest,
+      elegiveis: locked
+        ? eligibleHandoffTargets({
+            currentAgent: effectiveDest,
+            detected: detectados ?? {},
+            limitedAgents: limited,
+            byAgentSnapshots: usageByAgent,
+            lastSuccessByAgent,
+          }).map((o) => o.id)
+        : [],
+    },
+  )
   const baseModels = agentModels(effectiveDest)
   const supportsCustom = agentDef(effectiveDest)?.modeloLivre ?? false
   const isCustomValue =
@@ -166,10 +189,10 @@ export function IdentityPicker({
           <div
             role="group"
             aria-label="Agent"
-            title={locked ? "Escolha outro motor para revezar no próximo envio" : undefined}
+            title={locked ? `${ROTULO_OUTRO_MOTOR}: escolha para revezar no próximo envio` : undefined}
             className="flex w-11 shrink-0 flex-col items-center gap-1 border-r bg-secondary/30 py-2"
           >
-            {RAIL_AGENTS.map((d) => {
+            {RAIL_AGENTS.filter((d) => trilho.includes(d.id)).map((d) => {
               const isActive = d.id === effectiveDest
               const isLimited = d.id in limited
               const hint = limited[d.id]
@@ -232,7 +255,7 @@ export function IdentityPicker({
           ) : (
             <CommandList label="Modelo" className="flex-1">
               <CommandEmpty>Nenhum modelo bate com a busca</CommandEmpty>
-              <CommandGroup>
+              <CommandGroup heading={locked ? ROTULO_MESMO_MOTOR : undefined}>
                 {modelOptions.map((o) => {
                   const isSelected = o.value === effectiveModel
                   return (
