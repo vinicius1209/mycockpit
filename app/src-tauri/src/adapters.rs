@@ -714,6 +714,14 @@ pub struct Capabilities {
     /// Espelho TS: `modelSmoke` em lib/agents.ts (teste-gêmeo
     /// agents.modelSmoke.test.ts ↔ `matriz_fumaca_de_modelo_por_agent`).
     pub model_smoke: Option<ModelSmokeDialect>,
+    /// O CLI aceita um id de modelo DIGITADO, fora de qualquer lista: é o que
+    /// libera o "Modelo custom…" no seletor. claude ✅ `--model` passa alias ou
+    /// id completo direto à API; codex ✅ `-m` idem; agy ❌ só aceita os slugs
+    /// que ele mesmo lista (`agy models`, recusa local), então a escolha vem da
+    /// lista; opencode ❌ até ser auditado. Espelho TS: `modeloLivre` em
+    /// lib/agents.ts (teste-gêmeo agents.modeloLivre.test.ts ↔
+    /// `matriz_modelo_livre_por_agent`).
+    pub modelo_livre: bool,
 }
 
 impl Capabilities {
@@ -816,6 +824,7 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // claude 2.1.220: `-p --output-format json` classifica sozinho — 404 real
     // no slug inválido e `modelUsage.contextWindow` no sucesso (14/08/2026).
     model_smoke: Some(ModelSmokeDialect::ClaudePrintJson),
+    modelo_livre: true,
 };
 
 /// codex-cli 0.144.6 (auditado 2026-07): MCP completo (config efêmero via -c),
@@ -891,6 +900,7 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
     // de metadata) de recusa do servidor (14/08/2026).
     model_smoke: Some(ModelSmokeDialect::CodexExecJson),
+    modelo_livre: true,
 };
 
 /// agy 1.1.13 (auditado NESTA máquina em 14/08/2026, sondas cruas em
@@ -1012,6 +1022,7 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // agy 1.1.13: `-p --output-format json` recusa slug desconhecido LOCALMENTE
     // (sem chamada, sem custo) e devolve status SUCCESS quando aceita.
     model_smoke: Some(ModelSmokeDialect::AgyPrintJson),
+    modelo_livre: false,
 };
 
 pub trait AgentAdapter: Send {
@@ -1228,6 +1239,7 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     // existem, e isso muda sem o app saber.
     lists_models: Some(ModelListSource::OpenCodeModelsSubcommand),
     model_smoke: Some(ModelSmokeDialect::OpenCodeRunJson),
+    modelo_livre: false,
 };
 
 /// O `opencode run` sem bypass **não pergunta: auto-rejeita**, e grava no turno
@@ -5585,6 +5597,16 @@ mod tests {
             capabilities_of("agy").unwrap().model_smoke,
             Some(ModelSmokeDialect::AgyPrintJson)
         );
+    }
+
+    /// Teste-GÊMEO de `agents.modeloLivre.test.ts` (K2): quem aceita id de
+    /// modelo digitado. Mexeu aqui, mexa lá.
+    #[test]
+    fn matriz_modelo_livre_por_agent() {
+        assert!(capabilities_of("claude-code").unwrap().modelo_livre);
+        assert!(capabilities_of("codex").unwrap().modelo_livre);
+        assert!(!capabilities_of("agy").unwrap().modelo_livre);
+        assert!(!capabilities_of("opencode").unwrap().modelo_livre);
     }
 
     /// Teste-GÊMEO do espelho TS (`agents.hooks.test.ts`): quem emite hooks de

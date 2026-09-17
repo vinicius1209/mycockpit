@@ -19,6 +19,15 @@ const inflight = new Map<string, Promise<void>>()
 const writes = new Map<string, Promise<void>>()
 const failed = new Set<string>()
 
+/** Texto que um gesto de fora do composer (citar arquivo, comentários do diff,
+ *  pedir correção) põe no rascunho: vai DEPOIS do que já foi escrito, separado
+ *  por uma linha em branco. Trocar o texto inteiro apagava o que a pessoa
+ *  estava digitando. */
+export function acrescentarAoRascunho(atual: string, texto: string): string {
+  if (!atual.trim()) return texto
+  return `${atual.trimEnd()}\n\n${texto}`
+}
+
 export function hasComposerDraft(draft: ComposerDraft | undefined): boolean {
   return !!draft && (!!draft.text.trim() || draft.attachments.length > 0)
 }
@@ -29,6 +38,8 @@ interface ComposerDraftState {
   loaded: Record<string, true>
   load: (conversationId: string) => Promise<void>
   setText: (conversationId: string, text: string) => void
+  /** Acrescenta ao rascunho sem apagar o que já foi escrito. */
+  appendText: (conversationId: string, text: string) => void
   setAttachments: (conversationId: string, attachments: Attachment[]) => void
   setMentionValues: (conversationId: string, mentionValues: string[]) => void
   clear: (conversationId: string) => void
@@ -116,6 +127,10 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
     setText: (conversationId, text) => {
       const current = get().byConv[conversationId] ?? EMPTY
       patch(conversationId, { ...current, text })
+    },
+    appendText: (conversationId, text) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      patch(conversationId, { ...current, text: acrescentarAoRascunho(current.text, text) })
     },
     setAttachments: (conversationId, attachments) => {
       const current = get().byConv[conversationId] ?? EMPTY

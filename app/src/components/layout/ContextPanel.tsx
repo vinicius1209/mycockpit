@@ -42,7 +42,7 @@ export function ContextPanel() {
 
   // Prefill + foco de “Pedir correção” (P3) e dos comentários do diff.
   function prefillComposer(convId: string, text: string) {
-    useComposerDrafts.getState().setText(convId, text)
+    useComposerDrafts.getState().appendText(convId, text)
     setTimeout(focusConsoleComposer, 120)
   }
 

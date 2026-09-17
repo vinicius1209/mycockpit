@@ -3,6 +3,9 @@
 ## Status (17/09/2026)
 
 **Proposta, não implementada.** Épico B de `docs/sprint-ecossistema-2026-09.md`.
+Já entregue (17/09, K3): "Ligar navegador" do bloqueio do composer liga sem
+janela, como Configurações (`mcpPreflightRetry.ts`, teste ao lado); a evidência
+de `mcpPreflightRetry.ts:35` abaixo é do estado anterior. K5 segue no B4.
 Mock aprovado: aba "Navegador", "Flutuar sobre a conversa" e "Marcar e enviar ao
 agente" em `docs/mocks/sprint-ecossistema.html`. Double check na seção final.
 

@@ -51,7 +51,7 @@ export function DiffTab({
       // outro lado é esconder o resultado do próprio gesto.
       onSendToComposer={(text) => {
         if (!activeConvId) return
-        useComposerDrafts.getState().setText(activeConvId, text)
+        useComposerDrafts.getState().appendText(activeConvId, text)
         useApp.getState().closeMainTab()
         setTimeout(focusConsoleComposer, 120)
       }}

@@ -3,6 +3,10 @@
 ## Status (17/09/2026)
 
 **Proposta, não implementada.** Épico C de `docs/sprint-ecossistema-2026-09.md`.
+Já entregue (17/09, K1): gesto de fora do composer acrescenta ao rascunho
+(`useComposerDrafts.appendText`, `acrescentarAoRascunho`) em "Citar arquivo no
+chat", "Enviar comentários" e "Pedir correção". A citação de trecho (R4) usa a
+mesma porta; a evidência de `DiffTab.tsx:54` abaixo é do estado anterior.
 Mock aprovado ("achei sensacional, curti tudo"): tabela, citar trecho, soltar
 arquivo, colagem grande e "citar arquivo" em `docs/mocks/sprint-ecossistema.html`.
 Double check na seção final.

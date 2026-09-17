@@ -190,6 +190,15 @@ leitura: `despacharEnvio` depende de projeto, store e Tauri, e um teste honesto
 dele pede uma fixture de envio que ainda não existe. A rede do corolário, essa,
 está coberta.
 
+## Gesto de fora do composer escreve no rascunho acrescentando
+
+Citar arquivo, enviar comentários do diff, pedir correção de entrega e qualquer
+gesto novo que ponha texto no composer a partir de outra superfície usam
+`useComposerDrafts.getState().appendText`: o texto entra depois do que já foi
+escrito, com uma linha em branco. `setText` troca o rascunho inteiro e fica para
+quem É o composer (digitação, "Editar" de uma mensagem enviada). Foi o `setText`
+nesses gestos que apagava o que a pessoa estava digitando (K1).
+
 ## Mantenha este arquivo verdadeiro
 
 Mudou a ordem do `despacharEnvio`, o que aparece durante o preparo, ou quando a

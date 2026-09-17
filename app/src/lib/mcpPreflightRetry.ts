@@ -29,10 +29,13 @@ export function recoveryOverride(
   }
 }
 
+/** "Ligar navegador" do composer é o mesmo gesto de Configurações: Chromium
+ *  sem janela (ADR-131), acompanhado pelo painel próprio. A janela visível
+ *  aqui abria um Chrome externo a cada turno bloqueado (K3). */
 export async function startRequiredProjectBrowser(
   projectPath: string,
 ): Promise<void> {
-  await startProjectBrowser(projectPath, true)
+  await startProjectBrowser(projectPath)
 }
 
 export type PreflightRetryDispatcher = (

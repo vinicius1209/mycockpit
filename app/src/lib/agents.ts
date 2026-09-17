@@ -83,6 +83,7 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: `-p --output-format json` classifica sozinho (404 real
     // no slug inválido, contextWindow no sucesso — capturado 14/08/2026).
     modelSmoke: "claude-print-json",
+    modeloLivre: true,
   },
   {
     id: "codex",
@@ -149,6 +150,7 @@ export const AGENTS: AgentDef[] = [
     // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
     // de metadata) de recusa do servidor (capturado 14/08/2026).
     modelSmoke: "codex-exec-json",
+    modeloLivre: true,
   },
   {
     id: "agy",
@@ -202,6 +204,7 @@ export const AGENTS: AgentDef[] = [
     listsModels: "agy-models",
     // agy 1.1.13: recusa slug desconhecido LOCALMENTE, sem chamada e sem custo.
     modelSmoke: "agy-print-json",
+    modeloLivre: false,
   },
   {
     id: "opencode",
@@ -237,6 +240,7 @@ export const AGENTS: AgentDef[] = [
     hookDialect: null,
     listsModels: "opencode-models",
     modelSmoke: "opencode-run-json",
+    modeloLivre: false,
   },
   {
     id: "model",
@@ -272,6 +276,7 @@ export const AGENTS: AgentDef[] = [
     hookDialect: null,
     listsModels: null,
     modelSmoke: null,
+    modeloLivre: false,
   },
 ]
 

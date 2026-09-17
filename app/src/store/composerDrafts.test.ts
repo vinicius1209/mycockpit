@@ -12,7 +12,11 @@ import {
   loadComposerDraft,
   saveComposerDraft,
 } from "@/lib/db/conversationDrafts"
-import { hasComposerDraft, useComposerDrafts } from "@/store/composerDrafts"
+import {
+  acrescentarAoRascunho,
+  hasComposerDraft,
+  useComposerDrafts,
+} from "@/store/composerDrafts"
 
 const imagem: Attachment = {
   path: "attachments/c1/print.png",
@@ -112,5 +116,26 @@ describe("rascunho persistido por conversa", () => {
       attachments: [],
       mentionValues: ["src/app.ts"],
     })
+  })
+})
+
+describe("gesto de fora do composer acrescenta ao rascunho", () => {
+  it("citar arquivo com texto já escrito mantém o texto e vem depois dele", () => {
+    const store = useComposerDrafts.getState()
+    store.setText("c1", "revisa isso com calma  ")
+    store.setAttachments("c1", [imagem])
+    store.appendText("c1", "Sobre o arquivo `src/app.ts`:\n")
+    expect(useComposerDrafts.getState().byConv.c1).toEqual({
+      text: "revisa isso com calma\n\nSobre o arquivo `src/app.ts`:\n",
+      attachments: [imagem],
+      mentionValues: [],
+    })
+  })
+
+  it("rascunho vazio ou só espaço recebe o texto sozinho", () => {
+    expect(acrescentarAoRascunho("", "Sobre o arquivo `a`:\n")).toBe("Sobre o arquivo `a`:\n")
+    expect(acrescentarAoRascunho(" \n ", "Corrija X")).toBe("Corrija X")
+    useComposerDrafts.getState().appendText("c9", "primeiro")
+    expect(useComposerDrafts.getState().byConv.c9?.text).toBe("primeiro")
   })
 })

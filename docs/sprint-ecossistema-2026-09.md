@@ -1,6 +1,7 @@
 # Sprint "Ecossistema e capricho" (proposta revisada, 17/09/2026)
 
-> Status: **em andamento**. Épico A: R1 a R5 do PRD entregues em 17/09 (A1, A4
+> Status: **em andamento**. Correções K1 a K4 entregues em 17/09 (K4 dentro do
+> R1 do Companion). Épico A: R1 a R5 do PRD entregues em 17/09 (A1, A4
 > sem modo "só Tailscale", A7 e A8 do jeito simples, um atalho por Mac); o resto
 > segue como proposta para decisão. Revisão 2: incorpora as
 > respostas do usuário (17/09) e um double check de cada afirmação no código.
@@ -108,10 +109,10 @@ na política de TI, e o Android só mantém uma VPN ativa por vez.
 
 | # | achado | tam. |
 |---|---|---|
-| K1 | "Citar arquivo no chat" apaga o que você já escreveu (passar a acrescentar) | P |
-| K2 | Comparação por nome de motor no seletor de identidade vira capability | P |
-| K3 | Gate do composer liga o navegador com janela visível, contra a ADR-131 | P |
-| K4 | Arquivo de aparelhos do Companion nasce com permissão padrão antes do 0600 | P |
+| K1 | "Citar arquivo no chat" apaga o que você já escreveu (passar a acrescentar) · **entregue**: `appendText` no rascunho, também em "Enviar comentários" e "Pedir correção" | P |
+| K2 | Comparação por nome de motor no seletor de identidade vira capability · **entregue**: `modelo_livre` / `modeloLivre` com teste-gêmeo | P |
+| K3 | Gate do composer liga o navegador com janela visível, contra a ADR-131 · **entregue**: liga sem janela, como Configurações | P |
+| K4 | Arquivo de aparelhos do Companion nasce com permissão padrão antes do 0600 · **entregue** no R1 (`escrever_privado`) | P |
 | K5 | Injeção do navegador só entende Playwright (Chrome DevTools MCP não conecta) | M (B4) |
 
 ## 5. Spikes de 30 minutos (antes de estimar em definitivo)

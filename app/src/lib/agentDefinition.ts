@@ -158,4 +158,8 @@ export interface AgentDef {
    *  no boot (o freio vive no Rust, model_smoke.rs). Teste-gêmeo:
    *  agents.modelSmoke.test.ts ↔ `matriz_fumaca_de_modelo_por_agent`. */
   modelSmoke: "claude-print-json" | "codex-exec-json" | "agy-print-json" | "opencode-run-json" | null
+  /** Aceita id de modelo DIGITADO, fora da lista ("Modelo custom…" no
+   *  seletor). Teste-gêmeo: agents.modeloLivre.test.ts ↔
+   *  `matriz_modelo_livre_por_agent`. */
+  modeloLivre: boolean
 }

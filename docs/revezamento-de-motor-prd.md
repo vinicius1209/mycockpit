@@ -3,6 +3,10 @@
 ## Status (17/09/2026)
 
 **Proposta, não implementada.** Épico D de `docs/sprint-ecossistema-2026-09.md`.
+Já entregue (17/09, K2/D4): "Modelo custom…" no seletor vem da capability
+`modelo_livre` (Rust) / `modeloLivre` (TS), com teste-gêmeo; o `Set` com nomes de
+motor em `IdentityPicker.tsx:33` citado abaixo não existe mais. O id cru do motor
+no prompt do handoff (`handoff.ts:223`) continua para o D2.
 Mock aprovado: seletor de identidade com "Revezar aqui" e "Abrir ramo com…",
 faixa com custo estimado e "Desfazer", em `docs/mocks/sprint-ecossistema.html`.
 Double check na seção final.

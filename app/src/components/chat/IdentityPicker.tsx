@@ -18,7 +18,7 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { AgentLogo, AGENT_LOGO_LABEL, agentLogoLabel } from "@/components/common/AgentLogo"
-import { DESTINATIONS, agentModels, agentEfforts } from "@/lib/agents"
+import { DESTINATIONS, agentDef, agentModels, agentEfforts } from "@/lib/agents"
 import { effortFitsModel, SENTINELA } from "@/lib/modelList"
 import { problemaNoSlug } from "@/lib/modelSlug"
 import { estadoNaMaquina } from "@/lib/detect"
@@ -27,10 +27,9 @@ import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
 // Sentinela do "Modelo custom…" — nunca chega ao adapter: escolher abre o
-// input inline; só o id digitado (confirmado) vira o model. Mesma regra que
-// já existia em ComposerParts.tsx (IdentityControls), só migrada pra cá.
+// input inline; só o id digitado (confirmado) vira o model. Quem oferece o
+// gesto é a capability `modeloLivre` do registry, nunca o nome do motor.
 const CUSTOM_MODEL = "__custom__"
-const CUSTOM_MODEL_AGENTS = new Set(["claude-code", "codex"])
 
 // Agents com logo conhecido (AgentLogo.tsx) — hoje os únicos 3 no rail. Deriva
 // de AGENT_LOGO_LABEL, não de DESTINATIONS inteiro: os "em breve"
@@ -83,7 +82,7 @@ export function IdentityPicker({
   const effortTitle = effortLocked ? emVooTitle : locked ? trocaTitle : undefined
 
   const baseModels = agentModels(effectiveDest)
-  const supportsCustom = CUSTOM_MODEL_AGENTS.has(effectiveDest)
+  const supportsCustom = agentDef(effectiveDest)?.modeloLivre ?? false
   const isCustomValue =
     effectiveModel !== "default" && !baseModels.some((o) => o.value === effectiveModel)
   const modelOptions = isCustomValue
