@@ -160,11 +160,32 @@ pub(crate) struct CapturedTail {
     pub(crate) truncated: bool,
 }
 
+/// Linha de stderr repassada ao vivo acima disto é descartada (a cauda
+/// continua com os bytes): estado de motor cabe numa linha curta.
+const STDERR_LIVE_LINE_BYTES: usize = 4096;
+/// Fila das linhas ao vivo. Cheia, a linha nova cai: quem lê é o loop do run,
+/// e stderr barulhento não pode reter memória nem travar a drenagem.
+pub(crate) const STDERR_LIVE_QUEUE: usize = 256;
+
 /// Drena bytes crus para não permitir que uma linha sem `\n` cresça sem teto.
-pub(crate) async fn collect_stderr_tail<R>(mut reader: R) -> CapturedTail
+pub(crate) async fn collect_stderr_tail<R>(reader: R) -> CapturedTail
 where
     R: AsyncRead + Unpin,
 {
+    collect_stderr_tail_live(reader, None).await
+}
+
+/// Igual a `collect_stderr_tail`, e ainda repassa cada linha completa (até
+/// `STDERR_LIVE_LINE_BYTES`) para quem precisa reagir durante o turno.
+pub(crate) async fn collect_stderr_tail_live<R>(
+    mut reader: R,
+    live: Option<tokio::sync::mpsc::Sender<String>>,
+) -> CapturedTail
+where
+    R: AsyncRead + Unpin,
+{
+    let mut linha = Vec::<u8>::new();
+    let mut linha_estourou = false;
     let mut retained = vec![0_u8; STDERR_TAIL_BYTES];
     let mut retained_len = 0usize;
     let mut write_at = 0usize;
@@ -175,6 +196,22 @@ where
             Ok(0) | Err(_) => break,
             Ok(read) => read,
         };
+        if let Some(tx) = &live {
+            for &byte in &chunk[..read] {
+                if byte == b'\n' {
+                    if !linha_estourou {
+                        let texto = String::from_utf8_lossy(&linha);
+                        let _ = tx.try_send(texto.trim_end_matches('\r').to_string());
+                    }
+                    linha.clear();
+                    linha_estourou = false;
+                } else if linha.len() < STDERR_LIVE_LINE_BYTES {
+                    linha.push(byte);
+                } else {
+                    linha_estourou = true;
+                }
+            }
+        }
         if read >= STDERR_TAIL_BYTES {
             retained.copy_from_slice(&chunk[read - STDERR_TAIL_BYTES..read]);
             retained_len = STDERR_TAIL_BYTES;
@@ -393,6 +430,31 @@ mod tests {
         assert!(captured.truncated);
         assert!(captured.text.len() <= STDERR_TAIL_BYTES);
         assert!(captured.text.contains("no rollout found for thread id"));
+    }
+
+    #[tokio::test]
+    async fn stderr_ao_vivo_repassa_linhas_e_mantem_a_cauda() {
+        // Linha real do agy 1.2.5 (testdata/agy-1.2.5/bg-sleep.stderr), escrita
+        // em dois pedaços, depois de uma linha longa demais para ir ao vivo.
+        let real = include_str!("../testdata/agy-1.2.5/bg-sleep.stderr");
+        let (mut writer, reader) = tokio::io::duplex(64 * 1024);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(STDERR_LIVE_QUEUE);
+        let longa = "y".repeat(STDERR_LIVE_LINE_BYTES + 10);
+        let (a, b) = real.split_at(20);
+        let (a, b, longa) = (a.to_string(), b.to_string(), longa.clone());
+        let write = tokio::spawn(async move {
+            writer.write_all(format!("{longa}\r\n").as_bytes()).await.unwrap();
+            writer.write_all(a.as_bytes()).await.unwrap();
+            writer.write_all(b.as_bytes()).await.unwrap();
+        });
+        let captured = collect_stderr_tail_live(reader, Some(tx)).await;
+        write.await.unwrap();
+        let mut linhas = Vec::new();
+        while let Some(l) = rx.recv().await {
+            linhas.push(l);
+        }
+        assert_eq!(linhas, vec![real.trim_end().to_string()]);
+        assert!(captured.text.contains("root agent idle"));
     }
 
     #[tokio::test]

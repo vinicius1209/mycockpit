@@ -1056,6 +1056,17 @@ pub trait AgentAdapter: Send {
     fn on_cancel(&mut self) -> Vec<AgentEvent> {
         Vec::new()
     }
+    /// Uma linha do stderr AO VIVO. O stderr inteiro continua indo para o
+    /// relatório de fim de run; este gancho é só para motor que escreve ESTADO
+    /// ali durante o turno. Default: nada.
+    fn on_stderr_line(&mut self, _line: &str) -> Vec<AgentEvent> {
+        Vec::new()
+    }
+    /// Batida periódica do runner (a mesma da amostra de memória), para quem
+    /// espera uma fonte externa ao stream ficar pronta. Default: nada.
+    fn on_heartbeat(&mut self) -> Vec<AgentEvent> {
+        Vec::new()
+    }
 
     /// Como tratar UMA linha CRUA de stdout. Default (adapters ESTRUTURADOS):
     /// trima, pula vazia, parseia JSON → `map_line`; linha não-JSON vira `Unknown`
@@ -3275,6 +3286,33 @@ pub struct AgyAdapter {
     last_tool_position: Option<u64>,
     /// Sink de evidência visual de tool_result (browser-plan B1).
     evidence: Option<crate::evidence::EvidenceSink>,
+    /// Tarefas em background que o `-p` avisou estar esperando (stderr). None =
+    /// sem espera anunciada, ou a ponte já voltou a falar.
+    esperando_tarefas: Option<u32>,
+    /// A espera já foi explicada no fio (uma vez por run).
+    avisou_espera: bool,
+    /// Step da resposta mostrada a partir do transcript durante a espera. Quando
+    /// a ponte liberar os steps segurados, o texto deste step já está na tela.
+    resposta_adiantada: Option<u64>,
+    /// Teste: transcript no lugar do arquivo em `~/.gemini`.
+    #[cfg(test)]
+    pub(crate) transcript_de_teste: Option<String>,
+}
+
+/// Quantas tarefas o `agy -p` diz esperar, pela frase LITERAL do stderr da
+/// 1.2.5 (`testdata/agy-1.2.5/bg-sleep.stderr`). O `-p` só sai quando elas
+/// terminam, com teto no `--print-timeout`, e a ponte segura os steps até lá:
+/// um servidor de desenvolvimento em background deixava o turno "trabalhando"
+/// por até 60 min com a resposta pronta no histórico.
+pub fn agy_tarefas_em_espera(linha: &str) -> Option<u32> {
+    let resto = linha
+        .trim()
+        .strip_prefix("root agent idle; waiting for ")?;
+    let (numero, depois) = resto.split_once(' ')?;
+    depois
+        .starts_with("background task")
+        .then(|| numero.parse().ok())
+        .flatten()
 }
 
 /// A explicação do PRÓPRIO agy num `result` de `status: ERROR`: `error`
@@ -3325,15 +3363,71 @@ impl AgyAdapter {
         }
     }
 
+    /// Mostra a resposta que o agente já deu enquanto o `-p` espera tarefas em
+    /// background. `achada` vem do transcript do próprio Agy (fonte do provider,
+    /// nada fabricado); sem ela, só a explicação da espera entra no fio e a
+    /// batida do runner tenta de novo.
+    fn adiantar_resposta(&mut self, achada: Option<(u64, String)>) -> Vec<AgentEvent> {
+        let mut out = Vec::new();
+        let Some(tarefas) = self.esperando_tarefas else {
+            return out;
+        };
+        if self.result_seen || self.abandoned {
+            return out;
+        }
+        if self.resposta_adiantada.is_none() {
+            if let Some((step, text)) = achada {
+                if self.text_open {
+                    self.text_open = false;
+                    out.push(AgentEvent::TextStop);
+                }
+                self.resposta_adiantada = Some(step);
+                self.last_provider_step = self.last_provider_step.max(step);
+                out.push(AgentEvent::TextDelta { text });
+                out.push(AgentEvent::TextStop);
+            }
+        }
+        if !self.avisou_espera {
+            self.avisou_espera = true;
+            let quantas = if tarefas == 1 {
+                "1 tarefa".to_string()
+            } else {
+                format!("{tarefas} tarefas")
+            };
+            out.push(AgentEvent::Notice {
+                message: format!(
+                    "O Agy terminou de responder e está esperando {quantas} em segundo plano (um servidor de desenvolvimento, por exemplo). O turno fica aberto enquanto ela roda; parar encerra a tarefa junto."
+                ),
+            });
+        }
+        out
+    }
+
+    fn buscar_resposta_adiantada(&self) -> Option<(u64, String)> {
+        if self.resposta_adiantada.is_some() {
+            return None;
+        }
+        self.resposta_no_transcript()
+    }
+
+    /// A resposta final gravada no transcript do Agy depois do último step que
+    /// atravessou a ponte. Única porta para o arquivo do provider.
+    fn resposta_no_transcript(&self) -> Option<(u64, String)> {
+        #[cfg(test)]
+        if let Some(transcript) = &self.transcript_de_teste {
+            return crate::agy_recovery::completed_answer_step_in(transcript, self.last_provider_step);
+        }
+        crate::agy_recovery::completed_answer_step(
+            self.conversation_id.as_deref()?,
+            self.last_provider_step,
+        )
+    }
+
     fn recover_answer(&self) -> Vec<AgentEvent> {
         if self.result_seen {
             return Vec::new();
         }
-        let Some(session_id) = self.conversation_id.as_deref() else {
-            return Vec::new();
-        };
-        let Some(text) = crate::agy_recovery::completed_answer(session_id, self.last_provider_step)
-        else {
+        let Some((_, text)) = self.resposta_no_transcript() else {
             return Vec::new();
         };
         vec![
@@ -3350,9 +3444,17 @@ impl AgyAdapter {
     /// vem logo depois entra como cartão entre um texto e outro.
     fn map_step(&mut self, step: &serde_json::Value) -> Vec<AgentEvent> {
         self.stream_position = self.stream_position.saturating_add(1);
-        if let Some(step_index) = step.get("step_index").and_then(|x| x.as_u64()) {
+        // A ponte voltou a falar: a espera acabou (as tarefas terminaram).
+        self.esperando_tarefas = None;
+        let step_index = step.get("step_index").and_then(|x| x.as_u64());
+        if let Some(step_index) = step_index {
             self.last_provider_step = self.last_provider_step.max(step_index);
         }
+        // Texto que já foi para a tela pelo transcript durante a espera.
+        let ja_mostrado = matches!(
+            (step_index, self.resposta_adiantada),
+            (Some(i), Some(adiantada)) if i <= adiantada
+        );
         let position = self.stream_position;
         let state = step.get("state").and_then(|x| x.as_str()).unwrap_or("");
         let kind = step.get("step_type").and_then(|x| x.as_str()).unwrap_or("");
@@ -3382,10 +3484,12 @@ impl AgyAdapter {
                 if let Some(t) = step.get("text_delta").and_then(|x| x.as_str()) {
                     if !t.is_empty() {
                         self.response_step_has_text = true;
-                        self.text_open = true;
-                        out.push(AgentEvent::TextDelta {
-                            text: t.to_string(),
-                        });
+                        if !ja_mostrado {
+                            self.text_open = true;
+                            out.push(AgentEvent::TextDelta {
+                                text: t.to_string(),
+                            });
+                        }
                     }
                 }
                 // Fim do step = fim DESTE bloco de fala. Sem o TextStop a
@@ -3895,6 +3999,28 @@ impl AgentAdapter for AgyAdapter {
 
     fn on_cancel(&mut self) -> Vec<AgentEvent> {
         self.recover_answer()
+    }
+
+    fn on_stderr_line(&mut self, line: &str) -> Vec<AgentEvent> {
+        let Some(tarefas) = agy_tarefas_em_espera(line) else {
+            return Vec::new();
+        };
+        self.esperando_tarefas = Some(tarefas);
+        let achada = self.buscar_resposta_adiantada();
+        self.adiantar_resposta(achada)
+    }
+
+    /// O aviso de espera pode chegar antes de o transcript gravar a resposta:
+    /// enquanto a espera durar e nada tiver sido mostrado, a batida tenta de novo.
+    fn on_heartbeat(&mut self) -> Vec<AgentEvent> {
+        if self.esperando_tarefas.is_none() || self.resposta_adiantada.is_some() {
+            return Vec::new();
+        }
+        let achada = self.buscar_resposta_adiantada();
+        if achada.is_none() {
+            return Vec::new();
+        }
+        self.adiantar_resposta(achada)
     }
 
     /// Frase LITERAL do stderr do agy 1.1.13 quando o `--conversation <ID>`

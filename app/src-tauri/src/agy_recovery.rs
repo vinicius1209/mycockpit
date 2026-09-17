@@ -22,12 +22,19 @@ fn transcript_path(session_id: &str) -> Option<PathBuf> {
     )
 }
 
-pub(crate) fn completed_answer(session_id: &str, after_step: u64) -> Option<String> {
+/// Mesma busca, devolvendo também o `step_index` da resposta: quem mostra a
+/// resposta antes da ponte precisa reconhecer o mesmo step quando ele chegar.
+pub(crate) fn completed_answer_step(session_id: &str, after_step: u64) -> Option<(u64, String)> {
     let transcript = std::fs::read_to_string(transcript_path(session_id)?).ok()?;
-    completed_answer_in(&transcript, after_step)
+    completed_answer_step_in(&transcript, after_step)
 }
 
+#[cfg(test)]
 fn completed_answer_in(transcript: &str, after_step: u64) -> Option<String> {
+    completed_answer_step_in(transcript, after_step).map(|(_, content)| content)
+}
+
+pub(crate) fn completed_answer_step_in(transcript: &str, after_step: u64) -> Option<(u64, String)> {
     transcript
         .lines()
         .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
@@ -46,12 +53,11 @@ fn completed_answer_in(transcript: &str, after_step: u64) -> Option<String> {
             .then(|| (step, content.to_string()))
         })
         .max_by_key(|(step, _)| *step)
-        .map(|(_, content)| content)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{completed_answer_in, safe_session_id};
+    use super::{completed_answer_in, completed_answer_step_in, safe_session_id};
 
     // Fragmentos reais dos steps 204 e 210 do incidente de 29/08/2026. O
     // primeiro ainda pede ferramenta; o segundo é a resposta final do provider.
@@ -65,6 +71,23 @@ mod tests {
             Some("Ajustamos e refinamos completamente o protótipo.")
         );
         assert_eq!(completed_answer_in(INCIDENTE, 210), None);
+    }
+
+    #[test]
+    fn na_espera_por_tarefa_em_background_a_resposta_ja_esta_no_historico() {
+        // Captura real (agy 1.2.5): o step 3 "PRONTO." foi gravado antes do
+        // aviso de espera no stderr, enquanto a ponte seguia muda no step 2.
+        let transcript = include_str!("../testdata/agy-1.2.5/bg-sleep.transcript.jsonl");
+        let ate_a_espera: String = transcript.lines().take(4).collect::<Vec<_>>().join("\n");
+        assert_eq!(
+            completed_answer_step_in(&ate_a_espera, 2),
+            Some((3, "PRONTO.".to_string()))
+        );
+        // a notificação de sistema do step 4 nunca vira resposta
+        assert_eq!(
+            completed_answer_step_in(transcript, 3).map(|(step, _)| step),
+            Some(5)
+        );
     }
 
     #[test]

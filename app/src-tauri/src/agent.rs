@@ -1398,10 +1398,17 @@ async fn run_once(
     let stderr = child.stderr.take();
     let mut reader = crate::run_resources::LimitedLineReader::new(stdout);
 
-    // H3, coleta o stderr em paralelo p/ reportar erros de processo.
+    // H3, coleta o stderr em paralelo p/ reportar erros de processo. As linhas
+    // também chegam AO VIVO ao adapter: há motor que escreve estado ali durante
+    // o turno (o `agy -p` avisa quando fica esperando tarefa em background).
+    let (stderr_live_tx, mut stderr_live) =
+        tokio::sync::mpsc::channel::<String>(crate::run_resources::STDERR_LIVE_QUEUE);
+    let mut stderr_vivo = true;
     let stderr_task = tokio::spawn(async move {
         match stderr {
-            Some(stderr) => crate::run_resources::collect_stderr_tail(stderr).await,
+            Some(stderr) => {
+                crate::run_resources::collect_stderr_tail_live(stderr, Some(stderr_live_tx)).await
+            }
             None => crate::run_resources::CapturedTail::default(),
         }
     });
@@ -1490,6 +1497,18 @@ async fn run_once(
                     }
                 }
             }
+            line = stderr_live.recv(), if stderr_vivo => {
+                match line {
+                    Some(line) => {
+                        for ev in adapter.on_stderr_line(&line) {
+                            terminal_incident |= is_terminal_incident(&ev);
+                            emitiu_saida = true;
+                            let _ = on_event.send(ev);
+                        }
+                    }
+                    None => stderr_vivo = false,
+                }
+            }
             status = child.wait(), if exit_status.is_none() => {
                 exit_status = Some(status.map_err(|e| e.to_string())?);
                 let agora = tokio::time::Instant::now();
@@ -1518,6 +1537,11 @@ async fn run_once(
                     last_byte_at,
                     observed_at: crate::run_resources::epoch_ms(),
                 });
+                for ev in adapter.on_heartbeat() {
+                    terminal_incident |= is_terminal_incident(&ev);
+                    emitiu_saida = true;
+                    let _ = on_event.send(ev);
+                }
                 if let Some(rss_mb) = resources.warning_rss_mb {
                     let message = crate::run_resources::format_memory_warning_message(
                         rss_mb,

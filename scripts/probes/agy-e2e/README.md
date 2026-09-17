@@ -38,3 +38,23 @@ Limite de medição: RSS é amostrado a cada segundo; subprocessos muito breves
 podem não aparecer. Asserções de cancelamento do runner verificam o PID do
 workload e ausência de seu arquivo final. Isso não prova ausência universal
 de órfãos em todos os tipos de processo.
+
+## Caso dev server (ADR-203)
+
+Reproduz o incidente de 17/09/2026: o Agy sobe `next dev` em background e o
+`-p` fica esperando o servidor, que nunca termina. Prepare à mão um diretório
+com `workspace/` (um `package.json` e `pages/index.js` mínimos; `node_modules`
+pode ser link para um projeto que já tenha `next`, e aí o Next exige
+`--webpack`, porque o Turbopack recusa link fora da raiz) e um
+`devserver.prompt.txt` que peça `npx next dev --webpack -p PORTA` em segundo
+plano, o `curl` de confirmação e as instruções de teste. Em `app/src-tauri`:
+
+```sh
+FROTA_AGY_CAPTURE_DIR=DIRETORIO FROTA_AGY_DEVSERVER_PORT=PORTA cargo test --lib agent::agy_live_tests::runner_real_mostra_a_resposta_enquanto_o_agy_espera_o_dev_server -- --ignored --exact --nocapture
+```
+
+A sonda para o run 30 s depois da explicação da espera (ou em 6 min sem ela) e
+grava `devserver.normalized.jsonl` (eventos com segundos desde o início) e
+`devserver.runner-summary.json`. Cobra: resposta antes ou junto da explicação,
+servidor no ar durante a espera, turno encerrado só pelo parar, sem repetir a
+resposta, porta livre depois de parar.

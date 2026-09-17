@@ -7302,3 +7302,35 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   Extensões saiu do corpo e foi para o escopo da barra, como o do MCP. A
   descrição da seção fica como primeira linha do conteúdo, com margem fixa.
 - **Verificado:** `vitest` 4257, `tsc -b` 0, guardas do guia verdes.
+
+### ADR-203 · Agy esperando tarefa em segundo plano: a resposta aparece na hora e a espera se explica
+
+- **Contexto (17/09/2026):** num projeto com o Agy, o agente subiu `npx next
+  dev` em segundo plano, respondeu, e o turno ficou "trabalhando" por 25 min
+  até a interrupção manual; só então a resposta apareceu (recuperada do
+  histórico). Medido com o Agy 1.2.5 (`testdata/agy-1.2.5/`): o `-p` espera as
+  tarefas em background terminarem, com teto no `--print-timeout` (60 min na
+  Frota), e **a ponte `stream-json` segura os steps** durante a espera. O único
+  sinal ao vivo é uma linha de stderr: `root agent idle; waiting for N
+  background task(s)`. O stderr só era lido no fim do processo. Quando a tarefa
+  termina, os steps saem de uma vez e o agente ainda comenta o resultado, então
+  esperar faz sentido para tarefa que acaba; o servidor é que nunca acaba.
+- **Decisão:** o runner repassa as linhas do stderr AO VIVO ao adapter
+  (`collect_stderr_tail_live`, fila limitada, linha até 4 KiB; a cauda do
+  relatório continua igual) e ganha dois ganchos genéricos no contrato,
+  `on_stderr_line` e `on_heartbeat` (a batida de 5 s da amostra de memória),
+  ambos vazios por padrão. O `AgyAdapter` reconhece a frase literal, mostra a
+  resposta final que já está no transcript do próprio Agy (mesma fonte da
+  recuperação no parar, ADR do incidente de 29/08) e explica a espera numa
+  linha: o turno fica aberto enquanto a tarefa roda e parar encerra a tarefa
+  junto. Se o transcript ainda não tiver a resposta, a batida tenta de novo.
+  Quando a ponte libera os steps, o texto do step já mostrado é pulado pelo
+  `step_index`; ferramentas e o comentário novo do agente chegam normalmente.
+- **Não fizemos:** encerrar o turno sozinho. Encerrar mata a árvore do run
+  (`run_processes::terminate_run`), inclusive o servidor que o agente acabou de
+  dizer que está no ar; manter processo vivo depois do turno criaria órfão fora
+  do app. Quem decide parar é a pessoa, e o vigia de silêncio (10 min) segue
+  lembrando.
+- **Verificado:** captura real reproduzida em replay (resposta sem duplicar,
+  aviso uma vez, batida quando o transcript atrasa, parar sem repetir),
+  `collect_stderr_tail_live` com a linha real em pedaços, `cargo test` 864.
