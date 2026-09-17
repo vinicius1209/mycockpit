@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
+import { migratePersistedApp, type ViewMode } from "@/store/appMigracao"
 import { applyTheme, currentTheme, type Theme, type ThemePreference } from "@/lib/theme"
 import type { PermissionMode, Project } from "@/lib/types"
 import type { MainTab } from "@/lib/mainTabs"
@@ -29,10 +30,13 @@ export type {
 
 /** Destinos históricos persistidos. A navegação visível mora em Geral;
  * preservar estes valores mantém a última tela no boot (ADR-187). */
-export const VIEW_MODES = ["painel", "linear"] as const
-export type ViewMode = (typeof VIEW_MODES)[number]
+// O conjunto fechado de modos e a migração do estado persistido moram em
+// `appMigracao.ts` (a catraca de tamanho pediu a divisão); a porta continua
+// sendo `@/store/app` para todo mundo que já importava daqui.
+export { VIEW_MODES, migratePersistedApp } from "@/store/appMigracao"
+export type { ViewMode } from "@/store/appMigracao"
 
-interface AppState {
+export interface AppState {
   projects: Project[]
   activeProjectId: string | null
   theme: Theme
@@ -126,8 +130,12 @@ interface AppState {
   openDiffTab: (focusPath?: string) => void
   /** Abre um arquivo real na aba principal, fora da coluna estreita. */
   openFileTab: (path: string) => void
+  /** O navegador do projeto está aberto na tira, mesmo sem estar à vista. */
+  navegadorAberto: boolean
   /** Abre o navegador do projeto ativo na aba principal. */
   openBrowserTab: () => void
+  /** Fecha a aba do navegador (o Chromium do projeto segue como estava). */
+  closeBrowserTab: () => void
   /** Volta pra conversa. A aba transitória deixa de existir. */
   closeMainTab: () => void
   revealTranscriptItem: (conversationId: string, itemId: string) => void
@@ -168,49 +176,6 @@ interface AppState {
   ) => string | null
 }
 
-/** Migração PURA do estado persistido (mc.app) — exportada p/ teste porque o
- *  risco dela é o pior tipo: viewMode órfão persistido = boot num modo que não
- *  existe (tela branca) pra TODO usuário existente.
- *  - v<2: estado persistido = usuário existente → onboarded=true (instalação
- *    nova não passa por migrate → wizard aparece).
- *  - v<3: modo Fusion dissolvido (F3) → "fusion" vira "linear".
- *  - v<4: Escritório removido (office-removal-plan R2) → "office" cai em
- *    "linear" (Trabalho), nunca tela branca.
- *  - v<5: Features (SDD) removida (remocao-features-prd D4) → "sdd" e QUALQUER
- *    valor fora de `VIEW_MODES` caem em "linear". A regra do v4 foi absorvida
- *    aqui: "fora da união atual" já cobre "office". */
-export function migratePersistedApp(
-  persisted: unknown,
-  fromVersion: number,
-): AppState {
-  const p = (persisted ?? {}) as {
-    settings?: Record<string, unknown>
-    viewMode?: string
-  }
-  if (fromVersion < 2) {
-    p.settings = { ...(p.settings ?? {}), onboarded: true }
-  }
-  if (fromVersion < 3 && p.viewMode === "fusion") {
-    p.viewMode = "linear"
-  }
-  if (
-    fromVersion < 5 &&
-    p.viewMode != null &&
-    !(VIEW_MODES as readonly string[]).includes(p.viewMode)
-  ) {
-    p.viewMode = "linear"
-  }
-  if (p.settings) {
-    if (!p.settings.userProfile) {
-      p.settings.userProfile = DEFAULT_SETTINGS.userProfile
-    }
-    if (!p.settings.userPreferences) {
-      p.settings.userPreferences = DEFAULT_SETTINGS.userPreferences
-    }
-  }
-  return p as unknown as AppState
-}
-
 export const useApp = create<AppState>()(
   persist(
     (set, get) => ({
@@ -223,6 +188,7 @@ export const useApp = create<AppState>()(
       contextPanelTab: "conversa",
       viewMode: "linear",
       mainTab: { kind: "conversa" },
+      navegadorAberto: false,
       transcriptReveal: null,
       branchSplitOpen: false,
       scheduledOpen: false,
@@ -347,7 +313,13 @@ export const useApp = create<AppState>()(
         })),
       openFileTab: (path) =>
         set({ branchSplitOpen: false, mainTab: { kind: "arquivo", path } }),
-      openBrowserTab: () => set({ branchSplitOpen: false, mainTab: { kind: "navegador" } }),
+      openBrowserTab: () =>
+        set({ branchSplitOpen: false, navegadorAberto: true, mainTab: { kind: "navegador" } }),
+      closeBrowserTab: () =>
+        set((s) => ({
+          navegadorAberto: false,
+          mainTab: s.mainTab.kind === "navegador" ? { kind: "conversa" } : s.mainTab,
+        })),
       closeMainTab: () => set({ mainTab: { kind: "conversa" } }),
       revealTranscriptItem: (conversationId, itemId) =>
         set((state) => ({

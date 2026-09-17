@@ -47,6 +47,21 @@ describe("mainTabEntries", () => {
     ])
   })
 
+  it("o navegador FICA na tira com a conversa à vista: voltar não é fechar", () => {
+    expect(mainTabEntries(conversa, { navegadorAberto: true })).toEqual([
+      { kind: "conversa", label: "Conversa", closable: false },
+      { kind: "navegador", label: "Navegador", closable: true },
+    ])
+    // e convive com a aba transitória do diff
+    expect(mainTabEntries(diff, { navegadorAberto: true }).map((e) => e.kind)).toEqual([
+      "conversa",
+      "navegador",
+      "diff",
+    ])
+    // fechado, some
+    expect(mainTabEntries(conversa, { navegadorAberto: false }).map((e) => e.kind)).toEqual(["conversa"])
+  })
+
   it("focusPath não muda a lista de abas (é estado DENTRO da aba)", () => {
     const comFoco: MainTab = { kind: "diff", focusPath: "src/x.ts" }
     expect(mainTabEntries(comFoco)).toEqual(mainTabEntries(diff))

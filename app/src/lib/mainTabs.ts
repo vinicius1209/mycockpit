@@ -42,14 +42,21 @@ export interface MainTabEntry {
  * As abas visíveis agora. A conversa está SEMPRE aberta — ela é o fundo, não
  * um item que entra e sai; o que a lista diz é o que mais está aberto além dela.
  */
-export function mainTabEntries(tab: MainTab): MainTabEntry[] {
+export function mainTabEntries(
+  tab: MainTab,
+  contexto: { navegadorAberto?: boolean } = {},
+): MainTabEntry[] {
   const base: MainTabEntry[] = [
     { kind: "conversa", label: "Conversa", closable: false },
   ]
+  // O navegador FICA na tira enquanto estiver aberto: ele tem trabalho em
+  // andamento (página, login, análise), e voltar pra conversa é trocar de
+  // vista, não fechar. Diff e arquivo seguem transitórios: são leitura.
+  if (contexto.navegadorAberto || tab.kind === "navegador") {
+    base.push({ kind: "navegador", label: "Navegador", closable: true })
+  }
   if (tab.kind === "diff") {
     base.push({ kind: "diff", label: "Alterações", closable: true })
-  } else if (tab.kind === "navegador") {
-    base.push({ kind: "navegador", label: "Navegador", closable: true })
   } else if (tab.kind === "arquivo") {
     base.push({
       kind: "arquivo",

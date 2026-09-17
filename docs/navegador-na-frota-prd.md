@@ -70,6 +70,19 @@ O que foi feito, e onde divergiu do texto abaixo:
 Já entregue (17/09, K3): "Ligar navegador" do bloqueio do composer liga sem
 janela, como Configurações (`mcpPreflightRetry.ts`, teste ao lado); a evidência
 de `mcpPreflightRetry.ts:35` abaixo é do estado anterior. K5 segue no B4.
+Já entregue (17/09, depois do R4): duas coisas que o uso real mostrou.
+1. **Voltar para a conversa não fecha mais o navegador.** A tira mantinha só a
+   aba à vista, então clicar em "Conversa" sumia com o navegador e com o
+   trabalho que estava nele (o Chromium continua vivo, mas a vista se perdia).
+   Agora o store guarda `navegadorAberto`; a tira mostra a pastilha do navegador
+   enquanto ele estiver aberto, com "×" próprio (`store/app.ts`,
+   `lib/mainTabs.ts`, `MainTabs.tsx`). Fechar é só pelo "×"; flutuar também
+   fecha a pastilha, porque a vista mudou de casa.
+2. **Endereço sem esquema funciona.** Digitar `www.google.com.br` era recusado
+   com "digite uma URL completa". `com_esquema` (`browser_cdp.rs`) completa:
+   `https://` no geral, `http://` para `localhost`, `127.0.0.1`, `.local` e
+   `.localhost`; o que não parece endereço continua recusado, agora com um
+   exemplo no texto.
 Mock aprovado: aba "Navegador", "Flutuar sobre a conversa" e "Marcar e enviar ao
 agente" em `docs/mocks/sprint-ecossistema.html`. Double check na seção final.
 

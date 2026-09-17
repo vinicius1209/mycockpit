@@ -51,7 +51,9 @@ export function NavegadorTab() {
             title="Flutuar sobre a conversa"
             onClick={() => {
               useNavegadorFlutuante.getState().flutuar(alvo.projectId)
-              useApp.getState().closeMainTab()
+              // A janela flutuante passa a ser a vista: a aba sai da tira (e
+              // volta pelo "voltar para a aba" da flutuante).
+              useApp.getState().closeBrowserTab()
             }}
           >
             <PictureInPicture2 />

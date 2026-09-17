@@ -44,6 +44,54 @@ import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 
+/** Aba da tira que fecha: ativa (`bg-sel`) ou só aberta. */
+function AbaComFechar({
+  ativa,
+  label,
+  title,
+  Icon,
+  onSelect,
+  onClose,
+}: {
+  ativa: boolean
+  label: string
+  title: string
+  Icon: typeof Globe
+  onSelect: () => void
+  onClose: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        "group/aba flex h-[26px] items-center rounded-md transition-colors",
+        ativa ? "bg-sel" : "hover:bg-sel-hover",
+      )}
+    >
+      <button
+        role="tab"
+        aria-selected={ativa}
+        onClick={onSelect}
+        title={title}
+        className={cn(
+          "flex h-full items-center gap-1.5 rounded-md pr-1 pl-2 text-[11px] font-medium transition-colors",
+          ativa ? "text-foreground" : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
+        )}
+      >
+        <Icon className="size-3.5 shrink-0" />
+        <span className="max-w-[180px] truncate">{label}</span>
+      </button>
+      <button
+        onClick={onClose}
+        title={`Fechar ${label}`}
+        aria-label={`Fechar ${label}`}
+        className="mr-1 rounded p-0.5 text-transparent transition-colors group-hover/aba:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
+      >
+        <X className="size-3" />
+      </button>
+    </div>
+  )
+}
+
 export function MainTabs({
   tab,
   onSelect,
@@ -79,12 +127,15 @@ export function MainTabs({
   )
   const hasBranches = Boolean(family && family.branches.length > 1)
   const commandShortcut = commandMenuShortcut(currentPlatform())
+  // O navegador fica na tira enquanto estiver aberto, mesmo com a conversa à
+  // vista: ele tem trabalho em andamento (página carregada, login, análise), e
+  // voltar pra conversa é trocar de vista, não fechar. Diff e arquivo seguem
+  // transitórios, porque são leitura.
+  const navegadorAberto = useApp((s) => s.navegadorAberto)
   const transient =
     tab.kind === "diff"
       ? { kind: tab.kind, label: "Alterações", title: "Alterações", Icon: FileDiff }
-      : tab.kind === "navegador"
-        ? { kind: tab.kind, label: "Navegador", title: "Navegador do projeto", Icon: Globe }
-        : tab.kind === "arquivo"
+      : tab.kind === "arquivo"
         ? {
             kind: tab.kind,
             label: tab.path.split("/").pop() || tab.path,
@@ -153,29 +204,25 @@ export function MainTabs({
             </button>
           </div>
         )}
+        {(navegadorAberto || tab.kind === "navegador") && (
+          <AbaComFechar
+            ativa={tab.kind === "navegador"}
+            label="Navegador"
+            title="Navegador do projeto"
+            Icon={Globe}
+            onSelect={() => onSelect("navegador")}
+            onClose={() => onClose("navegador")}
+          />
+        )}
         {transient && (
-          <div
-            className="group/aba flex h-[26px] items-center rounded-md bg-sel transition-colors"
-          >
-            <button
-              role="tab"
-              aria-selected
-              onClick={() => onSelect(transient.kind)}
-              title={transient.title}
-              className="flex h-full items-center gap-1.5 rounded-md pl-2 pr-1 text-[11px] font-medium text-foreground transition-colors"
-            >
-              <transient.Icon className="size-3.5 shrink-0" />
-              <span className="max-w-[180px] truncate">{transient.label}</span>
-            </button>
-            <button
-              onClick={() => onClose(transient.kind)}
-              title={`Fechar ${transient.label}`}
-              aria-label={`Fechar ${transient.label}`}
-              className="mr-1 rounded p-0.5 text-transparent transition-colors group-hover/aba:text-muted-foreground/60 hover:!text-foreground focus-visible:text-muted-foreground/60"
-            >
-              <X className="size-3" />
-            </button>
-          </div>
+          <AbaComFechar
+            ativa
+            label={transient.label}
+            title={transient.title}
+            Icon={transient.Icon}
+            onSelect={() => onSelect(transient.kind)}
+            onClose={() => onClose(transient.kind)}
+          />
         )}
       </div>
       <DropdownMenu>

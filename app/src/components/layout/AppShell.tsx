@@ -71,6 +71,7 @@ export function AppShell() {
   const openDiffTab = useApp((s) => s.openDiffTab)
   const closeMainTab = useApp((s) => s.closeMainTab)
   const openBrowserTab = useApp((s) => s.openBrowserTab)
+  const fecharNavegador = useApp((s) => s.closeBrowserTab)
   const scheduledOpen = useApp((s) => s.scheduledOpen)
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const fleetOpen = useApp((s) => s.fleetOpen)
@@ -176,7 +177,9 @@ export function AppShell() {
                       else if (kind === "navegador") openBrowserTab()
                       else if (kind === "conversa") closeMainTab()
                     }}
-                    onClose={() => closeMainTab()}
+                    onClose={(kind) =>
+                      kind === "navegador" ? fecharNavegador() : closeMainTab()
+                    }
                   />
                 )}
                 {/* F7: as views globais (Agendado, Planos de voo, Frota) cobrem o

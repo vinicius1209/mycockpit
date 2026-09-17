@@ -430,11 +430,43 @@ fn finite(value: f64) -> Result<f64, String> {
     }
 }
 
+/// O que a pessoa digita na barra do navegador raramente tem esquema
+/// ("www.google.com.br"). Sem host plausível não se inventa endereço: fica o
+/// erro, que é honesto ("busca na barra" seria outra decisão, e não é esta).
+fn com_esquema(raw: &str) -> String {
+    let texto = raw.trim();
+    if texto.is_empty() || texto.contains("://") || texto.starts_with("about:") {
+        return texto.to_string();
+    }
+    let host = texto.split(['/', '?', '#']).next().unwrap_or(texto);
+    let host = host.split('@').next_back().unwrap_or(host);
+    let so_host = host.split(':').next().unwrap_or(host);
+    let parece_host = so_host == "localhost"
+        || (so_host.contains('.')
+            && !so_host.starts_with('.')
+            && !so_host.ends_with('.')
+            && so_host
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')));
+    if !parece_host {
+        return texto.to_string();
+    }
+    // Na máquina o servidor é http: pedir https em localhost só daria erro de
+    // certificado. Fora dela, https.
+    let local = so_host == "localhost"
+        || so_host == "127.0.0.1"
+        || so_host.ends_with(".local")
+        || so_host.ends_with(".localhost");
+    format!("{}://{texto}", if local { "http" } else { "https" })
+}
+
 fn validate_navigation(raw: &str) -> Result<String, String> {
     if raw == "about:blank" {
         return Ok(raw.into());
     }
-    let parsed = url::Url::parse(raw).map_err(|_| "digite uma URL completa".to_string())?;
+    let raw = &com_esquema(raw);
+    let parsed = url::Url::parse(raw)
+        .map_err(|_| "digite um endereço, como exemplo.com ou https://exemplo.com".to_string())?;
     if !matches!(parsed.scheme(), "http" | "https")
         || !parsed.username().is_empty()
         || parsed.password().is_some()
@@ -617,6 +649,15 @@ mod tests {
 
     #[test]
     fn navegacao_rejeita_esquema_perigoso() {
+        // Endereço digitado sem esquema (o caso real da barra) vira https://.
+        assert_eq!(validate_navigation("www.google.com.br").as_deref(), Ok("https://www.google.com.br/"));
+        assert_eq!(validate_navigation(" exemplo.com/busca?q=1 ").as_deref(), Ok("https://exemplo.com/busca?q=1"));
+        // Na própria máquina o servidor é http (https só daria erro de certificado).
+        assert_eq!(validate_navigation("localhost:3981/pedidos").as_deref(), Ok("http://localhost:3981/pedidos"));
+        assert_eq!(validate_navigation("127.0.0.1:5173").as_deref(), Ok("http://127.0.0.1:5173/"));
+        assert_eq!(com_esquema("http://interno/app"), "http://interno/app");
+        // Texto que não é endereço continua erro: a barra não vira busca.
+        assert!(validate_navigation("como fazer bolo").is_err());
         assert!(validate_navigation("javascript:alert(1)").is_err());
         assert!(validate_navigation("file:///etc/passwd").is_err());
         assert!(validate_navigation("https://example.com").is_ok());
