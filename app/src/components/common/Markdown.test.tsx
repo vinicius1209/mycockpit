@@ -54,15 +54,27 @@ vi.mock("@/store/editors", () => ({
 }))
 
 describe("Markdown Component", () => {
-  it("abre a saída real do Maclan sem parser e sem montar a linha inteira", () => {
-    const text = Object.values(import.meta.glob("../../test/maclan-test-output.txt", {
+  it("abre a saída real do Maclan sem parser, com a linha inteira e o resto formatado", () => {
+    const linha = Object.values(import.meta.glob("../../test/maclan-test-output.txt", {
       query: "?raw", import: "default", eager: true,
     }))[0] as string
+    const text = `# Testes\n\n${linha}\n\n**45 testes passando.**`
     const html = renderToStaticMarkup(<Markdown text={text} />)
+    // A linha patológica sai como texto cru, mas SAI: nada de paginar nem cortar.
     expect(html).toContain("data-plain-text")
-    expect(html).toContain("Copiar mensagem completa")
-    expect(html.length).toBeLessThan(10_000)
-    expect(html).not.toContain(text)
+    expect(html).toContain(linha)
+    expect(html).not.toContain("Próxima parte")
+    // E o que está em volta dela continua sendo Markdown de verdade.
+    expect(html).toContain(">Testes<")
+    expect(html).toMatch(/<strong[^>]*>45 testes passando\.<\/strong>/)
+  })
+
+  it("mensagem longa e normal sai formatada, sem virar texto cru", () => {
+    const text = "## Parte\n\nTexto com `código`.\n\n```ts\nconst a = 1\n```\n".repeat(400)
+    const html = renderToStaticMarkup(<Markdown text={text} />)
+    expect(text.length).toBeGreaterThan(16_384)
+    expect(html).not.toContain("data-plain-text")
+    expect(html).toContain("hljs")
   })
 
   it("renderiza texto simples sem atributos de arquivo", () => {

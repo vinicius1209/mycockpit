@@ -6514,7 +6514,9 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   sufixo; a medição cresceu aproximadamente com o quadrado do tamanho. A janela
   de 40/150 nós não limita trabalho dentro de um nó. O problema precede
   highlight e layout e pode bloquear a interface mesmo com turno encerrado.
-- **Decisão:** `Markdown` aplica `needsPlainText` ANTES de construir o parser.
+- **Superada em parte pela ADR-210 (17/09/2026):** o teto por mensagem virou
+  último recurso e a paginação saiu; a degradação passou a ser por trecho.
+- **Decisão (histórica):** `Markdown` aplica `needsPlainText` ANTES de construir o parser.
   Acima de 16.384 unidades UTF-16 por mensagem ou 2.048 por linha, usa
   `PlainTextPages`: texto literal em partes de 4.096 unidades (mais uma quando
   necessário para preservar um par UTF-16), sem GFM nem highlight. A tela
@@ -7462,3 +7464,43 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Verificado:** fixtures reais de CDP, ordenação (contêiner grande não passa na
   frente do botão, defeito pego pelo teste), teste real contra Chromium, harness da
   vista; vitest 4364, `cargo test` 883.
+
+### ADR-210 · A mensagem sai inteira; só o trecho pesado perde a formatação
+
+- **Contexto (17/09/2026):** a ADR-184 mandou a mensagem INTEIRA para texto cru
+  paginado acima de 16.384 caracteres. Na prática isso pegou resposta normal: a
+  mensagem real de `conversation_items` (conversa `aa416ab9`, item 169) tem
+  18.130 caracteres, 555 linhas e maior linha de 300, nada de patológico, e
+  mesmo assim virou "1 de 5" sem realce. Pior: as 4 fronteiras de 4.096 caíram
+  todas DENTRO de blocos de código, então a leitura em ordem quebrava no meio do
+  código, e o `<pre>` com `max-h-80` escondia o resto atrás de uma rolagem
+  interna. O relato do usuário: "preciso ler o output completo em ordem até pra
+  entender o que o code agent fez".
+- **Medição nesta máquina (parse + GFM + highlight + render):** conteúdo normal é
+  LINEAR, 18 KB = 72 ms, 145 KB = 146 ms, 290 KB = 234 ms. A patologia é a LINHA:
+  2.048 pontos = 11 ms, 8.192 = 108 ms, 16.384 = 427 ms, 65.536 = 6,8 s, contra
+  10 ms para 65.536 letras. Montar a linha inteira num `<pre>` custa layout, não
+  parse: 143 KB numa linha = 29 ms no Chromium. Ou seja, paginar nunca foi o que
+  protegia; o teto por caractere de mensagem é que estava no lugar errado.
+- **Decisão:** `fatiasDaMensagem` divide a mensagem em fatias NA ORDEM, cada uma
+  inteira, e `Markdown` renderiza todas em sequência. Fatia `rico` passa pelo
+  parser; fatia `cru` (bloco com linha acima de `MAX_RICH_LINE`) sai como texto
+  literal no lugar onde estava, com aviso. A unidade da fatia é o bloco de cerca
+  inteiro quando a linha pesada está dentro de ``` (senão a abertura ficaria numa
+  fatia e o fecho em outra). Nada de paginação: `fatias.join("\n")` reconstrói o
+  texto recebido, e isso é teste. `MAX_RICH_TEXT` vira teto de ÚLTIMO recurso
+  (262.144), e acima dele a mensagem sai crua, mas de uma vez só, sem cortar.
+- **Integridade:** continua valendo o que a ADR-184 diz (transcript, texto
+  enviado aos motores e eventos normalizados são integrais). O que muda é só a
+  leitura: agora o corpo inteiro está no DOM, selecionável e em ordem.
+- **Limites:** o pior caso que sobra é uma mensagem no teto toda feita de linhas
+  de 2.040 pontos (261 KB = 893 ms medidos), duas ordens de grandeza abaixo dos
+  32 s do incidente Maclan. Fatia pesada no meio de uma lista ou tabela separa o
+  que vem antes do que vem depois (a lista reinicia a numeração); é degradação
+  local e visível, não perda de conteúdo.
+- **Estado alterado:** nenhum. Só render.
+- **Verificação:** fixture real do Maclan (a linha de 142.976 pontos agora sai
+  inteira, com o Markdown em volta ainda formatado), a mensagem real de 18 KB
+  renderizada pelo componente (8 blocos de código, 9 títulos, 95,6 ms, sem texto
+  cru), invariante de reconstrução em cinco formas de entrada, `bun run test`
+  4.367, `tsc -b --force`, `bun run check`.

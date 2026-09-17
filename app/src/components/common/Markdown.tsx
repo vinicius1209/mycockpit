@@ -3,8 +3,8 @@ import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
 import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
-import { needsPlainText } from "./markdownBudget"
-import { PlainTextPages } from "./PlainTextPages"
+import { fatiasDaMensagem } from "./markdownBudget"
+import { TextoCru } from "./TextoCru"
 import { Check, Copy } from "lucide-react"
 import {
   DropdownMenu,
@@ -326,25 +326,49 @@ const mdComponents: Components = {
   ),
 }
 
+function MarkdownRico({ text }: { text: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      urlTransform={customUrlTransform}
+      // detect: highlight também blocos SEM linguagem (```) — agents muitas
+      // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
+      rehypePlugins={[[rehypeHighlight, { detect: true }]]}
+      components={mdComponents}
+    >
+      {text}
+    </ReactMarkdown>
+  )
+}
+
 /** Render de markdown (GFM + highlight) reusado no chat e no detalhe de contexto.
- *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12). */
+ *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12).
+ *
+ *  A mensagem sai INTEIRA e na ordem. Quando um trecho é pesado demais para o
+ *  parser (ADR-210), só ELE cai para texto cru, no lugar onde estava. */
 export const Markdown = memo(function Markdown({ text }: { text: string }) {
-  if (needsPlainText(text)) return <PlainTextPages text={text} />
+  const fatias = fatiasDaMensagem(text)
   return (
     <div
       data-selectable
-      className="min-w-0 text-[14px] leading-relaxed break-words [overflow-wrap:anywhere] text-foreground"
+      className="min-w-0 space-y-2 text-[14px] leading-relaxed break-words [overflow-wrap:anywhere] text-foreground"
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        urlTransform={customUrlTransform}
-        // detect: highlight também blocos SEM linguagem (```) — agents muitas
-        // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
-        rehypePlugins={[[rehypeHighlight, { detect: true }]]}
-        components={mdComponents}
-      >
-        {text}
-      </ReactMarkdown>
+      {fatias.map((fatia, indice) =>
+        fatia.tipo === "rico" ? (
+          <MarkdownRico key={indice} text={fatia.texto} />
+        ) : (
+          <TextoCru
+            key={indice}
+            texto={fatia.texto}
+            limitarAltura={fatias.length > 1}
+            aviso={
+              fatias.length > 1
+                ? "Trecho longo demais para formatar, mostrado como texto."
+                : "Mensagem muito longa, mostrada como texto, completa e na ordem."
+            }
+          />
+        ),
+      )}
     </div>
   )
 })

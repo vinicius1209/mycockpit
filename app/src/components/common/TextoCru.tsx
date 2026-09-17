@@ -1,31 +1,32 @@
-import { useState } from "react"
-import { Button } from "@/components/ui/button"
-import { copyText } from "@/lib/clipboard"
-import { plainTextPage } from "./markdownBudget"
+import { cn } from "@/lib/utils"
 
-/** Conteúdo integral preservado; parser, highlight e DOM recebem trabalho limitado. */
-export function PlainTextPages({ text }: { text: string }) {
-  const [requested, setRequested] = useState(0)
-  const current = plainTextPage(text, requested)
+/** O trecho que não pode passar pelo parser (ADR-210): sai inteiro, na ordem,
+ *  só sem formatação. Nada de paginar: a pessoa precisa ler o resultado do
+ *  começo ao fim, e um `<pre>` grande custa layout, não parse (143 KB numa
+ *  linha = 29 ms medidos no Chromium). */
+export function TextoCru({
+  texto,
+  aviso,
+  limitarAltura = true,
+}: {
+  texto: string
+  aviso: string
+  /** Trecho pesado no meio da mensagem ganha rolagem própria para não empurrar
+   *  o resto do fio; mensagem inteira em modo cru sai sem teto. */
+  limitarAltura?: boolean
+}) {
   return (
-    <div data-plain-text className="min-w-0 space-y-2 text-[14px] text-foreground">
-      <p className="text-[12px] text-muted-foreground">
-        Mensagem extensa, exibida em partes sem formatação. O conteúdo está completo.
-      </p>
-      <pre data-selectable className="max-h-80 overflow-auto font-mono text-[13px] whitespace-pre-wrap [overflow-wrap:anywhere]">
-        {current.text}
+    <div data-plain-text className="min-w-0 space-y-1">
+      <p className="text-[12px] text-muted-foreground">{aviso}</p>
+      <pre
+        data-selectable
+        className={cn(
+          "overflow-auto font-mono text-[13px] whitespace-pre-wrap [overflow-wrap:anywhere]",
+          limitarAltura && "max-h-96",
+        )}
+      >
+        {texto}
       </pre>
-      <div className="flex flex-wrap items-center gap-2">
-        <Button type="button" variant="ghost" size="compacto" disabled={current.page === 0}
-          onClick={() => setRequested(current.page - 1)}>Parte anterior</Button>
-        <span className="font-mono text-[11px] text-muted-foreground tabular-nums" aria-live="polite">
-          {current.page + 1} de {current.count}
-        </span>
-        <Button type="button" variant="ghost" size="compacto" disabled={current.page + 1 === current.count}
-          onClick={() => setRequested(current.page + 1)}>Próxima parte</Button>
-        <Button type="button" variant="ghost" size="compacto"
-          onClick={() => { void copyText(text) }}>Copiar mensagem completa</Button>
-      </div>
     </div>
   )
 }
