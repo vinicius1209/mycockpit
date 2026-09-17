@@ -17,6 +17,7 @@ do bloco ANTES de mexer nele.
 | `app/src-tauri/src/AGENTS.md` | nascimento do turno, plano de MCP, sondas, cache, comando Tauri |
 | `app/src/components/chat/AGENTS.md` | composer, `handleSend`, o que a pessoa vê entre o Enter e a bolha |
 | `app/src/lib/tasks.AGENTS.md` | derivação dos planos e terminalidade nas três superfícies de etapas |
+| `app/src-tauri/companion/AGENTS.md` | Companion do celular: página sem bundler, ações vindas de fora, pareamento, transporte |
 
 Regra que vale nos DOIS lados sobe pra cá. Bloco novo só ganha arquivo quando
 já custou retrabalho — não se abre camada por precaução.
@@ -37,6 +38,8 @@ pede a próxima decisão.
 | `docs/STYLEGUIDE.md` | design canônico. Consulte ANTES de mexer em UI |
 | `docs/decisions.md` | as ADRs. Toda decisão estrutural vira uma |
 | `docs/*-plan.md` | o plano da frente. Blocos de correção no topo mandam sobre o texto original |
+| `docs/*-prd.md` | o PRD de um épico: problema nas palavras do usuário, evidência com arquivo:linha, decisões, requisitos com aceite e double check |
+| `docs/sprint-*.md` | a sprint em revisão: épicos, histórias, corte e decisões pendentes, apontando para os PRDs |
 | `scripts/lints/` | as guardas automáticas do guia |
 
 Planos registram a evolução da frente e podem conservar alternativas antigas.

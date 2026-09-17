@@ -9,8 +9,12 @@
 //! token aleatório persistido (app_data_dir/companion-token) exigido em TODA
 //! rota /api (Authorization: Bearer ou ?token= p/ o WS); rate-limit por IP;
 //! respostas nunca carregam paths absolutos do disco; logs nunca têm o token.
+//! R1 do `docs/companion-chat-prd.md` (regras em `companion_rede.rs`): toda
+//! rota recusa origem fora de rede privada e `Host` de fora; aparelho parado
+//! há 30 dias sai do conjunto de credenciais; o arquivo nasce 0600.
 
 use crate::attachments::{self, Attachment};
+use crate::{companion_maquina, companion_rede};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -27,7 +31,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
@@ -369,7 +373,9 @@ struct Ctx {
 #[derive(Clone)]
 struct Guard {
     auth: Arc<Mutex<AuthSet>>,
-    rate: Arc<Mutex<HashMap<IpAddr, (Instant, u32)>>>,
+    /// Chave = `companion_rede::chave_do_limite` (IP, ou IP + começo do token
+    /// na loopback, onde `tailscale serve` junta todo mundo).
+    rate: Arc<Mutex<HashMap<String, (Instant, u32)>>>,
 }
 
 impl Guard {
@@ -390,8 +396,8 @@ impl Guard {
         }
     }
 
-    /// Janela fixa por IP; falha de lock NUNCA bloqueia o usuário legítimo.
-    fn allow(&self, ip: IpAddr) -> bool {
+    /// Janela fixa por chave; falha de lock NUNCA bloqueia o usuário legítimo.
+    fn allow(&self, chave: String) -> bool {
         let now = Instant::now();
         let Ok(mut m) = self.rate.lock() else {
             return true;
@@ -399,7 +405,7 @@ impl Guard {
         if m.len() > 1024 {
             m.retain(|_, (t, _)| now.duration_since(*t) <= RATE_WINDOW);
         }
-        let e = m.entry(ip).or_insert((now, 0u32));
+        let e = m.entry(chave).or_insert((now, 0u32));
         if now.duration_since(e.0) > RATE_WINDOW {
             *e = (now, 0);
         }
@@ -496,13 +502,43 @@ fn save_devices(app: &AppHandle, devices: &[Device]) -> Result<(), String> {
         std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     }
     let body = serde_json::to_string(devices).map_err(|e| e.to_string())?;
-    std::fs::write(&path, body).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    // Nasce 0600: `fs::write` + `chmod` deixava o arquivo com a umask por um
+    // instante na primeira criação.
+    companion_rede::escrever_privado(&path, body.as_bytes()).map_err(|e| e.to_string())
+}
+
+/// Tira do conjunto os aparelhos parados há mais de 30 dias. Devolve quantos
+/// saíram (quem chama decide se persiste).
+fn remover_vencidos(devices: &mut Vec<Device>, agora: u64) -> usize {
+    let antes = devices.len();
+    devices.retain(|d| !companion_rede::aparelho_expirado(d.paired_at, d.last_seen_at, agora));
+    antes - devices.len()
+}
+
+/// Persiste o "visto por último" no máximo a cada `LAST_SEEN_FLUSH_EVERY`.
+/// Chamado pela lista de aparelhos E pelo `/api/state`: sem o segundo, quem usa
+/// o celular todo dia mas nunca abre Configurações ficava com a data do
+/// pareamento no disco, e um reinício depois de 30 dias venceria um aparelho em
+/// uso.
+fn gravar_visto_se_vencido(app: &AppHandle, state: &CompanionState) {
+    let due = state
+        .last_seen_flush
+        .lock()
+        .map(|mut g| match *g {
+            Some(at) if at.elapsed() < LAST_SEEN_FLUSH_EVERY => false,
+            _ => {
+                *g = Some(Instant::now());
+                true
+            }
+        })
+        .unwrap_or(false);
+    if due {
+        if let Ok(a) = state.auth.lock() {
+            if let Err(e) = save_devices(app, &a.devices) {
+                log::warn!("companion: flush de visto-por-último falhou: {e}");
+            }
+        }
     }
-    Ok(())
 }
 
 // ---------------- comandos Tauri ----------------
@@ -518,6 +554,11 @@ pub struct CompanionInfo {
     /// Nº de dispositivos (sockets WS) conectados agora — cada conexão viva
     /// segura um Receiver do broadcast, então receiver_count é a verdade.
     pub connected_count: usize,
+    /// R2 — estado da Tailscale neste Mac e, quando pronta, o endereço
+    /// `https://…ts.net` que vai no QR. Só lido, nunca configurado daqui.
+    pub tailnet: Option<crate::companion_tailnet::Tailnet>,
+    /// R5 — nome deste Mac como o celular mostra (cabeçalho e atalho).
+    pub maquina: Option<String>,
 }
 
 /// Token de pareamento corrente (cunha um novo se expirou/foi consumido).
@@ -543,6 +584,8 @@ pub async fn companion_start(
             url_lan: Some(url_lan()),
             pairing_token: fresh_pairing_token(&state),
             connected_count: state.tx.receiver_count(),
+            tailnet: Some(crate::companion_tailnet::sondar(PORT).await),
+            maquina: crate::companion_maquina::nome().map(str::to_string),
         });
     }
     // C4 — credenciais vivas: legado (se existir; nunca mais criamos um) +
@@ -553,6 +596,11 @@ pub async fn companion_start(
     if let Ok(mut a) = state.auth.lock() {
         a.legacy = load_legacy_token(&app);
         a.devices = load_devices(&app);
+        if remover_vencidos(&mut a.devices, now_epoch_ms()) > 0 {
+            if let Err(e) = save_devices(&app, &a.devices) {
+                log::warn!("companion: não consegui gravar a remoção de aparelhos vencidos: {e}");
+            }
+        }
     }
 
     let listener = match tokio::net::TcpListener::bind(("0.0.0.0", PORT)).await {
@@ -592,6 +640,8 @@ pub async fn companion_start(
         url_lan: Some(url_lan()),
         pairing_token: fresh_pairing_token(&state),
         connected_count: 0,
+        tailnet: Some(crate::companion_tailnet::sondar(PORT).await),
+            maquina: crate::companion_maquina::nome().map(str::to_string),
     })
 }
 
@@ -631,6 +681,12 @@ pub async fn companion_status(state: State<'_, CompanionState>) -> Result<Compan
         } else {
             0
         },
+        tailnet: if running {
+            Some(crate::companion_tailnet::sondar(PORT).await)
+        } else {
+            None
+        },
+        maquina: crate::companion_maquina::nome().map(str::to_string),
     })
 }
 
@@ -675,6 +731,8 @@ pub struct DevicePublic {
     pub name: String,
     pub paired_at: u64,
     pub last_seen_at: Option<u64>,
+    /// Epoch ms em que o aparelho vence se continuar parado (R1).
+    pub expires_at: u64,
 }
 
 #[derive(Clone, Serialize)]
@@ -714,6 +772,7 @@ pub async fn companion_list_devices(
                         name: d.name.clone(),
                         paired_at: d.paired_at,
                         last_seen_at: d.last_seen_at,
+                        expires_at: companion_rede::expira_em(d.paired_at, d.last_seen_at),
                     })
                     .collect::<Vec<_>>(),
                 a.legacy.is_some(),
@@ -736,24 +795,7 @@ pub async fn companion_list_devices(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let due = state
-        .last_seen_flush
-        .lock()
-        .map(|mut g| match *g {
-            Some(at) if at.elapsed() < LAST_SEEN_FLUSH_EVERY => false,
-            _ => {
-                *g = Some(Instant::now());
-                true
-            }
-        })
-        .unwrap_or(false);
-    if due {
-        if let Ok(a) = state.auth.lock() {
-            if let Err(e) = save_devices(&app, &a.devices) {
-                log::warn!("companion: flush de visto-por-último falhou: {e}");
-            }
-        }
-    }
+    gravar_visto_se_vencido(&app, &state);
     Ok(CompanionDevices {
         devices,
         pending,
@@ -946,6 +988,7 @@ fn build_router(ctx: Ctx, guard_state: Guard) -> Router {
         .nest("/api", api)
         .nest("/pair", pair)
         .with_state(ctx)
+        .layer(middleware::from_fn(rede_guard))
 }
 
 /// Página do Companion embutida no binário (onda 3): única, auto-contida
@@ -973,9 +1016,6 @@ async fn guard(
     mut req: Request,
     next: Next,
 ) -> Response {
-    if !g.allow(addr.ip()) {
-        return StatusCode::TOO_MANY_REQUESTS.into_response();
-    }
     // O guard roda DENTRO do nest("/api", …): o axum entrega o path DESPIDO do
     // prefixo ("/ws"). Aceita as duas formas — um refactor pra rota plana não
     // pode reabrir o 401 silencioso do WS (bug real: celular carregava HTTP
@@ -989,14 +1029,26 @@ async fn guard(
             None
         }
     });
+    if !g.allow(companion_rede::chave_do_limite(addr.ip(), presented.as_deref())) {
+        return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
     // C4 — o token apresentado casa contra o conjunto VIVO (legado + por
     // aparelho); o principal viaja nas extensions (dedupe por-aparelho) e o
     // "visto por último" do aparelho é carimbado em memória de carona.
     let principal = presented.and_then(|t| {
         g.auth.lock().ok().and_then(|mut a| {
             let id = a.match_token(&t)?;
+            let agora = now_epoch_ms();
+            // R1: aparelho parado há 30 dias não entra, e sai do conjunto vivo
+            // (o arquivo acompanha na próxima gravação ou no próximo start).
+            if a.devices.iter().any(|d| {
+                d.id == id && companion_rede::aparelho_expirado(d.paired_at, d.last_seen_at, agora)
+            }) {
+                a.devices.retain(|d| d.id != id);
+                return None;
+            }
             if let Some(d) = a.devices.iter_mut().find(|d| d.id == id) {
-                d.last_seen_at = Some(now_epoch_ms());
+                d.last_seen_at = Some(agora);
             }
             Some(id)
         })
@@ -1018,8 +1070,30 @@ async fn rate_guard(
     req: Request,
     next: Next,
 ) -> Response {
-    if !g.allow(addr.ip()) {
+    if !g.allow(companion_rede::chave_do_limite(addr.ip(), None)) {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
+    }
+    next.run(req).await
+}
+
+/// R1 — porta de TODA rota (página, assets, /pair e /api): origem fora de rede
+/// privada é 403; `Host` que não é LAN, localhost ou `*.ts.net` é 421 (DNS
+/// rebinding). Roda antes de qualquer outra camada e não olha token.
+async fn rede_guard(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    req: Request,
+    next: Next,
+) -> Response {
+    if !companion_rede::origem_permitida(addr.ip()) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+    let host_ok = req
+        .headers()
+        .get(header::HOST)
+        .and_then(|h| h.to_str().ok())
+        .is_some_and(companion_rede::host_permitido);
+    if !host_ok {
+        return StatusCode::MISDIRECTED_REQUEST.into_response();
     }
     next.run(req).await
 }
@@ -1082,26 +1156,33 @@ async fn pair_status(AxState(ctx): AxState<Ctx>, AxPath(id): AxPath<String>) -> 
 
 /// CSP da página (defesa-em-profundidade contra XSS de conteúdo de LLM):
 /// nenhum host externo; script/style só inline (a página é auto-contida);
-/// connect só same-origin + WS (o `ws:` explícito cobre browsers móveis que
-/// ainda não casam WebSocket com 'self'); img blob:/data: p/ thumbs de anexo.
+/// connect só same-origin; o WS do próprio host entra por requisição em
+/// `index_page` (`companion_rede::csp_da_pagina`), porque browsers móveis nem
+/// sempre casam WebSocket com 'self' e `ws: wss:` genérico abria WebSocket para
+/// qualquer host (R1). img blob:/data: p/ thumbs de anexo.
 /// C1: `script-src` ganha 'self' (o core.js sai do próprio binário),
 /// `manifest-src`/`worker-src` 'self' liberam manifest e service worker —
 /// continua ZERO host externo.
 const PAGE_CSP: &str = "default-src 'none'; script-src 'self' 'unsafe-inline'; \
     style-src 'unsafe-inline'; img-src 'self' blob: data:; \
-    connect-src 'self' ws: wss:; manifest-src 'self'; worker-src 'self'; \
+    connect-src 'self'; manifest-src 'self'; worker-src 'self'; \
     base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
 /// GET / — serve a página do Companion (embutida via `COMPANION_PAGE`) com
 /// CSP + nosniff + no-referrer (o token do pareamento vive no fragment).
-async fn index_page() -> Response {
+async fn index_page(headers: HeaderMap) -> Response {
+    let host = headers.get(header::HOST).and_then(|h| h.to_str().ok());
+    let csp = companion_rede::csp_da_pagina(PAGE_CSP, host);
     (
         [
-            (header::CONTENT_SECURITY_POLICY, PAGE_CSP),
+            (header::CONTENT_SECURITY_POLICY, csp.as_str()),
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
             (header::REFERRER_POLICY, "no-referrer"),
         ],
-        Html(COMPANION_PAGE),
+        Html(companion_maquina::pagina_com_maquina(
+            COMPANION_PAGE,
+            companion_maquina::nome(),
+        )),
     )
         .into_response()
 }
@@ -1140,7 +1221,20 @@ async fn sw_js() -> Response {
     text_asset("application/javascript; charset=utf-8", COMPANION_SW)
 }
 async fn manifest_webmanifest() -> Response {
-    text_asset("application/manifest+json", COMPANION_MANIFEST)
+    // R5: o nome do Mac diferencia os atalhos instalados, um por máquina.
+    let corpo = companion_maquina::manifesto_com_maquina(
+        COMPANION_MANIFEST,
+        companion_maquina::nome(),
+    );
+    (
+        [
+            (header::CONTENT_TYPE, "application/manifest+json"),
+            (header::CACHE_CONTROL, "no-cache"),
+            (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        corpo,
+    )
+        .into_response()
 }
 async fn icon_192() -> Response {
     png_asset(COMPANION_ICON_192)
@@ -1154,6 +1248,7 @@ async fn icon_touch() -> Response {
 
 /// GET /api/state — snapshot corrente (o front define o shape).
 async fn get_state(AxState(ctx): AxState<Ctx>) -> Response {
+    gravar_visto_se_vencido(&ctx.app, &ctx.app.state::<CompanionState>());
     let snap = ctx
         .app
         .state::<CompanionState>()
@@ -1774,7 +1869,7 @@ mod tests {
 
     #[tokio::test]
     async fn index_serve_pagina_com_csp() {
-        let resp = index_page().await;
+        let resp = index_page(HeaderMap::new()).await;
         let csp = resp
             .headers()
             .get(header::CONTENT_SECURITY_POLICY)
@@ -2621,7 +2716,9 @@ mod tests {
                 id: "dev-1".into(),
                 name: "iPhone".into(),
                 token: dev_tok.into(),
-                paired_at: 1,
+                // Pareado agora: desde o R1, aparelho parado há 30 dias vence
+                // (o `1` de antes era "pareado em 1970").
+                paired_at: now_epoch_ms(),
                 last_seen_at: None,
             }],
         }));
@@ -2653,6 +2750,89 @@ mod tests {
             hit(&r, "/api/ping", Some(&format!("Bearer {TOK}"))).await,
             StatusCode::UNAUTHORIZED
         );
+    }
+
+    // ── R1 (companion-chat-prd): rede privada, Host, aparelho vencido ──
+
+    fn rede_router(origem: [u8; 4]) -> Router {
+        Router::new()
+            .route("/", get(|| async { "pagina" }))
+            .layer(middleware::from_fn(rede_guard))
+            .layer(MockConnectInfo(SocketAddr::from((origem, 5555))))
+    }
+
+    async fn hit_host(r: &Router, host: Option<&str>) -> StatusCode {
+        let mut b = http::Request::builder().uri("/");
+        if let Some(h) = host {
+            b = b.header(header::HOST, h);
+        }
+        r.clone()
+            .oneshot(b.body(Body::empty()).unwrap())
+            .await
+            .unwrap()
+            .status()
+    }
+
+    #[tokio::test]
+    async fn r1_origem_publica_e_recusada_antes_de_qualquer_rota() {
+        let publica = rede_router([8, 8, 8, 8]);
+        assert_eq!(hit_host(&publica, Some("192.168.0.42:14200")).await, StatusCode::FORBIDDEN);
+        let lan = rede_router([192, 168, 0, 42]);
+        assert_eq!(hit_host(&lan, Some("192.168.0.42:14200")).await, StatusCode::OK);
+        let tailnet = rede_router([100, 101, 102, 103]);
+        assert_eq!(hit_host(&tailnet, Some("mac.tail1234.ts.net")).await, StatusCode::OK);
+        // `tailscale serve` chega pela loopback com o nome da tailnet
+        let serve = rede_router([127, 0, 0, 1]);
+        assert_eq!(hit_host(&serve, Some("mac.tail1234.ts.net")).await, StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn r1_host_de_fora_e_recusado_mesmo_vindo_da_lan() {
+        let lan = rede_router([192, 168, 0, 42]);
+        assert_eq!(hit_host(&lan, Some("evil.example")).await, StatusCode::MISDIRECTED_REQUEST);
+        assert_eq!(hit_host(&lan, None).await, StatusCode::MISDIRECTED_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn r1_aparelho_parado_ha_30_dias_recebe_401_e_sai_do_conjunto_vivo() {
+        let vencido = "abadcafeabadcafeabadcafeabadcafe";
+        let ativo = "c0ffeec0ffeec0ffeec0ffeec0ffee00";
+        let agora = now_epoch_ms();
+        let dia = 24 * 60 * 60 * 1000;
+        let auth = Arc::new(Mutex::new(AuthSet {
+            legacy: None,
+            devices: vec![
+                Device { id: "velho".into(), name: "Android".into(), token: vencido.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 31 * dia) },
+                Device { id: "novo".into(), name: "Android".into(), token: ativo.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 2 * dia) },
+            ],
+        }));
+        let r = guarded_router(Guard::with_auth(auth.clone()));
+        assert_eq!(hit(&r, "/api/ping", Some(&format!("Bearer {vencido}"))).await, StatusCode::UNAUTHORIZED);
+        assert_eq!(hit(&r, "/api/ping", Some(&format!("Bearer {ativo}"))).await, StatusCode::OK);
+        let ids: Vec<String> = auth.lock().unwrap().devices.iter().map(|d| d.id.clone()).collect();
+        assert_eq!(ids, vec!["novo".to_string()]);
+    }
+
+    #[test]
+    fn r1_start_remove_vencidos_e_mantem_quem_usa() {
+        let agora = now_epoch_ms();
+        let dia = 24 * 60 * 60 * 1000;
+        let mut devices = vec![
+            Device { id: "a".into(), name: "x".into(), token: "t1".into(), paired_at: agora - 40 * dia, last_seen_at: None },
+            Device { id: "b".into(), name: "y".into(), token: "t2".into(), paired_at: agora - 40 * dia, last_seen_at: Some(agora - dia) },
+        ];
+        assert_eq!(remover_vencidos(&mut devices, agora), 1);
+        assert_eq!(devices[0].id, "b");
+    }
+
+    #[tokio::test]
+    async fn r1_csp_da_pagina_prende_o_websocket_ao_host() {
+        let mut headers = HeaderMap::new();
+        headers.insert(header::HOST, "mac.tail1234.ts.net".parse().unwrap());
+        let resp = index_page(headers).await;
+        let csp = resp.headers().get(header::CONTENT_SECURITY_POLICY).unwrap().to_str().unwrap().to_string();
+        assert!(csp.contains("wss://mac.tail1234.ts.net"));
+        assert!(!csp.contains("ws: "), "ws: genérico voltou: {csp}");
     }
 
     #[test]

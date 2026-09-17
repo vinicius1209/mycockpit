@@ -72,6 +72,7 @@ ADR-174.
 | texto e anexos ainda não enviados | `store/composerDrafts.ts` | durável por conversa; persiste em `conversation_drafts` |
 | permissões e perguntas pendentes | `store/interactions.ts` | uma fila real compartilhada pela UI e pelo Companion |
 | notas | `store/stickyNotes.ts` | só entram no prompt por menção ou gesto explícito |
+| Bastidores (vistas abertas, saída ao vivo) | `store/bastidores.ts` | lista derivada dos itens do fio (`lib/bastidores.ts`); saída ao vivo com teto, sem persistir e fora do `useChat` (ADR-200) |
 | mapa vivo da conversa | `store/conversationMaps.ts` | semântico derivado; pins humanos e fatos canônicos vencem a geração |
 | alterações do projeto | Git via `lib/git.ts` | consulta sob demanda; a UI não antecipa stage, descarte, commit ou pull request |
 | missões, disputas, cards e worktrees | stores próprias | não duplicar esses estados no chat |
@@ -136,7 +137,17 @@ nunca recebem sinal.
   de projeto, compartilhada por runs, plugins e takeover humano.
 - `app/src-tauri/src/browser.rs`, `browser_cdp.rs` e `browser_panel.rs`: ciclo
   de vida do Chromium isolado, inventário/preview/input CDP e janela própria;
-  WebSockets e frames nunca entram no manifesto ou no banco.
+  WebSockets e frames nunca entram no manifesto ou no banco. Próxima fase (aba e
+  flutuante dentro do app): `docs/navegador-na-frota-prd.md`.
+- `app/src-tauri/src/context_probe.rs`: lê onde cada motor compacta (ADR-196/198),
+  por capability `context_ceiling`, sem turno.
+- `app/src-tauri/src/bastidores.rs`: tail só-leitura do arquivo de saída de
+  trabalho em segundo plano (ADR-200); a UI é a aba Bastidores do painel direito,
+  que vira terminal só de leitura e alarga enquanto há vistas abertas.
+- `app/src-tauri/src/companion.rs` + `app/src-tauri/companion/`: servidor e página
+  do celular (irmãos: `companion_rede.rs` quem chega, `companion_tailnet.rs`
+  endereço seguro, `companion_maquina.rs` nome do Mac); regras em
+  `app/src-tauri/companion/AGENTS.md`.
 - `app/src-tauri/src/notch.rs` e `hud.rs`: geometria de tela medida e presenter
   nativo do instrumento, separado do snapshot renderizado (ADR-141 e ADR-188).
 - `app/src-tauri/src/desktop.rs`: sondas reais de Screen Recording e

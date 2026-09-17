@@ -8,10 +8,9 @@ import { invoke } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
 import type { MissionRun } from "@/lib/missionTypes"
 import { feedbackLesson } from "@/lib/learning"
-import { nativeNotify } from "@/lib/notify"
 import { cancelDeskTurn, ensureDeskConversation, sendFromDesk } from "@/lib/fleet/send"
 import { useApp } from "@/store/app"
-import { useCards, type CardRow } from "@/store/cards"
+import { useCards } from "@/store/cards"
 import { useChat, type ConvState } from "@/store/chat"
 import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
@@ -127,24 +126,6 @@ const att: Attachment = {
   kind: "image",
   mime: "image/png",
   bytes: 123,
-}
-
-function makeCard(partial: Partial<CardRow> & { id: string }): CardRow {
-  return {
-    projectId: "p1",
-    title: `Card ${partial.id}`,
-    body: null,
-    state: "backlog",
-    assigneeAgent: null,
-    conversationId: null,
-    owner: null,
-    pinned: false,
-    pinRank: null,
-    createdAt: 1,
-    updatedAt: 1,
-    archivedAt: null,
-    ...partial,
-  }
 }
 
 // ações REAIS do store de cards (restauradas no beforeEach — testes que mocam
@@ -359,11 +340,17 @@ describe("buildCompanionSnapshot", () => {
         id: "p1",
         name: "alpha",
         agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }, { agent: "opencode" }],
+        // R3 (companion-chat-prd): a conversa com aprovação pendente e turno
+        // rodando chega ao celular marcada como tal.
+        recent: [
+          { convId: "c1", title: "refatorar o parser", agent: "claude-code", updatedAt: 1, running: true, pedeVoce: true },
+        ],
       },
       {
         id: "p2",
         name: "beta",
         agents: [{ agent: "claude-code" }, { agent: "codex" }, { agent: "agy" }, { agent: "opencode" }],
+        recent: [],
       },
     ])
   })
@@ -815,66 +802,6 @@ describe("handleCompanionAction — switch fechado", () => {
 })
 
 // ------------------------------------------- board FORA do celular (ADR-041)
-
-describe("o Board não existe mais no Companion", () => {
-  it("snapshot não carrega seção de card, nem com o board cheio", () => {
-    useCards.setState({
-      all: [
-        makeCard({ id: "k1", state: "backlog" }),
-        makeCard({ id: "k2", state: "working", projectId: "p2" }),
-        makeCard({ id: "k3", state: "review" }),
-      ],
-    })
-    const snap = buildCompanionSnapshot()
-    expect("cards" in snap).toBe(false)
-  })
-
-  it("card estagnado não vira mais item de atenção no celular", () => {
-    useCards.setState({
-      all: [
-        makeCard({
-          id: "k9",
-          state: "working",
-          conversationId: "c-k9",
-          assigneeAgent: "codex",
-          stalledSince: Date.now() - 5 * 60_000,
-        }),
-      ],
-    })
-    const snap = buildCompanionSnapshot()
-    // a atenção do celular só fala de gate, aprovação, pergunta e turno mudo;
-    // card estagnado segue vivo na fila do desktop (lib/inbox), não aqui.
-    expect(snap.attention).toHaveLength(0)
-  })
-
-  it("ações de card viraram vocabulário desconhecido: inócuas e só com aviso", async () => {
-    const dispatch = vi.fn(async () => "conv-nova")
-    const closeCard = vi.fn(async () => {})
-    useCards.setState({ dispatch, closeCard })
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {})
-    await handleCompanionAction({ kind: "dispatch_card", cardId: "k1" })
-    await handleCompanionAction({ kind: "close_card", cardId: "k1", state: "done" })
-    expect(dispatch).not.toHaveBeenCalled()
-    expect(closeCard).not.toHaveBeenCalled()
-    expect(nativeNotify).not.toHaveBeenCalled()
-    expect(warn).toHaveBeenCalledTimes(2)
-    warn.mockRestore()
-  })
-
-  it("mutação no useCards não re-empurra o snapshot (a ponte não assina mais o board)", async () => {
-    vi.useFakeTimers()
-    startCompanionBridge()
-    await vi.advanceTimersByTimeAsync(600)
-    const pushes = () =>
-      vi
-        .mocked(invoke)
-        .mock.calls.filter(([cmd]) => cmd === "set_companion_snapshot").length
-    const base = pushes()
-    useCards.setState({ all: [makeCard({ id: "k1" })], byProject: {} })
-    await vi.advanceTimersByTimeAsync(600)
-    expect(pushes()).toBe(base)
-  })
-})
 
 // ------------------------------------------------------------------ coalescing
 

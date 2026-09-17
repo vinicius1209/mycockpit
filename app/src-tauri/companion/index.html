@@ -12,6 +12,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="FROTA">
+<!-- R5: o servidor troca o content vazio pelo nome deste Mac (companion_maquina.rs). -->
+<meta name="frota-maquina" content="">
 <title>FROTA · Companion</title>
 <script>
 "use strict";
@@ -123,6 +125,7 @@ header {
   border-bottom: 1px solid var(--border);
 }
 .wordmark { font-weight: 650; letter-spacing: 0.02em; font-size: 15px; }
+.wordmark { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wordmark small { color: var(--muted-foreground); font-weight: 450; }
 .conn { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .dot { width: 8px; height: 8px; border-radius: 999px; background: var(--st-idle); flex: none; }
@@ -239,6 +242,18 @@ pre.cmd {
 
 /* ---------- lançar tarefa (C2) ---------- */
 .launchbtn { width: 100%; justify-content: center; margin: 4px 0 2px; }
+/* R4 — tela inicial chat-first */
+.homebar { display: flex; gap: 8px; align-items: center; }
+.homebar .launchbtn { flex: 1; width: auto; }
+.conv { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
+.conv .cv-main { min-width: 0; flex: 1; }
+.conv .cv-title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv .cv-meta { font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conv .cv-tag { flex: none; font-size: 11px; border-radius: 999px; padding: 2px 8px; }
+.conv .cv-tag.pede { background: color-mix(in srgb, var(--st-queued) 16%, transparent); color: var(--st-queued); }
+.conv .cv-tag.roda { background: color-mix(in srgb, var(--st-running) 14%, transparent); color: var(--st-running); }
+#chatAttn .card { margin-top: 10px; }
+#chatStop { margin-left: auto; }
 .pickrow { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 12px; }
 .pick { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: color-mix(in srgb, var(--foreground) 85%, transparent); }
 .pick.on { border-color: var(--brass); background: var(--brass-soft); color: var(--brass); }
@@ -368,7 +383,7 @@ footer#costbar[hidden] { display: none !important; }
 <body>
 
 <header>
-  <div class="wordmark">FROTA <small>· Companion</small></div>
+  <div class="wordmark" id="wordmark">FROTA <small id="maquina">· Companion</small></div>
   <button id="btnTheme" title="Tema" aria-label="Alternar tema claro ou escuro">◐</button>
   <button id="btnBell" title="Notificações" aria-label="Ativar notificações">🔔</button>
   <div class="conn"><span id="dot" class="dot off"></span><span id="connLabel">—</span></div>
@@ -392,10 +407,22 @@ footer#costbar[hidden] { display: none !important; }
   </section>
 
   <!-- briefing (home) -->
+  <!-- R4 (companion-chat-prd): a tela inicial são as conversas; o painel de
+       números mora em #/painel. O id "brief" segue sendo a raiz da rota. -->
   <section class="screen" id="scr-brief" hidden>
-    <button class="btn primary launchbtn" id="btnLaunch">＋ Lançar tarefa</button>
-    <h2 class="sec"><span class="amber">Precisa de você</span></h2>
+    <div class="homebar">
+      <button class="btn primary launchbtn" id="btnLaunch">＋ Nova conversa</button>
+      <button class="btn" data-nav="painel">Painel</button>
+    </div>
+    <h2 class="sec"><span class="amber">Pede você</span></h2>
     <div id="attention"></div>
+    <h2 class="sec">Conversas</h2>
+    <div class="pickrow" id="convFilter"></div>
+    <div id="conversas"></div>
+  </section>
+
+  <section class="screen" id="scr-painel" hidden>
+    <button class="back" data-nav="brief">‹ Conversas</button>
     <h2 class="sec">Em execução</h2>
     <div id="running"></div>
     <!-- R2: o que ACABOU. Irmã de "Entregas recentes", não substituta —
@@ -405,13 +432,13 @@ footer#costbar[hidden] { display: none !important; }
     <div id="lastTurns"></div>
     <h2 class="sec">Entregas recentes</h2>
     <div id="deliveries"></div>
-    <h2 class="sec">Conversar</h2>
+    <h2 class="sec">Mesas por projeto</h2>
     <div id="projects"></div>
   </section>
 
   <!-- lançar tarefa (C2) -->
   <section class="screen" id="scr-launch" hidden>
-    <button class="back" data-nav="brief">‹ Briefing</button>
+    <button class="back" data-nav="brief">‹ Conversas</button>
     <h2 class="sec">Lançar tarefa</h2>
     <div class="lm" style="margin:10px 2px 2px">Projeto</div>
     <div class="pickrow" id="launchProjects"></div>
@@ -425,7 +452,7 @@ footer#costbar[hidden] { display: none !important; }
 
   <!-- escolha de agent -->
   <section class="screen" id="scr-agents" hidden>
-    <button class="back" data-nav="brief">‹ Briefing</button>
+    <button class="back" data-nav="brief">‹ Conversas</button>
     <h2 class="sec" id="agentsTitle">Agent</h2>
     <div id="agentList"></div>
   </section>
@@ -433,16 +460,20 @@ footer#costbar[hidden] { display: none !important; }
   <!-- chat -->
   <section class="screen" id="scr-chat" hidden>
     <div id="chatBar">
-      <button class="back" data-nav="brief">‹ Briefing</button>
+      <button class="back" data-nav="brief">‹ Conversas</button>
       <div id="chatTitle" style="font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></div>
       <span class="dot" id="chatDot" title="Estado do agent"></span>
+      <button class="btn danger" id="chatStop" data-stopkind="stop_turn" hidden>Parar</button>
     </div>
     <div id="chatItems"></div>
+    <!-- R4: o que esta conversa pede de você, dentro dela (mesmos cartões e
+         mesmas ações do início) -->
+    <div id="chatAttn"></div>
     <div id="composer">
       <div class="chips" id="chatChips" style="margin:0 0 6px"></div>
       <div class="pill">
         <button class="iconbtn" id="chatCam" aria-label="Anexar foto ou PDF">📷</button>
-        <textarea id="chatText" rows="1" placeholder="Mensagem…"></textarea>
+        <textarea id="chatText" rows="1" placeholder="Mensagem… (/parar, /btw)"></textarea>
         <button class="iconbtn" id="chatSend" aria-label="Enviar">➤</button>
       </div>
       <div id="chatHint"></div>
@@ -481,6 +512,15 @@ var MOCK = new URLSearchParams(location.search).get("mock") === "1";
    Se não carregar, a página segue viva com fallback mínimo (navegação sem
    histórico + backoff fixo) — degradação, nunca tela branca. */
 var Core = (typeof CompanionCore !== "undefined") ? CompanionCore : null;
+/* R5: nome do Mac que serviu esta página (null no mock ou sem nome). */
+var MAQUINA = (function () {
+  var m = document.querySelector('meta[name="frota-maquina"]');
+  var raw = m ? m.getAttribute("content") : "";
+  return Core ? Core.machineName(raw) : (raw || null);
+})();
+function notifTitle(text) {
+  return Core ? Core.notificationTitle(MAQUINA, text) : "FROTA · " + text;
+}
 
 // ---------------- helpers ----------------
 function $(sel) { return document.querySelector(sel); }
@@ -588,9 +628,17 @@ var MOCK_SNAP = {
   ],
   costs: { totalUsd: 4.21, byProject: { p1: 3.1, p2: 1.11 } },
   projects: [
-    { id: "p1", name: "mycockpit", agents: [{ agent: "claude-code" }, { agent: "codex" }] },
+    { id: "p1", name: "mycockpit", agents: [{ agent: "claude-code" }, { agent: "codex" }],
+      recent: [
+        { convId: "conv-t2", title: "Estratégia de cache do snapshot", agent: "claude-code", updatedAt: Date.now() - 9 * 60000, running: false, pedeVoce: true },
+        { convId: "conv-t9", title: "Atualizar dependências", agent: "claude-code", updatedAt: Date.now() - 2 * 60000, running: true, pedeVoce: false },
+        { convId: "c1", title: "Revisar o parser do diff", agent: "claude-code", updatedAt: Date.now() - 4 * 60000, running: false, pedeVoce: false },
+        { convId: "c3", title: "Subir o worker", agent: null, updatedAt: Date.now() - 3 * 3600000, running: false, pedeVoce: false } ] },
     { id: "p2", name: "site-maclan", agents: [
-      { agent: "claude-code" }, { agent: "codex", deskConvId: "conv-t1", deskTitle: "Mesa · Codex" }, { agent: "agy" } ] }
+      { agent: "claude-code" }, { agent: "codex", deskConvId: "conv-t1", deskTitle: "Mesa · Codex" }, { agent: "agy" } ],
+      recent: [
+        { convId: "conv-t1", title: "Ajustar formulário de contato", agent: "codex", updatedAt: Date.now() - 60000, running: true, pedeVoce: true },
+        { convId: "c2", title: "Ajustar o CSS do herói", agent: "claude-code", updatedAt: Date.now() - 40 * 60000, running: false, pedeVoce: false } ] }
   ],
   specialists: [
     { id: "revisor", name: "Revisor", backend: "claude-code", category: "Qualidade" },
@@ -952,7 +1000,7 @@ function notifyNewAttention(items) {
   items.forEach(function (a) {
     var kind = a.kind === "gate" ? "Gate de missão" : a.kind === "approval" ? "Aprovação pendente" : a.kind === "stalled" ? "Turno mudo" : "Pergunta do agente";
     var body = (a.projectName ? a.projectName + " · " : "") + agentName(a.agent);
-    try { new Notification("FROTA — " + kind, { body: body, tag: a.id }); } catch (e) {}
+    try { new Notification(notifTitle(kind), { body: body, tag: a.id }); } catch (e) {}
   });
 }
 
@@ -1021,10 +1069,10 @@ function refreshChatTitle() {
 
 function showScreen(name) {
   S.screen = name;
-  ["pair", "brief", "agents", "chat", "launch"].forEach(function (n) {
+  ["pair", "brief", "painel", "agents", "chat", "launch"].forEach(function (n) {
     $("#scr-" + n).hidden = n !== name;
   });
-  $("#costbar").hidden = name !== "brief";
+  $("#costbar").hidden = name !== "painel";
   renderOffline();
   window.scrollTo(0, 0);
 }
@@ -1062,6 +1110,7 @@ function applyRoute(r) {
     openLaunch(r.projectId || null);
     return;
   }
+  if (r.screen === "painel") { showScreen("painel"); return; }
   showScreen("brief");
 }
 /* Revisão C4 (F1) — fragment #token= do v1 é INERTE (anti-downgrade), mas a
@@ -1144,8 +1193,15 @@ function renderAttention() {
   var sig = JSON.stringify([att, S.answered]);
   if (!sigChanged("attention", sig)) return;
   var host = $("#attention");
-  if (!att.length) { host.innerHTML = '<div class="empty">Nada pendente — a frota segue sozinha.</div>'; return; }
-  host.innerHTML = att.map(function (a) {
+  if (!att.length) { host.innerHTML = '<div class="empty">Nada pendente, a frota segue sozinha.</div>'; return; }
+  host.innerHTML = att.map(attentionCardHtml).join("");
+  host.querySelectorAll("textarea").forEach(autoGrow);
+}
+
+/* Um cartão de atenção (aprovação, pergunta, gate, turno mudo). R4: o mesmo
+   cartão aparece no início e dentro da conversa dona dele; as ações são as
+   mesmas (delegação de clique do documento). */
+function attentionCardHtml(a) {
     if (S.answered[a.id]) {
       return '<div class="card attn"><div class="cardhead"><span class="badge ' + esc(a.kind) + '">' + esc(a.kind) + '</span>' +
         '<span class="ctx">' + ctxLine(a) + '</span></div><div class="sent">✓ Resposta enviada — aguardando o app…</div></div>';
@@ -1198,8 +1254,14 @@ function renderAttention() {
       '<pre class="cmd">' + esc(a.command || "(comando não informado)") + '</pre>' +
       '<div class="actions"><button class="btn danger" data-deny="' + esc(a.id) + '">Negar</button>' +
       '<button class="btn ok" data-approve="' + esc(a.id) + '">Aprovar</button></div></div>';
-  }).join("");
-  host.querySelectorAll("textarea").forEach(autoGrow);
+}
+
+/* Atenção mudou (resposta enviada, opção marcada): o início e a conversa aberta
+   desenham os mesmos cartões. */
+function rerenderAttention() {
+  S.sigs.attention = null;
+  renderAttention();
+  if (S.screen === "chat") renderChatAttention();
 }
 
 function renderRunning() {
@@ -1303,9 +1365,44 @@ function renderCost() {
   $("#costTotal").textContent = usd(v);
 }
 
+/* R4 — conversas de todos os projetos (snapshot projects[].recent), ordem e
+   motor decididos no core (homeConversations). Filtro por projeto lembrado. */
+var LS_FILTRO = "mc.companion.filtroProjeto";
+function renderConversas() {
+  var ps = (S.snap && S.snap.projects) || [];
+  var filtro = lsGet(LS_FILTRO) || "";
+  if (filtro && !ps.some(function (p) { return p.id === filtro; })) filtro = "";
+  var lista = Core ? Core.homeConversations(S.snap, filtro || null) : [];
+  var sig = JSON.stringify([filtro, ps.map(function (p) { return [p.id, p.name]; }), lista]);
+  if (!sigChanged("conversas", sig)) return;
+  $("#convFilter").innerHTML = ps.length > 1
+    ? ['<button class="pick' + (filtro ? "" : " on") + '" data-cfiltro="">Todos</button>'].concat(ps.map(function (p) {
+        return '<button class="pick' + (filtro === p.id ? " on" : "") + '" data-cfiltro="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+      })).join("")
+    : "";
+  var host = $("#conversas");
+  if (!S.snap) { host.innerHTML = '<div class="empty">Conectando ao Mac…</div>'; return; }
+  if (!lista.length) {
+    host.innerHTML = '<div class="empty">Nenhuma conversa ainda. Use “Nova conversa” para começar uma no seu Mac.</div>';
+    return;
+  }
+  host.innerHTML = lista.map(function (c) {
+    var tag = c.pedeVoce ? '<span class="cv-tag pede">pede você</span>'
+      : c.running ? '<span class="cv-tag roda">rodando</span>' : "";
+    var meta = [esc(c.projectName), c.agent ? esc(agentName(c.agent)) : "sem motor", c.updatedAt ? esc(ago(c.updatedAt)) : null]
+      .filter(Boolean).join(" · ");
+    var inner = '<span class="cv-main"><span class="cv-title" style="display:block">' + esc(c.title) + '</span>' +
+      '<span class="cv-meta" style="display:block">' + meta + '</span></span>' + tag;
+    return c.agent
+      ? '<button class="card conv" data-openchat="' + esc(c.convId) + '" data-pid="' + esc(c.projectId) + '" data-agent="' + esc(c.agent) + '">' + inner + '</button>'
+      : '<div class="card conv" title="Nenhum motor disponível nesta máquina">' + inner + '</div>';
+  }).join("");
+}
+
 function renderBrief() {
-  // Mesma ordem do DOM: precisa de você → agora → acabou → entregue.
+  // Início (R4): pede você → conversas. Painel: agora → acabou → entregue.
   renderAttention();
+  renderConversas();
   renderRunning();
   renderLastTurns();
   renderDeliveries();
@@ -1610,7 +1707,7 @@ function notifyChatDone() {
   if (!notifOn()) return;
   if (!canNativeNotify()) { fallbackAlert(1); return; }
   try {
-    new Notification("FROTA — resposta chegou", {
+    new Notification(notifTitle("resposta chegou"), {
       body: S.chat.projectName + " · " + agentName(S.chat.agent),
       tag: "chat-" + (S.chat.convId || S.chat.projectId),
     });
@@ -1747,8 +1844,39 @@ function chatItemHtml(it) {
 }
 /* mesmos 3 chips do vazio inicial do dock da mesa (DeskDock SUGGESTION_CHIPS) */
 var SUGGESTION_CHIPS = ["Status do projeto", "O que você está fazendo agora?", "Continuar a última tarefa"];
+/* R4 — os cartões de atenção DESTA conversa, embaixo do fio, e o Parar na barra
+   quando o turno dela roda (mesma semântica honesta do painel). */
+function renderChatAttention() {
+  var host = $("#chatAttn");
+  if (!host) return;
+  var cid = S.chat && S.chat.convId;
+  var att = cid ? ((S.snap && S.snap.attention) || []).filter(function (a) { return a.convId === cid; }) : [];
+  host.innerHTML = att.map(attentionCardHtml).join("");
+  host.querySelectorAll("textarea").forEach(autoGrow);
+  var stop = $("#chatStop");
+  if (!stop) return;
+  var run = chatRunning();
+  var disp = run && Core ? Core.stopDisposition(run) : { can: !!run };
+  var pode = !!(cid && run && disp.can);
+  if (!pode) {
+    // o turno acabou (ou não é mais interrompível) com o Parar armado: some e
+    // desarma. Antes o armado pulava esta conta, a confirmação expirava e o
+    // botão voltava a "Parar" numa conversa parada, sem render que o tirasse.
+    stop.removeAttribute("data-armed");
+    stop.disabled = false;
+    stop.textContent = "Parar";
+    stop.hidden = true;
+    return;
+  }
+  if (stop.getAttribute("data-armed") !== "1") {
+    stop.hidden = false;
+    stop.setAttribute("data-stop", cid);
+  }
+}
+
 function renderChatItems() {
   if (!S.chat) return;
+  renderChatAttention();
   var host = $("#chatItems");
   // auto-scroll respeitando leitura: só acompanha se JÁ estava no fim
   var atBottom = innerHeight + scrollY >= document.body.scrollHeight - 80;
@@ -1822,6 +1950,19 @@ function sendChat() {
   if (!S.chat || S.chat.sending) return;
   var text = $("#chatText").value.trim();
   if (!text) return;
+  // R4 — atalhos: /parar usa o MESMO Parar da barra (dois toques, veredito do
+  // Mac); /btw vira mensagem marcada como prioridade.
+  var atalho = Core ? Core.parseChatShortcut(text) : { kind: "message", text: text };
+  if (atalho.kind === "stop") {
+    var stopBtn = $("#chatStop");
+    if (!stopBtn || stopBtn.hidden) { showNote("Nada rodando nesta conversa para parar."); return; }
+    $("#chatText").value = "";
+    autoGrow($("#chatText"));
+    stopBtn.click(); // arma o botão: a parada só sai no segundo toque
+    showNote("Toque em “Confirmar parada?” na barra para parar o turno.");
+    return;
+  }
+  text = atalho.text;
   var atts = S.chat.atts;
   var ids = atts.map(function (t) { return t.id; });
   var btn = $("#chatSend");
@@ -1926,6 +2067,8 @@ document.addEventListener("input", function (ev) {
 document.addEventListener("click", function (ev) {
   // C3 — paginação do fio (o botão renasce a cada render: delegação)
   if (ev.target.closest && ev.target.closest("#loadOlder")) { loadOlderPage(); return; }
+  var fil = ev.target.closest ? ev.target.closest("[data-cfiltro]") : null;
+  if (fil) { lsSet(LS_FILTRO, fil.getAttribute("data-cfiltro")); renderConversas(); return; }
   var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
   if (!el) return;
 
@@ -1958,8 +2101,7 @@ document.addEventListener("click", function (ev) {
     } else {
       pick.selected = idx >= 0 ? [] : [olabel];
     }
-    S.sigs.attention = null;
-    renderAttention();
+    rerenderAttention();
     return;
   }
 
@@ -1973,7 +2115,7 @@ document.addEventListener("click", function (ev) {
     if (!payload) return; // incompleta: nunca viaja resposta vazia
     el.disabled = true;
     apiAction({ kind: "answer_interaction", id: qaid, answer: payload })
-      .then(function () { S.answered[qaid] = true; S.sigs.attention = null; renderAttention(); })
+      .then(function () { S.answered[qaid] = true; rerenderAttention(); })
       .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
     return;
   }
@@ -2042,7 +2184,7 @@ document.addEventListener("click", function (ev) {
       // os headers/options originais no snapshot, seleção rica fica pro desktop)
       p = apiAction({ kind: "answer_interaction", id: id, answer: { answers: answers.map(function (x) { return { header: "", selected: [x.text] }; }) } });
     }
-    p.then(function () { S.answered[id] = true; S.sigs.attention = null; renderAttention(); })
+    p.then(function () { S.answered[id] = true; rerenderAttention(); })
       .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
     return;
   }
@@ -2052,7 +2194,7 @@ document.addEventListener("click", function (ev) {
     var allow = el.hasAttribute("data-approve");
     el.disabled = true;
     apiAction({ kind: "answer_interaction", id: aid, answer: { allow: allow, message: allow ? undefined : "Negado pelo celular (Companion)." } })
-      .then(function () { S.answered[aid] = true; S.sigs.attention = null; renderAttention(); })
+      .then(function () { S.answered[aid] = true; rerenderAttention(); })
       .catch(function (e) { el.disabled = false; alert("Falha: " + (e && e.message ? e.message : e)); });
     return;
   }
@@ -2064,6 +2206,7 @@ document.addEventListener("click", function (ev) {
       el.textContent = "Confirmar parada?";
       setTimeout(function () {
         if (el.isConnected) { el.removeAttribute("data-armed"); el.textContent = "Parar"; }
+        if (el.id === "chatStop" && S.screen === "chat") renderChatAttention();
       }, 3500);
       return;
     }
@@ -2074,7 +2217,10 @@ document.addEventListener("click", function (ev) {
     S.pendingActions[stopId] = { kind: el.getAttribute("data-stopkind") };
     apiAction({ kind: el.getAttribute("data-stopkind"), convId: el.getAttribute("data-stop"), actionId: stopId })
       .catch(function () { delete S.pendingActions[stopId]; })
-      .then(function () { if (el.isConnected) { el.disabled = false; el.removeAttribute("data-armed"); el.textContent = "Parar"; } });
+      .then(function () {
+        if (el.isConnected) { el.disabled = false; el.removeAttribute("data-armed"); el.textContent = "Parar"; }
+        if (el.id === "chatStop" && S.screen === "chat") renderChatAttention();
+      });
     return;
   }
 });
@@ -2124,6 +2270,11 @@ applyTheme();
 // ---------------- boot ----------------
 initToken();
 renderBell();
+/* R5: com dois Macs, o cabeçalho diz em qual você está. */
+if (MAQUINA) {
+  $("#maquina").textContent = "· " + MAQUINA;
+  $("#wordmark").title = "Frota em " + MAQUINA;
+}
 /* PWA (C1): service worker mínimo — cacheia SÓ o shell (dados nunca). Em
    contexto inseguro (http na LAN) navigator.serviceWorker nem existe: degrada
    sem drama, o banner de offline continua cobrindo a honestidade. */

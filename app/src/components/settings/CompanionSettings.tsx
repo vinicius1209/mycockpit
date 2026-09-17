@@ -20,10 +20,10 @@ import {
   decideCompanionPairing,
   revokeCompanionDevice,
   revokeLegacyCompanionToken,
-  type CompanionDevicesInfo,
-  type CompanionInfo,
 } from "@/lib/companion"
+import { avisoDaTailnet, urlDePareamento, type CompanionInfo } from "@/lib/companionEndereco"
 import { drawQr } from "@/lib/qr"
+import { rotuloDeExpiracao, type CompanionDevicesInfo } from "@/lib/companionAparelhos"
 
 /** Mock p/ o dev no BROWSER (isTauri false): permite ver a seção inteira —
  *  QR, aparelhos, aceite — sem o servidor Rust. Nunca roda dentro do app real. */
@@ -32,6 +32,13 @@ const DEV_MOCK: CompanionInfo = {
   urlLan: "http://192.168.0.42:14200",
   pairingToken: "c0ffee00deadbeefc0ffee00deadbeef",
   connectedCount: 1,
+  tailnet: {
+    estado: "semServe",
+    nome: "mac-de-exemplo.tail1234.ts.net",
+    url: null,
+    comando: "tailscale serve --bg 14200",
+  },
+  maquina: "Mac de exemplo",
 }
 const DEV_MOCK_DEVICES: CompanionDevicesInfo = {
   devices: [
@@ -40,6 +47,7 @@ const DEV_MOCK_DEVICES: CompanionDevicesInfo = {
       name: "iPhone · Safari",
       pairedAt: Date.now() - 86_400_000,
       lastSeenAt: Date.now() - 120_000,
+      expiresAt: Date.now() + 29 * 86_400_000,
     },
   ],
   pending: [{ id: "pp-1", name: "Android · Chrome", requestedAt: Date.now() }],
@@ -74,7 +82,7 @@ export function CompanionSettings() {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [armedId, setArmedId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<"url" | "comando" | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   // status honesto: pergunta ao Rust (connectedCount vem dos sockets WS vivos)
@@ -121,12 +129,19 @@ export function CompanionSettings() {
     }
   }, [enabled])
 
-  // QR v2: só o token de PAREAMENTO (uso único) viaja na URL — nunca mais a
-  // credencial definitiva.
-  const pairUrl =
-    info?.running && info.urlLan && info.pairingToken
-      ? `${info.urlLan}#pair=${info.pairingToken}`
-      : null
+  // QR v2: só o token de PAREAMENTO (uso único) viaja na URL, nunca a
+  // credencial definitiva. R2: com a Tailscale pronta, o QR leva o endereço
+  // https://…ts.net em vez do IP da rede local.
+  const pareamento = urlDePareamento(info)
+  const pairUrl = pareamento?.url ?? null
+  const aviso = avisoDaTailnet(info?.tailnet)
+
+  function copiar(texto: string, qual: "url" | "comando") {
+    void navigator.clipboard?.writeText(texto).then(() => {
+      setCopied(qual)
+      window.setTimeout(() => setCopied(null), 1500)
+    })
+  }
 
   useEffect(() => {
     if (pairUrl && canvasRef.current)
@@ -275,28 +290,57 @@ export function CompanionSettings() {
                     expira em 10 minutos); o aparelho só entra depois que você
                     aceitar aqui.
                   </div>
+                  {info?.maquina && (
+                    <div className="mt-1 text-[12px] text-muted-foreground">
+                      No celular, este Mac aparece como{" "}
+                      <span className="text-foreground">{info.maquina}</span>.
+                      Cada Mac ganha um atalho próprio.
+                    </div>
+                  )}
                   <div className="mt-1.5 flex items-center gap-1.5">
                     <code className="block max-w-full overflow-x-auto rounded bg-secondary/40 px-2 py-1 font-mono text-[11px] break-all whitespace-normal text-foreground/90 select-all">
                       {pairUrl}
                     </code>
                     <button
-                      onClick={() => {
-                        void navigator.clipboard?.writeText(pairUrl).then(() => {
-                          setCopied(true)
-                          window.setTimeout(() => setCopied(false), 1500)
-                        })
-                      }}
+                      onClick={() => copiar(pairUrl, "url")}
                       title="Copiar URL de pareamento"
                       className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
                       aria-label="Copiar URL de pareamento"
                     >
-                      {copied ? (
+                      {copied === "url" ? (
                         <Check className="size-3.5 text-st-success" />
                       ) : (
                         <Copy className="size-3.5" />
                       )}
                     </button>
                   </div>
+
+                  {/* R2 — de onde vem o endereço do QR e o que falta para o seguro */}
+                  {aviso && (
+                    <div className="mt-2 text-[12px] leading-snug text-muted-foreground">
+                      <p>{aviso.texto}</p>
+                      {aviso.comando && (
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <code className="rounded bg-secondary/40 px-2 py-1 font-mono text-[11px] text-foreground/90 select-all">
+                            {aviso.comando}
+                          </code>
+                          <button
+                            onClick={() => copiar(aviso.comando!, "comando")}
+                            title="Copiar comando"
+                            className="shrink-0 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+                            aria-label="Copiar comando"
+                          >
+                            {copied === "comando" ? (
+                              // Verde é marco raro (§2): "copiado" é confirmação comum, fica neutro.
+                              <Check className="size-3.5 text-foreground" />
+                            ) : (
+                              <Copy className="size-3.5" />
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {/* C4 — aparelhos pareados + revogação individual */}
                   <div className="mt-3">
@@ -323,7 +367,9 @@ export function CompanionSettings() {
                                 {d.name}
                               </div>
                               <div className="text-[11px] text-muted-foreground">
-                                {pairedLabel(d.pairedAt)} · {agoLabel(d.lastSeenAt)}
+                                {[pairedLabel(d.pairedAt), agoLabel(d.lastSeenAt), rotuloDeExpiracao(d.expiresAt)]
+                                  .filter(Boolean)
+                                  .join(" · ")}
                               </div>
                             </div>
                             <Button
@@ -344,8 +390,9 @@ export function CompanionSettings() {
                               </div>
                               <div className="text-[11px] leading-snug text-muted-foreground">
                                 Aparelhos pareados antes desta versão usam um
-                                token compartilhado. Revogue quando todos
-                                tiverem pareado de novo pelo QR.
+                                token compartilhado que não expira sozinho.
+                                Revogue quando todos tiverem pareado de novo
+                                pelo QR.
                               </div>
                             </div>
                             <Button

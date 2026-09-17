@@ -13,6 +13,8 @@
 // doc). NÃO depende de nenhuma superfície montada: tudo sai dos stores direto.
 
 import { invoke } from "@tauri-apps/api/core"
+import type { CompanionDevicesInfo } from "@/lib/companionAparelhos"
+import type { CompanionInfo } from "@/lib/companionEndereco"
 import { listen } from "@tauri-apps/api/event"
 import { AGENTS, availability } from "@/lib/agents"
 import { projectForCwd, sessionPlace } from "@/lib/externalSessions"
@@ -29,8 +31,6 @@ import {
   type CompanionAttention,
   type CompanionExtras,
   type CompanionMission,
-  type CompanionProject,
-  type CompanionProjectAgent,
   type CompanionQuestion,
   type CompanionRunning,
   type CompanionSnapshot,
@@ -48,6 +48,7 @@ import { ownerByRunId, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { usePresets } from "@/store/presets"
 import { DESK_TITLE_PREFIX } from "@/lib/fleet/send"
+import { projetosDoCompanion } from "@/lib/companionProjetos"
 import { perfSpan } from "@/lib/fleet/perf"
 
 // ─────────────────────────────────────────────────────────── shape do snapshot
@@ -303,23 +304,14 @@ export function buildCompanionSnapshot(
         availability(a.id, app.settings.detected),
       ),
   ).map((a) => a.id)
-  const deskOf = (pid: string, agent: string): CompanionProjectAgent => {
-    const metas = chat.conversationsByProject[pid] ?? []
-    let best: { id: string; title: string | null; updatedAt: number } | null =
-      null
-    for (const m of metas) {
-      if (m.agent !== agent || !m.title?.startsWith(DESK_TITLE_PREFIX)) continue
-      if (!best || m.updatedAt > best.updatedAt) best = m
-    }
-    return best
-      ? { agent, deskConvId: best.id, deskTitle: best.title ?? undefined }
-      : { agent }
-  }
-  const projects: CompanionProject[] = app.projects.map((p) => ({
-    id: p.id,
-    name: p.name,
-    agents: usableAgents.map((a) => deskOf(p.id, a)),
-  }))
+  const projects = projetosDoCompanion({
+    projects: app.projects,
+    usableAgents,
+    metasByProject: chat.conversationsByProject,
+    prefixoDaMesa: DESK_TITLE_PREFIX,
+    rodando: (id) => chat.byId[id]?.running ?? false,
+    pedeVoce: new Set(attention.map((a) => a.convId).filter((id): id is string => !!id)),
+  })
 
   // ── Especialistas GLOBAIS (C2 · lançar tarefa): valem em qualquer projeto.
   // Escopo-projeto fica FORA (só existe no projeto carregado no desktop; num
@@ -523,40 +515,7 @@ export function stopCompanionBridge(): void {
 
 // ─────────────────────────────── servidor (comandos Rust) + gate pelo setting
 
-/** Info do servidor companion (espelho do CompanionInfo do Rust). */
-export interface CompanionInfo {
-  running: boolean
-  urlLan: string | null
-  /** C4 — token de PAREAMENTO do QR (uso único, vida curta; rotaciona
-   *  sozinho). A credencial definitiva de cada aparelho nunca sai por aqui. */
-  pairingToken: string | null
-  /** Nº de dispositivos (sockets WS) conectados agora. */
-  connectedCount: number
-}
 
-/** C4 — aparelho pareado (a credencial NUNCA viaja; só metadados). */
-export interface CompanionDeviceInfo {
-  id: string
-  name: string
-  /** Epoch ms do aceite. */
-  pairedAt: number
-  /** Epoch ms da última requisição autenticada; null = nunca visto pós-boot. */
-  lastSeenAt: number | null
-}
-
-/** C4 — pedido de pareamento aguardando o gesto humano. */
-export interface CompanionPendingPair {
-  id: string
-  name: string
-  requestedAt: number
-}
-
-export interface CompanionDevicesInfo {
-  devices: CompanionDeviceInfo[]
-  pending: CompanionPendingPair[]
-  /** true = o token único pré-v2 ainda existe (aparelhos antigos com acesso). */
-  legacyActive: boolean
-}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))

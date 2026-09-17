@@ -49,6 +49,8 @@
       if (parts[3]) r.convId = parts[3];
       return r;
     }
+    // R4 (companion-chat-prd): o painel de números saiu da tela inicial.
+    if (parts[0] === "painel") return { screen: "painel" };
     if (parts[0] === "launch") {
       var l = { screen: "launch" };
       if (parts[1]) l.projectId = parts[1];
@@ -69,6 +71,7 @@
     if (r.screen === "launch") {
       return "#/launch" + (r.projectId ? "/" + encodeURIComponent(r.projectId) : "");
     }
+    if (r.screen === "painel") return "#/painel";
     return "#/";
   }
 
@@ -488,7 +491,76 @@
     return k > 0 ? "(" + k + ") " + b : b;
   }
 
+  // ---------------- R4 · tela inicial chat-first ----------------
+  // As conversas de todos os projetos (snapshot `projects[].recent`, R3) numa
+  // lista só: quem pede você primeiro, depois quem roda, depois a mais recente.
+  // Conversa que nunca rodou (agent null) abre com o primeiro motor utilizável
+  // do projeto; sem nenhum, a linha vem sem motor e a página não a abre.
+
+  function motorDe(a) {
+    return a == null ? null : typeof a === "string" ? a : a.agent || null;
+  }
+
+  function homeConversations(snap, projectId) {
+    var ps = (snap && Array.isArray(snap.projects)) ? snap.projects : [];
+    var out = [];
+    for (var i = 0; i < ps.length; i++) {
+      var p = ps[i];
+      if (!p || (projectId && p.id !== projectId)) continue;
+      var primeiro = Array.isArray(p.agents) && p.agents.length ? motorDe(p.agents[0]) : null;
+      var rs = Array.isArray(p.recent) ? p.recent : [];
+      for (var j = 0; j < rs.length; j++) {
+        var c = rs[j];
+        if (!c || !c.convId) continue;
+        out.push({
+          convId: c.convId,
+          projectId: p.id,
+          projectName: p.name,
+          agent: c.agent || primeiro,
+          title: c.title || "Conversa",
+          updatedAt: typeof c.updatedAt === "number" ? c.updatedAt : 0,
+          running: !!c.running,
+          pedeVoce: !!c.pedeVoce,
+        });
+      }
+    }
+    out.sort(function (a, b) {
+      return (Number(b.pedeVoce) - Number(a.pedeVoce)) ||
+        (Number(b.running) - Number(a.running)) ||
+        (b.updatedAt - a.updatedAt);
+    });
+    return out;
+  }
+
+  // Atalhos do campo de mensagem: "/parar" para o turno da conversa aberta;
+  // "/btw <texto>" manda o texto marcado como prioridade (é mensagem comum, não
+  // ação nova no servidor). Qualquer outra coisa segue como mensagem.
+  function parseChatShortcut(text) {
+    var t = String(text == null ? "" : text).trim();
+    if (/^\/parar$/i.test(t)) return { kind: "stop" };
+    var m = /^\/btw\s+([\s\S]+)$/i.exec(t);
+    if (m) return { kind: "message", text: "Prioridade (enviado do celular): " + m[1].trim() };
+    return { kind: "message", text: t };
+  }
+
+  // ---------------- R5 · dois Macs ----------------
+  // Cada Mac serve a sua página com o próprio nome no <meta name="frota-maquina">.
+  // Sem nome (mock, servidor antigo), a página segue como "Companion".
+  function machineName(raw) {
+    var t = String(raw == null ? "" : raw).replace(/\s+/g, " ").trim();
+    return t || null;
+  }
+  // Título da notificação: com dois Macs, diz de qual máquina ela veio.
+  function notificationTitle(machine, text) {
+    var m = machineName(machine);
+    return (m || "FROTA") + " · " + String(text == null ? "" : text);
+  }
+
   return {
+    machineName: machineName,
+    notificationTitle: notificationTitle,
+    homeConversations: homeConversations,
+    parseChatShortcut: parseChatShortcut,
     parseRoute: parseRoute,
     routeHash: routeHash,
     backoffDelay: backoffDelay,

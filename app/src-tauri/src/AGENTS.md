@@ -164,6 +164,28 @@ parado, no máximo 6 seguidores. Acaba em `bastidor_parar`, quando o `Channel`
 falha (janela fechou) ou quando o arquivo some. Saída ao vivo de tool pelo
 stream (`AgentEvent::ToolOutput`) nunca vira item do fio.
 
+## Navegador do projeto (ADR-131, ADR-147)
+
+O Chromium é da Frota (`browser.rs`): um por projeto, perfil persistente,
+headless por padrão, controlado por CDP na loopback. O que a pessoa vê é
+screencast (`browser_cdp.rs`), guardado como último quadro e buscado pelo front;
+frames e WebSockets nunca entram no banco nem no manifesto. Um piloto por
+navegador (`experience_broker.rs`): run, plugin ou pessoa; observar é livre.
+
+- **Não troque por webview nativo nem iframe.** WKWebView não fala CDP (o agente
+  não pilotaria) e a view nativa cobre menus e modais. O racional está em
+  `docs/browser-plan.md`; a evolução para aba e janela flutuante dentro do app
+  está em `docs/navegador-na-frota-prd.md`.
+- O preview é indexado por projeto (`BrowserPreviewRegistry`): duas vistas do
+  mesmo projeto disputam a mesma sessão. Decida quem assiste antes de abrir a
+  segunda.
+- Ligar o navegador por gate ou por Configurações deve ser headless; janela
+  visível só por gesto explícito. Hoje `mcpPreflightRetry.ts` liga com janela:
+  divergência conhecida, registrada no PRD.
+- A injeção do endpoint no MCP usa `--cdp-endpoint` (`mcp_control.rs`), que só o
+  Playwright MCP entende. Outro MCP de navegador precisa de forma de conexão
+  declarada no binding, não de `if` por nome.
+
 ## Mantenha este arquivo verdadeiro
 
 Mudou como o turno nasce, como o plano de MCP é montado, o que é sondado ou

@@ -6,7 +6,7 @@ export {}
 
 declare global {
   interface CompanionWebRoute {
-    screen: "brief" | "agents" | "chat" | "launch"
+    screen: "brief" | "agents" | "chat" | "launch" | "painel"
     projectId?: string
     agent?: string
     convId?: string
@@ -51,7 +51,25 @@ declare global {
     start: number
   }
 
+  interface CompanionWebHomeConversation {
+    convId: string
+    projectId: string
+    projectName: string
+    /** Motor da conversa, ou o primeiro utilizável do projeto; null = não abre. */
+    agent: string | null
+    title: string
+    updatedAt: number
+    running: boolean
+    pedeVoce: boolean
+  }
+
   var CompanionCore: {
+    homeConversations(snap: unknown, projectId?: string | null): CompanionWebHomeConversation[]
+    machineName(raw: string | null | undefined): string | null
+    notificationTitle(machine: string | null | undefined, text: string): string
+    parseChatShortcut(
+      text: string | null | undefined,
+    ): { kind: "stop" } | { kind: "message"; text: string }
     parseRoute(hash: string): CompanionWebRoute
     routeHash(route: Partial<CompanionWebRoute> | null | undefined): string
     backoffDelay(attempt: number): number

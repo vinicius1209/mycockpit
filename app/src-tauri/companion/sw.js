@@ -13,7 +13,7 @@
    shell + banner honesto, nunca tela branca.
    ============================================================ */
 
-var CACHE = "frota-companion-shell-v2"; /* C4: shell com tema + pareamento v2 */
+var CACHE = "frota-companion-shell-v5"; /* R4: início chat-first + painel em #/painel */
 var SHELL = [
   "/",
   "/core.js",

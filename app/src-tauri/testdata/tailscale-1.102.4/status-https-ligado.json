@@ -1,0 +1,27 @@
+{
+  "Version": "1.102.4-t3caf7d9e7-g084ee3b64",
+  "BackendState": "Running",
+  "TailscaleIPs": [
+    "100.87.192.106",
+    "fd7a:115c:a1e0::272e:c06b"
+  ],
+  "MagicDNSSuffix": "taild44f89.ts.net",
+  "CertDomains": [
+    "macbook-pro-de-vinicius.taild44f89.ts.net"
+  ],
+  "CurrentTailnet": {
+    "Name": "usuario@example.com",
+    "MagicDNSSuffix": "taild44f89.ts.net",
+    "MagicDNSEnabled": true
+  },
+  "Self": {
+    "HostName": "MacBook Pro de Vinicius",
+    "DNSName": "macbook-pro-de-vinicius.taild44f89.ts.net.",
+    "OS": "macOS",
+    "Online": true,
+    "TailscaleIPs": [
+      "100.87.192.106",
+      "fd7a:115c:a1e0::272e:c06b"
+    ]
+  }
+}

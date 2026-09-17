@@ -711,3 +711,75 @@ describe("aviso degradado sem Notification (titleBadge)", () => {
     expect(core.titleBadge(null, 2)).toBe("(2) ")
   })
 })
+
+describe("R4 · tela inicial chat-first (companion-chat-prd)", () => {
+  const snap = {
+    projects: [
+      {
+        id: "p1",
+        name: "atlas",
+        agents: [{ agent: "claude-code" }, { agent: "codex" }],
+        recent: [
+          { convId: "a", title: "Refatorar parser", agent: "codex", updatedAt: 100, running: false, pedeVoce: false },
+          { convId: "b", title: "", agent: null, updatedAt: 50, running: false, pedeVoce: false },
+          { convId: "c", title: "Migração", agent: "claude-code", updatedAt: 10, running: false, pedeVoce: true },
+        ],
+      },
+      {
+        id: "p2",
+        name: "lumen",
+        agents: [],
+        recent: [{ convId: "d", title: "Build", agent: null, updatedAt: 70, running: true, pedeVoce: false }],
+      },
+    ],
+  }
+
+  it("pede você primeiro, depois quem roda, depois a mais recente", () => {
+    expect(core.homeConversations(snap).map((c) => c.convId)).toEqual(["c", "d", "a", "b"])
+  })
+
+  it("conversa que nunca rodou abre com o primeiro motor do projeto; sem motor, fica sem", () => {
+    const lista = core.homeConversations(snap)
+    expect(lista.find((c) => c.convId === "b")).toMatchObject({ agent: "claude-code", title: "Conversa" })
+    expect(lista.find((c) => c.convId === "d")?.agent).toBeNull()
+  })
+
+  it("filtra por projeto e aguenta snapshot antigo sem recent", () => {
+    expect(core.homeConversations(snap, "p2").map((c) => c.convId)).toEqual(["d"])
+    expect(core.homeConversations({ projects: [{ id: "p", name: "x", agents: ["codex"] }] })).toEqual([])
+    expect(core.homeConversations(null)).toEqual([])
+  })
+
+  it("o painel de números tem rota própria e a raiz continua sendo a tela inicial", () => {
+    expect(core.parseRoute("#/painel")).toEqual({ screen: "painel" })
+    expect(core.routeHash({ screen: "painel" })).toBe("#/painel")
+    expect(core.parseRoute("#/")).toEqual({ screen: "brief" })
+  })
+
+  it("atalhos: /parar para, /btw marca prioridade, o resto é mensagem", () => {
+    expect(core.parseChatShortcut(" /PARAR ")).toEqual({ kind: "stop" })
+    expect(core.parseChatShortcut("/btw o deploy é amanhã")).toEqual({
+      kind: "message",
+      text: "Prioridade (enviado do celular): o deploy é amanhã",
+    })
+    expect(core.parseChatShortcut("/parar agora")).toEqual({ kind: "message", text: "/parar agora" })
+    expect(core.parseChatShortcut("/btw")).toEqual({ kind: "message", text: "/btw" })
+  })
+})
+
+describe("R5 · dois Macs", () => {
+  it("o nome da máquina vem limpo do meta e some quando vazio", () => {
+    expect(core.machineName("  MacBook Pro   de Vinicius \n")).toBe("MacBook Pro de Vinicius")
+    expect(core.machineName("")).toBeNull()
+    expect(core.machineName("   ")).toBeNull()
+    expect(core.machineName(null)).toBeNull()
+  })
+
+  it("a notificação diz de qual Mac veio, e sem nome segue como FROTA", () => {
+    expect(core.notificationTitle("Mac da empresa", "Aprovação pendente")).toBe(
+      "Mac da empresa · Aprovação pendente",
+    )
+    expect(core.notificationTitle(null, "resposta chegou")).toBe("FROTA · resposta chegou")
+    expect(core.notificationTitle(" ", "resposta chegou")).toBe("FROTA · resposta chegou")
+  })
+})

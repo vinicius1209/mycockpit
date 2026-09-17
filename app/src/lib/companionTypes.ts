@@ -130,11 +130,27 @@ export interface CompanionProjectAgent {
   deskTitle?: string
 }
 
+/** R3 — conversa recente de um projeto, para o celular abrir pelo chat. */
+export interface CompanionConversa {
+  convId: string
+  title: string
+  /** Motor persistido da conversa; null = nunca rodou. */
+  agent: string | null
+  updatedAt: number
+  running: boolean
+  /** Há algo em `attention` para esta conversa: aprovação, pergunta, gate ou
+   *  turno parado sem notícia. */
+  pedeVoce: boolean
+}
+
 export interface CompanionProject {
   id: string
   name: string
   /** Agents utilizáveis nesta máquina (ready/instalado) + conversa da mesa. */
   agents: CompanionProjectAgent[]
+  /** R3 — conversas mais recentes (teto por projeto; quem roda ou pede você
+   *  entra sempre). Ordem: mais recente primeiro. */
+  recent: CompanionConversa[]
 }
 
 /** Especialista GLOBAL utilizável em qualquer projeto (C2 · lançar tarefa).
