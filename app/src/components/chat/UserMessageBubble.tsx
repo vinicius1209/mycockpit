@@ -11,6 +11,7 @@ import { usePresets } from "@/store/presets"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { blocoDaCitacaoNoTexto, itemDaCitacao, separarCitacoes } from "@/lib/citacao"
+import { rotuloDaColagem, separarColagens } from "@/lib/colagem"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
@@ -49,7 +50,12 @@ export function UserMessageBubble({
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
   // Citação enviada (capricho R4) vira linha ↳ acima do texto, nunca o formato cru.
-  const { citacoes, corpo } = useMemo(() => separarCitacoes(text), [text])
+  const { citacoes, corpo, colagens } = useMemo(() => {
+    const semCitacoes = separarCitacoes(text)
+    // Colagem grande (capricho R7) mora no fim do texto; vira bloco recolhido.
+    const { corpo, colagens } = separarColagens(semCitacoes.corpo)
+    return { citacoes: semCitacoes.citacoes, corpo, colagens }
+  }, [text])
 
   function handleEdit() {
     const convId = useChat.getState().activeId
@@ -57,7 +63,12 @@ export function UserMessageBubble({
 
     const drafts = useComposerDrafts.getState()
     drafts.setText(convId, corpo)
-    if (citacoes.length > 0) drafts.setBlocos(convId, citacoes.map((c) => blocoDaCitacaoNoTexto(c)))
+    if (citacoes.length > 0 || colagens.length > 0) {
+      drafts.setBlocos(convId, [
+        ...citacoes.map((c) => blocoDaCitacaoNoTexto(c)),
+        ...colagens.map((texto) => ({ tipo: "colagem" as const, id: crypto.randomUUID(), texto })),
+      ])
+    }
     const inputEl = document.querySelector<HTMLElement>('[data-composer="console"]')
     if (inputEl) {
       inputEl.focus()
@@ -125,6 +136,19 @@ export function UserMessageBubble({
       >
         <MentionText text={corpo} />
       </div>
+      {colagens.map((c, i) => (
+        <details key={i} className="group/colado mt-1 max-w-full">
+          <summary className="w-max cursor-pointer list-none text-[12px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            <span className="tabular-nums">{rotuloDaColagem(c)}</span>
+          </summary>
+          <pre
+            data-selectable
+            className="mt-1 max-h-72 max-w-full overflow-auto rounded-md border bg-card p-2 font-mono text-[11px] leading-relaxed whitespace-pre text-foreground/85"
+          >
+            {c}
+          </pre>
+        </details>
+      ))}
 
       <div
         className={cn(

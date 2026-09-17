@@ -22,16 +22,20 @@ export function parseBlocos(raw: string): BlocoDoRascunho[] {
   try {
     const value: unknown = JSON.parse(raw)
     if (!Array.isArray(value)) return []
-    return value.filter(
-      (item): item is BlocoDoRascunho =>
-        !!item &&
-        typeof item === "object" &&
-        (item as BlocoDoRascunho).tipo === "citacao" &&
-        typeof (item as BlocoDoRascunho).itemId === "string" &&
-        typeof (item as BlocoDoRascunho).autor === "string" &&
-        typeof (item as BlocoDoRascunho).ts === "number" &&
-        typeof (item as BlocoDoRascunho).trecho === "string",
-    )
+    return value.filter((item): item is BlocoDoRascunho => {
+      if (!item || typeof item !== "object") return false
+      const b = item as Record<string, unknown>
+      if (b.tipo === "citacao") {
+        return (
+          typeof b.itemId === "string" &&
+          typeof b.autor === "string" &&
+          typeof b.ts === "number" &&
+          typeof b.trecho === "string"
+        )
+      }
+      // Colagem grande (capricho R7): o conteúdo inteiro mora no rascunho.
+      return b.tipo === "colagem" && typeof b.id === "string" && typeof b.texto === "string"
+    })
   } catch {
     return []
   }

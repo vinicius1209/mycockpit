@@ -9,3 +9,10 @@ describe("citações lidas do banco", () => {
     expect(parseBlocos("{}")).toEqual([])
   })
 })
+
+describe("colagem lida do banco", () => {
+  it("colagem bem formada volta inteira; sem texto é descartada", () => {
+    const boa = { tipo: "colagem", id: "c1", texto: "a\nb" }
+    expect(parseBlocos(JSON.stringify([boa, { tipo: "colagem", id: "c2" }]))).toEqual([boa])
+  })
+})

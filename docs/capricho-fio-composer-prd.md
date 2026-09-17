@@ -2,8 +2,19 @@
 
 ## Status (17/09/2026)
 
-**R1, R3, R4 e R6 entregues (17/09/2026, ADR-205). R2 e R5 entregues em seguida.**
-R7 e R8 seguem para a próxima sprint; spikes S1 e S2 dependem do app rodando.
+**R1, R3, R4 e R6 entregues (17/09/2026, ADR-205). R2, R5 e R7 entregues em seguida.**
+R8 segue para a próxima sprint; spikes S1 e S2 dependem do app rodando.
+
+R7: acima de 40 linhas ou 4.000 caracteres, colar vira bloco `colagem` no
+rascunho (`colagemGrande.ts`, módulo irmão do `LexicalComposer`), com chip
+"Colado · N linhas", prévia em popover e "Inserir como texto". No envio vai no fim
+do texto entre `⟦colado · N linhas⟧` e `⟦/colado⟧`; a leitura CONTA as linhas do
+cabeçalho, então conteúdo com o próprio marcador não quebra. A porta do prompt
+emoldura como dado com o conteúdo byte a byte (teste com 500 linhas); a bolha
+mostra a colagem recolhida. Como a citação, a colagem sozinha não envia. ⌘⇧V arma
+"colar como texto" para a próxima colagem; não confirmado se o WebKit dispara
+colagem nesse atalho (a prévia tem o mesmo gesto). Verificado colando 500 linhas
+no editor Lexical num harness.
 
 R2: `CopiaDeTabela` (montado na raiz) troca a cópia por planilha só quando a
 seleção começa e termina na mesma tabela de um bloco selecionável, levando o

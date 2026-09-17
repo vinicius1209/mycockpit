@@ -31,11 +31,15 @@
 // forçado e fila. Sem texto escrito, a citação sozinha não vira mensagem.
 
 import { textoComCitacoes, type BlocoDoRascunho } from "@/lib/citacao"
+import { textoComColagens, type BlocoColagem } from "@/lib/colagem"
 
 export function textoDoEnvio(
   override: unknown,
   value: string,
   blocos?: readonly BlocoDoRascunho[],
 ): string {
-  return textoComCitacoes((typeof override === "string" ? override : value).trim(), blocos)
+  const texto = textoComCitacoes((typeof override === "string" ? override : value).trim(), blocos)
+  // Colagens grandes (capricho R7) vão no fim, depois do que foi escrito.
+  const colagens = (blocos ?? []).filter((b): b is BlocoColagem => b.tipo === "colagem")
+  return textoComColagens(texto, colagens)
 }

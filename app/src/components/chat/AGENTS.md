@@ -210,6 +210,10 @@ nesses gestos que apagava o que a pessoa estava digitando (K1).
   desenha a linha ↳. "Editar" devolve a citação como bloco.
 - Mensagem citável tem `data-citavel` com o id do item. Superfície nova que deva
   ser citável recebe o atributo; a pílula e o menu de contexto já a enxergam.
+- Colagem grande (R7) é o segundo tipo de bloco: mesma porta (`textoDoEnvio` no
+  envio, `withNotasDoTurno` no prompt), no FIM do texto, com contagem de linhas
+  no marcador. Bloco novo segue o mesmo caminho: tipo em `BlocoDoRascunho`,
+  `parseBlocos`, chip em `BlocosDoRascunho.tsx`, formato + moldura em `lib/`.
 - Arquivo do sistema chega pelo evento do Tauri (`SolturaNoComposer`), nunca
   pelo `drop` do HTML5; o alvo é o `[data-composer-card]` do `ComposerShell`.
 

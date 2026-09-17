@@ -49,6 +49,8 @@ interface ComposerDraftState {
   appendText: (conversationId: string, text: string) => void
   /** Acrescenta uma citação; `false` quando o teto de citações recusou. */
   addCitacao: (conversationId: string, citacao: BlocoCitacao) => boolean
+  /** Colagem grande vira bloco (capricho R7). */
+  addColagem: (conversationId: string, texto: string) => void
   removeBloco: (conversationId: string, index: number) => void
   setBlocos: (conversationId: string, blocos: BlocoDoRascunho[]) => void
   setAttachments: (conversationId: string, attachments: Attachment[]) => void
@@ -148,6 +150,11 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
       const { blocos, coube } = comNovaCitacao(current.blocos ?? [], citacao)
       if (coube) patch(conversationId, { ...current, blocos })
       return coube
+    },
+    addColagem: (conversationId, texto) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      const bloco = { tipo: "colagem" as const, id: crypto.randomUUID(), texto }
+      patch(conversationId, { ...current, blocos: [...(current.blocos ?? []), bloco] })
     },
     removeBloco: (conversationId, index) => {
       const current = get().byConv[conversationId] ?? EMPTY

@@ -1,5 +1,4 @@
 import {
-  CornerDownRight,
   FileText,
   Image as ImageIcon,
   Paperclip,
@@ -19,7 +18,7 @@ import { DESTINATIONS } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
 import { useChat, type QueuedMsg } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
-import { horaDaCitacao, type BlocoDoRascunho } from "@/lib/citacao"
+import { BlocosDoRascunho } from "@/components/chat/BlocosDoRascunho"
 import type { Destination } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { fmtBytes } from "@/lib/format"
@@ -29,32 +28,6 @@ const CHIPS = [
   { label: "Rodar os testes", prompt: "Rode a suíte de testes e me mostre o resultado." },
   { label: "Criar uma branch", prompt: "Crie uma branch nova a partir da main para esta tarefa." },
 ]
-
-/** Uma citação no rascunho: de quem e quando, e o trecho em até duas linhas. */
-function CitacaoChip({ bloco, onRemove }: { bloco: BlocoDoRascunho; onRemove: () => void }) {
-  return (
-    <span className="flex w-full min-w-0 items-start gap-1.5 rounded-md border bg-secondary/50 py-1 pr-1 pl-2 text-[12px]">
-      <CornerDownRight className="mt-0.5 size-3 shrink-0 text-muted-foreground" />
-      <span className="min-w-0 flex-1">
-        <span className="block font-mono text-[11px] text-muted-foreground">
-          {bloco.autor} · {horaDaCitacao(bloco.ts)}
-        </span>
-        <span className="line-clamp-2 text-foreground/80">{bloco.trecho}</span>
-      </span>
-      <button
-        onClick={(e) => {
-          e.stopPropagation()
-          onRemove()
-        }}
-        className="text-muted-foreground hover:text-foreground"
-        aria-label="Remover citação"
-        title="Remover citação"
-      >
-        <X className="size-3" />
-      </button>
-    </span>
-  )
-}
 
 /** Faixa de chips dos anexos pendentes (acima do input). */
 export function AttachmentChips({
@@ -76,7 +49,7 @@ export function AttachmentChips({
   return (
     <div className="flex flex-wrap gap-1.5 px-3 pt-3">
       {activeId &&
-        blocos?.map((b, i) => <CitacaoChip key={`${b.itemId}:${i}`} bloco={b} onRemove={() => useComposerDrafts.getState().removeBloco(activeId, i)} />)}
+        blocos?.length ? <BlocosDoRascunho convId={activeId} blocos={blocos} /> : null}
       {attachments.map((a) => {
         const ok =
           a.kind === "image"

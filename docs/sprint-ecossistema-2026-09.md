@@ -2,7 +2,8 @@
 
 > Status: **corte da sprint entregue em 17/09**. Da próxima sprint, já saíram
 > C-Q3 (↳ leva à original), C-T2 (seleção de tabela como planilha, clique duplo) e
-> B6 (vigia do navegador e navegador órfão no boot). Épico D: R1, R2 e R4 do PRD entregues em 17/09 (D2, D4). Épico C: R1, R3, R4 e R6 do PRD entregues em 17/09
+> B6 (vigia do navegador e navegador órfão no boot) e C-D2 (colagem grande vira
+> pílula). Épico D: R1, R2 e R4 do PRD entregues em 17/09 (D2, D4). Épico C: R1, R3, R4 e R6 do PRD entregues em 17/09
 > (C-T1, C-Q1 e C-Q2, C-D1). Épico B: R1 a R3 do PRD entregues em 17/09 (B1 aba,
 > B1b flutuante, B2 anexar e copiar). Correções K1 a K4 entregues em 17/09 (K4 dentro do
 > R1 do Companion). Épico A: R1 a R5 do PRD entregues em 17/09 (A1, A4

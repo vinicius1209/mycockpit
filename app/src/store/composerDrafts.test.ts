@@ -171,3 +171,17 @@ describe("citações no rascunho", () => {
     expect(useComposerDrafts.getState().byConv.c2).toMatchObject({ text: "por quê isso?", blocos: [citacao] })
   })
 })
+
+describe("colagem grande no rascunho", () => {
+  it("vira bloco persistido e o texto do editor não muda", async () => {
+    const store = useComposerDrafts.getState()
+    store.setText("c3", "o que houve?")
+    const log = Array.from({ length: 500 }, (_, i) => `linha ${i}`).join("\n")
+    store.addColagem("c3", log)
+    const draft = useComposerDrafts.getState().byConv.c3
+    expect(draft?.text).toBe("o que houve?")
+    expect(draft?.blocos).toEqual([{ tipo: "colagem", id: expect.any(String), texto: log }])
+    await useComposerDrafts.getState().flush("c3")
+    expect(saveComposerDraft).toHaveBeenLastCalledWith("c3", expect.objectContaining({ blocos: draft?.blocos }))
+  })
+})

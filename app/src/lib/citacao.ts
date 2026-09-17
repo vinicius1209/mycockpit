@@ -11,6 +11,8 @@
 //   (linha em branco)
 //   o que a pessoa escreveu
 
+import type { BlocoColagem } from "@/lib/colagem"
+
 export interface BlocoCitacao {
   tipo: "citacao"
   /** Item do fio de onde saiu (para voltar a ele depois). */
@@ -21,7 +23,7 @@ export interface BlocoCitacao {
   trecho: string
 }
 
-export type BlocoDoRascunho = BlocoCitacao
+export type BlocoDoRascunho = BlocoCitacao | BlocoColagem
 
 /** Teto do trecho: citação é apontar, não recolar a resposta inteira. */
 export const TETO_DO_TRECHO = 600
@@ -73,9 +75,10 @@ export function comNovaCitacao(
   blocos: readonly BlocoDoRascunho[],
   nova: BlocoCitacao,
 ): { blocos: BlocoDoRascunho[]; coube: boolean } {
-  const igual = blocos.some((b) => b.itemId === nova.itemId && b.trecho === nova.trecho)
+  const citacoes = blocos.filter((b): b is BlocoCitacao => b.tipo === "citacao")
+  const igual = citacoes.some((b) => b.itemId === nova.itemId && b.trecho === nova.trecho)
   if (igual) return { blocos: [...blocos], coube: true }
-  if (blocos.length >= TETO_DE_CITACOES) return { blocos: [...blocos], coube: false }
+  if (citacoes.length >= TETO_DE_CITACOES) return { blocos: [...blocos], coube: false }
   return { blocos: [...blocos, nova], coube: true }
 }
 
@@ -86,8 +89,9 @@ export function textoComCitacoes(
   blocos: readonly BlocoDoRascunho[] | undefined,
   agora: number = Date.now(),
 ): string {
-  if (!texto.trim() || !blocos?.length) return texto
-  const cabecas = blocos.map((b) => {
+  const citacoes = (blocos ?? []).filter((b): b is BlocoCitacao => b.tipo === "citacao")
+  if (!texto.trim() || !citacoes.length) return texto
+  const cabecas = citacoes.map((b) => {
     const trecho = b.trecho
       .split("\n")
       .map((l) => (l ? `> ${l}` : ">"))

@@ -2,6 +2,7 @@
 // Entrega Enter=envia/corrige, Tab=fila, Shift+Enter=quebra linha, menções "@",
 // comandos "/" e histórico ↑/↓.
 
+import { virouPilula } from "@/components/chat/colagemGrande"
 import { useEffect, useMemo, useRef } from "react"
 import { LexicalComposer as LexicalComposerBase } from "@lexical/react/LexicalComposer"
 import { RichTextPlugin } from "@lexical/react/LexicalRichTextPlugin"
@@ -397,6 +398,7 @@ function PasteAttachmentsPlugin({
         // nada aproveitável (nem texto, nem arquivo) → deixa o pipeline seguir.
         if (files.length === 0 && !text) return false
         event.preventDefault()
+        if (files.length === 0 && virouPilula(text)) return true
         if (text) {
           const selection = $getSelection()
           if ($isRangeSelection(selection)) {

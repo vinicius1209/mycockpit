@@ -35,3 +35,18 @@ describe("citação no prompt", () => {
     expect(withNotasDoTurno("conv-1", "proj", [], "oi").prompt).toBe("oi")
   })
 })
+
+describe("colagem grande no prompt (capricho R7)", () => {
+  it("500 linhas chegam ao motor byte a byte, depois do pedido e com citação junto", () => {
+    const log = Array.from({ length: 500 }, (_, i) => `linha ${i}\té \`código\` <tag> ${"x".repeat(i % 7)}`).join("\n")
+    const enviado = textoDoEnvio(undefined, "o que houve?", [
+      citacao,
+      { tipo: "colagem", id: "c1", texto: log },
+    ])
+    const { prompt } = withNotasDoTurno("conv-1", "proj", [], enviado)
+    expect(prompt).toContain(`<colado>\n${log}\n</colado>`)
+    expect(prompt.indexOf("<citacao>")).toBeLessThan(prompt.indexOf("o que houve?"))
+    expect(prompt.indexOf("o que houve?")).toBeLessThan(prompt.indexOf("<colado>"))
+    expect(prompt).not.toContain("⟦colado")
+  })
+})
