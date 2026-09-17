@@ -153,7 +153,11 @@ export function AppShell() {
                 // `clip` e não `hidden` pela regra do esqueleto (index.css): moldura
                 // corta, nunca rola. `hidden` aceitaria `scrollTop` e deixaria a
                 // tira de abas ser empurrada pra fora por um scroll de dentro.
-                className="flex h-full flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-pop)]"
+                // Sombra curta, a mesma do cartão irmão (ContextPanel). O cartão
+                // ocupa o painel inteiro e o grupo corta em `clip`: a sombra longa
+                // (`--shadow-pop`, 40px de blur) só sobrava nos quatro cantos,
+                // entre a curva e o retângulo, e virava uma cunha cinza.
+                className="flex h-full flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-sm),var(--lift)]"
               >
                 {/* Tira de abas do Trabalho (F1.1). Conversa é a âncora fixa e
                     hospeda o + de ações; Alterações entra e sai sem levar a
