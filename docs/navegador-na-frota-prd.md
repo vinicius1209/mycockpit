@@ -2,7 +2,18 @@
 
 ## Status (17/09/2026)
 
-**R1 a R3 entregues (17/09/2026, ADR-204).** R4 a R6 seguem para a próxima sprint.
+**R1 a R3 entregues (17/09/2026, ADR-204). R6 entregue (17/09/2026, ADR-207).** R4 e
+R5 seguem para a próxima sprint.
+
+R6, e onde divergiu: a queda NÃO é sondada no ticker do `watchdog.ts`; o
+`ProcessRegistry` já emite `process_exited`, e o vigia (`lib/vigiaDoNavegador.ts`)
+reage a ele, com um aviso por processo e "Ligar de novo" (parada pedida chega como
+`stopped` e não avisa). A aba e o card de Configurações reconsultam o status nessa
+hora. No boot, `browser_orfaos.rs` acha Chromium de perfil da Frota sem sessão viva
+(pelo pid ou pelo grupo de processos, porque o app lança por `zsh -lc`) e o app
+oferece "Encerrar"; **não adota** o processo órfão, porque o ciclo de vida do
+navegador mora no `ProcessRegistry`, que não teria o handle dele. Fixture real de
+`ps` em `testdata/chromium-ps/`.
 Épico B de `docs/sprint-ecossistema-2026-09.md`.
 
 O que foi feito, e onde divergiu do texto abaixo:

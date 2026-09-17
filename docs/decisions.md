@@ -7409,3 +7409,20 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   motor anterior retomando a sessão.
 - **Verificado:** vitest 4342, `tsc -b` 0, guardas verdes; golden test de 100
   itens; H3 (`trust.test.ts`) e os testes v1 do handoff sem alteração.
+
+### ADR-207 · Navegador do projeto: queda avisada pelo evento de saída e órfão encerrado, nunca adotado
+
+- **Contexto (17/09/2026):** o navegador morria em silêncio (a UI só descobria na
+  próxima consulta) e, se o app caísse, o Chromium do projeto ficava vivo
+  segurando o perfil, e o próximo "Ligar" falhava sem explicar.
+- **Decisão:** a queda é detectada pelo `process_exited` que o `ProcessRegistry`
+  já emite, não por sondagem no ticker: um aviso por processo, com "Ligar de
+  novo", e parada pedida (`stopped`) não avisa. No boot, `browser_orfaos` acha
+  Chromium com perfil da Frota sem sessão viva (pid ou grupo de processos) e o app
+  oferece encerrar; o encerramento confere de novo antes do sinal.
+- **Recusado:** adotar o órfão na sessão. O ciclo de vida do navegador (TERM no
+  grupo, tail, kill_all no quit) mora no `ProcessRegistry`, que não tem o handle de
+  um processo que ele não lançou; adotar criaria uma sessão que o app não consegue
+  desligar direito.
+- **Verificado:** fixture real de `ps` (Chrome for Testing 151 lançado por `zsh
+  -lc` com as flags do app), testes do vigia; vitest 4351, `cargo test` 874.

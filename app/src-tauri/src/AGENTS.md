@@ -186,6 +186,9 @@ navegador (`experience_broker.rs`): run, plugin ou pessoa; observar é livre.
   de vista não cortar o stream da vista nova.
 - Ligar o navegador por gate ou por Configurações é headless; janela visível só
   por gesto explícito.
+- Navegador que sobrou de sessão anterior (`browser_orfaos.rs`) é encontrado e,
+  por gesto, encerrado; nunca adotado. Sessão viva se reconhece pelo pid OU pelo
+  grupo de processos (o `ProcessRegistry` lança por `zsh -lc`).
 - Capturar a página (`browser_capture.rs`) é observação, não pilotagem: PNG real
   por `Page.captureScreenshot`, bytes direto para anexo ou clipboard, URL limpa
   por `sanitize_page_url`. Nunca base64 no Channel.

@@ -54,6 +54,7 @@ import { setHudPreferences } from "@/lib/hud"
 import { nativeNotify } from "@/lib/notify"
 import { focusConsoleComposer } from "@/lib/focusComposer"
 import { startTurnWatchdog } from "@/lib/watchdog"
+import { startVigiaDoNavegador } from "@/lib/vigiaDoNavegador"
 import { startUsageWindow } from "@/lib/usageWindow"
 import {
   externalSessionsKey,
@@ -253,6 +254,8 @@ export default function App() {
   useEffect(() => rastrearModalidade(), [])
 
   useEffect(() => startTurnWatchdog(), [])
+  // B6: queda do navegador do projeto e navegador que sobrou de sessão anterior.
+  useEffect(() => startVigiaDoNavegador(), [])
 
   // Medidor de janela de uso: hidrata os snapshots vivos do backend e assina
   // o push da statusline (usage://snapshot). O poll (codex) roda na passada

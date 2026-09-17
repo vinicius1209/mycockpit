@@ -133,6 +133,14 @@ impl Drop for BrowserLifecycleGuard {
 }
 
 impl BrowserRegistry {
+    /// PIDs das sessões vivas: o que NÃO é navegador órfão.
+    pub(crate) fn pids(&self) -> std::collections::HashSet<u32> {
+        self.sessions
+            .lock()
+            .map(|m| m.values().map(|s| s.pid).collect())
+            .unwrap_or_default()
+    }
+
     pub(crate) fn get(&self, project_id: &str) -> Option<BrowserSession> {
         self.sessions
             .lock()

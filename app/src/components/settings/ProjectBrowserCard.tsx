@@ -68,7 +68,13 @@ export function useProjectBrowser(projectPath: string | null): ProjectBrowser {
     let cancelled = false
     let unlisten: (() => void) | undefined
     void listenWorkEvents((event) => {
-      if (event.kind === "browser_state") void refresh()
+      // Queda do processo (B6) também: sem isto a aba seguia "ligada" até a
+      // próxima consulta, com o endpoint já morto.
+      if (
+        event.kind === "browser_state" ||
+        (event.kind === "process_exited" && event.data.process?.runId.startsWith("browser-"))
+      )
+        void refresh()
     }).then((fn) => {
       if (cancelled) fn()
       else unlisten = fn

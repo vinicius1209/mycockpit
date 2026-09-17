@@ -2,8 +2,18 @@
 
 ## Status (17/09/2026)
 
-**R1, R3, R4 e R6 entregues (17/09/2026, ADR-205).** R2, R5, R7 e R8 seguem para a
-próxima sprint; spikes S1 e S2 dependem do app rodando e continuam abertos.
+**R1, R3, R4 e R6 entregues (17/09/2026, ADR-205). R2 e R5 entregues em seguida.**
+R7 e R8 seguem para a próxima sprint; spikes S1 e S2 dependem do app rodando.
+
+R2: `CopiaDeTabela` (montado na raiz) troca a cópia por planilha só quando a
+seleção começa e termina na mesma tabela de um bloco selecionável, levando o
+retângulo das células tocadas com o texto inteiro (`recorteDaSelecao`, testado);
+uma célula só fica com a cópia normal. Clique duplo seleciona a célula. Verificado
+no Chromium lendo o clipboard. R5: a linha ↳ da bolha é botão; como o id não viaja
+no texto (ADR-205), a original é achada pelo trecho (`itemDaCitacao`, comparando só
+letras e dígitos, da mensagem mais recente para trás) e revelada pelo
+`revealTranscriptItem` que já abre o histórico fora da janela, rola sem
+`scrollIntoView` e destaca. Original ausente vira aviso.
 Épico C de `docs/sprint-ecossistema-2026-09.md`.
 
 O que foi feito, e onde divergiu do texto abaixo:

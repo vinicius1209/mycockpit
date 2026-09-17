@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { usePresets } from "@/store/presets"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
-import { blocoDaCitacaoNoTexto, separarCitacoes } from "@/lib/citacao"
+import { blocoDaCitacaoNoTexto, itemDaCitacao, separarCitacoes } from "@/lib/citacao"
+import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 
 export function MentionText({ text }: { text: string }) {
@@ -97,17 +98,26 @@ export function UserMessageBubble({
   return (
     <div className="group relative inline-block max-w-full">
       {citacoes.map((c, i) => (
-        <div
+        <button
           key={i}
-          title={c.trecho}
-          className="mb-1 flex max-w-[520px] items-center gap-1.5 text-[12px] text-muted-foreground"
+          type="button"
+          title={`Ir para a mensagem original: ${c.trecho}`}
+          // C-Q3: a busca é feita no clique, não a cada render do fio.
+          onClick={() => {
+            const convId = useChat.getState().activeId
+            const items = convId ? useChat.getState().byId[convId]?.items : undefined
+            const original = items ? itemDaCitacao(items, c.trecho, itemId) : null
+            if (convId && original) useApp.getState().revealTranscriptItem(convId, original)
+            else toast("A mensagem citada não está mais nesta conversa.")
+          }}
+          className="mb-1 flex max-w-[520px] items-center gap-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:text-foreground"
         >
           <CornerDownRight className="size-3 shrink-0" />
           <span className="shrink-0 font-mono text-[11px]">
             {c.autor} · {c.hora}
           </span>
           <span className="min-w-0 truncate italic">«{c.trecho.replace(/\s+/g, " ")}»</span>
-        </div>
+        </button>
       ))}
       <div
         data-selectable

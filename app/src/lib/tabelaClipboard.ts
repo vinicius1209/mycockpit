@@ -90,3 +90,39 @@ export function conteudoDaTabela(
 ): { plain: string; html?: string } {
   return destino === "planilha" ? { plain: paraTsv(t), html: paraHtml(t) } : { plain: paraMarkdown(t) }
 }
+
+export interface CelulaVista {
+  texto: string
+  /** A seleção toca esta célula (ainda que em parte). */
+  selecionada: boolean
+}
+
+/** Seleção dentro de uma tabela → a sub-tabela que ela cobre (C-T2). Pega o
+ *  retângulo das células tocadas: linhas e colunas entre a primeira e a última
+ *  selecionadas, com o texto INTEIRO de cada célula (planilha não tem meia
+ *  célula). O cabeçalho vale se a primeira linha do recorte é a de cabeçalho. */
+export function recorteDaSelecao(
+  linhas: readonly (readonly CelulaVista[])[],
+  primeiraLinhaECabecalho: boolean,
+): TabelaCopiavel | null {
+  let l0 = Infinity
+  let l1 = -1
+  let c0 = Infinity
+  let c1 = -1
+  linhas.forEach((linha, i) =>
+    linha.forEach((celula, j) => {
+      if (!celula.selecionada) return
+      l0 = Math.min(l0, i)
+      l1 = Math.max(l1, i)
+      c0 = Math.min(c0, j)
+      c1 = Math.max(c1, j)
+    }),
+  )
+  if (l1 < 0) return null
+  const recorte = linhas
+    .slice(l0, l1 + 1)
+    .map((linha) => Array.from({ length: c1 - c0 + 1 }, (_, k) => linha[c0 + k]?.texto ?? ""))
+  // Uma célula só não é tabela: a cópia normal do texto resolve.
+  if (recorte.length === 1 && recorte[0].length === 1) return null
+  return { linhas: recorte, cabecalho: primeiraLinhaECabecalho && l0 === 0 }
+}

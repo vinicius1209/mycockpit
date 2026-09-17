@@ -157,3 +157,35 @@ export function blocoDaCitacaoNoTexto(c: CitacaoNoTexto, agora: number = Date.no
     : base
   return { tipo: "citacao", itemId: "", autor: c.autor, ts: d.getTime(), trecho: c.trecho }
 }
+
+/** Texto comparável: só letras e dígitos, em minúscula. A seleção vem do texto
+ *  RENDERIZADO e o item guarda o Markdown cru (`**`, crases, quebras); tirar
+ *  pontuação e espaço dos dois lados é o que os torna iguais. */
+function comparavel(s: string): string {
+  return s
+    .replace(/…$/, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+}
+
+/** Qual mensagem do agente contém o trecho citado (C-Q3). Procura antes da
+ *  mensagem que citou, da mais recente para a mais antiga; o id não viaja no
+ *  texto (ADR-205), então a busca é pelo trecho. `null` quando a original não
+ *  está mais no fio. */
+export function itemDaCitacao(
+  items: readonly { id: string; kind: string; text?: string }[],
+  trecho: string,
+  antesDoItem?: string,
+): string | null {
+  const alvo = comparavel(trecho)
+  // Trecho curto demais casaria com qualquer mensagem.
+  if (alvo.length < 3) return null
+  const limite = antesDoItem ? items.findIndex((i) => i.id === antesDoItem) : -1
+  const fim = limite >= 0 ? limite : items.length
+  for (let i = fim - 1; i >= 0; i--) {
+    const it = items[i]
+    if (it.kind !== "text" || !it.text) continue
+    if (comparavel(it.text).includes(alvo)) return it.id
+  }
+  return null
+}
