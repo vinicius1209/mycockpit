@@ -16,6 +16,7 @@ mod attachments;
 mod browser;
 mod browser_capture;
 mod browser_conexao;
+mod browser_marcacao;
 mod browser_orfaos;
 mod browser_cdp;
 mod browser_panel;
@@ -962,6 +963,7 @@ pub fn run() {
             browser_cdp::browser_input,
             browser_capture::browser_capture_attach,
             browser_capture::browser_capture_copy,
+            browser_marcacao::browser_marcar,
             browser_orfaos::browser_orfaos,
             browser_orfaos::browser_encerrar_orfao,
             soltura::caminhos_soltos,

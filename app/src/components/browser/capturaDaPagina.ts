@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { toast } from "sonner"
+import { agentDef } from "@/lib/agents"
 import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
@@ -66,5 +67,64 @@ export async function copiarImagemDaPagina(projectPath: string, targetId: string
     toast.success("Imagem da página copiada.")
   } catch (cause) {
     toast.error(cause instanceof Error ? cause.message : String(cause))
+  }
+}
+
+export interface RegiaoNoQuadro {
+  x: number
+  y: number
+  largura: number
+  altura: number
+  quadroLargura: number
+  quadroAltura: number
+}
+
+export interface Marcacao extends PaginaAnexada {
+  descricao: string
+  elementos: { papel: string; nome: string; seletor: string; tag: string }[]
+}
+
+/** Para onde vai a marcação (B3): a descrição sempre; a imagem só se o motor da
+ *  conversa lê imagem (capability, nunca nome) e se cabe no teto de anexos. */
+export function destinoDaMarcacao(
+  aceitaImagem: boolean,
+  atuais: Attachment[],
+  imagem: Attachment,
+): { anexos: Attachment[]; aviso: string | null } {
+  if (!aceitaImagem) {
+    return { anexos: atuais, aviso: "Este motor não lê imagem: vai só a descrição da região." }
+  }
+  const { anexos, coube } = anexosComCaptura(atuais, imagem)
+  return { anexos, aviso: coube ? null : `O rascunho já tem ${MAX_ATTACH_COUNT} anexos: vai só a descrição.` }
+}
+
+export async function marcarRegiaoNoRascunho(
+  projectPath: string,
+  targetId: string,
+  regiao: RegiaoNoQuadro,
+): Promise<boolean> {
+  const chat = useChat.getState()
+  const convId = chat.activeId
+  if (!convId) {
+    toast.error("Abra uma conversa para enviar a marcação.")
+    return false
+  }
+  try {
+    const marcacao = await invoke<Marcacao>("browser_marcar", { projectPath, targetId, convId, regiao })
+    const drafts = useComposerDrafts.getState()
+    const agent = chat.byId[convId]?.stagedAgent ?? chat.byId[convId]?.agent ?? ""
+    const { anexos, aviso } = destinoDaMarcacao(
+      agentDef(agent)?.caps.image ?? false,
+      drafts.byConv[convId]?.attachments ?? [],
+      marcacao.attachment,
+    )
+    drafts.setAttachments(convId, anexos)
+    drafts.appendText(convId, marcacao.descricao)
+    if (aviso) toast(aviso)
+    else toast.success("Marcação no rascunho da conversa.")
+    return true
+  } catch (cause) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+    return false
   }
 }

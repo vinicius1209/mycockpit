@@ -5,12 +5,13 @@
 // O quadro é imagem no DOM de propósito (navegador PRD, decisão 1): menus,
 // modais e Lightbox passam por cima, e nada nativo disputa camada.
 
-import { useRef } from "react"
+import { useRef, useState } from "react"
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   ChevronDown,
+  Crosshair,
   Eye,
   ImageDown,
   MousePointer2,
@@ -32,6 +33,8 @@ import {
 import { controle } from "@/components/ui/controle"
 import type { BrowserPage } from "@/lib/browser"
 import { cn } from "@/lib/utils"
+import type { BrowserPreviewFrame } from "@/lib/browser"
+import { MarcacaoNoQuadro } from "./MarcacaoNoQuadro"
 import type { NavegadorDoProjeto } from "./useNavegadorDoProjeto"
 
 function pageLabel(page: BrowserPage): string {
@@ -48,6 +51,10 @@ export function NavegadorVista({
 }) {
   const imageRef = useRef<HTMLImageElement | null>(null)
   const { frame, selected, ownsPilot, pilot, input } = nav
+  // B3: o quadro do momento em que "Marcar" foi apertado; enquanto existe, a
+  // vista mostra ele parado em vez do stream.
+  const [congelado, setCongelado] = useState<BrowserPreviewFrame | null>(null)
+  const [enviandoMarcacao, setEnviandoMarcacao] = useState(false)
 
   const framePoint = (clientX: number, clientY: number) => {
     const image = imageRef.current
@@ -167,6 +174,19 @@ export function NavegadorVista({
           type="button"
           size="icone-compacto"
           variant="ghost"
+          disabled={!selected || !frame}
+          aria-pressed={congelado != null}
+          aria-label="Marcar uma região para o agente"
+          title="Marcar uma região para o agente"
+          className={cn(congelado && "bg-sel text-foreground")}
+          onClick={() => setCongelado(congelado ? null : frame)}
+        >
+          <Crosshair />
+        </Button>
+        <Button
+          type="button"
+          size="icone-compacto"
+          variant="ghost"
           disabled={!selected}
           aria-label="Anexar a página à conversa"
           title="Anexar a página à conversa"
@@ -229,7 +249,20 @@ export function NavegadorVista({
       </form>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-card/30 p-3">
-        {frame ? (
+        {congelado ? (
+          <MarcacaoNoQuadro
+            quadro={congelado}
+            enviando={enviandoMarcacao}
+            onCancelar={() => setCongelado(null)}
+            onMarcar={(regiao) => {
+              setEnviandoMarcacao(true)
+              void nav.marcar(regiao).then((ok) => {
+                setEnviandoMarcacao(false)
+                if (ok) setCongelado(null)
+              })
+            }}
+          />
+        ) : frame ? (
           <button
             type="button"
             disabled={!ownsPilot}
@@ -283,7 +316,7 @@ export function NavegadorVista({
             </div>
           </div>
         )}
-        {!ownsPilot && frame && (
+        {!ownsPilot && frame && !congelado && (
           <div className="pointer-events-none absolute right-5 bottom-5 rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] text-muted-foreground shadow-[var(--shadow-sm)]">
             Observando, {pilot?.label.toLowerCase() ?? "sem piloto"}
           </div>

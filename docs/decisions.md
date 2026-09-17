@@ -7442,3 +7442,23 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   (fixture), testes das formas e do parse do WebSocket, testes do Playwright
   intactos; prova real com o MCP conectado pelas duas formas a um Chromium lançado
   com as flags da Frota, listando a página dele. `cargo test` 878, vitest 4361.
+
+### ADR-209 · Marcar região no navegador: elementos reais por CDP e traço desenhado na própria página
+
+- **Contexto (17/09/2026):** para apontar algo da página ao agente, a pessoa
+  anexava a página inteira e descrevia em texto. PRD R4 do navegador.
+- **Decisão:** a marcação acontece sobre o quadro congelado; o Rust converte a
+  região para pixels CSS e pergunta ao Chromium quem está ali
+  (`DOM.getNodeForLocation` em amostras + uma função em página que devolve papel,
+  nome, seletor e caixa). O traço é desenhado na própria página e recortado pelo
+  `Page.captureScreenshot`: o app não decodifica nem desenha PNG. A imagem só vai a
+  motor que lê imagem (capability); a descrição vai sempre.
+- **Recusado agora:** domínio `Accessibility` (experimental) e
+  `DOM.describeNode`/`getBoxModel` por elemento; a função em página dá o mesmo em
+  uma chamada e é testada contra Chromium real.
+- **Riscos aceitos:** o traço aparece por um instante na página que o agente pode
+  estar vendo; a página que muda no meio (URL) cancela, mas mudança sem trocar de
+  URL não é detectada.
+- **Verificado:** fixtures reais de CDP, ordenação (contêiner grande não passa na
+  frente do botão, defeito pego pelo teste), teste real contra Chromium, harness da
+  vista; vitest 4364, `cargo test` 883.

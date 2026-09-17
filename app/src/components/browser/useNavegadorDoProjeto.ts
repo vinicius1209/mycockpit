@@ -23,7 +23,12 @@ import {
   type BrowserPilotStatus,
   type BrowserPreviewFrame,
 } from "@/lib/browser"
-import { anexarPaginaAoRascunho, copiarImagemDaPagina } from "./capturaDaPagina"
+import {
+  anexarPaginaAoRascunho,
+  copiarImagemDaPagina,
+  marcarRegiaoNoRascunho,
+  type RegiaoNoQuadro,
+} from "./capturaDaPagina"
 
 export interface AlvoDoNavegador {
   projectId: string
@@ -55,6 +60,8 @@ export interface NavegadorDoProjeto {
   anexarPagina: () => void
   /** Copia a página visível como imagem (R3). */
   copiarImagem: () => void
+  /** Marca uma região do quadro e manda ao rascunho (R4, B3). */
+  marcar: (regiao: RegiaoNoQuadro) => Promise<boolean>
 }
 
 /** Vistas montadas por projeto e a parada adiada de cada um. Trocar de vista
@@ -286,6 +293,10 @@ export function useNavegadorDoProjeto(
     },
     anexarPagina: () => {
       if (projectPath && selected) void anexarPaginaAoRascunho(projectPath, selected.id)
+    },
+    marcar: async (regiao) => {
+      if (!projectPath || !selected) return false
+      return marcarRegiaoNoRascunho(projectPath, selected.id, regiao)
     },
     copiarImagem: () => {
       if (projectPath && selected) void copiarImagemDaPagina(projectPath, selected.id)

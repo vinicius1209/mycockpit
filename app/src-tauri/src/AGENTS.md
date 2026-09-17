@@ -189,6 +189,10 @@ navegador (`experience_broker.rs`): run, plugin ou pessoa; observar é livre.
 - Navegador que sobrou de sessão anterior (`browser_orfaos.rs`) é encontrado e,
   por gesto, encerrado; nunca adotado. Sessão viva se reconhece pelo pid OU pelo
   grupo de processos (o `ProcessRegistry` lança por `zsh -lc`).
+- Marcar região (`browser_marcacao.rs`) também é observação: o traço é um elemento
+  temporário na página, removido mesmo em erro. Mudou a função em página
+  (`browser_marcacao_descrever.js`)? Recapture `testdata/chromium-cdp/marcacao.json`
+  e rode o teste `marcacao_real_contra_chromium` com `--ignored`.
 - Capturar a página (`browser_capture.rs`) é observação, não pilotagem: PNG real
   por `Page.captureScreenshot`, bytes direto para anexo ou clipboard, URL limpa
   por `sanitize_page_url`. Nunca base64 no Channel.

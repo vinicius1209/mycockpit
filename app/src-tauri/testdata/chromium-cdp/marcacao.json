@@ -1,0 +1,97 @@
+{
+  "getLayoutMetrics": {
+    "id": 1,
+    "result": {
+      "layoutViewport": {
+        "pageX": 0,
+        "pageY": 0,
+        "clientWidth": 1280,
+        "clientHeight": 800
+      },
+      "visualViewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "pageX": 0,
+        "pageY": 0,
+        "clientWidth": 1280,
+        "clientHeight": 800,
+        "scale": 1,
+        "zoom": 1
+      },
+      "contentSize": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 800
+      },
+      "cssLayoutViewport": {
+        "pageX": 0,
+        "pageY": 0,
+        "clientWidth": 1280,
+        "clientHeight": 800
+      },
+      "cssVisualViewport": {
+        "offsetX": 0,
+        "offsetY": 0,
+        "pageX": 0,
+        "pageY": 0,
+        "clientWidth": 1280,
+        "clientHeight": 800,
+        "scale": 1,
+        "zoom": 1
+      },
+      "cssContentSize": {
+        "x": 0,
+        "y": 0,
+        "width": 1280,
+        "height": 800
+      }
+    }
+  },
+  "getNodeForLocation_botao": {
+    "id": 2,
+    "result": {
+      "backendNodeId": 4,
+      "frameId": "722B928FC874BE51F2C94D4B0E4B11B1",
+      "nodeId": 14
+    },
+    "ponto": [
+      306,
+      171
+    ]
+  },
+  "callFunctionOn_botao": {
+    "id": 3,
+    "result": {
+      "result": {
+        "type": "object",
+        "value": {
+          "papel": "button",
+          "nome": "Finalizar pedido",
+          "seletor": "body > main > form > button",
+          "tag": "button",
+          "caixa": {
+            "x": 238.796875,
+            "y": 151.875,
+            "largura": 134.109375,
+            "altura": 39
+          }
+        }
+      }
+    }
+  },
+  "getNodeForLocation_fundo": {
+    "id": 4,
+    "result": {
+      "backendNodeId": 2,
+      "frameId": "722B928FC874BE51F2C94D4B0E4B11B1",
+      "nodeId": 4
+    }
+  },
+  "caixa_do_botao_playwright": {
+    "x": 238.796875,
+    "y": 151.875,
+    "width": 134.109375,
+    "height": 39
+  }
+}

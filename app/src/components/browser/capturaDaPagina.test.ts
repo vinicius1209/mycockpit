@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
-import { anexosComCaptura, linhaDaPagina } from "./capturaDaPagina"
+import { anexosComCaptura, destinoDaMarcacao, linhaDaPagina } from "./capturaDaPagina"
 
 const anexo = (n: number): Attachment => ({
   path: `attachments/c1/${n}.png`,
@@ -32,5 +32,23 @@ describe("captura da página no rascunho", () => {
     expect(linhaDaPagina({ title: "  ", url: "https://app.exemplo.com/painel" })).toBe(
       "Página https://app.exemplo.com/painel:",
     )
+  })
+})
+
+describe("destino da marcação (B3)", () => {
+  it("motor que lê imagem recebe a imagem junto da descrição", () => {
+    expect(destinoDaMarcacao(true, [anexo(1)], anexo(9))).toEqual({ anexos: [anexo(1), anexo(9)], aviso: null })
+  })
+
+  it("motor sem imagem recebe só a descrição, e a pessoa é avisada", () => {
+    expect(destinoDaMarcacao(false, [anexo(1)], anexo(9))).toEqual({
+      anexos: [anexo(1)],
+      aviso: "Este motor não lê imagem: vai só a descrição da região.",
+    })
+  })
+
+  it("rascunho cheio mantém os anexos e avisa", () => {
+    const cheio = Array.from({ length: MAX_ATTACH_COUNT }, (_, i) => anexo(i))
+    expect(destinoDaMarcacao(true, cheio, anexo(99)).aviso).toContain("vai só a descrição")
   })
 })

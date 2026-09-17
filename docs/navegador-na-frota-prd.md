@@ -2,8 +2,22 @@
 
 ## Status (17/09/2026)
 
-**R1 a R3 entregues (17/09/2026, ADR-204). R6 (ADR-207) e R5 (ADR-208) entregues em
-seguida.** R4 (marcar e enviar) segue para a próxima sprint.
+**R1 a R6 entregues (17/09/2026): R1 a R3 na ADR-204, R6 na ADR-207, R5 na ADR-208,
+R4 na ADR-209.**
+
+R4: "Marcar" (mira) na barra congela o quadro; a pessoa arrasta e
+`browser_marcacao.rs` converte a região para pixels CSS (`Page.getLayoutMetrics`),
+pergunta `DOM.getNodeForLocation` no centro e numa grade 3×3, e uma função em página
+(`browser_marcacao_descrever.js`, a mesma das fixtures) sobe até o elemento
+interessante e devolve papel, nome, seletor e caixa. Ordem: quem contém o centro, do
+mais específico ao mais amplo. O traço vermelho é desenhado NA página, recortado com
+margem por `Page.captureScreenshot` com `clip` e removido; URL diferente antes e
+depois cancela. A imagem vai como anexo só se o motor lê imagem (capability) e a
+descrição ("Marquei uma região… Elementos na região: - button "Finalizar pedido" ·
+`…`") vai ao rascunho. Divergência: sem `DOM.describeNode`/`getBoxModel` nem
+`Accessibility`; a função em página resolve papel e nome em uma chamada. Provado
+contra Chromium real (teste `--ignored` que acha o botão, confere o PNG e que o traço
+saiu) e no harness da vista.
 
 R5: migração 50 (`mcp_bindings.browser_conexao`, padrão `cdp-endpoint`, então o
 Playwright segue idêntico e os testes dele não mudaram). `browser_conexao.rs` aplica
