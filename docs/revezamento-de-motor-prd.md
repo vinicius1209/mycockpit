@@ -112,8 +112,23 @@ memória.
   no fio; estimativa rotulada como estimativa; teste de render da faixa.
 
 ### R3 · Abrir ramo com outro motor (M)
-- Depois do spike S4 (o ramo, em worktree próprio, enxerga as alterações não
-  commitadas da original?).
+- **Spike S4 rodado (17/09/2026): não enxerga.** Um `git worktree add` parte do
+  HEAD, então NADA do que não está commitado viaja: alteração sem stage,
+  alteração com stage e arquivo novo ficam todos na árvore de origem (provado
+  num repo de teste com os três estados; o ramo nasceu limpo no HEAD). No repo
+  da Frota o worktree nasce em 0,73 s e 39 MB, **sem `node_modules`**.
+- O transporte é possível e foi medido: `git diff HEAD --binary` aplicado no
+  ramo mais uma cópia do que `git ls-files --others --exclude-standard` lista
+  leva modificação, apagamento, binário, modo de arquivo e arquivo novo. O que
+  NÃO vai é o que o git ignora, e é justamente aí que moram `.env.local`,
+  `node_modules` e artefato de build: o ramo recebe o código mas pode não
+  rodar. (Cuidado achado no spike: a cópia do untracked precisa excluir
+  `.mycockpit/`, senão copia o próprio worktree dentro dele.)
+- **Decisão:** o padrão continua sendo ramo a partir do último commit, dito
+  ANTES (é o que `isolateFork` já faz: "Parte do último commit; mudança
+  não-commitada não veio junto"). Levar as alterações é gesto explícito,
+  oferecido só quando `git status` não está limpo, e com o aviso de que
+  arquivo ignorado não vai junto.
 - `forkConversationAtImpl` aceita `targetAgent` opcional e deixa o ramo com o
   revezamento preparado; nota no ramo "Ramo aberto com X. A conversa original
   continua com Y."
@@ -146,14 +161,14 @@ memória.
 
 ## Ordem de entrega
 
-Sprint atual: R1, R2, R4. Próxima: spike S4, R3, R5.
+Sprint atual: R1, R2, R4. Próxima: R3 (spike S4 já rodado), R5.
 
 ## Riscos
 
 - Preâmbulo maior custa mais tokens no primeiro turno do motor novo (até ~20 mil
   tokens pelo teto); a faixa diz o custo antes.
 - A sessão nova não herda cache de prompt: primeiro turno paga a criação de cache.
-- Ramo em worktree pode não ver alterações não commitadas (S4).
+- Ramo em worktree NÃO vê alterações não commitadas (S4, medido); e o que o git ignora (`.env.local`, `node_modules`) não viaja nem com transporte explícito.
 
 ## Arquivos que mudam
 
@@ -174,4 +189,4 @@ null` (`revezamento.ts:12`, `:42`, `:68`); `prepareHybridHandoff` chamado em
 orçamento `transplante` em `compact.ts:197` e `transcript.ts:217`, teto 60.000
 (`orcamentoDaMemoria.ts`); `forkConversationAtImpl` (`clone.ts:217`);
 `eligibleHandoffTargets` (`quotaExhausted.ts:115`); `sessionResume` no registry.
-Não conferido (depende de rodar): S4.
+S4 rodado em 17/09/2026 (resultado no R3): worktree não vê alteração não commitada.

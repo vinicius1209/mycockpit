@@ -130,7 +130,7 @@ na política de TI, e o Android só mantém uma VPN ativa por vez.
 - **S1** ⌘C numa tabela do fio já entrega colunas separadas por tab no WebKit?
 - **S2** Com `dragDropEnabled` ligado, arrastar por HTML5 dentro do app funciona? A reordenação da sidebar funciona no build atual?
 - **S3** `tailscale serve` no Mac (Tailscale ainda não está instalado neste Mac): o Android em 4G abre a PWA em `https://…ts.net` com service worker e WebSocket?
-- **S4** Ramo com outro motor enxerga as alterações não commitadas da conversa original?
+- **S4** ~~Ramo com outro motor enxerga as alterações não commitadas da conversa original?~~ **Rodado em 17/09: não.** Worktree parte do HEAD; transporte explícito é possível, mas arquivo ignorado (`.env.local`, `node_modules`) não vai. Resultado no PRD do revezamento, R3.
 - **S5** Mac da empresa: a política permite Tailscale? (pergunta para você, não código)
 
 ## 6. Épicos e histórias
