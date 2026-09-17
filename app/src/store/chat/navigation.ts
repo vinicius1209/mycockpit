@@ -103,6 +103,9 @@ export function createChatNavigation(
               ...hydrateContextSnapshot(conversation || null),
               sessionMode:
                 (conversation?.sessionMode as ConvState["sessionMode"]) ?? null,
+              // R5: voltar a um motor retoma a sessão dele, e isso tem que
+              // sobreviver a fechar o app.
+              sessoesAnteriores: conversation?.sessoesAnteriores,
             }
       set((current) =>
         current.byId[convId]

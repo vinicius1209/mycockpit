@@ -7504,3 +7504,42 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   renderizada pelo componente (8 blocos de código, 9 títulos, 95,6 ms, sem texto
   cru), invariante de reconstrução em cinco formas de entrada, `bun run test`
   4.367, `tsc -b --force`, `bun run check`.
+
+### ADR-211 · Voltar ao motor anterior retoma a sessão dele
+
+- **Contexto (17/09/2026):** revezar já funcionava num sentido: sai do motor A,
+  entra no B com a memória transplantada e sessão nova. Voltar para A pagava o
+  envelope inteiro de novo, embora o CLI do A ainda tivesse a sessão daquela
+  conversa, com o contexto que ele mesmo construiu. O R5 do PRD do revezamento
+  pedia a volta barata; faltava onde guardar a sessão de quem sai.
+- **Decisão:** `ConvState.sessoesAnteriores` guarda, por motor, a sessão que ele
+  deixou (`sessionId`, modelo resolvido, último item que ele viu, quando saiu).
+  `commitTransplantState` grava na saída. Ao voltar, `planoDeVolta` (puro, em
+  `lib/retomadaDeMotor.ts`) decide entre **retomar** e **transplantar**, e só
+  retoma quando as três coisas são verdade: o motor declara `sessionResume` no
+  registry (capability, nunca nome), existe sessão guardada e o item onde ele
+  parou ainda está no fio. Retomando, o prompt não leva envelope: leva a
+  AUSÊNCIA, o que o outro motor fez desde aquele item, no mesmo orçamento do
+  revezamento. A mesma função decide a sessão do run e o prompt do turno.
+- **Persistência:** coluna, não blob. Migração **51**
+  (`conversations.sessoes_anteriores TEXT`, conferida contra a máxima real do
+  `lib.rs`, que era 50). JSON quebrado na leitura vira "sem sessão guardada":
+  perder a chance de retomar é degradação, derrubar a conversa não é.
+- **Honestidade:** a linha do fio diz qual das duas aconteceu ("retomou a sessão
+  que já tinha aqui" x "o contexto recente foi transferido"). Se o resume falha,
+  o backend já cai no fallback de memória e avisa por `resume://fallback`; aí o
+  front esquece a sessão morta daquele motor E escreve no fio que a volta virou
+  transplante, senão a linha anterior ficaria mentindo no histórico.
+- **Estado alterado:** `sessoesAnteriores` na conversa (memória e coluna nova) e
+  a sessão usada no run que reveza. Nada no runner.
+- **Limites:** a sessão pode ter morrido no CLI sem ninguém avisar; quem
+  descobre é o run, e a queda é o caminho do fallback acima. O texto da ausência
+  não reconstrói o que o outro motor fez em disco: cita o fio e os arquivos que
+  o chamador souber informar.
+- **Divisão:** a união `ChatItemBody` saiu de `store/chat.ts` para
+  `store/chat/itens.ts` (a catraca disparou; a porta `@/store/chat` re-exporta
+  `ChatItem`), e a baseline do `store/chat.ts` desceu de 2.236 para 2.150.
+- **Verificação:** 13 testes novos (guardar, esquecer, plano de volta com
+  capability falhando fechado, corte que sumiu do fio, texto da ausência, ida e
+  volta guardando as duas sessões, resume falhado com nota honesta);
+  `bun run test` 4.397, `tsc -b --force`, `cargo test` 883, `bun run check`.

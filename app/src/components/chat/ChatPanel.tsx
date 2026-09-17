@@ -49,7 +49,7 @@ import { runAgent } from "@/lib/agent"
 import { dispatchBlockReason } from "@/lib/agents"
 import { avisoDeMotorAusente } from "@/lib/detect"
 import { BannersDoComposer } from "@/components/chat/BannersDoComposer"
-import { assemblePromptCascade, prepareTurnTransplant } from "@/lib/turnHandoff"
+import { assemblePromptCascade, prepareTurnTransplant, sessaoDeVolta } from "@/lib/turnHandoff"
 import { decidePlanGateAndSend } from "@/lib/planGate"
 import { extractPlanText, turnEndedOk } from "@/lib/planMode"
 import {
@@ -533,7 +533,7 @@ export function ChatPanel() {
     )
     // sessão fresca quando o volante trocou de backend (o resume nativo do agent
     // anterior não vale pro novo); senão o resume normal da conversa.
-    const sessionId = wheelSwitch ? null : (conv.sessionId ?? null)
+    const sessionId = wheelSwitch ? sessaoDeVolta(conv, agent) : (conv.sessionId ?? null)
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
     const cwd = conv.worktreePath ?? project.path
     // A mensagem ainda não pertence ao fio. Ela só entra quando o backend

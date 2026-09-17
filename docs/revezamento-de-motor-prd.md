@@ -148,13 +148,19 @@ memória.
   (`modeloCustom`) no registry TS e Rust, com teste-gêmeo.
 - **Aceite:** teste de contrato do registry; nenhuma string de motor no seletor.
 
-### R5 · Voltar ao motor anterior retomando a sessão (G, próxima sprint)
-- `commitTransplantState` guarda `sessoesAnteriores[motor] = { sessionId, model,
-  ultimoItemId }`. Ao revezar de volta, se o motor tem `sessionResume` e a sessão
-  ainda existe, retoma e envia só o que aconteceu no outro motor desde
-  `ultimoItemId` (mais arquivos alterados).
-- Persistência: conferir se o estado da conversa sai no blob ou em coluna; se for
-  coluna, `Migration` em `lib.rs` depois de conferir a versão máxima real.
+### R5 · Voltar ao motor anterior retomando a sessão (G)
+- **Entregue em 17/09/2026 (ADR-211).** `commitTransplantState` guarda
+  `sessoesAnteriores[motor] = { sessionId, model, ultimoItemId, at }`, e
+  `planoDeVolta` (puro) decide entre retomar e transplantar: precisa de
+  `sessionResume` no registry, sessão guardada e o item de corte ainda no fio.
+  Retomando, o prompt leva só a AUSÊNCIA (o que o outro motor fez desde aquele
+  item, no mesmo orçamento do revezamento), e a mesma função escolhe a sessão do
+  run e o prompt do turno.
+- Persistência: coluna. Migração **51**, `conversations.sessoes_anteriores TEXT`
+  (a máxima real no `lib.rs` era 50). JSON quebrado vira "sem sessão guardada".
+- Resume que falha: o backend cai no fallback de memória e avisa por
+  `resume://fallback`; o front esquece a sessão morta daquele motor e escreve no
+  fio que a volta virou transplante.
 - **Aceite:** Claude → Codex → Claude retoma a sessão original (teste do reducer);
   resume que falha cai no transplante completo com nota honesta.
 
@@ -167,7 +173,7 @@ memória.
 
 ## Ordem de entrega
 
-Sprint atual: R1, R2, R4. Próxima: R3 (spike S4 já rodado), R5.
+Entregues: R1, R2, R3, R4, R5. O épico do revezamento fechou em 17/09/2026.
 
 ## Riscos
 

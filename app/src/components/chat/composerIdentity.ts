@@ -13,6 +13,8 @@
 // regra tem de sobreviver à mudança de lugar.
 
 import { DESTINATIONS, agentModels } from "@/lib/agents"
+import { planoDeVolta, type SessoesAnteriores } from "@/lib/retomadaDeMotor"
+import type { ChatItem } from "@/store/chat"
 
 /** O que de fato vai no próximo run (nunca o estado cru dos seletores). */
 export interface IdentidadeEfetiva {
@@ -176,11 +178,16 @@ export function notaDeTrocaDeEsforco(
 export function notaDeRevezamentoDeMotor(
   anterior: string,
   novo: string,
+  /** R5: `true` quando o destino RETOMA a sessão que ele já tinha aqui, em vez
+   *  de receber o transplante. A linha tem que dizer qual das duas foi. */
+  retomando = false,
 ): string | null {
   if (anterior === novo) return null
   const de = DESTINATIONS.find((d) => d.id === anterior)?.label ?? anterior
   const para = DESTINATIONS.find((d) => d.id === novo)?.label ?? novo
-  return `Revezamento de motor nesta conversa: ${de} → ${para}. O contexto recente foi transferido e vale deste turno em diante.`
+  return retomando
+    ? `Revezamento de motor nesta conversa: ${de} → ${para}. ${para} retomou a sessão que já tinha aqui e recebeu o que aconteceu enquanto esteve fora.`
+    : `Revezamento de motor nesta conversa: ${de} → ${para}. O contexto recente foi transferido e vale deste turno em diante.`
 }
 
 /**
@@ -199,7 +206,15 @@ export function identidadeDoDespacho({
   cfg,
 }: {
   locked: boolean
-  conv: { agent: string; stagedAgent?: string | null; reqModel: string | null; effort: string | null }
+  conv: {
+    agent: string
+    stagedAgent?: string | null
+    reqModel: string | null
+    effort: string | null
+    /** Para a nota dizer a verdade sobre retomar x transplantar (R5). */
+    items?: ChatItem[]
+    sessoesAnteriores?: SessoesAnteriores
+  }
   cfg?: {
     agent: string
     model: string | null
@@ -221,7 +236,17 @@ export function identidadeDoDespacho({
     model,
     effort,
     isAgentSwitch,
-    agentChangeNotice: isAgentSwitch ? notaDeRevezamentoDeMotor(conv.agent, agent) : null,
+    agentChangeNotice: isAgentSwitch
+      ? notaDeRevezamentoDeMotor(
+          conv.agent,
+          agent,
+          planoDeVolta({
+            alvo: agent,
+            sessoes: conv.sessoesAnteriores,
+            items: conv.items ?? [],
+          }).tipo === "retomar",
+        )
+      : null,
     modelChangeNotice: noMesmoMotor ? notaDeTrocaDeModelo(conv.reqModel, model) : null,
     effortChangeNotice: noMesmoMotor ? notaDeTrocaDeEsforco(conv.effort, effort) : null,
   }

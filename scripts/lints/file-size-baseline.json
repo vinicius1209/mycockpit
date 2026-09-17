@@ -14,7 +14,7 @@
     "lib/fleet/derive.ts": 806,
     "lib/fleet/send.test.ts": 977,
     "lib/fleet/send.ts": 718,
-    "store/chat.ts": 2236,
+    "store/chat.ts": 2150,
     "store/fusion.ts": 507,
     "store/interactions.ts": 640,
     "store/mission.ts": 1263

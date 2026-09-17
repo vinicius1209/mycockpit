@@ -1,6 +1,6 @@
 import { create } from "zustand"
 import { toast } from "sonner"
-import type { AgentEvent, CostSource } from "@/lib/agent"
+import type { AgentEvent } from "@/lib/agent"
 import {
   beginPreparationState,
   blockPreparationState,
@@ -49,9 +49,10 @@ export {
 import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"
 import type { Enfileirar } from "@/lib/sendOrigin"
-import type { DeferredWork, WorkEvent, ManagedProcess } from "@/lib/work"
+import type { DeferredWork, WorkEvent } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
-import { commitTransplantState, stageAgentImpl } from "@/store/chat/revezamento"
+import { argsDaSessao, commitTransplantState, stageAgentImpl } from "@/store/chat/revezamento"
+import { comResumeFalhado } from "@/store/chat/retomada"
 import {
   bringAdviceToExecutorImpl,
   removeAdviceImpl,
@@ -59,7 +60,7 @@ import {
 } from "@/store/chat/advice"
 import { markNotesSentImpl } from "@/store/chat/notes"
 import { reduceTerminalEvent, settleOrphanedTool } from "@/store/chat/terminalTools"
-import { tomarCausaDoCorte, type CausaDoCorte } from "@/lib/corte"
+import { tomarCausaDoCorte } from "@/lib/corte"
 export { pendingDeferred } from "@/store/chat/terminalTools"
 import { reduceRunManifest } from "@/store/chat/runManifest"
 import { removeConversationImpl } from "@/store/chat/remove"
@@ -82,103 +83,8 @@ import {
   type ContextSnapshotState,
 } from "@/lib/contextSnapshot"
 
-type ChatItemBody =
-  | {
-      kind: "user"
-      id: string
-      text: string
-      attachments?: Attachment[]
-      /** Fala ENDEREÇADA a um conselheiro (`@aline …`, Especialistas E1), não ao
-       *  executor. O pedido é seu e aparece no fio como seu — mas não é turno de
-       *  executor: não trava agent/preset e não rouba a injeção de
-       *  persona/doutrina do turno-1 (ver `executorItems`). Ausente = fala com
-       *  quem pilota, o caso normal. */
-      advisorTo?: { id: string; name: string }
-    }
-  | { kind: "text"; id: string; text: string }
-  | {
-      kind: "tool"
-      id: string
-      name: string
-      input: unknown
-      /** tool_use_id do CLI (liga o tool_result à linha). */
-      toolId?: string
-      /** Tool `Task`/agent que originou esta ação. Preservado do provider para
-       *  reconstruir a árvore do Fio Vivo após restart. */
-      parentToolId?: string
-      /** Síntese final do subagente, mantida dentro do nó que o criou em vez de
-       *  virar uma fala solta do executor principal. */
-      agentSummary?: string
-      /** Processo externo cujo ciclo de vida pertence ao MyCockpit. */
-      managedProcess?: ManagedProcess
-      /** Trabalho DIFERIDO do provider (tool Workflow/background task): nó com
-       *  ciclo de vida PRÓPRIO, assíncrono ao turno (deferred-work-plan D1.2). */
-      deferred?: DeferredWork
-      /** Último evento observável desta ação (resultado/retorno do subagente).
-       * `ts` continua sendo o nascimento, usado na cronologia do transcript. */
-      activityAt?: number
-      /** Resumo do resultado (texto truncado + nº de linhas do output).
-       *  `interrupted`: fechada por um corte seu, não falhou (ADR-180). */
-      result?: { ok: boolean; text: string; lines: number; interrupted?: true }
-      /** Evidência VISUAL do resultado (browser-plan B1): paths relativos ao
-       *  app_data_dir ("evidence/<convId>/<toolId>-<idx>.<ext>"). Persistem no
-       *  snapshot (replay-safe); arquivo sumido do disco vira placeholder na
-       *  UI, nunca imagem quebrada. */
-      images?: string[]
-    }
-  | {
-      kind: "result"
-      id: string
-      ok: boolean
-      text?: string
-      costUsd?: number
-      costSource?: CostSource
-      model?: string | null
-      usage?: {
-        input: number
-        output: number
-        cacheRead: number
-        cacheCreation: number
-      }
-      /** Duração total do turno em ms (start→result). */
-      durationMs?: number
-      /** Reações do usuário ao RESULTADO consolidado deste turno. Persistem no
-       *  próprio transcript e são agnósticas ao provider que o executou. */
-      reactions?: string[]
-    }
-  | { kind: "error"; id: string; message: string }
-  /** Nota do HUMANO ancorada num item (`anchorId`). Modelo A: viaja SEMPRE —
-   *  recap + transcript (docs/notas-no-fio-plan.md), senão é decoração. */
-  | { kind: "note"; id: string; text: string; anchorId: string; sent?: boolean }
-  /** Plano proposto num turno `plan_first`. `decision` ausente = ainda na mesa.
-   *  Por que é item e não campo: store/chat/planGate.ts. */
-  | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" | "superseded" }
-  | { kind: "cancelled"; id: string; cause?: CausaDoCorte }
-  | { kind: "notice"; id: string; message: string }
-  /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
-  | { kind: "limit"; id: string; message: string; resetHint?: string }
-  /** Parecer de um CONSELHEIRO (Especialistas E1): uma persona chamada inline
-   *  (`@aline`) opinou sobre o contexto atual, read-only. Item ADITIVO — não é
-   *  turno de executor. Carimba persona id+version+digest (auditoria/drift). */
-  | {
-      kind: "advice"
-      id: string
-      personaId: string
-      personaName: string
-      personaVersion: number
-      digest: string
-      /** A pergunta que originou o parecer (rastro). */
-      question: string
-      text: string
-    }
-
-/** Todo item do fio carrega o instante em que NASCEU (epoch ms), carimbado na
- *  criação com Date.now() (estilo Slack: a hora vira cabeçalho do grupo).
- *  Opcional: itens gravados antes deste campo não têm carimbo — a UI tolera
- *  `undefined` e omite a hora nesses casos (sem "undefined" fantasma). A
- *  intersecção sobre a união preserva o discriminante `kind` (narrowing e
- *  Extract<> seguem funcionando) sem repetir o campo em cada variante. */
-export type ChatItem = ChatItemBody & { ts?: number }
+export type { ChatItem } from "@/store/chat/itens"
+import type { ChatItem } from "@/store/chat/itens"
 
 /** Um processo marcado como vivo no snapshot anterior não pertence ao registry
  * desta nova instância. Não finge "rodando": preserva PID/tail e marca órfão,
@@ -276,6 +182,8 @@ export interface ConvState extends ContextSnapshotState {
   }
   /** Revezamento de motor engatilhado para o próximo envio deste fio. */
   stagedAgent?: string | null
+  /** Sessão que cada motor deixou nesta conversa ao sair (R5). */
+  sessoesAnteriores?: import("@/lib/retomadaDeMotor").SessoesAnteriores
   /** Timestamp (ms) de início do run atual, p/ cronômetro ao vivo. */
   startedAt: number | null
   /** Vida do processo e relógios técnicos do run corrente. Não persiste. */
@@ -449,7 +357,9 @@ export interface ChatState {
    *  conversa sumiu) — o caller só anuncia quando efetivou. */
   returnWheel: (convId: string) => Promise<boolean>
   /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
-   *  morta; o run em fallback vai emitir `session` e gravar a nova). */
+   *  morta; o run em fallback vai emitir `session` e gravar a nova). Some
+   *  também com a sessão GUARDADA do motor que falhou, e registra a nota
+   *  honesta quando a volta do R5 virou transplante. */
   clearSession: (convId: string) => void
   /** S3.2 — higiene de transplante (achado #3): zera sessão nativa E o resolvido
    *  (model) E o anel (contextTokens) juntos. Sem zerar model/contextTokens, um
@@ -1351,11 +1261,15 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     clearSession: (convId) => {
-      set((s) =>
-        s.byId[convId]
-          ? { byId: { ...s.byId, [convId]: { ...s.byId[convId], sessionId: null } } }
-          : s,
-      )
+      set((s) => {
+        const cur = s.byId[convId]
+        if (!cur) return s
+        // No revezamento a conversa ainda pertence à origem até o `session`:
+        // quem tentou retomar é o destino em voo.
+        const motor = cur.pendingTransplant?.targetAgent ?? cur.agent
+        const proximo = comResumeFalhado(cur, motor)
+        return { byId: { ...s.byId, [convId]: proximo } }
+      })
     },
 
     dropNativeSession: (convId) => {
@@ -1404,7 +1318,7 @@ export const useChat = create<ChatState>((set, get) => {
         c.effort,
         c.model,
         ...contextSnapshotArgs(c),
-        c.sessionMode ?? null,
+        ...argsDaSessao(c),
       )
       endSpan()
       const now = Date.now()

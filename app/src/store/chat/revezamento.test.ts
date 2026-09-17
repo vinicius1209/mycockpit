@@ -1,6 +1,25 @@
 import { beforeEach, describe, expect, it } from "vitest"
 import { useChat } from "@/store/chat"
-import { avisoDeRevezamento } from "@/store/chat/revezamento"
+import { avisoDeRevezamento, commitTransplantState } from "@/store/chat/revezamento"
+import type { ConvState } from "@/store/chat"
+
+const base = (): ConvState => ({
+  projectId: "p1",
+  agent: "codex",
+  reqModel: null,
+  effort: null,
+  worktreePath: null,
+  items: [],
+  sessionId: null,
+  model: null,
+  streamingTextId: null,
+  running: false,
+  finalizing: false,
+  runId: null,
+  startedAt: null,
+  suggestions: [],
+  suggesting: false,
+})
 
 describe("stageAgent (revezamento engatilhado na store)", () => {
   beforeEach(() => {
@@ -62,5 +81,45 @@ describe("avisoDeRevezamento", () => {
     const msg = avisoDeRevezamento(null, "codex")
     expect(msg).toBe("Revezamento cancelado: mantendo Codex")
     expect(msg).not.toContain("—")
+  })
+})
+
+describe("sessão guardada ao revezar (R5)", () => {
+  it("o motor que sai deixa sessão, modelo e até onde viu o fio", () => {
+    const cur = {
+      ...base(),
+      agent: "claude-code",
+      sessionId: "sess-claude",
+      model: "claude-opus-5",
+      items: [
+        { kind: "user" as const, id: "u1", text: "oi" },
+        { kind: "result" as const, id: "r1", ok: true },
+      ],
+    }
+    const depois = commitTransplantState(cur, { runId: "run-1", targetAgent: "codex" })
+    expect(depois.agent).toBe("codex")
+    expect(depois.sessionId).toBeNull()
+    expect(depois.sessoesAnteriores).toEqual({
+      "claude-code": {
+        sessionId: "sess-claude",
+        model: "claude-opus-5",
+        ultimoItemId: "r1",
+        at: expect.any(Number),
+      },
+    })
+  })
+
+  it("voltar guarda a sessão do outro sem perder a primeira", () => {
+    const ida = commitTransplantState(
+      { ...base(), agent: "claude-code", sessionId: "sess-claude", model: "claude-opus-5", items: [{ kind: "text" as const, id: "a", text: "x" }] },
+      { runId: "r1", targetAgent: "codex" },
+    )
+    const volta = commitTransplantState(
+      { ...ida, sessionId: "sess-codex", model: "gpt-6", items: [...ida.items, { kind: "text" as const, id: "b", text: "y" }] },
+      { runId: "r2", targetAgent: "claude-code" },
+    )
+    expect(Object.keys(volta.sessoesAnteriores ?? {}).sort()).toEqual(["claude-code", "codex"])
+    expect(volta.sessoesAnteriores?.codex.sessionId).toBe("sess-codex")
+    expect(volta.sessoesAnteriores?.["claude-code"].sessionId).toBe("sess-claude")
   })
 })

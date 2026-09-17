@@ -675,6 +675,15 @@ pub fn run() {
             sql: "ALTER TABLE mcp_bindings ADD COLUMN browser_conexao TEXT NOT NULL DEFAULT 'cdp-endpoint';",
             kind: MigrationKind::Up,
         },
+        // D3 (revezamento PRD R5): a sessão que cada motor deixou na conversa,
+        // para voltar a ele retomando o que ele já tem em vez de transplantar
+        // tudo de novo. JSON; NULL = nenhuma sessão guardada.
+        Migration {
+            version: 51,
+            description: "conversations_sessoes_anteriores",
+            sql: "ALTER TABLE conversations ADD COLUMN sessoes_anteriores TEXT;",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

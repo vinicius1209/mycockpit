@@ -108,6 +108,8 @@ async function commitClonedConversation(
     null,
     null,
     null,
+    // Clone não herda sessão de motor nenhum: nem a atual, nem as guardadas.
+    null,
   )
   if (parentId != null) await dbSetParent(newId, parentId)
   if (srcColor != null) await dbSetColor(newId, srcColor)

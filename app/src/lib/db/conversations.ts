@@ -7,6 +7,7 @@ import { getDb, ensureBoardTables } from "@/lib/db"
 import { ensureComposerDraftTables, ensureConversationHierarchySchema } from "@/lib/db/schema"
 import type { ChatItem } from "@/store/chat"
 import type { ContextBasis } from "@/lib/contextSnapshot"
+import type { SessoesAnteriores } from "@/lib/retomadaDeMotor"
 import { loadConversationItemSnapshot } from "@/lib/db/conversationItems"
 
 /** S1.2 — persiste a ordem manual das conversas DE UM projeto. O filtro por
@@ -188,6 +189,21 @@ interface ConvLoadRow {
   context_basis: string | null
   /** Modo desta conversa. NULL = herda o do projeto (≠ "sem modo"). */
   session_mode: string | null
+  /** JSON das sessões que cada motor deixou nesta conversa (revezamento R5).
+   *  NULL = nenhuma, ou linha anterior à migração 51. */
+  sessoes_anteriores: string | null
+}
+
+/** Sessões guardadas por motor (revezamento R5). JSON quebrado vira `undefined`:
+ *  perder a chance de retomar é degradação; derrubar a conversa não é. */
+function lerSessoesAnteriores(bruto: string | null): SessoesAnteriores | undefined {
+  if (!bruto) return undefined
+  try {
+    const lido = JSON.parse(bruto) as SessoesAnteriores
+    return lido && typeof lido === "object" ? lido : undefined
+  } catch {
+    return undefined
+  }
 }
 
 /** `null` = conversa não existe; `"corrupt"` = a linha EXISTE mas o JSON não
@@ -212,11 +228,13 @@ export async function loadConversation(
   contextBasis: ContextBasis | null
   /** `null` = herda o modo do projeto. */
   sessionMode: string | null
+  /** Sessões que cada motor deixou aqui (revezamento R5). */
+  sessoesAnteriores?: SessoesAnteriores
 } | null | "corrupt"> {
   const db = await getDb()
   if (!db) return null
   const rows = await db.select<ConvLoadRow[]>(
-    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path, preset_id, preset_digest, context_tokens, context_window, context_basis, session_mode FROM conversations WHERE id = $1",
+    "SELECT session_id, items, title, suggestions, agent, req_model, effort, model, worktree_path, preset_id, preset_digest, context_tokens, context_window, context_basis, session_mode, sessoes_anteriores FROM conversations WHERE id = $1",
     [id],
   )
   if (!rows.length) return null
@@ -247,6 +265,9 @@ export async function loadConversation(
           ? rows[0].context_basis
           : null,
       sessionMode: rows[0].session_mode,
+      // Sessões guardadas: JSON quebrado não derruba a conversa (fail-open no
+      // render), só some com a chance de retomar.
+      sessoesAnteriores: lerSessoesAnteriores(rows[0].sessoes_anteriores),
     }
   } catch {
     return "corrupt"
@@ -303,6 +324,8 @@ export async function saveConversation(
   contextBasis: ContextBasis | null,
   /** `null` = herda o projeto. Ver a migração 37. */
   sessionMode: string | null,
+  /** JSON de `SessoesAnteriores` (revezamento R5), ou `null`. */
+  sessoesAnteriores: string | null,
 ): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -310,7 +333,7 @@ export async function saveConversation(
   // da lista do projeto); o ON CONFLICT não toca nela — a ordem manual (S1.2)
   // sobrevive aos saves de linha inteira, igual color/worktree/preset.
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, context_window, context_basis, session_mode, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, context_window = excluded.context_window, context_basis = excluded.context_basis, session_mode = excluded.session_mode, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, context_window, context_basis, session_mode, sessoes_anteriores, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, context_window = excluded.context_window, context_basis = excluded.context_basis, session_mode = excluded.session_mode, sessoes_anteriores = excluded.sessoes_anteriores, updated_at = excluded.updated_at",
     [
       id,
       projectId,
@@ -326,6 +349,7 @@ export async function saveConversation(
       contextWindow,
       contextBasis,
       sessionMode,
+      sessoesAnteriores,
       Date.now(),
     ],
   )

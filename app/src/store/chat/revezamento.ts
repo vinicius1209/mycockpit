@@ -1,5 +1,6 @@
 import { DESTINATIONS } from "@/lib/agents"
 import { EMPTY_CONTEXT_SNAPSHOT } from "@/lib/contextSnapshot"
+import { comSessaoGuardada } from "@/lib/retomadaDeMotor"
 import type { ChatState, ConvState } from "@/store/chat"
 
 type Get = () => ChatState
@@ -61,6 +62,13 @@ export function commitTransplantState(
       : cur.items
   return {
     ...cur,
+    // R5: a sessão de quem SAI fica guardada. Voltar depois para este motor
+    // retoma a conversa que ele já tem, em vez de pagar o transplante de novo.
+    sessoesAnteriores: comSessaoGuardada(cur.sessoesAnteriores, cur.agent, {
+      sessionId: cur.sessionId,
+      model: cur.model,
+      items: cur.items,
+    }),
     agent: pending.targetAgent,
     reqModel: pending.targetModel ?? null,
     effort: pending.targetEffort ?? null,
@@ -70,4 +78,18 @@ export function commitTransplantState(
     ...EMPTY_CONTEXT_SNAPSHOT,
     pendingTransplant: undefined,
   }
+}
+
+/** Os dois campos de sessão que a linha da conversa grava (a persistência da
+ *  conversa é por coluna, não por blob). Sai daqui para o `persist` do store
+ *  não crescer de tamanho por causa de um campo novo. */
+export function argsDaSessao(
+  c: Pick<ConvState, "sessionMode" | "sessoesAnteriores">,
+): [string | null, string | null] {
+  return [
+    c.sessionMode ?? null,
+    c.sessoesAnteriores && Object.keys(c.sessoesAnteriores).length
+      ? JSON.stringify(c.sessoesAnteriores)
+      : null,
+  ]
 }
