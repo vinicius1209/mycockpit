@@ -142,6 +142,28 @@ Falta ainda um guarda que fixe o item 1 no geral (nenhum subprocesso inesperado
 entre o `invoke` e o `RunManifest`). Os testes acima cobrem a fonte que já
 custou; o genérico não existe.
 
+## Sonda do limiar de contexto (ADR-196)
+
+`context_probe::read_engine_context` lê onde o motor compacta sozinho, por
+capability (`context_ceiling`). Claude: retoma a sessão só para um
+`control_request` (`get_context_usage`), sem mensagem de usuário, sem hooks e
+sem MCP. Codex (ADR-198): `config/read` no app-server mais o catálogo
+`models_cache.json`. agy (ADR-198): lê só-leitura o `gen_metadata` da conversa;
+o id passa pelo alfabeto de UUID antes de virar caminho, e protobuf cru nunca
+lê além do buffer. Nada disso é preflight nem entra no `run_agent`. Quem chama
+é o TS (`lib/engineContext.ts`), que garante que não há turno da mesma sessão
+rodando. Prazo de 8s, `kill_on_drop`, erro com motivo.
+
+## Tail dos Bastidores (ADR-200)
+
+`bastidores::bastidor_seguir` só LÊ o arquivo de saída que o motor escreve
+(`.output` em `tasks/` sob `/tmp/claude-*`, validado depois de canônico). Não
+sobe processo, então não há órfão possível. Polling com offset, teto de 256 KB
+por leitura, linha cortada em 4.000 caracteres, recuo para 2 s depois de 60 s
+parado, no máximo 6 seguidores. Acaba em `bastidor_parar`, quando o `Channel`
+falha (janela fechou) ou quando o arquivo some. Saída ao vivo de tool pelo
+stream (`AgentEvent::ToolOutput`) nunca vira item do fio.
+
 ## Mantenha este arquivo verdadeiro
 
 Mudou como o turno nasce, como o plano de MCP é montado, o que é sondado ou

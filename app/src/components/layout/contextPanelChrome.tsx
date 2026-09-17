@@ -4,7 +4,7 @@
 // juntas: são a receita de "seção" e de "ativo" do painel (ADR-043, Fase 2).
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
-import { FileDiff, Folder, PanelRight, Route } from "lucide-react"
+import { Activity, FileDiff, Folder, PanelRight, Route } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ContextPanelTab } from "@/store/app"
 
@@ -45,11 +45,17 @@ export function Section({
  *  título de seção MANTÉM o tratamento, que ali é correto.
  *  O custo era medido, não estético: com caixa-alta a tira antiga media
  *  **353,6px**; sem, **298,9px** (−15%). A quarta aba elevou a largura mínima
- *  de rótulos completos para 400px; abaixo disso os quatro ícones dividem o
- *  trilho igualmente e o nome permanece em `title`/`aria-label`.
+ *  de rótulos completos para 400px. A quinta (Bastidores, ADR-200) mudou a
+ *  receita, medida no navegador em 16/09/2026 com o pior caso de contador
+ *  ("999" em Alterações e "12" em Bastidores): com abas de LARGURA IGUAL cada
+ *  uma precisa caber a mais larga e os cinco rótulos não cabiam inteiros nem
+ *  numa janela de 2300px; entre 400 e 470px eles truncavam ("Alteraç…") sem que
+ *  nada acusasse. Com largura PELO CONTEÚDO (`flex-auto`) os cinco cabem a partir
+ *  de 491px de tira, daí o limiar de 492px. Abaixo dele os ícones dividem o
+ *  trilho e o nome permanece em `title`/`aria-label`.
  *
  *  DEGRADA POR LARGURA, não por decreto. Rótulo quando cabe, ícone quando não
- *  cabe (`@min-[400px]`; o painel tem `minSize` 240px, onde só o ícone cabe).
+ *  cabe (`@min-[492px]`; o painel tem `minSize` 240px, onde só o ícone cabe).
  *  O contador continua visível NOS DOIS modos: ele é o único dado da tira que
  *  muda sozinho. */
 export function TabBtn({
@@ -74,14 +80,14 @@ export function TabBtn({
       title={label}
       aria-label={label}
       className={cn(
-        "flex h-[26px] min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
+        "flex h-[26px] min-w-0 flex-auto items-center justify-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
         active
           ? "bg-sel text-foreground"
           : "text-muted-foreground/50 hover:bg-sel-hover hover:text-muted-foreground",
       )}
     >
       <Icon className="size-3.5 shrink-0" />
-      <span className="hidden min-w-0 truncate @min-[400px]:inline">{label}</span>
+      <span className="hidden min-w-0 truncate @min-[492px]:inline">{label}</span>
       {badge != null && badge > 0 && (
         <span
           className={cn(
@@ -101,10 +107,13 @@ export function TabBtn({
 export function ContextPanelTabs({
   tab,
   changedCount,
+  liveCount = 0,
   onSelect,
 }: {
   tab: ContextPanelTab
   changedCount: number
+  /** Trabalhos em segundo plano vivos na conversa ativa (ADR-200). */
+  liveCount?: number
   onSelect: (tab: ContextPanelTab) => void
 }) {
   return (
@@ -127,6 +136,13 @@ export function ContextPanelTabs({
         icon={FileDiff}
         badge={changedCount}
         label="Alterações"
+      />
+      <TabBtn
+        active={tab === "bastidores"}
+        onClick={() => onSelect("bastidores")}
+        icon={Activity}
+        badge={liveCount}
+        label="Bastidores"
       />
       <TabBtn
         active={tab === "contexto"}

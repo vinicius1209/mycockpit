@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Frota · Bastidores: layout e estilo terminal (mock)</title>
+<style>
+  :root {
+    --bg: #f3f2ef; --app: #fbfbfa; --card: #ffffff; --rail: #f6f6f4;
+    --fg: #16181b; --muted: #5c6166; --faint: #9a9ea3;
+    --line: rgba(0,0,0,.09); --line2: rgba(0,0,0,.05);
+    --brass: #a9742b; --brass-soft: rgba(169,116,43,.12);
+    --err: #cf4a3e; --ok: #1f9d6b;
+    --mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  }
+  body.escuro {
+    --bg: #050607; --app: #0a0b0d; --card: #141619; --rail: #0c0d10;
+    --fg: #e7e8ea; --muted: #9aa0a7; --faint: #6b7178;
+    --line: rgba(255,255,255,.08); --line2: rgba(255,255,255,.05);
+    --brass: #e4a862; --brass-soft: rgba(228,168,98,.14);
+    --err: #f2766b; --ok: #5bd6a0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 var(--sans); color: var(--fg); background: var(--bg); }
+  header.topo { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 12px; padding: 10px 28px; background: var(--bg); border-bottom: 1px solid var(--line); }
+  header.topo h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  header.topo .sp { flex: 1; }
+  button.t { font: 12px var(--sans); border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 8px; height: 28px; padding: 0 10px; cursor: pointer; }
+  main { max-width: 1320px; margin: 0 auto; padding: 8px 28px 60px; }
+  h2 { font-size: 20px; margin: 36px 0 4px; font-weight: 600; }
+  h3 { font-size: 14px; margin: 0; font-weight: 600; }
+  p.lead { color: var(--muted); margin: 0 0 16px; max-width: 900px; }
+  .grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+  .opcao { display: flex; flex-direction: column; gap: 8px; }
+  .opcao .cab { display: flex; align-items: baseline; gap: 8px; }
+  .tag { font: 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+  .tag.rec { color: var(--brass); border-color: var(--brass); }
+  .pros { margin: 0; padding-left: 16px; color: var(--muted); font-size: 12px; }
+  .pros li.contra::marker { content: "− "; color: var(--err); }
+  .pros li.pro::marker { content: "+ "; color: var(--ok); }
+
+  /* ---------- mini app (parte A) ---------- */
+  .mini { height: 380px; background: var(--app); border: 1px solid var(--line); border-radius: 12px; display: flex; gap: 6px; padding: 6px; overflow: hidden; }
+  .m-rail { width: 70px; flex: none; background: var(--rail); border-radius: 8px; }
+  .m-cartao { flex: 1; min-width: 0; background: var(--app); border: 1px solid var(--line); border-radius: 9px; display: flex; flex-direction: column; overflow: hidden; }
+  .m-abas { height: 22px; border-bottom: 1px solid var(--line2); flex: none; }
+  .m-corpo { flex: 1; min-height: 0; display: flex; }
+  .m-fio { flex: 1; min-width: 0; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
+  .m-fio i { display: block; height: 6px; border-radius: 3px; background: var(--line); }
+  .m-fio i.c { width: 70%; } .m-fio i.b { width: 45%; } .m-fio i.a { width: 85%; }
+  .m-comp { margin: 8px 10px 10px; height: 46px; flex: none; border: 1px solid var(--line); background: var(--card); border-radius: 10px; position: relative; }
+  .m-comp::after { content: ""; position: absolute; right: 7px; bottom: 7px; width: 14px; height: 14px; border-radius: 50%; background: var(--fg); opacity: .8; }
+  .m-comp::before { content: ""; position: absolute; left: 9px; top: 9px; width: 40%; height: 5px; border-radius: 3px; background: var(--line); }
+  .m-painel { width: 150px; flex: none; background: var(--card); border-radius: 9px; border: 1px solid var(--line); overflow: hidden; display: flex; flex-direction: column; }
+  .m-painel.largo { width: 44%; }
+  .m-term { background: #0e0f11; color: #cfd3d8; font: 7.5px/1.45 var(--mono); padding: 6px 7px; overflow: hidden; }
+  .m-term .p { color: #e4a862; } .m-term .d { color: #7d838a; }
+  .m-bar { height: 18px; flex: none; display: flex; align-items: center; gap: 4px; padding: 0 6px; font: 8px var(--mono); color: #9aa0a7; background: #16181b; border-bottom: 1px solid rgba(255,255,255,.06); }
+  .m-bar b { color: #e7e8ea; font-weight: 500; } .m-bar .x { margin-left: auto; }
+  .m-lista { padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+  .m-lista span { height: 12px; border-radius: 4px; background: var(--line2); }
+  .m-lista span.sel { background: var(--brass-soft); }
+  .rotulo { position: absolute; font: 10px var(--mono); color: var(--brass); background: var(--card); border: 1px solid var(--brass); border-radius: 4px; padding: 0 4px; }
+
+  /* ---------- painel terminal (parte B/C) ---------- */
+  .palco { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 18px; align-items: start; }
+  .quadro { height: 560px; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; border: 1px solid var(--line); }
+  .linha { white-space: pre-wrap; overflow-wrap: anywhere; }
+  .cursor { display: inline-block; width: .6em; height: 1.1em; vertical-align: -2px; animation: pisca 1.1s steps(1) infinite; }
+  @keyframes pisca { 50% { opacity: 0 } }
+  .novo { animation: chega .35s ease-out; }
+  @keyframes chega { from { opacity: 0; transform: translateY(2px) } to { opacity: 1; transform: none } }
+  .ico { width: 12px; height: 12px; flex: none; }
+
+  /* C1: Terminal Frota (escuro sempre, âmbar da casa) */
+  .c1 { background: #0e0f11; color: #cfd3d8; border-color: #23262b; font: 12px/1.6 var(--mono); }
+  .c1 .abas { display: flex; align-items: stretch; height: 34px; background: #121417; border-bottom: 1px solid #23262b; flex: none; }
+  .c1 .aba { display: flex; align-items: center; gap: 7px; padding: 0 10px 0 12px; border-right: 1px solid #23262b; color: #8b9199; font: 12px var(--sans); max-width: 60%; }
+  .c1 .aba.on { background: #0e0f11; color: #e7e8ea; box-shadow: inset 0 2px 0 #e4a862; }
+  .c1 .aba .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c1 .aba .fx { color: #6b7178; margin-left: 4px; font-size: 13px; }
+  .c1 .acoes { margin-left: auto; display: flex; align-items: center; gap: 2px; padding-right: 6px; color: #6b7178; }
+  .c1 .acoes span { width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; }
+  .c1 .corpo { flex: 1; overflow: auto; padding: 12px 14px; }
+  .c1 .prompt { color: #e4a862; } .c1 .cmd { color: #f1f2f4; } .c1 .dim { color: #6b7178; } .c1 .err { color: #f2766b; }
+  .c1 .rodape { height: 28px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid #23262b; color: #6b7178; font-size: 11px; }
+  .c1 .vivo { width: 6px; height: 6px; border-radius: 50%; background: #e4a862; animation: resp 1.6s infinite; }
+  .c1 .cursor { background: #e4a862; }
+  @keyframes resp { 0%,100% { opacity: .35 } 50% { opacity: 1 } }
+
+  /* C2: Fósforo (matrix) */
+  .c2 { background: #030803; color: #6dff9a; border-color: #0f2a14; font: 12px/1.6 var(--mono); position: relative; }
+  .c2::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px); }
+  .c2 .cab { height: 34px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-bottom: 1px solid #0f2a14; text-transform: uppercase; letter-spacing: .06em; font-size: 11px; color: #3fbf66; }
+  .c2 .cab b { color: #a6ffc0; font-weight: 500; text-shadow: 0 0 6px rgba(109,255,154,.55); }
+  .c2 .cab .x { margin-left: auto; }
+  .c2 .corpo { flex: 1; overflow: auto; padding: 12px 14px; text-shadow: 0 0 5px rgba(109,255,154,.35); }
+  .c2 .dim { color: #2f8f4d; text-shadow: none; } .c2 .err { color: #ff7a6b; text-shadow: 0 0 5px rgba(255,122,107,.4); }
+  .c2 .cursor { background: #6dff9a; box-shadow: 0 0 8px #6dff9a; }
+  .c2 .rodape { height: 28px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid #0f2a14; color: #2f8f4d; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+
+  /* C3: Integrado, contraste alto (segue o tema) */
+  .c3 { background: var(--card); color: var(--fg); font: 12px/1.6 var(--mono); }
+  .c3 .cab { height: 38px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--line); font-family: var(--sans); }
+  .c3 .cab b { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .c3 .cab .meta { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+  .c3 .cab .x { margin-left: auto; color: var(--muted); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 6px; }
+  .c3 .cmdbox { margin: 10px 12px 0; padding: 8px 10px; border-radius: 8px; background: var(--brass-soft); color: var(--fg); border-left: 2px solid var(--brass); }
+  .c3 .cmdbox .p { color: var(--brass); }
+  .c3 .corpo { flex: 1; overflow: auto; padding: 10px 0 10px; counter-reset: l; }
+  .c3 .corpo .linha { display: grid; grid-template-columns: 38px 1fr; padding-right: 12px; }
+  .c3 .corpo .linha::before { counter-increment: l; content: counter(l); color: var(--faint); text-align: right; padding-right: 10px; }
+  .c3 .corpo .linha.err { color: var(--err); background: color-mix(in srgb, var(--err) 7%, transparent); }
+  .c3 .dim { color: var(--muted); }
+  .c3 .cursor { background: var(--brass); }
+  .c3 .rodape { height: 30px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 12px; border-top: 1px solid var(--line); color: var(--muted); font: 11px var(--mono); }
+  .c3 .vivo { width: 6px; height: 6px; border-radius: 50%; background: var(--brass); animation: resp 1.6s infinite; }
+
+  /* mosaico dentro de uma variante */
+  .mosaico { display: grid; grid-template-rows: 1fr 1fr; gap: 1px; background: #23262b; flex: 1; min-height: 0; }
+  .mosaico > div { background: #0e0f11; display: flex; flex-direction: column; min-height: 0; }
+  .mosaico .sub { height: 28px; flex: none; display: flex; align-items: center; gap: 7px; padding: 0 8px 0 12px; font: 12px var(--sans); color: #9aa0a7; border-bottom: 1px solid #1c1f23; }
+  .mosaico .sub b { color: #e7e8ea; font-weight: 500; }
+  .mosaico .sub .x { margin-left: auto; color: #6b7178; }
+  .mosaico .sub.on { box-shadow: inset 2px 0 0 #e4a862; }
+  .aviso { margin-top: 10px; font-size: 12px; color: var(--muted); border-left: 2px solid var(--brass); padding: 2px 10px; }
+  .aviso b { color: var(--fg); }
+</style>
+</head>
+<body>
+<header class="topo">
+  <h1>Bastidores · layout do composer, um X só, estilo terminal</h1>
+  <span class="tag">mock · 16/09/2026</span>
+  <span class="sp"></span>
+  <button class="t" onclick="document.body.classList.toggle('escuro')">Alternar tema do app</button>
+</header>
+<main>
+
+<h2>A · Onde o composer fica quando os Bastidores abrem</h2>
+<p class="lead">No build #389 o composer divide a largura com as vistas e quebra em três linhas. A pergunta é de quem é a largura: da conversa, do composer ou dos Bastidores. As três respostas abaixo resolvem a quebra; o que muda é o que cada uma sacrifica.</p>
+<div class="grade">
+  <div class="opcao">
+    <div class="cab"><h3>A1 · Composer na base do cartão</h3><span class="tag">a sua ideia</span></div>
+    <div class="mini" style="position:relative">
+      <div class="m-rail"></div>
+      <div class="m-cartao">
+        <div class="m-abas"></div>
+        <div class="m-corpo">
+          <div class="m-fio"><i class="a"></i><i class="c"></i><i class="b"></i><i class="a"></i><i class="c"></i></div>
+          <div class="m-painel largo" style="border-radius:0;border-width:0 0 0 1px">
+            <div class="m-bar"><b>Build test app</b> 1min 25s <span class="x">×</span></div>
+            <div class="m-term" style="flex:1"><span class="p">❯</span> ./scripts/build.sh test<br>build=0<br>✓ teste #388 pronto</div>
+          </div>
+        </div>
+        <div class="m-comp" style="margin:6px 10px 8px"></div>
+      </div>
+      <div class="m-painel"><div class="m-lista"><span class="sel"></span><span></span><span></span></div></div>
+    </div>
+    <ul class="pros">
+      <li class="pro">O composer sai da coluna da conversa e usa a largura do cartão: nunca espreme.</li>
+      <li class="pro">Nada muda no painel direito.</li>
+      <li class="contra">As vistas perdem a altura do composer, e o composer passa a ficar embaixo do terminal também: dá a impressão de que você digita nele.</li>
+      <li class="contra">É a maior mudança de código: o composer sai do <code>ChatPanel</code> e vira irmão do grupo redimensionável.</li>
+    </ul>
+  </div>
+
+  <div class="opcao">
+    <div class="cab"><h3>A2 · As vistas moram no painel direito, que alarga</h3><span class="tag rec">recomendo</span></div>
+    <div class="mini">
+      <div class="m-rail"></div>
+      <div class="m-cartao">
+        <div class="m-abas"></div>
+        <div class="m-corpo"><div class="m-fio"><i class="a"></i><i class="c"></i><i class="b"></i><i class="a"></i><i class="c"></i><i class="b"></i></div></div>
+        <div class="m-comp"></div>
+      </div>
+      <div class="m-painel largo" style="background:#0e0f11;border-color:#23262b">
+        <div class="m-bar" style="background:#121417"><b>Build test app</b><span style="color:#6b7178">· e2e · cargo</span><span class="x">×</span></div>
+        <div class="m-term" style="flex:1"><span class="p">❯</span> ./scripts/build.sh test<br>build=0<br>✓ teste #388 pronto<br><span class="d">exit 0 · 1min 25s</span></div>
+      </div>
+    </div>
+    <ul class="pros">
+      <li class="pro">A conversa e o composer não mudam de tamanho nunca. É onde a lista já está, então índice e vista ficam num lugar só.</li>
+      <li class="pro">O X duplicado some sozinho: o painel já tem o dele, e cada vista vira uma aba de terminal.</li>
+      <li class="pro">Mosaico continua possível (empilhado no painel), e o painel volta à largura de antes quando você sai da vista.</li>
+      <li class="contra">"Ao lado da conversa" passa a ser "à direita de tudo", e o painel direito fica ocupado enquanto a vista está aberta.</li>
+    </ul>
+  </div>
+
+  <div class="opcao">
+    <div class="cab"><h3>A3 · Doca embaixo, como terminal de IDE</h3></div>
+    <div class="mini">
+      <div class="m-rail"></div>
+      <div class="m-cartao">
+        <div class="m-abas"></div>
+        <div class="m-corpo" style="flex-direction:column">
+          <div class="m-fio" style="flex:1"><i class="a"></i><i class="c"></i><i class="b"></i></div>
+          <div style="height:118px;flex:none;display:flex;flex-direction:column;border-top:1px solid #23262b">
+            <div class="m-bar"><b>Build test app</b><span style="color:#6b7178">│ e2e │ cargo</span><span class="x">×</span></div>
+            <div class="m-term" style="flex:1"><span class="p">❯</span> ./scripts/build.sh test<br>build=0<br>✓ teste #388 pronto</div>
+          </div>
+        </div>
+        <div class="m-comp"></div>
+      </div>
+      <div class="m-painel"><div class="m-lista"><span class="sel"></span><span></span><span></span></div></div>
+    </div>
+    <ul class="pros">
+      <li class="pro">Composer com a largura de sempre; mosaico vira abas ou colunas lado a lado, que é o formato natural de terminal.</li>
+      <li class="contra">Rouba altura da conversa, e a doca fica entre o fio e o composer: o que você lê fica longe de onde você escreve.</li>
+      <li class="contra">Comando longo com linha comprida pede largura, e a doca tem; mas o fio fica baixo em tela de notebook.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>B e C · Um X só, e o painel com cara de terminal</h2>
+<p class="lead">Os três quadros mostram o mesmo trabalho: o build que acabou, o e2e rodando com saída chegando agora e o cargo que falhou. Em todos, o X de "fechar os Bastidores" deixa de existir como faixa própria: com uma vista, o cabeçalho da vista é o cabeçalho do painel; com várias, cada aba tem o seu X e fechar a última fecha o painel (Esc continua fechando tudo). A saída abaixo anima de verdade.</p>
+<div class="palco">
+  <div class="opcao">
+    <div class="cab"><h3>C1 · Terminal Frota</h3><span class="tag rec">recomendo</span></div>
+    <div class="quadro c1">
+      <div class="abas">
+        <div class="aba"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="#9aa0a7" stroke-width="2"><path d="M3 8.5l3 3 7-7"/></svg><span class="t">Build test app</span><span class="fx">×</span></div>
+        <div class="aba on"><span class="vivo"></span><span class="t">Run e2e</span><span class="fx">×</span></div>
+        <div class="aba"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="#f2766b" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.5M8 11h.01"/></svg><span class="t">cargo test</span><span class="fx">×</span></div>
+        <div class="acoes"><span title="Dividir">⊟</span></div>
+      </div>
+      <div class="corpo" id="c1"></div>
+      <div class="rodape"><span class="vivo"></span><span>rodando · 21s</span><span style="margin-left:auto">↑↓ abas · Esc fecha</span></div>
+    </div>
+    <ul class="pros">
+      <li class="pro">Escuro nos dois temas, como terminal de verdade: separa o "bastidor" do fio sem gritar.</li>
+      <li class="pro">Âmbar da casa no prompt, na aba ativa e no cursor vivo; vermelho só em erro. Nenhuma cor nova.</li>
+      <li class="pro">Abas no lugar da faixa + X: o mosaico vira "dividir" (⊟).</li>
+    </ul>
+  </div>
+
+  <div class="opcao">
+    <div class="cab"><h3>C2 · Fósforo (matrix)</h3><span class="tag">exige ADR</span></div>
+    <div class="quadro c2">
+      <div class="cab"><span>▌</span><b>RUN E2E</b><span>· 3 trabalhos</span><span class="x">[×]</span></div>
+      <div class="corpo" id="c2"></div>
+      <div class="rodape"><span>● rodando</span><span>00:21</span><span style="margin-left:auto">esc fecha</span></div>
+    </div>
+    <ul class="pros">
+      <li class="pro">É a mais "viva": brilho, varredura de CRT, cursor aceso. Impossível confundir com o fio.</li>
+      <li class="contra">Verde é o marco raro do guia (§2): um painel inteiro verde gasta essa cor. Precisa de ADR e de uma tinta própria de terminal.</li>
+      <li class="contra">Brilho e varredura cansam em saída longa; eu deixaria como tema opcional, não padrão.</li>
+    </ul>
+  </div>
+
+  <div class="opcao">
+    <div class="cab"><h3>C3 · Integrado, contraste alto</h3></div>
+    <div class="quadro c3">
+      <div class="cab"><span class="vivo"></span><b>Run e2e, build test app and open it</b><span class="meta">21s</span><span class="x">×</span></div>
+      <div class="cmdbox"><span class="p">$</span> bun run test:e2e &gt; /tmp/g-e2e.out 2&gt;&amp;1</div>
+      <div class="corpo" id="c3"></div>
+      <div class="rodape"><span class="vivo"></span><span>rodando</span><span style="margin-left:auto">3 trabalhos · ↑↓ no índice</span></div>
+    </div>
+    <ul class="pros">
+      <li class="pro">Segue o tema do app; o comando ganha caixa com filete âmbar e a saída ganha número de linha.</li>
+      <li class="pro">Erro destacado por linha, bom para achar a falha no meio de muita saída.</li>
+      <li class="contra">Continua "documento", não terminal: resolve o apagado, mas não a sensação que você descreveu.</li>
+    </ul>
+  </div>
+</div>
+
+<h2>C1 com duas vistas (mosaico)</h2>
+<p class="lead">Mesmo terminal, dividido: cada vista tem só o próprio X, a em foco leva o filete âmbar. Fechar a última fecha o painel.</p>
+<div style="max-width:440px">
+  <div class="quadro c1" style="height:520px">
+    <div class="abas"><div class="aba on"><span class="t">2 vistas</span></div><div class="acoes"><span title="Juntar">⊡</span></div></div>
+    <div class="mosaico">
+      <div><div class="sub on"><span class="vivo" style="width:6px;height:6px;border-radius:50%;background:#e4a862;animation:resp 1.6s infinite"></span><b>Run e2e</b><span>21s</span><span class="x">×</span></div><div class="corpo" id="c1b" style="flex:1;overflow:auto;padding:10px 14px"></div></div>
+      <div><div class="sub"><svg class="ico" viewBox="0 0 16 16" fill="none" stroke="#f2766b" stroke-width="2"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.5M8 11h.01"/></svg><b>cargo test</b><span>41s</span><span class="x">×</span></div>
+        <div class="corpo" style="flex:1;overflow:auto;padding:10px 14px"><div class="linha"><span class="prompt">❯</span> <span class="cmd">cargo test --lib -- adapters</span></div><div class="linha dim">   Compiling app v0.1.0</div><div class="linha err">error[E0277]: `AgentEvent` doesn't implement `Debug`</div><div class="linha err">error: could not compile `app` (lib test)</div><div class="linha dim">exit 101 · 41s</div></div></div>
+    </div>
+  </div>
+</div>
+<p class="aviso"><b>Minha leitura:</b> A2 + C1. O composer nunca mais divide largura, o X duplicado some por construção e o terminal escuro dá o peso que falta sem gastar o verde. C2 pode entrar depois como tema opcional, com ADR.</p>
+</main>
+
+<script>
+  const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;")
+  const ROTEIRO = [
+    ["cmd", "bun run test:e2e > /tmp/g-e2e.out 2>&1"],
+    ["dim", "Running 34 tests using 4 workers"],
+    ["", "  ✓  1 [chromium] › e2e/painel-abas.spec.ts:103:1 › nenhuma aba é cortada (2.1s)"],
+    ["", "  ✓  2 [chromium] › e2e/painel-abas.spec.ts:130:1 › rótulo quando cabe (876ms)"],
+    ["", "  ✓  3 [chromium] › e2e/layout-cartao.spec.ts:18:1 › cartão não vaza (1.4s)"],
+    ["", "  ✓  4 [chromium] › e2e/composer.spec.ts:40:1 › enfileirar com Tab (1.1s)"],
+    ["", "  ✓  5 [chromium] › e2e/fio.spec.ts:22:1 › resposta longa não corta (3.0s)"],
+    ["", "  ✓  6 [chromium] › e2e/notas.spec.ts:57:1 › gaveta não cobre o painel (940ms)"],
+    ["", "  ✓  7 [chromium] › e2e/bastidores.spec.ts:12:1 › vista ao lado (1.8s)"],
+    ["", "  ✓  8 [chromium] › e2e/ditado.spec.ts:9:1 › pill acima do composer (700ms)"],
+  ]
+  function montar(id, estilo) {
+    const el = document.getElementById(id)
+    if (!el) return
+    let i = 0
+    const cursor = document.createElement("span")
+    cursor.className = "cursor"
+    function linha([tipo, texto]) {
+      const d = document.createElement("div")
+      d.className = "linha novo " + (tipo === "dim" ? "dim" : tipo === "err" ? "err" : "")
+      if (tipo === "cmd") {
+        if (estilo === "c3") return null
+        d.innerHTML = estilo === "c2"
+          ? `<span class="dim">frota@bastidores:~$</span> ${esc(texto)}`
+          : `<span class="prompt">❯</span> <span class="cmd">${esc(texto)}</span>`
+      } else d.textContent = texto
+      return d
+    }
+    function passo() {
+      if (i >= ROTEIRO.length) { i = 0; el.innerHTML = "" }
+      const d = linha(ROTEIRO[i++])
+      if (d) { cursor.remove(); el.appendChild(d); (estilo === "c3" ? d : el).appendChild(cursor); el.scrollTop = el.scrollHeight }
+      setTimeout(passo, i === 1 ? 500 : 650 + Math.random() * 700)
+    }
+    passo()
+  }
+  montar("c1", "c1"); montar("c2", "c2"); montar("c3", "c3"); montar("c1b", "c1")
+</script>
+</body>
+</html>

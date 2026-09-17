@@ -65,11 +65,8 @@ import { useLightbox, type LightboxImage } from "@/store/lightbox"
 import { editHunks, UnifiedDiff } from "@/components/chat/InlineDiff"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { TurnNoteBlock } from "@/components/chat/TurnNote"
-import {
-  TurnActions,
-  type FeedbackApi,
-} from "@/components/chat/TurnActions"
-import { TurnTelemetry } from "@/components/chat/TurnTelemetry"
+import type { FeedbackApi } from "@/components/chat/TurnActions"
+import { TurnReceipt } from "@/components/chat/TurnReceipt"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
 import { PlanMilestone } from "@/components/chat/PlanMilestone"
 import { ActivityAge } from "@/components/chat/LiveTime"
@@ -1142,11 +1139,16 @@ const MessageItem = memo(function MessageItem({
   item: it,
   feedback,
   feedbackText,
+  final,
+  lastTurn,
   reads,
   onApprovePlan,
   onKeepPlanning,
 }: {
   item: ChatItem
+  /** Resultado mais recente do pedido / da conversa (recibo, ADR-199). */
+  final?: boolean
+  lastTurn?: boolean
   /** Decidir o gate de plano. Ausentes = não dá pra agir agora. */
   onApprovePlan?: (id: string) => void
   onKeepPlanning?: (id: string) => void
@@ -1277,24 +1279,8 @@ const MessageItem = memo(function MessageItem({
     )
   }
 
-  return (
-    <div className="rounded-lg border border-border/40 bg-card/20 px-3 py-1.5">
-      {!it.ok && it.text && (
-        <div className="rounded-lg border border-st-error/40 bg-st-error/10 px-3 py-2">
-          <div
-            data-selectable
-            className="font-mono text-[12px] leading-relaxed break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground/85"
-          >
-            {it.text}
-          </div>
-        </div>
-      )}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-        <TurnTelemetry it={it} />
-        {feedback && <TurnActions it={it} feedbackText={feedbackText} api={feedback} />}
-      </div>
-    </div>
-  )
+  if (it.kind !== "result") return null
+  return <TurnReceipt it={it} feedback={feedback} feedbackText={feedbackText} final={!!final} lastTurn={!!lastTurn} />
 })
 
 // Modelo de nós (buildNodes/continuesProse) mora em ./messageNodes — puro e
@@ -1314,6 +1300,7 @@ interface NodeCtx {
   agent: string
   stalledSince?: number
   feedbackByResult: Map<string, string>
+  lastResultId: string | null
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
   /** Aprovar o plano proposto: precisa ENVIAR, e quem sabe enviar nesta
@@ -1387,6 +1374,8 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       item={n.item}
       feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
       feedbackText={ctx.feedbackByResult.get(n.item.id)}
+      final={ctx.feedbackByResult.has(n.item.id)}
+      lastTurn={n.item.id === ctx.lastResultId}
       onApprovePlan={ctx.onApprovePlan}
       onKeepPlanning={ctx.onKeepPlanning}
       reads={ctx.attReads.get(n.item.id)}
@@ -1531,6 +1520,10 @@ export function MessageList({
     () => feedbackTextByResult(threadItems, turnStartIndex(threadItems, windowStart)),
     [threadItems, windowStart],
   )
+  const lastResultId = useMemo(
+    () => threadItems.findLast((item) => item.kind === "result")?.id ?? null,
+    [threadItems],
+  )
   // Selo "lido / não foi aberto" por anexo. Calculado UMA vez aqui e entregue
   // pronto ao MessageItem: fazer dentro do item quebraria o memo dele a cada
   // delta do streaming. Indexado POR ITEM e com a referência preservada enquanto
@@ -1555,6 +1548,7 @@ export function MessageList({
     agent,
     stalledSince,
     feedbackByResult,
+    lastResultId,
     onStop: stableStop,
     onRetry: stableRetry,
     onApprovePlan,

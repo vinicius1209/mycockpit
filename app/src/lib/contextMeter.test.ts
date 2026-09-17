@@ -64,3 +64,28 @@ describe("contextMeter", () => {
     ).toEqual({ kind: "absolute", tokens: 42_000 })
   })
 })
+
+describe("contextMeter com o limiar do motor (ADR-196)", () => {
+  // Leitura real do Claude Code 2.1.270 (testdata/claude-2.1.270/context-usage.jsonl):
+  // janela de 1.000.000 e compactação automática em 967.000.
+  const base = { basis: "last_call" as const, runtimeWindow: 1_000_000, model: "claude-opus-5[1m]" }
+
+  it("mede contra o ponto em que o motor compacta, não contra a janela", () => {
+    const meter = contextMeter({ ...base, tokens: 882_525, ceiling: { kind: "autocompact", tokens: 967_000 } })
+    expect(meter).toMatchObject({ kind: "ratio", window: 1_000_000, free: 84_475, ceiling: { kind: "autocompact" } })
+    expect(meter.kind === "ratio" && Math.round(meter.pct * 100)).toBe(91)
+  })
+
+  it("janela de compactação reduzida pela pessoa muda o anel de 37% para perto do fim", () => {
+    const meter = contextMeter({ ...base, tokens: 367_000, ceiling: { kind: "autocompact", tokens: 367_000 } })
+    expect(meter.kind === "ratio" && meter.pct).toBe(1)
+    const semLeitura = contextMeter({ ...base, tokens: 367_000 })
+    expect(semLeitura.kind === "ratio" && Math.round(semLeitura.pct * 100)).toBe(37)
+  })
+
+  it("teto maior que a janela é contradição: ignora o teto em vez de inventar", () => {
+    const meter = contextMeter({ ...base, tokens: 100_000, ceiling: { kind: "autocompact", tokens: 2_000_000 } })
+    expect(meter).toMatchObject({ kind: "ratio", pct: 0.1 })
+    expect(meter.kind === "ratio" && meter.ceiling).toBeUndefined()
+  })
+})

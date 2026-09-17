@@ -162,7 +162,7 @@ impl CumulativeUsage {
 /// Estado de um trabalho DIFERIDO do provider (background task que sobrevive ao
 /// turno): `running`/`progress` = vivo; `completed` = concluiu limpo; `stopped`
 /// = morreu/foi parado sem concluir (o front mostra "interrompido").
-#[derive(Clone, Copy, Serialize)]
+#[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeferredStatus {
     Running,
@@ -255,6 +255,13 @@ pub enum AgentEvent {
         lines: u64,
         #[serde(skip_serializing_if = "Vec::is_empty")]
         images: Vec<String>,
+    },
+    /// Pedaço de saída AO VIVO de uma tool que ainda roda (ADR-200). Não é
+    /// transcript: o front desvia para o painel Bastidores, com teto, sem
+    /// persistir nem re-renderizar o fio. `id` = o mesmo da `Tool`.
+    ToolOutput {
+        id: String,
+        text: String,
     },
     /// Trabalho DIFERIDO do provider (tool `Workflow`, background task): vive
     /// além do turno que o criou (deferred-work-plan, D1). Traduzido dos
@@ -1658,6 +1665,43 @@ fn claude_oneshot(model: &str, cwd: &str, prompt: &str, format: &str, no_mcp: bo
             .arg("--mcp-config")
             .arg("{\"mcpServers\":{}}");
     }
+    cmd
+}
+
+/// Sonda do limiar de compactação (ADR-196): retoma a sessão em modo de
+/// entrada stream-json SÓ para mandar um `control_request`. Nenhuma mensagem
+/// de usuário é enviada, então não há turno de modelo nem escrita na sessão.
+/// Sem hooks (não vira sessão externa fantasma nem paga ~2s) e sem MCP (os
+/// servidores não entram no limiar nem no total; entram só nas categorias
+/// adiadas). O `--model` é o mesmo do run: o limiar muda por modelo.
+pub(crate) fn claude_context_probe_command(
+    cwd: &str,
+    session_id: &str,
+    model: Option<&str>,
+) -> Command {
+    let mut cmd = Command::new("claude");
+    cmd.arg("-p")
+        .arg("--input-format")
+        .arg("stream-json")
+        .arg("--output-format")
+        .arg("stream-json")
+        .arg("--verbose")
+        .arg("--resume")
+        .arg(session_id)
+        .arg("--settings")
+        .arg("{\"disableAllHooks\":true}")
+        .arg("--strict-mcp-config")
+        .arg("--mcp-config")
+        .arg("{\"mcpServers\":{}}");
+    if let Some(m) = model {
+        cmd.arg("--model").arg(m);
+    }
+    crate::hook_sessions::correlate_run(&mut cmd, "oneshot");
+    cmd.current_dir(cwd)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .kill_on_drop(true);
     cmd
 }
 

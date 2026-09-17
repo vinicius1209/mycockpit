@@ -1,7 +1,17 @@
 import { useEffect, useRef, useState } from "react"
 import { useActiveConv, useChat, type ConvState } from "@/store/chat"
-import { contextMeter, type ContextMeter } from "@/lib/contextMeter"
+import { useApp } from "@/store/app"
+import { contextMeter, type ContextCeiling, type ContextMeter } from "@/lib/contextMeter"
 import { compactActionHint, offersCompactAction } from "@/lib/compact"
+import { contextCeilingProbe } from "@/lib/agentContext"
+import { agentDef } from "@/lib/agents"
+import {
+  ceilingFrom,
+  entryFor,
+  refreshEngineContext,
+  useEngineContext,
+  type EngineContextEntry,
+} from "@/lib/engineContext"
 import { METER_TEXT, meterIsLoud, meterTone } from "@/lib/meter"
 import { cn } from "@/lib/utils"
 
@@ -12,15 +22,52 @@ const exactTokens = (value: number) => value.toLocaleString("pt-BR")
  *  janela são compatíveis; legado e falhas de fonte nunca viram 100% fictício. */
 export function ContextRing() {
   const conv = useActiveConv()
-  return <ContextRingView conv={conv} />
+  const convId = useChat((s) => s.activeId)
+  const projectPath = useApp(
+    (s) => s.projects.find((p) => p.id === conv.projectId)?.path ?? null,
+  )
+  const cwd = conv.worktreePath ?? projectPath
+  const entry = entryFor(
+    conv,
+    useEngineContext((s) => (convId ? s.byConv[convId] : undefined)),
+  )
+  // Aquecimento (ADR-196): anel com medida e sem leitura do limiar para esta
+  // sessão e modelo. Falha também grava entrada, então não há laço de retry.
+  const warm =
+    !!convId &&
+    !!cwd &&
+    !!conv.sessionId &&
+    conv.contextBasis === "last_call" &&
+    !!contextCeilingProbe(conv.agent) &&
+    !entry &&
+    !conv.running &&
+    !conv.finalizing
+  useEffect(() => {
+    if (warm && convId && cwd) void refreshEngineContext(convId, cwd)
+  }, [warm, convId, cwd])
+  return (
+    <ContextRingView
+      conv={conv}
+      engine={entry}
+      onOpen={() => {
+        if (convId && cwd) void refreshEngineContext(convId, cwd)
+      }}
+    />
+  )
 }
 
 /** View exportada para validar os estados sem depender do snapshot SSR da store. */
 export function ContextRingView({
   conv,
+  engine = null,
+  onOpen,
   initiallyOpen = false,
 }: {
   conv: ConvState
+  /** Leitura do limiar pelo motor, já validada para esta sessão e modelo. */
+  engine?: EngineContextEntry | null
+  /** Gesto de abrir o popover: relê o limiar. */
+  onOpen?: () => void
   initiallyOpen?: boolean
 }) {
   const [open, setOpen] = useState(initiallyOpen)
@@ -30,7 +77,9 @@ export function ContextRingView({
     tokens: conv.contextTokens,
     runtimeWindow: conv.contextWindow,
     model: conv.model,
+    ceiling: ceilingFrom(engine?.reading),
   })
+  const label = agentDef(conv.agent)?.label ?? conv.agent
 
   useEffect(() => {
     if (!open) return
@@ -53,7 +102,9 @@ export function ContextRingView({
   const pct100 = ratio ? ratio.pct * 100 : null
   const color = ratio ? METER_TEXT[meterTone(pct100!)] : "text-muted-foreground"
   const loud = pct100 != null && meterIsLoud(pct100)
-  const title = ratio
+  const title = ratio?.ceiling?.kind === "autocompact"
+    ? `contexto: ${Math.round(pct100!)}% até a compactação automática (${exactTokens(ratio.tokens)} de ${exactTokens(ratio.ceiling.tokens)} tokens)`
+    : ratio
     ? `contexto: ${Math.round(pct100!)}% da janela (${exactTokens(ratio.tokens)} de ${exactTokens(ratio.window)} tokens)`
     : meter.kind === "unavailable"
       ? "contexto: medição indisponível · clique para entender"
@@ -67,7 +118,10 @@ export function ContextRingView({
         </span>
       )}
       <button
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => {
+          if (!open) onOpen?.()
+          setOpen((value) => !value)
+        }}
         title={title}
         aria-label="Detalhes do contexto"
         aria-expanded={open}
@@ -83,7 +137,7 @@ export function ContextRingView({
               fill="none"
               strokeWidth="2.5"
               strokeLinecap="round"
-              strokeDasharray={`${ratio.pct * C} ${C}`}
+              strokeDasharray={`${Math.min(ratio.pct, 1) * C} ${C}`}
               className={cn("stroke-current transition-all duration-500", color)}
             />
           )}
@@ -97,7 +151,12 @@ export function ContextRingView({
 
       {open && (
         <div className="absolute right-0 bottom-full z-30 mb-2 w-72 overflow-hidden rounded-xl border bg-popover p-3 shadow-[var(--shadow-pop)]">
-          <ContextDetails meter={meter} model={conv.model} />
+          <ContextDetails meter={meter} model={conv.model} label={label} />
+          {engine?.error && (
+            <p className="mt-1.5 text-[11px] leading-snug text-muted-foreground">
+              Limiar do motor não lido agora: {engine.error}
+            </p>
+          )}
           {ratio && offersCompactAction(ratio.pct) && (
             <div className="mt-2 border-t pt-2">
               <button
@@ -121,7 +180,15 @@ export function ContextRingView({
   )
 }
 
-function ContextDetails({ meter, model }: { meter: Exclude<ContextMeter, { kind: "hidden" }>; model: string | null }) {
+function ContextDetails({
+  meter,
+  model,
+  label,
+}: {
+  meter: Exclude<ContextMeter, { kind: "hidden" }>
+  model: string | null
+  label: string
+}) {
   const ratio = meter.kind === "ratio" ? meter : null
   const color = ratio ? METER_TEXT[meterTone(ratio.pct * 100)] : "text-muted-foreground"
   return (
@@ -136,7 +203,7 @@ function ContextDetails({ meter, model }: { meter: Exclude<ContextMeter, { kind:
         <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-border">
           <div
             className={cn("h-full rounded-full bg-current transition-all", color)}
-            style={{ width: `${ratio.pct * 100}%` }}
+            style={{ width: `${Math.min(ratio.pct, 1) * 100}%` }}
           />
         </div>
       )}
@@ -157,7 +224,7 @@ function ContextDetails({ meter, model }: { meter: Exclude<ContextMeter, { kind:
         )}
         {meter.kind === "unavailable" && <Row k="Medição" v="Indisponível" />}
       </dl>
-      <Explanation meter={meter} />
+      <Explanation meter={meter} label={label} />
     </>
   )
 }
@@ -167,14 +234,38 @@ function RatioRows({ meter }: { meter: Extract<ContextMeter, { kind: "ratio" }> 
     <>
       <Row k="Janela" v={windowLabel(meter.window, meter.windowSource)} />
       <Row k="Última chamada" v={exactTokens(meter.tokens)} />
-      <Row k="Disponível" v={exactTokens(meter.free)} />
+      {meter.ceiling?.kind === "autocompact" ? (
+        <>
+          <Row k="Compacta sozinho em" v={exactTokens(meter.ceiling.tokens)} />
+          {meter.ceiling.engineCount != null && (
+            <Row k="Estimativa do motor" v={exactTokens(meter.ceiling.engineCount)} />
+          )}
+          <Row k="Até compactar" v={exactTokens(meter.free)} />
+        </>
+      ) : (
+        <>
+          {meter.ceiling && <Row k="Compactação automática" v="Desligada" />}
+          <Row k="Disponível" v={exactTokens(meter.free)} />
+        </>
+      )}
     </>
   )
 }
 
-function Explanation({ meter }: { meter: Exclude<ContextMeter, { kind: "hidden" }> }) {
+function Explanation({
+  meter,
+  label,
+}: {
+  meter: Exclude<ContextMeter, { kind: "hidden" }>
+  label: string
+}) {
+  const ceiling = meter.kind === "ratio" ? meter.ceiling : undefined
   const copy =
-    meter.kind === "unavailable"
+    ceiling?.kind === "autocompact"
+      ? autocompactCopy(ceiling, label)
+      : ceiling?.kind === "sem-autocompact"
+        ? `A compactação automática do ${label} está desligada: quando a janela encher, o turno falha. Compacte antes.`
+        : meter.kind === "unavailable"
       ? "O agent não informou uma medição confiável neste turno. O total processado no turno não é usado como contexto."
       : meter.kind === "absolute"
         ? "A última chamada é conhecida, mas a janela não. Por isso o percentual e o disponível foram omitidos."
@@ -184,6 +275,21 @@ function Explanation({ meter }: { meter: Exclude<ContextMeter, { kind: "hidden" 
             ? "Última chamada concluída · janela informada pelo agent."
             : "Última chamada concluída · janela estimada pelo catálogo do modelo."
   return <p className="mt-2 border-t pt-2 text-[11px] leading-snug text-muted-foreground">{copy}</p>
+}
+
+/** A confiança muda com a origem, então a frase também (ADR-198). */
+function autocompactCopy(
+  ceiling: Extract<ContextCeiling, { kind: "autocompact" }>,
+  label: string,
+) {
+  const limite = exactTokens(ceiling.tokens)
+  if (ceiling.origin === "engine-record") {
+    return `O ${label} resume a conversa sozinho quando a estimativa dele passa de ${limite} tokens, antes de a janela do modelo encher. Lido do registro local da conversa, que não é contrato do motor.`
+  }
+  if (ceiling.origin === "engine-config") {
+    return `O ${label} resume a conversa sozinho ao chegar em ${limite} tokens. Calculado da configuração e do catálogo de modelos do próprio ${label}.`
+  }
+  return `O ${label} resume a conversa sozinho ao chegar em ${limite} tokens. Limiar lido do próprio motor.`
 }
 
 function windowLabel(window: number, source: "runtime" | "catalog") {

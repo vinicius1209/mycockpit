@@ -12,6 +12,7 @@ import type {
   McpRunOverride,
 } from "@/lib/tooling"
 import { entregarSemTravar, relatoVisivel } from "@/lib/entregaDeEvento"
+import { useBastidores } from "@/store/bastidores"
 
 /** Proveniência do custo (espelha CostSource no Rust). */
 export type CostSource = "reported" | "estimated" | "unknown"
@@ -69,6 +70,9 @@ export type AgentEvent =
       output_file: string | null
       progress: unknown
     }
+  /** Saída AO VIVO de uma tool que ainda roda (ADR-200). Não vai para o fio:
+   *  `runAgent` desvia para o painel Bastidores. */
+  | { type: "tool_output"; id: string; text: string }
   /** Footprint da última chamada. A janela vem do runtime quando ele informa;
    *  null permite fallback de catálogo explicitamente marcado como estimado. */
   | { type: "context_usage"; tokens: number; window_tokens: number | null }
@@ -175,6 +179,12 @@ export async function runAgent(
   // Falha ao aplicar um evento não pode congelar o resto do turno, e precisa
   // aparecer no fio, não só no log (ADR-190).
   channel.onmessage = entregarSemTravar((e) => {
+    // ADR-200: saída viva tem teto e dono próprio; no fio ela re-renderizaria
+    // a conversa a cada linha e incharia o banco.
+    if (e.type === "tool_output") {
+      useBastidores.getState().anexarSaida(convId, e.id, e.text)
+      return
+    }
     if (e.type === "session" && e.session_id) threadId = e.session_id
     if (e.type === "result" && e.cumulative_usage && threadId) {
       void saveUsageBaseline(threadId, convId, nextBaseline(e.cumulative_usage))

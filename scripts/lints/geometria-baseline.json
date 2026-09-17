@@ -23,7 +23,6 @@
   "components/fusion/FusionBoard.tsx": 1,
   "components/fusion/FusionLauncher.tsx": 1,
   "components/layout/AddProjectDialog.tsx": 2,
-  "components/layout/ContextPanel.tsx": 6,
   "components/layout/DiffIndex.tsx": 2,
   "components/layout/DiffPanel.tsx": 1,
   "components/layout/DiffPanel/sendBar.tsx": 2,

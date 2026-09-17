@@ -1,4 +1,5 @@
-import { Copy, FolderOpen } from "lucide-react"
+import { Copy, FolderOpen, PanelRight } from "lucide-react"
+import { abrirBastidorDoArquivo } from "@/components/bastidores/abrirBastidores"
 import { toast } from "sonner"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { Button } from "@/components/ui/button"
@@ -44,6 +45,22 @@ export function DeferredOutputFile({
           {rotulo}
         </p>
         <div className="flex items-center gap-1">
+          {tauri && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="chip"
+              onClick={(e) => {
+                e.stopPropagation()
+                abrirBastidorDoArquivo(outputFile)
+              }}
+              title="Acompanhar a saída ao lado da conversa"
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <PanelRight className="size-3" />
+              <span>Acompanhar</span>
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

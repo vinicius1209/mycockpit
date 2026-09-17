@@ -6924,3 +6924,261 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Limites:** caminho relativo ao cwd do motor (`.playwright-mcp/x.png`) só
   resolve se estiver dentro do projeto. Captura fora das raízes autorizadas
   segue sem link, e alargar essas raízes é decisão do Rust, não do fio.
+
+### ADR-196 · O anel mede até onde o motor compacta, e a compactação se prova em números
+
+- **Contexto (16/09/2026):** a pessoa perguntou se o `/compactar` compactava
+  de verdade. Compactava: o `compact_boundary` do turno de 15/09 registrou
+  882.525 → 8.090 tokens em 2min38. Mas o app não mostrava a prova. O turno de
+  compactação devolve `result` sem `usage`, a medida morre, e o anel ficava sem
+  número. Ao mesmo tempo, a régua era nossa: o anel media contra a janela do
+  modelo e oferecia compactar a 70% dela, enquanto o limiar real depende de
+  modelo, `autoCompactEnabled`, ambiente e `/autocompact`. Com
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` num modelo de 1 milhão, o anel
+  marcava 37% no ponto em que o Claude Code resume a conversa.
+- **Evidência (claude 2.1.270, medido):** `get_context_usage` por
+  `control_request`, `detail: "summary"`, num processo
+  `-p --input-format stream-json --resume <sid>` sem mensagem de usuário.
+  Responde em 0,7s sem hooks nem MCP, custa zero, deixa a sessão com o mesmo
+  md5 e devolve `totalTokens`, `maxTokens`, `autoCompactThreshold` (967.000 no
+  padrão, 367.000 com a variável acima, ausente com `autoCompactEnabled:
+  false`) e `autocompactSource`. Numa cópia de sessão terminando logo após uma
+  compactação, `totalTokens` foi 34.995, não o milhão velho. `/context` e
+  `/autocompact` em texto também funcionam no headless, mas são Markdown para
+  pessoas; a fonte é o controle estruturado. Fixtures em
+  `testdata/claude-2.1.270/context-usage*.jsonl`.
+- **Decisão:**
+  - Capability nova nos dois lados: `context_ceiling:
+    Option<ContextCeilingProbe>` no Rust, `contextCeilingProbe` em
+    `lib/agentContext.ts`, com teste-gêmeo e a coerência "exige
+    `session_resume`". Só o Claude Code declara.
+  - A sonda (`context_probe.rs`, comando `read_engine_context`) roda fora do
+    turno, com prazo de 8s e `kill_on_drop`. A gramática do CLI mora em
+    `agent::claude_context_probe_command`, ao lado do one-shot. Falha é erro
+    com motivo, nunca leitura vazia.
+  - Quem pergunta (`lib/engineContext.ts`): o anel visível com medida e sem
+    leitura para aquela sessão e modelo, o gesto de abrir o popover e o fim de
+    uma compactação nativa. Nunca no envio e nunca com turno da sessão rodando.
+    A leitura vale só para a sessão e o modelo em que foi feita; falha preserva
+    a última leitura boa e mostra o motivo no popover.
+  - Com leitura, o percentual do anel é contra o limiar do motor ("até a
+    compactação automática"), o popover diz onde ela dispara e quanto falta.
+    Compactação desligada mostra a janela como teto e avisa que encher derruba
+    o turno. Sem leitura, nada muda e nada se afirma.
+  - O `COMPACT_OFFER_THRESHOLD` (0,70) continua como decisão de produto, mas
+    agora sobre o teto que o motor aplica: oferecer antes do motor agir, numa
+    pausa natural, em vez de no meio da tarefa.
+  - No fim de `/compactar` nativo, a sonda mede o contexto resumido, o número
+    entra no anel e o marco do fio vira "Contexto compactado · 882.525 →
+    34.995 tokens, medido pelo Claude Code.".
+- **Limites:** Codex e agy seguem sem limiar lido (nenhum canal auditado). O
+  custo da compactação (US$ 4,67 no caso de 15/09) ainda aparece como turno
+  comum em `turn_costs`; etiquetar é outra frente. A leitura não se renova
+  sozinha se a pessoa mudar `/autocompact` fora do app; o gesto de abrir o
+  popover relê.
+
+### ADR-197 · A compactação do agy é detectada pelo que o stream real manda
+
+- **Contexto (16/09/2026):** a Frota nunca registrou aviso de compactação do
+  agy, embora conversas rodadas por ela tenham compactado ("Olist
+  implementações", "Sobre a meta", uma do sicredi). O adapter procurava
+  `compaction_info` num step, com base num fixture escrito à mão
+  (`conversation_id: "a1"`). Esse campo existe no binário, mas nunca apareceu
+  no stream-json.
+- **Evidência (agy 1.2.4, capturada):** duas compactações provocadas em forks
+  da conversa "nuvem" (a original intacta). A compactação chega como step
+  `checkpoint` DONE **sem `usage`**, com 12 a 15 s; a resposta seguinte cai de
+  ~255 mil para ~22 mil. O checkpoint auxiliar já registrado em fixture real de
+  versão anterior traz `usage` de 121 tokens e dura 0,57 s. Um segundo turno
+  numa conversa pequena na 1.2.4 não emite checkpoint. O agy decide pela
+  estimativa própria contra 256.000 (estudo em
+  `docs/contexto-dos-motores-estudo.md`, §3.1).
+- **Decisão:** `checkpoint` DONE sem `usage` abre uma compactação pendente com
+  o nível conhecido antes dele. A próxima resposta com `usage` confirma: se o
+  contexto não caiu, nada se afirma; se caiu, o fio recebe "Contexto cheio: o
+  Antigravity resumiu a conversa sozinho · antes → depois tokens.", só com o
+  depois quando o run começou pela compactação. Sem resposta até o `result`,
+  o aviso sai sem número. Um aviso por run. O caminho de `compaction_info`
+  continua, deduplicado pelo mesmo marcador.
+- **Limites:** o anel do agy ainda mede contra ≈1.000.000. O teto de 256.000 só
+  existe no banco interno do agy (`gen_metadata`); ler esse dado é decisão
+  pendente, registrada no estudo.
+
+### ADR-198 · O anel do Codex e do agy mede até onde cada um compacta de verdade
+
+- **Contexto (16/09/2026):** a ADR-196 levou o anel do Claude Code ao limiar do
+  próprio motor. Codex e agy seguiam contra a janela: o Codex contra 258.400
+  quando compacta em 244.800, e o agy contra ≈1.000.000 quando compacta perto
+  de 256.000. A conversa "nuvem" do agy aparecia com 25% e estava a 97%.
+- **Evidência (estudo em `docs/contexto-dos-motores-estudo.md`):**
+  - Codex 0.154.0: fórmula do código (`openai_models.rs`, `context_window.rs`)
+    validada ao token no binário real contra uma Responses API local, inclusive
+    overrides e cortes (244.800 · 100.000 · 500.000→244.800 · janela 400.000 no
+    gpt-6-astra→360.000 com 380.000 reportados). `config/read` do app-server
+    devolve a config efetiva sem turno e sem cota; o catálogo local traz janela,
+    máximo e percentual efetivo. O Codex compara o `total_tokens` da última
+    chamada (entrada e saída), não só a entrada.
+  - agy 1.2.4: cada geração grava a estimativa do agy e o limite (256.000 nos
+    Gemini Flash) no `gen_metadata` da conversa, caminho protobuf 1→9→10 medido
+    em 8.514 de 8.548 gerações. Experimento controlado: estimativa 255.444 com
+    257.274 reais não compactou; cruzar 256.000 compactou. A estimativa é a
+    mesma do `/context` do agy.
+- **Decisão:**
+  - `ContextCeilingProbe` ganha `CodexConfigCatalog` e `AgyGenerationRecord`,
+    nos dois lados, com teste-gêmeo.
+  - `EngineContext` passa a declarar a origem do limiar (`engine-report`,
+    `engine-config`, `engine-record`) e, quando existe, a contagem própria do
+    motor (`engineEstimate`). O anel mede essa contagem contra o limiar; o
+    popover mostra a estimativa ao lado da última chamada da API e explica a
+    origem com palavras diferentes, porque a confiança não é a mesma.
+  - Leitura com contagem própria vale só para o nível de contexto em que foi
+    feita: a cada turno o anel relê (leitura local, sem processo). Codex relê
+    por sessão e modelo, usando o modelo resolvido da conversa.
+  - O rollout do Codex passa a medir `last_token_usage.total_tokens`, com a
+    entrada como fallback.
+- **Limites:** o registro do agy não é contrato; campo ausente vira nenhuma
+  afirmação e o anel volta à janela. Escopo `body_after_prefix` do Codex não
+  afirma limiar. O catálogo do Codex é cache interno dele; modelo fora dele é
+  erro com motivo no popover. A validação do Codex com turno da OpenAI fica
+  para depois de 19/09 (cota esgotada).
+
+### ADR-199 · O recibo do turno fala só do que muda decisão, e a régua de ações aparece onde decide
+
+- **Contexto (16/09/2026):** o dono do produto achou a barra de fim de turno
+  confusa ("concluído sem nada", "preciso ver o total de cache?", "o que é
+  reconstruído?") e pediu ações sob hover. Um especialista de UI/UX revisou a
+  peça contra o STYLEGUIDE e o código (mock em `docs/mocks/recibo-do-turno.html`,
+  alternativas A/B/C). Escolhida a **A**. Esta ADR revisa a escolha "tudo
+  visível" (mock B) de 17/08, que já previa o hover "se a densidade incomodar".
+- **Achados:** de sete peças por turno, só o custo e as ações do último turno
+  mudam decisão. Entrada/saída não ajudam e "10↓" enganava (exclui o cache
+  lido). "+N reconstruído" em âmbar gritava em todo turno sem pedir nada (§2).
+  A barra tinha borda de linha única (§4) e botões de 22px fora da escada
+  (§13). O diff de um turno antigo abria o diff ATUAL do worktree. E um
+  `result` de bastidor sem texto, custo nem token virava "concluído · 7s · US$
+  0,000" no topo da resposta (reproduzido com o Claude Code 2.1.270: ao retomar
+  depois de uma tarefa em segundo plano que parou, o CLI fecha esse envelope
+  antes do turno pedido).
+- **Decisão:**
+  - Legenda sem borda: desfecho, duração e custo (ou modelo, quando não há
+    custo). Em sucesso, o ✓ sem a palavra (que fica para leitor de tela), verde
+    só no turno que acabou de fechar. Erro e limite mantêm o rótulo.
+  - Entrada, saída, contexto reaproveitado e contexto reenviado saem da linha e
+    viram a quebra no tooltip da ponta (`resumoDosTokens`).
+  - Régua de ações à vista no turno mais recente. Nos anteriores, aparece no
+    hover ou no foco do turno (`group/turno` no `GroupRow`, mesmo gesto do
+    balão do usuário), fica à vista com reação dada ou formulário aberto, e
+    aparece sempre em tela sem hover. O diff só no turno mais recente.
+  - Botões da régua no degrau `icone-chip` (§13).
+  - O adapter do Claude descarta o `result` de bastidor (`num_turns` 0, custo
+    zero, sem texto nem token); builtin com texto e compactação com custo
+    continuam fechando turno. Na tela e no Companion, `result` parcial sem
+    conteúdo não vira recibo; parcial com custo real continua aparecendo.
+- **Limites:** "custo acima do seu limite em âmbar, com o motivo e o botão
+  Compactar" depende de um teto de custo por turno que ainda não existe nas
+  Configurações; sem ele, nenhum limiar inventado pinta o custo. Os 2 recibos
+  vazios já gravados antes da correção do adapter somem pela regra da tela.
+
+### ADR-200 · Bastidores: acompanhar trabalho em segundo plano ao lado da conversa, em uma vista ou em mosaico
+
+- **Contexto (16/09/2026):** a conversa só dizia "2 trabalhos em background ·
+  bash", sem dizer quais nem mostrar saída. O pedido: acompanhar subprocessos,
+  shells e subagentes como no CLI, abrindo uma vista ao lado ou N vistas em
+  mosaico sem tirar o foco da conversa, "sem problema de desempenho nem de
+  processo órfão". Plano em `docs/bastidores-plan.md`, mock em
+  `docs/mocks/bastidores.html` (alternativa escolhida: vista ao lado e mosaico).
+- **Evidência (B0, capturas reais de 16/09/2026, fixtures em `testdata/`):**
+  - Claude 2.1.270, shell em segundo plano: `task_started` e o `tool_result`
+    trazem o `output_file` desde o início; o arquivo é texto puro e cresce ao
+    vivo. No modo headless ele MORRE ~5 s depois do `result` (`task_updated`
+    com status `killed`, que o adapter não reconhecia), mesmo com o teto de
+    espera de 4 h, que só segura workflow e subagente.
+  - Claude 2.1.270, subagente em segundo plano: fica vivo, cada mensagem e tool
+    dele chega com `parent_tool_use_id`, `task_progress` traz tokens, tools e
+    duração, e o fim reinvoca o modelo com um segundo `result`.
+  - Codex 0.154.0 (binário real contra Responses API local): `exec_command` que
+    passa do `yield_time_ms` continua depois do `turn/completed`, com
+    `item/commandExecution/outputDelta` por linha e `processId`. A Frota
+    ignorava os deltas. Como o app-server da Frota é por turno e morre no fim
+    dele, o terminal também só vive durante o turno.
+  - agy 1.2.4: `run_command` entrega a saída só no fim do passo.
+- **Decisão:**
+  - Nenhum processo novo. O Rust só LÊ: tail por polling com offset (arquivo
+    validado: `.output` dentro de `tasks/` sob `/tmp/claude-*`), teto de bytes
+    por leitura e de linhas por vista, limpeza de ANSI e `\r`, recuo do
+    intervalo quando o arquivo para, fim quando a vista fecha, o canal cai ou o
+    arquivo some. Polling e não FSEvents: poucos arquivos, sem crate nova e sem
+    as pegadinhas de permissão do FSEvents.
+  - Saída ao vivo do Codex (`ToolOutput`) desviada em `lib/agent.ts` para o
+    store `bastidores`, com buffer circular e flush agrupado: não entra no fio,
+    não persiste e não re-renderiza a conversa a cada linha.
+  - Lista derivada dos itens da conversa: tarefa (arquivo de saída), subagente
+    (passos pelo pai), comando com saída ao vivo, processo do `mc-work`, e
+    comando sem saída ao vivo dito com honestidade.
+  - Índice na aba "Bastidores" do painel direito (entre Alterações e
+    Contexto), navegável por teclado (↑/↓, Enter abre, F fixa, Esc fecha), com
+    contador dos vivos na aba. As vistas abrem à direita da conversa, dentro do
+    cartão central, até 3: uma ao lado, duas empilhadas, três com uma em cima e
+    duas embaixo. `react-resizable-panels` (já no app); o `ChatPanel` nunca
+    remonta.
+  - A primeira versão pôs o índice dentro do painel das vistas porque o
+    `ContextPanel` estava no teto da guarda de tamanho. O teto não decide
+    produto: o `ContextPanel` foi dividido (roteamento das abas fica nele; a aba
+    Contexto virou `ContextoDoProjeto` + `contextoDoProjetoPecas`), e os
+    controles migrados entraram na escada §13 e no filete de dois papéis em vez
+    de levar a dívida para as baselines.
+  - Cinco abas mudaram a receita da tira: com largura igual os rótulos
+    truncavam ("Alteraç…") em qualquer janela até 2300px com o pior contador.
+    As abas passam a crescer pelo conteúdo (`flex-auto`) e o rótulo aparece a
+    partir de 492px de tira (medido: 491px com "999" em Alterações e "12" em
+    Bastidores); abaixo disso, só ícone com nome em `title`/`aria-label`. O e2e
+    `painel-abas` passou a verificar truncamento em cada largura.
+  - `task_updated` com `killed` passa a encerrar o trabalho como interrompido.
+  - **Correção (build #386):** o Claude 2.1.270 abre task até para o Bash comum
+    que demora (`is_backgrounded: false`, `output_file: ""`, captura real em
+    `testdata/claude-2.1.270/comando-em-primeiro-plano.jsonl`). A Frota ignorava
+    o campo: cada comando longo virava "trabalho em background" na linha viva e
+    enchia o índice de itens concluídos sem nada para abrir. O adapter agora
+    segura essas tasks e só as emite se um `task_updated` trouxer
+    `is_backgrounded: true` (o binário emite esse patch); sem o campo, segue como
+    antes. O índice deixa de listar terminado sem saída, o que também limpa o
+    que já estava gravado, e a vista de um trabalho terminado sem saída não diz
+    mais que "a saída vem no fim".
+  - **Comandos do turno (build #387, pedido do usuário):** comando longo (`bun
+    run test`, build) é o que mais se quer acompanhar, mesmo sem ser segundo
+    plano. Entra no índice como "comando" o Bash (nome canônico do contrato)
+    que manda saída ao vivo ou passa de 3 s; o rápido fica só no fio, e o de
+    subagente fica nos passos dele. A vista mostra a linha de comando e, no
+    fim, o resultado guardado no item (com "N de M linhas" quando a conversa
+    guardou só um trecho). Um timeout único, só para o comando vivo mais novo,
+    faz ele entrar ao completar 3 s; sem comando novo, nenhum relógio.
+  - Terminado mostra a duração em vez da palavra "concluído": o estado já está
+    no ícone, e a palavra fica no `title` e no leitor de tela. O painel ganha
+    superfície própria (`bg-card`, a mesma do painel direito) para não se
+    confundir com o fundo da conversa.
+  - O rodapé do composer mede a própria largura (`@container/composer`):
+    abaixo de 560px, Interromper e Enfileirar ficam só com o ícone, e o rodapé
+    quebra linha em vez de vazar do cartão, que foi o que se viu com a conversa
+    estreitada pelos Bastidores.
+  - **Terminal no painel direito (build #390, mock
+    `docs/mocks/bastidores-terminal.html`, A2 + C1):** mesmo com o rodapé
+    responsivo, dividir o cartão central espremia o composer em três linhas e
+    empilhava dois X (o do painel e o da vista). As vistas saem do cartão e
+    abrem na própria aba Bastidores: com vistas abertas a aba mostra o
+    terminal, e um botão volta à lista sem fechá-las. O painel direito alarga
+    para 46% (teto de arrasto 58%) enquanto o terminal está à vista e volta à
+    largura anterior quando a última vista fecha; a conversa e o composer não
+    mudam de tamanho. Uma vista por aba, cada aba com o próprio X; "lado a
+    lado" empilha até 3, cada uma com cabeçalho e X. ←/→ trocam de aba, Esc
+    fecha todas. Visual de terminal com tokens próprios (`terminal-*`, §2),
+    escuros nos dois temas como o `hud-shell`; seleção por superfície e peso,
+    sem tinta. O terminal é só leitura: a Frota traduz o que o motor já
+    entrega (sem PTY nem emulador; as capturas reais não trazem ANSI porque
+    os motores rodam comandos sem TTY).
+- **Limites:** parar um item pelo motor fica para a fase B4 (Claude exige
+  transporte bidirecional; Codex exige manter o app-server vivo). Shell do
+  Claude e terminal do Codex só vivem durante o turno no modo headless, e a
+  vista diz isso quando eles morrem. Subagente mostra as tools, não o texto de
+  raciocínio.
+
+

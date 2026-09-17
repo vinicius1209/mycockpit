@@ -71,7 +71,11 @@ export function ComposerShell({
       >
         {input}
       </div>
-      <div className={cn("flex items-center gap-2", footerClassName)}>{footer}</div>
+      {/* `@container/composer`: o rodapé mede a PRÓPRIA largura (a conversa
+          encolhe com Bastidores e painéis abertos) e os rótulos do despacho
+          viram ícone antes de estourar o cartão. `flex-wrap` é a rede: se ainda
+          assim não couber, o despacho desce de linha, nunca vaza (build #386). */}
+      <div className={cn("@container/composer flex flex-wrap items-center gap-2", footerClassName)}>{footer}</div>
     </div>
   )
 }

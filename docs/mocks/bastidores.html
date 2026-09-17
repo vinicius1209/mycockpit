@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<title>Frota · Bastidores (mock)</title>
+<style>
+  :root {
+    --bg: #fbfaf8; --card: #ffffff; --line: #e8e5df; --line2: #f0ede8;
+    --fg: #1f1d1a; --muted: #75716b; --faint: #a8a39b;
+    --brass: #a8793d; --ok: #2f8a5b; --warn: #b7791f; --err: #c0443c;
+    --r: 10px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  .note { max-width: 1280px; margin: 16px auto 8px; color: var(--muted); font-size: 12px; }
+  .note b { color: var(--fg); }
+  .app { max-width: 1280px; margin: 0 auto 32px; height: 760px; display: grid; grid-template-columns: 1fr 360px; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--card); }
+  .app.split { grid-template-columns: 1fr 1fr 300px; }
+  .app.mosaico { grid-template-columns: 1fr 1.3fr 300px; }
+  /* ---------- conversa ---------- */
+  .conversa { display: flex; flex-direction: column; min-width: 0; border-right: 1px solid var(--line); }
+  .tabs { height: 40px; display: flex; align-items: center; gap: 6px; padding: 0 12px; border-bottom: 1px solid var(--line2); font-size: 12px; color: var(--muted); }
+  .tab { padding: 4px 10px; border-radius: 8px; }
+  .tab.on { background: #f1eee9; color: var(--fg); font-weight: 500; }
+  .fio { flex: 1; overflow: auto; padding: 18px 22px; }
+  .autor { display: flex; gap: 10px; margin-bottom: 14px; }
+  .av { width: 26px; height: 26px; border-radius: 50%; background: #efe7dc; display: grid; place-items: center; font-size: 11px; color: var(--brass); flex: none; }
+  .nome { font-weight: 500; font-size: 13px; }
+  .hora { color: var(--faint); font-size: 11px; margin-left: 6px; }
+  .msg p { margin: 4px 0 8px; font-size: 14px; }
+  .bg-linha { display: inline-flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 10px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; color: var(--muted); cursor: pointer; background: var(--card); }
+  .bg-linha:hover { border-color: var(--brass); color: var(--fg); }
+  .bg-linha .dots i { display: inline-block; width: 4px; height: 4px; border-radius: 50%; background: var(--brass); margin-right: 2px; animation: resp 1.4s infinite ease-in-out; }
+  .bg-linha .dots i:nth-child(2) { animation-delay: .2s } .bg-linha .dots i:nth-child(3) { animation-delay: .4s }
+  @keyframes resp { 0%,100% { opacity: .25 } 50% { opacity: 1 } }
+  .composer { margin: 10px 16px 14px; border: 1px solid var(--line); border-radius: 14px; padding: 10px 12px; color: var(--faint); font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+  /* ---------- painel direito ---------- */
+  .painel { display: flex; flex-direction: column; min-width: 0; background: #fcfbf9; }
+  .painel .tabs { justify-content: flex-start; }
+  .contador { font-size: 11px; background: var(--brass); color: #fff; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+  .grupo { padding: 10px 12px 2px; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .04em; }
+  .lista { list-style: none; margin: 0; padding: 0 6px 8px; outline: none; }
+  .item { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: start; padding: 8px 8px; border-radius: 8px; cursor: pointer; }
+  .item:hover { background: #f4f1ec; }
+  .item.sel { background: #efe7dc; box-shadow: inset 2px 0 0 var(--brass); }
+  .ico { width: 18px; height: 18px; border-radius: 5px; display: grid; place-items: center; font-size: 11px; background: #efece7; color: var(--muted); margin-top: 1px; }
+  .titulo { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sub { font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta { font-size: 11px; color: var(--faint); text-align: right; white-space: nowrap; }
+  .estado { display: inline-flex; align-items: center; gap: 5px; }
+  .pt { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); }
+  .pt.vivo { background: var(--brass); }
+  .pt.novo { animation: pulso 1.2s ease-out; }
+  @keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(168,121,61,.55) } 100% { box-shadow: 0 0 0 7px rgba(168,121,61,0) } }
+  .pt.ok { background: var(--ok); } .pt.parado { background: var(--warn); }
+  .dica { margin: auto 12px 12px; font-size: 11px; color: var(--faint); border-top: 1px solid var(--line2); padding-top: 8px; }
+  kbd { font: 11px ui-monospace, Menlo, monospace; background: #f1eee9; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; color: var(--muted); }
+  /* ---------- vistas ---------- */
+  .vistas { display: none; min-width: 0; border-right: 1px solid var(--line); background: #fdfcfa; }
+  .app.split .vistas, .app.mosaico .vistas { display: grid; }
+  .app.split .vistas { grid-template-rows: 1fr; }
+  .app.mosaico .vistas { grid-template-rows: 1fr 1fr; grid-template-columns: 1fr 1fr; }
+  .app.mosaico .vista:first-child { grid-column: 1 / 3; }
+  .vista { display: flex; flex-direction: column; min-width: 0; min-height: 0; border-bottom: 1px solid var(--line2); border-right: 1px solid var(--line2); }
+  .vhead { height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-bottom: 1px solid var(--line2); font-size: 12px; }
+  .vhead .t { font-weight: 500; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn { height: 24px; padding: 0 8px; border: 1px solid var(--line); background: var(--card); border-radius: 6px; font-size: 12px; color: var(--fg); cursor: pointer; }
+  .btn:hover { border-color: var(--brass); }
+  .btn.perigo:hover { border-color: var(--err); color: var(--err); }
+  .btn.x { width: 24px; padding: 0; color: var(--muted); }
+  .saida { flex: 1; overflow: auto; margin: 0; padding: 10px 12px; font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: #3b3833; background: #fbfaf7; white-space: pre-wrap; }
+  .saida .nova { animation: nasce .6s ease-out; }
+  @keyframes nasce { from { background: #f3e8d6 } to { background: transparent } }
+  .rodape { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-top: 1px solid var(--line2); font-size: 11px; color: var(--faint); }
+  .rodape .esp { flex: 1; }
+  .subfio { flex: 1; overflow: auto; padding: 10px 12px; font-size: 13px; }
+  .subfio .passo { display: flex; gap: 8px; padding: 5px 0; color: var(--muted); font-size: 12px; }
+  .subfio .passo b { color: var(--fg); font-weight: 500; }
+  .modal { position: fixed; inset: 0; background: rgba(20,18,15,.25); display: none; place-items: center; }
+  .modal.on { display: grid; }
+  .caixa { width: 380px; background: var(--card); border-radius: 12px; border: 1px solid var(--line); padding: 16px; box-shadow: 0 12px 32px rgba(0,0,0,.12); }
+  .caixa h3 { margin: 0 0 6px; font-size: 14px; }
+  .caixa p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  .caixa code { font-size: 12px; background: #f4f1ec; padding: 1px 4px; border-radius: 4px; }
+  .acoes { display: flex; justify-content: flex-end; gap: 8px; }
+  .modos { max-width: 1280px; margin: 0 auto 8px; display: flex; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="note"><b>Mock · Bastidores</b> (docs/bastidores-plan.md). Clique na linha "3 em segundo plano" no fio ou na lista à direita. Teclado: <kbd>↑</kbd> <kbd>↓</kbd> percorre, <kbd>Enter</kbd> abre ao lado, <kbd>F</kbd> fixa em mosaico, <kbd>Esc</kbd> fecha. Saída e tempos são simulados.</div>
+<div class="modos">
+  <button class="btn" data-modo="">Só conversa + lista</button>
+  <button class="btn" data-modo="split">Uma vista ao lado</button>
+  <button class="btn" data-modo="mosaico">N vistas (mosaico)</button>
+</div>
+
+<div class="app" id="app">
+  <section class="conversa">
+    <div class="tabs"><span class="tab on">Conversa</span><span class="tab">+</span></div>
+    <div class="fio">
+      <div class="autor"><div class="av">V</div><div class="msg"><div><span class="nome">Você</span><span class="hora">13:36</span></div><p>Mergeia o #74 e acompanha o deploy da develop, e enquanto isso revisa os adapters.</p></div></div>
+      <div class="autor"><div class="av">C</div><div class="msg"><div><span class="nome">Claude Code</span><span class="hora">13:37</span></div>
+        <p>Mergeei o <b>#74</b> na develop. Deixei o acompanhamento do deploy rodando e mandei um subagente revisar os adapters; os testes Rust estão rodando também.</p>
+        <p>Assim que o deploy fechar eu trago o resultado aqui.</p>
+        <span class="bg-linha" id="abrirBastidores"><span class="dots"><i></i><i></i><i></i></span><span id="resumoFio">3 em segundo plano · deploy, revisão dos adapters, cargo test</span><span>›</span></span>
+      </div></div>
+    </div>
+    <div class="composer">Peça algo… ou / para comandos</div>
+  </section>
+
+  <section class="vistas" id="vistas"></section>
+
+  <aside class="painel">
+    <div class="tabs"><span class="tab">Arquivos</span><span class="tab">Alterações</span><span class="tab on">Bastidores<span class="contador" id="contador">3</span></span></div>
+    <div class="grupo">Tarefas do motor</div>
+    <ul class="lista" tabindex="0" id="lista"></ul>
+    <div class="dica"><kbd>↑</kbd><kbd>↓</kbd> percorrer · <kbd>Enter</kbd> abrir ao lado · <kbd>F</kbd> fixar · <kbd>Esc</kbd> fechar<br/>Pulso = saída nova agora. Sem pulso há mais de 2 min: "sem notícia", com o processo como prova.</div>
+  </aside>
+</div>
+
+<div class="modal" id="modal"><div class="caixa">
+  <h3>Parar este trabalho?</h3>
+  <p id="alvo"></p>
+  <div class="acoes"><button class="btn" id="cancelar">Cancelar</button><button class="btn perigo" id="confirmar">Parar</button></div>
+</div></div>
+
+<script>
+const itens = [
+  { id: "t1", tipo: "tarefa", ico: "›_", titulo: "Acompanhar deploy da develop", sub: "gh run watch 35121197107", estado: "vivo", desde: 157, fonte: "Claude Code · shell em background",
+    linhas: ["Refreshing run status every 3 seconds.", "✓ Build (Node 20)  1m12s", "* Deploy Supabase (Migrations + Functions)"],
+    novas: ["  ↳ applying migration 20260915141000_add_provider", "  ↳ deploying function erp-sync", "* Smoke test prod", "✓ Deploy Supabase (Migrations + Functions)  2m41s"] },
+  { id: "s1", tipo: "subagente", ico: "◎", titulo: "Revisar adapters", sub: "lendo adapters.rs · 14 passos", estado: "vivo", desde: 92, fonte: "Claude Code · subagente",
+    passos: ["<b>Read</b> app/src-tauri/src/adapters.rs", "<b>Grep</b> compaction_info", "<b>Read</b> testdata/agy-1.2.4/…", "<b>Pensando</b> sobre o checkpoint sem usage"] },
+  { id: "p1", tipo: "processo", ico: "⚙", titulo: "cargo test", sub: "pid 48122 · 812 MB · 2 filhos", estado: "vivo", desde: 41, fonte: "Processo do run",
+    linhas: ["   Compiling app v0.1.0", "running 827 tests"], novas: ["test adapters::tests::matriz_context_ceiling_por_agent ... ok", "test context_probe::tests::agy_registro_real_traz_estimativa_e_limite ... ok", "test result: ok. 818 passed; 0 failed"] },
+];
+let sel = 0; let modo = ""; const fixados = [];
+const $ = (id) => document.getElementById(id);
+const fmt = (s) => s >= 60 ? `${Math.floor(s/60)}min ${String(s%60).padStart(2,"0")}s` : `${s}s`;
+
+function desenharLista() {
+  $("lista").innerHTML = itens.map((it, i) => `
+    <li class="item ${i===sel?"sel":""}" data-i="${i}">
+      <span class="ico">${it.ico}</span>
+      <span style="min-width:0"><div class="titulo">${it.titulo}</div><div class="sub">${it.estado==="vivo" ? (it.linhas ? it.linhas[it.linhas.length-1] : it.sub) : it.sub}</div></span>
+      <span class="meta"><span class="estado"><span class="pt ${it.estado} ${it.pulso?"novo":""}"></span>${it.estado==="vivo"?fmt(it.desde):it.estado==="ok"?"concluído":"parado"}</span><br/>${it.tipo}</span>
+    </li>`).join("");
+  const vivos = itens.filter(i => i.estado === "vivo").length;
+  $("contador").textContent = vivos;
+  $("resumoFio").textContent = vivos ? `${vivos} em segundo plano · ${itens.filter(i=>i.estado==="vivo").map(i=>i.titulo.toLowerCase()).join(", ")}` : "nada em segundo plano";
+  itens.forEach(i => i.pulso = false);
+}
+function vistaDe(it) {
+  const corpo = it.tipo === "subagente"
+    ? `<div class="subfio">${it.passos.map(p => `<div class="passo">◦ <span>${p}</span></div>`).join("")}</div>`
+    : `<pre class="saida" id="saida-${it.id}">${it.linhas.map(l => `<div>${l}</div>`).join("")}</pre>`;
+  return `<div class="vista" data-id="${it.id}">
+    <div class="vhead"><span class="pt ${it.estado}"></span><span class="t">${it.titulo}</span>
+      <button class="btn" onclick="citar('${it.id}')">Mandar para a conversa</button>
+      ${it.estado==="vivo" ? `<button class="btn perigo" onclick="pedirParar('${it.id}')">Parar</button>` : ""}
+      <button class="btn x" onclick="fechar('${it.id}')" title="Fechar">✕</button></div>
+    ${corpo}
+    <div class="rodape"><span>${it.fonte}</span><span class="esp"></span><span>${it.estado==="vivo"?"ao vivo · "+fmt(it.desde):it.estado==="ok"?"concluído":"parado por você"}</span></div>
+  </div>`;
+}
+function desenharVistas() {
+  const app = $("app"); app.className = "app" + (modo ? " " + modo : "");
+  const ids = modo === "mosaico" ? fixados.slice(0, 3) : modo === "split" ? [itens[sel].id] : [];
+  $("vistas").innerHTML = ids.map(id => vistaDe(itens.find(i => i.id === id))).join("");
+}
+function abrir(i) { sel = i; if (!modo) modo = "split"; if (modo === "mosaico" && !fixados.includes(itens[i].id)) fixados.unshift(itens[i].id); desenharLista(); desenharVistas(); }
+function fechar(id) { const k = fixados.indexOf(id); if (k >= 0) fixados.splice(k, 1); if (modo === "split" || !fixados.length) modo = ""; desenharVistas(); }
+function citar(id) { const it = itens.find(i => i.id === id); alert(`Vai para o composer, sem enviar:\n\n"Saída de ${it.titulo}:"\n${(it.linhas||it.passos).slice(-3).join("\n").replace(/<[^>]+>/g,"")}`); }
+let alvo = null;
+function pedirParar(id) { alvo = itens.find(i => i.id === id); $("alvo").innerHTML = `<b>${alvo.titulo}</b><br/><code>${alvo.sub}</code><br/><br/>${alvo.tipo==="tarefa"?"O Claude Code ainda não aceita parar tarefa por fora do turno; a Frota encerra o processo do sistema e avisa o motor no próximo turno.":"Encerra só este item. Os outros continuam."}`; $("modal").classList.add("on"); }
+$("cancelar").onclick = () => $("modal").classList.remove("on");
+$("confirmar").onclick = () => { alvo.estado = "parado"; $("modal").classList.remove("on"); desenharLista(); desenharVistas(); };
+$("lista").onclick = (e) => { const li = e.target.closest(".item"); if (li) abrir(+li.dataset.i); };
+$("abrirBastidores").onclick = () => { $("lista").focus(); abrir(sel); };
+document.querySelectorAll("[data-modo]").forEach(b => b.onclick = () => { modo = b.dataset.modo; if (modo === "mosaico" && !fixados.length) fixados.push(...itens.map(i => i.id)); desenharVistas(); });
+document.addEventListener("keydown", (e) => {
+  if ($("modal").classList.contains("on")) { if (e.key === "Escape") $("modal").classList.remove("on"); return; }
+  if (e.key === "ArrowDown") { sel = Math.min(itens.length - 1, sel + 1); desenharLista(); if (modo === "split") desenharVistas(); e.preventDefault(); }
+  if (e.key === "ArrowUp") { sel = Math.max(0, sel - 1); desenharLista(); if (modo === "split") desenharVistas(); e.preventDefault(); }
+  if (e.key === "Enter") abrir(sel);
+  if (e.key === "Escape") { modo = ""; desenharVistas(); }
+  if (e.key.toLowerCase() === "f") { const id = itens[sel].id; if (!fixados.includes(id)) fixados.unshift(id); modo = "mosaico"; desenharVistas(); }
+});
+setInterval(() => {
+  itens.forEach(it => {
+    if (it.estado !== "vivo") return;
+    it.desde += 1;
+    if (it.novas && it.novas.length && Math.random() < 0.18) {
+      const l = it.novas.shift(); it.linhas.push(l); it.pulso = true;
+      const pre = document.getElementById("saida-" + it.id);
+      if (pre) { const d = document.createElement("div"); d.className = "nova"; d.textContent = l; pre.appendChild(d); pre.scrollTop = pre.scrollHeight; }
+      if (!it.novas.length && it.tipo !== "subagente") { it.estado = "ok"; }
+    }
+  });
+  desenharLista();
+  document.querySelectorAll(".vista .rodape span:last-child").forEach(s => { const it = itens.find(i => i.id === s.closest(".vista").dataset.id); s.textContent = it.estado === "vivo" ? "ao vivo · " + fmt(it.desde) : it.estado === "ok" ? "concluído" : "parado por você"; });
+}, 1000);
+desenharLista(); desenharVistas();
+</script>
+</body>
+</html>

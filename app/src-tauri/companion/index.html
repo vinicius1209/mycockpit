@@ -1717,6 +1717,11 @@ function chatItemHtml(it) {
     case "text": return '<div class="ci-text md">' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
     case "tool": return toolLine(it);
     case "result": {
+      // ADR-199: envelope de bastidor (sem texto, custo nem token) fechado no
+      // meio do pedido não é turno; o desktop também não desenha.
+      var u = it.usage || {};
+      if (it.ok && !(it.text || "").trim() && !it.costUsd &&
+          !u.input && !u.output && !u.cacheRead && !u.cacheCreation) return "";
       var bits = [it.ok ? "✓ turno concluído" : "✗ turno falhou"];
       if (typeof it.costUsd === "number") bits.push(usd(it.costUsd));
       if (typeof it.durationMs === "number") bits.push(Math.round(it.durationMs / 1000) + "s");

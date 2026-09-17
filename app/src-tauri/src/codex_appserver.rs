@@ -408,6 +408,19 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
             Some(item) => map_item_completed(item, st),
             None => vec![],
         },
+        // codex 0.154.0 (binário real, ADR-200): o `exec_command` que passa do
+        // `yield_time_ms` segue rodando e manda a saída por aqui, linha a linha,
+        // inclusive depois do `turn/completed` enquanto o app-server vive.
+        "item/commandExecution/outputDelta" => {
+            let delta = params.get("delta").and_then(|x| x.as_str()).unwrap_or("");
+            match params.get("itemId").and_then(|x| x.as_str()) {
+                Some(id) if !delta.is_empty() => vec![AgentEvent::ToolOutput {
+                    id: id.to_string(),
+                    text: delta.to_string(),
+                }],
+                _ => vec![],
+            }
+        }
         "item/started" => match params.get("item") {
             Some(item) => map_item_started(item),
             None => vec![],
@@ -785,8 +798,14 @@ fn parse_thread_context(tail: &str) -> Option<ThreadContext> {
             continue;
         }
         let payload = value.get("payload")?;
+        // ADR-198: o Codex compara ao limiar o `total_tokens` da última
+        // chamada (entrada E saída, `context_window.rs` do 0.154.0). A saída
+        // entra no próximo prompt, então medir só a entrada subestimava o anel
+        // em até 4 mil tokens. Rollout sem `total_tokens` segue na entrada.
         let tokens = payload
-            .pointer("/info/last_token_usage/input_tokens")
+            .pointer("/info/last_token_usage/total_tokens")
+            .or_else(|| payload.pointer("/last_token_usage/total_tokens"))
+            .or_else(|| payload.pointer("/info/last_token_usage/input_tokens"))
             .or_else(|| payload.pointer("/last_token_usage/input_tokens"))
             .and_then(Value::as_u64);
         let window_tokens = payload
@@ -1198,6 +1217,34 @@ pub async fn run(
 
 #[cfg(test)]
 mod tests {
+
+    /// Captura real (codex 0.154.0 contra Responses API local, 16/09/2026): o
+    /// comando passou do `yield_time_ms`, o turno fechou e a saída continuou
+    /// chegando por `outputDelta` até o `item/completed`.
+    #[test]
+    fn saida_ao_vivo_do_terminal_vira_tool_output_com_o_id_do_item() {
+        let captura = include_str!("../testdata/codex-0.154.0/background-terminal-appserver.jsonl");
+        let mut st = StreamState::new(None);
+        let mut started = None;
+        let mut saida = String::new();
+        for linha in captura.lines() {
+            let Ok(v) = serde_json::from_str::<Value>(linha) else { continue };
+            let Some(method) = v.get("method").and_then(Value::as_str) else { continue };
+            let params = v.get("params").cloned().unwrap_or(Value::Null);
+            for ev in map_notification(method, &params, &mut st) {
+                match ev {
+                    AgentEvent::Tool { id, name, .. } if name == "Bash" => started = Some(id),
+                    AgentEvent::ToolOutput { id, text } => {
+                        assert_eq!(Some(&id), started.as_ref(), "delta amarrado à tool que roda");
+                        saida.push_str(&text);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert_eq!(saida, "cx 2\ncx 3\ncx 4\ncx 5\ncx 6\nfim\n");
+    }
+
     use super::*;
     use crate::attachments::{Attachment, AttachmentKind};
 
@@ -1647,6 +1694,19 @@ mod tests {
             parse_thread_context(&tail),
             Some(ThreadContext {
                 tokens: 211_547,
+                window_tokens: 258_400,
+            })
+        );
+    }
+
+    #[test]
+    fn rollout_real_mede_o_total_da_ultima_chamada_como_o_codex_compara() {
+        // Linha real de rollout (08/09/2026): entrada 27.577 + saída 558.
+        let tail = include_str!("../testdata/codex-0.154.0/rollout-token-count-2026-09-08.jsonl");
+        assert_eq!(
+            parse_thread_context(tail),
+            Some(ThreadContext {
+                tokens: 28_135,
                 window_tokens: 258_400,
             })
         );

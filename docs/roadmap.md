@@ -4,6 +4,10 @@
 > `competitors-xirp.md`, `background-status-plan.md` (Warp), `hooks-plan.md`
 > e da auditoria §9 do `STYLEGUIDE.md`. Ordem = recomendação, não obrigação.
 
+> Atualização de 16/09/2026: o que o mercado fez depois deste consolidado,
+> mais ideias novas (custo com dentes, nuvem por perfil, mobile com poder de
+> aprovar), está em [`estudo-produto-2026-09.md`](./estudo-produto-2026-09.md).
+
 ## Entregue (para memória)
 Fio despoluído (ADR-037) · STYLEGUIDE canônico · medidor de janela de uso
 (statusline + conta Claude + RPC Codex) · hooks H0-H2 (frota da máquina +

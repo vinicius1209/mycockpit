@@ -26,6 +26,7 @@ import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
 import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import { contextMeter, type ContextMeter } from "@/lib/contextMeter"
+import { medirCompactacao } from "@/lib/engineContext"
 import { memoriaDaConversa } from "@/lib/memoriaDaConversa"
 import { orcamentoDaMemoria } from "@/lib/orcamentoDaMemoria"
 import { hasAssistantReply, personaHandoffBlock } from "@/lib/presets"
@@ -330,10 +331,9 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
         (after?.items ?? []).slice(itemsBefore),
       )
       if (outcome) {
-        useChat.getState().handleEvent(args.convId, {
-          type: "notice",
-          message: outcome,
-        })
+        // ADR-196: o motor mede o contexto resumido; o anel sai da medida velha.
+        const message = await medirCompactacao(args.convId, cwd, outcome, conv.contextTokens)
+        useChat.getState().handleEvent(args.convId, { type: "notice", message })
       }
     } catch (e) {
       if (accepted) recordCompactError(args.convId, e, "Falha ao compactar o contexto")

@@ -1,6 +1,12 @@
 // Ações de fim de turno (fork · anotar · diff · 👍/👎 · 🎓) — a régua de ícones
-// que mora lado a lado com a `TurnTelemetry`, na MESMA linha (mock B de
-// docs/mocks/turno-resumo-README.md).
+// que mora lado a lado com a `TurnTelemetry`, na MESMA linha.
+//
+// ADR-199 (revisa o mock B de 17/08): no ÚLTIMO turno a régua fica à vista,
+// porque é onde ela decide. Nos anteriores aparece no hover ou no foco do turno
+// (`group/turno`, o mesmo gesto do balão do usuário), e fica à vista quando já
+// tem reação ou quando um formulário está aberto. Sem hover (toque), aparece.
+// O diff só vai no último turno: ele abre o diff ATUAL do worktree, e num
+// turno antigo isso mentiria sobre "esta entrega".
 //
 // Saiu do MessageList porque aquele arquivo está no teto da catraca e esta é
 // uma peça fechada: tudo aqui é "o que eu faço COM um turno terminado". Cada
@@ -27,6 +33,7 @@ import {
 } from "lucide-react"
 import { toast } from "sonner"
 import { TurnNoteComposer } from "@/components/chat/TurnNote"
+import { Button } from "@/components/ui/button"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
 import type { SaveLessonOutcome } from "@/lib/learning"
 import { SELECTED_FILL } from "@/lib/selection"
@@ -68,10 +75,13 @@ export function TurnActions({
   it,
   feedbackText,
   api,
+  lastTurn = true,
 }: {
   it: Extract<ChatItem, { kind: "result" }>
   feedbackText?: string
   api: FeedbackApi
+  /** É o turno mais recente da conversa? Decide régua à vista e o diff. */
+  lastTurn?: boolean
 }) {
   const resultId = it.id
   const agentTurn = feedbackText ?? it.text ?? ""
@@ -146,82 +156,101 @@ export function TurnActions({
     }
   }
 
+  const aVista = lastTurn || reactions.length > 0 || mode !== "idle"
   return (
     <>
-      <div className="ml-auto flex shrink-0 items-center gap-0.5">
-        <button
+      <div
+        data-testid="turn-actions"
+        data-reveal={aVista ? "sempre" : "hover"}
+        className={cn(
+          "ml-auto flex shrink-0 items-center gap-0.5 transition-opacity duration-150",
+          !aVista &&
+            "pointer-events-none opacity-0 group-hover/turno:pointer-events-auto group-hover/turno:opacity-100 group-focus-within/turno:pointer-events-auto group-focus-within/turno:opacity-100 [@media(hover:none)]:pointer-events-auto [@media(hover:none)]:opacity-100",
+        )}
+      >
+        <Button
           type="button"
+          variant="ghost"
+          size="icone-chip"
           onClick={() => setMode(mode === "note" ? "idle" : "note")}
           title="Anotar sobre este turno (o agente lê)"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="text-muted-foreground hover:text-foreground"
         >
           <PenLine className="size-3.5" />
           <span className="sr-only">Anotar sobre este turno</span>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="icone-chip"
           onClick={onActiveConv((convId) =>
             void useChat.getState().forkConversationAt(convId, resultId),
           )}
           title="Fork: nova conversa a partir daqui"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="text-muted-foreground hover:text-foreground"
         >
           <GitFork className="size-3.5" />
           <span className="sr-only">Fork: nova conversa a partir daqui</span>
-        </button>
-        {it.ok && (
-          <button
+        </Button>
+        {it.ok && lastTurn && (
+          <Button
             type="button"
+            variant="ghost"
+            size="icone-chip"
             onClick={onActiveConv(
               (convId) => void openDeliveryDiff({ convId, text: it.text ?? "" }),
             )}
             title="Ver o diff desta entrega"
-            className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            className="text-muted-foreground hover:text-foreground"
           >
             <FileDiff className="size-3.5" />
             <span className="sr-only">Ver o diff desta entrega</span>
-          </button>
+          </Button>
         )}
         <span className="mx-0.5 h-3.5 w-px bg-border/60" aria-hidden />
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icone-chip"
           onClick={() => void react(THUMB_UP)}
           aria-pressed={reactions.includes(THUMB_UP)}
           title="Gostei"
           className={cn(
-            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             reactions.includes(THUMB_UP)
               ? SELECTED_FILL
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
           <ThumbsUp className="size-3.5" />
           <span className="sr-only">Gostei</span>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="icone-chip"
           onClick={() => void react(THUMB_DOWN)}
           aria-pressed={reactions.includes(THUMB_DOWN)}
           title="Precisa melhorar"
           className={cn(
-            "rounded-md p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
             reactions.includes(THUMB_DOWN)
               ? SELECTED_FILL
-              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              : "text-muted-foreground hover:text-foreground",
           )}
         >
           <ThumbsDown className="size-3.5" />
           <span className="sr-only">Precisa melhorar</span>
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
+          size="icone-chip"
           onClick={openAsk}
           title="Transformar em aprendizado"
-          className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-brass focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="text-muted-foreground hover:text-brass"
         >
           <GraduationCap className="size-3.5" />
           <span className="sr-only">Transformar em aprendizado</span>
-        </button>
+        </Button>
         {mode === "done" && (
           <span className="ml-1 inline-flex items-center gap-1 text-[11px] text-st-success">
             <Check className="size-3" /> Regra salva

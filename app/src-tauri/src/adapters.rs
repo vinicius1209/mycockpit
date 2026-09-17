@@ -269,6 +269,28 @@ pub enum ContextUsageSource {
     CodexRollout,
 }
 
+/// Onde o PRÓPRIO motor diz em que ponto compacta sozinho (ADR-196). O teto
+/// do anel sem isto é a janela do modelo, e a régua de oferta era palpite
+/// nosso: o limiar efetivo depende de modelo, `autoCompactEnabled`, ambiente e
+/// do `/autocompact` da pessoa, e só o CLI sabe combinar os quatro.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ContextCeilingProbe {
+    /// claude 2.1.270: `control_request` `get_context_usage` (`detail:
+    /// "summary"`) num processo `--input-format stream-json --resume <sid>`.
+    /// Medido em 16/09/2026: 0,7s sem hooks nem MCP, custo zero, sessão
+    /// intacta (md5 igual), `autoCompactThreshold` sensível a modelo, env e
+    /// settings. Fixtures em testdata/claude-2.1.270/context-usage*.jsonl.
+    ClaudeControlRequest,
+    /// codex 0.154.0: `config/read` no app-server (sem turno, sem cota) mais o
+    /// catálogo `models_cache.json`, com a fórmula do código validada no
+    /// binário contra uma Responses API local (ADR-198).
+    CodexConfigCatalog,
+    /// agy 1.2.4: estimativa e limite gravados a cada geração em
+    /// `conversations/<id>.db` (`gen_metadata`). Registro interno, não
+    /// contrato: sem o campo, nada se afirma (ADR-198).
+    AgyGenerationRecord,
+}
+
 /// Dialeto de instalação/protocolo de HOOKS de um motor (hooks-plan §2).
 /// Mesmo padrão do `CommandSource`/`UsageWindowSource`: o enum confina o
 /// "como" (formato do config, shape do payload, forma da resposta síncrona —
@@ -623,6 +645,12 @@ pub struct Capabilities {
     /// Nunca aponta para o total acumulado do turno/thread. `None` = o motor
     /// não oferece medição confiável e a UI não inventa percentual.
     pub context_usage: Option<ContextUsageSource>,
+    /// Sonda FORA do turno que lê o limiar efetivo de compactação automática e
+    /// o footprint atual da sessão. `None` = o anel usa a janela como teto e
+    /// não afirma quando o motor compacta. Exige `session_resume` (a sonda
+    /// retoma a sessão sem mandar mensagem). Espelho TS: `contextCeilingProbe`
+    /// em lib/agentContext.ts.
+    pub context_ceiling: Option<ContextCeilingProbe>,
     /// Expõe a JANELA DE USO do plano (% usado + reset, feature "9% used ·
     /// 4h 22m" do estudo do Orca — pipeline SEPARADO do custo em $). `None` =
     /// motor sem fonte auditada: a UI some com pill/toggle (degradação
@@ -759,6 +787,7 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     // modo print (empírico 04/08/2026; §7.1 do agent-runner).
     native_compact: true,
     context_usage: Some(ContextUsageSource::Stream),
+    context_ceiling: Some(ContextCeilingProbe::ClaudeControlRequest),
     // claude 2.1.220: a statusline recebe `rate_limits` no stdin por turno
     // (payload real capturado 12/08/2026 — fixture em usage_window.rs).
     usage_window: Some(UsageWindowSource::ClaudeStatusline),
@@ -835,6 +864,9 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     // O `turn.completed.usage` do exec é acumulado da THREAD e não serve de
     // nível. O runner lê o `last_token_usage` do rollout depois do turno.
     context_usage: Some(ContextUsageSource::CodexRollout),
+    // codex 0.154.0: nenhum canal diz o limiar; ele sai da config efetiva e do
+    // catálogo pela fórmula do código, validada no binário (ADR-198).
+    context_ceiling: Some(ContextCeilingProbe::CodexConfigCatalog),
     // codex 0.146: `account/rateLimits/read` no app-server read-only devolve
     // usedPercent + resetsAt (provado na mão 12/08/2026, fixture em
     // usage_window.rs).
@@ -950,6 +982,9 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // compactação nativa, o `/compactar` do app segue na renovação com recap.
     native_compact: false,
     context_usage: Some(ContextUsageSource::Stream),
+    // agy 1.2.4: compacta quando a PRÓPRIA estimativa passa do limite gravado
+    // a cada geração (256.000 no Gemini Flash), não perto da janela de 1M.
+    context_ceiling: Some(ContextCeilingProbe::AgyGenerationRecord),
     // agy 1.1.13: era `None` porque o `/credits` só expõe saldo absoluto (sem
     // percentual de janela nem reset). O motivo caiu em 16/08/2026: o `/usage`
     // existe, o print mode o expande e devolve `command.data` com grupos ×
@@ -1171,6 +1206,7 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     // não foi observado emitindo — fica false até alguém ver acontecer.
     native_compact: false,
     context_usage: None,
+    context_ceiling: None,
     usage_window: None,
     usage_window_poll: None,
     hooks_status: false,
@@ -1561,6 +1597,24 @@ pub fn is_registered(agent: &str) -> bool {
 }
 
 /// Lê um inteiro não-negativo de um sub-objeto `usage` (0 se ausente/inválido).
+/// `result` do Claude que não fecha turno nenhum (ver o uso em `map_line`).
+fn resultado_de_bastidor(v: &serde_json::Value) -> bool {
+    let zero_turnos = v.get("num_turns").and_then(|x| x.as_u64()) == Some(0);
+    let sem_texto = v
+        .get("result")
+        .and_then(|x| x.as_str())
+        .is_none_or(|t| t.trim().is_empty());
+    let sem_custo = v
+        .get("total_cost_usd")
+        .and_then(|x| x.as_f64())
+        .is_none_or(|c| c == 0.0);
+    let usage = v.get("usage");
+    let sem_tokens = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"]
+        .iter()
+        .all(|k| usage_u64(usage, k) == 0);
+    zero_turnos && sem_texto && sem_custo && sem_tokens
+}
+
 fn usage_u64(usage: Option<&serde_json::Value>, key: &str) -> u64 {
     usage
         .and_then(|u| u.get(key))
@@ -1679,6 +1733,20 @@ pub struct ClaudeAdapter {
     /// nunca streamou (builtin local: modelo `<synthetic>`, sem deltas, claude
     /// 2.1.270) só existe no `assistant` consolidado, e é ele que vai pro fio.
     mensagens_streamadas: std::collections::HashSet<String>,
+    /// Tasks que nasceram com `is_backgrounded: false` (claude 2.1.270, fixture
+    /// `comando-em-primeiro-plano.jsonl`): o CLI abre task até para o Bash comum
+    /// que demora, e o turno ESPERA por ele. Não é trabalho em segundo plano; o
+    /// cartão da tool já conta a história. Guardadas aqui até um `task_updated`
+    /// com `is_backgrounded: true` promovê-las (o binário emite esse patch).
+    tarefas_em_primeiro_plano: std::collections::HashMap<String, TarefaEmPrimeiroPlano>,
+}
+
+/// O nascimento de uma task em primeiro plano, para emitir se ela for para o
+/// segundo plano depois.
+struct TarefaEmPrimeiroPlano {
+    tool_use_id: Option<String>,
+    kind: Option<String>,
+    name: Option<String>,
 }
 
 impl AgentAdapter for ClaudeAdapter {
@@ -2069,6 +2137,9 @@ impl AgentAdapter for ClaudeAdapter {
                         .iter()
                         .filter_map(|t| {
                             let id = t.get("task_id").and_then(|x| x.as_str())?;
+                            if self.tarefas_em_primeiro_plano.contains_key(id) {
+                                return None;
+                            }
                             Some(AgentEvent::DeferredWork {
                                 id: id.to_string(),
                                 tool_use_id: None,
@@ -2094,21 +2165,31 @@ impl AgentAdapter for ClaudeAdapter {
                     let Some(id) = v.get("task_id").and_then(|x| x.as_str()) else {
                         return vec![];
                     };
+                    let tool_use_id = v
+                        .get("tool_use_id")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                    let kind = v
+                        .get("task_type")
+                        .and_then(|x| x.as_str())
+                        .map(str::to_string);
+                    let name = v
+                        .get("workflow_name")
+                        .and_then(|x| x.as_str())
+                        .or_else(|| v.get("description").and_then(|x| x.as_str()))
+                        .map(str::to_string);
+                    // Só `false` explícito segura: CLI antigo sem o campo segue
+                    // como antes (fail-open, ADR-200).
+                    if v.get("is_backgrounded").and_then(|x| x.as_bool()) == Some(false) {
+                        self.tarefas_em_primeiro_plano
+                            .insert(id.to_string(), TarefaEmPrimeiroPlano { tool_use_id, kind, name });
+                        return vec![];
+                    }
                     vec![AgentEvent::DeferredWork {
                         id: id.to_string(),
-                        tool_use_id: v
-                            .get("tool_use_id")
-                            .and_then(|x| x.as_str())
-                            .map(str::to_string),
-                        kind: v
-                            .get("task_type")
-                            .and_then(|x| x.as_str())
-                            .map(str::to_string),
-                        name: v
-                            .get("workflow_name")
-                            .and_then(|x| x.as_str())
-                            .or_else(|| v.get("description").and_then(|x| x.as_str()))
-                            .map(str::to_string),
+                        tool_use_id,
+                        kind,
+                        name,
                         status: DeferredStatus::Running,
                         summary: None,
                         output_file: None,
@@ -2122,6 +2203,9 @@ impl AgentAdapter for ClaudeAdapter {
                     let Some(id) = v.get("task_id").and_then(|x| x.as_str()) else {
                         return vec![];
                     };
+                    if self.tarefas_em_primeiro_plano.contains_key(id) {
+                        return vec![];
+                    }
                     let mut progress = serde_json::Map::new();
                     if let Some(wp) = v.get("workflow_progress") {
                         progress.insert("workflow_progress".to_string(), wp.clone());
@@ -2154,12 +2238,34 @@ impl AgentAdapter for ClaudeAdapter {
                     let Some(id) = v.get("task_id").and_then(|x| x.as_str()) else {
                         return vec![];
                     };
+                    // Foi para o segundo plano no meio do caminho: nasce agora.
+                    let mut out = Vec::new();
+                    if self.tarefas_em_primeiro_plano.contains_key(id) {
+                        if v.pointer("/patch/is_backgrounded").and_then(|x| x.as_bool()) != Some(true) {
+                            return vec![];
+                        }
+                        if let Some(t) = self.tarefas_em_primeiro_plano.remove(id) {
+                            out.push(AgentEvent::DeferredWork {
+                                id: id.to_string(),
+                                tool_use_id: t.tool_use_id,
+                                kind: t.kind,
+                                name: t.name,
+                                status: DeferredStatus::Running,
+                                summary: None,
+                                output_file: None,
+                                progress: None,
+                            });
+                        }
+                    }
                     let status = match v.pointer("/patch/status").and_then(|x| x.as_str()) {
                         Some("completed") => DeferredStatus::Completed,
-                        Some("stopped") | Some("cancelled") => DeferredStatus::Stopped,
-                        _ => return vec![],
+                        // claude 2.1.270 (fixture background-bash.jsonl): o
+                        // shell em segundo plano morto no fim do turno chega
+                        // como `killed` (ADR-200).
+                        Some("stopped") | Some("cancelled") | Some("killed") => DeferredStatus::Stopped,
+                        _ => return out,
                     };
-                    vec![AgentEvent::DeferredWork {
+                    out.push(AgentEvent::DeferredWork {
                         id: id.to_string(),
                         tool_use_id: None,
                         kind: None,
@@ -2168,7 +2274,8 @@ impl AgentAdapter for ClaudeAdapter {
                         summary: None,
                         output_file: None,
                         progress: None,
-                    }]
+                    });
+                    out
                 }
                 // Fim com resumo + output_file. Qualquer fim não-"completed"
                 // vira Stopped (o front mostra "interrompido" — honesto). O
@@ -2178,6 +2285,11 @@ impl AgentAdapter for ClaudeAdapter {
                     let Some(id) = v.get("task_id").and_then(|x| x.as_str()) else {
                         return vec![];
                     };
+                    // Fim de task que nunca saiu do primeiro plano: o resultado
+                    // já veio no tool_result do próprio comando.
+                    if self.tarefas_em_primeiro_plano.remove(id).is_some() {
+                        return vec![];
+                    }
                     let status = match v.get("status").and_then(|x| x.as_str()) {
                         Some("completed") => DeferredStatus::Completed,
                         _ => DeferredStatus::Stopped,
@@ -2444,6 +2556,17 @@ impl AgentAdapter for ClaudeAdapter {
             }
             "result" => {
                 let is_error = v.get("is_error").and_then(|x| x.as_bool()).unwrap_or(false);
+                // claude 2.1.270 (reproduzido 16/09/2026, fixture
+                // `resume-apos-tarefa-parada.jsonl`): ao retomar depois de uma
+                // tarefa em segundo plano que parou, o CLI entrega a
+                // `task_notification` e fecha um `result` de BASTIDOR antes do
+                // turno pedido: `num_turns` 0, custo 0, texto vazio. Não é fim
+                // de turno; virava recibo "concluído · US$ 0,000" no TOPO da
+                // resposta. Builtin (`/usage`) também tem zero turnos, mas traz
+                // texto, e a compactação traz custo: os dois seguem valendo.
+                if !is_error && resultado_de_bastidor(v) {
+                    return vec![];
+                }
                 let mut failure_message = None;
                 let mut limit = None;
                 // resume falhou (sessão não existe) → sinaliza p/ degradação graciosa,
@@ -3077,11 +3200,38 @@ fn map_codex_item(
 //     ⚠️ alucina: 1 rodada em 4 leu errado uma página de PDF sem sinalizar.
 //   • `--mode plan` é CONSULTIVO e furou o gate em 2026-07 → seguimos com
 //     emulação por prompt + `--sandbox`.
+/// Marco do fio quando o agy resume a conversa sozinho. Antes → depois só com
+/// as duas medidas do próprio stream; sem elas, o fato sem número.
+fn aviso_agy_compactou(antes: Option<u64>, depois: Option<u64>) -> AgentEvent {
+    fn milhar(n: u64) -> String {
+        let digits = n.to_string();
+        let mut out = String::new();
+        for (i, c) in digits.chars().enumerate() {
+            if i > 0 && (digits.len() - i) % 3 == 0 {
+                out.push('.');
+            }
+            out.push(c);
+        }
+        out
+    }
+    let base = "Contexto cheio: o Antigravity resumiu a conversa sozinho";
+    let message = match (antes, depois) {
+        (Some(a), Some(d)) => format!("{base} · {} → {} tokens.", milhar(a), milhar(d)),
+        (None, Some(d)) => format!("{base} · agora {} tokens.", milhar(d)),
+        _ => format!("{base}; o detalhe antigo virou resumo."),
+    };
+    AgentEvent::Notice { message }
+}
+
 #[derive(Default)]
 pub struct AgyAdapter {
     /// Já avisamos que o agy compactou neste run? O `compaction_info` acompanha
     /// os steps seguintes, e repetir viraria eco a cada linha.
     avisou_compactacao: bool,
+    /// Compactação vista (step `checkpoint` sem `usage`) esperando a próxima
+    /// resposta para confirmar a queda e medir o antes → depois. Guarda o nível
+    /// de contexto conhecido ANTES do checkpoint (0 = o run começou por ele).
+    compactacao_pendente: Option<u64>,
     /// Modelo requisitado (p/ o rótulo no Session e p/ estimar o custo).
     /// None = default do agy, e aí o custo sai sem estimativa (honesto).
     model: Option<String>,
@@ -3368,6 +3518,34 @@ impl AgyAdapter {
         if self.avisou_compactacao {
             return vec![];
         }
+        // agy 1.2.4 (medido 16/09/2026, fixtures em testdata/agy-1.2.4): a
+        // compactação chega como step `checkpoint` DONE SEM `usage` (12 a 15s,
+        // é o resumidor), e a resposta seguinte cai de ~255 mil para ~22 mil.
+        // O `checkpoint` auxiliar de versões anteriores trazia `usage` de ~120
+        // tokens e não derrubava nada; ele não avisa.
+        let kind = step.get("step_type").and_then(|x| x.as_str()).unwrap_or("");
+        let done = step.get("state").and_then(|x| x.as_str()) == Some("DONE");
+        if kind == "checkpoint" && done && step.get("usage").is_none() {
+            self.compactacao_pendente = Some(self.context_tokens);
+            return vec![];
+        }
+        if kind == "agent_response" && done {
+            if let Some(antes) = self.compactacao_pendente {
+                let depois = step
+                    .get("usage")
+                    .map(|u| usage_u64(Some(u), "input_tokens") + usage_u64(Some(u), "cache_read_tokens"))
+                    .unwrap_or(0);
+                if depois > 0 {
+                    self.compactacao_pendente = None;
+                    // Sem queda não houve resumo: nada se afirma.
+                    if antes > 0 && depois >= antes {
+                        return vec![];
+                    }
+                    self.avisou_compactacao = true;
+                    return vec![aviso_agy_compactou(Some(antes).filter(|a| *a > 0), Some(depois))];
+                }
+            }
+        }
         let tem = ["compaction_info", "compactionInfo"]
             .iter()
             .any(|k| step.get(*k).is_some_and(|v| !v.is_null()));
@@ -3375,9 +3553,7 @@ impl AgyAdapter {
             return vec![];
         }
         self.avisou_compactacao = true;
-        vec![AgentEvent::Notice {
-            message: "Contexto cheio: o Antigravity resumiu a conversa sozinho — o detalhe antigo virou resumo.".to_string(),
-        }]
+        vec![aviso_agy_compactou(None, None)]
     }
 
     fn map_result(&mut self, result: &serde_json::Value) -> Vec<AgentEvent> {
@@ -3416,6 +3592,12 @@ impl AgyAdapter {
         if self.text_open {
             self.text_open = false;
             out.push(AgentEvent::TextStop);
+        }
+        // Checkpoint de compactação sem resposta depois (turno caiu logo após o
+        // resumo): o fato aconteceu, só não há medida do depois.
+        if self.compactacao_pendente.take().is_some() && !self.avisou_compactacao {
+            self.avisou_compactacao = true;
+            out.push(aviso_agy_compactou(None, None));
         }
         if self.context_tokens > 0 {
             out.push(AgentEvent::ContextUsage {
@@ -5127,6 +5309,33 @@ mod tests {
         );
     }
 
+    /// Teste-GÊMEO de `agents.contextCeiling.test.ts` (ADR-196): quem diz onde
+    /// compacta sozinho. Declarar sem resume é prometer uma sessão que a sonda
+    /// não sabe retomar.
+    #[test]
+    fn matriz_context_ceiling_por_agent() {
+        assert_eq!(
+            capabilities_of("claude-code").unwrap().context_ceiling,
+            Some(ContextCeilingProbe::ClaudeControlRequest)
+        );
+        assert_eq!(
+            capabilities_of("codex").unwrap().context_ceiling,
+            Some(ContextCeilingProbe::CodexConfigCatalog)
+        );
+        assert_eq!(
+            capabilities_of("agy").unwrap().context_ceiling,
+            Some(ContextCeilingProbe::AgyGenerationRecord)
+        );
+        assert_eq!(capabilities_of("opencode").unwrap().context_ceiling, None);
+        for agent in ["claude-code", "codex", "agy", "opencode"] {
+            let caps = capabilities_of(agent).unwrap();
+            assert!(
+                caps.context_ceiling.is_none() || caps.session_resume,
+                "{agent}: context_ceiling exige session_resume"
+            );
+        }
+    }
+
     /// Teste-GÊMEO do espelho TS (`agents.telemetry.test.ts`): quem narra o
     /// turno em EVENTOS (e portanto pode listar ação a ação) e de quem existe
     /// custo em DÓLAR. É o par que a superfície de missão consulta pra trocar
@@ -5485,6 +5694,63 @@ mod tests {
             .filter(|e| matches!(e, AgentEvent::Notice { .. }))
             .count();
         assert_eq!((n1, n2), (1, 0), "o aviso repetiu");
+    }
+
+    const AGY_COMPACTACAO_REAL: &str =
+        include_str!("../testdata/agy-1.2.4/compactacao-checkpoint.jsonl");
+    const AGY_COMPACTACAO_NO_INICIO: &str =
+        include_str!("../testdata/agy-1.2.4/compactacao-no-inicio-do-turno.jsonl");
+    const AGY_SEM_COMPACTACAO_ACIMA_256K: &str =
+        include_str!("../testdata/agy-1.2.4/sem-compactacao-acima-de-256k-real.jsonl");
+
+    fn avisos_do_stream(stream: &str) -> Vec<String> {
+        let mut a = AgyAdapter::default();
+        stream
+            .lines()
+            .flat_map(|l| agy_linha(&mut a, l))
+            .filter_map(|e| match e {
+                AgentEvent::Notice { message } if message.contains("resumiu a conversa") => Some(message),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn agy_compactacao_real_avisa_com_antes_e_depois() {
+        // agy 1.2.4, fork da conversa "nuvem": leitura de arquivo empurrou a
+        // estimativa acima de 256.000, `checkpoint` de 14,9s, resposta com
+        // 5.915 + 16.298 de cache. Antes disso a Frota nunca avisou nenhuma.
+        assert_eq!(
+            avisos_do_stream(AGY_COMPACTACAO_REAL),
+            vec!["Contexto cheio: o Antigravity resumiu a conversa sozinho · 250.647 → 22.213 tokens."]
+        );
+    }
+
+    #[test]
+    fn agy_compactacao_no_inicio_do_turno_avisa_so_o_depois() {
+        // O run começou pelo checkpoint (a mensagem nova cruzou o limite): o
+        // nível anterior é de outro processo, então só o depois é afirmado.
+        assert_eq!(
+            avisos_do_stream(AGY_COMPACTACAO_NO_INICIO),
+            vec!["Contexto cheio: o Antigravity resumiu a conversa sozinho · agora 22.217 tokens."]
+        );
+    }
+
+    #[test]
+    fn agy_acima_de_256k_reais_sem_checkpoint_nao_avisa() {
+        // 257.274 tokens reais na API sem compactar: o agy decide pela
+        // estimativa dele (255.444 ali), e o aviso só vem do fato.
+        assert!(avisos_do_stream(AGY_SEM_COMPACTACAO_ACIMA_256K).is_empty());
+    }
+
+    #[test]
+    fn agy_checkpoint_auxiliar_com_usage_nao_avisa() {
+        let mut a = AgyAdapter::default();
+        let mut evs = Vec::new();
+        for linha in [AGY_STEP_NARRACAO, AGY_STEP_CHECKPOINT, AGY_STEP_RESP_DONE, AGY_RESULT] {
+            evs.extend(agy_linha(&mut a, linha));
+        }
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Notice { .. })));
     }
 
     #[test]

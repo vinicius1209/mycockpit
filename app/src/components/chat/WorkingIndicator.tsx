@@ -1,6 +1,7 @@
 // Extraído do MessageList (catraca de tamanho, STYLEGUIDE §10: divide o
 // arquivo, não sobe o teto) — o indicador "trabalhando…" não tem estado
 // próprio do painel, é uma superfície fechada como os banners do composer.
+import { abrirBastidores } from "@/components/bastidores/abrirBastidores"
 import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
@@ -148,13 +149,29 @@ export function WorkingIndicator({
           )}
         </span>
       ) : (
-        <span
-          key={fase}
-          className={cn("min-w-0 truncate", trocouFase && "fio-nasce")}
-          title={live ? live.detail : undefined}
-        >
-          {label}
-        </span>
+        live ? (
+          // ADR-200: a linha de trabalho em segundo plano abre os Bastidores.
+          <button
+            type="button"
+            key={fase}
+            onClick={() => abrirBastidores(convId)}
+            className={cn(
+              "min-w-0 truncate rounded text-left underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+              trocouFase && "fio-nasce",
+            )}
+            title={live.detail}
+          >
+            {label}
+            <span className="sr-only"> (acompanhar nos bastidores)</span>
+          </button>
+        ) : (
+          <span
+            key={fase}
+            className={cn("min-w-0 truncate", trocouFase && "fio-nasce")}
+          >
+            {label}
+          </span>
+        )
       )}
       <span className="flex shrink-0 items-center gap-1" aria-hidden>
         {[0, 1, 2].map((i) => (

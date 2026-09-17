@@ -6,7 +6,7 @@
 // único lugar que conhece os três destinos (enviar, disputa, missão) e os
 // estados do turno (preparo, rodando, finalizando).
 
-import { ArrowUp, ChevronDown, Rocket, Square, Swords, Zap } from "lucide-react"
+import { ArrowUp, ChevronDown, ListEnd, Rocket, Square, Swords, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -61,6 +61,9 @@ export function SendSplit({
   missionDisabled?: boolean
 }) {
   // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria).
+  // Abaixo de 560px de rodapé (medido: rótulos inteiros pedem ~320px ao lado da
+  // identidade), Interromper e Enfileirar ficam só com o ícone; nome e atalho
+  // seguem no `title` e no `aria-label`.
   if (running || finalizing) {
     return (
       <div className="flex items-center gap-1.5">
@@ -74,8 +77,8 @@ export function SendSplit({
             aria-label="Interromper e enviar"
           >
             <Zap className="size-3 fill-current" />
-            <span>Interromper e enviar</span>
-            <span className="font-mono text-[11px] text-muted-foreground">↵</span>
+            <span className="hidden @min-[560px]/composer:inline">Interromper e enviar</span>
+            <span className="hidden font-mono text-[11px] text-muted-foreground @min-[560px]/composer:inline">↵</span>
           </Button>
         )}
         {canEnqueue && (
@@ -87,8 +90,9 @@ export function SendSplit({
             title="Enfileirar para o próximo turno (Tab)"
             aria-label="Enfileirar"
           >
-            <span>Enfileirar</span>
-            <span className="font-mono text-[11px] opacity-75">Tab</span>
+            <ListEnd className="size-3.5 @min-[560px]/composer:hidden" />
+            <span className="hidden @min-[560px]/composer:inline">Enfileirar</span>
+            <span className="hidden font-mono text-[11px] opacity-75 @min-[560px]/composer:inline">Tab</span>
           </Button>
         )}
         {running && (

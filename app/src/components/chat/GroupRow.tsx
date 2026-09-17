@@ -91,7 +91,8 @@ export function GroupRow({
       // A brasa pinta um pouco além do conteúdo; margem negativa + padding
       // iguais mantêm o layout onde estava (nada no fio pula).
       className={cn(
-        "flex scroll-mt-6 gap-3",
+        // `group/turno`: o hover/foco do turno revela a régua de ações (ADR-199).
+        "group/turno flex scroll-mt-6 gap-3",
         brasa && "fio-brasa -mx-2 -my-1 rounded-lg px-2 py-1",
         !brasa && nasceu && (author.kind === "you" ? "fio-nasce-sobe" : "fio-nasce"),
       )}

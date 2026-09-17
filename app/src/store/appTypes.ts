@@ -4,6 +4,8 @@ export type ContextPanelTab =
   | "arquivos"
   | "conversa"
   | "alteracoes"
+  /** Trabalho em segundo plano da conversa ativa (ADR-200). */
+  | "bastidores"
   | "contexto"
 
 export interface TranscriptRevealRequest {

@@ -17,7 +17,7 @@ import { test, expect, type Page } from "@playwright/test"
 //  - no painel mínimo a tira degrada pra ícone, e o CONTADOR continua visível
 //    nos dois modos (é o único dado da tira que muda sozinho).
 
-const ABAS = ["Arquivos", "Conversa", "Alterações", "Contexto"] as const
+const ABAS = ["Arquivos", "Conversa", "Alterações", "Bastidores", "Contexto"] as const
 
 async function preparar(page: Page) {
   await page.addInitScript(() => {
@@ -71,6 +71,13 @@ async function medir(page: Page) {
           (s) => s.textContent === b.getAttribute("aria-label") &&
             s.getBoundingClientRect().width > 0,
         ),
+        // Rótulo que aparece pela metade ("Alteraç…") passava pelo teste de
+        // corte e pelo de visibilidade. Medido com a quinta aba (ADR-200).
+        rotuloTruncado: [...b.querySelectorAll("span")].some(
+          (s) => s.textContent === b.getAttribute("aria-label") &&
+            s.getBoundingClientRect().width > 0 &&
+            s.scrollWidth > s.clientWidth,
+        ),
       })),
     }
   }, ABAS as unknown as string[])
@@ -99,7 +106,7 @@ test("nenhuma aba é cortada, em nenhuma largura do painel", async ({ page }) =>
 
   // Janela mínima do app (940, tauri.conf.json) → painel no `minSize` de 240px;
   // e janelas largas, onde o painel abre na proporção padrão de 30%.
-  for (const largura of [940, 1280, 1600, 1920]) {
+  for (const largura of [940, 1280, 1600, 1760, 1920, 2200]) {
     await page.setViewportSize({ width: largura, height: 832 })
     await page.waitForTimeout(200)
     const m = await medir(page)
@@ -108,6 +115,10 @@ test("nenhuma aba é cortada, em nenhuma largura do painel", async ({ page }) =>
       `a tira de abas estourou o painel (${m.larguraPainel}px) na janela de ${largura}px`,
     ).toBeLessThanOrEqual(0)
     for (const aba of m.abas) {
+      expect(
+        aba.rotuloTruncado,
+        `rótulo de "${aba.nome}" truncado (painel ${m.larguraPainel}px, janela ${largura}px)`,
+      ).toBe(false)
       expect(
         aba.corte,
         `aba "${aba.nome}" cortada em ${aba.corte}px (painel ${m.larguraPainel}px, janela ${largura}px)`,
@@ -122,10 +133,11 @@ test("rótulo quando cabe, ícone quando não cabe — e o contador fica nos doi
   await preparar(page)
   await comContadorLargo(page)
 
-  // Com painel >= 400px, os quatro nomes cabem e precisam aparecer. Em
-  // larguras menores a própria quarta aba exige a degradação documentada no
-  // componente, sem corte e preservando nome acessível.
-  await page.setViewportSize({ width: 1920, height: 832 })
+  // Com a tira >= 492px (medido para CINCO rótulos inteiros com o pior
+  // contador, ADR-200; eram 400px com quatro), os nomes cabem e precisam
+  // aparecer. A janela de 2200px abre o painel acima disso na proporção padrão.
+  // Em larguras menores a tira degrada para ícone, sem corte e sem truncar.
+  await page.setViewportSize({ width: 2200, height: 832 })
   await page.waitForTimeout(200)
   const padrao = await medir(page)
   for (const aba of padrao.abas) {

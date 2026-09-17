@@ -18,6 +18,8 @@ mod browser_cdp;
 mod browser_panel;
 mod catalog;
 mod command_inventory;
+mod context_probe;
+mod bastidores;
 mod claude_usage;
 mod codex_appserver;
 mod codex_resume_guard;
@@ -875,6 +877,9 @@ pub fn run() {
             sources::read_project_file_bytes,
             sources::read_project_commands,
             command_inventory::read_command_inventory,
+            context_probe::read_engine_context,
+            bastidores::bastidor_seguir,
+            bastidores::bastidor_parar,
             project_files::list_dir_children,
             project_files::search_project_files,
             sources::write_mission_state,
