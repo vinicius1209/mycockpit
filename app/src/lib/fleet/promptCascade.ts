@@ -15,6 +15,7 @@
 // mencionar duas vezes é decisão). Intenções iguais, gatilhos diferentes.
 
 import { withNotes } from "@/lib/notes"
+import { emoldurarCitacoes } from "@/lib/citacao"
 import { withNotasDoBloco } from "@/store/stickyNotes"
 import { finalizeSlashExpansion } from "@/lib/slashDispatch"
 import type { SlashExpansion } from "@/lib/slashCommands"
@@ -52,7 +53,8 @@ export function withNotasDoTurno(
   texto: string,
   attachments: readonly Attachment[] = [],
 ): { prompt: string; attachments: Attachment[] } {
-  const bloco = withNotasDoBloco(withNotes(convId, items, texto), { projectId, convId })
+  // Citações (capricho R4) viram moldura de dado antes das notas.
+  const bloco = withNotasDoBloco(withNotes(convId, items, emoldurarCitacoes(texto)), { projectId, convId })
   return { prompt: bloco.prompt, attachments: juntarAnexos(attachments, bloco.anexos) }
 }
 

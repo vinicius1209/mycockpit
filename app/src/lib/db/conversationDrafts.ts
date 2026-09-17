@@ -1,4 +1,5 @@
 import type { Attachment } from "@/lib/attachments"
+import type { BlocoDoRascunho } from "@/lib/citacao"
 import { getDb } from "@/lib/db"
 import { ensureComposerDraftTables } from "@/lib/db/schema"
 
@@ -6,12 +7,34 @@ export interface PersistedComposerDraft {
   text: string
   attachments: Attachment[]
   mentionValues: string[]
+  blocos?: BlocoDoRascunho[]
 }
 
 interface DraftRow {
   text: string
   attachments: string
   mention_values: string
+  blocos: string
+}
+
+/** Só citações bem formadas voltam do banco; o resto é descartado. */
+export function parseBlocos(raw: string): BlocoDoRascunho[] {
+  try {
+    const value: unknown = JSON.parse(raw)
+    if (!Array.isArray(value)) return []
+    return value.filter(
+      (item): item is BlocoDoRascunho =>
+        !!item &&
+        typeof item === "object" &&
+        (item as BlocoDoRascunho).tipo === "citacao" &&
+        typeof (item as BlocoDoRascunho).itemId === "string" &&
+        typeof (item as BlocoDoRascunho).autor === "string" &&
+        typeof (item as BlocoDoRascunho).ts === "number" &&
+        typeof (item as BlocoDoRascunho).trecho === "string",
+    )
+  } catch {
+    return []
+  }
 }
 
 function parseStrings(raw: string): string[] {
@@ -48,14 +71,16 @@ export async function loadComposerDraft(
   if (!db) return null
   await ensureComposerDraftTables(db)
   const rows = await db.select<DraftRow[]>(
-    "SELECT text, attachments, mention_values FROM conversation_drafts WHERE conversation_id = $1",
+    "SELECT text, attachments, mention_values, blocos FROM conversation_drafts WHERE conversation_id = $1",
     [conversationId],
   )
   if (!rows.length) return null
+  const blocos = parseBlocos(rows[0].blocos ?? "[]")
   return {
     text: rows[0].text,
     attachments: parseAttachments(rows[0].attachments),
     mentionValues: parseStrings(rows[0].mention_values),
+    ...(blocos.length > 0 ? { blocos } : {}),
   }
 }
 
@@ -66,23 +91,25 @@ export async function saveComposerDraft(
   const db = await getDb()
   if (!db) return
   await ensureComposerDraftTables(db)
-  if (!draft.text.trim() && draft.attachments.length === 0) {
+  if (!draft.text.trim() && draft.attachments.length === 0 && !draft.blocos?.length) {
     await deleteComposerDraft(conversationId)
     return
   }
   await db.execute(
-    `INSERT INTO conversation_drafts (conversation_id, text, attachments, mention_values, updated_at)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO conversation_drafts (conversation_id, text, attachments, mention_values, blocos, updated_at)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT(conversation_id) DO UPDATE SET
        text = excluded.text,
        attachments = excluded.attachments,
        mention_values = excluded.mention_values,
+       blocos = excluded.blocos,
        updated_at = excluded.updated_at`,
     [
       conversationId,
       draft.text,
       JSON.stringify(draft.attachments),
       JSON.stringify(draft.mentionValues),
+      JSON.stringify(draft.blocos ?? []),
       Date.now(),
     ],
   )

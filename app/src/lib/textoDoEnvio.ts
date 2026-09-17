@@ -25,6 +25,17 @@
 // escrever `() => submit()` — e um call site novo não consegue reintroduzir o
 // defeito.
 
-export function textoDoEnvio(override: unknown, value: string): string {
-  return (typeof override === "string" ? override : value).trim()
+//
+// Citações do rascunho (capricho PRD R4) entram AQUI, na frente do texto, pelo
+// formato de `lib/citacao.ts`: é o único ponto por onde passam envio, envio
+// forçado e fila. Sem texto escrito, a citação sozinha não vira mensagem.
+
+import { textoComCitacoes, type BlocoDoRascunho } from "@/lib/citacao"
+
+export function textoDoEnvio(
+  override: unknown,
+  value: string,
+  blocos?: readonly BlocoDoRascunho[],
+): string {
+  return textoComCitacoes((typeof override === "string" ? override : value).trim(), blocos)
 }

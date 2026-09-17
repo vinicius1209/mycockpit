@@ -41,6 +41,11 @@ export async function ensureComposerDraftTables(db: Database): Promise<void> {
         db,
         `ALTER TABLE conversation_drafts ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0`,
       )
+      // Capricho PRD R4: citações do rascunho, fora do texto do editor.
+      await addColumn(
+        db,
+        `ALTER TABLE conversation_drafts ADD COLUMN blocos TEXT NOT NULL DEFAULT '[]'`,
+      )
     })()
     composerDraftsReady = run.catch((e) => {
       composerDraftsReady = null

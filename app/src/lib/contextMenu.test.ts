@@ -301,3 +301,58 @@ describe("alvoDe · precedência", () => {
     expect(alvoDe(sondaVazia)).toBeNull()
   })
 })
+
+describe("tabela dentro de bloco (capricho R1)", () => {
+  const tabela = { cabecalho: true, linhas: [["Motor", "Custo"], ["Codex", "US$ 0,20"]] }
+
+  it("clique sobre tabela oferece copiar para planilha e como Markdown, depois do texto", () => {
+    expect(itensPara({ tipo: "bloco", texto: "Motor Custo", selecao: "", tabela }, NADA)).toEqual([
+      "copiar-bloco",
+      "copiar-tabela-planilha",
+      "copiar-tabela-markdown",
+    ])
+  })
+
+  it("bloco sem tabela, ou tabela vazia, segue só com as cópias de texto", () => {
+    expect(itensPara({ tipo: "bloco", texto: "oi", selecao: "" }, NADA)).toEqual(["copiar-bloco"])
+    expect(
+      itensPara({ tipo: "bloco", texto: "oi", selecao: "", tabela: { cabecalho: false, linhas: [] } }, NADA),
+    ).toEqual(["copiar-bloco"])
+  })
+
+  it("a sonda leva a tabela até o alvo", () => {
+    expect(alvoDe({ ...sondaVazia, bloco: { texto: "Motor", tabela } })).toEqual({
+      tipo: "bloco",
+      texto: "Motor",
+      selecao: "",
+      tabela,
+    })
+  })
+
+  it("rótulos dizem o destino da cópia", () => {
+    expect(ROTULOS["copiar-tabela-planilha"]).toBe("Copiar tabela para planilha")
+    expect(ROTULOS["copiar-tabela-markdown"]).toBe("Copiar tabela como Markdown")
+  })
+})
+
+describe("citar trecho pelo menu (capricho R3)", () => {
+  it("seleção dentro de mensagem citável oferece citar logo depois de copiar", () => {
+    expect(itensPara({ tipo: "bloco", texto: "resposta", selecao: "trecho", citavel: "t1" }, NADA)).toEqual([
+      "copiar",
+      "citar-trecho",
+      "divisor",
+      "copiar-bloco",
+    ])
+  })
+
+  it("sem seleção, ou fora de mensagem citável, não há citar", () => {
+    expect(itensPara({ tipo: "bloco", texto: "resposta", selecao: "", citavel: "t1" }, NADA)).not.toContain("citar-trecho")
+    expect(itensPara({ tipo: "bloco", texto: "resposta", selecao: "trecho" }, NADA)).not.toContain("citar-trecho")
+  })
+
+  it("a sonda só leva o item citável quando há seleção", () => {
+    expect(alvoDe({ ...sondaVazia, bloco: { texto: "r", citavel: "t1" }, selecao: "tr" })).toMatchObject({ citavel: "t1" })
+    expect(alvoDe({ ...sondaVazia, bloco: { texto: "r", citavel: "t1" }, selecao: "" })).not.toHaveProperty("citavel")
+    expect(ROTULOS["citar-trecho"]).toBe("Citar trecho")
+  })
+})

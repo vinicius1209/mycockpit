@@ -3,13 +3,14 @@
 // ponto ou copiar o texto para a área de transferência.
 
 import { useMemo, useState } from "react"
-import { Check, Copy, GitFork, PenLine } from "lucide-react"
+import { Check, Copy, CornerDownRight, GitFork, PenLine } from "lucide-react"
 import { toast } from "sonner"
 import { splitMentions } from "@/components/chat/mentions"
 import { Button } from "@/components/ui/button"
 import { usePresets } from "@/store/presets"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { blocoDaCitacaoNoTexto, separarCitacoes } from "@/lib/citacao"
 import { cn } from "@/lib/utils"
 
 export function MentionText({ text }: { text: string }) {
@@ -46,12 +47,16 @@ export function UserMessageBubble({
 }) {
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
+  // Citação enviada (capricho R4) vira linha ↳ acima do texto, nunca o formato cru.
+  const { citacoes, corpo } = useMemo(() => separarCitacoes(text), [text])
 
   function handleEdit() {
     const convId = useChat.getState().activeId
     if (!convId) return
 
-    useComposerDrafts.getState().setText(convId, text)
+    const drafts = useComposerDrafts.getState()
+    drafts.setText(convId, corpo)
+    if (citacoes.length > 0) drafts.setBlocos(convId, citacoes.map((c) => blocoDaCitacaoNoTexto(c)))
     const inputEl = document.querySelector<HTMLElement>('[data-composer="console"]')
     if (inputEl) {
       inputEl.focus()
@@ -91,11 +96,24 @@ export function UserMessageBubble({
 
   return (
     <div className="group relative inline-block max-w-full">
+      {citacoes.map((c, i) => (
+        <div
+          key={i}
+          title={c.trecho}
+          className="mb-1 flex max-w-[520px] items-center gap-1.5 text-[12px] text-muted-foreground"
+        >
+          <CornerDownRight className="size-3 shrink-0" />
+          <span className="shrink-0 font-mono text-[11px]">
+            {c.autor} · {c.hora}
+          </span>
+          <span className="min-w-0 truncate italic">«{c.trecho.replace(/\s+/g, " ")}»</span>
+        </div>
+      ))}
       <div
         data-selectable
         className="max-w-full rounded-2xl rounded-tl-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
       >
-        <MentionText text={text} />
+        <MentionText text={corpo} />
       </div>
 
       <div

@@ -1,6 +1,7 @@
 import { create } from "zustand"
 import { toast } from "sonner"
 import type { Attachment } from "@/lib/attachments"
+import { comNovaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/citacao"
 import {
   deleteComposerDraft,
   loadComposerDraft,
@@ -11,6 +12,9 @@ export interface ComposerDraft {
   text: string
   attachments: Attachment[]
   mentionValues: string[]
+  /** Blocos fora do texto do editor (hoje, citações: capricho PRD R4).
+   *  Ausente = nenhum. */
+  blocos?: BlocoDoRascunho[]
 }
 
 const EMPTY: ComposerDraft = { text: "", attachments: [], mentionValues: [] }
@@ -29,7 +33,10 @@ export function acrescentarAoRascunho(atual: string, texto: string): string {
 }
 
 export function hasComposerDraft(draft: ComposerDraft | undefined): boolean {
-  return !!draft && (!!draft.text.trim() || draft.attachments.length > 0)
+  return (
+    !!draft &&
+    (!!draft.text.trim() || draft.attachments.length > 0 || (draft.blocos?.length ?? 0) > 0)
+  )
 }
 
 interface ComposerDraftState {
@@ -40,6 +47,10 @@ interface ComposerDraftState {
   setText: (conversationId: string, text: string) => void
   /** Acrescenta ao rascunho sem apagar o que já foi escrito. */
   appendText: (conversationId: string, text: string) => void
+  /** Acrescenta uma citação; `false` quando o teto de citações recusou. */
+  addCitacao: (conversationId: string, citacao: BlocoCitacao) => boolean
+  removeBloco: (conversationId: string, index: number) => void
+  setBlocos: (conversationId: string, blocos: BlocoDoRascunho[]) => void
   setAttachments: (conversationId: string, attachments: Attachment[]) => void
   setMentionValues: (conversationId: string, mentionValues: string[]) => void
   clear: (conversationId: string) => void
@@ -131,6 +142,21 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
     appendText: (conversationId, text) => {
       const current = get().byConv[conversationId] ?? EMPTY
       patch(conversationId, { ...current, text: acrescentarAoRascunho(current.text, text) })
+    },
+    addCitacao: (conversationId, citacao) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      const { blocos, coube } = comNovaCitacao(current.blocos ?? [], citacao)
+      if (coube) patch(conversationId, { ...current, blocos })
+      return coube
+    },
+    removeBloco: (conversationId, index) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      const blocos = (current.blocos ?? []).filter((_, i) => i !== index)
+      patch(conversationId, { ...current, blocos })
+    },
+    setBlocos: (conversationId, blocos) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      patch(conversationId, { ...current, blocos })
     },
     setAttachments: (conversationId, attachments) => {
       const current = get().byConv[conversationId] ?? EMPTY

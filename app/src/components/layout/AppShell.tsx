@@ -11,6 +11,8 @@ import { DiffTab } from "@/components/layout/DiffTab"
 import { FileTab } from "@/components/layout/FileTab"
 import { NavegadorTab } from "@/components/browser/NavegadorTab"
 import { NavegadorFlutuante } from "@/components/browser/NavegadorFlutuante"
+import { CitarTrecho } from "@/components/chat/CitarTrecho"
+import { SolturaNoComposer } from "@/components/chat/SolturaNoComposer"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
@@ -239,6 +241,10 @@ export function AppShell() {
                 {viewMode === "linear" && !coberto && mainTab.kind !== "navegador" && (
                   <NavegadorFlutuante />
                 )}
+                {/* Capricho R3: pílula "Citar" sobre seleção numa mensagem (portal). */}
+                <CitarTrecho />
+                {/* Capricho R6: soltar arquivos do sistema no composer (portal). */}
+                <SolturaNoComposer />
               </div>
             </ResizablePanel>
             {painelVisivel && (

@@ -139,3 +139,35 @@ describe("gesto de fora do composer acrescenta ao rascunho", () => {
     expect(useComposerDrafts.getState().byConv.c9?.text).toBe("primeiro")
   })
 })
+
+describe("citações no rascunho", () => {
+  const citacao = {
+    tipo: "citacao" as const,
+    itemId: "t1",
+    autor: "Claude Code",
+    ts: 1_790_000_000_000,
+    trecho: "rode npm test",
+  }
+
+  it("citação acende o marcador, persiste com o rascunho e sai ao remover", async () => {
+    const store = useComposerDrafts.getState()
+    expect(store.addCitacao("c1", citacao)).toBe(true)
+    expect(hasComposerDraft(useComposerDrafts.getState().byConv.c1)).toBe(true)
+    await useComposerDrafts.getState().flush("c1")
+    expect(saveComposerDraft).toHaveBeenLastCalledWith(
+      "c1",
+      expect.objectContaining({ blocos: [citacao] }),
+    )
+    useComposerDrafts.getState().removeBloco("c1", 0)
+    expect(useComposerDrafts.getState().byConv.c1?.blocos).toEqual([])
+    expect(hasComposerDraft(useComposerDrafts.getState().byConv.c1)).toBe(false)
+  })
+
+  it("o texto digitado convive com a citação", () => {
+    const store = useComposerDrafts.getState()
+    store.setText("c2", "por quê?")
+    store.addCitacao("c2", citacao)
+    store.setText("c2", "por quê isso?")
+    expect(useComposerDrafts.getState().byConv.c2).toMatchObject({ text: "por quê isso?", blocos: [citacao] })
+  })
+})

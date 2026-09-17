@@ -386,7 +386,7 @@ export function CommandConsole({
   // o MouseEvent aqui. Quem separa string de evento é `textoDoEnvio` (ADR-092),
   // e não a memória de quem escreve o próximo call site.
   function submit(overrideText?: unknown) {
-    const text = textoDoEnvio(overrideText, value)
+    const text = textoDoEnvio(overrideText, value, useComposerDrafts.getState().byConv[activeId ?? ""]?.blocos)
     if (destinoDoComposer(estadoDoComposer(text)) === "barrado") return
     // UM caminho só para enviar e para ENFILEIRAR (turno em andamento): texto e
     // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo
@@ -418,7 +418,7 @@ export function CommandConsole({
 
   function handleForceSendDraft(overrideText?: unknown) {
     if (!activeId) return
-    const text = textoDoEnvio(overrideText, value)
+    const text = textoDoEnvio(overrideText, value, useComposerDrafts.getState().byConv[activeId ?? ""]?.blocos)
     forceSendDraft(
       activeId,
       text,

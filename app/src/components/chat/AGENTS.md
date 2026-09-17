@@ -199,6 +199,20 @@ escrito, com uma linha em branco. `setText` troca o rascunho inteiro e fica para
 quem É o composer (digitação, "Editar" de uma mensagem enviada). Foi o `setText`
 nesses gestos que apagava o que a pessoa estava digitando (K1).
 
+## Citação e arquivos soltos no composer (capricho, ADR-205)
+
+- A citação mora no rascunho como bloco (`ComposerDraft.blocos`, persistido) e
+  vira TEXTO no envio, em `textoDoEnvio`, no formato de `lib/citacao.ts`. Não
+  crie outro caminho para levá-la ao motor: a porta é `withNotasDoTurno`, que
+  emoldura como dado. Todo envio que não passar por `textoDoEnvio` sai sem a
+  citação.
+- A bolha nunca mostra o formato cru: `UserMessageBubble` separa as citações e
+  desenha a linha ↳. "Editar" devolve a citação como bloco.
+- Mensagem citável tem `data-citavel` com o id do item. Superfície nova que deva
+  ser citável recebe o atributo; a pílula e o menu de contexto já a enxergam.
+- Arquivo do sistema chega pelo evento do Tauri (`SolturaNoComposer`), nunca
+  pelo `drop` do HTML5; o alvo é o `[data-composer-card]` do `ComposerShell`.
+
 ## Mantenha este arquivo verdadeiro
 
 Mudou a ordem do `despacharEnvio`, o que aparece durante o preparo, ou quando a

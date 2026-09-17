@@ -19,7 +19,9 @@ import {
   type Sonda,
 } from "@/lib/contextMenu"
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
-import { copyText } from "@/lib/clipboard"
+import { copyRich, copyText } from "@/lib/clipboard"
+import { conteudoDaTabela, lerTabela } from "@/lib/tabelaClipboard"
+import { citarTrecho } from "@/lib/citarTrecho"
 import { openConvImage, revealConvImage } from "@/lib/evidence"
 import { openInEditor, pickEditor } from "@/lib/editors"
 import { useEditors } from "@/store/editors"
@@ -154,7 +156,17 @@ function sondarBloco(el: Element | null): Sonda["bloco"] {
   const bloco = el?.closest<HTMLElement>("[data-selectable]")
   if (!bloco) return null
   const texto = (bloco.innerText ?? bloco.textContent ?? "").trim()
-  return texto ? { texto } : null
+  if (!texto) return null
+  const tabela = el?.closest("table")
+  const comTabela = tabela && bloco.contains(tabela) ? { texto, tabela: lerTabela(tabela) } : { texto }
+  // Citável só quando a seleção inteira mora na mensagem do clique (R3).
+  const citavel = el?.closest<HTMLElement>("[data-citavel]")
+  const sel = window.getSelection()
+  const selecaoDentro = Boolean(
+    citavel && sel && !sel.isCollapsed && sel.anchorNode && sel.focusNode &&
+      citavel.contains(sel.anchorNode) && citavel.contains(sel.focusNode),
+  )
+  return selecaoDentro && citavel?.dataset.citavel ? { ...comTabela, citavel: citavel.dataset.citavel } : comTabela
 }
 
 function acharImagem(el: Element | null): HTMLImageElement | null {
@@ -285,6 +297,19 @@ async function executar(
 
     case "copiar-bloco":
       if (alvo.tipo === "bloco" || alvo.tipo === "arquivo") await copyText(alvo.texto)
+      return
+
+    case "citar-trecho":
+      if (alvo.tipo === "bloco" && alvo.citavel) citarTrecho(alvo.citavel, alvo.selecao)
+      return
+
+    case "copiar-tabela-planilha":
+    case "copiar-tabela-markdown":
+      if (alvo.tipo !== "bloco" || !alvo.tabela) return
+      await copyRich(
+        conteudoDaTabela(alvo.tabela, id === "copiar-tabela-planilha" ? "planilha" : "markdown"),
+        id === "copiar-tabela-planilha" ? "Tabela copiada para planilha" : "Tabela copiada como Markdown",
+      )
       return
 
     case "copiar-imagem":

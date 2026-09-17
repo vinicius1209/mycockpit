@@ -6,10 +6,17 @@ import rehypeHighlight from "rehype-highlight"
 import { needsPlainText } from "./markdownBudget"
 import { PlainTextPages } from "./PlainTextPages"
 import { Check, Copy } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
-import { copyText } from "@/lib/clipboard"
+import { copyRich, copyText } from "@/lib/clipboard"
+import { conteudoDaTabela, lerTabela, type DestinoDaTabela } from "@/lib/tabelaClipboard"
 import {
   formatFileOpenTooltip,
   isFileMention,
@@ -77,28 +84,44 @@ function CodeBlock({ children }: { children?: ReactNode }) {
   )
 }
 
-/** Serializa uma <table> do DOM em TSV (linhas por \n, células por \t). */
-function tableToTsv(table: HTMLTableElement | null): string {
-  if (!table) return ""
-  const rows = Array.from(table.querySelectorAll("tr"))
-  return rows
-    .map((tr) =>
-      Array.from(tr.querySelectorAll("th,td"))
-        .map((c) => (c.textContent ?? "").trim())
-        .join("\t"),
-    )
-    .join("\n")
-}
-
-/** Tabela markdown com copiar-como-TSV no hover. */
+/** Tabela markdown com "copiar" no hover que pergunta o destino (capricho
+ *  PRD R1): planilha leva TSV + HTML, Markdown leva GFM. */
 function TableBlock({ children }: { children?: ReactNode }) {
   const ref = useRef<HTMLTableElement>(null)
+  const [copied, setCopied] = useState(false)
+  const copiar = (destino: DestinoDaTabela) => {
+    if (!ref.current) return
+    const conteudo = conteudoDaTabela(lerTabela(ref.current), destino)
+    void copyRich(conteudo, destino === "planilha" ? "Tabela copiada para planilha" : "Tabela copiada como Markdown").then(
+      (ok) => {
+        if (!ok) return
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1400)
+      },
+    )
+  }
   return (
     <div className="group/table relative mb-2 overflow-x-auto rounded-md border">
-      <CopyButton
-        group="group-hover/table:opacity-100"
-        onCopy={() => tableToTsv(ref.current)}
-      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="absolute top-2 right-2 z-10 rounded-md border bg-card/80 p-1 text-muted-foreground opacity-0 transition group-hover/table:opacity-100 hover:text-foreground focus-visible:opacity-100 data-[state=open]:opacity-100"
+            aria-label="Copiar tabela"
+            title="Copiar tabela"
+          >
+            {copied ? <Check className="size-3 text-foreground" /> : <Copy className="size-3" />}
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="border-border/40">
+          <DropdownMenuItem onSelect={() => copiar("planilha")} className="text-[12px]">
+            Para planilha
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => copiar("markdown")} className="text-[12px]">
+            Como Markdown
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       <table ref={ref} className="w-full border-collapse text-[13px]">
         {children}
       </table>

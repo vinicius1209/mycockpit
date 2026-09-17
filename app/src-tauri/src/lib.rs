@@ -77,6 +77,7 @@ mod run_resources;
 mod sandbox;
 pub mod scope_guidance;
 mod skills;
+mod soltura;
 mod sources;
 mod provider_commands;
 mod statusline_install;
@@ -951,6 +952,7 @@ pub fn run() {
             browser_cdp::browser_input,
             browser_capture::browser_capture_attach,
             browser_capture::browser_capture_copy,
+            soltura::caminhos_soltos,
             browser_panel::browser_panel_open,
             browser_panel::browser_panel_context,
             despertador::set_keep_awake,

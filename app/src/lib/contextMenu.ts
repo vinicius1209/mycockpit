@@ -14,6 +14,8 @@
 // item aqui tem execução real; o que não tem implementação ficou de fora em
 // vez de virar item morto.
 
+import type { TabelaCopiavel } from "./tabelaClipboard"
+
 /** O que estava embaixo do cursor quando o usuário clicou com o direito. */
 export type Alvo =
   /** input/textarea/contenteditable: o botão direito ainda tem que servir. */
@@ -33,7 +35,15 @@ export type Alvo =
    * usuário pode copiar" são a mesma pergunta, então não inventamos um
    * segundo marcador pra ela.
    */
-  | { tipo: "bloco"; texto: string; selecao: string }
+  | {
+      tipo: "bloco"
+      texto: string
+      selecao: string
+      /** O clique caiu numa tabela do bloco: copiar como tabela (R1 do capricho). */
+      tabela?: TabelaCopiavel
+      /** A seleção está inteira numa mensagem citável: id do item (R3). */
+      citavel?: string
+    }
   /**
    * Imagem: anexo, evidência de tool ou o lightbox. `path` só existe onde o
    * app conhece o arquivo de verdade (path relativo contido, resolvido no
@@ -62,6 +72,9 @@ export type ItemId =
   | "colar"
   | "selecionar-tudo"
   | "copiar-bloco"
+  | "citar-trecho"
+  | "copiar-tabela-planilha"
+  | "copiar-tabela-markdown"
   | "copiar-imagem"
   | "abrir-imagem"
   | "revelar-imagem"
@@ -102,6 +115,9 @@ export const ROTULOS: Record<ItemId, string> = {
   // texto). "Copiar mensagem" mentiria no painel de contexto, que usa o mesmo
   // marcador e não tem mensagem nenhuma.
   "copiar-bloco": "Copiar texto",
+  "citar-trecho": "Citar trecho",
+  "copiar-tabela-planilha": "Copiar tabela para planilha",
+  "copiar-tabela-markdown": "Copiar tabela como Markdown",
   "copiar-imagem": "Copiar imagem",
   "abrir-imagem": "Abrir no app padrão",
   // Neutro de propósito: o produto é Mac E Linux, e "Finder" mentiria no
@@ -153,8 +169,12 @@ export function itensPara(alvo: Alvo | null, rec: Recursos): LinhaMenu[] {
   if (alvo.tipo === "bloco") {
     return limpaDivisores([
       ...(alvo.selecao ? (["copiar"] as LinhaMenu[]) : []),
+      ...(alvo.selecao && alvo.citavel ? (["citar-trecho"] as LinhaMenu[]) : []),
       DIVISOR,
       ...(alvo.texto ? (["copiar-bloco"] as LinhaMenu[]) : []),
+      ...(alvo.tabela && alvo.tabela.linhas.length > 0
+        ? (["copiar-tabela-planilha", "copiar-tabela-markdown"] as LinhaMenu[])
+        : []),
     ])
   }
 
@@ -204,7 +224,7 @@ export type Sonda = {
     abs?: string
     line: number | null
   } | null
-  bloco: { texto: string } | null
+  bloco: { texto: string; tabela?: TabelaCopiavel; citavel?: string } | null
   /** Seleção de texto vigente na janela, já aparada. */
   selecao: string
 }
@@ -227,7 +247,15 @@ export function alvoDe(s: Sonda): Alvo | null {
       selecao: s.selecao,
     }
   }
-  if (s.bloco) return { tipo: "bloco", texto: s.bloco.texto, selecao: s.selecao }
+  if (s.bloco) {
+    return {
+      tipo: "bloco",
+      texto: s.bloco.texto,
+      selecao: s.selecao,
+      ...(s.bloco.tabela ? { tabela: s.bloco.tabela } : {}),
+      ...(s.bloco.citavel && s.selecao ? { citavel: s.bloco.citavel } : {}),
+    }
+  }
   if (s.selecao) return { tipo: "selecao", texto: s.selecao }
   return null
 }

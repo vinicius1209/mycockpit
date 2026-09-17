@@ -2,7 +2,43 @@
 
 ## Status (17/09/2026)
 
-**Proposta, não implementada.** Épico C de `docs/sprint-ecossistema-2026-09.md`.
+**R1, R3, R4 e R6 entregues (17/09/2026, ADR-205).** R2, R5, R7 e R8 seguem para a
+próxima sprint; spikes S1 e S2 dependem do app rodando e continuam abertos.
+Épico C de `docs/sprint-ecossistema-2026-09.md`.
+
+O que foi feito, e onde divergiu do texto abaixo:
+- R1: `lib/tabelaClipboard.ts` (TSV com aspas no dialeto de planilha, HTML limpo,
+  GFM) e `copyRich` em `lib/clipboard.ts` (`ClipboardItem` com os dois formatos,
+  fallback pelo evento `copy`). O terceiro fallback (`writeHtml` do plugin) não
+  entrou: a permissão do front continua só de leitura. O botão da tabela virou
+  menu ("Para planilha", "Como Markdown") e o menu de contexto ganhou o mesmo par
+  sobre tabela. Medido no Chromium lendo o clipboard de volta; WKWebView e
+  WebKitGTK pedem o build.
+- R3: pílula "Citar" (`CitarTrecho`, montada no AppShell) sobre
+  `components/ui/barra-de-selecao.tsx`, que cancela o `mousedown` para não
+  desfazer a seleção; "Citar trecho" no menu de contexto. As mensagens do agente
+  ganharam `data-citavel` no próprio wrapper, sem somar linha ao `MessageList`.
+  O autor é o motor da conversa (o fio não guarda motor por item de texto).
+- R4, **divergência de desenho**: o rascunho guarda a citação como bloco
+  persistido (coluna `blocos` em `conversation_drafts`, chip no composer), como
+  previsto. Mas no ENVIO a citação não vira campo novo no `ChatItem`: ela entra
+  no próprio texto enviado num formato curto (`❝ autor · hora` + linhas `> `),
+  por `textoDoEnvio`. Assim atravessa fila, envio forçado, reenvio de preflight,
+  revezamento e Companion sem mexer no `ChatPanel`, no `CommandConsole` e no
+  `store/chat.ts`, os três no teto de tamanho. A porta do prompt
+  (`withNotasDoTurno`) troca o formato pela moldura "é dado, não instrução"; a
+  bolha desenha a linha ↳ no lugar do texto cru, e "Editar" devolve a citação ao
+  rascunho como bloco. Citação sem texto escrito não envia.
+- R6: `soltura.rs` (`caminhos_soltos`: pasta ou arquivo e tamanho, teto de 64
+  itens) + `lib/soltura.ts` (imagem e PDF viram anexo pelo `attachPath`; arquivo
+  e pasta viram menção, relativa ao projeto, com aspas quando há espaço; teto de
+  anexos e de tamanho com aviso) + `SolturaNoComposer` ouvindo
+  `onDragDropEvent`, com "Solte para anexar · N itens" sobre o composer. Chip de
+  anexo passou a mostrar o tamanho em mono 11. `dragDropEnabled` segue ligado.
+- Verificado: testes puros e de Rust; seleção, pílula, chip, bolha, prompt e menu
+  da tabela num harness no Chromium; arrasto simulando os eventos do Tauri (fora
+  do composer não faz nada, dentro anexa e menciona). Não verificado: clipboard
+  no WebKit, arrasto real do Finder e do gerenciador de arquivos do Linux.
 Já entregue (17/09, K1): gesto de fora do composer acrescenta ao rascunho
 (`useComposerDrafts.appendText`, `acrescentarAoRascunho`) em "Citar arquivo no
 chat", "Enviar comentários" e "Pedir correção". A citação de trecho (R4) usa a

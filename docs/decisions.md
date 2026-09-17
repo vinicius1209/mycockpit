@@ -7360,3 +7360,31 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   para a próxima sprint.
 - **Verificado:** vitest 4296, `tsc -b` 0, guardas verdes, `cargo test` 869;
   vista e flutuante num harness com Tauri simulado. Falta a verificação no app.
+
+### ADR-205 · Capricho no fio e no composer: tabela em dois formatos, citação que viaja no texto e arquivos soltos pelo Tauri
+
+- **Contexto (17/09/2026):** o usuário pediu o cuidado de detalhe que viu no
+  Maestri: copiar tabela como tabela, citar um trecho selecionado, arrastar
+  arquivos para o composer. PRD em `docs/capricho-fio-composer-prd.md`.
+- **Tabela:** a mesma matriz vira TSV + HTML ("Para planilha") ou GFM ("Como
+  Markdown"), pelo botão da tabela e pelo menu de contexto. `copyRich` grava os
+  dois formatos por `ClipboardItem` e cai para o evento `copy`; sem permissão
+  nova de escrita no front.
+- **Citação, a decisão estrutural:** no rascunho ela é bloco persistido (coluna
+  `blocos`), mas no envio vira texto num formato curto (`❝ autor · hora` + `> `).
+  Recusado o campo `quote` no `ChatItem` agora: ele teria de atravessar fila,
+  reenvio, envio forçado, revezamento e Companion, passando por `ChatPanel`,
+  `CommandConsole` e `store/chat.ts`, todos no teto da catraca de tamanho. O
+  formato em texto atravessa tudo isso sem mudança, e a apresentação e o prompt
+  o traduzem: a bolha mostra ↳, a porta do prompt emoldura como dado. Custo
+  aceito: o texto guardado no fio contém o formato, e o id do item citado não
+  viaja (o R5, rolar até a original, vai procurar pelo trecho).
+- **Pílula:** primitiva própria (`barra-de-selecao.tsx`) porque Popover e
+  DropdownMenu desfazem a seleção ao abrir.
+- **Arquivos soltos:** pelo `onDragDropEvent` do Tauri com caminho real, e um
+  comando só de metadados (`caminhos_soltos`) para separar pasta de arquivo;
+  `dragDropEnabled` não se desliga.
+- **Verificado:** vitest 4332, `tsc -b` 0, guardas verdes (catraca de filete
+  apertada), `cargo test` 871; harness no Chromium para pílula, chip, bolha,
+  prompt, menu da tabela, clipboard e arrasto simulado. Falta WebKit e arrasto
+  real no app.

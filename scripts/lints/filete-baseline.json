@@ -33,7 +33,6 @@
   "components/settings/HooksSettings.tsx": 1,
   "components/settings/MachineAgents.tsx": 1,
   "components/settings/McpAgentRows.tsx": 1,
-  "components/settings/McpSettings.tsx": 8,
   "components/settings/MissionSettings.tsx": 1,
   "components/settings/ModelsSettings.tsx": 2,
   "components/settings/parts.tsx": 3,

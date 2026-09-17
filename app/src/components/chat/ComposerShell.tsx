@@ -47,6 +47,8 @@ export function ComposerShell({
 
   return (
     <div
+      // Alvo de soltar arquivos do sistema (SolturaNoComposer, capricho R6).
+      data-composer-card={focusRing ? "" : undefined}
       onClick={focusRing ? onCardClick : undefined}
       className={
         focusRing

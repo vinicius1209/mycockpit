@@ -1211,7 +1211,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "text") {
-    return <Markdown text={it.text} />
+    return <div data-citavel={it.id} className="min-w-0"><Markdown text={it.text} /></div>
   }
 
   // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
@@ -1341,7 +1341,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     const active = ctx.running && ctx.isLast
     const hasText = n.text.trim().length > 0
     return (
-      <div className="group/msg flex flex-col gap-1.5">
+      <div className="group/msg flex flex-col gap-1.5" data-citavel={n.itemIds?.[0] ?? n.key}>
         {hasText && <Markdown text={n.text} />}
         {n.tools.length > 0 && (
           <ToolGroup
