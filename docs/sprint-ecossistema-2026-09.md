@@ -123,12 +123,13 @@ na política de TI, e o Android só mantém uma VPN ativa por vez.
 | K6 | Voltar para a conversa fechava a aba do navegador e perdia o trabalho em andamento · **entregue**: pastilha do navegador fica na tira, com "×" próprio; endereço sem esquema passa a navegar | P |
 | K7 | Mensagem acima de 16 KB virava texto cru paginado, mesmo sendo normal · **entregue**: só o trecho com linha pesada perde formatação, a mensagem sai inteira e em ordem (ADR-210) | P |
 | K8 | Marcação de região despejava a descrição como texto no composer · **entregue**: vira bloco do rascunho (pílula com prévia), como citação e colagem | P |
+| K9 | Reordenar projeto e conversa arrastando não funcionava no app (só o fantasma se movia) · **entregue**: `lib/arrastoInterno.ts`, gesto conclui no `dragend` | P |
 | K5 | Injeção do navegador só entende Playwright (Chrome DevTools MCP não conecta) · **entregue** no B4: forma de conexão no binding (`cdp-endpoint`, `browser-url`, `ws-endpoint`) | M (B4) |
 
 ## 5. Spikes de 30 minutos (antes de estimar em definitivo)
 
 - **S1** ⌘C numa tabela do fio já entrega colunas separadas por tab no WebKit?
-- **S2** Com `dragDropEnabled` ligado, arrastar por HTML5 dentro do app funciona? A reordenação da sidebar funciona no build atual?
+- **S2** ~~Com `dragDropEnabled` ligado, arrastar por HTML5 dentro do app funciona?~~ **Respondido em 18/09 no app instalado: pela metade.** O arrasto COMEÇA (o fantasma segue o cursor) e o gesto não se conclui: o tipo próprio no `dataTransfer` não sobrevive à travessia, o `dragover` não dava `preventDefault` e o `drop` nunca chegava. Reordenar projeto e conversa estava quebrado por isso. Corrigido em `lib/arrastoInterno.ts`: a carga mora em memória e o gesto fecha no `dragend`. C-D3 fica viável com a mesma mecânica.
 - **S3** `tailscale serve` no Mac (Tailscale ainda não está instalado neste Mac): o Android em 4G abre a PWA em `https://…ts.net` com service worker e WebSocket?
 - **S4** ~~Ramo com outro motor enxerga as alterações não commitadas da conversa original?~~ **Rodado em 17/09: não.** Worktree parte do HEAD; transporte explícito é possível, mas arquivo ignorado (`.env.local`, `node_modules`) não vai. Resultado no PRD do revezamento, R3.
 - **S5** Mac da empresa: a política permite Tailscale? (pergunta para você, não código)

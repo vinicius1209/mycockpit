@@ -137,7 +137,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
   // S1.2 — payload de drag de CONVERSA, escopado pelo projeto: o dragover de
   // uma lista só aceita conversa DA MESMA lista (mover entre projetos está
   // fora de escopo). O tipo é lowercased pelo browser — ids uuid já são.
-  const convDnd = `application/x-mycockpit-conv-${projectId.toLowerCase()}`
   // Projeto DESTA lista (não o ativo): worktree/isolamento usam o path certo,
   // mesmo numa árvore de projeto não-ativo.
   const project = useApp((s) => s.projects.find((p) => p.id === projectId) ?? null)
@@ -261,7 +260,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
             idx={idx}
             totalCount={conversations.length}
             projectId={projectId}
-            convDnd={convDnd}
             activeId={activeId}
             viewMode={viewMode}
             defaultAgent={defaultAgent}

@@ -7543,3 +7543,37 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   capability falhando fechado, corte que sumiu do fio, texto da ausência, ida e
   volta guardando as duas sessões, resume falhado com nota honesta);
   `bun run test` 4.397, `tsc -b --force`, `cargo test` 883, `bun run check`.
+
+### ADR-212 · Arrastar dentro da janela não pode depender do `dataTransfer`
+
+- **Contexto (18/09/2026):** a reordenação de projetos e de conversas na barra
+  lateral usava HTML5 puro: `setData` com um tipo próprio
+  (`application/x-mycockpit-project`, `…-conv-<projeto>`), `dragover` que só
+  chamava `preventDefault` quando `dataTransfer.types` continha esse tipo, e
+  `drop` que lia o id de volta. No app instalado o usuário relatou: "consigo ver
+  o efeito do arrastar, mas não funciona a função em si". Era o spike S2 da
+  sprint, respondido pelo relato: o `dragstart` acontece, o gesto não se
+  conclui. O tipo próprio não sobrevive à travessia pelo pasteboard do sistema,
+  então o `dragover` nunca liberava o alvo e o `drop` nunca era entregue.
+- **Decisão:** `lib/arrastoInterno.ts` guarda EM MEMÓRIA o que está sendo
+  arrastado, entre o `dragstart` e o fim do gesto. O `dragover` decide pela
+  carga guardada (não por `types`) e registra o alvo por onde passou; a
+  conclusão acontece no `drop` **ou** no `dragend`, que é do elemento de origem
+  e chega mesmo quando o `drop` se perde. O `dataTransfer` fica só com o visual
+  (`text/plain` para o fantasma). Concluir é idempotente: o gesto se limpa ao
+  fechar, então `drop` seguido de `dragend` não reordena duas vezes.
+- **Alcance:** vale para todo arrasto DENTRO da janela, e é a mecânica que o
+  C-D3 (arrastar arquivo da árvore, trecho do diff, imagem do fio) vai usar.
+  Soltar arquivo VINDO DE FORA continua sendo o evento do Tauri
+  (`onDragDropEvent`), que é o único caminho com caminho real de arquivo.
+- **Estado alterado:** nenhum novo; só o caminho que aciona `reorderProjects` e
+  `reorderConversations`. A prop `convDnd` deixou de existir.
+- **Limites:** o módulo não desenha onde a linha vai cair (sem indicador de
+  posição); o gesto continua tendo o teclado como equivalente pelo menu de
+  contexto. Não testamos webview por webview: a mecânica foi escolhida para não
+  depender de qual entrega o `drop`.
+- **Verificação:** 6 testes do módulo (alvo do `dragover` concluindo sem `drop`,
+  `drop` vencendo o último alvo, dupla conclusão sem efeito duplo, soltar em si
+  mesmo, pairar sem arrasto, carga legível durante o gesto); `bun run test`
+  4.407, `tsc -b`, `bun run check`. Falta a confirmação no app instalado, que
+  depende do próximo build.

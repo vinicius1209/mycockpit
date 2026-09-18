@@ -23,6 +23,12 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
+import {
+  cargaArrastada,
+  comecarArrasto,
+  concluirArrasto,
+  pairarSobre,
+} from "@/lib/arrastoInterno"
 import { controle } from "@/components/ui/controle"
 import type { ConversationMeta } from "@/lib/db/conversations"
 
@@ -35,7 +41,6 @@ interface ConversationRowProps {
   idx: number
   totalCount: number
   projectId: string
-  convDnd: string
   activeId: string | null
   viewMode: string
   defaultAgent: string
@@ -66,7 +71,6 @@ export function ConversationRow({
   idx,
   totalCount,
   projectId,
-  convDnd,
   activeId,
   viewMode,
   defaultAgent,
@@ -87,6 +91,13 @@ export function ConversationRow({
   renameConversation,
   setConversationColor,
 }: ConversationRowProps) {
+  // O gesto se conclui no `drop` OU no `dragend`; os dois passam por aqui.
+  function aplicarArrasto(feito: ReturnType<typeof concluirArrasto>) {
+    if (feito?.carga.tipo === "conversa" && feito.carga.projectId === projectId) {
+      reorderConversations(projectId, feito.carga.id, feito.alvo)
+    }
+  }
+
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
@@ -179,18 +190,24 @@ export function ConversationRow({
         <div
           draggable={!isEditing}
           onDragStart={(e) => {
-            e.dataTransfer.setData(convDnd, c.id)
+            comecarArrasto({ tipo: "conversa", projectId, id: c.id })
+            // Só o visual vai no `dataTransfer` (spike S2): o tipo próprio não
+            // chega inteiro do outro lado, e o gesto morria aí.
+            e.dataTransfer.setData("text/plain", c.title ?? "Conversa")
             e.dataTransfer.effectAllowed = "move"
           }}
           onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(convDnd)) e.preventDefault()
+            const carga = cargaArrastada()
+            // Conversa só reordena dentro do projeto dela.
+            if (carga?.tipo !== "conversa" || carga.projectId !== projectId) return
+            e.preventDefault()
+            pairarSobre(c.id)
           }}
           onDrop={(e) => {
-            const dragId = e.dataTransfer.getData(convDnd)
-            if (!dragId || dragId === c.id) return
             e.preventDefault()
-            reorderConversations(projectId, dragId, c.id)
+            aplicarArrasto(concluirArrasto(c.id))
           }}
+          onDragEnd={() => aplicarArrasto(concluirArrasto())}
           className={cn(
             "group/c relative flex items-center rounded-md transition-colors",
             isFull

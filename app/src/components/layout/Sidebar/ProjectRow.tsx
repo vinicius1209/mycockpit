@@ -3,8 +3,9 @@
 //
 // Extraído de Sidebar.tsx (que estava no teto do ratchet) quando o "Abrir no
 // editor" (M1) precisou de mais um item no menu. Recorte fechado, não pedaço
-// partido pra caber: `ProjectFolder` e `PROJECT_DND` só existem pra esta linha,
-// e vieram junto.
+// partido pra caber: `ProjectFolder` só existe pra esta linha, e veio junto. O
+// arrasto em si mora em `lib/arrastoInterno.ts`, compartilhado com a linha de
+// conversa desde que o spike S2 mostrou por que ele não funcionava no app.
 
 import { useState } from "react"
 import { toast } from "sonner"
@@ -30,6 +31,12 @@ import { useApp } from "@/store/app"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import {
+  cargaArrastada,
+  comecarArrasto,
+  concluirArrasto,
+  pairarSobre,
+} from "@/lib/arrastoInterno"
 
 /** Ícone do projeto: pasta TINGIDA da cor-rótulo (cinza se sem cor), com um
  *  pulso no canto quando o projeto tem um turno rodando. Marcador do container. */
@@ -77,7 +84,6 @@ function ProjectFolder({
 // S1.2 — tipo do payload de drag de PROJETO (HTML5 dnd; não há lib de dnd no
 // repo). `types` é legível no dragover (getData não é), então o tipo é o
 // discriminador do que se aceita soltar.
-const PROJECT_DND = "application/x-mycockpit-project"
 
 export function ProjectRow({
   project,
@@ -135,17 +141,28 @@ export function ProjectRow({
           // de texto do input de renomear.
           draggable={!editing}
           onDragStart={(e) => {
-            e.dataTransfer.setData(PROJECT_DND, project.id)
+            comecarArrasto({ tipo: "projeto", id: project.id })
+            // O `dataTransfer` fica só com o visual: o tipo próprio não
+            // atravessa o pasteboard do sistema, e era isso que matava o gesto
+            // no app instalado (spike S2, `lib/arrastoInterno.ts`).
+            e.dataTransfer.setData("text/plain", project.name)
             e.dataTransfer.effectAllowed = "move"
           }}
           onDragOver={(e) => {
-            if (e.dataTransfer.types.includes(PROJECT_DND)) e.preventDefault()
+            if (cargaArrastada()?.tipo !== "projeto") return
+            e.preventDefault()
+            pairarSobre(project.id)
           }}
           onDrop={(e) => {
-            const dragId = e.dataTransfer.getData(PROJECT_DND)
-            if (!dragId || dragId === project.id) return
             e.preventDefault()
-            reorderProjects(dragId, project.id)
+            const feito = concluirArrasto(project.id)
+            if (feito?.carga.tipo === "projeto") reorderProjects(feito.carga.id, feito.alvo)
+          }}
+          onDragEnd={() => {
+            // Rede de segurança: sem `drop` entregue, o gesto se fecha aqui,
+            // com o último alvo por onde passou.
+            const feito = concluirArrasto()
+            if (feito?.carga.tipo === "projeto") reorderProjects(feito.carga.id, feito.alvo)
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
