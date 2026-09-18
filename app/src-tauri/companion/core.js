@@ -556,6 +556,45 @@
     return (m || "FROTA") + " · " + String(text == null ? "" : text);
   }
 
+  // ---------------- soltar arquivo na página (A7, 18/09/2026) ----------------
+  // O Companion também é aberto no navegador do Mac, e lá arrastar é o gesto
+  // natural. A página aceita o mesmo que o botão de anexo aceita (imagem e PDF,
+  // até 10 MB), então a triagem é uma regra só, aqui, e não duas no HTML.
+  var ANEXO_MAX_BYTES = 10 * 1024 * 1024;
+  function triagemDeArquivos(lista) {
+    var arquivos = Array.prototype.slice.call(lista || []);
+    var aceitos = [];
+    var recusados = [];
+    for (var i = 0; i < arquivos.length; i++) {
+      var f = arquivos[i];
+      var tipo = String((f && f.type) || "");
+      var nome = String((f && f.name) || "arquivo");
+      if (tipo.indexOf("image/") !== 0 && tipo !== "application/pdf") {
+        recusados.push({ nome: nome, motivo: "só imagem e PDF" });
+      } else if ((f && f.size) > ANEXO_MAX_BYTES) {
+        recusados.push({ nome: nome, motivo: "acima de 10MB" });
+      } else {
+        aceitos.push(f);
+      }
+    }
+    return { aceitos: aceitos, recusados: recusados };
+  }
+  // "Solte para anexar · 2 itens". Zero item não vira rótulo: sem rótulo, sem
+  // alvo aceso na tela.
+  function rotuloDaSoltura(quantos) {
+    var n = Number(quantos) || 0;
+    if (n <= 0) return null;
+    return "Solte para anexar · " + n + (n === 1 ? " item" : " itens");
+  }
+  // O que dizer de quem ficou de fora, sem transformar recusa em silêncio.
+  function avisoDeRecusa(recusados) {
+    var lista = recusados || [];
+    if (!lista.length) return null;
+    return lista
+      .map(function (r) { return r.nome + " (" + r.motivo + ")"; })
+      .join(", ");
+  }
+
   return {
     machineName: machineName,
     notificationTitle: notificationTitle,
@@ -585,5 +624,9 @@
     SNAP_MAX_AGE_MS: SNAP_MAX_AGE_MS,
     snapshotRestorable: snapshotRestorable,
     titleBadge: titleBadge,
+    ANEXO_MAX_BYTES: ANEXO_MAX_BYTES,
+    triagemDeArquivos: triagemDeArquivos,
+    rotuloDaSoltura: rotuloDaSoltura,
+    avisoDeRecusa: avisoDeRecusa,
   };
 });

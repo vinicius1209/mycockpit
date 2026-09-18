@@ -200,6 +200,12 @@ pre.cmd {
 
 /* chips de anexo */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+/* Alvo de soltura: só aparece com arquivo arrastado sobre a conversa. */
+#soltura {
+  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  background: rgba(0,0,0,.35); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
+  color: #fff; font-size: 15px; font-weight: 600; pointer-events: none;
+}
 .chip {
   display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
   background: var(--rail); border: 1px solid var(--border); border-radius: 999px;
@@ -489,6 +495,7 @@ footer#costbar[hidden] { display: none !important; }
 </footer>
 
 <input type="file" id="filePick" accept="image/*,application/pdf" capture="environment" hidden>
+<div id="soltura" hidden></div>
 
 <!-- núcleo puro compartilhado (rotas, reconexão, "visto há") — o MESMO arquivo
      roda no vitest; script clássico p/ o mock via file:// continuar abrindo -->
@@ -2025,13 +2032,12 @@ function pickAttachment(ctx) {
   $("#filePick").value = "";
   $("#filePick").click();
 }
-$("#filePick").addEventListener("change", function () {
-  var f = this.files && this.files[0];
-  var ctx = S.pickCtx;
-  if (!f || !ctx) return;
-  if (f.size > 10 * 1024 * 1024) { alert("Arquivo acima de 10MB."); return; }
+// Uma porta só para o anexo: o botão (um arquivo) e o soltar (vários) passam
+// pelo mesmo caminho, então o que vale para um vale para o outro.
+function anexarArquivo(f, ctx) {
+  if (!f || !ctx) return Promise.resolve();
   var url = f.type && f.type.indexOf("image/") === 0 ? URL.createObjectURL(f) : null;
-  apiUpload(f).then(function (r) {
+  return apiUpload(f).then(function (r) {
     var att = { id: r.attachmentId, name: f.name || "foto.jpg", url: url };
     if (ctx.kind === "chat" && S.chat) { S.chat.atts.push(att); renderChatChips(); }
     else if (ctx.kind === "gate" && S.drafts[ctx.id]) {
@@ -2040,6 +2046,52 @@ $("#filePick").addEventListener("change", function () {
       if (host) host.innerHTML = S.drafts[ctx.id].atts.map(function (t, i) { return chipHtml(ctx.id, i, t); }).join("");
     }
   }).catch(function (e) { alert("Falha no anexo: " + (e && e.message ? e.message : e)); });
+}
+$("#filePick").addEventListener("change", function () {
+  var f = this.files && this.files[0];
+  var ctx = S.pickCtx;
+  if (!f || !ctx) return;
+  var triagem = Core ? Core.triagemDeArquivos([f]) : { aceitos: [f], recusados: [] };
+  var recusa = Core ? Core.avisoDeRecusa(triagem.recusados) : null;
+  if (recusa) { alert("Não anexei: " + recusa + "."); return; }
+  anexarArquivo(triagem.aceitos[0], ctx);
+});
+
+// ---------------- soltar arquivo (navegador do Mac) ----------------
+// No celular ninguém arrasta; no Mac é o gesto que a pessoa tenta primeiro. O
+// alvo só acende com a conversa aberta, que é onde existe composer, e o que não
+// serve é recusado por escrito, nunca em silêncio.
+function solturaAtiva(ev) {
+  var dt = ev.dataTransfer;
+  if (!dt || S.screen !== "chat" || !S.chat) return false;
+  var tipos = Array.prototype.slice.call(dt.types || []);
+  return tipos.indexOf("Files") !== -1;
+}
+document.addEventListener("dragover", function (ev) {
+  if (!solturaAtiva(ev)) return;
+  ev.preventDefault();
+  ev.dataTransfer.dropEffect = "copy";
+  var quantos = (ev.dataTransfer.items && ev.dataTransfer.items.length) || 1;
+  var alvo = $("#soltura");
+  alvo.textContent = (Core && Core.rotuloDaSoltura(quantos)) || "Solte para anexar";
+  alvo.hidden = false;
+});
+["dragleave", "dragend"].forEach(function (nome) {
+  document.addEventListener(nome, function (ev) {
+    if (ev.relatedTarget) return; // ainda dentro da página
+    $("#soltura").hidden = true;
+  });
+});
+document.addEventListener("drop", function (ev) {
+  if (!solturaAtiva(ev)) { $("#soltura").hidden = true; return; }
+  ev.preventDefault();
+  $("#soltura").hidden = true;
+  var triagem = Core
+    ? Core.triagemDeArquivos(ev.dataTransfer.files)
+    : { aceitos: Array.prototype.slice.call(ev.dataTransfer.files || []), recusados: [] };
+  triagem.aceitos.forEach(function (f) { anexarArquivo(f, { kind: "chat" }); });
+  var recusa = Core && Core.avisoDeRecusa(triagem.recusados);
+  if (recusa) alert("Não anexei: " + recusa + ".");
 });
 
 // ---------------- eventos (delegação) ----------------

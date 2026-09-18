@@ -2,7 +2,15 @@
 
 ## Status (17/09/2026)
 
-**R1 a R5 entregues (17/09/2026).** Fica para depois o que está em
+**R1 a R5 entregues (17/09/2026).** Em 18/09, o anexo do R4 ganhou o gesto que
+faltava: **arrastar arquivo para a conversa**. O Companion também é aberto no
+navegador do Mac, e lá arrastar é o primeiro gesto que a pessoa tenta (foi o que
+o usuário tentou). O alvo só acende com a conversa aberta (é onde existe
+composer), aceita o MESMO que o botão de anexo aceita (imagem e PDF, até 10 MB)
+pela mesma triagem em `core.js`, e o que não serve é recusado por escrito. O
+botão e o soltar passam a compartilhar uma porta só (`anexarArquivo`). Cache do
+service worker foi para `v6`. Isto não tem nada a ver com o C-D1 do capricho,
+que é soltar do Finder no composer do APP. Fica para depois o que está em
 "Não-objetivos" (seletor de vários Macs num Companion só, TLS no app, Web Push).
 
 O que o R5 fez, e onde divergiu do texto abaixo:

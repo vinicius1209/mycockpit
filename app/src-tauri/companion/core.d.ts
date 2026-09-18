@@ -117,5 +117,14 @@ declare global {
     SNAP_MAX_AGE_MS: number
     snapshotRestorable(nowMs: number, atMs: number | null | undefined): boolean
     titleBadge(base: string | null | undefined, n: number | null | undefined): string
+    ANEXO_MAX_BYTES: number
+    triagemDeArquivos(lista: ArrayLike<{ type?: string; name?: string; size?: number }> | null | undefined): {
+      aceitos: { type?: string; name?: string; size?: number }[]
+      recusados: { nome: string; motivo: string }[]
+    }
+    rotuloDaSoltura(quantos: number | null | undefined): string | null
+    avisoDeRecusa(
+      recusados: { nome: string; motivo: string }[] | null | undefined,
+    ): string | null
   }
 }

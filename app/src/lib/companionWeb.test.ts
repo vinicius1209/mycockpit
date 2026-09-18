@@ -783,3 +783,43 @@ describe("R5 · dois Macs", () => {
     expect(core.notificationTitle(" ", "resposta chegou")).toBe("FROTA · resposta chegou")
   })
 })
+
+describe("soltar arquivo na página do Companion", () => {
+  const arquivo = (name: string, type: string, size: number) => ({ name, type, size })
+
+  it("aceita imagem e PDF dentro do teto, recusa o resto por escrito", () => {
+    const triagem = core.triagemDeArquivos([
+      arquivo("print.png", "image/png", 2_000),
+      arquivo("contrato.pdf", "application/pdf", 1_000),
+      arquivo("dump.zip", "application/zip", 10),
+      arquivo("video.mov", "video/quicktime", 10),
+      arquivo("enorme.png", "image/png", core.ANEXO_MAX_BYTES + 1),
+    ])
+    expect(triagem.aceitos.map((f) => f.name)).toEqual(["print.png", "contrato.pdf"])
+    expect(triagem.recusados).toEqual([
+      { nome: "dump.zip", motivo: "só imagem e PDF" },
+      { nome: "video.mov", motivo: "só imagem e PDF" },
+      { nome: "enorme.png", motivo: "acima de 10MB" },
+    ])
+    expect(core.avisoDeRecusa(triagem.recusados)).toBe(
+      "dump.zip (só imagem e PDF), video.mov (só imagem e PDF), enorme.png (acima de 10MB)",
+    )
+  })
+
+  it("arquivo exatamente no teto ainda entra", () => {
+    const triagem = core.triagemDeArquivos([arquivo("limite.png", "image/png", core.ANEXO_MAX_BYTES)])
+    expect(triagem.aceitos).toHaveLength(1)
+    expect(triagem.recusados).toHaveLength(0)
+  })
+
+  it("lista vazia ou ausente não vira aviso nem rótulo", () => {
+    expect(core.triagemDeArquivos(null)).toEqual({ aceitos: [], recusados: [] })
+    expect(core.avisoDeRecusa([])).toBeNull()
+    expect(core.rotuloDaSoltura(0)).toBeNull()
+  })
+
+  it("o rótulo conta os itens no singular e no plural", () => {
+    expect(core.rotuloDaSoltura(1)).toBe("Solte para anexar · 1 item")
+    expect(core.rotuloDaSoltura(3)).toBe("Solte para anexar · 3 itens")
+  })
+})
