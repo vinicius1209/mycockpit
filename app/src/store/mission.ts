@@ -42,6 +42,7 @@ import {
   takeInterrupt,
 } from "@/lib/missionHold"
 import { useApp } from "@/store/app"
+import { helperDoProjeto } from "@/lib/helperDoProjeto"
 import { useChat, type ChatItem } from "@/store/chat"
 // Os marcos que a missão grava no fio moram em lib/missionMarks (a catraca de
 // tamanho cobrou a divisão deste arquivo).
@@ -424,13 +425,9 @@ export const useMission = create<MissionState>((set, get) => {
         last: engine.lastReview,
       })
 
-      // Modelo helper (Haiku) p/ destilar lições (M2). Config por projeto vence o
-      // default global; null = destilação desligada (mesma regra das sugestões).
-      const appState = useApp.getState()
-      const projCfg = appState.mycockpit[projectId]
-      const helperModel = projCfg
-        ? projCfg.helper
-        : appState.settings.helperModel
+      // Modelo helper (Haiku) p/ destilar lições (M2); null = destilação
+      // desligada. Mesma régua das sugestões e do recibo de turno.
+      const helperModel = helperDoProjeto(projectId)
 
       // Doutrina do projeto (.mycockpit/instructions.md) — lida UMA vez e
       // injetada em TODAS as fases: cada fase é um run novo de CLI e a maioria

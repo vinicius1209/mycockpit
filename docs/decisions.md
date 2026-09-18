@@ -7581,3 +7581,59 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   mesmo, pairar sem arrasto, carga legível durante o gesto); `bun run test`
   4.407, `tsc -b`, `bun run check`. Falta a confirmação no app instalado, que
   depende do próximo build.
+
+### ADR-214 · A conversa ganha nome de gente no fim do primeiro turno ✅
+
+- **Queixa real (18/09/2026):** "se eu inicio uma conversa e mando 'oi', ela
+  fica salva com o nome 'oi'". O nome saía de `deriveTitle`, função pura que
+  pega o primeiro texto do usuário e corta em 44 caracteres, e nunca mais era
+  revisto (`c.title ? c : ...` em `store/chat.ts:1919` e `:2092`). Na mesma
+  sessão, uma segunda queixa com a mesma raiz: os três chips estáticos do
+  composer apareciam mesmo com o modelo helper desligado nas Configurações.
+- **A raiz comum:** a tela não sabia se a camada de inferência utilitária estava
+  ligada. A regra `cfg ? cfg.helper : settings.helperModel` existia em cinco
+  consumidores e nenhum a exportava, então nem a sidebar podia chamá-la nem o
+  composer podia perguntar por ela.
+- **Decisão 1, a régua vira uma só.** `lib/helperDoProjeto.ts` passa a ser a
+  única porta (`resolverHelper` puro, `helperDoProjeto` sobre o store,
+  `temInteligencia` para a tela). A ordem continua sendo ternário, nunca `??`:
+  `null` em `cfg.helper` é resposta ("este projeto desligou"), não ausência, e o
+  `??` ressuscitaria o helper num projeto que o desligou de propósito.
+  `hooks/useProjectConfig.ts` fica fora: ele PRODUZ esse campo, é a outra metade
+  da cadeia.
+- **Decisão 2, oferta desligada não ocupa espaço.** Sem helper no projeto, a
+  linha de sugestões não é renderizada (devolve string vazia, não uma `div`
+  vazia, que ainda ocuparia altura no flex). Sugestão já entregue permanece: ela
+  é fato consumado, o que some é a oferta. `SuggestionChips` virou container e a
+  linha pura saiu como `LinhaDeSugestoes`, porque `CommandConsole.tsx` está
+  exatamente no teto de 700 e não podia receber a prop nova.
+- **Decisão 3, o nome é a oitava finalidade do gateway.** `conversation_title`
+  entra em `UtilityTaskKind` com perfil próprio (prioridade baixa, prazo de 4 s,
+  16 KB de entrada). Nada de chamada solta: rota, consentimento e contabilidade
+  de custo são os que o mapa vivo já instalou.
+- **Decisão 4, "ainda não tem nome de gente" é DERIVADO, não persistido.** A
+  condição é `title == null || title === deriveTitle(items)`, mais a contagem de
+  turnos do usuário. Dispensa coluna, flag e migração; é replay-safe; e trava
+  sozinha depois da primeira renomeação, porque a igualdade quebra e não volta.
+  Ramo (`Nome (fork)`) e título escrito por gente ficam de fora pelo mesmo teste
+  (ADR-142: nada de autocorrigir texto humano).
+- **Decisão 5, o gancho é o funil que já existia.** `nomearConversa` é chamada
+  de `notifyTurnEnd`, o único ponto que os cinco caminhos de fim de turno já
+  atravessam. Fire-and-forget: a notificação não espera pelo nome, e quando ele
+  cai, HUD e bandeja o resolvem pelo `convId` (ADR-142) sem reescrever o evento
+  congelado no feed.
+- **A sentinela veio de payload real, não de projeto.** Rodando o MESMO one-shot
+  do app (`claude -p --tools "" --output-format text`), a conversa "oi" devolveu
+  **"Qual é o assunto do trabalho"**: o modelo respondia a pergunta em vez de
+  nomear, e isso viraria o nome na sidebar. Daí a regra `SEM ASSUNTO` no prompt,
+  que o parser mapeia para `null`. Uma segunda rodada devolveu a mesma sentinela
+  como "Sem assunto." (minúscula, com ponto), então a comparação normaliza caixa,
+  acento e pontuação. As duas saídas estão em `lib/tituloDaConversa.test.ts`,
+  junto com as outras seis colhidas em 18/09/2026, de haiku e de sonnet.
+- **Degradação honesta em toda borda:** helper desligado, prazo estourado ou
+  resposta sem nome usável deixam o nome cru que a pessoa escreveu. Um nome ruim
+  é pior que um nome cru.
+- **Verificado:** 480 arquivos e 4450 testes de vitest, `tsc -b --force`, 883
+  testes de cargo e as 15 guardas de `bun run check`. A única baseline tocada foi
+  a de tamanho, e para BAIXO (`store/mission.ts` 1263 → 1260), gerada pelo
+  próprio script. PRD em `docs/nome-da-conversa-prd.md`.

@@ -6,6 +6,7 @@ export type UtilityTaskKind =
   | "skill_draft"
   | "model_curator"
   | "commit_message"
+  | "conversation_title"
 
 export type UtilityRoutePolicy =
   | "device_only"

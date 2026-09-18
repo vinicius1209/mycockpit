@@ -22,6 +22,7 @@ import { BlocosDoRascunho } from "@/components/chat/BlocosDoRascunho"
 import type { Destination } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { fmtBytes } from "@/lib/format"
+import { resolverHelper } from "@/lib/helperDoProjeto"
 
 const CHIPS = [
   { label: "Explicar o projeto", prompt: "Explique a arquitetura deste projeto em alto nível." },
@@ -425,16 +426,50 @@ export function ComposerActions({
   )
 }
 
-/** Linha de sugestões (chips) abaixo do composer: spinner → sugestões → CHIPS. */
-export function SuggestionChips({
-  suggesting,
-  suggestions,
-  onPick,
-}: {
+/** Container: pergunta se ESTE projeto tem inteligência utilitária e entrega a
+ *  resposta pronta pra linha desenhar. A leitura do store fica aqui em cima
+ *  porque `LinhaDeSugestoes` precisa continuar puro: componente que lê `useApp`
+ *  direto enxerga o estado INICIAL congelado sob `renderToStaticMarkup`, e era
+ *  justamente o desligado que o teste precisava provar. */
+export function SuggestionChips(props: {
   suggesting: boolean
   suggestions: string[]
   onPick: (text: string) => void
 }) {
+  const activeId = useChat((s) => s.activeId)
+  const projectId = useChat((s) => (activeId ? s.byId[activeId]?.projectId : null))
+  // Selector devolve booleano (primitivo): não recria referência a cada render,
+  // e reage tanto ao default global quanto à config do projeto.
+  const temHelper = useApp((s) =>
+    projectId ? resolverHelper({
+      cfg: s.mycockpit[projectId],
+      global: s.settings.helperModel,
+    }) !== null : false,
+  )
+  return <LinhaDeSugestoes {...props} temHelper={temHelper} />
+}
+
+/** Linha de sugestões (chips) abaixo do composer: spinner → sugestões → CHIPS.
+ *
+ *  `temHelper === false` some com a linha INTEIRA, e o composer não reserva a
+ *  altura dela. Os três chips estáticos são o fallback de uma oferta que existe
+ *  ("o modelo ainda não escreveu as suas sugestões"); com o helper desligado nas
+ *  Configurações não há oferta nenhuma, e oferecer o gesto de uma camada
+ *  desligada é teatro — além de comer altura útil de graça. */
+export function LinhaDeSugestoes({
+  suggesting,
+  suggestions,
+  onPick,
+  temHelper,
+}: {
+  suggesting: boolean
+  suggestions: string[]
+  onPick: (text: string) => void
+  temHelper: boolean
+}) {
+  // Sugestão já entregue continua na tela mesmo se o helper for desligado no
+  // meio: ela é fato consumado, não promessa. O que some é a OFERTA.
+  if (!temHelper && suggestions.length === 0) return null
   return (
     // Sugestão é OFERTA, não instrução: pesa menos que o composer inteiro logo
     // acima. Antes cada pílula tinha borda brass + fundo brass + 13px + ícone

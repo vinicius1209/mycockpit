@@ -39,6 +39,7 @@ import {
   secoesDisponiveis,
 } from "@/components/settings/sections"
 import { useApp } from "@/store/app"
+import { helperDoProjeto } from "@/lib/helperDoProjeto"
 import { useChat } from "@/store/chat"
 import { useStickyNotes } from "@/store/stickyNotes"
 
@@ -162,10 +163,7 @@ export function CommandMenu() {
     if (!conv) return
     const proj = useApp.getState().projects.find((p) => p.id === conv.projectId)
     if (!proj) return
-    const cfg = useApp.getState().mycockpit[conv.projectId]
-    const helperModel = cfg
-      ? cfg.helper
-      : useApp.getState().settings.helperModel
+    const helperModel = helperDoProjeto(conv.projectId)
     setOpen(false)
     setSkillPath(proj.path)
     setSkillDraft(null)

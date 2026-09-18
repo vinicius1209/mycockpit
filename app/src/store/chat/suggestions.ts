@@ -15,6 +15,7 @@ import {
 } from "@/lib/suggestions"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
+import { helperDoProjeto } from "@/lib/helperDoProjeto"
 
 type Get = () => ChatState
 
@@ -46,10 +47,8 @@ export async function generateSuggestionsImpl(get: Get, convId: string) {
     console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
     return
   }
-  // modelo helper por projeto (.mycockpit/config.toml); default haiku, null = off
-  const cfg = useApp.getState().mycockpit[c.projectId]
-  // projeto define no config.toml → vence; senão, o default global (Settings).
-  const helperModel = cfg ? cfg.helper : useApp.getState().settings.helperModel
+  // modelo helper por projeto (.mycockpit/config.toml); null = off
+  const helperModel = helperDoProjeto(c.projectId)
   if (!helperModel) return
   // token desta geração: se um novo run começar enquanto geramos, descartamos.
   const myGen = gen[convId] ?? 0

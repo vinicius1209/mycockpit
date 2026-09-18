@@ -9,6 +9,8 @@ import { agentLabel } from "@/lib/agent"
 import { receiptBody, turnReceipt } from "@/lib/turnReceipt"
 import { clipTitle, nativeNotify } from "@/lib/notify/native"
 import { playTaskDoneChime } from "@/lib/userProfile"
+import { helperDoProjeto } from "@/lib/helperDoProjeto"
+import { nomearConversa } from "@/store/chat/titulo"
 // A porta de entrada continua sendo `@/lib/notify`: quem já importava
 // `nativeNotify` daqui (App, onboarding, companion) não precisa saber que o
 // transporte mudou de arquivo. Extração não é motivo pra mexer em call site.
@@ -34,6 +36,12 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   const last = c.items[c.items.length - 1]
   if (last?.kind === "cancelled") return // cancelamento do usuário não notifica
 
+  // Fim de turno é onde a conversa ganha nome de gente, e este é o ÚNICO funil
+  // que os cinco caminhos de fim de turno já atravessam (ChatPanel, mesa, fila,
+  // auto-resume, handoff). Fire-and-forget: a notificação não espera pelo nome,
+  // e quando ele cai, HUD e bandeja o resolvem pelo convId (ADR-142).
+  void nomearConversa(convId)
+
   // usa o array do projeto DONO (c.projectId) — o turno pode ter rodado em
   // background num projeto não-ativo, que não está no espelho `conversations`.
   const meta = (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
@@ -48,7 +56,7 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   const background = chat.activeId !== convId
   const recibo = background
     ? await turnReceipt({
-        helperModel: helperModelDe(c.projectId),
+        helperModel: helperDoProjeto(c.projectId),
         cwd: c.worktreePath ?? proj?.path ?? "",
         items: c.items,
       })
@@ -71,15 +79,6 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   if (useApp.getState().settings.userPreferences?.soundAlertsEnabled && !errored) {
     void playTaskDoneChime()
   }
-}
-
-/** Helper efetivo do projeto: o `.mycockpit/config.toml` vence o default
- *  global, MESMA precedência das sugestões (dois donos dariam dois custos e
- *  duas respostas pra uma configuração só). `null` = recibo desligado. */
-function helperModelDe(projectId: string): string | null {
-  const app = useApp.getState()
-  const cfg = app.mycockpit[projectId]
-  return cfg ? cfg.helper : app.settings.helperModel
 }
 
 /** Chamado UMA vez quando um GATE humano abre (a missão pausou aguardando as

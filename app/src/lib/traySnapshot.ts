@@ -33,7 +33,12 @@ export function isLinearInFlight(conversation: {
   return conversation.running || conversation.finalizing
 }
 
-function conversationTitle(
+/** Título VIGENTE da conversa (ADR-142): o evento do feed guarda a cópia de
+ *  quando ele aconteceu, e ela envelhece — renomear a conversa (na mão ou pelo
+ *  helper no fim do primeiro turno) precisa aparecer no instrumento sem
+ *  reescrever histórico. `null` = conversa não carregada, e aí quem chama cai
+ *  na cópia do feed. Exportada para o teste. */
+export function conversationTitle(
   conversationsByProject: ConversationTitles,
   convId: string,
   projectId?: string,

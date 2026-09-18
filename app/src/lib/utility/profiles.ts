@@ -12,6 +12,19 @@ export interface UtilityTaskProfile {
 }
 
 export const UTILITY_PROFILES: Record<UtilityTaskKind, UtilityTaskProfile> = {
+  conversation_title: {
+    task: "conversation_title",
+    promptVersion: 1,
+    // Ninguém está esperando: o turno acabou e a sidebar já tem um nome cru.
+    priority: "low",
+    defaultDeadlineMs: 4_000,
+    // O recorte é o pedido + a última resposta, os dois com teto de 600 chars.
+    maxInputBytes: 16 * 1024,
+    requiresStructuredOutput: false,
+    // Persiste em `conversations.title`, que é o campo que já existia.
+    canPersist: true,
+    canUseBillableSource: true,
+  },
   conversation_map: {
     task: "conversation_map",
     promptVersion: 6,

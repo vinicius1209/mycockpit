@@ -7,7 +7,7 @@
 
 import { useMemo, type RefObject } from "react"
 import { distillCandidate, reinforceLessons, saveLesson } from "@/lib/learning"
-import { useApp } from "@/store/app"
+import { helperDoProjeto } from "@/lib/helperDoProjeto"
 import { useChat } from "@/store/chat"
 
 export function useFeedbackDoFio(
@@ -20,10 +20,7 @@ export function useFeedbackDoFio(
 ) {
   return useMemo(() => {
     if (viewMode !== "linear" || !project) return null
-    const cfg = useApp.getState().mycockpit[project.id]
-    const helperModel = cfg
-      ? cfg.helper
-      : useApp.getState().settings.helperModel
+    const helperModel = helperDoProjeto(project.id)
     const cwd = conv?.worktreePath ?? project.path
     return {
       onReact: async (resultId: string, reaction: string) => {
