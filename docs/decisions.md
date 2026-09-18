@@ -7692,3 +7692,46 @@ considerou.
   testes de cargo e as 15 guardas de `bun run check`. A única baseline tocada foi
   a de tamanho, e para BAIXO (`store/mission.ts` 1263 → 1260), gerada pelo
   próprio script. PRD em `docs/nome-da-conversa-prd.md`.
+
+### ADR-214 · Arrastar dentro da janela é por ponteiro, não por HTML5
+
+- **Contexto (18/09/2026):** reordenar projeto e conversa arrastando não
+  funcionava no app instalado, e o C-D3 (arrastar para o composer) também não.
+  Duas tentativas por HTML5 falharam, a segunda já com a carga em memória e
+  conclusão no `dragend` (ADR-212). O relato que fechou o diagnóstico: "consigo
+  ver o efeito do arrastar, mas não funciona a função em si".
+- **A causa, no código instalado:** com `dragDropEnabled` (padrão, e o que faz
+  o arquivo do Finder chegar com caminho REAL), o `WryWebView` implementa
+  `draggingEntered`, `draggingUpdated` e `performDragOperation`, e só devolve o
+  evento ao WebKit quando o handler responde `false`
+  (`wry-0.55.1/src/wkwebview/drag_drop.rs:35-96`); o handler do Tauri responde
+  `true` sempre (`tauri-runtime-wry-2.11.3/src/lib.rs:4862-4896`). No macOS todo
+  arrasto que entra na view passa por ali, inclusive o que NASCEU na página:
+  `dragover` e `drop` nunca chegam ao DOM. Sem `dragover` não há alvo, e por
+  isso nem a rede de segurança no `dragend` tinha o que concluir.
+- **Decisão:** o arrasto interno é por PONTEIRO (`pointerdown` → `pointermove` →
+  `pointerup`), que não abre sessão de arrasto do sistema e portanto não tem o
+  que interceptar. É o mecanismo que a janela flutuante do navegador já usava.
+  Uma camada única (`components/common/CamadaDeArrasto.tsx`) resolve o alvo sob
+  o cursor por `elementFromPoint`, desenha o fantasma com o rótulo do que vai
+  acontecer e conclui o gesto; as fontes só declaram o que arrastam
+  (`iniciarArrasto`) e os alvos se declaram no DOM com `data-arrasto-alvo`.
+  Captura de ponteiro para o gesto sobreviver ao sair da linha, `Escape`
+  cancela, e o clique seguinte ao arrasto é engolido para não abrir o projeto
+  sem querer. Substitui a ADR-212, que descrevia a segunda tentativa por HTML5.
+- **Alcance:** reordenar projeto e conversa; soltar arquivo da árvore
+  (`@caminho`) e trecho selecionado (texto ou bloco de colagem, pela régua do
+  colar) no composer. Soltar arquivo VINDO DE FORA continua sendo o evento do
+  Tauri, que é o único caminho com caminho real de arquivo.
+- **Verificação:** prova end-to-end contra o app servido pelo Vite, com um
+  Chromium dirigido por CDP disparando eventos de ponteiro reais: o gesto nasce
+  (`iniciarArrasto` chamado), o fantasma mostra o nome do projeto arrastado, o
+  alvo sob o cursor recebe `data-arrasto-sobre`, e a ordem das linhas muda ao
+  soltar. Mais 9 testes do módulo de estado e 5 das regras de destino;
+  `bun run test` 4.450, `tsc -b --force`, `cargo test` 883, `bun run check`.
+- **Limites:** a prova acima é em Chromium; no WKWebView do app o que sustenta a
+  escolha é o mecanismo (não há sessão de arrasto do sistema) mais o precedente
+  da janela flutuante, que arrasta por ponteiro no app instalado. A confirmação
+  no build t401 é do usuário. A camada não desenha onde a linha vai cair, e o
+  equivalente sem arrastar continua existindo em todos os casos ("Mover para
+  cima/baixo", `@`, "Citar trecho").
