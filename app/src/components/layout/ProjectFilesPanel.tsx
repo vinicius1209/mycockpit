@@ -35,7 +35,7 @@ import {
   searchProjectFileIndex,
 } from "@/lib/projectFilesService"
 import { cn } from "@/lib/utils"
-import { comecarArrasto } from "@/lib/arrastoInterno"
+import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { useApp } from "@/store/app"
 
 type RequestState = "idle" | "loading" | "ready" | "error"
@@ -465,19 +465,21 @@ export function ProjectFilesPanel({ root }: { root: string }) {
                     title={node.isSymlink ? `${node.relPath} (link)` : node.relPath}
                     onFocus={() => setFocusedPath(node.relPath)}
                     onClick={() => activate(node)}
-                    // R8: arrastar a linha até o composer vira `@caminho`. O
-                    // equivalente sem arrastar é o `@` do próprio composer.
-                    draggable
-                    onDragStart={(event) => {
-                      comecarArrasto({
-                        tipo: "arquivo",
-                        id: `arquivo:${node.relPath}`,
-                        caminho: node.relPath,
-                        pasta: isDirectory,
-                      })
-                      event.dataTransfer.setData("text/plain", node.relPath)
-                      event.dataTransfer.effectAllowed = "copy"
-                    }}
+                    // R8: arrastar a linha até o composer vira `@caminho`. Por
+                    // ponteiro (ADR-214). Equivalente sem arrastar: o `@` do
+                    // próprio composer.
+                    onPointerDown={(event) =>
+                      iniciarArrasto(
+                        event,
+                        {
+                          tipo: "arquivo",
+                          id: `arquivo:${node.relPath}`,
+                          caminho: node.relPath,
+                          pasta: isDirectory,
+                        },
+                        node.relPath,
+                      )
+                    }
                     onKeyDown={(event) => handleKeyDown(event, index)}
                     style={{ paddingLeft: 8 + depth * 12 }}
                     className={cn(

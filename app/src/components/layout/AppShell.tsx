@@ -13,6 +13,7 @@ import { NavegadorTab } from "@/components/browser/NavegadorTab"
 import { NavegadorFlutuante } from "@/components/browser/NavegadorFlutuante"
 import { CitarTrecho } from "@/components/chat/CitarTrecho"
 import { SolturaNoComposer } from "@/components/chat/SolturaNoComposer"
+import { CamadaDeArrasto } from "@/components/common/CamadaDeArrasto"
 import { ChatPanel } from "@/components/chat/ChatPanel"
 import { MissionControl } from "@/components/panel/MissionControl"
 import { ScheduledView } from "@/components/scheduled/ScheduledView"
@@ -248,6 +249,7 @@ export function AppShell() {
                 <CitarTrecho />
                 {/* Capricho R6: soltar arquivos do sistema no composer (portal). */}
                 <SolturaNoComposer />
+                <CamadaDeArrasto />
               </div>
             </ResizablePanel>
             {painelVisivel && (

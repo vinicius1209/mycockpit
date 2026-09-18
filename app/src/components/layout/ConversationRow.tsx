@@ -23,12 +23,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu"
 import { cn } from "@/lib/utils"
-import {
-  cargaArrastada,
-  comecarArrasto,
-  concluirArrasto,
-  pairarSobre,
-} from "@/lib/arrastoInterno"
+import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { controle } from "@/components/ui/controle"
 import type { ConversationMeta } from "@/lib/db/conversations"
 
@@ -53,7 +48,6 @@ interface ConversationRowProps {
   limitStatus?: "stuck" | "cooldown" | "pending"
   hasDraft: boolean
   openConv: (id: string) => void
-  reorderConversations: (projectId: string, dragId: string, targetId: string) => void
   moveConversation: (projectId: string, id: string, dir: -1 | 1) => void
   duplicateConversation: (id: string) => void
   toggleWorktree: (id: string, wt: string | null) => void
@@ -83,7 +77,6 @@ export function ConversationRow({
   limitStatus,
   hasDraft,
   openConv,
-  reorderConversations,
   moveConversation,
   duplicateConversation,
   toggleWorktree,
@@ -91,17 +84,6 @@ export function ConversationRow({
   renameConversation,
   setConversationColor,
 }: ConversationRowProps) {
-  // O gesto se conclui no `drop` OU no `dragend`; os dois passam por aqui.
-  function aplicarArrasto(feito: ReturnType<typeof concluirArrasto>) {
-    if (
-      feito?.carga.tipo === "conversa" &&
-      feito.carga.projectId === projectId &&
-      feito.alvo.tipo === "reordenar"
-    ) {
-      reorderConversations(projectId, feito.carga.id, feito.alvo.id)
-    }
-  }
-
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
@@ -192,26 +174,16 @@ export function ConversationRow({
     <ContextMenu key={c.id}>
       <ContextMenuTrigger asChild>
         <div
-          draggable={!isEditing}
-          onDragStart={(e) => {
-            comecarArrasto({ tipo: "conversa", projectId, id: c.id })
-            // Só o visual vai no `dataTransfer` (spike S2): o tipo próprio não
-            // chega inteiro do outro lado, e o gesto morria aí.
-            e.dataTransfer.setData("text/plain", c.title ?? "Conversa")
-            e.dataTransfer.effectAllowed = "move"
+          // Arrasto por ponteiro (ADR-214); reordenar também está no menu.
+          data-arrasto-alvo={`reordenar:${c.id}`}
+          onPointerDown={(event) => {
+            if (isEditing) return
+            iniciarArrasto(
+              event,
+              { tipo: "conversa", projectId, id: c.id },
+              c.title ?? "Conversa",
+            )
           }}
-          onDragOver={(e) => {
-            const carga = cargaArrastada()
-            // Conversa só reordena dentro do projeto dela.
-            if (carga?.tipo !== "conversa" || carga.projectId !== projectId) return
-            e.preventDefault()
-            pairarSobre({ tipo: "reordenar", id: c.id })
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            aplicarArrasto(concluirArrasto("reordenar", { tipo: "reordenar", id: c.id }))
-          }}
-          onDragEnd={() => aplicarArrasto(concluirArrasto("reordenar"))}
           className={cn(
             "group/c relative flex items-center rounded-md transition-colors",
             isFull
@@ -220,6 +192,7 @@ export function ConversationRow({
                 ? "bg-sel-hover"
                 : "hover:bg-sel-hover",
             isChild && "ml-2.5",
+            "data-[arrasto-sobre]:bg-sel",
           )}
           style={
             c.color

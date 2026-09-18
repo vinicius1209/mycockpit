@@ -132,7 +132,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const setConversationColor = useChat((s) => s.setConversationColor)
   const duplicateConversation = useChat((s) => s.duplicateConversation)
   const setWorktree = useChat((s) => s.setWorktree)
-  const reorderConversations = useChat((s) => s.reorderConversations)
   const moveConversation = useChat((s) => s.moveConversation)
   // S1.2 — payload de drag de CONVERSA, escopado pelo projeto: o dragover de
   // uma lista só aceita conversa DA MESMA lista (mover entre projetos está
@@ -276,7 +275,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
                 : !!c.hasDraft
             }
             openConv={openConv}
-            reorderConversations={reorderConversations}
             moveConversation={moveConversation}
             duplicateConversation={duplicateConversation}
             toggleWorktree={toggleWorktree}

@@ -31,12 +31,7 @@ import { useApp } from "@/store/app"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import {
-  cargaArrastada,
-  comecarArrasto,
-  concluirArrasto,
-  pairarSobre,
-} from "@/lib/arrastoInterno"
+import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 
 /** Ícone do projeto: pasta TINGIDA da cor-rótulo (cinza se sem cor), com um
  *  pulso no canto quando o projeto tem um turno rodando. Marcador do container. */
@@ -118,7 +113,6 @@ export function ProjectRow({
 }) {
   const renameProject = useApp((s) => s.renameProject)
   const setProjectColor = useApp((s) => s.setProjectColor)
-  const reorderProjects = useApp((s) => s.reorderProjects)
   const moveProject = useApp((s) => s.moveProject)
   const [editing, setEditing] = useState(false)
   const [val, setVal] = useState(project.name)
@@ -139,39 +133,19 @@ export function ProjectRow({
           // S1.2 — drag & drop reordena projetos (teclado cobre via context
           // menu). Draggable sai durante a edição pra não brigar com a seleção
           // de texto do input de renomear.
-          draggable={!editing}
-          onDragStart={(e) => {
-            comecarArrasto({ tipo: "projeto", id: project.id })
-            // O `dataTransfer` fica só com o visual: o tipo próprio não
-            // atravessa o pasteboard do sistema, e era isso que matava o gesto
-            // no app instalado (spike S2, `lib/arrastoInterno.ts`).
-            e.dataTransfer.setData("text/plain", project.name)
-            e.dataTransfer.effectAllowed = "move"
-          }}
-          onDragOver={(e) => {
-            if (cargaArrastada()?.tipo !== "projeto") return
-            e.preventDefault()
-            pairarSobre({ tipo: "reordenar", id: project.id })
-          }}
-          onDrop={(e) => {
-            e.preventDefault()
-            const feito = concluirArrasto("reordenar", { tipo: "reordenar", id: project.id })
-            if (feito?.carga.tipo === "projeto" && feito.alvo.tipo === "reordenar") {
-              reorderProjects(feito.carga.id, feito.alvo.id)
-            }
-          }}
-          onDragEnd={() => {
-            // Rede de segurança: sem `drop` entregue, o gesto se fecha aqui,
-            // com o último alvo por onde passou.
-            const feito = concluirArrasto("reordenar")
-            if (feito?.carga.tipo === "projeto" && feito.alvo.tipo === "reordenar") {
-              reorderProjects(feito.carga.id, feito.alvo.id)
-            }
+          // S1.2 — arrastar reordena (teclado cobre pelo menu de contexto). Por
+          // PONTEIRO, não por HTML5: o webview engole o arrasto do sistema
+          // (ADR-214). Editar desativa, para não brigar com a seleção de texto.
+          data-arrasto-alvo={`reordenar:${project.id}`}
+          onPointerDown={(event) => {
+            if (editing) return
+            iniciarArrasto(event, { tipo: "projeto", id: project.id }, project.name)
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
             // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + peso.
             active ? "bg-sel" : "hover:bg-sel-hover",
+            "data-[arrasto-sobre]:bg-sel",
           )}
         >
           {editing ? (

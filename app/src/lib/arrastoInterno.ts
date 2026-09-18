@@ -1,23 +1,26 @@
 // ARRASTAR DENTRO DA JANELA.
 //
-// Spike S2, respondido em 18/09/2026 com o app instalado: arrastar um projeto na
-// barra lateral MOSTRA o arrasto (o fantasma segue o cursor) e não reordena
-// nada. Ou seja, o `dragstart` acontece; o que se perde é o resto.
+// Duas tentativas e a prova de por que a primeira não podia funcionar.
 //
-// A causa está no `dataTransfer`: os dois pontos que decidiam o gesto liam um
-// tipo PRÓPRIO (`application/x-mycockpit-project`, `…-conv-<projeto>`), e esse
-// tipo não sobrevive à travessia pelo pasteboard do sistema — do outro lado ele
-// chega com outro nome. Com `types.includes(…)` falso, o `dragover` nunca
-// chamava `preventDefault`, e sem isso o `drop` nem é entregue.
+// 1) HTML5 (`draggable`, `dragover`, `drop`): no app instalado o arrasto COMEÇA
+//    (o fantasma segue o cursor) e nada mais acontece. A causa está no código do
+//    Tauri, não no nosso: com `dragDropEnabled` (padrão), o `WryWebView` do wry
+//    implementa `draggingEntered/Updated/performDragOperation` e só devolve o
+//    evento ao WebKit quando o handler diz `false`
+//    (`wry-0.55.1/src/wkwebview/drag_drop.rs:35-96`); o handler do Tauri devolve
+//    `true` SEMPRE (`tauri-runtime-wry-2.11.3/src/lib.rs:4862-4896`). No macOS,
+//    todo arrasto que entra na view passa por aí, inclusive o que nasceu DENTRO
+//    da página: `dragover` e `drop` nunca chegam ao DOM, e sem `dragover` nem o
+//    último alvo existe para o `dragend` aproveitar.
 //
-// A saída é não depender do `dataTransfer` para NADA além do visual: o que está
-// sendo arrastado mora aqui, em memória, enquanto o gesto dura. E o gesto se
-// conclui também no `dragend`, que é do elemento de ORIGEM e acontece mesmo
-// quando o `drop` se perde no caminho — é o que torna isto robusto sem depender
-// de como cada webview trata o arrasto.
+// 2) Ponteiro (`pointerdown` → `pointermove` → `pointerup`): não existe sessão de
+//    arrasto do sistema, então não há o que interceptar. É o caminho que o PRD
+//    do capricho já previa ("senão arraste por ponteiro") e é o que vale aqui.
 //
-// Módulo, e não store, porque isto não é estado de aplicação: vive entre o
-// `dragstart` e o `dragend`, não aparece na tela e não persiste.
+// Este módulo é a memória do gesto: quem está sendo arrastado e sobre qual alvo,
+// entre o começo e o fim. Não é estado de aplicação (não aparece na tela, não
+// persiste), por isso módulo e não store. A mecânica de ponteiro mora em
+// `components/common/CamadaDeArrasto.tsx`; as regras de destino, em `lib/soltura.ts`.
 
 export type CargaArrastada =
   /** Reordenação na barra lateral. */
@@ -60,34 +63,31 @@ export function pairarSobre(alvo: AlvoDoArrasto | null): void {
   ultimoAlvo = alvo
 }
 
-/** Encerra o gesto e diz o que fazer.
- *
- *  `aceita` é o tipo de alvo de QUEM PERGUNTA: gesto que não é dele volta
- *  `null` e fica intacto, para o dono concluir depois (o `dragend` da origem
- *  chega antes do `drop` do composer em alguns caminhos, e sem isso um
- *  consumidor apagaria o gesto do outro).
- *
- *  `alvoExplicito` é o do `drop`, quando ele chega; sem ele vale o último alvo
- *  pairado. Devolve `null` também quando não há alvo ou quando soltou em cima
- *  de si mesmo. Concluído, o gesto se limpa: não acontece duas vezes. */
+/** Encerra o gesto e diz o que fazer. `alvoExplicito` é o que estava sob o
+ *  ponteiro ao soltar; sem ele vale o último alvo pairado. Devolve `null`
+ *  quando não há arrasto, quando o gesto acabou no vazio ou quando soltou em
+ *  cima de si mesmo. Em qualquer caso o gesto se limpa: um arrasto não se
+ *  conclui duas vezes, e carga velha nunca sobra para o próximo. */
 export function concluirArrasto(
-  aceita: AlvoDoArrasto["tipo"],
   alvoExplicito?: AlvoDoArrasto | null,
 ): ArrastoConcluido | null {
   const atual = carga
   const alvo = alvoExplicito ?? ultimoAlvo
-  if (!atual) return null
-  // Sem alvo nenhum o gesto acabou no vazio: ninguém mais vai concluí-lo, e
-  // deixá-lo aberto faria o próximo arrasto herdar carga velha.
-  if (!alvo) {
-    cancelarArrasto()
-    return null
-  }
-  // Alvo de outro consumidor: devolve sem consumir, para o dono concluir.
-  if (alvo.tipo !== aceita) return null
-  const mesmo = alvo.tipo === "reordenar" && alvo.id === atual.id
   cancelarArrasto()
-  return mesmo ? null : { carga: atual, alvo }
+  if (!atual || !alvo) return null
+  if (alvo.tipo === "reordenar" && alvo.id === atual.id) return null
+  return { carga: atual, alvo }
+}
+
+/** O alvo escrito no DOM (`data-arrasto-alvo="composer"` ou
+ *  `data-arrasto-alvo="reordenar:<id>"`). Atributo ausente ou estranho vira
+ *  `null`: alvo desconhecido nunca recebe nada. */
+export function alvoDoAtributo(valor: string | null | undefined): AlvoDoArrasto | null {
+  if (!valor) return null
+  if (valor === "composer") return { tipo: "composer" }
+  const [tipo, ...resto] = valor.split(":")
+  const id = resto.join(":")
+  return tipo === "reordenar" && id ? { tipo: "reordenar", id } : null
 }
 
 /** Some com o gesto sem concluir (troca de tela, teste). */
