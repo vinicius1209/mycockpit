@@ -20,18 +20,29 @@
 // `dragstart` e o `dragend`, não aparece na tela e não persiste.
 
 export type CargaArrastada =
+  /** Reordenação na barra lateral. */
   | { tipo: "projeto"; id: string }
   /** Conversa só reordena DENTRO do projeto dela. */
   | { tipo: "conversa"; projectId: string; id: string }
+  /** Arquivo ou pasta da árvore do projeto, caminho RELATIVO à raiz. */
+  | { tipo: "arquivo"; id: string; caminho: string; pasta: boolean }
+  /** Texto selecionado em qualquer lugar do app (fio, diff, Bastidores). */
+  | { tipo: "texto"; id: string; texto: string }
+
+/** Onde a pessoa está soltando. Alvo é TIPADO porque os dois consumidores não
+ *  podem se atropelar: a barra lateral só conclui o que é dela, e o composer
+ *  só o que é dele. */
+export type AlvoDoArrasto =
+  | { tipo: "reordenar"; id: string }
+  | { tipo: "composer" }
 
 export interface ArrastoConcluido {
   carga: CargaArrastada
-  /** Sobre quem soltou. */
-  alvo: string
+  alvo: AlvoDoArrasto
 }
 
 let carga: CargaArrastada | null = null
-let ultimoAlvo: string | null = null
+let ultimoAlvo: AlvoDoArrasto | null = null
 
 export function comecarArrasto(nova: CargaArrastada): void {
   carga = nova
@@ -44,22 +55,39 @@ export function cargaArrastada(): CargaArrastada | null {
 
 /** Chamado a cada `dragover` de um alvo válido: é ele que sobrevive quando o
  *  `drop` não chega. `null` esquece o alvo (saiu de cima de tudo). */
-export function pairarSobre(alvo: string | null): void {
+export function pairarSobre(alvo: AlvoDoArrasto | null): void {
   if (!carga) return
   ultimoAlvo = alvo
 }
 
-/** Encerra o gesto e diz o que fazer. `alvoExplicito` é o do `drop`, quando ele
- *  chega; sem ele vale o último alvo pairado. Devolve `null` quando não há nada
- *  a fazer (sem arrasto, sem alvo, ou soltou em cima de si mesmo), e SEMPRE
- *  limpa: um gesto não pode ser concluído duas vezes. */
-export function concluirArrasto(alvoExplicito?: string | null): ArrastoConcluido | null {
+/** Encerra o gesto e diz o que fazer.
+ *
+ *  `aceita` é o tipo de alvo de QUEM PERGUNTA: gesto que não é dele volta
+ *  `null` e fica intacto, para o dono concluir depois (o `dragend` da origem
+ *  chega antes do `drop` do composer em alguns caminhos, e sem isso um
+ *  consumidor apagaria o gesto do outro).
+ *
+ *  `alvoExplicito` é o do `drop`, quando ele chega; sem ele vale o último alvo
+ *  pairado. Devolve `null` também quando não há alvo ou quando soltou em cima
+ *  de si mesmo. Concluído, o gesto se limpa: não acontece duas vezes. */
+export function concluirArrasto(
+  aceita: AlvoDoArrasto["tipo"],
+  alvoExplicito?: AlvoDoArrasto | null,
+): ArrastoConcluido | null {
   const atual = carga
   const alvo = alvoExplicito ?? ultimoAlvo
-  carga = null
-  ultimoAlvo = null
-  if (!atual || !alvo || alvo === atual.id) return null
-  return { carga: atual, alvo }
+  if (!atual) return null
+  // Sem alvo nenhum o gesto acabou no vazio: ninguém mais vai concluí-lo, e
+  // deixá-lo aberto faria o próximo arrasto herdar carga velha.
+  if (!alvo) {
+    cancelarArrasto()
+    return null
+  }
+  // Alvo de outro consumidor: devolve sem consumir, para o dono concluir.
+  if (alvo.tipo !== aceita) return null
+  const mesmo = alvo.tipo === "reordenar" && alvo.id === atual.id
+  cancelarArrasto()
+  return mesmo ? null : { carga: atual, alvo }
 }
 
 /** Some com o gesto sem concluir (troca de tela, teste). */

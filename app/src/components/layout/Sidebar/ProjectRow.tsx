@@ -151,18 +151,22 @@ export function ProjectRow({
           onDragOver={(e) => {
             if (cargaArrastada()?.tipo !== "projeto") return
             e.preventDefault()
-            pairarSobre(project.id)
+            pairarSobre({ tipo: "reordenar", id: project.id })
           }}
           onDrop={(e) => {
             e.preventDefault()
-            const feito = concluirArrasto(project.id)
-            if (feito?.carga.tipo === "projeto") reorderProjects(feito.carga.id, feito.alvo)
+            const feito = concluirArrasto("reordenar", { tipo: "reordenar", id: project.id })
+            if (feito?.carga.tipo === "projeto" && feito.alvo.tipo === "reordenar") {
+              reorderProjects(feito.carga.id, feito.alvo.id)
+            }
           }}
           onDragEnd={() => {
             // Rede de segurança: sem `drop` entregue, o gesto se fecha aqui,
             // com o último alvo por onde passou.
-            const feito = concluirArrasto()
-            if (feito?.carga.tipo === "projeto") reorderProjects(feito.carga.id, feito.alvo)
+            const feito = concluirArrasto("reordenar")
+            if (feito?.carga.tipo === "projeto" && feito.alvo.tipo === "reordenar") {
+              reorderProjects(feito.carga.id, feito.alvo.id)
+            }
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",

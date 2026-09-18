@@ -1,8 +1,17 @@
-// Soltar arquivos do sistema no composer (capricho PRD R6): regras puras.
-// Imagem e PDF viram anexo (a mesma allowlist do Rust); o resto vira menção
-// `@caminho`, relativo quando mora no projeto. Pasta vira menção de pasta.
+// Soltar no composer: regras puras.
+//
+// De FORA (capricho PRD R6): imagem e PDF viram anexo (a mesma allowlist do
+// Rust); o resto vira menção `@caminho`, relativo quando mora no projeto. Pasta
+// vira menção de pasta.
+//
+// De DENTRO (R8): o que já está na janela não precisa passar pelo disco.
+// Arquivo da árvore vira menção; texto selecionado vira bloco do rascunho
+// (colagem grande) ou texto direto, pela MESMA régua do colar (R7), senão o
+// mesmo conteúdo teria dois destinos dependendo do gesto.
 
 import { MAX_ATTACH_BYTES, MAX_ATTACH_COUNT, MAX_ATTACH_MB } from "@/lib/attachments"
+import { ehColagemGrande } from "@/lib/colagem"
+import type { CargaArrastada } from "@/lib/arrastoInterno"
 
 export interface CaminhoSolto {
   path: string
@@ -79,4 +88,36 @@ export function dentroDoRetangulo(
 /** Rótulo do estado de arrasto. */
 export function rotuloDaSoltura(quantos: number): string {
   return quantos === 1 ? "Solte para anexar · 1 item" : `Solte para anexar · ${quantos} itens`
+}
+
+export type PlanoDoArrasto =
+  | { acao: "mencao"; texto: string }
+  | { acao: "colagem"; texto: string }
+  | { acao: "texto"; texto: string }
+  | { acao: "nada" }
+
+/** O que soltar no composer faz com cada carga arrastada de dentro do app.
+ *  Carga de reordenação (projeto, conversa) não tem o que fazer aqui: o
+ *  composer recusa em silêncio, que é o comportamento honesto para um gesto
+ *  que a pessoa começou em outro contexto. */
+export function planoDoArrasto(carga: CargaArrastada): PlanoDoArrasto {
+  if (carga.tipo === "arquivo") {
+    return { acao: "mencao", texto: mencaoDoCaminho(carga.caminho, null) }
+  }
+  if (carga.tipo === "texto") {
+    const texto = carga.texto.trim()
+    if (!texto) return { acao: "nada" }
+    return ehColagemGrande(texto) ? { acao: "colagem", texto } : { acao: "texto", texto }
+  }
+  return { acao: "nada" }
+}
+
+/** O rótulo do alvo aceso, que diz o que vai acontecer ANTES de soltar. */
+export function rotuloDoArrasto(carga: CargaArrastada): string | null {
+  const plano = planoDoArrasto(carga)
+  if (plano.acao === "nada") return null
+  if (plano.acao === "mencao") return `Solte para mencionar ${plano.texto.replace(/^@"?|"$/g, "")}`
+  return plano.acao === "colagem"
+    ? "Solte para anexar o trecho como bloco"
+    : "Solte para citar o trecho"
 }

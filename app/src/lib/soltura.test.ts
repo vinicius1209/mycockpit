@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest"
 import { MAX_ATTACH_COUNT, MAX_ATTACH_BYTES } from "@/lib/attachments"
-import { dentroDoRetangulo, mencaoDoCaminho, planoDaSoltura, rotuloDaSoltura } from "./soltura"
+import {
+  dentroDoRetangulo,
+  mencaoDoCaminho,
+  planoDaSoltura,
+  planoDoArrasto,
+  rotuloDaSoltura,
+  rotuloDoArrasto,
+} from "./soltura"
 
 const PROJETO = "/Users/ana/projetos/jornal"
 const arq = (path: string, bytes = 100) => ({ path, pasta: false, bytes })
@@ -53,5 +60,50 @@ describe("soltar arquivos no composer", () => {
     expect(dentroDoRetangulo({ x: 800, y: 1100 }, 1, composer)).toBe(false)
     expect(rotuloDaSoltura(1)).toBe("Solte para anexar · 1 item")
     expect(rotuloDaSoltura(3)).toBe("Solte para anexar · 3 itens")
+  })
+})
+
+describe("soltar de DENTRO do app no composer (R8)", () => {
+  it("arquivo da árvore vira menção, e o rótulo diz isso antes de soltar", () => {
+    const carga = {
+      tipo: "arquivo" as const,
+      id: "arquivo:src/lib/soltura.ts",
+      caminho: "src/lib/soltura.ts",
+      pasta: false,
+    }
+    expect(planoDoArrasto(carga)).toEqual({ acao: "mencao", texto: "@src/lib/soltura.ts" })
+    expect(rotuloDoArrasto(carga)).toBe("Solte para mencionar src/lib/soltura.ts")
+  })
+
+  it("caminho com espaço vai entre aspas, como na menção de sempre", () => {
+    expect(
+      planoDoArrasto({
+        tipo: "arquivo",
+        id: "arquivo:docs/plano de voo.md",
+        caminho: "docs/plano de voo.md",
+        pasta: false,
+      }),
+    ).toEqual({ acao: "mencao", texto: '@"docs/plano de voo.md"' })
+  })
+
+  it("seleção curta entra como texto e seleção grande vira bloco, pela régua do colar", () => {
+    const curta = { tipo: "texto" as const, id: "t1", texto: "  const a = 1  " }
+    expect(planoDoArrasto(curta)).toEqual({ acao: "texto", texto: "const a = 1" })
+    expect(rotuloDoArrasto(curta)).toBe("Solte para citar o trecho")
+
+    const grande = { tipo: "texto" as const, id: "t2", texto: "linha\n".repeat(60) }
+    expect(planoDoArrasto(grande).acao).toBe("colagem")
+    expect(rotuloDoArrasto(grande)).toBe("Solte para anexar o trecho como bloco")
+  })
+
+  it("seleção só de espaço não vira nada, e o alvo nem acende", () => {
+    const vazia = { tipo: "texto" as const, id: "t3", texto: "   \n  " }
+    expect(planoDoArrasto(vazia)).toEqual({ acao: "nada" })
+    expect(rotuloDoArrasto(vazia)).toBeNull()
+  })
+
+  it("carga de reordenação não tem o que fazer no composer", () => {
+    expect(planoDoArrasto({ tipo: "projeto", id: "p1" })).toEqual({ acao: "nada" })
+    expect(rotuloDoArrasto({ tipo: "conversa", projectId: "p", id: "c1" })).toBeNull()
   })
 })

@@ -178,7 +178,7 @@ falhou).
 | C-Q3 | Linha "↳ autor · hora · «trecho»" na mensagem enviada, que rola até a original | P/M | C-Q2 |
 | C-D1 | **Soltar arquivos do Finder** no composer: imagem e PDF viram anexo com tamanho e miniatura, outros viram `@caminho`, recusa visível quando o motor não aceita | M | S2 |
 | C-D2 | **Colagem grande vira pílula** com prévia e "inserir como texto" | M | modelo de blocos (C-Q2) |
-| C-D3 | Arrastar de dentro do app (arquivo da árvore, trecho do diff, imagem do fio, saída dos Bastidores), sempre com ação equivalente por teclado | G | C-D1 |
+| C-D3 | Arrastar de dentro do app · **entregue em 18/09** para arquivo da árvore e texto selecionado (fio, diff, Bastidores); imagem do fio espera a divisão do `MessageList.tsx` | G | C-D1 |
 
 ### Épico D · Continuar em outro motor
 

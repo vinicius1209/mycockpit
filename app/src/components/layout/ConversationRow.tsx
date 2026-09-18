@@ -93,8 +93,12 @@ export function ConversationRow({
 }: ConversationRowProps) {
   // O gesto se conclui no `drop` OU no `dragend`; os dois passam por aqui.
   function aplicarArrasto(feito: ReturnType<typeof concluirArrasto>) {
-    if (feito?.carga.tipo === "conversa" && feito.carga.projectId === projectId) {
-      reorderConversations(projectId, feito.carga.id, feito.alvo)
+    if (
+      feito?.carga.tipo === "conversa" &&
+      feito.carga.projectId === projectId &&
+      feito.alvo.tipo === "reordenar"
+    ) {
+      reorderConversations(projectId, feito.carga.id, feito.alvo.id)
     }
   }
 
@@ -201,13 +205,13 @@ export function ConversationRow({
             // Conversa só reordena dentro do projeto dela.
             if (carga?.tipo !== "conversa" || carga.projectId !== projectId) return
             e.preventDefault()
-            pairarSobre(c.id)
+            pairarSobre({ tipo: "reordenar", id: c.id })
           }}
           onDrop={(e) => {
             e.preventDefault()
-            aplicarArrasto(concluirArrasto(c.id))
+            aplicarArrasto(concluirArrasto("reordenar", { tipo: "reordenar", id: c.id }))
           }}
-          onDragEnd={() => aplicarArrasto(concluirArrasto())}
+          onDragEnd={() => aplicarArrasto(concluirArrasto("reordenar"))}
           className={cn(
             "group/c relative flex items-center rounded-md transition-colors",
             isFull

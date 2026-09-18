@@ -3,7 +3,9 @@
 ## Status (17/09/2026)
 
 **R1, R3, R4 e R6 entregues (17/09/2026, ADR-205). R2, R5 e R7 entregues em seguida.**
-R8 segue para a próxima sprint; spikes S1 e S2 dependem do app rodando.
+R8 entregue em 18/09 com duas das quatro fontes (arquivo da árvore e texto
+selecionado); a imagem do fio espera a divisão do `MessageList.tsx`. O spike S2
+foi respondido pelo uso real e virou a ADR-212; o S1 ainda depende do app.
 
 R7: acima de 40 linhas ou 4.000 caracteres, colar vira bloco `colagem` no
 rascunho (`colagemGrande.ts`, módulo irmão do `LexicalComposer`), com chip
@@ -209,11 +211,19 @@ poder arrastar coisas aqui no composer de forma elegante, bonita, funcional".
   capturado íntegro byte a byte; persiste ao reabrir; abaixo do limiar segue
   inline.
 
-### R8 · Arrastar de dentro do app (G, próxima sprint)
-- Fontes: arquivo da árvore, cabeçalho/trecho do diff, imagem do fio, seleção dos
-  Bastidores. HTML5 se o spike S2 provar que funciona com `dragDropEnabled`; senão
-  arraste por ponteiro (`lib/arrasto.ts`). Cada fonte tem ação equivalente sem
-  arrastar.
+### R8 · Arrastar de dentro do app (G)
+- **Entregue em 18/09/2026, com duas fontes.** O spike S2 mostrou que o HTML5
+  COMEÇA e não conclui (ADR-212), então a carga mora em memória
+  (`lib/arrastoInterno.ts`) e o gesto fecha no `drop` ou no `dragend`.
+- Fontes entregues: **arquivo da árvore** (vira `@caminho`) e **texto
+  selecionado** em qualquer superfície de leitura (`[data-selectable]`: fio,
+  diff, Bastidores). A seleção segue a régua do colar (R7): curta entra como
+  texto, grande vira bloco de colagem. O rótulo do alvo diz o que vai acontecer
+  antes de soltar.
+- Equivalentes sem arrastar, que já existiam: `@` no composer para o arquivo,
+  "Citar trecho" para a seleção, "Anexar" e colar para imagem.
+- **Falta a imagem do fio**, que exige uma alça no `MessageList.tsx` e ele está
+  no teto da catraca (1.630): entra quando o arquivo for dividido, não antes.
 
 ## Não-objetivos
 

@@ -7562,8 +7562,12 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   e chega mesmo quando o `drop` se perde. O `dataTransfer` fica só com o visual
   (`text/plain` para o fantasma). Concluir é idempotente: o gesto se limpa ao
   fechar, então `drop` seguido de `dragend` não reordena duas vezes.
-- **Alcance:** vale para todo arrasto DENTRO da janela, e é a mecânica que o
-  C-D3 (arrastar arquivo da árvore, trecho do diff, imagem do fio) vai usar.
+- **Alcance:** vale para todo arrasto DENTRO da janela, e é a mecânica do C-D3,
+  entregue no mesmo dia: arquivo da árvore vira `@caminho` e texto selecionado
+  em superfície de leitura (`[data-selectable]`) vira texto ou bloco de colagem,
+  pela régua do colar. Dois consumidores dividem o mesmo gesto (barra lateral e
+  composer) sem se atropelar: `concluirArrasto` só consome o alvo do TIPO de
+  quem pergunta, porque o `dragend` da origem chega antes do `drop` do composer.
   Soltar arquivo VINDO DE FORA continua sendo o evento do Tauri
   (`onDragDropEvent`), que é o único caminho com caminho real de arquivo.
 - **Estado alterado:** nenhum novo; só o caminho que aciona `reorderProjects` e
