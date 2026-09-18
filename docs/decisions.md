@@ -7582,6 +7582,61 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   4.407, `tsc -b`, `bun run check`. Falta a confirmação no app instalado, que
   depende do próximo build.
 
+### ADR-213 · A busca do fio ganha índice léxico; o ranking não muda
+
+- **Contexto (18/09/2026):** um rascunho de PRD propunha LanceDB + embeddings
+  ONNX para resolver dois pedidos tratados como um só: "digitar 'scroll que
+  parou' e achar 'rolagem automática que quebrou'" e "conversas longas ficaram
+  lentas para pesquisar". A medição sobre o banco real (22 conversas, 11.421
+  itens, maior conversa com 3.199 itens e blob de 5,0MB) desmontou o
+  diagnóstico. `search_conversation` (`context_gateway.rs:317`) gasta 53ms
+  abrindo o blob `items`, 25ms parseando e **28ms varrendo**: a varredura, que o
+  rascunho culpava, é o terço mais barato. O gargalo é abrir 5MB de JSON a cada
+  query, e isso se resolve sem vetor nenhum. FTS5 já vem ligado no build do
+  `libsqlite3-sys 0.30.1` (`build.rs:129`), o mesmo lib dos dois lados do app,
+  então não custa crate, modelo nem risco de linker (`Cargo.toml:46-48`). A
+alternativa já estava anotada como arte prévia no próprio repositório
+(`autonomy.md:177`, o recall episódico do Hermes) e o rascunho não a
+considerou.
+- **Decisão:** índice FTS5 sobre os itens de transcript, usado como **gerador de
+  candidatos**, não como ranqueador. O `MATCH` estreita de 3.199 itens para 800
+  candidatos e **a função de score que já existe** (`exact*8 + coverage*6 +
+  recência`) rankeia os candidatos. O blob nunca é aberto. Trocar o ranking
+  junto foi medido e recusado: `MATCH` + BM25 puro dá 30x de velocidade e apenas
+  **32% de sobreposição no top-10** com a busca de hoje, ou seja, a busca
+  pareceria a mesma e responderia outra coisa. Com o score preservado a
+  fidelidade é **97%** a 4,3ms de mediana contra 61,5ms (14x; pior caso 15,9ms
+  contra 66,4ms). 800 candidatos é o joelho medido: 200 dá 86%, 400 dá 91%, e
+  acima de 800 a fidelidade não sobe mais.
+- **Alcance:** o índice guarda o `id` estável do item, nunca só a posição, porque
+  `/compactar` reescreve o transcript e a cauda é reescrita em operação normal
+  (`chat.ts:838`), e um ref posicional velho passaria a apontar para outro
+  conteúdo. A escrita pendura em `flushItems` (`chat.ts:1345`), que já confirma
+  a cauda incremental, e nunca em trigger sobre `conversations`, que
+  reextrairia todos os itens a cada persist. O gateway continua READ-ONLY
+  (`context_gateway.rs:330`, `:415`): ele lê o índice, o app escreve, e índice
+  ausente ou frio degrada para a varredura atual sem erro na tela.
+- **Consequência:** 3% dos hits de hoje ficam inalcançáveis, e isso é o piso
+  estrutural da técnica, não parâmetro mal escolhido: o score atual casa por
+  substring (`lower.contains`) e acha o termo no meio da palavra, coisa que
+  índice de tokens não faz nem com prefixo. Parte disso é ruído, o mesmo
+  mecanismo que casa "de" dentro de "desde", e o PRD cobra a inspeção caso a
+  caso por escrito. Segunda consequência: prefixo em token curto explode
+  (`de*` casa 7.976 documentos, e "erro de build" custava 16ms fixos,
+  independentes do tamanho da conversa), então stopwords saem da query e
+  prefixo só vale para token de 4+ caracteres, o que derruba para 1-2ms. A
+  lista de stopwords passa a ser gêmea entre Rust e TS, com `recall.ts:31`
+  como fonte. Terceira: embedding fica **adiado**, não cancelado, e se voltar
+  volta como vetor em BLOB no SQLite com cosseno linear (11.421 vetores de 384
+  dimensões são 17,5MB e poucos milissegundos com SIMD), não como banco
+  vetorial; LanceDB só se justifica umas 10x de corpus à frente.
+- **Verificação:** benchmark sobre cópia do banco real, com o `searchable_text`
+  e o `tokens` do `context_gateway.rs` portados fielmente, em
+  `docs/evidence/busca-no-fio/`. Banco vivo não foi tocado. As 15 guardas de
+  `bun run check` passam e nenhuma baseline foi alterada. Números em Python, ou
+  seja, teto pessimista dos dois lados; o que sustenta a decisão é a razão, não
+  o absoluto. PRD em `docs/busca-no-fio-prd.md`. Implementação ainda não feita.
+
 ### ADR-214 · A conversa ganha nome de gente no fim do primeiro turno ✅
 
 - **Queixa real (18/09/2026):** "se eu inicio uma conversa e mando 'oi', ela
