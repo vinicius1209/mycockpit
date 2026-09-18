@@ -2,7 +2,7 @@
 
 ## Status (18/09/2026)
 
-**R1 a R5 entregues (18/09/2026, ADR-214).** As duas queixas estão fechadas: a
+**R1 a R5 entregues (18/09/2026, ADR-215).** As duas queixas estão fechadas: a
 conversa ganha nome de gente no fim do primeiro turno, e a linha de sugestões só
 existe quando há inteligência utilitária no projeto.
 
@@ -289,8 +289,8 @@ Muda: `lib/utility/types.ts`, `lib/utility/profiles.ts`,
 `components/chat/ComposerParts.tsx` (476 linhas, teto genérico de tsx é 700),
 `lib/notify.ts` (488, teto de `ts` é 500), `components/chat/feedbackDoFio.ts`,
 `components/common/CommandMenu.tsx`, `hooks/useProjectConfig.ts`,
-`store/chat/suggestions.ts`, `docs/decisions.md` (a ADR desta frente é a
-**214**: a máxima real em `decisions.md` é ADR-213).
+`store/chat/suggestions.ts`, `docs/decisions.md` (a ADR desta frente saiu como
+**215**: nasceu 214, e a frente do arrasto tomou esse número em paralelo).
 
 **Três arquivos do caminho estão congelados pelo ratchet e não podem crescer uma
 linha:** `store/chat.ts` (2150), `lib/fleet/send.ts` (718) e

@@ -7584,6 +7584,15 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 
 ### ADR-213 · A busca do fio ganha índice léxico; o ranking não muda
 
+> **Corrigida em 18/09/2026, antes de qualquer implementação.** O double check
+> contra a árvore (outra frente havia avançado nela) achou `conversation_items`,
+> a fonte itemizada da migração 48, que a primeira versão desta ADR desconhecia.
+> Três pontos mudaram: a fonte do índice é a tabela e não o blob; a manutenção é
+> por **trigger em SQL** e não por gancho em `flushItems`, o que deixa
+> `store/chat.ts` intocado; e o `replaceAll` do `persist` precisa perder um
+> `DELETE` redundante, sem o qual o trigger custa **3.310ms por persist** em vez
+> de 8ms. A fidelidade medida é 95,7%, não 97%. O texto abaixo já é o corrigido.
+
 - **Contexto (18/09/2026):** um rascunho de PRD propunha LanceDB + embeddings
   ONNX para resolver dois pedidos tratados como um só: "digitar 'scroll que
   parou' e achar 'rolagem automática que quebrou'" e "conversas longas ficaram
@@ -7605,28 +7614,41 @@ considerou.
   junto foi medido e recusado: `MATCH` + BM25 puro dá 30x de velocidade e apenas
   **32% de sobreposição no top-10** com a busca de hoje, ou seja, a busca
   pareceria a mesma e responderia outra coisa. Com o score preservado a
-  fidelidade é **97%** a 4,3ms de mediana contra 61,5ms (14x; pior caso 15,9ms
-  contra 66,4ms). 800 candidatos é o joelho medido: 200 dá 86%, 400 dá 91%, e
+  fidelidade é **95,7%** a 4,58ms de mediana contra 60,5ms (13x; pior caso 13,6ms
+  contra 63,9ms). 800 candidatos é o joelho medido: 200 dá 89%, 400 dá 93,3%, e
   acima de 800 a fidelidade não sobe mais.
-- **Alcance:** o índice guarda o `id` estável do item, nunca só a posição, porque
-  `/compactar` reescreve o transcript e a cauda é reescrita em operação normal
-  (`chat.ts:838`), e um ref posicional velho passaria a apontar para outro
-  conteúdo. A escrita pendura em `flushItems` (`chat.ts:1345`), que já confirma
-  a cauda incremental, e nunca em trigger sobre `conversations`, que
-  reextrairia todos os itens a cada persist. O gateway continua READ-ONLY
+- **Alcance:** o índice nasce de `conversation_items` (migração 48,
+  `lib.rs:652`), não do blob, e se mantém por três triggers em SQL
+  (`AFTER INSERT/UPDATE/DELETE`). Isso é possível porque a extração de texto em
+  `CASE` + `json_extract` foi verificada **byte a byte** contra o
+  `searchable_text` do Rust nos 7.721 itens reais: 7.721 idênticos, 0
+  divergentes. Consequência boa: **nenhuma linha de `store/chat.ts` muda**, e a
+  consistência vira propriedade estrutural em vez de disciplina. O índice guarda
+  o `item_id` estável, nunca só a posição, porque `/compactar` reescreve o
+  transcript e a cauda é reescrita em operação normal (`chat.ts:838`). Trigger
+  sobre `conversations` continua proibido, pelo motivo original: reextrairia
+  tudo a cada persist. O gateway continua READ-ONLY
   (`context_gateway.rs:330`, `:415`): ele lê o índice, o app escreve, e índice
   ausente ou frio degrada para a varredura atual sem erro na tela.
-- **Consequência:** 3% dos hits de hoje ficam inalcançáveis, e isso é o piso
+- **Consequência:** o trigger obriga a remover o `DELETE` inicial do
+  `replace_all` (`conversation_items.rs:56-62`), que é **redundante** (o
+  change-set cobre todas as posições e o `DELETE position >= item_count` do fim
+  já trata encolhimento) mas, com trigger, reindexa a conversa inteira a cada
+  persist: 3.310ms contra 8ms. Com ele fora e uma guarda
+  `WHEN old.item_json IS NOT new.item_json` no trigger de UPDATE, o persist de
+  3.286 itens custa 8ms parado e 21ms com 10 itens alterados. Segunda
+  consequência: 4,3% dos hits de hoje ficam inalcançáveis, e isso é o piso
   estrutural da técnica, não parâmetro mal escolhido: o score atual casa por
   substring (`lower.contains`) e acha o termo no meio da palavra, coisa que
   índice de tokens não faz nem com prefixo. Parte disso é ruído, o mesmo
   mecanismo que casa "de" dentro de "desde", e o PRD cobra a inspeção caso a
-  caso por escrito. Segunda consequência: prefixo em token curto explode
+  caso por escrito. Terceira: prefixo em token curto explode
   (`de*` casa 7.976 documentos, e "erro de build" custava 16ms fixos,
   independentes do tamanho da conversa), então stopwords saem da query e
   prefixo só vale para token de 4+ caracteres, o que derruba para 1-2ms. A
   lista de stopwords passa a ser gêmea entre Rust e TS, com `recall.ts:31`
-  como fonte. Terceira: embedding fica **adiado**, não cancelado, e se voltar
+  como fonte, e a extração SQL é uma segunda gêmea, presa por teste de
+  contrato. Quarta: embedding fica **adiado**, não cancelado, e se voltar
   volta como vetor em BLOB no SQLite com cosseno linear (11.421 vetores de 384
   dimensões são 17,5MB e poucos milissegundos com SIMD), não como banco
   vetorial; LanceDB só se justifica umas 10x de corpus à frente.
@@ -7635,9 +7657,18 @@ considerou.
   `docs/evidence/busca-no-fio/`. Banco vivo não foi tocado. As 15 guardas de
   `bun run check` passam e nenhuma baseline foi alterada. Números em Python, ou
   seja, teto pessimista dos dois lados; o que sustenta a decisão é a razão, não
-  o absoluto. PRD em `docs/busca-no-fio-prd.md`. Implementação ainda não feita.
+  o absoluto. O porte inicial serializava o `input` das ferramentas com
+  espaçamento que o `serde_json` não usa; foi corrigido e tudo remedido.
+  Alternativa medida e descartada: ler `conversation_items` sem índice custa
+  61,0ms contra 60,5ms do blob, ou seja, o formato não era o problema. PRD em `docs/busca-no-fio-prd.md`. Implementação ainda não feita.
 
-### ADR-214 · A conversa ganha nome de gente no fim do primeiro turno ✅
+### ADR-215 · A conversa ganha nome de gente no fim do primeiro turno ✅
+
+- **Numeração:** nasceu como ADR-214 no commit `e7bfced`, que é o número citado
+  na mensagem daquele commit. A frente do arrasto tomou o 214 em paralelo
+  (`9a99ef5`) e o cita em quatro arquivos de código, então quem renumerou foi
+  esta ADR, que só era citada no próprio PRD. Árvore compartilhada: o barato é
+  mover o lado com menos call sites.
 
 - **Queixa real (18/09/2026):** "se eu inicio uma conversa e mando 'oi', ela
   fica salva com o nome 'oi'". O nome saía de `deriveTitle`, função pura que
