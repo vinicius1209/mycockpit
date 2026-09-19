@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { MAX_ATTACH_COUNT, MAX_ATTACH_BYTES } from "@/lib/attachments"
 import {
+  anexosComOutro,
   dentroDoRetangulo,
   mencaoDoCaminho,
   planoDaSoltura,
@@ -105,5 +106,27 @@ describe("soltar de DENTRO do app no composer (R8)", () => {
   it("carga de reordenação não tem o que fazer no composer", () => {
     expect(planoDoArrasto({ tipo: "projeto", id: "p1" })).toEqual({ acao: "nada" })
     expect(rotuloDoArrasto({ tipo: "conversa", projectId: "p", id: "c1" })).toBeNull()
+  })
+})
+
+describe("imagem do fio arrastada para o composer (R8)", () => {
+  const anexo = { path: "attachments/c1/print.png", name: "print.png", kind: "image" }
+  const carga = { tipo: "imagem" as const, id: "imagem:attachments/c1/print.png", anexo }
+
+  it("vira anexo do rascunho, apontando para o mesmo arquivo", () => {
+    expect(planoDoArrasto(carga)).toEqual({
+      acao: "anexo",
+      anexo: { path: anexo.path, name: "print.png" },
+    })
+    expect(rotuloDoArrasto(carga)).toBe("Solte para anexar print.png")
+  })
+
+  it("o mesmo arquivo não entra duas vezes, e o teto recusa em vez de empurrar", () => {
+    const um = { path: "a.png" }
+    expect(anexosComOutro([um], um)).toEqual({ anexos: [um], coube: true })
+    const cheio = Array.from({ length: MAX_ATTACH_COUNT }, (_, i) => ({ path: `${i}.png` }))
+    const resultado = anexosComOutro(cheio, { path: "novo.png" })
+    expect(resultado.coube).toBe(false)
+    expect(resultado.anexos).toHaveLength(MAX_ATTACH_COUNT)
   })
 })

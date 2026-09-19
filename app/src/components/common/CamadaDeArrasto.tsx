@@ -23,7 +23,8 @@ import {
   type AlvoDoArrasto,
   type CargaArrastada,
 } from "@/lib/arrastoInterno"
-import { planoDoArrasto, rotuloDoArrasto } from "@/lib/soltura"
+import { anexosComOutro, planoDoArrasto, rotuloDoArrasto } from "@/lib/soltura"
+import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
@@ -120,8 +121,24 @@ function soltarNoComposer(carga: CargaArrastada): void {
   }
   const plano = planoDoArrasto(carga)
   const drafts = useComposerDrafts.getState()
-  if (plano.acao === "colagem") drafts.addColagem(convId, plano.texto)
-  else if (plano.acao !== "nada") drafts.appendText(convId, plano.texto)
+  if (plano.acao === "colagem") {
+    drafts.addColagem(convId, plano.texto)
+    return
+  }
+  if (plano.acao === "anexo" && carga.tipo === "imagem") {
+    // A imagem já está no disco de anexos desta conversa: o rascunho aponta
+    // para o MESMO arquivo, sem cópia. Teto de anexos e repetição decididos
+    // pela regra de sempre.
+    const atuais = drafts.byConv[convId]?.attachments ?? []
+    const { anexos, coube } = anexosComOutro(atuais, carga.anexo as Attachment)
+    if (!coube) {
+      toast.error(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para anexar esta imagem.`)
+      return
+    }
+    drafts.setAttachments(convId, anexos)
+    return
+  }
+  if (plano.acao === "mencao" || plano.acao === "texto") drafts.appendText(convId, plano.texto)
 }
 
 function soltarNaLinha(carga: CargaArrastada, alvoId: string): void {

@@ -31,10 +31,23 @@ export type CargaArrastada =
   | { tipo: "arquivo"; id: string; caminho: string; pasta: boolean }
   /** Texto selecionado em qualquer lugar do app (fio, diff, Bastidores). */
   | { tipo: "texto"; id: string; texto: string }
+  /** Imagem que já está no fio (anexo de uma mensagem): volta ao rascunho como
+   *  anexo, sem passar pelo disco de novo. */
+  | { tipo: "imagem"; id: string; anexo: AnexoArrastado }
 
 /** Onde a pessoa está soltando. Alvo é TIPADO porque os dois consumidores não
  *  podem se atropelar: a barra lateral só conclui o que é dela, e o composer
  *  só o que é dele. */
+/** O anexo, só com o que o rascunho precisa (evita importar o tipo inteiro de
+ *  anexos aqui, que é camada de disco). */
+export interface AnexoArrastado {
+  path: string
+  name: string
+  kind: string
+  mime?: string | null
+  bytes?: number
+}
+
 export type AlvoDoArrasto =
   | { tipo: "reordenar"; id: string }
   | { tipo: "composer" }

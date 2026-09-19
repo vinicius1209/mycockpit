@@ -90,7 +90,20 @@ export function rotuloDaSoltura(quantos: number): string {
   return quantos === 1 ? "Solte para anexar · 1 item" : `Solte para anexar · ${quantos} itens`
 }
 
+/** Um anexo a mais no rascunho: o mesmo arquivo não entra duas vezes e o teto
+ *  recusa em vez de empurrar outro para fora. A mesma regra da captura de
+ *  página (`anexosComCaptura`), aqui para qualquer anexo. */
+export function anexosComOutro<T extends { path: string }>(
+  atuais: readonly T[],
+  novo: T,
+): { anexos: T[]; coube: boolean } {
+  if (atuais.some((a) => a.path === novo.path)) return { anexos: [...atuais], coube: true }
+  if (atuais.length >= MAX_ATTACH_COUNT) return { anexos: [...atuais], coube: false }
+  return { anexos: [...atuais, novo], coube: true }
+}
+
 export type PlanoDoArrasto =
+  | { acao: "anexo"; anexo: { path: string; name: string } }
   | { acao: "mencao"; texto: string }
   | { acao: "colagem"; texto: string }
   | { acao: "texto"; texto: string }
@@ -104,6 +117,9 @@ export function planoDoArrasto(carga: CargaArrastada): PlanoDoArrasto {
   if (carga.tipo === "arquivo") {
     return { acao: "mencao", texto: mencaoDoCaminho(carga.caminho, null) }
   }
+  if (carga.tipo === "imagem") {
+    return { acao: "anexo", anexo: { path: carga.anexo.path, name: carga.anexo.name } }
+  }
   if (carga.tipo === "texto") {
     const texto = carga.texto.trim()
     if (!texto) return { acao: "nada" }
@@ -116,6 +132,7 @@ export function planoDoArrasto(carga: CargaArrastada): PlanoDoArrasto {
 export function rotuloDoArrasto(carga: CargaArrastada): string | null {
   const plano = planoDoArrasto(carga)
   if (plano.acao === "nada") return null
+  if (plano.acao === "anexo") return `Solte para anexar ${plano.anexo.name}`
   if (plano.acao === "mencao") return `Solte para mencionar ${plano.texto.replace(/^@"?|"$/g, "")}`
   return plano.acao === "colagem"
     ? "Solte para anexar o trecho como bloco"

@@ -222,8 +222,13 @@ poder arrastar coisas aqui no composer de forma elegante, bonita, funcional".
   antes de soltar.
 - Equivalentes sem arrastar, que já existiam: `@` no composer para o arquivo,
   "Citar trecho" para a seleção, "Anexar" e colar para imagem.
-- **Falta a imagem do fio**, que exige uma alça no `MessageList.tsx` e ele está
-  no teto da catraca (1.630): entra quando o arquivo for dividido, não antes.
+- **Imagem do fio entregue em 19/09**, junto com a divisão que ela exigia: as
+  miniaturas (evidência de tool, anexo do histórico e o selo de leitura) saíram
+  do `MessageList.tsx` para `MiniaturasDoFio.tsx`, e a baseline do arquivo desceu
+  de 1.630 para 1.487. Arrastar a miniatura leva o anexo ao rascunho apontando
+  para o MESMO arquivo em disco, sem cópia; o teto de anexos e a repetição
+  seguem a regra de sempre (`anexosComOutro`). PDF e arquivo sumido não oferecem
+  o gesto. Com isso o R8 está completo nas quatro fontes.
 
 ## Não-objetivos
 
