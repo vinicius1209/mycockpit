@@ -684,6 +684,52 @@ pub fn run() {
             sql: "ALTER TABLE conversations ADD COLUMN sessoes_anteriores TEXT;",
             kind: MigrationKind::Up,
         },
+        // BUSCA NO FIO (PRD docs/busca-no-fio-prd.md, ADR-213). Índice léxico sobre
+        // conversation_items: o `context_search` para de abrir o blob de 5MB a cada
+        // query. O texto indexado é a GÊMEA EM SQL do `searchable_text` de
+        // context_gateway.rs:484 — verificada byte a byte em 7.721 itens reais e em
+        // 20 casos de borda. Mudou um lado, muda o outro, e o teste de contrato cobra.
+        Migration {
+            version: 52,
+            description: "create_conversation_item_fts",
+            sql: crate::conversation_items::FTS_CRIAR_TABELA,
+            kind: MigrationKind::Up,
+        },
+        // O rowid do índice é O MESMO da linha em conversation_items. Sem isso o
+        // DELETE do trigger varre o índice inteiro (colunas UNINDEXED não se
+        // buscam): medido 4,06ms por item alterado contra 0,10ms por rowid, e a
+        // diferença CRESCE com o corpus. O app não usa VACUUM em lugar nenhum, que é
+        // o que tornaria o rowid instável.
+        Migration {
+            version: 53,
+            description: "conversation_item_fts_ai",
+            sql: crate::conversation_items::FTS_TRIGGER_INSERT,
+            kind: MigrationKind::Up,
+        },
+        // A guarda `WHEN old.item_json IS NOT new.item_json` não é otimização, é o
+        // que impede o `persist` de reindexar a conversa inteira: sem ela, 3.310ms
+        // por persist contra 8ms.
+        Migration {
+            version: 54,
+            description: "conversation_item_fts_au",
+            sql: crate::conversation_items::FTS_TRIGGER_UPDATE,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 55,
+            description: "conversation_item_fts_ad",
+            sql: crate::conversation_items::FTS_TRIGGER_DELETE,
+            kind: MigrationKind::Up,
+        },
+        // Retrofit: o que já está em conversation_items entra no índice agora. As
+        // conversas que só existem no blob legado entram quando forem itemizadas, e
+        // até lá a busca delas cai na varredura (fail-open do R6).
+        Migration {
+            version: 56,
+            description: "backfill_conversation_item_fts",
+            sql: crate::conversation_items::FTS_BACKFILL,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

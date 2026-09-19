@@ -6,7 +6,7 @@
 //! atravessa a raiz e aplica caps de resultado — memória durável sem despejar
 //! tudo na janela de contexto.
 
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde_json::{json, Value};
 use std::cmp::Ordering;
 use std::path::{Path, PathBuf};
@@ -314,6 +314,199 @@ fn search_from_env(query: &str, limit: usize) -> Result<String, String> {
     .map_err(|e| e.to_string())
 }
 
+/// Quantos candidatos o índice entrega ao ranqueador. 800 é o joelho medido
+/// (docs/evidence/busca-no-fio): 200 dá 89% de fidelidade contra a varredura,
+/// 400 dá 93,3%, 800 dá 95,7%, e acima disso não sobe mais — o resto é o teto
+/// estrutural do índice de tokens, que não alcança match no MEIO da palavra.
+const CANDIDATOS_DO_INDICE: usize = 800;
+
+/// Stopwords pt-BR/en. GÊMEA de `src/lib/recall.ts` (`STOPWORDS`): mudou lá,
+/// muda aqui. Não é preciosismo de qualidade — é desempenho. Sem cortá-las, o
+/// prefixo de um termo curto explode: `de*` casa 7.976 documentos e fazia
+/// "erro de build" custar 16ms FIXOS, independentes do tamanho da conversa.
+const STOPWORDS: &[&str] = &[
+    "a", "o", "os", "as", "um", "uma", "uns", "umas", "de", "do", "da", "dos", "das", "e", "ou",
+    "que", "com", "sem", "por", "para", "pra", "pro", "no", "na", "nos", "nas", "em", "ao", "aos",
+    "se", "ser", "foi", "the", "of", "to", "in", "on", "for", "and", "or", "with", "isso", "este",
+    "esta", "esse", "essa", "mais", "menos",
+];
+
+/// A fórmula de relevância, em UM lugar só. Os dois caminhos de busca (índice e
+/// varredura) chamam esta função: é o que garante que ligar o índice muda a
+/// VELOCIDADE e não o que a pessoa vê. Trocar por BM25 foi medido e recusado —
+/// 30x mais rápido e só 32% de sobreposição no top-10 (ADR-213).
+fn pontuar(text: &str, index: usize, total: f64, query_lower: &str, terms: &[String]) -> Option<f64> {
+    if text.is_empty() {
+        return None;
+    }
+    let lower = text.to_lowercase();
+    let matched = terms.iter().filter(|t| lower.contains(t.as_str())).count();
+    if matched == 0 && !lower.contains(query_lower) {
+        return None;
+    }
+    let exact = if lower.contains(query_lower) { 8.0 } else { 0.0 };
+    let coverage = matched as f64 / terms.len().max(1) as f64;
+    let recency = index as f64 / total;
+    Some(exact + coverage * 6.0 + recency)
+}
+
+fn resultado(text: &str, kind: &str, index: usize, score: f64) -> Value {
+    json!({
+        "ref": format!("conversation:item:{index}"),
+        "kind": kind,
+        "summary": truncate_chars(text, 500),
+        "score": (score * 100.0).round() / 100.0
+    })
+}
+
+fn ordenar_e_cortar(mut hits: Vec<(f64, Value)>, limit: usize) -> Vec<Value> {
+    hits.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+    hits.into_iter()
+        .take(limit.clamp(1, MAX_SEARCH_RESULTS))
+        .map(|(_, item)| item)
+        .collect()
+}
+
+/// Monta a expressão do FTS5. Prefixo só em token de 4+ caracteres: em token
+/// curto o prefixo casa meio corpus e a busca fica mais lenta que a varredura
+/// que ela veio substituir. `None` = não sobrou termo utilizável.
+fn expressao_fts(query_lower: &str) -> Option<String> {
+    let brutos = tokens(query_lower);
+    let uteis: Vec<&String> = brutos
+        .iter()
+        .filter(|t| t.chars().count() >= 3 && !STOPWORDS.contains(&t.as_str()))
+        .collect();
+    // Query feita só de stopwords ainda merece resposta: cai nos termos crus.
+    let escolhidos: Vec<&String> = if uteis.is_empty() {
+        brutos.iter().collect()
+    } else {
+        uteis
+    };
+    let partes: Vec<String> = escolhidos
+        .iter()
+        // O tokenizador já só devolve alfanumérico, `_` e `-`, então não há aspas
+        // para escapar aqui; o filtro abaixo é cinto de segurança, não etiqueta.
+        .filter(|t| !t.contains('"'))
+        .map(|t| {
+            if t.chars().count() >= 4 {
+                format!("\"{t}\"*")
+            } else {
+                format!("\"{t}\"")
+            }
+        })
+        .collect();
+    if partes.is_empty() {
+        None
+    } else {
+        Some(partes.join(" OR "))
+    }
+}
+
+/// Busca pelo índice léxico. `Ok(None)` = esta conversa não está na fonte
+/// itemizada (ou o índice não existe ainda), e quem chama deve varrer — é o
+/// fail-open do PRD: índice ausente nunca vira erro na tela.
+fn search_pelo_indice(
+    conn: &Connection,
+    conv: &str,
+    query_lower: &str,
+    terms: &[String],
+    limit: usize,
+) -> Result<Option<Vec<Value>>, String> {
+    // A fonte itemizada se anuncia aqui. Busca por PK, não varre.
+    //
+    // Erro aqui NÃO é erro da busca: banco anterior à migração 48 nem tem a
+    // tabela, e conversa nunca itemizada não tem linha. Os dois casos significam
+    // "não há índice para esta conversa", e a resposta certa é varrer. Não é
+    // catch silencioso — quem chama devolve resultado correto pelo outro caminho,
+    // e o único efeito visível é a busca ser mais lenta.
+    let total: Option<i64> = conn
+        .query_row(
+            "SELECT item_count FROM conversation_item_state WHERE conversation_id = ?1",
+            [conv],
+            |row| row.get(0),
+        )
+        .optional()
+        .unwrap_or(None);
+    let Some(total) = total.filter(|n| *n > 0) else {
+        return Ok(None);
+    };
+    let Some(expressao) = expressao_fts(query_lower) else {
+        return Ok(None);
+    };
+    let mut consulta = match conn.prepare(
+        "SELECT position, text FROM conversation_item_fts \
+         WHERE conversation_item_fts MATCH ?1 AND conversation_id = ?2 \
+         ORDER BY rank LIMIT ?3",
+    ) {
+        Ok(consulta) => consulta,
+        // Banco anterior à migração 52: sem índice, varre.
+        Err(_) => return Ok(None),
+    };
+    // Expressão recusada pelo FTS5 (sintaxe) ou índice ilegível também caem na
+    // varredura, pelo mesmo motivo acima.
+    let Ok(linhas) = consulta.query_map(
+        rusqlite::params![expressao, conv, CANDIDATOS_DO_INDICE as i64],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)),
+    ) else {
+        return Ok(None);
+    };
+    let total_f = (total as f64).max(1.0);
+    let mut hits: Vec<(f64, Value)> = Vec::new();
+    for linha in linhas {
+        let Ok((position, text)) = linha else {
+            return Ok(None);
+        };
+        let index = position.max(0) as usize;
+        if let Some(score) = pontuar(&text, index, total_f, query_lower, terms) {
+            // O `kind` sai do próprio texto indexado? Não: o índice guarda o texto
+            // já extraído, então o kind vem de uma leitura barata por posição.
+            let kind: String = conn
+                .query_row(
+                    "SELECT coalesce(json_extract(item_json,'$.kind'),'item') \
+                     FROM conversation_items WHERE conversation_id = ?1 AND position = ?2",
+                    rusqlite::params![conv, position],
+                    |row| row.get(0),
+                )
+                .unwrap_or_else(|_| "item".to_string());
+            hits.push((score, resultado(&text, &kind, index, score)));
+        }
+    }
+    Ok(Some(ordenar_e_cortar(hits, limit)))
+}
+
+/// Varredura do blob legado. Continua sendo a verdade de referência: é contra
+/// ela que a fidelidade do índice é medida, e é para cá que a busca cai quando
+/// a conversa ainda não foi itemizada (10 das 22 no banco de referência).
+fn search_varrendo(
+    conn: &Connection,
+    conv: &str,
+    query_lower: &str,
+    terms: &[String],
+    limit: usize,
+) -> Result<Vec<Value>, String> {
+    let items: String = conn
+        .query_row(
+            "SELECT items FROM conversations WHERE id = ?1",
+            [conv],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("conversa não encontrada no SQLite: {e}"))?;
+    let items: Vec<Value> =
+        serde_json::from_str(&items).map_err(|e| format!("histórico corrompido: {e}"))?;
+    let total = items.len().max(1) as f64;
+    let hits: Vec<(f64, Value)> = items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| {
+            let text = searchable_text(item);
+            let score = pontuar(&text, index, total, query_lower, terms)?;
+            let kind = item.get("kind").and_then(Value::as_str).unwrap_or("item");
+            Some((score, resultado(&text, kind, index, score)))
+        })
+        .collect();
+    Ok(ordenar_e_cortar(hits, limit))
+}
+
 fn search_conversation(
     db: &Path,
     conv: &str,
@@ -330,57 +523,14 @@ fn search_conversation(
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("SQLite indisponível: {e}"))?;
-    let items: String = conn
-        .query_row(
-            "SELECT items FROM conversations WHERE id = ?1",
-            [conv],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("conversa não encontrada no SQLite: {e}"))?;
-    let items: Vec<Value> =
-        serde_json::from_str(&items).map_err(|e| format!("histórico corrompido: {e}"))?;
     let query_lower = query.to_lowercase();
     let terms = tokens(&query_lower);
-    let total = items.len().max(1) as f64;
-    let mut hits: Vec<(f64, Value)> = items
-        .iter()
-        .enumerate()
-        .filter_map(|(index, item)| {
-            let text = searchable_text(item);
-            if text.is_empty() {
-                return None;
-            }
-            let lower = text.to_lowercase();
-            let matched = terms.iter().filter(|t| lower.contains(t.as_str())).count();
-            if matched == 0 && !lower.contains(&query_lower) {
-                return None;
-            }
-            let exact = if lower.contains(&query_lower) {
-                8.0
-            } else {
-                0.0
-            };
-            let coverage = matched as f64 / terms.len().max(1) as f64;
-            let recency = index as f64 / total;
-            let score = exact + coverage * 6.0 + recency;
-            let kind = item.get("kind").and_then(Value::as_str).unwrap_or("item");
-            Some((
-                score,
-                json!({
-                    "ref": format!("conversation:item:{index}"),
-                    "kind": kind,
-                    "summary": truncate_chars(&text, 500),
-                    "score": (score * 100.0).round() / 100.0
-                }),
-            ))
-        })
-        .collect();
-    hits.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-    Ok(hits
-        .into_iter()
-        .take(limit.clamp(1, MAX_SEARCH_RESULTS))
-        .map(|(_, item)| item)
-        .collect())
+    // Índice primeiro; varredura quando ele não cobre a conversa. Nunca o
+    // contrário, e nunca os dois: o score é o mesmo, então misturar não somaria.
+    if let Some(hits) = search_pelo_indice(&conn, conv, &query_lower, &terms, limit)? {
+        return Ok(hits);
+    }
+    search_varrendo(&conn, conv, &query_lower, &terms, limit)
 }
 
 fn read_ref_from_env(
@@ -626,6 +776,232 @@ mod tests {
         assert!(dbg.contains("context-server"));
         assert!(dbg.contains(ROOT_ENV));
         assert!(dbg.contains(DB_ENV));
+    }
+
+    /// Monta um banco com as DUAS fontes: o blob legado e a fonte itemizada com
+    /// o índice. A SQL do índice é a MESMA das migrações (consts de
+    /// `conversation_items`), então este teste quebra se a migração mudar.
+    fn banco_com_indice(db: &Path, conv: &str, items: &[Value]) {
+        let conn = Connection::open(db).unwrap();
+        conn.execute(
+            "CREATE TABLE conversations (id TEXT PRIMARY KEY, items TEXT NOT NULL)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE conversation_items (conversation_id TEXT NOT NULL, position INTEGER NOT NULL, \
+             item_id TEXT NOT NULL, item_json TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, \
+             updated_at INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (conversation_id, position))",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "CREATE TABLE conversation_item_state (conversation_id TEXT PRIMARY KEY, \
+             revision INTEGER NOT NULL, item_count INTEGER NOT NULL, updated_at INTEGER NOT NULL)",
+            [],
+        )
+        .unwrap();
+        for sql in [
+            crate::conversation_items::FTS_CRIAR_TABELA,
+            crate::conversation_items::FTS_TRIGGER_INSERT,
+            crate::conversation_items::FTS_TRIGGER_UPDATE,
+            crate::conversation_items::FTS_TRIGGER_DELETE,
+        ] {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO conversations (id, items) VALUES (?1, ?2)",
+            (conv, Value::Array(items.to_vec()).to_string()),
+        )
+        .unwrap();
+        for (position, item) in items.iter().enumerate() {
+            conn.execute(
+                "INSERT INTO conversation_items (conversation_id, position, item_id, item_json) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![
+                    conv,
+                    position as i64,
+                    item.get("id").and_then(Value::as_str).unwrap_or("sem-id"),
+                    item.to_string()
+                ],
+            )
+            .unwrap();
+        }
+        conn.execute(
+            "INSERT INTO conversation_item_state (conversation_id, revision, item_count, updated_at) \
+             VALUES (?1, 1, ?2, 0)",
+            rusqlite::params![conv, items.len() as i64],
+        )
+        .unwrap();
+    }
+
+    /// Itens de FORMATO REAL, com os kinds que o `searchable_text` trata de
+    /// jeitos diferentes — inclusive o `tool`, que é onde a gêmea em SQL tem
+    /// mais chance de divergir (ADR-016: fixture inventada esconde bug).
+    fn itens_de_exemplo() -> Vec<Value> {
+        vec![
+            json!({"kind":"user","id":"i0","text":"o scroll do fio parou de descer"}),
+            json!({"kind":"text","id":"i1","text":"decidimos usar um gateway orientado por capabilities"}),
+            json!({"kind":"tool","id":"i2","name":"run_command",
+                   "input":{"CommandLine":"grep -rn gateway app/src"},
+                   "result":{"text":"app/src/lib/mcp.ts:12"}}),
+            json!({"kind":"error","id":"i3","message":"a migração falhou no gateway"}),
+            json!({"kind":"result","id":"i4","text":"o gateway também limita tokens"}),
+            json!({"kind":"notice","id":"i5","message":"rolagem automática restabelecida"}),
+        ]
+    }
+
+    #[test]
+    fn indice_e_varredura_devolvem_exatamente_o_mesmo_ranking() {
+        let root = temp_root("fidelidade");
+        let db = root.join("db.sqlite");
+        let items = itens_de_exemplo();
+        banco_com_indice(&db, "conv-1", &items);
+        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+
+        // Mesma entrada nos dois caminhos: o que muda é só COMO se chega neles.
+        for query in [
+            "gateway",
+            "gateway capabilities",
+            "scroll",
+            "rolagem automatica",
+            "migração",
+            "run_command",
+        ] {
+            let ql = query.to_lowercase();
+            let terms = tokens(&ql);
+            let pelo_indice = search_pelo_indice(&conn, "conv-1", &ql, &terms, 10)
+                .unwrap()
+                .unwrap_or_else(|| panic!("o índice devia cobrir esta conversa ({query})"));
+            let varrendo = search_varrendo(&conn, "conv-1", &ql, &terms, 10).unwrap();
+            assert_eq!(
+                pelo_indice, varrendo,
+                "índice e varredura divergiram em {query:?}"
+            );
+        }
+        drop(conn);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn conversa_fora_da_fonte_itemizada_cai_na_varredura_sem_erro() {
+        let root = temp_root("fallback");
+        let db = root.join("db.sqlite");
+        banco_com_indice(&db, "conv-1", &itens_de_exemplo());
+        let conn = Connection::open(&db).unwrap();
+        // Conversa que existe só no blob legado, como as que nunca foram tocadas
+        // desde a migração 48.
+        conn.execute(
+            "INSERT INTO conversations (id, items) VALUES ('conv-velha', ?1)",
+            [json!([{"kind":"user","text":"gateway antigo"}]).to_string()],
+        )
+        .unwrap();
+        drop(conn);
+
+        let hits = search_conversation(&db, "conv-velha", "gateway", 5).unwrap();
+        assert_eq!(hits.len(), 1, "a varredura devia responder mesmo sem índice");
+        assert_eq!(hits[0]["ref"], "conversation:item:0");
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn o_trigger_acompanha_mudanca_e_remocao_do_item() {
+        let root = temp_root("trigger");
+        let db = root.join("db.sqlite");
+        banco_com_indice(&db, "conv-1", &itens_de_exemplo());
+        let conn = Connection::open(&db).unwrap();
+
+        let indexados = |c: &Connection| -> i64 {
+            c.query_row("SELECT count(*) FROM conversation_item_fts", [], |r| r.get(0))
+                .unwrap()
+        };
+        let orfas = |c: &Connection| -> i64 {
+            c.query_row(
+                "SELECT count(*) FROM conversation_item_fts f WHERE NOT EXISTS \
+                 (SELECT 1 FROM conversation_items i WHERE i.rowid = f.rowid)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(indexados(&conn), 6);
+
+        // Item muda: o índice acompanha, sem duplicar a linha.
+        conn.execute(
+            "UPDATE conversation_items SET item_json = ?1 WHERE conversation_id='conv-1' AND position=0",
+            [json!({"kind":"user","id":"i0","text":"palavraunicaparateste"}).to_string()],
+        )
+        .unwrap();
+        assert_eq!(indexados(&conn), 6, "update não pode duplicar a linha");
+        let achou: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM conversation_item_fts \
+                 WHERE conversation_item_fts MATCH 'palavraunicaparateste'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(achou, 1, "o texto novo tinha que estar buscável");
+
+        // Item some: o índice some junto, senão a busca vira teatro.
+        conn.execute(
+            "DELETE FROM conversation_items WHERE conversation_id='conv-1' AND position >= 4",
+            [],
+        )
+        .unwrap();
+        assert_eq!(indexados(&conn), 4);
+        assert_eq!(orfas(&conn), 0, "índice não pode apontar para item que não existe");
+        drop(conn);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn a_expressao_do_fts_corta_stopword_e_so_prefixa_token_longo() {
+        // Prefixo em token curto é o que fazia "erro de build" custar 16ms fixos.
+        assert_eq!(
+            expressao_fts("erro de build"),
+            Some("\"erro\"* OR \"build\"*".into())
+        );
+        // Token de 3 chars entra, mas sem prefixo.
+        assert_eq!(expressao_fts("api do fio"), Some("\"api\" OR \"fio\"".into()));
+        // Query só de stopwords ainda merece resposta: cai nos termos crus.
+        assert_eq!(expressao_fts("de do da"), Some("\"de\" OR \"do\" OR \"da\"".into()));
+        // Sem termo utilizável não há o que perguntar ao índice.
+        assert_eq!(expressao_fts("!!!"), None);
+    }
+
+    #[test]
+    fn a_extracao_em_sql_e_gemea_do_searchable_text() {
+        // O índice se mantém por trigger, então o texto indexado é produzido em
+        // SQL. Se ele divergir do `searchable_text`, o ranking passa a pontuar um
+        // texto e a mostrar outro. Este teste é a corda que prende as duas pontas.
+        let root = temp_root("gemea");
+        let db = root.join("db.sqlite");
+        let items = itens_de_exemplo();
+        banco_com_indice(&db, "conv-1", &items);
+        let conn = Connection::open(&db).unwrap();
+        let mut consulta = conn
+            .prepare(
+                "SELECT f.position, f.text FROM conversation_item_fts f \
+                 WHERE f.conversation_id = 'conv-1' ORDER BY f.position",
+            )
+            .unwrap();
+        let linhas: Vec<(i64, String)> = consulta
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert_eq!(linhas.len(), items.len());
+        for (position, do_sql) in linhas {
+            let do_rust = searchable_text(&items[position as usize]);
+            assert_eq!(
+                do_sql, do_rust,
+                "a gêmea em SQL divergiu do searchable_text na posição {position}"
+            );
+        }
+        drop(consulta);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

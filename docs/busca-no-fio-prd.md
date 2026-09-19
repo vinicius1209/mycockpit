@@ -6,6 +6,34 @@
 > Decisão estrutural: ADR-213 em `docs/decisions.md`.
 > Evidência bruta: `docs/evidence/busca-no-fio/`.
 
+## 0. Correção de 18/09/2026, depois do double check
+
+Este PRD foi revisado contra a árvore após outra frente ter avançado nela. Cinco
+coisas mudaram, e as três primeiras são estruturais:
+
+1. **A fonte não é o blob.** Existe `conversation_items` (migração **48**,
+   `lib.rs:652`), tabela itemizada e escrita a cada cauda. O `context_search`
+   lê o blob legado; o índice nasce da tabela.
+2. **O gancho não é TypeScript.** A extração de texto é expressável em SQL puro
+   e foi verificada **byte a byte** contra o `searchable_text` do Rust em 7.721
+   itens. Logo o índice se mantém por **trigger**, e `store/chat.ts` não é
+   tocado. O problema da catraca sem folga desaparece.
+3. **Trigger ingênuo custa 3,3 segundos.** O `persist` chama `replaceAll`, que
+   hoje faz `DELETE` da conversa inteira antes de reinserir. Com trigger isso
+   reindexa 3.286 itens a cada persist. A correção está no R3.
+4. **O ganho real é 3,5x, não 13x.** Medido com o código Rust em release
+   contra o banco real: a varredura custa 24-30ms, não os 60ms que o
+   protótipo em Python indicava. O Python parseava JSON muito mais devagar
+   que o `serde_json`, então o teto pessimista era pessimista **demais** do
+   lado errado. A fidelidade, em compensação, é **12 de 12 queries idênticas**.
+5. Trocar a leitura do blob pela tabela, sem índice, **não ganha nada**
+   (61,0ms contra 60,5ms). Alternativa medida e descartada.
+
+O texto abaixo já incorpora tudo isso. O que a versão anterior dizia sobre
+`flushItems` como gancho está **revogado**.
+
+---
+
 Este documento substitui o rascunho "PRD, busca vetorial com LanceDB". O
 rascunho propunha LanceDB + embeddings ONNX como resposta única. A medição
 sobre o corpus real derrubou o diagnóstico dele e a maior parte da solução. O
@@ -32,9 +60,14 @@ Tudo abaixo foi **medido** em 18/09/2026 sobre uma cópia do banco real
 | | valor |
 |---|---|
 | conversas | 22 |
-| itens de transcript, total | 11.421 (11.353 com texto indexável) |
-| maior conversa | 3.199 itens, blob de 5,0MB |
+| itens no blob legado | 11.421 |
+| itens em `conversation_items` | 7.721, em 12 das 22 conversas |
+| itens com texto indexável | 7.640 |
+| maior conversa | 3.286 itens, blob de 5,0MB |
 | média por conversa | 696KB |
+
+`conversation_items` cobre só as conversas tocadas desde a migração 48; as
+outras 10 ainda vivem só no blob. O retrofit disso é o R7.
 
 O rascunho estimava "500-2000 itens" e um índice de "~5 MB". Errou por 6x no
 primeiro número, com um único usuário e 22 conversas.
@@ -55,8 +88,17 @@ construía um banco vetorial para resolver isso. O gargalo é abrir e parsear um
 blob de 5MB a cada query. Qualquer índice que evite tocar no blob resolve, e
 vetor não é requisito para isso.
 
+**Trocar só a fonte não resolve.** Ler `conversation_items` linha a linha em vez
+do blob custa 61,0ms contra 60,5ms: idêntico. O preço não é o formato do
+armazenamento, é parsear 3.286 JSONs. Alternativa medida e descartada.
+
 > Medições em Python, ou seja, teto pessimista dos dois lados da comparação. Em
 > Rust ambos caem. O que carrega a decisão é a **razão**, não o absoluto.
+>
+> Correção de método: o porte inicial serializava o `input` das ferramentas com
+> `json.dumps` padrão (`{"a": "b"}`), enquanto o `Display` do `serde_json` é
+> compacto (`{"a":"b"}`). Os tokens eram os mesmos, então os números não se
+> moveram, mas o porte foi corrigido e tudo foi remedido com ele.
 
 ### 2.3 FTS5 está disponível, sem dependência nova
 
@@ -81,43 +123,85 @@ que o BM25 seja pior; é outro ranking. O score atual
 que o BM25 não replica. Ninguém decidiu trocar o ranking, então trocar junto
 seria teatro: a busca pareceria a mesma e responderia outra coisa.
 
-### 2.5 O desenho medido: FTS5 como filtro, score atual preservado
+### 2.5 O ganho real, medido em release
+
+Os números desta seção e da seguinte vieram de um protótipo em Python. O que
+vale é a medição do código que ficou, em perfil release, contra o banco real
+(conversa de 3.286 itens, 12 queries):
+
+| | varredura | índice | |
+|---|---|---|---|
+| total das 12 queries | 316ms | **91ms** | **3,5x** |
+| melhor caso (`styleguide elevacao`) | 24,8ms | **1,9ms** | 13x |
+| pior caso (`tauri command async`) | 28,5ms | **17,4ms** | 1,6x |
+| queries com top-10 idêntico | (referência) | **12 de 12** | |
+
+Corte de candidatos, também em release. É um trade direto entre velocidade e
+fidelidade, e só um valor entrega ranking idêntico:
+
+| candidatos | ganho | queries com top-10 idêntico |
+|---|---|---|
+| 100 | 8x | 6 de 12 |
+| 200 | 6x | 8 de 12 |
+| 400 | 4x | 9 de 12 |
+| **800** | **3,5x** | **12 de 12** |
+
+Escolhemos 800. A decisão inteira é "a busca fica mais rápida sem mudar o que
+devolve"; trocar fidelidade por velocidade seria desfazer a premissa.
+
+**Por que 3,5x ainda vale:** a varredura é O(n) no tamanho da conversa e o
+índice não é. Em 3.286 itens a diferença é 316ms contra 91ms; ela abre conforme
+a conversa cresce, e a maior conversa deste banco cresceu 87 itens durante a
+própria frente.
+
+### 2.6 O desenho medido: FTS5 como filtro, score atual preservado
 
 `MATCH` estreita de 3.199 itens para N candidatos; **a função de score que já
 existe** rankeia os candidatos. O blob nunca é aberto.
 
-Varredura do limite de candidatos (3 maiores conversas, 12 queries):
+Varredura do limite de candidatos (3 maiores conversas, 12 queries, índice
+construído a partir de `conversation_items`):
 
-| candidatos | fidelidade do top-10 | latência p95 |
-|---|---|---|
-| 50 | 71% | 5,5ms |
-| 100 | 80% | 5,7ms |
-| 200 | 86% | 7,3ms |
-| 400 | 91% | 11,2ms |
-| **800** | **97%** | 15,3ms |
-| 2000 | 97% | 15,9ms |
-| ilimitado | 97% | 17,1ms |
+| candidatos | fidelidade do top-10 | mediana | p95 |
+|---|---|---|---|
+| 25 | 50,0% | 1,17ms | 4,3ms |
+| 50 | 68,1% | 1,25ms | 4,2ms |
+| 100 | 77,3% | 1,57ms | 4,6ms |
+| 200 | 89,0% | 1,80ms | 5,9ms |
+| 400 | 93,3% | 1,91ms | 8,4ms |
+| **800** | **95,7%** | 1,84ms | 14,4ms |
+| 2000 | 95,7% | 1,88ms | 14,2ms |
 
-800 é o joelho: acima disso a fidelidade não sobe mais. Na maior conversa, com
-esse corte:
+800 é o joelho: acima disso a fidelidade não sobe mais, o que confirma que o
+resto é o teto estrutural da §2.6, não o corte. Na maior conversa (3.286 itens):
 
 | | hoje | híbrido | |
 |---|---|---|---|
-| mediana | 61,5ms | **4,3ms** | 14x |
-| pior caso | 66,4ms | **15,9ms** | 4x |
-| melhor caso | 59,4ms | **0,67ms** | 89x |
-| fidelidade do top-10 | (referência) | **97%** | |
+| mediana | 60,5ms | **4,58ms** | 13x |
+| pior caso | 63,9ms | **13,6ms** | 5x |
+| melhor caso | 59,0ms | **0,76ms** | 78x |
+| fidelidade do top-10 | (referência) | **100%** nessa conversa, **95,7%** no corpus de 3 |
 
 ### 2.6 Os 3% que o FTS5 não alcança, e por quê
 
 O score atual casa por **substring** (`lower.contains(t)`), então acha o termo no
 meio da palavra. Um índice de tokens não faz isso nem com prefixo, que é sempre
-ancorado no início. Com candidatos ilimitados a perda estabiliza em 3%, ou seja,
-é o piso estrutural da técnica, não um parâmetro mal escolhido.
+ancorado no início. A perda estabiliza em 4,3% e não melhora com mais candidatos, ou
+seja, é o piso estrutural da técnica, não um parâmetro mal escolhido.
 
 Parte dessa perda é ruído (é o mesmo mecanismo que casa "de" dentro de "desde").
 Não chamamos isso de regressão sem olhar caso a caso, e o aceite da §5 cobra
 exatamente esse olhar.
+
+### 2.8 A extração de texto em SQL é gêmea exata da do Rust
+
+Para o índice se manter por trigger, o `searchable_text`
+(`context_gateway.rs:484`) precisa existir em SQL. A versão em `CASE` +
+`json_extract` foi comparada com o porte fiel do Rust nos **7.721 itens** da
+tabela: **7.721 idênticos, 0 divergentes**. Não é semelhança aceitável, é
+igualdade byte a byte, e é o que autoriza o desenho por trigger.
+
+Essa igualdade é uma gêmea e gêmea diverge com o tempo. O R6 a prende com teste.
 
 ### 2.7 Armadilha: prefixo em token curto explode
 
@@ -177,79 +261,107 @@ Herdados do rascunho, os que sobrevivem à decisão:
 
 ## 5. Requisitos, com aceite
 
-### R1 · O índice existe e é canônico quanto à sua própria cobertura
+### R1 · O índice nasce da fonte itemizada
 
-- **Aceite:** tabela virtual FTS5 criada por `Migration` em
-  `app/src-tauri/src/lib.rs`. A versão máxima real hoje é **51**
-  (`lib.rs:682`), logo a nova é a **52**, conferida no arquivo no momento de
-  escrever, não presumida deste texto.
-- **Double check:** subir o app com banco pré-existente e confirmar que a
-  migração roda uma vez e é idempotente numa segunda abertura.
+- **Aceite:** tabela virtual FTS5 sobre o texto extraído de
+  `conversation_items`, criada por `Migration` em `app/src-tauri/src/lib.rs`. A
+  versão máxima real é **51** (`lib.rs:682`), conferida na árvore depois dos
+  commits de outra frente, logo a nova é a **52**. Conferir de novo no momento
+  de escrever: este número envelhece.
+- **Aceite:** a extração de texto em SQL é a gêmea do `searchable_text`
+  (`context_gateway.rs:484`), incluindo a serialização **compacta** do `input`
+  das ferramentas.
+- **Double check:** subir com banco pré-existente, confirmar que a migração roda
+  uma vez e que uma segunda abertura é no-op.
 
-### R2 · A escrita acontece onde a cauda já é confirmada
+### R2 · O índice se mantém por trigger, não por lembrança
 
-- **Aceite:** a indexação pendura em `flushItems` (`app/src/store/chat.ts:1345`),
-  que já confirma "a cauda incremental pendente antes de um novo envio". **Não**
-  se usa trigger em `conversations`: o trigger reextrairia todos os itens a cada
-  persist, que é exatamente o custo que a frente existe para matar.
-- **Aceite:** item que ainda está mudando não é indexado. Itens de streaming
-  mutam no lugar e a cauda é reescrita (`chat.ts:838` descarta o último
-  `result`), então o gatilho é a finalização, nunca o append.
-- **Double check:** rodar um turno com streaming e confirmar que o item entra no
-  índice uma vez, com o texto final.
+- **Aceite:** três triggers em `conversation_items` (`AFTER INSERT`,
+  `AFTER UPDATE`, `AFTER DELETE`). Nenhuma linha de `store/chat.ts` muda, e não
+  há gancho novo em TypeScript. Consistência vira propriedade estrutural: quem
+  escrever o item, de onde for, indexa.
+- **Aceite:** o trigger de `UPDATE` tem guarda `WHEN old.item_json IS NOT
+  new.item_json`. Sem ela, todo persist reindexa a conversa inteira.
+- **Double check medido:** após `DELETE ... position >= 50`, `DELETE` da conversa
+  inteira e 200 re-upserts do mesmo item, o índice fica com **0 órfãs, 0
+  faltando, 0 duplicadas**. Esse é o teste, não a inspeção visual.
 
-### R3 · O ref devolvido resolve no item certo
+### R3 · O `replaceAll` não pode reindexar tudo
 
-- **Aceite:** o índice guarda o `id` estável do item (os itens já têm uuid
-  próprio, verificado no blob real), e a posição é resolvida na leitura. Guardar
-  só `item_index` é proibido: `/compactar` reescreve o transcript e as posições
-  andam, e um ref velho passaria a apontar para outro conteúdo.
-- **Double check:** indexar, rodar `/compactar`, buscar, e confirmar que o
-  `context_read` do ref devolvido traz o item que o `summary` prometeu.
+- **Contexto:** `persist` (`chat.ts:1292`) chama `itemPersistence.replaceAll`,
+  que hoje passa `replace_all=true` e o Rust faz `DELETE` da conversa inteira
+  antes de reinserir (`conversation_items.rs:56-62`). Sem trigger isso custa
+  24ms e ninguém notou. **Com trigger custa 3.310ms, em todo persist.**
+- **Aceite:** o `DELETE` inicial sai. Ele é **redundante**: com
+  `replace_all=true` o change-set cobre todas as posições `0..n-1`
+  (`conversationItems.ts`, `itemChanges` não filtra nada além da faixa), o
+  upsert `ON CONFLICT DO UPDATE` reescreve todas elas, e o
+  `DELETE ... position >= item_count` no fim já remove a cauda que sobrou.
+- **Aceite medido:** com o `DELETE` fora e a guarda do R2 no lugar, o persist de
+  uma conversa de 3.286 itens custa **8ms** quando nada mudou, e 11ms, 12ms e
+  21ms com 1, 3 e 10 itens alterados.
+- **Double check:** encolher uma conversa (compactar, remover item) e confirmar
+  que nenhuma linha antiga sobrevive na tabela **nem** no índice. É o cenário
+  que o `DELETE` inicial aparentava proteger.
+- **Nota de árvore compartilhada:** isto toca código de outra frente. É
+  remoção de redundância provada, não mudança de comportamento, e está isolada
+  em um requisito próprio justamente para ser revisada como tal.
 
-### R4 · A busca fica mais rápida sem mudar o que devolve
+### R4 · O ref devolvido resolve no item certo
 
-- **Aceite:** fidelidade do top-10 contra a implementação atual **≥ 95%** no
-  corpus de 12 queries da §2.5. Abaixo disso a frente não entrega.
-- **Aceite:** mediana **< 10ms** e p95 **< 20ms** na conversa de 3.199 itens.
-- **Aceite:** os 3% de divergência são inspecionados um a um e classificados
-  como ruído ou como perda real, por escrito.
+- **Aceite:** o índice guarda o `item_id` estável, que a tabela já carrega como
+  coluna própria. A posição também entra, mas como dado de ranking (a recência
+  do score), nunca como identidade.
+- **Aceite:** `/compactar` reescreve o transcript e as posições andam; o ref
+  entregue ao `context_read` precisa continuar resolvendo no item que o
+  `summary` prometeu.
+- **Double check:** indexar, compactar, buscar, e abrir o ref devolvido.
+
+### R5 · A busca fica mais rápida sem mudar o que devolve
+
+- **Aceite:** o top-10 do índice é **igual** ao da varredura nas 12 queries do
+  corpus. Não é "≥95%": com 800 candidatos e o mesmo `pontuar` nos dois
+  caminhos, a igualdade é o comportamento esperado, e qualquer divergência é
+  sinal de regressão, não de piso estrutural.
+- **Aceite medido em release:** 12 de 12 queries com top-10 idêntico à
+  varredura, e nenhuma query mais lenta que ela. Total de 91ms contra 316ms.
+- **Aceite:** a divergência residual é inspecionada item a item e classificada
+  como ruído ou perda real, por escrito.
 - **Double check:** o teste compara os dois caminhos sobre o MESMO corpus, com
   fixture de payload real colhido do banco (ADR-016), nunca inventada.
 
-### R5 · O gateway não escreve
+### R6 · O gateway não escreve, e a gêmea não deriva
 
 - **Aceite:** `context_gateway.rs` continua abrindo `SQLITE_OPEN_READ_ONLY`
-  (`:330`, `:415`). Ele lê o índice; quem escreve é o app.
-- **Aceite:** índice ausente ou vazio para aquela conversa cai na varredura
-  atual, sem erro e sem aviso na tela.
+  (`:330`, `:415`). Ele lê o índice; quem escreve é o trigger.
+- **Aceite:** conversa sem linhas em `conversation_items`, ou sem índice, cai na
+  varredura atual sem erro e sem aviso na tela. São 10 das 22 conversas hoje.
+- **Aceite:** teste de contrato prende a gêmea SQL ao `searchable_text` do Rust
+  sobre um corpus real. Se alguém mudar um lado, o teste quebra. Sem isso a
+  igualdade de 7.721/7.721 da §2.6b apodrece em silêncio.
+- **Aceite:** stopwords em uma lista só, gêmea entre Rust e TS, com
+  `recall.ts:31` como fonte; prefixo só em token de 4+ caracteres.
 - **Double check:** apagar o índice com o app rodando e confirmar que a busca
-  continua respondendo, mais devagar e com os mesmos resultados.
+  responde igual, só mais devagar.
 
-### R6 · A query não tem caso patológico
+### R7 · Ninguém configura nada, e banco velho também ganha
 
-- **Aceite:** nenhuma query do corpus de teste passa de 20ms p95, incluindo as
-  que só têm stopword e termo curto.
-- **Aceite:** stopwords vivem em uma lista só, gêmea entre Rust e TS, com teste
-  de contrato (`recall.ts:31` é a fonte).
-- **Double check:** query de uma letra, query só de stopwords e query vazia
-  respondem sem varrer o corpus inteiro.
-
-### R7 · Ninguém configura nada
-
-- **Aceite:** não há controle novo nas Configurações nesta frente. O índice se
-  constrói sozinho e se mantém sozinho.
-- **Aceite:** primeira execução em banco cheio constrói o índice sem travar a
-  interface (0,58s medidos para 11.353 itens, mas o gesto não bloqueia o fio).
-- **Double check:** abrir o app com banco de 36MB sem índice e confirmar que a
-  primeira busca responde, mesmo que pela varredura, enquanto o índice enche.
+- **Aceite:** nenhum controle novo nas Configurações.
+- **Aceite:** as 10 conversas que só existem no blob entram na tabela e no
+  índice sem gesto do usuário, e a primeira busca responde mesmo antes disso,
+  pela varredura.
+- **Aceite:** a carga inicial de uma conversa grande custa 378ms medidos, e não
+  acontece na thread da interface.
+- **Double check:** abrir com banco de 36MB, buscar imediatamente, e confirmar
+  resposta correta durante o preenchimento.
 
 ## 6. Fases
 
-### F1 · Índice e leitura
+### F1 · Índice, trigger e leitura
 
-Migração 52, escrita em `flushItems`, leitura em `context_gateway.rs` com
-fallback. Testes de R1 a R5.
+Migração 52 (tabela FTS + três triggers + a gêmea SQL), remoção do `DELETE`
+redundante do R3, leitura em `context_gateway.rs` com fallback. Testes de R1 a
+R6.
 
 **Saída:** `context_search` responde em milissegundos, devolvendo o mesmo que
 hoje.
@@ -257,15 +369,15 @@ hoje.
 ### F2 · Qualidade da query
 
 Stopwords gêmeas, prefixo condicional, `remove_diacritics 2`, corpus de teste e
-a inspeção escrita dos 3%. Testes de R6.
+a inspeção escrita dos 4,3%. Teste de contrato da gêmea SQL.
 
 **Saída:** nenhum caso patológico, e a divergência contra o caminho antigo está
 explicada por escrito.
 
 ### F3 · Retrofit e reconstrução
 
-Bancos que já existem ganham o índice sem gesto do usuário; reconstrução por
-gesto explícito quando o índice estiver inconsistente. Testes de R7.
+As 10 conversas que só existem no blob entram na tabela e no índice sem gesto do
+usuário; reconstrução quando o índice estiver inconsistente. Testes de R7.
 
 **Saída:** a frente vale para banco velho, não só para banco novo.
 
@@ -324,8 +436,13 @@ executa, resolve caminho ou mantém estado entre indexações.
 - `app/src-tauri/src/context_gateway.rs:514` · `tokens`, o tokenizer atual
 - `app/src-tauri/src/lib.rs:682` · migração 51, a máxima real hoje
 - `app/src-tauri/Cargo.toml:46-48` · a cicatriz do `links="sqlite3"`
-- `app/src/store/chat.ts:1345` · `flushItems`, o gancho de escrita
-- `app/src/store/chat.ts:838` · a cauda sendo reescrita, motivo do R2
+- `app/src-tauri/src/lib.rs:652` · migração 48, `create_conversation_items`
+- `app/src-tauri/src/conversation_items.rs:56-62` · o `DELETE` redundante do R3
+- `app/src-tauri/src/conversation_items.rs:88` · o `DELETE position >= item_count` que já cobre o encolhimento
+- `app/src/lib/db/conversationItems.ts` · `itemChanges`, prova de que o change-set cobre todas as posições
+- `app/src/store/chat/itemPersistence.ts` · a fila incremental, debounce de 1200ms
+- `app/src/store/chat.ts:1292` · `persist`, que chama `replaceAll` e motiva o R3
+- `app/src/store/chat.ts:838` · a cauda sendo reescrita, motivo do R4
 - `app/src/lib/recall.ts:31` · as stopwords pt-BR/en já calibradas
 - `docs/autonomy.md:177` · arte prévia: o Hermes faz recall episódico com FTS5
 - `docs/decisions.md` · ADR-213, a decisão estrutural desta frente

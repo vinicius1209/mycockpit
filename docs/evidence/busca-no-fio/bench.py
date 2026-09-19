@@ -1,7 +1,7 @@
 # Benchmark: busca atual (blob + scan) vs FTS5, sobre copia do banco real.
 import sqlite3, json, time, statistics, os, sys
 
-SRC = "/tmp/fts-bench/copia.db"  # SEMPRE uma copia; nunca o banco vivo
+SRC = "/tmp/fts-bench/copia.db"
 FTS = "/tmp/fts-bench/fts.db"
 
 # --- porte fiel de searchable_text() de context_gateway.rs:484 ---
@@ -13,7 +13,7 @@ def searchable_text(it):
         return it.get("message") or ""
     if k == "tool":
         name = it.get("name") or "tool"
-        inp = json.dumps(it.get("input"), ensure_ascii=False) if "input" in it else "null"
+        inp = json.dumps(it.get("input"), ensure_ascii=False, separators=(",", ":")) if "input" in it else "null"  # serde_json Display e COMPACTO
         res = ((it.get("result") or {}).get("text")) if isinstance(it.get("result"), dict) else ""
         return f"{name} {inp} {res or ''}"
     if k == "result":

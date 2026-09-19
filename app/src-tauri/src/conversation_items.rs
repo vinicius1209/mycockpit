@@ -25,6 +25,191 @@ pub struct ConversationItemsSnapshot {
     items: Vec<String>,
 }
 
+/// Migração 52 (`create_conversation_item_fts`). Migração é história: NÃO edite esta string.
+/// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
+/// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
+pub const FTS_CRIAR_TABELA: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS conversation_item_fts USING fts5( \
+                    conversation_id UNINDEXED, item_id UNINDEXED, position UNINDEXED, \
+                    text, tokenize='unicode61 remove_diacritics 2' \
+                  );";
+
+/// Migração 53 (`conversation_item_fts_ai`). Migração é história: NÃO edite esta string.
+/// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
+/// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
+pub const FTS_TRIGGER_INSERT: &str = "CREATE TRIGGER IF NOT EXISTS conversation_item_fts_ai \
+                  AFTER INSERT ON conversation_items BEGIN \
+                    INSERT INTO conversation_item_fts(rowid, conversation_id, item_id, position, text) \
+                    SELECT new.rowid, new.conversation_id, new.item_id, new.position, \
+                  CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END \
+                    WHERE CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END IS NOT NULL \
+                      AND CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END <> ''; \
+                  END;";
+
+/// Migração 54 (`conversation_item_fts_au`). Migração é história: NÃO edite esta string.
+/// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
+/// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
+pub const FTS_TRIGGER_UPDATE: &str = "CREATE TRIGGER IF NOT EXISTS conversation_item_fts_au \
+                  AFTER UPDATE ON conversation_items \
+                  WHEN old.item_json IS NOT new.item_json BEGIN \
+                    DELETE FROM conversation_item_fts WHERE rowid = old.rowid; \
+                    INSERT INTO conversation_item_fts(rowid, conversation_id, item_id, position, text) \
+                    SELECT new.rowid, new.conversation_id, new.item_id, new.position, \
+                  CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END \
+                    WHERE CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END IS NOT NULL \
+                      AND CASE json_extract(new.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'advice' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(new.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(new.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(new.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(new.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(new.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'real' THEN \
+                  json_extract(new.item_json,'$.input') WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' \
+                  ELSE coalesce(json_extract(new.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(new.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(new.item_json,'$.result.text') ELSE '' END) ELSE NULL END <> ''; \
+                  END;";
+
+/// Migração 55 (`conversation_item_fts_ad`). Migração é história: NÃO edite esta string.
+/// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
+/// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
+pub const FTS_TRIGGER_DELETE: &str = "CREATE TRIGGER IF NOT EXISTS conversation_item_fts_ad \
+                  AFTER DELETE ON conversation_items BEGIN \
+                    DELETE FROM conversation_item_fts WHERE rowid = old.rowid; \
+                  END;";
+
+/// Migração 56 (`backfill_conversation_item_fts`). Migração é história: NÃO edite esta string.
+/// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
+/// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
+pub const FTS_BACKFILL: &str = "INSERT INTO conversation_item_fts(rowid, conversation_id, item_id, position, text) \
+                  SELECT i.rowid, i.conversation_id, i.item_id, i.position, \
+                  CASE json_extract(i.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'text' THEN json_extract(i.item_json,'$.text') \
+                  WHEN 'advice' THEN json_extract(i.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(i.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(i.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(i.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(i.item_json,'$.input') WHEN 'real' THEN json_extract(i.item_json,'$.input') \
+                  WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE \
+                  coalesce(json_extract(i.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(i.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(i.item_json,'$.result.text') ELSE '' END) ELSE NULL END \
+                  FROM conversation_items i \
+                  WHERE CASE json_extract(i.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'text' THEN json_extract(i.item_json,'$.text') \
+                  WHEN 'advice' THEN json_extract(i.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(i.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(i.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(i.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(i.item_json,'$.input') WHEN 'real' THEN json_extract(i.item_json,'$.input') \
+                  WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE \
+                  coalesce(json_extract(i.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(i.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(i.item_json,'$.result.text') ELSE '' END) ELSE NULL END IS NOT NULL \
+                    AND CASE json_extract(i.item_json,'$.kind') WHEN 'user' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'text' THEN json_extract(i.item_json,'$.text') \
+                  WHEN 'advice' THEN json_extract(i.item_json,'$.text') WHEN 'result' THEN \
+                  json_extract(i.item_json,'$.text') WHEN 'error' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'notice' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'limit' THEN \
+                  json_extract(i.item_json,'$.message') WHEN 'tool' THEN \
+                  coalesce(json_extract(i.item_json,'$.name'),'tool') || ' ' || (CASE \
+                  json_type(i.item_json,'$.input') WHEN 'text' THEN \
+                  json_quote(json_extract(i.item_json,'$.input')) WHEN 'integer' THEN \
+                  json_extract(i.item_json,'$.input') WHEN 'real' THEN json_extract(i.item_json,'$.input') \
+                  WHEN 'true' THEN 'true' WHEN 'false' THEN 'false' ELSE \
+                  coalesce(json_extract(i.item_json,'$.input'),'null') END) || ' ' || (CASE \
+                  json_type(i.item_json,'$.result.text') WHEN 'text' THEN \
+                  json_extract(i.item_json,'$.result.text') ELSE '' END) ELSE NULL END <> '' \
+                    AND NOT EXISTS (SELECT 1 FROM conversation_item_fts f WHERE f.rowid = i.rowid);";
+
 fn database_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
@@ -53,12 +238,31 @@ fn save_changes(
         .unwrap_or(0);
     let revision = previous.saturating_add(1);
 
+    // O `replace_all` NÃO apaga a conversa antes de reinserir, de propósito. O
+    // apagão era redundante: com replace_all o change-set cobre todas as posições
+    // `0..n-1` (lib/db/conversationItems.ts, `itemChanges`), o upsert abaixo
+    // reescreve cada uma, e o `DELETE ... position >= item_count` no fim remove a
+    // cauda que sobrou. Redundante e caro: desde o índice léxico (ADR-213) os
+    // triggers de `conversation_item_fts` acompanham cada linha, então apagar tudo
+    // fazia o persist reindexar a conversa inteira — 3.310ms contra 8ms medidos numa
+    // conversa de 3.286 itens.
+    //
+    // O que era garantido pelo apagão agora é COBRADO: `replace_all` promete um
+    // change-set completo, e a promessa é verificada antes de escrever. Fail-closed
+    // no efeito — snapshot furado aborta em vez de deixar item velho sobrevivendo
+    // numa posição que ninguém reescreveu.
     if replace_all {
-        tx.execute(
-            "DELETE FROM conversation_items WHERE conversation_id = ?1",
-            [conversation_id],
-        )
-        .map_err(|error| error.to_string())?;
+        let mut cobertas = vec![false; item_count as usize];
+        for change in &changes {
+            if let Some(slot) = cobertas.get_mut(change.position as usize) {
+                *slot = true;
+            }
+        }
+        if let Some(faltando) = cobertas.iter().position(|coberta| !coberta) {
+            return Err(format!(
+                "snapshot incompleto: posição {faltando} de {item_count} não veio no change-set"
+            ));
+        }
     }
     {
         let mut statement = tx
@@ -241,6 +445,78 @@ mod tests {
             item_id: id.into(),
             item_json: serde_json::json!({ "kind": "text", "id": id, "text": text }).to_string(),
         }
+    }
+
+    #[test]
+    fn snapshot_incompleto_aborta_em_vez_de_deixar_item_velho_vivo() {
+        // O `replace_all` não apaga mais a conversa antes de reinserir (o apagão
+        // reindexava tudo no índice léxico, 3.310ms por persist). A garantia que
+        // ele dava virou cobrança: snapshot que não cobre todas as posições é
+        // recusado, senão um item velho sobreviveria numa posição que ninguém
+        // reescreveu — e a busca acharia conteúdo que a pessoa já não tem.
+        let mut connection = database();
+        save_changes(
+            &mut connection,
+            "c1",
+            vec![change(0, "a", "um"), change(1, "b", "dois")],
+            2,
+            true,
+        )
+        .unwrap();
+
+        let erro = save_changes(
+            &mut connection,
+            "c1",
+            vec![change(0, "a", "um novo")], // falta a posição 1
+            2,
+            true,
+        )
+        .unwrap_err();
+        assert!(
+            erro.contains("snapshot incompleto"),
+            "esperava recusa explícita, veio: {erro}"
+        );
+
+        // E o banco continua intacto: fail-closed não escreve pela metade.
+        let texto: String = connection
+            .query_row(
+                "SELECT json_extract(item_json,'$.text') FROM conversation_items \
+                 WHERE conversation_id='c1' AND position=0",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(texto, "um");
+    }
+
+    #[test]
+    fn replace_all_encolhe_a_conversa_sem_deixar_cauda() {
+        // O cenário que o apagão aparentava proteger: a conversa diminui.
+        let mut connection = database();
+        save_changes(
+            &mut connection,
+            "c1",
+            vec![change(0, "a", "um"), change(1, "b", "dois"), change(2, "c", "tres")],
+            3,
+            true,
+        )
+        .unwrap();
+        save_changes(
+            &mut connection,
+            "c1",
+            vec![change(0, "a", "um")],
+            1,
+            true,
+        )
+        .unwrap();
+        let restantes: i64 = connection
+            .query_row(
+                "SELECT count(*) FROM conversation_items WHERE conversation_id='c1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(restantes, 1, "a cauda tinha que ter sumido");
     }
 
     #[test]

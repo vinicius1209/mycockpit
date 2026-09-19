@@ -7591,7 +7591,11 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 > por **trigger em SQL** e não por gancho em `flushItems`, o que deixa
 > `store/chat.ts` intocado; e o `replaceAll` do `persist` precisa perder um
 > `DELETE` redundante, sem o qual o trigger custa **3.310ms por persist** em vez
-> de 8ms. A fidelidade medida é 95,7%, não 97%. O texto abaixo já é o corrigido.
+> de 8ms. E o ganho real, medido com o código Rust em **release** contra o banco
+> real, é **3,5x** (316ms contra 91ms nas 12 queries), não os 13x que o
+> protótipo em Python sugeria: o `serde_json` parseia muito mais rápido que o
+> Python, então a varredura real custa 24-30ms. Em troca, a fidelidade é
+> **12 de 12 queries com top-10 idêntico**. O texto abaixo já é o corrigido.
 
 - **Contexto (18/09/2026):** um rascunho de PRD propunha LanceDB + embeddings
   ONNX para resolver dois pedidos tratados como um só: "digitar 'scroll que
@@ -7614,9 +7618,10 @@ considerou.
   junto foi medido e recusado: `MATCH` + BM25 puro dá 30x de velocidade e apenas
   **32% de sobreposição no top-10** com a busca de hoje, ou seja, a busca
   pareceria a mesma e responderia outra coisa. Com o score preservado a
-  fidelidade é **95,7%** a 4,58ms de mediana contra 60,5ms (13x; pior caso 13,6ms
-  contra 63,9ms). 800 candidatos é o joelho medido: 200 dá 89%, 400 dá 93,3%, e
-  acima de 800 a fidelidade não sobe mais.
+  fidelidade é **ranking idêntico nas 12 queries** e 3,5x de ganho em release.
+  800 candidatos é o único corte que entrega essa igualdade: 100 acerta 6 das 12,
+  200 acerta 8, 400 acerta 9, e 800 acerta as 12. Mais barato seria mais rápido e
+  desfaria a premissa da decisão.
 - **Alcance:** o índice nasce de `conversation_items` (migração 48,
   `lib.rs:652`), não do blob, e se mantém por três triggers em SQL
   (`AFTER INSERT/UPDATE/DELETE`). Isso é possível porque a extração de texto em
