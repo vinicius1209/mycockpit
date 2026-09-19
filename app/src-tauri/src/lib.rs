@@ -730,6 +730,33 @@ pub fn run() {
             sql: crate::conversation_items::FTS_BACKFILL,
             kind: MigrationKind::Up,
         },
+        // O índice nasceu com `unicode61` e isso perdia identificador em
+        // camelCase: o tokenizador faz `useWatchdog` virar UM token, e prefixo é
+        // ancorado no início, então buscar "watchdog" não achava. Medido no banco
+        // real: 11 de 33 em "interval", 59 de 195 em "Conversations". Como o
+        // corpus é código, a perda é sistemática, não cauda. Trocar o tokenizador
+        // exige recriar a tabela; os triggers sobrevivem porque citam o nome e são
+        // resolvidos na execução.
+        Migration {
+            version: 57,
+            description: "drop_conversation_item_fts_unicode61",
+            sql: crate::conversation_items::FTS_DROP_UNICODE61,
+            kind: MigrationKind::Up,
+        },
+        Migration {
+            version: 58,
+            description: "create_conversation_item_fts_trigram",
+            sql: crate::conversation_items::FTS_CRIAR_TRIGRAM,
+            kind: MigrationKind::Up,
+        },
+        // Reindexa tudo no tokenizador novo. Mesmo statement do 56: a cláusula
+        // NOT EXISTS o mantém idempotente, e depois do DROP ele reconstrói do zero.
+        Migration {
+            version: 59,
+            description: "backfill_conversation_item_fts_trigram",
+            sql: crate::conversation_items::FTS_BACKFILL,
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()

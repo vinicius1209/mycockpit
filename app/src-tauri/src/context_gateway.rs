@@ -318,7 +318,7 @@ fn search_from_env(query: &str, limit: usize) -> Result<String, String> {
 /// (docs/evidence/busca-no-fio): 200 dá 89% de fidelidade contra a varredura,
 /// 400 dá 93,3%, 800 dá 95,7%, e acima disso não sobe mais — o resto é o teto
 /// estrutural do índice de tokens, que não alcança match no MEIO da palavra.
-const CANDIDATOS_DO_INDICE: usize = 800;
+const CANDIDATOS_DO_INDICE: usize = 4000;
 
 /// Stopwords pt-BR/en. GÊMEA de `src/lib/recall.ts` (`STOPWORDS`): mudou lá,
 /// muda aqui. Não é preciosismo de qualidade — é desempenho. Sem cortá-las, o
@@ -367,33 +367,57 @@ fn ordenar_e_cortar(mut hits: Vec<(f64, Value)>, limit: usize) -> Vec<Value> {
         .collect()
 }
 
-/// Monta a expressão do FTS5. Prefixo só em token de 4+ caracteres: em token
-/// curto o prefixo casa meio corpus e a busca fica mais lenta que a varredura
-/// que ela veio substituir. `None` = não sobrou termo utilizável.
-fn expressao_fts(query_lower: &str) -> Option<String> {
+/// Os termos que valem a pergunta, UMA vez, para os dois caminhos.
+///
+/// Stopword não pode ser o motivo de um item casar. Medido no corpus real: a
+/// varredura respondia "revezamento de motor" com os dez itens mais recentes
+/// porque casava só o `de` e desempatava por recência — nenhum deles falava do
+/// assunto. Isso é ruído ordenado por recência vestido de resultado, e é o
+/// contrário de "estado real, nunca teatro".
+///
+/// Query feita SÓ de stopwords ainda merece resposta (procurar literalmente
+/// "de" é um pedido legítimo), então nesse caso valem os termos crus.
+fn termos_uteis(query_lower: &str) -> Vec<String> {
     let brutos = tokens(query_lower);
-    let uteis: Vec<&String> = brutos
+    let uteis: Vec<String> = brutos
         .iter()
         .filter(|t| t.chars().count() >= 3 && !STOPWORDS.contains(&t.as_str()))
+        .cloned()
         .collect();
-    // Query feita só de stopwords ainda merece resposta: cai nos termos crus.
-    let escolhidos: Vec<&String> = if uteis.is_empty() {
-        brutos.iter().collect()
-    } else {
-        uteis
-    };
+    if uteis.is_empty() { brutos } else { uteis }
+}
+
+/// Comprimento mínimo de termo que o índice `trigram` sabe procurar. Abaixo
+/// disso ele devolve zero EM SILÊNCIO, que é o pior desfecho possível: a busca
+/// pareceria ter respondido "não achei" quando na verdade nem procurou.
+const MINIMO_DO_TRIGRAM: usize = 3;
+
+/// Monta a expressão do FTS5. Com o tokenizador `trigram`, `"termo"` já é busca
+/// por SUBSTRING — a mesma semântica do `contains` da varredura —, então não há
+/// prefixo `*` a colocar.
+///
+/// `None` = o índice não pode responder esta pergunta e quem chama deve varrer.
+/// Acontece quando algum termo é curto demais para o trigram: devolver os
+/// resultados dos termos longos apenas seria pior, porque a pontuação cobra
+/// COBERTURA sobre todos os termos, e o item que casa o termo curto ficaria de
+/// fora sem ninguém saber.
+fn expressao_fts(query_lower: &str) -> Option<String> {
+    let escolhidos = termos_uteis(query_lower);
+    if escolhidos.is_empty() {
+        return None;
+    }
+    if escolhidos
+        .iter()
+        .any(|t| t.chars().count() < MINIMO_DO_TRIGRAM)
+    {
+        return None;
+    }
     let partes: Vec<String> = escolhidos
         .iter()
         // O tokenizador já só devolve alfanumérico, `_` e `-`, então não há aspas
         // para escapar aqui; o filtro abaixo é cinto de segurança, não etiqueta.
         .filter(|t| !t.contains('"'))
-        .map(|t| {
-            if t.chars().count() >= 4 {
-                format!("\"{t}\"*")
-            } else {
-                format!("\"{t}\"")
-            }
-        })
+        .map(|t| format!("\"{t}\""))
         .collect();
     if partes.is_empty() {
         None
@@ -524,7 +548,10 @@ fn search_conversation(
     )
     .map_err(|e| format!("SQLite indisponível: {e}"))?;
     let query_lower = query.to_lowercase();
-    let terms = tokens(&query_lower);
+    // Os MESMOS termos nos dois caminhos, já sem stopword: antes o índice
+    // filtrava para achar candidatos e pontuava com a lista crua, o que fazia a
+    // cobertura ser calculada sobre um termo que não gerou candidato nenhum.
+    let terms = termos_uteis(&query_lower);
     // Índice primeiro; varredura quando ele não cobre a conversa. Nunca o
     // contrário, e nunca os dois: o score é o mesmo, então misturar não somaria.
     if let Some(hits) = search_pelo_indice(&conn, conv, &query_lower, &terms, limit)? {
@@ -842,8 +869,12 @@ mod tests {
         vec![
             json!({"kind":"user","id":"i0","text":"o scroll do fio parou de descer"}),
             json!({"kind":"text","id":"i1","text":"decidimos usar um gateway orientado por capabilities"}),
+            // Input de VÁRIAS chaves de propósito: é o que revela que o
+            // `serde_json` ordena as chaves (usa BTreeMap) enquanto o SQLite
+            // preserva a ordem do documento. Com uma chave só isso fica
+            // invisível, e foi assim que passou despercebido.
             json!({"kind":"tool","id":"i2","name":"run_command",
-                   "input":{"CommandLine":"grep -rn gateway app/src"},
+                   "input":{"CommandLine":"grep -rn gateway app/src","cwd":"/tmp","label":"busca"},
                    "result":{"text":"app/src/lib/mcp.ts:12"}}),
             json!({"kind":"error","id":"i3","message":"a migração falhou no gateway"}),
             json!({"kind":"result","id":"i4","text":"o gateway também limita tokens"}),
@@ -956,16 +987,23 @@ mod tests {
     }
 
     #[test]
-    fn a_expressao_do_fts_corta_stopword_e_so_prefixa_token_longo() {
-        // Prefixo em token curto é o que fazia "erro de build" custar 16ms fixos.
+    fn a_expressao_do_fts_corta_stopword_e_busca_substring() {
+        // Sem prefixo `*`: no `trigram`, `"termo"` já é substring, que é a mesma
+        // semântica do `contains` da varredura.
         assert_eq!(
             expressao_fts("erro de build"),
-            Some("\"erro\"* OR \"build\"*".into())
+            Some("\"erro\" OR \"build\"".into())
         );
-        // Token de 3 chars entra, mas sem prefixo.
         assert_eq!(expressao_fts("api do fio"), Some("\"api\" OR \"fio\"".into()));
-        // Query só de stopwords ainda merece resposta: cai nos termos crus.
-        assert_eq!(expressao_fts("de do da"), Some("\"de\" OR \"do\" OR \"da\"".into()));
+        // Termo curto convive com termo longo sem estragar nada: `termos_uteis`
+        // já o descarta, e a VARREDURA usa a mesma lista, então os dois caminhos
+        // continuam perguntando a mesma coisa.
+        assert_eq!(expressao_fts("ab watchdog"), Some("\"watchdog\"".into()));
+        // Mas quando NÃO sobra termo longo, a lista crua volta e pode ter termo
+        // com menos de 3 caracteres: aí o trigram devolveria zero em SILÊNCIO, e
+        // a pergunta inteira vai para a varredura.
+        assert_eq!(expressao_fts("de do da"), None);
+        assert_eq!(expressao_fts("ab"), None);
         // Sem termo utilizável não há o que perguntar ao índice.
         assert_eq!(expressao_fts("!!!"), None);
     }
@@ -994,12 +1032,282 @@ mod tests {
         assert_eq!(linhas.len(), items.len());
         for (position, do_sql) in linhas {
             let do_rust = searchable_text(&items[position as usize]);
+            if do_sql == do_rust {
+                continue;
+            }
+            // Diferença CONHECIDA e aceita: dentro do `input` de uma ferramenta,
+            // o `serde_json` serializa as chaves em ordem alfabética (o `Map`
+            // dele é um BTreeMap) e o SQLite devolve a ordem do documento. O
+            // conteúdo é o mesmo objeto, e o que a busca consome — os termos —
+            // é idêntico. O que NÃO pode acontecer é perder ou ganhar termo.
+            let termos = |t: &str| {
+                let mut v = tokens(&t.to_lowercase());
+                v.sort();
+                v
+            };
             assert_eq!(
-                do_sql, do_rust,
-                "a gêmea em SQL divergiu do searchable_text na posição {position}"
+                termos(&do_sql),
+                termos(&do_rust),
+                "a gêmea em SQL mudou os TERMOS na posição {position}, não só a ordem das chaves"
+            );
+            assert_eq!(
+                do_sql.chars().filter(|c| !c.is_whitespace()).count(),
+                do_rust.chars().filter(|c| !c.is_whitespace()).count(),
+                "tamanho diferente na posição {position}: não é só reordenação de chave"
             );
         }
         drop(consulta);
+        drop(conn);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// CORPUS DE FIDELIDADE (F2 do PRD da busca no fio).
+    ///
+    /// Compara, conversa a conversa, o que o ÍNDICE devolve com o que a
+    /// VARREDURA devolve, no banco real da pessoa. Não roda no `cargo test`
+    /// normal porque depende de um banco que só existe na máquina; é a
+    /// ferramenta de revalidar a frente depois de mexer no índice, na gêmea SQL
+    /// ou no `pontuar`.
+    ///
+    /// ```sh
+    /// cp "$HOME/Library/Application Support/dev.vinicius.mycockpit/mycockpit.db" /tmp/fid.db
+    /// BENCH_DB=/tmp/fid.db cargo test --release fidelidade -- --ignored --nocapture
+    /// ```
+    ///
+    /// Sempre numa CÓPIA: o teste só lê, mas banco vivo de app aberto não é
+    /// lugar de experimento.
+    #[test]
+    #[ignore = "precisa de BENCH_DB apontando para uma cópia do banco real"]
+    fn fidelidade_do_indice_contra_a_varredura() {
+        let Ok(caminho) = std::env::var("BENCH_DB") else {
+            panic!("defina BENCH_DB com o caminho de uma CÓPIA do banco")
+        };
+        let db = PathBuf::from(caminho);
+        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+
+        // Termos de vocabulário real do produto, misturando o que casa muito
+        // (tool, Bash) com o que casa pouco, acento, maiúscula e frase.
+        let queries = [
+            "scroll", "rolagem automatica", "composer anexo", "migration sqlite",
+            "erro de build", "companion pareamento", "watchdog interval",
+            "drag and drop sidebar", "custo do turno", "styleguide elevacao",
+            "tauri command async", "teste que quebrou", "migração", "MIGRAÇÃO",
+            "índice léxico", "worktree", "revezamento de motor", "ADR",
+            "fts5", "conversation_items", "bash", "arquivo não encontrado",
+            "o que", "de", "plano aprovado", "gate", "cargo test", "bun run check",
+        ];
+
+        let mut consulta = conn
+            .prepare("SELECT conversation_id FROM conversation_item_state WHERE item_count > 0")
+            .unwrap();
+        let convs: Vec<String> = consulta
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(Result::unwrap)
+            .collect();
+        assert!(!convs.is_empty(), "o banco não tem conversa itemizada");
+
+        // O blob legado (`conversations.items`) pode estar ATRÁS da fonte
+        // itemizada: só o `persist` reescreve os dois, enquanto a cauda
+        // incremental grava apenas a tabela. Comparar índice contra varredura
+        // nessas conversas mede o blob velho, não a fidelidade do índice — por
+        // isso elas saem da conta e entram num relatório próprio.
+        let defasada = |conv: &str| -> Option<(i64, i64)> {
+            let no_blob: i64 = conn
+                .query_row(
+                    "SELECT json_array_length(items) FROM conversations WHERE id = ?1",
+                    [conv],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            let na_tabela: i64 = conn
+                .query_row(
+                    "SELECT count(*) FROM conversation_items WHERE conversation_id = ?1",
+                    [conv],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            (no_blob != na_tabela).then_some((no_blob, na_tabela))
+        };
+
+        let (mut pares, mut iguais, mut so_score) = (0usize, 0usize, 0usize);
+        let (mut t_indice, mut t_varredura) = (0f64, 0f64);
+        let mut pior_indice = 0f64;
+        let mut divergencias: Vec<String> = Vec::new();
+        let mut defasadas: Vec<String> = Vec::new();
+        for conv in &convs {
+            if let Some((no_blob, na_tabela)) = defasada(conv) {
+                defasadas.push(format!(
+                    "{} · blob {} itens, tabela {} itens (blob {} atrás)",
+                    &conv[..8.min(conv.len())],
+                    no_blob,
+                    na_tabela,
+                    na_tabela - no_blob,
+                ));
+                continue;
+            }
+            for q in queries {
+                let ql = q.to_lowercase();
+                // `termos_uteis`, NÃO `tokens`: é o que `search_conversation`
+                // entrega aos dois caminhos. Usar a lista crua aqui media um
+                // cenário que não existe em produção — a varredura casava pelo
+                // `do` enquanto o índice já o havia descartado, e a diferença
+                // aparecia como se fosse do índice.
+                let termos = termos_uteis(&ql);
+                let marca = std::time::Instant::now();
+                let indexado = search_pelo_indice(&conn, conv, &ql, &termos, 10).unwrap();
+                let gasto = marca.elapsed().as_secs_f64() * 1000.0;
+                let Some(pelo_indice) = indexado else {
+                    continue; // conversa fora do índice: a varredura é a resposta
+                };
+                t_indice += gasto;
+                pior_indice = pior_indice.max(gasto);
+                let marca = std::time::Instant::now();
+                let varrendo = search_varrendo(&conn, conv, &ql, &termos, 10).unwrap();
+                t_varredura += marca.elapsed().as_secs_f64() * 1000.0;
+                pares += 1;
+                let refs = |v: &Vec<Value>| {
+                    v.iter()
+                        .map(|x| x["ref"].as_str().unwrap_or("?").to_string())
+                        .collect::<Vec<_>>()
+                };
+                // O que importa é a ORDEM que o agente recebe. O `score` pode
+                // diferir no decimal porque a recência divide por totais de
+                // fontes diferentes (o índice usa `item_count` da tabela, a
+                // varredura o tamanho do blob), e isso não muda o ranking.
+                if refs(&pelo_indice) == refs(&varrendo) {
+                    iguais += 1;
+                    if pelo_indice != varrendo {
+                        so_score += 1;
+                    }
+                    continue;
+                }
+                divergencias.push(format!(
+                    "conv {} · query {:?}\n     índice: {:?}\n  varredura: {:?}",
+                    &conv[..8.min(conv.len())],
+                    q,
+                    refs(&pelo_indice),
+                    refs(&varrendo),
+                ));
+            }
+        }
+
+        println!("\n=== fidelidade do índice ===");
+        println!(
+            "{} conversas itemizadas · {} comparáveis · {} queries · {} pares",
+            convs.len(),
+            convs.len() - defasadas.len(),
+            queries.len(),
+            pares
+        );
+        println!(
+            "mesmo ranking: {iguais}/{pares} ({:.1}%)",
+            iguais as f64 / pares.max(1) as f64 * 100.0
+        );
+        if so_score > 0 {
+            println!(
+                "  destes, {so_score} com score diferente no decimal (recência sobre totais \
+                 de fontes diferentes) — mesma ordem, mesmos itens"
+            );
+        }
+        println!(
+            "tempo: índice {t_indice:.0}ms · varredura {t_varredura:.0}ms · {:.1}x · \
+             pior query do índice {pior_indice:.1}ms",
+            t_varredura / t_indice.max(0.001)
+        );
+        println!("\n--- por query, só na maior conversa ---");
+        let maior = conn
+            .query_row(
+                "SELECT conversation_id FROM conversation_item_state ORDER BY item_count DESC LIMIT 1",
+                [],
+                |r| r.get::<_, String>(0),
+            )
+            .unwrap();
+        for q in queries {
+            let ql = q.to_lowercase();
+            let termos = termos_uteis(&ql);
+            let (mut ti, mut tv) = (f64::MAX, f64::MAX);
+            for _ in 0..5 {
+                let m = std::time::Instant::now();
+                let _ = search_pelo_indice(&conn, &maior, &ql, &termos, 10).unwrap();
+                ti = ti.min(m.elapsed().as_secs_f64() * 1000.0);
+                let m = std::time::Instant::now();
+                let _ = search_varrendo(&conn, &maior, &ql, &termos, 10).unwrap();
+                tv = tv.min(m.elapsed().as_secs_f64() * 1000.0);
+            }
+            println!("  {q:<24} índice {ti:>7.2}ms · varredura {tv:>7.2}ms · {:>5.1}x", tv / ti.max(0.001));
+        }
+        if !defasadas.is_empty() {
+            println!(
+                "\n--- fora da conta: blob legado atrasado ({}) ---",
+                defasadas.len()
+            );
+            for d in &defasadas {
+                println!("  {d}");
+            }
+            println!(
+                "  (não é erro do índice: o índice lê a tabela, que está à frente.\n                    A varredura leria a fonte velha, então comparar ali mede o blob.)"
+            );
+        }
+        if !divergencias.is_empty() {
+            println!("\n--- divergências ({}) ---", divergencias.len());
+            for d in &divergencias {
+                println!("  {d}");
+            }
+        }
+        println!();
+    }
+
+    #[test]
+    fn stopword_sozinha_nao_faz_um_item_casar() {
+        // Medido no banco real: "revezamento de motor" devolvia os dez itens
+        // mais recentes porque casava só o `de` e desempatava por recência —
+        // nenhum falava do assunto. Ruído ordenado por recência vestido de
+        // resultado é o oposto de "estado real, nunca teatro".
+        let root = temp_root("stopword");
+        let db = root.join("db.sqlite");
+        let items = vec![
+            json!({"kind":"user","id":"i0","text":"onde fica o gate de aprovação"}),
+            json!({"kind":"text","id":"i1","text":"depois de tudo, o resto de sempre"}),
+            json!({"kind":"text","id":"i2","text":"o revezamento troca o motor da conversa"}),
+        ];
+        banco_com_indice(&db, "conv-1", &items);
+
+        // Só o item que fala do assunto entra; os que têm apenas `de` ficam fora.
+        let hits = search_conversation(&db, "conv-1", "revezamento de motor", 10).unwrap();
+        assert_eq!(hits.len(), 1, "stopword não pode arrastar item irrelevante");
+        assert_eq!(hits[0]["ref"], "conversation:item:2");
+
+        // Procurar literalmente uma stopword continua valendo: é pedido legítimo,
+        // e aí ela é o único termo que existe.
+        let so_stopword = search_conversation(&db, "conv-1", "de", 10).unwrap();
+        assert!(
+            so_stopword.len() >= 2,
+            "query só de stopword ainda responde, veio {}",
+            so_stopword.len()
+        );
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn os_dois_caminhos_usam_os_mesmos_termos() {
+        // O defeito que isto tranca: filtrar stopword só para gerar candidatos e
+        // pontuar com a lista crua fazia a COBERTURA ser dividida por um termo
+        // que não gerou candidato nenhum, baixando o score de quem casou tudo.
+        let root = temp_root("mesmos-termos");
+        let db = root.join("db.sqlite");
+        let items = itens_de_exemplo();
+        banco_com_indice(&db, "conv-1", &items);
+        let conn = Connection::open_with_flags(&db, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        for query in ["o gateway de capabilities", "erro de build", "a rolagem"] {
+            let ql = query.to_lowercase();
+            let terms = termos_uteis(&ql);
+            let pelo_indice = search_pelo_indice(&conn, "conv-1", &ql, &terms, 10)
+                .unwrap()
+                .unwrap();
+            let varrendo = search_varrendo(&conn, "conv-1", &ql, &terms, 10).unwrap();
+            assert_eq!(pelo_indice, varrendo, "divergiram em {query:?}");
+        }
         drop(conn);
         let _ = std::fs::remove_dir_all(root);
     }

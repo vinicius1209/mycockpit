@@ -7922,3 +7922,54 @@ considerou.
   console. Falta conferir num aparelho de verdade (teclado do Android e do iOS).
 
 
+
+### ADR-220 · O índice da busca troca tokens por trigramas, e paga em velocidade
+
+> Numerada 219 por engano e corrigida no mesmo dia: a frente do Companion levou
+> o 219 enquanto esta estava em andamento. Quem move é esta, que é a mais nova e
+> não era citada em lugar nenhum. Foi a guarda `check-adr-unico.mjs`, escrita
+> horas antes, que pegou — no primeiro dia de vida e no cenário exato para o
+> qual foi feita.
+
+- **Contexto (19/09/2026):** a F2 do PRD pedia o corpus de avaliação do índice
+  entregue na ADR-213. Rodando contra o banco real, o índice `unicode61` perdia
+  itens que a varredura achava, e não na cauda: 11 de 33 em "interval", 59 de
+  195 em "Conversations". A causa é o corpus ser CÓDIGO. O tokenizador quebra em
+  palavras e o prefixo é ancorado no início do token, então `useWatchdog` vira
+  um token só e buscar "watchdog" não acha nada. Numa ferramenta onde se procura
+  identificador o dia inteiro, isso não é cauda, é o caso central.
+- **Decisão:** o índice passa a usar o tokenizador `trigram`, que casa
+  SUBSTRING — exatamente a semântica do `contains` da varredura. Com ele, e com
+  o corte de candidatos em 4000, o ranking do índice é **idêntico ao da
+  varredura em 216 de 216 pares** do corpus (10 conversas, 28 queries).
+- **Alcance:** a expressão perde o prefixo `*`, porque `"termo"` já é substring.
+  Termo com menos de 3 caracteres **não pode** ir ao trigram: ele devolve zero
+  em SILÊNCIO, que é o pior desfecho (a busca pareceria ter procurado). Nesse
+  caso a pergunta inteira vai para a varredura. Trocar o tokenizador exige
+  recriar a tabela (migrações 57 a 59); os triggers sobrevivem porque citam o
+  nome e são resolvidos na execução, o que foi verificado no banco real e não
+  suposto.
+- **Consequência, e ela dói:** o ganho de velocidade encolhe. Trigram é rápido
+  quando o termo é raro e lento quando é comum, porque precisa cruzar listas
+  enormes. Na maior conversa (3.286 itens): `fts5` 69x, `styleguide elevacao`
+  15x, `migração` 12x, `watchdog interval` 10,5x — mas `bash` 0,9x e
+  `tauri command async` 0,7x, ou seja, MAIS LENTO que varrer. O pior caso vai a
+  39ms contra 29ms da varredura. Aceitamos: uma busca 10ms mais lenta em "bash"
+  que em troca acha `useWatchdog` é melhor produto que uma busca veloz que mente
+  por omissão. A ADR-213 vendia 3,5x com ranking intacto; o número honesto agora
+  é "a maioria das queries ganha vários x, algumas empatam, duas perdem", com
+  ranking idêntico de verdade.
+- **Segunda consequência:** o índice cresce de 17,6MB para 41MB no corpus de
+  referência, e o arquivo do banco não encolhe sozinho depois do DROP. **VACUUM
+  é proibido aqui**: `conversation_items` não tem INTEGER PRIMARY KEY, então os
+  rowids implícitos podem mudar, e o índice é amarrado a eles (ADR-213). O
+  espaço liberado é reaproveitado por escrita nova, que é o desfecho aceitável.
+- **Verificação:** `fidelidade_do_indice_contra_a_varredura` (`#[ignore]`,
+  guiado por `BENCH_DB`) compara ranking e tempo conversa a conversa e separa
+  três coisas que antes vinham misturadas: divergência de RANKING, diferença só
+  no decimal do score, e conversa cujo blob legado está atrasado — comparar
+  nessas últimas media o blob, não o índice. O teste de contrato da gêmea SQL
+  ganhou fixture com `input` de VÁRIAS chaves, que revelou uma diferença real e
+  aceita: o `serde_json` serializa chaves em ordem alfabética (o `Map` dele é
+  BTreeMap) e o SQLite preserva a ordem do documento. Os termos são idênticos, e
+  o teste passou a cobrar isso em vez de igualdade byte a byte, que era falsa.

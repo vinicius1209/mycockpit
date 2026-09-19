@@ -6,6 +6,40 @@
 > Decisão estrutural: ADR-213 em `docs/decisions.md`.
 > Evidência bruta: `docs/evidence/busca-no-fio/`.
 
+## 0b. O que a F2 descobriu (19/09/2026)
+
+A avaliação do índice entregue na F1 achou um erro que a medição anterior não
+podia ver, porque o protótipo era em Python e o corpus de teste era pequeno:
+
+1. **`unicode61` perdia identificador em camelCase.** `useWatchdog` vira UM
+   token e o prefixo é ancorado no início, então buscar "watchdog" não achava.
+   Medido: 11 de 33 itens em "interval", 59 de 195 em "Conversations". Num
+   corpus de código isso é o caso central, não a cauda. Corrigido trocando o
+   tokenizador para `trigram` (ADR-220), que casa substring.
+2. **O ranking agora é idêntico de verdade:** 216 de 216 pares (10 conversas,
+   28 queries), contra os "95,7%" estimados antes.
+3. **O ganho de velocidade encolheu, e isso está assumido.** Trigram é rápido
+   com termo raro e lento com termo comum: `fts5` 69x, `migração` 12x,
+   `watchdog interval` 10,5x, mas `bash` 0,9x e `tauri command async` 0,7x. A
+   troca é deliberada: busca 10ms mais lenta em "bash" que acha `useWatchdog`
+   é melhor que busca veloz que mente por omissão.
+4. **Stopword sozinha não pode fazer item casar.** A varredura respondia
+   "revezamento de motor" com os dez itens mais recentes porque casava só o
+   `de`. Isso é ruído ordenado por recência vestido de resultado, e valia para
+   os DOIS caminhos: agora os termos são filtrados uma vez, no topo.
+5. **Três instrumentos meus estavam errados antes do código estar.** O harness
+   de fidelidade usava `tokens` cru em vez de `termos_uteis`; a comparação
+   misturava `score` junto com ranking e acusava divergência onde a ordem era
+   idêntica; e a fixture do teste de contrato tinha `input` de UMA chave, o que
+   escondia que o `serde_json` ordena chaves e o SQLite preserva a ordem do
+   documento. Os três foram corrigidos e estão descritos na ADR-220.
+
+Fora do escopo, mas achado aqui e **não corrigido**: o blob legado
+(`conversations.items`) fica ATRÁS da fonte itemizada em algumas conversas (uma
+com 34 itens no blob e 82 na tabela). Só o `persist` reescreve os dois; a cauda
+incremental grava apenas a tabela. Não é da busca, e mexer nisso é da frente que
+é dona do `itemPersistence`.
+
 ## 0. Correção de 18/09/2026, depois do double check
 
 Este PRD foi revisado contra a árvore após outra frente ter avançado nela. Cinco

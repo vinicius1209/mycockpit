@@ -25,6 +25,27 @@ pub struct ConversationItemsSnapshot {
     items: Vec<String>,
 }
 
+/// Migração 57 (`drop_conversation_item_fts_unicode61`). Migração é história: NÃO edite.
+/// Os TRIGGERS sobrevivem: eles citam a tabela pelo nome e são resolvidos na
+/// execução, então recriar com o mesmo nome e as mesmas colunas basta.
+pub const FTS_DROP_UNICODE61: &str = "DROP TABLE IF EXISTS conversation_item_fts;";
+
+/// Migração 58 (`create_conversation_item_fts_trigram`). Migração é história: NÃO edite.
+///
+/// `trigram` e não `unicode61` porque o corpus é CÓDIGO. O tokenizador quebra
+/// em palavras e o prefixo é ancorado no início do token, então `useWatchdog`
+/// vira o token `usewatchdog` e a busca por "watchdog" não acha — medido no
+/// banco real: 11 de 33 itens perdidos em "interval", 59 de 195 em
+/// "Conversations". O trigram casa SUBSTRING, que é exatamente a semântica do
+/// `searchable_text` + `contains` da varredura, e devolve os mesmos itens.
+///
+/// Preço: o índice vai de 17,6MB para 41MB no corpus de referência. É o preço
+/// de a busca achar identificador em camelCase, que é o caso de uso principal.
+pub const FTS_CRIAR_TRIGRAM: &str = "CREATE VIRTUAL TABLE IF NOT EXISTS conversation_item_fts USING fts5( \
+                    conversation_id UNINDEXED, item_id UNINDEXED, position UNINDEXED, \
+                    text, tokenize='trigram remove_diacritics 1' \
+                  );";
+
 /// Migração 52 (`create_conversation_item_fts`). Migração é história: NÃO edite esta string.
 /// Vive aqui, e não solta em `lib.rs`, para que os testes exercitem a SQL
 /// EXATA que roda no banco da pessoa — gêmea que ninguém leu é gêmea que derivou.
