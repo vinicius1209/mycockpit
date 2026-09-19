@@ -156,7 +156,7 @@ function MarkdownLink({
   href?: string
 }) {
   const project = useActiveProject()
-  const target = parseFileTarget(href, project?.path)
+  const target = parseFileTarget(destinoLocal(href), project?.path)
   const isWeb = isWebUrl(href)
 
   const handleClick = (e: React.MouseEvent) => {
@@ -222,6 +222,59 @@ function MarkdownLink({
       {imagem && <ImagemCitadaThumb root={project?.path ?? ""} path={imagem} />}
     </>
   )
+}
+
+/** Destino de link ou imagem como o AGENTE escreveu. O parser de markdown
+ *  entrega `href`/`src` já normalizados como URI: espaço vira `%20` e acento
+ *  vira `%C3%AA`, inclusive na forma `<caminho com espaço.png>`. No disco o
+ *  arquivo se chama `evidência final.png`, então o caminho local se decodifica
+ *  aqui. `file://` fica de fora: o `parseFileTarget` já decodifica esse. */
+function destinoLocal(url: string | undefined): string | undefined {
+  if (!url || isWebUrl(url) || /^file:\/\//i.test(url)) return url
+  try {
+    return decodeURIComponent(url)
+  } catch {
+    return url
+  }
+}
+
+/** `![alt](caminho)` escrito pelo agente. Sem este componente o react-markdown
+ *  emitia `<img src="/Users/...">` cru, que a webview resolve contra a origem
+ *  do app e nunca carrega: a evidência chegava como moldura quebrada (o Agy
+ *  cita as capturas do `brain` exatamente assim). Imagem local passa pela mesma
+ *  miniatura do link, com a contenção do Rust decidindo se pode ser lida. */
+function MarkdownImage({ src, alt }: { src?: string; alt?: string }) {
+  const project = useActiveProject()
+  if (isWebUrl(src)) {
+    return (
+      <img
+        src={src}
+        alt={alt ?? ""}
+        className="max-h-32 max-w-[220px] rounded-lg border object-contain"
+      />
+    )
+  }
+  // `captura.png?raw=true` é hábito de README; no disco a query não existe.
+  const destino = destinoLocal(src)?.replace(/\?[^#]*$/, "")
+  const target = parseFileTarget(destino, project?.path)
+  if (target && isImagePath(target.rel)) {
+    return (
+      <ImagemCitadaThumb root={project?.path ?? ""} path={target.abs ?? target.rel} />
+    )
+  }
+  // Imagem que existe para o agente mas mora onde o Frota não lê (`/tmp`, a
+  // pasta de outro motor): dizer isso é melhor que moldura quebrada ou sumiço.
+  if (destino && isImagePath(destino)) {
+    return (
+      <span
+        title={destino}
+        className="mt-1.5 block w-fit rounded-md border bg-card px-2.5 py-1.5 text-[12px] text-muted-foreground"
+      >
+        {`imagem fora das pastas que o Frota lê · ${destino.split("/").pop()}`}
+      </span>
+    )
+  }
+  return alt ? <span className="text-muted-foreground">{alt}</span> : null
 }
 
 function MarkdownInlineCode({
@@ -290,6 +343,7 @@ const mdComponents: Components = {
     <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>
   ),
   a: ({ children, href }) => <MarkdownLink href={href}>{children}</MarkdownLink>,
+  img: ({ src, alt }) => <MarkdownImage src={src} alt={alt} />,
   strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
   h1: ({ children }) => (
     <h3 className="mt-2 mb-1 text-[14px] font-semibold">{children}</h3>
