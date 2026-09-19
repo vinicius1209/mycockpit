@@ -192,7 +192,10 @@ export function ConversationRow({
                 ? "bg-sel-hover"
                 : "hover:bg-sel-hover",
             isChild && "ml-2.5",
-            "data-[arrasto-sobre]:bg-sel",
+            // Destino do arrasto: traço na aresta onde cai, não preenchimento
+            // da linha (ADR-216). O preenchimento dizia QUAL alvo e escondia
+            // de que LADO, que é a metade que decide o resultado.
+            "alvo-de-arrasto",
           )}
           style={
             c.color

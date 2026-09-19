@@ -485,6 +485,38 @@
    Círculo é o glifo que já se sabe ler, e o app já fala essa língua no
    composer. A regra do §6 não mudou: movimento é pra vivo, e o círculo é
    movimento. Mudou o glifo, não a doutrina. */
+/* DESTINO DO ARRASTO (ADR-216). Um traço na ARESTA onde o item vai cair, não o
+   preenchimento da linha inteira: `reorderByIds` calcula o índice na lista
+   original e aplica depois da remoção, então arrastar para BAIXO deposita
+   DEPOIS do alvo e para CIMA deposita ANTES. Preencher a linha dizia qual
+   alvo e escondia de que lado, que é a metade que importa.
+
+   Neutro por ADR-043 (seleção e destino não são tinta). Transitório: existe só
+   enquanto o atributo existe, então morre com o gesto, inclusive se o gesto
+   morrer por Escape, erro ou fechamento — §6 exige presença, nunca timer. */
+.alvo-de-arrasto::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--foreground);
+  /* Acima do conteúdo da linha, abaixo de qualquer superfície flutuante. */
+  z-index: 1;
+}
+.alvo-de-arrasto[data-arrasto-sobre="antes"]::before {
+  top: -1px;
+}
+.alvo-de-arrasto[data-arrasto-sobre="depois"]::before {
+  bottom: -1px;
+}
+/* Sem direção conhecida (alvo que não é linha de lista) o traço não aparece:
+   melhor nada que um traço mentindo o lado. */
+.alvo-de-arrasto:not([data-arrasto-sobre="antes"]):not([data-arrasto-sobre="depois"])::before {
+  content: none;
+}
+
 @keyframes conv-spin {
   to {
     transform: rotate(360deg);

@@ -7783,3 +7783,46 @@ considerou.
   A captura existe só para o gesto sobreviver ao ponteiro sair da linha, o que
   só importa depois que virou arrasto — então ela nasce no `pointermove`, quando
   o limiar é cruzado. Quem só clica nunca chega a capturar nada.
+
+### ADR-216 · O destino do arrasto é um traço na aresta, e é o terceiro filete
+
+- **Contexto (19/09/2026):** com o arrasto por ponteiro funcionando, o usuário
+  relatou que reordenar "não tem efeito, é meio brusco". O realce de hoje
+  preenche a linha inteira do alvo (`data-[arrasto-sobre]:bg-sel`), o que diz
+  QUAL linha e esconde de que LADO — e o lado é o que decide o resultado.
+  `reorderByIds` (`lib/reorder.ts`) acha o índice do alvo na lista ORIGINAL e
+  insere DEPOIS de remover a origem, então arrastar para baixo deposita DEPOIS
+  do alvo e arrastar para cima deposita ANTES. Preenchendo a linha, a pessoa só
+  descobre o lado soltando.
+- **Decisão:** o alvo passa a mostrar um traço de 2px na ARESTA onde o item vai
+  cair, no topo quando cai antes e na base quando cai depois, e o preenchimento
+  da linha sai. A direção não vem da geometria do cursor: vem de
+  `compareDocumentPosition` entre a linha de origem e a de destino, porque a
+  ordem no DOM espelha a ordem da lista e é exatamente o que `reorderByIds`
+  consulta. Sem direção conhecível (arrasto de texto ou de arquivo, que vão para
+  o composer), nenhum traço aparece: traço no lado errado é pior que traço
+  nenhum.
+- **Alcance:** isto abre o **terceiro papel do filete**, e o §4 fechava o set em
+  dois (`border` = aresta de superfície, `border-border/40` = divisor interno).
+  O terceiro é o **destino**: 2px, neutro (`--foreground`), e **transitório** —
+  existe só enquanto o atributo `data-arrasto-sobre` existe. É o que o separa
+  dos outros dois, que são estrutura permanente: em repouso ele não está lá,
+  então não disputa com a estrutura nem cria o quarto degrau de opacidade que a
+  varredura de 29/08/2026 combateu. Fica NEUTRO por ADR-043 (seleção não é cor,
+  e destino também não): brass tem "marcar item em lista" na coluna do NÃO, e
+  `st-running` significa "um motor está rodando" — pintar destino com ele faria
+  a barra lateral mentir. Mora em `.alvo-de-arrasto` no `index.css`, junto do
+  `.conv-spin`, e não em utilitário solto nas duas linhas.
+- **Consequência:** a guarda `check-filete.mjs` não vê esta regra, porque ela
+  varre `border-<token>` e o traço é um `background` em pseudo-elemento. Isso é
+  registrado aqui de propósito, e não aproveitado em silêncio: se o set de
+  filetes ganhar guarda mais ampla um dia, o destino é exceção declarada, não
+  achado. Segunda consequência: o §6 exige que movimento e sinal vivam presos à
+  PRESENÇA do elemento, nunca a timer, e o traço cumpre — morre com o gesto,
+  inclusive quando o gesto morre por Escape, erro ou fechamento do app.
+- **Verificação:** testes em `CamadaDeArrasto.test.tsx` prendem os dois lados
+  contra o helper puro de verdade (`reorderByIds`), não contra a intuição: para
+  baixo `[a,b,c,d]` com `a` sobre `c` vira `[b,c,a,d]`; para cima, `d` sobre `b`
+  vira `[a,d,b,c]`. O lado é testado com dublês, porque a suíte roda em Node sem
+  jsdom — e por isso a implementação escreve os bits de `compareDocumentPosition`
+  em vez de lê-los de `Node`, que não existe fora do navegador.

@@ -145,7 +145,10 @@ export function ProjectRow({
             "group relative flex w-full items-center rounded-md transition-colors",
             // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + peso.
             active ? "bg-sel" : "hover:bg-sel-hover",
-            "data-[arrasto-sobre]:bg-sel",
+            // Destino do arrasto: traço na aresta onde cai, não preenchimento
+            // da linha (ADR-216). O preenchimento dizia QUAL alvo e escondia
+            // de que LADO, que é a metade que decide o resultado.
+            "alvo-de-arrasto",
           )}
         >
           {editing ? (

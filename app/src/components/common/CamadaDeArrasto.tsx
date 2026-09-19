@@ -80,6 +80,31 @@ function engolirProximoClique(): void {
   setTimeout(() => document.removeEventListener("click", engolir, { capture: true }), 0)
 }
 
+/** Bits de `compareDocumentPosition`, escritos aqui em vez de lidos de `Node`:
+ *  a suíte roda em Node puro (sem jsdom), onde `Node` não existe. Valores da
+ *  especificação do DOM, que não mudam. */
+const PRECEDE = 2
+const SEGUE = 4
+
+/** De que lado do alvo o item vai cair.
+ *
+ *  Não é geometria do cursor: é a semântica de `reorderByIds`, que acha o
+ *  índice do alvo na lista ORIGINAL e insere DEPOIS de remover a origem. Efeito
+ *  prático: arrastando para baixo o item deposita DEPOIS do alvo, para cima
+ *  deposita ANTES. A ordem no DOM espelha a ordem da lista, então
+ *  `compareDocumentPosition` responde exatamente isso, sem a camada precisar
+ *  conhecer as stores.
+ *
+ *  `null` quando não dá para saber (alvo que não é linha, origem sem elemento):
+ *  aí nenhum traço aparece, porque traço no lado errado é pior que traço nenhum. */
+export function ladoDoDestino(origem: Element | null, alvo: Element): "antes" | "depois" | null {
+  if (!origem || origem === alvo) return null
+  const rel = origem.compareDocumentPosition(alvo)
+  if (rel & SEGUE) return "depois"
+  if (rel & PRECEDE) return "antes"
+  return null
+}
+
 function alvoSob(x: number, y: number): { alvo: AlvoDoArrasto; el: Element } | null {
   const el = document.elementFromPoint(x, y)?.closest("[data-arrasto-alvo]")
   const alvo = alvoDoAtributo(el?.getAttribute("data-arrasto-alvo"))
@@ -123,11 +148,15 @@ export function CamadaDeArrasto() {
   const realcadoRef = useRef<Element | null>(null)
 
   useEffect(() => {
-    function realcar(el: Element | null) {
-      if (realcadoRef.current === el) return
-      realcadoRef.current?.removeAttribute("data-arrasto-sobre")
-      if (el) el.setAttribute("data-arrasto-sobre", "")
-      realcadoRef.current = el
+    function realcar(el: Element | null, lado: "antes" | "depois" | "" = "") {
+      if (realcadoRef.current !== el) {
+        realcadoRef.current?.removeAttribute("data-arrasto-sobre")
+        realcadoRef.current = el
+      }
+      // O lado muda sem o alvo mudar (passar do topo para a base da mesma
+      // linha não acontece hoje, mas trocar de origem no mesmo alvo sim), então
+      // o atributo é reescrito mesmo quando o elemento é o mesmo.
+      if (el) el.setAttribute("data-arrasto-sobre", lado)
     }
     function limpar() {
       realcar(null)
@@ -185,7 +214,11 @@ export function CamadaDeArrasto() {
         sob?.alvo.tipo === "composer" ? (rotuloDoArrasto(p.carga) ?? null) : p.rotulo
       const valido = Boolean(sob && rotulo)
       pairarSobre(valido && sob ? sob.alvo : null)
-      realcar(valido && sob ? sob.el : null)
+      const lado =
+        valido && sob && sob.alvo.tipo === "reordenar"
+          ? (ladoDoDestino(p.captor, sob.el) ?? "")
+          : ""
+      realcar(valido && sob ? sob.el : null, lado)
       setFantasma({ x: ev.clientX, y: ev.clientY, rotulo: rotulo ?? p.rotulo })
     }
     function soltar(ev: PointerEvent) {

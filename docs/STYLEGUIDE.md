@@ -393,6 +393,15 @@ nunca em big-bang):
   esses dois papéis, com `border` cheia vencendo por 327 usos. Ninguém escolheu
   oito degraus: cada um escolheu o que estava perto. Guarda:
   `scripts/check-filete.mjs` (§10), catraca.
+- **O terceiro papel é o DESTINO, e só ele** (ADR-216): traço de 2px neutro
+  (`--foreground`) na aresta onde um item arrastado vai cair — topo quando cai
+  antes, base quando cai depois. O que o separa dos outros dois é ser
+  **transitório**: existe só enquanto o gesto existe, e em repouso não está na
+  tela, então não disputa com a estrutura. Fica neutro porque destino não é
+  tinta, pela mesma régua que faz seleção não ser (ADR-043). Implementação
+  única em `.alvo-de-arrasto` (`index.css`); quem precisar de destino importa a
+  classe, não desenha outra. **Não** é convite para um quarto: o set continua
+  fechado, e papel novo segue exigindo ADR.
 - **Borda de coisa única está errada.** Um elemento com borda que envolve UMA
   coisa ou é um cartão de uma linha (e então use o cartão), ou não precisa de
   borda. É um teste mais fácil de aplicar em review do que "não aninhe bordas",
