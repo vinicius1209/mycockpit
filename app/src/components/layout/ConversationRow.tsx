@@ -175,6 +175,7 @@ export function ConversationRow({
       <ContextMenuTrigger asChild>
         <div
           // Arrasto por ponteiro (ADR-214); reordenar também está no menu.
+          data-fluido={c.id}
           data-arrasto-alvo={`reordenar:${c.id}`}
           onPointerDown={(event) => {
             if (isEditing) return

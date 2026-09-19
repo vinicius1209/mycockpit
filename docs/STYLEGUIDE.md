@@ -509,6 +509,15 @@ proporcionalidade do Orca:
   transição instantânea, sem erro nenhum. `prefers-reduced-motion` desliga
   pulse/reveal/esteira sempre (bloco global de movimento reduzido no
   `index.css`).
+- **Reordenar anima o TRAJETO, não a chegada** (ADR-217). Lista que muda de
+  ordem por gesto da pessoa (conversas e projetos na barra lateral) move cada
+  linha do lugar antigo até o novo por FLIP, em `var(--dur)`; a implementação
+  única é `lib/reordenacaoFluida.ts`, e lista nova importa em vez de repetir.
+  Duas regras herdadas do ADR-179 valem aqui: linha **sem posição anterior não
+  anima** (conversa recém-criada, troca de projeto e primeira pintura chegam
+  prontas), e a medida é `offsetTop`, não o rect da viewport, senão ROLAR a
+  lista faria o gesto seguinte animar linhas que ninguém moveu. Movimento
+  reduzido troca a ordem na hora: some o trajeto, nunca o resultado.
 - **Movimento no fio conta um evento que acabou de nascer** (ADR-179). Entrada
   só para o que `nasceuAgora` aprova (`lib/nascimento.ts`, carimbo de
   nascimento do item contra uma janela curta), decidido UMA vez na montagem por

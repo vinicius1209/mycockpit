@@ -136,6 +136,7 @@ export function ProjectRow({
           // S1.2 — arrastar reordena (teclado cobre pelo menu de contexto). Por
           // PONTEIRO, não por HTML5: o webview engole o arrasto do sistema
           // (ADR-214). Editar desativa, para não brigar com a seleção de texto.
+          data-fluido={project.id}
           data-arrasto-alvo={`reordenar:${project.id}`}
           onPointerDown={(event) => {
             if (editing) return

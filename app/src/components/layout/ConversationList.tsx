@@ -1,9 +1,10 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
 import { confirm } from "@/lib/confirm"
 import { createWorktree, removeWorktree, worktreeRemovalNote } from "@/lib/git"
 import { useWorktrees } from "@/store/worktrees"
+import { useReordenacaoFluida } from "@/lib/reordenacaoFluida"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -220,6 +221,13 @@ export function ConversationList({ projectId }: { projectId: string }) {
   }
 
   const tree = useMemo(() => groupConversationTree(conversations), [conversations])
+  // Reordenar anima em vez de saltar. A assinatura é a ORDEM, não a lista: mudar
+  // título ou estado de uma conversa não é reposicionamento e não move nada.
+  const listaRef = useRef<HTMLDivElement>(null)
+  useReordenacaoFluida(
+    listaRef,
+    useMemo(() => conversations.map((c) => c.id).join(","), [conversations]),
+  )
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
@@ -227,7 +235,10 @@ export function ConversationList({ projectId }: { projectId: string }) {
     // Cada filho recebe ~40px de recuo → texto sob o texto do projeto. Na linha
     // de conversa, parte desse recuo é a marca do agent (esquerda), então o
     // padding cai para 18px e a soma continua batendo.
-    <div className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px">
+    <div
+      ref={listaRef}
+      className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px"
+    >
       {tree.map((node, rootIdx) => {
         const hasChildren = node.children.length > 0
         const isChildActive = node.children.some((child) => child.id === activeId)

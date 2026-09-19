@@ -28,6 +28,7 @@ import {
 import { GLOBAL_NAVIGATION } from "@/components/layout/globalNavigation"
 import { ProjectRow } from "@/components/layout/Sidebar/ProjectRow"
 import { AccountMenu } from "@/components/layout/AccountMenu"
+import { useReordenacaoFluida } from "@/lib/reordenacaoFluida"
 import { useApp } from "@/store/app"
 import {
   COPY_DA_PASTA,
@@ -257,6 +258,10 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
   // ativo respeita a escolha e os pula. Expandir de novo (chevron/seleção)
   // tira do set. Ref (não re-renderiza; só o efeito abaixo lê).
   const userCollapsed = useRef<Set<string>>(new Set())
+  // Reordenar projeto anima em vez de saltar, igual à lista de conversas. A
+  // assinatura é a ORDEM: renomear ou mudar status não reposiciona nada.
+  const listaDeProjetosRef = useRef<HTMLDivElement>(null)
+  useReordenacaoFluida(listaDeProjetosRef, projects.map((p) => p.id).join(","))
   // Abrir um projeto = adicionar ao set + carregar (lazy) as conversas dele.
   const openExpand = (id: string) => {
     userCollapsed.current.delete(id) // expandir desfaz o colapso deliberado
@@ -337,7 +342,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
               auto`): a área de projetos crescia com a lista, empurrava o
               rodapé pra fora e o avatar descia junto com a rolagem. */}
           <ScrollArea className="min-h-0 flex-1">
-            <div className="flex flex-col gap-0.5 px-2 pb-2">
+            <div ref={listaDeProjetosRef} className="flex flex-col gap-0.5 px-2 pb-2">
               {projects.length === 0 ? (
                 <div className="mt-10 flex flex-col items-center gap-3 px-4 text-center">
                   <FolderGit2 className="size-6 text-muted-foreground/60" />

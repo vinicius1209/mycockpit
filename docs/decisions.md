@@ -7826,3 +7826,36 @@ considerou.
   vira `[a,d,b,c]`. O lado é testado com dublês, porque a suíte roda em Node sem
   jsdom — e por isso a implementação escreve os bits de `compareDocumentPosition`
   em vez de lê-los de `Node`, que não existe fora do navegador.
+
+### ADR-217 · Reordenar move a linha; salto é resultado sem gesto
+
+- **Contexto (19/09/2026):** com o destino já legível (ADR-216), reordenar ainda
+  era "meio brusco": ao soltar, a lista trocava de ordem num quadro. A pessoa
+  não via o gesto acontecer, via o resultado já pronto e tinha que conferir se
+  era o que pediu.
+- **Decisão:** a lista anima o TRAJETO por FLIP — mede `offsetTop` de cada linha
+  antes, deixa o React reordenar, devolve cada uma ao lugar antigo por
+  `transform` e anima até zero, em `var(--dur)`. O DOM final é sempre o
+  correto; o movimento é só a diferença, então nada aqui pode deixar a lista
+  num estado que não seja o de verdade. Vale para conversas e projetos, com
+  implementação única em `lib/reordenacaoFluida.ts`.
+- **Alcance:** `offsetTop` e não `getBoundingClientRect().top`, porque o rect é
+  relativo à viewport: rolar a lista mudaria todos os valores e o gesto seguinte
+  animaria linhas que ninguém moveu. Linha **sem posição anterior não anima**,
+  que é o ADR-179 aplicado fora do fio: conversa nova, troca de projeto e
+  primeira pintura chegam prontas, e movimento conta reposicionamento, não
+  chegada. A assinatura que dispara o efeito é a ORDEM dos ids, não a lista:
+  renomear uma conversa ou mudar o estado dela não move nada.
+- **Consequência:** a animação é WAAPI e não classe CSS, porque o trajeto é um
+  número diferente a cada gesto. Isso afasta um pouco da regra "animação presa à
+  presença do elemento" do §6, e a compensação é que a WAAPI se limpa sozinha ao
+  terminar: não existe timer nem transform preso, e o elemento nunca fica devendo
+  um estado. `prefers-reduced-motion` pula o trajeto e mantém a troca de ordem,
+  que é o "estático e visível" que o §6 exige — some o caminho, nunca o
+  resultado.
+- **Verificação:** o núcleo é puro e testado em `reordenacaoFluida.test.ts`
+  (quem desceu é puxado para cima e vice-versa; linha parada não entra; linha
+  sem posição anterior não anima; linha que sumiu não aparece). A leitura do
+  token de duração também é testada, inclusive os casos que valem o padrão em
+  vez de zero — `var(--dur)` sem definição já virou transição instantânea sem
+  erro uma vez (ADR-179), e zero é "sem animação" disfarçado de animação.
