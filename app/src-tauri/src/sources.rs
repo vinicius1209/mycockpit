@@ -243,6 +243,18 @@ fn read_text_file_scoped(
     Ok(output)
 }
 
+/// `~` e `~/resto` viram caminho sob `home`. Qualquer outra forma (`~fulano`,
+/// til no meio, `home` desconhecido) sai intacta e cai na resolução normal.
+fn expandir_til(path: &str, home: Option<&Path>) -> std::path::PathBuf {
+    match (home, path.strip_prefix('~')) {
+        (Some(home), Some("")) => home.to_path_buf(),
+        (Some(home), Some(resto)) if resto.starts_with('/') => {
+            home.join(resto.trim_start_matches('/'))
+        }
+        _ => std::path::PathBuf::from(path),
+    }
+}
+
 fn scoped_file_path(
     root: &str,
     path: &str,
@@ -256,7 +268,11 @@ fn scoped_file_path(
     // editor.rs sempre juntou a raiz. Duas portas para o mesmo alvo, e só uma
     // resolvia o caminho. A guarda de escopo abaixo segue valendo: `..` continua
     // barrado pelo `starts_with`.
-    let alvo = Path::new(path);
+    // `~/` é como alguns motores citam o que salvaram fora do projeto (a pasta
+    // de artefatos, por exemplo). Expandir NÃO autoriza nada: o caminho já
+    // expandido passa pela mesma guarda de escopo logo abaixo.
+    let expandido = expandir_til(path, std::env::var_os("HOME").as_deref().map(Path::new));
+    let alvo = expandido.as_path();
     let canon = if alvo.is_absolute() {
         std::fs::canonicalize(alvo).map_err(|e| e.to_string())?
     } else {
@@ -1117,6 +1133,20 @@ mod tests {
         assert!(read_project_file_bytes_scoped(&raiz, "../etc/hosts", None).is_err());
 
         std::fs::remove_dir_all(&tmp).unwrap();
+    }
+
+    #[test]
+    fn expandir_til_so_troca_o_til_inicial_seguido_de_barra() {
+        let home = Path::new("/Users/v");
+        assert_eq!(
+            expandir_til("~/.gemini/antigravity-cli/brain/x/a.png", Some(home)),
+            Path::new("/Users/v/.gemini/antigravity-cli/brain/x/a.png")
+        );
+        assert_eq!(expandir_til("~", Some(home)), Path::new("/Users/v"));
+        // Nada disto é "a minha home": segue como veio, e a guarda decide.
+        assert_eq!(expandir_til("~fulano/a.png", Some(home)), Path::new("~fulano/a.png"));
+        assert_eq!(expandir_til("docs/~/a.png", Some(home)), Path::new("docs/~/a.png"));
+        assert_eq!(expandir_til("~/a.png", None), Path::new("~/a.png"));
     }
 
     #[test]
