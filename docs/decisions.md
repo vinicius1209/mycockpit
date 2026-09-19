@@ -7771,3 +7771,15 @@ considerou.
   no build t401 é do usuário. A camada não desenha onde a linha vai cair, e o
   equivalente sem arrastar continua existindo em todos os casos ("Mover para
   cima/baixo", `@`, "Citar trecho").
+
+- **Correção (19/09/2026):** a captura do ponteiro NÃO pode acontecer no
+  `pointerdown`. A fonte do gesto é um `<div>` com um `<button>` dentro (linha de
+  conversa, linha de projeto), e o alvo do `click` é o ancestral comum dos alvos
+  do `pointerdown` e do `pointerup`. Capturar no `pointerdown` retargeta o
+  `pointerup` para a div, o ancestral comum vira a div, e o `onClick` do botão
+  nunca roda: no app instalado isso apareceu como "não consigo alternar entre
+  conversas", com o arrastar funcionando (é na div) e o clicar morto. Não era
+  intermitente porque é comportamento de especificação, não quirk do WebKit.
+  A captura existe só para o gesto sobreviver ao ponteiro sair da linha, o que
+  só importa depois que virou arrasto — então ela nasce no `pointermove`, quando
+  o limiar é cruzado. Quem só clica nunca chega a capturar nada.

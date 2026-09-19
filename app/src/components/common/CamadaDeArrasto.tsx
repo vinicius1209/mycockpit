@@ -51,16 +51,20 @@ export function iniciarArrasto(
   rotulo: string,
 ): void {
   if (ev.button !== 0) return
-  const captor = ev.currentTarget
-  // Captura: o gesto continua valendo mesmo se o ponteiro sair da linha (ou da
-  // janela) no meio do caminho. Elemento que já saiu do DOM lança, e aí o
-  // arrasto segue sem captura, que é o pior caso aceitável.
-  try {
-    captor.setPointerCapture(ev.pointerId)
-  } catch {
-    /* sem captura */
+  // Guarda QUEM vai capturar, mas NÃO captura ainda. Captura aqui comia o
+  // clique: a fonte é um `<div>` com um `<button>` dentro, e captura ativa num
+  // ancestral redireciona os eventos de mouse derivados para quem capturou —
+  // o `click` parava na div e o `onClick` do botão nunca rodava. Quem só clica
+  // nunca chega a precisar de captura; ela nasce no `mover`, quando o gesto
+  // realmente vira arrasto.
+  pendente = {
+    carga,
+    rotulo,
+    x: ev.clientX,
+    y: ev.clientY,
+    pointerId: ev.pointerId,
+    captor: ev.currentTarget,
   }
-  pendente = { carga, rotulo, x: ev.clientX, y: ev.clientY, pointerId: ev.pointerId, captor }
 }
 
 /** Depois de arrastar, o `click` que o sistema manda em seguida não pode virar
@@ -165,6 +169,14 @@ export function CamadaDeArrasto() {
       if (!cargaArrastada()) {
         if (!andou) return
         comecarArrasto(p.carga)
+        // AGORA sim: virou arrasto, então o gesto precisa sobreviver ao ponteiro
+        // sair da linha (ou da janela). Elemento que já saiu do DOM lança, e aí
+        // o arrasto segue sem captura, que é o pior caso aceitável.
+        try {
+          p.captor?.setPointerCapture(p.pointerId)
+        } catch {
+          /* sem captura */
+        }
         // Sem isto, arrastar sobre texto vira seleção no meio do gesto.
         document.body.style.userSelect = "none"
       }
