@@ -87,3 +87,39 @@ export async function loadConversationItemSnapshot(
     return null
   }
 }
+
+/**
+ * Retrofit PREGUIÇOSO para a fonte itemizada (F3 do PRD da busca no fio).
+ *
+ * Conversa anterior à migração 48 vive só no blob `conversations.items`. Ela
+ * continua respondendo busca (o gateway varre o blob), mas fora do índice, que
+ * é mais rápido e casa substring. Aqui ela entra na fonte nova na PRIMEIRA vez
+ * que é aberta, e os triggers de `conversation_item_fts` a indexam sozinhos.
+ *
+ * Por que aqui e não numa migração em SQL: o carregamento PREFERE a fonte
+ * itemizada ao blob (`loadConversation`). Um snapshot montado à mão com
+ * `json_each` que saísse torto passaria a ser o que a pessoa vê, e o histórico
+ * apareceria danificado. Estes `items` são os que acabaram de ser lidos e vão
+ * para a tela: o snapshot não tem como divergir do que ela enxerga.
+ *
+ * Fail-open: falhar aqui não pode atrapalhar abrir a conversa. O blob segue
+ * sendo a fonte, a busca segue varrendo, e a próxima abertura tenta de novo.
+ * Conversa vazia NÃO é itemizada: gravar `item_count = 0` faria o carregamento
+ * preferir uma lista vazia ao blob, e isso é perda de histórico, não retrofit.
+ */
+export async function itemizarSeFaltando(
+  conversationId: string,
+  items: readonly ChatItem[],
+): Promise<void> {
+  if (!isTauri() || items.length === 0) return
+  try {
+    await saveConversationItemChanges(
+      conversationId,
+      items,
+      items.map((_, position) => position),
+      true,
+    )
+  } catch (error) {
+    console.warn("[conversation-items] retrofit adiado", error)
+  }
+}

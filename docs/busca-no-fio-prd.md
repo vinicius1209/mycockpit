@@ -408,12 +408,25 @@ a inspeção escrita dos 4,3%. Teste de contrato da gêmea SQL.
 **Saída:** nenhum caso patológico, e a divergência contra o caminho antigo está
 explicada por escrito.
 
-### F3 · Retrofit e reconstrução
+### F3 · Retrofit · **entregue em 19/09/2026**
 
-As 10 conversas que só existem no blob entram na tabela e no índice sem gesto do
-usuário; reconstrução quando o índice estiver inconsistente. Testes de R7.
+Conversa anterior à migração 48 entra na fonte itemizada na PRIMEIRA vez que é
+aberta (`itemizarSeFaltando`), e os triggers do índice a alcançam sozinhos.
 
-**Saída:** a frente vale para banco velho, não só para banco novo.
+**Descartado: retrofit por migração em SQL.** O carregamento PREFERE a fonte
+itemizada ao blob (`loadConversation`), então um snapshot montado com `json_each`
+que saísse torto viraria o que a pessoa vê, e o histórico apareceria danificado.
+Os itens usados no retrofit são os que acabaram de ser lidos e vão para a tela:
+não têm como divergir do que ela enxerga. O preço é que só retrofita conversa que
+alguém abre, e isso é aceitável — conversa que ninguém abre também ninguém busca,
+e a varredura responde igual, só mais devagar.
+
+Conversa VAZIA não é itemizada: gravar `item_count = 0` faria o carregamento
+preferir uma lista vazia ao blob, o que é perda de histórico e não retrofit. Das
+10 conversas fora da fonte itemizada no banco de referência, 3 são vazias.
+
+**Saída:** a frente vale para banco velho, sem gesto e sem risco de o retrofit
+virar a verdade errada.
 
 ## 7. Fora de escopo
 

@@ -8,7 +8,10 @@ import { ensureComposerDraftTables, ensureConversationHierarchySchema } from "@/
 import type { ChatItem } from "@/store/chat"
 import type { ContextBasis } from "@/lib/contextSnapshot"
 import type { SessoesAnteriores } from "@/lib/retomadaDeMotor"
-import { loadConversationItemSnapshot } from "@/lib/db/conversationItems"
+import {
+  itemizarSeFaltando,
+  loadConversationItemSnapshot,
+} from "@/lib/db/conversationItems"
 
 /** S1.2 — persiste a ordem manual das conversas DE UM projeto. O filtro por
  *  project_id impede que um id vazado de outra lista mexa em conversa alheia. */
@@ -240,12 +243,16 @@ export async function loadConversation(
   if (!rows.length) return null
   try {
     const incrementalItems = await loadConversationItemSnapshot(id)
+    const items = incrementalItems ?? (JSON.parse(rows[0].items) as ChatItem[])
+    // Primeira abertura de uma conversa anterior à fonte itemizada: ela entra
+    // nela agora, e os triggers do índice a alcançam sozinhos. Fire-and-forget
+    // de propósito — abrir a conversa não espera pelo retrofit.
+    if (!incrementalItems) void itemizarSeFaltando(id, items)
     return {
       sessionId: rows[0].session_id,
       // A fonte nova é realmente preferencial: um snapshot legado danificado
       // não invalida uma revisão incremental que já fechou contagem e ids.
-      items:
-        incrementalItems ?? (JSON.parse(rows[0].items) as ChatItem[]),
+      items,
       title: rows[0].title,
       suggestions: rows[0].suggestions
         ? (JSON.parse(rows[0].suggestions) as string[])
