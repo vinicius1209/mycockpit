@@ -521,6 +521,7 @@
           updatedAt: typeof c.updatedAt === "number" ? c.updatedAt : 0,
           running: !!c.running,
           pedeVoce: !!c.pedeVoce,
+          frase: typeof c.frase === "string" && c.frase.trim() ? c.frase.trim() : null,
         });
       }
     }
@@ -530,6 +531,96 @@
         (b.updatedAt - a.updatedAt);
     });
     return out;
+  }
+
+  // ---------------- cara de app (início, linha, fio) ----------------
+  // Identidade visual SEM comparar nome de motor: forma e cor saem de hash do
+  // id. `n` é quantas opções a página tem; id vazio cai na primeira.
+  function hashIndex(seed, n) {
+    var t = String(seed == null ? "" : seed);
+    var total = Math.max(1, Math.floor(Number(n) || 1));
+    var h = 0;
+    for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) >>> 0;
+    return h % total;
+  }
+
+  // Hora da linha, curta como em mensageiro ("agora", "4 min", "3 h", "2 d").
+  function shortAgo(nowMs, ts) {
+    if (typeof ts !== "number" || !ts) return "";
+    var s = Math.max(0, (nowMs - ts) / 1000);
+    if (s < 60) return "agora";
+    if (s < 3600) return Math.round(s / 60) + " min";
+    if (s < 86400) return Math.round(s / 3600) + " h";
+    return Math.round(s / 86400) + " d";
+  }
+
+  // O que a cara do topo diz. Estado REAL: fora do ar vence tudo (dado velho
+  // não finge calma), depois quem pede você, depois quem roda.
+  function fleetPulse(snap, offline, seenLabel) {
+    var att = snap && Array.isArray(snap.attention) ? snap.attention.length : 0;
+    var run = snap && Array.isArray(snap.running) ? snap.running.length : 0;
+    if (offline) {
+      return { state: "off", label: "Sem conexão com o Mac" + (seenLabel ? " · " + seenLabel : "") };
+    }
+    if (!snap) return { state: "wait", label: "Conectando ao Mac…" };
+    var roda = run ? run + " rodando" : "nada rodando";
+    if (att) return { state: "pede", label: att + (att === 1 ? " pede você" : " pedem você") + " · " + roda };
+    return { state: run ? "roda" : "calma", label: roda };
+  }
+
+  // Segunda linha da conversa no início. Ordem: o que pede você (o texto do
+  // próprio pedido), o que roda agora (detail do running), a frase pronta do
+  // último turno. Sem nenhuma, texto vazio: a página não inventa prévia.
+  function convPreview(conv, snap) {
+    var c = conv || {};
+    var att = snap && Array.isArray(snap.attention) ? snap.attention : [];
+    for (var i = 0; i < att.length; i++) {
+      var a = att[i];
+      if (!a || a.convId !== c.convId) continue;
+      if (a.kind === "approval") return { tone: "pede", text: "Pede aprovação: " + (a.command || a.toolName || "comando") };
+      if (a.kind === "stalled") return { tone: "pede", text: "Turno sem sinal de vida, pode ter travado" };
+      var q = Array.isArray(a.questions) && a.questions.length ? a.questions[0] : null;
+      return { tone: "pede", text: q || (a.kind === "gate" ? "Missão esperando sua resposta" : "Pergunta do agente") };
+    }
+    var run = snap && Array.isArray(snap.running) ? snap.running : [];
+    for (var j = 0; j < run.length; j++) {
+      if (run[j] && run[j].convId === c.convId) return { tone: "roda", text: run[j].detail || "Trabalhando…" };
+    }
+    if (c.running) return { tone: "roda", text: "Trabalhando…" };
+    return { tone: "", text: c.frase || "" };
+  }
+
+  // Ferramentas seguidas viram UM grupo ("3 ações · Grep, Bash"): num turno
+  // real são dezenas e, no celular, empurram a resposta para longe. Os demais
+  // itens passam intactos e na mesma ordem.
+  function groupThreadItems(items) {
+    var out = [];
+    var lista = Array.isArray(items) ? items : [];
+    for (var i = 0; i < lista.length; i++) {
+      var it = lista[i];
+      if (it && it.kind === "tool") {
+        var ult = out[out.length - 1];
+        if (ult && ult.kind === "tools") ult.items.push(it);
+        else out.push({ kind: "tools", id: "g-" + (it.id || i), items: [it] });
+      } else {
+        out.push(it);
+      }
+    }
+    return out;
+  }
+  // Rótulo do grupo: contagem + nomes distintos na ordem em que apareceram
+  // (no máximo 3, o resto vira "+N").
+  function toolGroupLabel(tools) {
+    var lista = Array.isArray(tools) ? tools : [];
+    var nomes = [];
+    for (var i = 0; i < lista.length; i++) {
+      var n = lista[i] && lista[i].name ? String(lista[i].name) : "";
+      if (n && nomes.indexOf(n) < 0) nomes.push(n);
+    }
+    var visiveis = nomes.slice(0, 3).join(", ") + (nomes.length > 3 ? " +" + (nomes.length - 3) : "");
+    var falhas = lista.filter(function (t) { return t && t.result && t.result.ok === false; }).length;
+    return lista.length + (lista.length === 1 ? " ação" : " ações") + (visiveis ? " · " + visiveis : "") +
+      (falhas ? " · " + falhas + (falhas === 1 ? " falhou" : " falharam") : "");
   }
 
   // Atalhos do campo de mensagem: "/parar" para o turno da conversa aberta;
@@ -599,6 +690,12 @@
     machineName: machineName,
     notificationTitle: notificationTitle,
     homeConversations: homeConversations,
+    hashIndex: hashIndex,
+    shortAgo: shortAgo,
+    fleetPulse: fleetPulse,
+    convPreview: convPreview,
+    groupThreadItems: groupThreadItems,
+    toolGroupLabel: toolGroupLabel,
     parseChatShortcut: parseChatShortcut,
     parseRoute: parseRoute,
     routeHash: routeHash,

@@ -61,9 +61,35 @@ declare global {
     updatedAt: number
     running: boolean
     pedeVoce: boolean
+    /** Frase pronta do último turno encerrado; null = sem prévia. */
+    frase: string | null
+  }
+
+  interface CompanionWebPreview {
+    tone: "pede" | "roda" | ""
+    text: string
+  }
+
+  interface CompanionWebToolGroup {
+    kind: "tools"
+    id: string
+    items: { kind: "tool"; id?: string; name?: string; result?: { ok?: boolean } | null }[]
   }
 
   var CompanionCore: {
+    hashIndex(seed: string | null | undefined, n: number): number
+    shortAgo(nowMs: number, ts: number | null | undefined): string
+    fleetPulse(
+      snap: unknown,
+      offline: boolean,
+      seenLabel?: string | null,
+    ): { state: "off" | "wait" | "pede" | "roda" | "calma"; label: string }
+    convPreview(
+      conv: { convId?: string; running?: boolean; frase?: string | null } | null | undefined,
+      snap: unknown,
+    ): CompanionWebPreview
+    groupThreadItems(items: unknown): (CompanionWebToolGroup | { kind: string; [k: string]: unknown })[]
+    toolGroupLabel(tools: unknown): string
     homeConversations(snap: unknown, projectId?: string | null): CompanionWebHomeConversation[]
     machineName(raw: string | null | undefined): string | null
     notificationTitle(machine: string | null | undefined, text: string): string

@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0a0b0d">
 <!-- PWA (C1): instalável na home screen, standalone. hrefs RELATIVOS de
      propósito: servidos pelo mesmo binário e inofensivos no mock via file://. -->
@@ -34,467 +34,449 @@
 </script>
 <style>
 /* ============================================================
-   FROTA · Companion — página mobile auto-contida (onda 3).
-   Tokens copiados do app (src/index.css, tema dark grafite).
-   Zero build, zero dependência: este arquivo é o deploy.
+   FROTA · Companion — página mobile auto-contida.
+   Cara de app nativo (ADR da escala do celular em docs/decisions.md):
+   telas que empurram, folhas que sobem, uma barra por tela.
+   Tokens de cor copiados do app (src/index.css). Zero build, zero
+   dependência: este arquivo é o deploy.
    ============================================================ */
 :root {
-  --background: #0a0b0d;
-  --rail: #0c0d10;
-  --foreground: #e7e8ea;
-  --card: #141619;
-  --popover: #191c20;
-  --muted-foreground: #9aa0a7;
-  --accent: #1e2126;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.13);
-  --input: rgba(255, 255, 255, 0.12);
-  --brass: #e4a862;
-  --brass-soft: rgba(228, 168, 98, 0.14);
-  --brass-fg: #1a1306;
-  --st-idle: #687078;
-  --st-running: #5bb8e8;
-  --st-queued: #d99138;
-  --st-success: #5bd6a0;
-  --st-error: #f2766b;
-  --font-sans: "Geist Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
-  --font-mono: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo, monospace;
-  --radius: 9px;
-  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --background: #0a0b0d; --rail: #101216; --foreground: #e7e8ea; --card: #141619;
+  --muted-foreground: #9aa0a7; --faint: #5f656c; --accent: #1e2126;
+  --border: rgba(255, 255, 255, 0.08); --border-strong: rgba(255, 255, 255, 0.14);
+  --brass: #e4a862; --brass-soft: rgba(228, 168, 98, 0.14); --brass-fg: #1a1306;
+  --st-idle: #687078; --st-running: #5bb8e8; --st-queued: #d99138; --st-success: #5bd6a0; --st-error: #f2766b;
+  --scrim: rgba(0, 0, 0, 0.6);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, "Roboto Mono", monospace;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  --ease: cubic-bezier(.32, .72, 0, 1);
 }
 /* C4 — tema claro: MESMA paleta light do app (src/index.css :root). O tema
-   segue o sistema por padrão; o toggle do header persiste a escolha. */
+   segue o sistema por padrão; Ajustes persiste a escolha. */
 :root[data-theme="light"] {
-  --background: #fbfbfa;
-  --rail: #f6f6f4;
-  --foreground: #16181b;
-  --card: #ffffff;
-  --popover: #ffffff;
-  --muted-foreground: #5c6166;
-  --accent: #f1f1ef;
-  --border: rgba(0, 0, 0, 0.09);
-  --border-strong: rgba(0, 0, 0, 0.14);
-  --input: rgba(0, 0, 0, 0.13);
-  --brass: #a9742b;
-  --brass-soft: rgba(169, 116, 43, 0.12);
-  --brass-fg: #fbf6ee;
-  --st-idle: #8a9099;
-  --st-running: #2f8fbf;
-  --st-queued: #c1861f;
-  --st-success: #1f9d6b;
-  --st-error: #cf4a3e;
-  --lift: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --background: #fbfbfa; --rail: #f3f3f1; --foreground: #16181b; --card: #ffffff;
+  --muted-foreground: #6b7076; --faint: #a3a7ac; --accent: #efefec;
+  --border: rgba(0, 0, 0, 0.08); --border-strong: rgba(0, 0, 0, 0.14);
+  --brass: #a9742b; --brass-soft: rgba(169, 116, 43, 0.12); --brass-fg: #fbf6ee;
+  --st-idle: #8a9099; --st-running: #2f8fbf; --st-queued: #c1861f; --st-success: #1f9d6b; --st-error: #cf4a3e;
+  --scrim: rgba(10, 11, 13, 0.38);
 }
-* { box-sizing: border-box; border-color: var(--border); }
-html { color-scheme: dark; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { color-scheme: dark; height: 100%; }
 :root[data-theme="light"] { color-scheme: light; }
 body {
-  margin: 0;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-sans);
-  font-size: 15px;
-  line-height: 1.45;
+  margin: 0; height: 100%; overflow: hidden; overscroll-behavior: none;
+  background: var(--background); color: var(--foreground);
+  font-family: var(--font-sans); font-size: 16px; line-height: 1.4;
   -webkit-font-smoothing: antialiased;
-  padding-bottom: env(safe-area-inset-bottom);
 }
-button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-textarea {
-  font: inherit; color: var(--foreground); background: var(--rail);
-  border: 1px solid var(--input); border-radius: 7px; padding: 8px 10px;
-  width: 100%; resize: none; min-height: 40px; max-height: 40vh;
-}
-textarea:focus { outline: none; border-color: var(--brass); }
-code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent); border-radius: 4px; padding: 1px 4px; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+textarea { font: inherit; color: inherit; }
+code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accent); border-radius: 5px; padding: 1px 5px; }
 .mono { font-family: var(--font-mono); font-variant-ligatures: none; }
+[hidden] { display: none !important; }
 
-/* etiqueta "de instrumento" (label-mono do app) */
-.lm {
-  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em;
-  font-size: 0.6875rem; line-height: 1; color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
-}
+/* ---------- casca: telas que empurram ---------- */
+/* A altura vem do visualViewport (JS) quando o teclado sobe; 100dvh é o piso. */
+#app { position: fixed; left: 0; right: 0; top: 0; height: var(--vh, 100dvh); overflow: hidden; max-width: 640px; margin: 0 auto; background: var(--background); }
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--background); transition: transform .42s var(--ease), opacity .42s var(--ease); }
+.screen.push { transform: translateX(100%); visibility: hidden; box-shadow: -1px 0 0 var(--border); transition: transform .42s var(--ease), visibility 0s .42s; }
+.screen.push.in { transform: none; visibility: visible; transition: transform .42s var(--ease); }
+#scr-brief.under { transform: translateX(-22%); opacity: .6; }
+#app.noanim .screen, #app.noanim .sheet, #app.noanim .scrim { transition: none !important; }
+.scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
 
-/* ---------- header ---------- */
-header {
-  position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; gap: 10px;
-  padding: calc(10px + env(safe-area-inset-top)) 14px 10px;
-  background: color-mix(in srgb, var(--background) 88%, transparent);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  border-bottom: 1px solid var(--border);
-}
-.wordmark { font-weight: 650; letter-spacing: 0.02em; font-size: 15px; }
-.wordmark { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wordmark small { color: var(--muted-foreground); font-weight: 450; }
-.conn { display: flex; align-items: center; gap: 6px; margin-left: auto; }
-.dot { width: 8px; height: 8px; border-radius: 999px; background: var(--st-idle); flex: none; }
-.dot.on { background: var(--st-success); }
-.dot.connecting { background: var(--st-queued); animation: pulse 1.6s cubic-bezier(.4,0,.6,1) infinite; }
-.dot.off { background: var(--st-error); }
-@keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
-#connLabel { font-size: 11px; color: var(--muted-foreground); }
-#btnBell { font-size: 16px; opacity: .55; padding: 4px; }
-#btnBell.on { opacity: 1; }
-#btnTheme { font-size: 16px; opacity: .55; padding: 4px; }
+/* barra do início: nasce transparente, vira vidro quando o herói sai de cena */
+.topbar { position: absolute; z-index: 5; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 6px) 12px 8px; display: flex; align-items: center; gap: 8px; min-height: calc(var(--sat) + 54px); pointer-events: none; }
+.topbar > * { pointer-events: auto; }
+.topbar::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; transition: opacity .2s; background: color-mix(in srgb, var(--background) 82%, transparent); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border-bottom: 1px solid var(--border); }
+.topbar.solid::before { opacity: 1; }
+.topbar .mini { display: flex; align-items: center; gap: 8px; padding-left: 8px; font-weight: 600; font-size: 16px; opacity: 0; transform: translateY(4px); transition: .2s; }
+.topbar .mini .face { width: 26px; height: 26px; }
+.topbar.solid .mini { opacity: 1; transform: none; }
+.sp { flex: 1; }
+.ib { width: 42px; height: 42px; border-radius: 999px; display: grid; place-items: center; color: var(--muted-foreground); flex: none; }
+.ib:active { background: var(--accent); }
+.ib svg { width: 22px; height: 22px; }
 
-/* banner de offline honesto (C1): Mac fora do ar nunca é tela branca nem dado
-   velho fingindo vivo — aviso + carimbo "visto há…" + retry automático */
-#offline {
-  position: sticky; top: calc(50px + env(safe-area-inset-top)); z-index: 18;
-  display: flex; gap: 6px; align-items: center; justify-content: center;
-  padding: 7px 12px; font-size: 12.5px; color: var(--st-queued);
-  background: color-mix(in srgb, var(--st-queued) 13%, var(--background));
-  border-bottom: 1px solid color-mix(in srgb, var(--st-queued) 35%, transparent);
-}
-#offline[hidden] { display: none !important; }
-#offline .seen { color: var(--muted-foreground); }
+/* herói: a cara da frota deste Mac. Cor e olhos dizem o estado REAL. */
+.hero { padding: calc(var(--sat) + 34px) 20px 10px; text-align: center; }
+.hero .face { width: 124px; height: 124px; margin: 0 auto; }
+.hero .who { margin-top: 12px; font-size: 17px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pulse { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; margin-top: 10px; padding: 7px 8px 7px 12px; border-radius: 999px; background: var(--accent); font-size: 14px; }
+.pulse span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pulse .chev { color: var(--faint); width: 16px; height: 16px; flex: none; }
+.pulse .d { width: 7px; height: 7px; border-radius: 9px; background: var(--st-success); flex: none; }
+.pulse.roda .d { background: var(--st-running); }
+.pulse.pede .d { background: var(--st-queued); }
+.pulse.wait .d { background: var(--st-idle); }
+.pulse.off { color: var(--muted-foreground); } .pulse.off .d { background: var(--st-error); }
 
-/* ---------- layout ---------- */
-main { max-width: 640px; margin: 0 auto; padding: 12px 14px 90px; }
-/* !important: vence o display:flex do #scr-chat (especificidade de ID) */
-section.screen[hidden] { display: none !important; }
-h2.sec {
-  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.07em;
-  font-size: 11px; color: var(--muted-foreground); margin: 22px 2px 8px;
-  display: flex; align-items: center; gap: 8px;
-}
-h2.sec::after { content: ""; flex: 1; height: 1px; background: var(--border); }
-h2.sec .amber { color: var(--st-queued); }
+.filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 20px 6px; scrollbar-width: none; }
+.filters:empty { padding: 8px 0 0; }
+.filters::-webkit-scrollbar { display: none; }
+.fchip { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 14px; color: var(--muted-foreground); border: 1px solid var(--border-strong); }
+.fchip.on { background: var(--foreground); color: var(--background); border-color: transparent; }
+.fchip i { width: 8px; height: 8px; border-radius: 9px; }
 
-.card {
-  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
-  padding: 12px; margin-bottom: 10px; box-shadow: var(--lift);
-}
-.card.attn { border-color: color-mix(in srgb, var(--st-queued) 45%, transparent); }
-.badge {
-  display: inline-block; font-family: var(--font-mono); font-size: 10px;
-  text-transform: uppercase; letter-spacing: .08em; padding: 3px 7px; border-radius: 5px;
-}
-.badge.gate { background: var(--brass-soft); color: var(--brass); }
-.badge.approval { background: color-mix(in srgb, var(--st-queued) 16%, transparent); color: var(--st-queued); }
-.badge.question { background: color-mix(in srgb, var(--st-running) 14%, transparent); color: var(--st-running); }
-.cardhead { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
-.cardhead .ctx { font-size: 12px; color: var(--muted-foreground); }
-.qblock { margin: 10px 0; }
-.qblock p { margin: 0 0 6px; font-size: 14px; }
-pre.cmd {
-  font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12.5px;
-  background: var(--rail); border: 1px solid var(--border); border-radius: 7px;
-  padding: 9px 10px; margin: 8px 0; overflow-x: auto; white-space: pre-wrap; word-break: break-word;
-}
-.row { display: flex; gap: 8px; align-items: center; }
-.btn {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  border-radius: 7px; padding: 9px 14px; font-size: 14px; font-weight: 550;
-  background: var(--accent); border: 1px solid var(--border-strong); min-height: 40px;
-}
-.btn:active { transform: translateY(1px); }
-.btn.primary { background: var(--brass); color: var(--brass-fg); border-color: transparent; }
-.btn.danger { background: color-mix(in srgb, var(--st-error) 18%, transparent); color: var(--st-error); border-color: color-mix(in srgb, var(--st-error) 40%, transparent); }
-.btn.ok { background: color-mix(in srgb, var(--st-success) 16%, transparent); color: var(--st-success); border-color: color-mix(in srgb, var(--st-success) 38%, transparent); }
-.btn[disabled] { opacity: .45; pointer-events: none; }
-.btn.icon { padding: 8px 10px; font-size: 17px; min-width: 42px; }
-.actions { display: flex; gap: 8px; margin-top: 10px; justify-content: flex-end; flex-wrap: wrap; }
-.sent { color: var(--st-success); font-size: 13px; padding: 6px 2px; }
+/* linha de conversa */
+.list { padding: 4px 0 calc(var(--sab) + 96px); }
+.rowc { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 13px 20px; position: relative; }
+button.rowc:active { background: var(--accent); }
+.rowc .face { width: 52px; height: 52px; flex: none; }
+.rowc .mid { flex: 1; min-width: 0; display: block; }
+.rowc .l1 { display: flex; align-items: center; gap: 8px; }
+.rowc .tt { font-size: 17px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.tag { flex: none; max-width: 92px; font-size: 13px; color: var(--muted-foreground); background: var(--accent); border-radius: 7px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowc .when { margin-left: auto; flex: none; font-size: 13px; color: var(--faint); padding-left: 6px; }
+.rowc .l2 { margin-top: 3px; font-size: 15px; color: var(--muted-foreground); display: flex; align-items: center; gap: 6px; min-height: 21px; }
+.rowc .l2 span.t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowc.pede .l2 { color: var(--st-queued); }
+.rowc.roda .l2 { color: var(--st-running); }
+.rowc .mark { position: absolute; left: 7px; top: 50%; width: 7px; height: 7px; margin-top: -3px; border-radius: 9px; background: var(--st-queued); }
+.rowc.semmotor { opacity: .55; }
+#app.stale .list { opacity: .55; }
+.empty { text-align: center; color: var(--muted-foreground); font-size: 15px; padding: 36px 30px; }
 
-/* chips de anexo */
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-/* Alvo de soltura: só aparece com arquivo arrastado sobre a conversa. */
-#soltura {
-  position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
-  background: rgba(0,0,0,.35); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px);
-  color: #fff; font-size: 15px; font-weight: 600; pointer-events: none;
-}
-.chip {
-  display: inline-flex; align-items: center; gap: 6px; max-width: 100%;
-  background: var(--rail); border: 1px solid var(--border); border-radius: 999px;
-  padding: 3px 8px 3px 4px; font-size: 12px;
-}
-.chip img { width: 22px; height: 22px; border-radius: 999px; object-fit: cover; }
-.chip .file { width: 22px; height: 22px; border-radius: 999px; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
-.chip .nm { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip button { color: var(--muted-foreground); font-size: 14px; padding: 0 3px; }
+.fab { position: absolute; z-index: 6; right: 18px; bottom: calc(var(--sab) + 18px); height: 54px; padding: 0 20px 0 16px; border-radius: 999px; display: flex; align-items: center; gap: 8px; background: var(--brass); color: var(--brass-fg); font-weight: 600; font-size: 16px; box-shadow: 0 8px 24px rgba(0, 0, 0, .22); transition: transform .15s; }
+.fab:active { transform: scale(.96); }
+.fab svg { width: 22px; height: 22px; }
 
-/* execução */
-.run .top { display: flex; align-items: baseline; gap: 8px; }
-.run .kind { font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: .08em; color: var(--st-running); }
-.run .label { font-weight: 550; font-size: 14px; overflow-wrap: anywhere; }
-.run .now { font-size: 12.5px; color: var(--muted-foreground); margin-top: 4px; }
-.run .now b { color: var(--st-running); font-weight: 550; }
-.phases { margin: 8px 0 2px; display: grid; gap: 4px; }
-.phase { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
-.phase .pd { width: 7px; height: 7px; border-radius: 999px; flex: none; background: var(--st-idle); }
-.phase.running .pd { background: var(--st-running); animation: pulse 1.6s infinite; }
-.phase.done .pd { background: var(--st-success); }
-.phase.error .pd, .phase.aborted .pd { background: var(--st-error); }
-.phase.queued .pd { background: var(--st-queued); opacity: .55; }
-.phase .pl { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.phase .pc { color: var(--muted-foreground); font-family: var(--font-mono); font-size: 11px; }
-.meta { font-size: 12px; color: var(--muted-foreground); margin-top: 6px; }
+/* caras: piscam todas; quem roda respira; fora do ar dormem. Movimento é
+   sutil de propósito e some inteiro com prefers-reduced-motion. */
+.face { display: block; overflow: visible; }
+.face .eyes { transform-box: fill-box; transform-origin: center; animation: blink 5.2s infinite; }
+.face.viva .body { transform-box: fill-box; transform-origin: 50% 80%; animation: respira 2.4s ease-in-out infinite; }
+.face.dorme .eyes { animation: none; transform: scaleY(.16); }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@keyframes respira { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045, .965); } }
 
-/* entregas / projetos */
-.dl { display: flex; align-items: baseline; gap: 8px; }
-.dl .task { flex: 1; font-size: 13.5px; overflow-wrap: anywhere; }
-.dl .cost { font-family: var(--font-mono); font-size: 12px; color: var(--muted-foreground); white-space: nowrap; }
-.proj { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
-.proj .nm { font-weight: 550; flex: 1; }
-.proj .ar { color: var(--muted-foreground); }
-.agentbtn { width: 100%; text-align: left; display: flex; align-items: center; gap: 10px; }
-.agentbtn .glyph { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 12px; color: var(--brass); flex: none; }
+/* ---------- barra das telas empurradas ---------- */
+.nav { flex: none; display: flex; align-items: center; gap: 4px; padding: calc(var(--sat) + 4px) 10px 8px 6px; background: var(--background); border-bottom: 1px solid var(--border); z-index: 3; }
+.nav .face { width: 34px; height: 34px; flex: none; }
+.nav .ttl { flex: 1; min-width: 0; padding-left: 6px; }
+.nav .ttl b { display: block; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav .ttl small { display: block; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav .ttl small.roda { color: var(--st-running); }
+.stop { flex: none; height: 34px; padding: 0 12px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 12%, transparent); }
+.stop[disabled] { opacity: .45; pointer-events: none; }
+#offline { position: absolute; z-index: 8; left: 50%; top: calc(var(--sat) + 58px); transform: translateX(-50%); max-width: calc(100% - 24px); display: flex; gap: 6px; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 13px; white-space: nowrap; color: var(--st-queued); background: color-mix(in srgb, var(--st-queued) 14%, var(--background)); border: 1px solid color-mix(in srgb, var(--st-queued) 35%, transparent); }
+#offline .seen { color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; }
 
-.empty { color: var(--muted-foreground); font-size: 13px; padding: 10px 2px; }
-.back { color: var(--muted-foreground); font-size: 14px; padding: 6px 8px 6px 0; }
-
-/* ---------- lançar tarefa (C2) ---------- */
-.launchbtn { width: 100%; justify-content: center; margin: 4px 0 2px; }
-/* R4 — tela inicial chat-first */
-.homebar { display: flex; gap: 8px; align-items: center; }
-.homebar .launchbtn { flex: 1; width: auto; }
-.conv { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; }
-.conv .cv-main { min-width: 0; flex: 1; }
-.conv .cv-title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv .cv-meta { font-size: 12px; color: var(--muted-foreground); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.conv .cv-tag { flex: none; font-size: 11px; border-radius: 999px; padding: 2px 8px; }
-.conv .cv-tag.pede { background: color-mix(in srgb, var(--st-queued) 16%, transparent); color: var(--st-queued); }
-.conv .cv-tag.roda { background: color-mix(in srgb, var(--st-running) 14%, transparent); color: var(--st-running); }
-#chatAttn .card { margin-top: 10px; }
-#chatStop { margin-left: auto; }
-.pickrow { display: flex; flex-wrap: wrap; gap: 7px; margin: 6px 0 12px; }
-.pick { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 8px 14px; font-size: 13px; color: color-mix(in srgb, var(--foreground) 85%, transparent); }
-.pick.on { border-color: var(--brass); background: var(--brass-soft); color: var(--brass); }
-.pick small { color: var(--muted-foreground); font-size: 11px; margin-left: 4px; }
-#launchStatus { font-size: 13px; margin-top: 10px; min-height: 18px; }
-#launchStatus.err { color: var(--st-error); }
-#launchStatus.ok { color: var(--st-success); }
-
-/* snackbar honesto: veredito de ação vindo do Mac (action-result) */
-#note {
-  position: fixed; left: 12px; right: 12px; bottom: calc(64px + env(safe-area-inset-bottom));
-  z-index: 30; background: var(--popover); border: 1px solid var(--border-strong);
-  border-radius: 9px; padding: 10px 12px; font-size: 13px;
-  box-shadow: 0 6px 24px rgba(0,0,0,.45);
-}
-#note[hidden] { display: none !important; }
-
-/* opções de pergunta estruturada (C2: escolhas respondíveis do celular) */
-.optbtn {
-  display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left;
-  border: 1px solid var(--border); background: var(--rail); border-radius: 7px;
-  padding: 8px 10px; margin-top: 6px; font-size: 13.5px;
-}
-.optbtn.on { border-color: var(--brass); background: var(--brass-soft); }
-.optbtn .od { color: var(--muted-foreground); font-size: 12px; }
-
-/* rodapé de custo */
-footer#costbar {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
-  display: flex; justify-content: space-between; align-items: center;
-  padding: 10px 16px calc(10px + env(safe-area-inset-bottom));
-  background: color-mix(in srgb, var(--rail) 92%, transparent);
-  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-  border-top: 1px solid var(--border);
-}
-#costbar .v { font-family: var(--font-mono); font-size: 13px; color: var(--brass); }
-footer#costbar[hidden] { display: none !important; }
-
-/* ---------- chat (linguagem Blocks.So do composer do app: pill arredondado,
-   botão brass circular, chips — ver PLAN.md ai-02 + tokens do index.css) ---- */
-#scr-chat { display: flex; flex-direction: column; min-height: calc(100dvh - 120px); }
-#chatBar { position: sticky; top: 52px; z-index: 10; background: var(--background); margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
-#chatTitle { flex: 1; }
-.dot.busy { background: var(--st-running); animation: pulse 1.6s cubic-bezier(.4,0,.6,1) infinite; }
-#chatItems { flex: 1; display: flex; flex-direction: column; gap: 10px; padding-bottom: 8px; }
-.ci-user { align-self: flex-end; max-width: 86%; background: var(--brass-soft); border: 1px solid color-mix(in srgb, var(--brass) 30%, transparent); border-radius: 14px 14px 4px 14px; padding: 8px 12px; font-size: 14px; overflow-wrap: anywhere; white-space: pre-wrap; }
-/* feedback em 3 tempos: enviando… (pré-202) e digitando (turno vivo) */
-.dots { display: inline-flex; gap: 3px; align-items: center; }
-.dots i { width: 5px; height: 5px; border-radius: 999px; background: var(--muted-foreground); animation: tblink 1.2s ease-in-out infinite; }
+/* ---------- conversa ---------- */
+#chatItems { padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 12px; min-height: 100%; }
+.ci-user { align-self: flex-end; max-width: 84%; background: var(--accent); border-radius: 20px 20px 6px 20px; padding: 10px 14px; font-size: 16px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.ci-sending { align-self: flex-end; display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--faint); margin-top: -8px; padding-right: 6px; }
+.dots { display: inline-flex; gap: 3px; align-items: center; flex: none; }
+.dots i { width: 5px; height: 5px; border-radius: 999px; background: currentColor; opacity: .7; animation: tblink 1.2s ease-in-out infinite; }
 .dots i:nth-child(2) { animation-delay: .18s; }
 .dots i:nth-child(3) { animation-delay: .36s; }
 @keyframes tblink { 0%, 70%, 100% { opacity: .25; transform: translateY(0); } 35% { opacity: 1; transform: translateY(-2px); } }
-.ci-sending { align-self: flex-end; display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground); margin-top: -4px; padding-right: 4px; }
-.typing { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted-foreground); padding: 4px 2px; }
-.typing .tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 11px; color: var(--st-running); background: color-mix(in srgb, var(--st-running) 12%, transparent); border-radius: 5px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 52vw; }
-/* vazio: convite + chips de sugestão (os mesmos 3 do dock da mesa) */
-.chatempty { text-align: center; color: var(--muted-foreground); font-size: 13px; margin-top: 18vh; }
-.sugchips { display: flex; flex-wrap: wrap; gap: 7px; justify-content: center; margin-top: 12px; }
-.sug { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 7px 13px; font-size: 12.5px; color: color-mix(in srgb, var(--foreground) 82%, transparent); }
-.sug:active { border-color: color-mix(in srgb, var(--brass) 60%, transparent); color: var(--foreground); transform: translateY(1px); }
-.ci-text { align-self: stretch; max-width: 100%; font-size: 14px; overflow-wrap: anywhere; }
-/* ---------- markdown do fio (C3: subset do core.js, mesmo tom do app) ------ */
+.typing { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--muted-foreground); min-width: 0; }
+.typing .face { width: 26px; height: 26px; flex: none; }
+.typing .lbl { white-space: nowrap; }
+.typing .tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 13px; color: var(--st-running); background: color-mix(in srgb, var(--st-running) 12%, transparent); border-radius: 7px; padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.chatempty { text-align: center; color: var(--muted-foreground); font-size: 15px; margin: auto 0; padding: 20px 10px; }
+.chatempty .face { width: 72px; height: 72px; margin: 0 auto 14px; }
+.sugchips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.sug { border: 1px solid var(--border-strong); border-radius: 999px; padding: 9px 15px; font-size: 14px; color: var(--foreground); }
+.sug:active { background: var(--accent); }
+.ci-text { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.ci-text .who { font-size: 13px; color: var(--muted-foreground); margin-bottom: 4px; }
+/* markdown do fio (C3: subset do core.js) */
 .md .mdp { margin: 0 0 8px; }
 .md .mdp:last-child { margin-bottom: 0; }
-.md .mdh { font-weight: 650; margin: 12px 0 6px; }
-.md .mdh1 { font-size: 16.5px; }
-.md .mdh2 { font-size: 15.5px; }
-.md .mdh3, .md .mdh4 { font-size: 14.5px; }
+.md .mdh { font-weight: 650; margin: 12px 0 6px; font-size: 16px; }
+.md .mdh1 { font-size: 20px; }
+.md .mdh2 { font-size: 17px; }
 .md ul.mdl, .md ol.mdl { margin: 0 0 8px; padding-left: 22px; }
 .md .mdl li { margin: 3px 0; }
-.md pre.mdcode {
-  font-family: var(--font-mono); font-variant-ligatures: none; font-size: 12px;
-  line-height: 1.5; background: var(--rail); border: 1px solid var(--border);
-  border-radius: 7px; padding: 10px 12px; margin: 8px 0;
-  overflow-x: auto; white-space: pre; -webkit-overflow-scrolling: touch;
-}
+.md pre.mdcode { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 13px; line-height: 1.5; background: var(--rail); border: 1px solid var(--border); border-radius: 12px; padding: 11px 13px; margin: 8px 0; overflow-x: auto; white-space: pre; -webkit-overflow-scrolling: touch; }
 .md pre.mdcode code { background: none; padding: 0; font-size: inherit; }
-.md blockquote.mdq {
-  margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--brass);
-  color: var(--muted-foreground); background: color-mix(in srgb, var(--brass) 6%, transparent);
-  border-radius: 0 7px 7px 0;
-}
+.md blockquote.mdq { margin: 8px 0; padding: 4px 12px; border-left: 3px solid var(--brass); color: var(--muted-foreground); }
 .md .mdtablewrap { overflow-x: auto; margin: 8px 0; -webkit-overflow-scrolling: touch; }
-.md table.mdtable { border-collapse: collapse; font-size: 13px; min-width: 100%; }
-.md .mdtable th, .md .mdtable td { border: 1px solid var(--border-strong); padding: 5px 9px; text-align: left; white-space: nowrap; }
+.md table.mdtable { border-collapse: collapse; font-size: 14px; min-width: 100%; }
+.md .mdtable th, .md .mdtable td { border: 1px solid var(--border-strong); padding: 6px 10px; text-align: left; white-space: nowrap; }
 .md .mdtable th { background: var(--accent); font-weight: 600; }
 .md hr.mdhr { border: 0; height: 1px; background: var(--border); margin: 12px 0; }
 .md a { color: var(--brass); text-decoration: underline; text-underline-offset: 2px; }
-/* imagens do fio (anexos do usuário + capturas de tool), buscadas autenticadas */
-.ci-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.ci-imgs img { max-width: 100%; max-height: 260px; border-radius: 8px; border: 1px solid var(--border); background: var(--rail); }
-/* carregar anteriores (janela do fio decidida no servidor) */
-#loadOlderWrap { text-align: center; margin-bottom: 4px; }
-#loadOlder { font-size: 12.5px; color: var(--muted-foreground); padding: 7px 12px; }
-.ci-tool { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 11.5px; color: var(--muted-foreground); background: var(--rail); border-left: 2px solid var(--st-running); border-radius: 0 6px 6px 0; padding: 5px 8px; overflow-x: auto; white-space: nowrap; }
-.ci-tool .tn { color: var(--st-running); }
-.ci-result { font-size: 12px; color: var(--muted-foreground); text-align: center; padding: 4px 0; font-family: var(--font-mono); }
+.ci-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ci-imgs img { max-width: 100%; max-height: 260px; border-radius: 12px; border: 1px solid var(--border); background: var(--rail); }
+#loadOlderWrap { text-align: center; }
+#loadOlder { font-size: 14px; color: var(--muted-foreground); padding: 8px 14px; border-radius: 999px; background: var(--accent); }
+#loadOlder[disabled] { opacity: .5; }
+/* ferramentas seguidas: um grupo que expande (regra no core: groupThreadItems) */
+details.acts { border-radius: 12px; background: var(--rail); font-size: 14px; color: var(--muted-foreground); }
+details.acts summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px; cursor: pointer; }
+details.acts summary::-webkit-details-marker { display: none; }
+details.acts summary svg { width: 16px; height: 16px; flex: none; transition: transform .2s; color: var(--faint); }
+details.acts[open] summary svg { transform: rotate(90deg); }
+details.acts .ln { font-family: var(--font-mono); font-variant-ligatures: none; font-size: 13px; padding: 7px 12px 7px 36px; border-top: 1px solid var(--border); white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+details.acts .ln b { color: var(--st-running); font-weight: 500; }
+details.acts .ln.bad b { color: var(--st-error); }
+details.acts .ci-imgs { padding: 0 12px 10px 36px; margin: 0; }
+.ci-result { align-self: center; display: flex; align-items: center; gap: 4px; font-size: 13px; color: var(--faint); text-align: center; }
 .ci-result.bad { color: var(--st-error); }
-/* 👍/👎 do turno concluído (P6): discreto ao lado do "✓ turno concluído" */
-.ci-result .fb { font-size: 13px; opacity: .5; padding: 2px 5px; }
-.ci-result .fb.on { opacity: 1; }
-.fbrow { margin-left: 6px; white-space: nowrap; }
-.ci-notice { font-size: 12.5px; color: var(--muted-foreground); font-style: italic; text-align: center; }
-.ci-error { font-size: 13px; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 10%, transparent); border-radius: 7px; padding: 8px 10px; overflow-wrap: anywhere; }
-.ci-limit { font-size: 13px; color: var(--st-queued); background: color-mix(in srgb, var(--st-queued) 10%, transparent); border-radius: 7px; padding: 8px 10px; }
-#composer { position: sticky; bottom: 0; background: linear-gradient(to top, var(--background) 78%, transparent); padding: 8px 0 10px; }
-#composer .pill {
-  display: flex; align-items: flex-end; gap: 4px;
-  background: var(--card); border: 1px solid var(--border-strong); border-radius: 24px;
-  padding: 5px 5px 5px 6px; box-shadow: var(--lift);
-  transition: border-color .15s ease;
+.fb { width: 32px; height: 32px; border-radius: 99px; display: inline-grid; place-items: center; color: var(--faint); }
+.fb svg { width: 16px; height: 16px; }
+.fb.on { color: var(--brass); }
+.ci-notice { align-self: center; font-size: 13px; color: var(--faint); text-align: center; }
+.ci-error { font-size: 15px; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 10%, transparent); border-radius: 12px; padding: 10px 13px; overflow-wrap: anywhere; }
+.ci-limit { font-size: 15px; color: var(--st-queued); background: color-mix(in srgb, var(--st-queued) 10%, transparent); border-radius: 12px; padding: 10px 13px; }
+.meta { font-size: 13px; color: var(--muted-foreground); margin-top: 6px; }
+
+.dock { flex: none; padding: 0 12px calc(var(--sab) + 10px); background: var(--background); }
+#chatAttn { max-height: 46vh; overflow-y: auto; scrollbar-width: none; }
+#chatAttn .decide { margin-bottom: 10px; }
+#chatHint { font-size: 13px; color: var(--muted-foreground); margin: 0 0 8px; text-align: center; }
+#chatHint:empty { display: none; }
+.composer { display: flex; align-items: flex-end; gap: 8px; }
+.plus { width: 42px; height: 42px; border-radius: 999px; background: var(--accent); display: grid; place-items: center; color: var(--muted-foreground); flex: none; }
+.plus svg, #chatSend svg { width: 22px; height: 22px; }
+.field { flex: 1; min-width: 0; display: flex; align-items: flex-end; min-height: 42px; border-radius: 21px; background: var(--accent); padding: 0 5px 0 15px; }
+.field textarea { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; font-size: 16px; line-height: 22px; padding: 10px 0; max-height: 130px; }
+textarea::placeholder { color: var(--faint); }
+#chatSend { width: 32px; height: 32px; margin: 5px 0; border-radius: 999px; background: var(--brass); color: var(--brass-fg); display: grid; place-items: center; flex: none; }
+#chatSend[disabled] { background: var(--border-strong); color: var(--background); pointer-events: none; }
+
+/* chips de anexo */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips:not(:empty) { margin: 8px 0; }
+.chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; background: var(--accent); border-radius: 999px; padding: 4px 8px 4px 4px; font-size: 13px; }
+.chip img { width: 24px; height: 24px; border-radius: 999px; object-fit: cover; }
+.chip .file { width: 24px; height: 24px; border-radius: 999px; background: var(--background); display: inline-grid; place-items: center; color: var(--muted-foreground); }
+.chip .file svg { width: 14px; height: 14px; }
+.chip .nm { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip button { color: var(--muted-foreground); width: 24px; height: 24px; display: grid; place-items: center; }
+.chip button svg { width: 14px; height: 14px; }
+#soltura { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; background: rgba(0, 0, 0, .35); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); color: #fff; font-size: 16px; font-weight: 600; pointer-events: none; }
+
+/* ---------- cartão de decisão (o mesmo na folha e dentro da conversa) ---------- */
+.decide { border-radius: 18px; background: var(--card); border: 1px solid color-mix(in srgb, var(--st-queued) 40%, transparent); padding: 14px; }
+.decide + .decide { margin-top: 10px; }
+.decide .kind { font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--st-queued); }
+.decide .ctx { font-size: 13px; color: var(--muted-foreground); margin-top: 2px; }
+.qblock { margin-top: 12px; }
+.qblock p { font-size: 16px; margin: 0 0 8px; }
+.qblock .multi { font-size: 13px; color: var(--muted-foreground); }
+pre.cmd { margin: 10px 0 0; padding: 11px 13px; border-radius: 12px; background: var(--rail); font-family: var(--font-mono); font-variant-ligatures: none; font-size: 14px; white-space: pre-wrap; word-break: break-word; max-height: 30vh; overflow-y: auto; }
+.decide textarea { display: block; width: 100%; border: 0; outline: 0; resize: none; border-radius: 12px; background: var(--accent); padding: 11px 13px; font-size: 16px; min-height: 44px; max-height: 40vh; margin-top: 8px; }
+.optbtn { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px 13px; border-radius: 12px; background: var(--accent); margin-top: 8px; border: 1.5px solid transparent; }
+.optbtn .r { width: 20px; height: 20px; flex: none; border-radius: 99px; border: 2px solid var(--faint); }
+.optbtn .r.sq { border-radius: 6px; }
+.optbtn.on { border-color: var(--brass); background: var(--brass-soft); }
+.optbtn.on .r { border: 6px solid var(--brass); }
+.optbtn b { display: block; font-weight: 600; font-size: 16px; }
+.optbtn .od { display: block; color: var(--muted-foreground); font-size: 14px; }
+.actions { display: flex; gap: 10px; margin-top: 14px; }
+.btn { flex: 1; min-width: 0; height: 50px; padding: 0 14px; border-radius: 14px; font-size: 16px; font-weight: 600; background: var(--accent); display: inline-flex; align-items: center; justify-content: center; gap: 8px; transition: transform .12s; }
+.btn:active { transform: scale(.98); }
+.btn.primary { background: var(--brass); color: var(--brass-fg); }
+.btn.danger { color: var(--st-error); }
+.btn.icon { flex: none; width: 50px; padding: 0; color: var(--muted-foreground); }
+.btn.icon svg { width: 22px; height: 22px; }
+.btn.small { flex: none; height: 36px; border-radius: 999px; font-size: 14px; }
+.btn[disabled] { opacity: .4; pointer-events: none; }
+.btn.link { background: none; color: var(--muted-foreground); height: 44px; font-weight: 500; font-size: 15px; width: 100%; margin-top: 4px; }
+.sent { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted-foreground); padding: 8px 2px 2px; }
+
+/* ---------- folhas ---------- */
+.scrim { position: absolute; inset: 0; z-index: 20; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; max-height: 90%; overflow-y: auto; overscroll-behavior: contain; background: var(--background); border-radius: 26px 26px 0 0; padding: 8px 16px calc(var(--sab) + 16px); transform: translateY(105%); visibility: hidden; transition: transform .42s var(--ease), visibility 0s .42s; scrollbar-width: none; }
+.sheet.on { transform: none; visibility: visible; transition: transform .42s var(--ease); }
+.sheet .grab { width: 38px; height: 5px; border-radius: 9px; background: var(--border-strong); margin: 0 auto 14px; }
+.sheet h3 { margin: 0 4px 14px; font-size: 20px; letter-spacing: -.01em; }
+.lbl { font-size: 13px; color: var(--muted-foreground); margin: 18px 4px 8px; }
+.hs { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+.hs::-webkit-scrollbar { display: none; }
+.hs .empty { padding: 8px 4px; text-align: left; }
+.pilot { flex: none; width: 96px; padding: 10px 4px 8px; border-radius: 16px; text-align: center; border: 1.5px solid transparent; }
+.pilot .face { width: 48px; height: 48px; margin: 0 auto 6px; }
+.pilot b { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pilot small { display: block; font-size: 13px; color: var(--muted-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pilot.on { background: var(--brass-soft); border-color: var(--brass); }
+#launchText { display: block; width: 100%; min-height: 96px; margin-top: 18px; border: 0; outline: 0; resize: none; border-radius: 16px; background: var(--accent); padding: 13px 15px; font-size: 16px; }
+#launchStatus { font-size: 14px; margin-top: 10px; text-align: center; color: var(--muted-foreground); }
+#launchStatus:empty { display: none; }
+#launchStatus.err { color: var(--st-error); }
+.fine { font-size: 13px; color: var(--muted-foreground); text-align: center; margin-top: 10px; }
+
+/* ---------- listas agrupadas (painel, agents, ajustes) ---------- */
+.pad { padding: 0 16px calc(var(--sab) + 30px); }
+.grp { border-radius: 16px; background: var(--card); border: 1px solid var(--border); overflow: hidden; }
+.grp .empty { padding: 18px 14px; text-align: left; }
+.it { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 13px 14px; font-size: 16px; min-height: 54px; }
+.it + .it { border-top: 1px solid var(--border); }
+button.it:active { background: var(--accent); }
+.it .face { width: 36px; height: 36px; flex: none; }
+.it .m { flex: 1; min-width: 0; display: block; }
+.it .m b { display: block; font-weight: 500; font-size: 16px; overflow-wrap: anywhere; }
+.it .m small { display: block; font-size: 13px; color: var(--muted-foreground); overflow-wrap: anywhere; }
+.it .m small.now { color: var(--st-running); }
+.it .v { font-size: 14px; color: var(--muted-foreground); font-variant-numeric: tabular-nums; flex: none; max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.it .v.bad { color: var(--st-error); }
+.it .v.chev svg { width: 18px; height: 18px; display: block; color: var(--faint); }
+.it.col { display: block; }
+.it.col .head { display: flex; align-items: center; gap: 12px; }
+.it.col .actions { margin-top: 10px; justify-content: flex-end; }
+.phases { display: flex; gap: 4px; margin-top: 8px; }
+.phases i { flex: 1; height: 4px; border-radius: 9px; background: var(--border-strong); }
+.phases i.done { background: var(--st-success); }
+.phases i.running { background: var(--st-running); animation: tblink 1.6s infinite; }
+.phases i.error, .phases i.aborted { background: var(--st-error); }
+.phaselbl { display: flex; gap: 4px; margin-top: 4px; font-size: 13px; color: var(--muted-foreground); }
+.phaselbl span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 16px 16px 0; }
+.stat { border-radius: 16px; background: var(--card); border: 1px solid var(--border); padding: 12px; min-width: 0; }
+.stat b { display: block; font-size: 20px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat small { font-size: 13px; color: var(--muted-foreground); }
+.seg { display: flex; background: var(--accent); border-radius: 10px; padding: 2px; flex: none; }
+.seg button { padding: 7px 11px; border-radius: 8px; font-size: 14px; color: var(--muted-foreground); }
+.seg button.on { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.sw { width: 50px; height: 30px; border-radius: 99px; background: var(--border-strong); position: relative; transition: .2s; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 99px; background: #fff; transition: .2s var(--ease); box-shadow: 0 1px 3px rgba(0, 0, 0, .25); }
+.sw.on { background: var(--st-success); } .sw.on::after { transform: translateX(20px); }
+
+/* pareamento */
+#scr-pair { align-items: center; justify-content: center; text-align: center; padding: 30px; }
+#scr-pair .face { width: 110px; height: 110px; margin: 0 auto 18px; }
+#scr-pair h1 { font-size: 20px; margin: 0 0 8px; letter-spacing: -.01em; }
+#pairMsg { font-size: 15px; color: var(--muted-foreground); max-width: 320px; }
+
+/* aviso honesto: veredito de ação vindo do Mac (action-result) */
+#note { position: absolute; z-index: 30; left: 16px; right: 16px; bottom: calc(var(--sab) + 84px); background: var(--foreground); color: var(--background); font-size: 15px; padding: 12px 16px; border-radius: 16px; text-align: center; box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .screen.push, .screen.push.in, .sheet, .sheet.on, .scrim { transition-duration: .01s; }
+  .face .eyes, .face.viva .body, .dots i, .phases i.running { animation: none; }
 }
-#composer .pill:focus-within { border-color: color-mix(in srgb, var(--brass) 55%, transparent); }
-#composer textarea { background: none; border: 0; min-height: 34px; padding: 7px 6px; }
-#composer textarea:focus { border: 0; }
-.iconbtn {
-  width: 38px; height: 38px; border-radius: 999px; flex: none;
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px; color: var(--muted-foreground);
-}
-.iconbtn:active { transform: translateY(1px); }
-#chatSend { background: var(--brass); color: var(--brass-fg); font-size: 15px; }
-#chatSend[disabled] { opacity: .45; pointer-events: none; }
-#chatHint { font-size: 11.5px; color: var(--muted-foreground); margin-top: 6px; text-align: center; }
 </style>
 </head>
 <body>
 
-<header>
-  <div class="wordmark" id="wordmark">FROTA <small id="maquina">· Companion</small></div>
-  <button id="btnTheme" title="Tema" aria-label="Alternar tema claro ou escuro">◐</button>
-  <button id="btnBell" title="Notificações" aria-label="Ativar notificações">🔔</button>
-  <div class="conn"><span id="dot" class="dot off"></span><span id="connLabel">—</span></div>
-</header>
-
-<div id="offline" hidden>
-  <span>Sem conexão com o Mac · reconectando…</span>
-  <span class="seen" id="offlineSeen"></span>
-</div>
-
-<main>
+<div id="app" class="noanim">
   <!-- pareamento -->
   <section class="screen" id="scr-pair" hidden>
-    <div class="card" style="text-align:center; padding:34px 18px; margin-top:24vh">
-      <div style="font-size:34px; margin-bottom:10px">⛶</div>
-      <div style="font-weight:600; margin-bottom:6px">Escaneie o QR no app</div>
-      <div id="pairMsg" style="font-size:13px; color:var(--muted-foreground)">
-        Abra o FROTA no computador e escaneie o código do Companion para parear este aparelho.
+    <div>
+      <div id="pairFace"></div>
+      <h1>Escaneie o QR no app</h1>
+      <div id="pairMsg">Abra o FROTA no computador e escaneie o código do Companion para parear este aparelho.</div>
+    </div>
+  </section>
+
+  <!-- início (R4, chat-first): a cara da frota e as conversas. O id "brief"
+       segue sendo a raiz da rota; o painel de números mora em #/painel. -->
+  <section class="screen" id="scr-brief" hidden>
+    <div class="topbar" id="topbar">
+      <div class="mini"><span id="miniFace"></span>Conversas</div>
+      <span class="sp"></span>
+      <button class="ib" id="btnPrefs" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+    </div>
+    <div class="scroll" id="homeScroll">
+      <div class="hero">
+        <div id="heroFace"></div>
+        <div class="who" id="heroWho">Frota</div>
+        <button class="pulse" id="pulse" data-nav="painel"></button>
+      </div>
+      <div class="filters" id="convFilter"></div>
+      <div class="list" id="conversas"></div>
+    </div>
+    <button class="fab" id="btnLaunch"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova conversa</button>
+  </section>
+
+  <!-- painel: agora → acabou → entregue → mesas -->
+  <section class="screen push" id="scr-painel">
+    <div class="nav">
+      <button class="ib" data-back aria-label="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="ttl"><b>Painel</b><small id="painelSub"></small></div>
+    </div>
+    <div class="scroll">
+      <div class="stats">
+        <div class="stat"><b id="costTotal">US$ 0.00</b><small>custo hoje</small></div>
+        <div class="stat"><b id="statRun">0</b><small>rodando</small></div>
+        <div class="stat"><b id="statAttn">0</b><small>pedem você</small></div>
+      </div>
+      <div class="pad">
+        <div class="lbl">Em execução</div>
+        <div class="grp" id="running"></div>
+        <!-- R2: o que ACABOU. Irmã de "Entregas recentes", não substituta:
+             entrega é o que o agente marcou como pronto; turno é o que
+             terminou, com o recibo quando existe. -->
+        <div class="lbl">Turnos recentes</div>
+        <div class="grp" id="lastTurns"></div>
+        <div class="lbl">Entregas recentes</div>
+        <div class="grp" id="deliveries"></div>
+        <div class="lbl">Mesas por projeto</div>
+        <div class="grp" id="projects"></div>
       </div>
     </div>
-  </section>
-
-  <!-- briefing (home) -->
-  <!-- R4 (companion-chat-prd): a tela inicial são as conversas; o painel de
-       números mora em #/painel. O id "brief" segue sendo a raiz da rota. -->
-  <section class="screen" id="scr-brief" hidden>
-    <div class="homebar">
-      <button class="btn primary launchbtn" id="btnLaunch">＋ Nova conversa</button>
-      <button class="btn" data-nav="painel">Painel</button>
-    </div>
-    <h2 class="sec"><span class="amber">Pede você</span></h2>
-    <div id="attention"></div>
-    <h2 class="sec">Conversas</h2>
-    <div class="pickrow" id="convFilter"></div>
-    <div id="conversas"></div>
-  </section>
-
-  <section class="screen" id="scr-painel" hidden>
-    <button class="back" data-nav="brief">‹ Conversas</button>
-    <h2 class="sec">Em execução</h2>
-    <div id="running"></div>
-    <!-- R2: o que ACABOU. Irmã de "Entregas recentes", não substituta —
-         entrega é o que o agente marcou como pronto; turno é o que terminou,
-         com o recibo quando existe. -->
-    <h2 class="sec">Turnos recentes</h2>
-    <div id="lastTurns"></div>
-    <h2 class="sec">Entregas recentes</h2>
-    <div id="deliveries"></div>
-    <h2 class="sec">Mesas por projeto</h2>
-    <div id="projects"></div>
-  </section>
-
-  <!-- lançar tarefa (C2) -->
-  <section class="screen" id="scr-launch" hidden>
-    <button class="back" data-nav="brief">‹ Conversas</button>
-    <h2 class="sec">Lançar tarefa</h2>
-    <div class="lm" style="margin:10px 2px 2px">Projeto</div>
-    <div class="pickrow" id="launchProjects"></div>
-    <div class="lm" style="margin:10px 2px 2px">Quem pilota</div>
-    <div class="pickrow" id="launchPilots"></div>
-    <textarea id="launchText" rows="3" placeholder="O que precisa ser feito?"></textarea>
-    <div class="actions"><button class="btn primary" id="launchGo">Lançar</button></div>
-    <div id="launchStatus"></div>
-    <div class="meta">A tarefa vira uma conversa nova no app, rodando de verdade no seu Mac.</div>
   </section>
 
   <!-- escolha de agent -->
-  <section class="screen" id="scr-agents" hidden>
-    <button class="back" data-nav="brief">‹ Conversas</button>
-    <h2 class="sec" id="agentsTitle">Agent</h2>
-    <div id="agentList"></div>
+  <section class="screen push" id="scr-agents">
+    <div class="nav">
+      <button class="ib" data-back aria-label="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <div class="ttl"><b id="agentsTitle">Agent</b><small>Escolha quem senta na mesa</small></div>
+    </div>
+    <div class="scroll"><div class="pad" style="padding-top:16px"><div class="grp" id="agentList"></div></div></div>
   </section>
 
-  <!-- chat -->
-  <section class="screen" id="scr-chat" hidden>
-    <div id="chatBar">
-      <button class="back" data-nav="brief">‹ Conversas</button>
-      <div id="chatTitle" style="font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap"></div>
-      <span class="dot" id="chatDot" title="Estado do agent"></span>
-      <button class="btn danger" id="chatStop" data-stopkind="stop_turn" hidden>Parar</button>
+  <!-- conversa -->
+  <section class="screen push" id="scr-chat">
+    <div class="nav" id="chatBar">
+      <button class="ib" data-back aria-label="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <span id="chatFace"></span>
+      <div class="ttl"><b id="chatTitle"></b><small id="chatSub"></small></div>
+      <button class="stop" id="chatStop" data-stopkind="stop_turn" hidden>Parar</button>
     </div>
-    <div id="chatItems"></div>
-    <!-- R4: o que esta conversa pede de você, dentro dela (mesmos cartões e
-         mesmas ações do início) -->
-    <div id="chatAttn"></div>
-    <div id="composer">
-      <div class="chips" id="chatChips" style="margin:0 0 6px"></div>
-      <div class="pill">
-        <button class="iconbtn" id="chatCam" aria-label="Anexar foto ou PDF">📷</button>
-        <textarea id="chatText" rows="1" placeholder="Mensagem… (/parar, /btw)"></textarea>
-        <button class="iconbtn" id="chatSend" aria-label="Enviar">➤</button>
-      </div>
+    <div class="scroll" id="chatScroll"><div id="chatItems"></div></div>
+    <div class="dock">
+      <!-- R4: o que esta conversa pede de você, ancorado acima do campo
+           (mesmos cartões e mesmas ações da folha do início) -->
+      <div id="chatAttn"></div>
       <div id="chatHint"></div>
+      <div class="chips" id="chatChips"></div>
+      <div class="composer">
+        <button class="plus" id="chatCam" aria-label="Anexar foto ou PDF"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <div class="field">
+          <textarea id="chatText" rows="1" placeholder="Mensagem (/parar, /btw)"></textarea>
+          <button id="chatSend" aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+        </div>
+      </div>
     </div>
   </section>
-</main>
 
-<div id="note" hidden></div>
+  <!-- banner de offline honesto (C1) nas telas empurradas; no início quem
+       fala é a própria cara do topo (pulso "Sem conexão com o Mac") -->
+  <div id="offline" hidden>
+    <span>Sem conexão com o Mac</span>
+    <span class="seen" id="offlineSeen"></span>
+  </div>
 
-<footer id="costbar" hidden>
-  <span class="lm">custo hoje</span>
-  <span class="v" id="costTotal">US$ 0.00</span>
-</footer>
+  <div class="scrim" id="scrim"></div>
+  <!-- folha dinâmica: decisão de uma conversa, ou Ajustes -->
+  <div class="sheet" id="sheet"></div>
+  <!-- lançar tarefa (C2): folha estática, o texto sobrevive aos re-renders -->
+  <div class="sheet" id="scr-launch">
+    <div class="grab"></div>
+    <h3>Nova conversa</h3>
+    <div class="lbl">Projeto</div>
+    <div class="hs" id="launchProjects"></div>
+    <div class="lbl">Quem pilota</div>
+    <div class="hs" id="launchPilots"></div>
+    <textarea id="launchText" rows="3" placeholder="O que precisa ser feito?"></textarea>
+    <div class="actions"><button class="btn primary" id="launchGo">Lançar</button></div>
+    <div id="launchStatus"></div>
+    <div class="fine">Vira uma conversa nova na Frota, rodando de verdade no seu Mac.</div>
+  </div>
 
-<input type="file" id="filePick" accept="image/*,application/pdf" capture="environment" hidden>
+  <div id="note" hidden></div>
+</div>
+
+<input type="file" id="filePick" accept="image/*,application/pdf" hidden>
 <div id="soltura" hidden></div>
 
 <!-- núcleo puro compartilhado (rotas, reconexão, "visto há") — o MESMO arquivo
@@ -561,6 +543,51 @@ function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
    projeto+agent sobrevive a reload/snapshot atrasado */
 function convKey(pid, agent) { return "mc.companion.conv." + pid + "." + agent; }
 
+// ---------------- caras e ícones ----------------
+/* A cara é identidade, não enfeite: forma pelo id de quem ela representa
+   (conversa, ou piloto na folha de lançamento), cor pelo projeto. As duas por
+   hash do id (Core.hashIndex), nunca comparando nome de motor. Estado REAL nos
+   olhos: quem roda respira, fora do ar dorme. */
+var SHAPES = [
+  { d: '<circle cx="32" cy="32" r="27"/>', x: 40, y: 22, s: 1 },
+  { d: '<rect x="3" y="12" width="58" height="40" rx="20"/>', x: 43, y: 25, s: .9 },
+  { d: '<circle cx="21" cy="35" r="13"/><circle cx="37" cy="27" r="15"/><circle cx="48" cy="39" r="11"/><rect x="10" y="35" width="49" height="17" rx="8.5"/>', x: 40, y: 27, s: .8 },
+  { d: '<path d="M32 4C39 17 55 27 55 40a23 23 0 0 1-46 0C9 27 25 17 32 4Z"/>', x: 38, y: 37, s: .82 },
+  { d: '<rect x="6" y="6" width="52" height="52" rx="15"/>', x: 40, y: 21, s: .92 },
+  { d: '<path d="M32 12 54 51H10Z" stroke-width="10" stroke-linejoin="round"/>', x: 37, y: 41, s: .7 }
+];
+var TINTS = ["#8b5cf0", "#ec6b2d", "#56b8a6", "#f0a03c", "#4e9ce8", "#5cc47a", "#e0609a", "#7a8088"];
+var FLEET_TINT = { pede: "#e0a04a", roda: "#5cc47a", calma: "#5cc47a", wait: "#8a9099", off: "#8a9099" };
+function hidx(seed, n) { return Core ? Core.hashIndex(seed, n) : 0; }
+function tintOf(projectId) { return TINTS[hidx(projectId || "", TINTS.length)]; }
+function faceSvg(shape, color, cls) {
+  function eye(dx, dy) {
+    var cx = shape.x + dx, cy = shape.y + dy;
+    return '<rect x="' + (cx - 2) + '" y="' + (cy - 5.5) + '" width="4" height="11" rx="2" transform="rotate(-20 ' + cx + " " + cy + ')"/>';
+  }
+  var k = shape.s;
+  var fit = "translate(" + shape.x * (1 - k) + " " + shape.y * (1 - k) + ") scale(" + k + ")";
+  // atraso negativo por cor+forma: as caras não piscam em coro
+  var delay = hidx(color + shape.d, 50) / 10;
+  return '<svg class="face ' + (cls || "") + '" viewBox="0 0 64 64" aria-hidden="true">' +
+    '<g class="body" fill="' + color + '" stroke="' + color + '" stroke-width="0">' + shape.d + '</g>' +
+    '<g transform="' + fit + '"><g class="eyes" fill="#fff" style="animation-delay:-' + delay + 's">' + eye(-5.5, 1.5) + eye(5.5, -1.5) + '</g></g></svg>';
+}
+function faceFor(seed, projectId, running) {
+  return faceSvg(SHAPES[hidx(seed || "", SHAPES.length)], tintOf(projectId), S.off ? "dorme" : running ? "viva" : "");
+}
+function ico(path, sw) {
+  return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + (sw || 2) + '" stroke-linecap="round" stroke-linejoin="round">' + path + '</svg>';
+}
+var ICO = {
+  chev: '<path d="M9 5l7 7-7 7"/>',
+  x: '<path d="M6 6l12 12M18 6L6 18"/>',
+  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
+  clip: '<path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l7.9-7.9"/>',
+  up: '<path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/>',
+  down: '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>'
+};
+
 // ---------------- estado ----------------
 var S = {
   token: null,
@@ -579,6 +606,8 @@ var S = {
   sigs: {},                 // assinaturas por seção (evita re-render que rouba foco)
   snapAt: null,             // quando o snapshot corrente foi VISTO (carimbo honesto)
   snapStale: false,         // true = snapshot RESTAURADO do cache (velho até chegar dado vivo)
+  off: false,               // decisão do offlineBanner (core): caras dormem, lista esmaece
+  sheet: null,              // folha aberta: null | {kind:"attn", convId, attnId} | {kind:"prefs"} | {kind:"launch"}
   connSt: { status: "connecting", attempt: 0, retryInMs: null }, // máquina de reconexão (core.js)
 };
 
@@ -639,13 +668,15 @@ var MOCK_SNAP = {
       recent: [
         { convId: "conv-t2", title: "Estratégia de cache do snapshot", agent: "claude-code", updatedAt: Date.now() - 9 * 60000, running: false, pedeVoce: true },
         { convId: "conv-t9", title: "Atualizar dependências", agent: "claude-code", updatedAt: Date.now() - 2 * 60000, running: true, pedeVoce: false },
-        { convId: "c1", title: "Revisar o parser do diff", agent: "claude-code", updatedAt: Date.now() - 4 * 60000, running: false, pedeVoce: false },
+        { convId: "c1", title: "Revisar o parser do diff", agent: "claude-code", updatedAt: Date.now() - 4 * 60000, running: false, pedeVoce: false,
+          frase: "Extraiu o parser pra lib/ e cobriu o caso vazio." },
         { convId: "c3", title: "Subir o worker", agent: null, updatedAt: Date.now() - 3 * 3600000, running: false, pedeVoce: false } ] },
     { id: "p2", name: "site-maclan", agents: [
       { agent: "claude-code" }, { agent: "codex", deskConvId: "conv-t1", deskTitle: "Mesa · Codex" }, { agent: "agy" } ],
       recent: [
         { convId: "conv-t1", title: "Ajustar formulário de contato", agent: "codex", updatedAt: Date.now() - 60000, running: true, pedeVoce: true },
-        { convId: "c2", title: "Ajustar o CSS do herói", agent: "claude-code", updatedAt: Date.now() - 40 * 60000, running: false, pedeVoce: false } ] }
+        { convId: "c2", title: "Ajustar o CSS do herói", agent: "claude-code", updatedAt: Date.now() - 40 * 60000, running: false, pedeVoce: false,
+          frase: "turno concluído" } ] }
   ],
   specialists: [
     { id: "revisor", name: "Revisor", backend: "claude-code", category: "Qualidade" },
@@ -874,7 +905,7 @@ function onUnauthorized() {
   S.snap = null;
   S.snapAt = null;
   S.snapStale = false;
-  $("#pairMsg").textContent = "Token inválido ou expirado — escaneie o QR do Companion de novo no app.";
+  $("#pairMsg").textContent = "Token inválido ou expirado. Escaneie o QR do Companion de novo no app.";
   showScreen("pair");
   setConn("off");
 }
@@ -893,14 +924,10 @@ function connEvent(ev) {
           ? { status: "reconnecting", attempt: (S.connSt.attempt || 0) + 1, retryInMs: 3000 }
           : S.connSt);
 }
+/* Sem bolinha de conexão no cabeçalho: quem diz se o Mac está vivo é a cara do
+   topo (renderHero) e, nas telas empurradas, o aviso de offline. */
 function setConn(st) {
   S.conn = st;
-  var d = $("#dot");
-  d.className = "dot " + (st === "on" ? "on" : st === "connecting" ? "connecting" : "off");
-  $("#connLabel").textContent = MOCK ? "mock"
-    : st === "on" ? "conectado"
-    : st === "connecting" ? (Core ? Core.connLabel(S.connSt) : "reconectando…")
-    : "desconectado";
   renderOffline();
 }
 function connectWS() {
@@ -958,12 +985,15 @@ function canNativeNotify() {
   return typeof Notification !== "undefined" && Notification.permission === "granted";
 }
 function renderBell() {
-  $("#btnBell").classList.toggle("on", notifOn());
+  var sw = $("#swNotif");
+  if (sw) sw.classList.toggle("on", notifOn());
 }
 function noteDegradedNotif() {
   showNote("Notificações do navegador não funcionam neste endereço (http na rede local). Vou avisar vibrando e piscando o título da aba.");
 }
-$("#btnBell").addEventListener("click", function () {
+/* O interruptor mora na folha de Ajustes (renasce a cada abertura): o clique
+   chega por delegação. */
+function toggleNotif() {
   if (notifOn()) {
     lsSet(LS_NOTIF, "0");
     stopTitleFlash();
@@ -981,7 +1011,7 @@ $("#btnBell").addEventListener("click", function () {
   lsSet(LS_NOTIF, "1");
   renderBell();
   if (!canNativeNotify()) noteDegradedNotif();
-});
+}
 /* título piscando enquanto a aba está em background (para ao voltar) */
 var baseTitle = document.title, titleFlashTimer = null, titleFlashOn = false;
 function startTitleFlash(count) {
@@ -1057,31 +1087,60 @@ function applySnapshot(snap, seenAtMs) {
   S.prevRunning = nowRunning;
   renderBrief();
   if (S.screen === "agents") renderAgents();
-  if (S.screen === "chat") { refreshChatTitle(); bindChatConv(); renderChatItems(); }
+  if (S.screen === "chat") { bindChatConv(); renderChatHead(); renderChatItems(); }
   if (S.screen === "launch") renderLaunch();
+  // folha de decisão aberta e o pedido saiu do snapshot (o Mac confirmou a
+  // resposta, ou alguém respondeu no desktop): a folha fecha sozinha.
+  if (S.sheet && S.sheet.kind === "attn" && !sheetAttention().length) closeSheet();
+  else renderSheetAttn();
 }
 
-/* chat restaurado por URL (F5) nasce com o id do projeto no título; quando o
-   snapshot chega, o nome real assume. */
-function refreshChatTitle() {
+/* Cabeçalho da conversa: cara, título e uma linha de contexto. O título é o da
+   conversa (das recentes do snapshot); sem ele, a mesa do motor. Chat restaurado
+   por URL (F5) nasce com o id do projeto e ganha o nome real quando o snapshot
+   chega. */
+function chatConvMeta() {
+  if (!S.chat || !S.chat.convId || !Core) return null;
+  var lista = Core.homeConversations(S.snap, null);
+  for (var i = 0; i < lista.length; i++) if (lista[i].convId === S.chat.convId) return lista[i];
+  return null;
+}
+function renderChatHead() {
   if (!S.chat) return;
   var ps = (S.snap && S.snap.projects) || [];
-  for (var i = 0; i < ps.length; i++) {
-    if (ps[i].id === S.chat.projectId && ps[i].name !== S.chat.projectName) {
-      S.chat.projectName = ps[i].name;
-      $("#chatTitle").textContent = ps[i].name + " · " + agentName(S.chat.agent);
-    }
-  }
+  for (var i = 0; i < ps.length; i++) if (ps[i].id === S.chat.projectId) S.chat.projectName = ps[i].name;
+  var meta = chatConvMeta();
+  var run = chatRunning();
+  var vivo = !!(run || S.chat.sending || S.chat.waitStart);
+  var sig = JSON.stringify([S.chat.convId, S.chat.projectName, meta && meta.title, vivo, S.off,
+    run && Core ? Core.elapsedLabel(Date.now(), run.startedAt) : ""]);
+  if (!sigChanged("chatHead", sig)) return;
+  $("#chatFace").innerHTML = faceFor(S.chat.convId || (S.chat.projectId + S.chat.agent), S.chat.projectId, vivo);
+  $("#chatTitle").textContent = meta ? meta.title : "Mesa · " + agentName(S.chat.agent);
+  var sub = $("#chatSub");
+  var elapsed = run && Core ? Core.elapsedLabel(Date.now(), run.startedAt) : "";
+  sub.textContent = vivo
+    ? agentName(S.chat.agent) + " · trabalhando" + (elapsed ? " " + elapsed : "")
+    : S.chat.projectName + " · " + agentName(S.chat.agent);
+  sub.className = vivo ? "roda" : "";
 }
 
+/* Telas: pareamento e início são a base; painel, agents e conversa EMPURRAM por
+   cima (classe .in) e o início recua; "launch" é rota de folha, com o início
+   por baixo. Nada de display:none nas empurradas: é o transform que anima. */
+var PUSHED = ["painel", "agents", "chat"];
 function showScreen(name) {
+  var veioDe = S.screen;
   S.screen = name;
-  ["pair", "brief", "painel", "agents", "chat", "launch"].forEach(function (n) {
-    $("#scr-" + n).hidden = n !== name;
-  });
-  $("#costbar").hidden = name !== "painel";
+  $("#scr-pair").hidden = name !== "pair";
+  $("#scr-brief").hidden = name === "pair";
+  var empurrada = PUSHED.indexOf(name) >= 0;
+  PUSHED.forEach(function (n) { $("#scr-" + n).classList.toggle("in", n === name); });
+  $("#scr-brief").classList.toggle("under", empurrada);
+  if (name === "launch") showSheetEl("launch"); else if (S.sheet && S.sheet.kind === "launch") hideSheetEl();
+  if (name === "pair") { hideSheetEl(); $("#pairFace").innerHTML = faceSvg(SHAPES[0], FLEET_TINT.off, "dorme"); }
+  if (empurrada && veioDe !== name) { var sc = $("#scr-" + name + " .scroll"); if (sc && name !== "chat") sc.scrollTop = 0; }
   renderOffline();
-  window.scrollTo(0, 0);
 }
 
 // ---------------- rotas (C1): history API real via hash ----------------
@@ -1092,6 +1151,12 @@ function showScreen(name) {
 function currentRoute() {
   return Core ? Core.parseRoute(location.hash) : { screen: "brief" };
 }
+/* A entrada do histórico carrega a PROFUNDIDADE (state.d): é ela que deixa o
+   "‹" da barra e o fechar da folha usarem history.back() sem risco de sair do
+   app quando a pessoa entrou direto numa URL funda (F5, atalho). pushState não
+   dispara hashchange, então a tela é aplicada aqui; voltar/avançar do sistema
+   seguem chegando pelo hashchange. */
+function histDepth() { return (history.state && history.state.d) || 0; }
 function nav(route) {
   if (!Core) { applyRoute(route); return; }
   var h = Core.routeHash(route);
@@ -1099,10 +1164,24 @@ function nav(route) {
     applyRoute(route); // já estamos nessa rota: só re-aplica, sem entrada nova
     return;
   }
-  location.hash = h; // dispara hashchange → applyRoute
+  history.pushState({ d: histDepth() + 1 }, "", location.pathname + location.search + h);
+  applyRoute(route);
+}
+/* Troca a entrada atual em vez de empilhar: sair de uma folha direto para uma
+   conversa não deixa a folha no caminho do voltar. */
+function navReplace(route) {
+  var h = Core ? Core.routeHash(route) : "#/";
+  history.replaceState({ d: histDepth() }, "", location.pathname + location.search + h);
+  applyRoute(route);
+}
+function goBack() {
+  if (histDepth() > 0) { history.back(); return; }
+  navReplace({ screen: "brief" });
 }
 function applyRoute(r) {
   if (!S.token && !MOCK) { showScreen("pair"); return; }
+  // folha dinâmica (decisão, ajustes) não é rota: qualquer troca de tela a fecha
+  if (S.sheet && S.sheet.kind !== "launch") hideSheetEl();
   if (r.screen === "agents" && r.projectId) {
     S.agentsFor = r.projectId;
     showScreen("agents");
@@ -1142,6 +1221,12 @@ window.addEventListener("hashchange", function () {
   }
   applyRoute(currentRoute());
 });
+/* Folha dinâmica empilha uma entrada com o MESMO hash (state.sheet): o voltar
+   do Android fecha a folha em vez de sair da tela. Sem hashchange nesse caso,
+   quem vê é o popstate. */
+window.addEventListener("popstate", function () {
+  if (S.sheet && S.sheet.kind !== "launch" && !(history.state && history.state.sheet)) hideSheetEl();
+});
 
 // ---------------- offline honesto (C1) ----------------
 /* Banner sempre que a conexão com o Mac não está viva: avisa, mostra o carimbo
@@ -1158,18 +1243,24 @@ function renderOffline() {
   var off = Core ? Core.offlineBanner(inp)
     : (!inp.mock && inp.token && inp.screen !== "pair" && inp.conn !== "on" &&
        (inp.connStatus === "reconnecting" || inp.snapStale));
-  el.hidden = !off;
-  if (el.hidden) return;
+  var mudou = S.off !== !!off;
+  S.off = !!off;
+  $("#app").classList.toggle("stale", S.off);
+  // no início quem fala é a cara do topo; o aviso flutuante é das outras telas
+  el.hidden = !off || S.screen === "brief" || S.screen === "launch";
   $("#offlineSeen").textContent =
-    Core && S.snapAt ? "· " + Core.seenAgo(Date.now(), S.snapAt) : "";
+    off && Core && S.snapAt ? "· " + Core.seenAgo(Date.now(), S.snapAt) : "";
+  renderHero();
+  if (mudou) { S.sigs.conversas = null; renderConversas(); if (S.screen === "chat") renderChatHead(); }
 }
 setInterval(function () {
-  var el = $("#offline");
-  if (el && !el.hidden) renderOffline(); // mantém o "visto há…" honesto
+  if (S.off) renderOffline(); // mantém o "visto há…" honesto
 }, 10000);
+// a hora curta das linhas ("4 min") anda sozinha entre snapshots
+setInterval(function () { if (S.screen === "brief") renderConversas(); }, 30000);
 // C3 — o "trabalhando há…" do chat anda sozinho enquanto o turno vive
 setInterval(function () {
-  if (S.screen === "chat" && S.chat && !S.chat.sending && chatRunning()) renderChatItems();
+  if (S.screen === "chat" && S.chat && !S.chat.sending && chatRunning()) { renderChatHead(); renderChatItems(); }
 }, 5000);
 
 // re-render de seção só quando a assinatura muda (não rouba foco de textarea)
@@ -1190,149 +1281,237 @@ function ctxLine(a) {
 function chipHtml(scope, i, att) {
   var thumb = att.url
     ? '<img src="' + esc(att.url) + '" alt="">'
-    : '<span class="file">📄</span>';
+    : '<span class="file">' + ico(ICO.doc) + '</span>';
   return '<span class="chip">' + thumb + '<span class="nm">' + esc(att.name) + '</span>' +
-    '<button data-rmatt="' + esc(scope) + '" data-i="' + i + '" aria-label="Remover anexo">✕</button></span>';
+    '<button data-rmatt="' + esc(scope) + '" data-i="' + i + '" aria-label="Remover anexo">' + ico(ICO.x) + '</button></span>';
 }
 
-function renderAttention() {
-  var att = (S.snap && S.snap.attention) || [];
-  var sig = JSON.stringify([att, S.answered]);
-  if (!sigChanged("attention", sig)) return;
-  var host = $("#attention");
-  if (!att.length) { host.innerHTML = '<div class="empty">Nada pendente, a frota segue sozinha.</div>'; return; }
-  host.innerHTML = att.map(attentionCardHtml).join("");
-  host.querySelectorAll("textarea").forEach(autoGrow);
+// ---------------- folhas ----------------
+/* Duas folhas dividem o mesmo véu: a dinâmica (#sheet: decisão de uma conversa,
+   Ajustes) e a de lançamento (#scr-launch, estática, presa à rota #/launch). */
+function showSheetEl(kind) {
+  if (kind === "launch") S.sheet = { kind: "launch" };
+  $("#scr-launch").classList.toggle("on", kind === "launch");
+  $("#sheet").classList.toggle("on", kind !== "launch");
+  $("#scrim").classList.add("on");
+}
+function hideSheetEl() {
+  S.sheet = null;
+  $("#scr-launch").classList.remove("on");
+  $("#sheet").classList.remove("on");
+  $("#scrim").classList.remove("on");
+}
+function openSheet(state, html) {
+  S.sheet = state;
+  $("#sheet").innerHTML = '<div class="grab"></div>' + html;
+  $("#sheet").scrollTop = 0;
+  if (!(history.state && history.state.sheet)) {
+    history.pushState({ d: histDepth() + 1, sheet: true }, "", location.href);
+  }
+  showSheetEl(state.kind);
+}
+/* Fechar por gesto na tela (véu, botão): desfaz a entrada que a folha empilhou,
+   para o voltar do sistema não reabrir nada. */
+function closeSheet() {
+  if (!S.sheet) return;
+  if (S.sheet.kind === "launch") { goBack(); return; }
+  if (history.state && history.state.sheet) { history.back(); return; } // popstate esconde
+  hideSheetEl();
+}
+function sheetAttention() {
+  if (!S.sheet || S.sheet.kind !== "attn") return [];
+  var sh = S.sheet;
+  return ((S.snap && S.snap.attention) || []).filter(function (a) {
+    return sh.convId ? a.convId === sh.convId : a.id === sh.attnId;
+  });
+}
+function sheetAttnHtml() {
+  var att = sheetAttention();
+  var h = att.map(attentionCardHtml).join("");
+  var a = att[0];
+  if (a && a.convId && a.projectId && a.agent) {
+    h += '<button class="btn link" data-goto="' + esc(a.convId) + '" data-pid="' + esc(a.projectId) + '" data-agent="' + esc(a.agent) + '">Ver a conversa</button>';
+  }
+  return h;
+}
+function renderSheetAttn() {
+  if (!S.sheet || S.sheet.kind !== "attn") return;
+  var sig = JSON.stringify([sheetAttention(), S.answered]);
+  if (!sigChanged("sheet", sig)) return;
+  $("#sheet").innerHTML = '<div class="grab"></div>' + sheetAttnHtml();
+  $("#sheet").querySelectorAll("textarea").forEach(autoGrow);
+}
+function openAttnSheet(convId, attnId) {
+  var state = { kind: "attn", convId: convId || null, attnId: attnId || null };
+  S.sheet = state;
+  S.sigs.sheet = null;
+  openSheet(state, sheetAttnHtml());
+  S.sigs.sheet = JSON.stringify([sheetAttention(), S.answered]);
+  $("#sheet").querySelectorAll("textarea").forEach(autoGrow);
+}
+function prefsHtml() {
+  var stored = lsGet(LS_THEME);
+  var modo = stored === "light" || stored === "dark" ? stored : "system";
+  function seg(v, rot) { return '<button data-settheme="' + v + '" class="' + (modo === v ? "on" : "") + '">' + rot + '</button>'; }
+  var conexao = MOCK ? "demonstração" : S.conn === "on" ? "conectado"
+    : S.conn === "connecting" ? (Core ? Core.connLabel(S.connSt) : "reconectando…") : "desconectado";
+  return '<h3>Ajustes</h3><div class="grp">' +
+    '<div class="it"><span class="m"><b>Tema</b></span><span class="seg">' + seg("system", "Sistema") + seg("light", "Claro") + seg("dark", "Escuro") + '</span></div>' +
+    '<div class="it"><span class="m"><b>Notificações</b><small>Avisar quando a frota pedir você</small></span>' +
+    '<button class="sw' + (notifOn() ? " on" : "") + '" id="swNotif" role="switch" aria-label="Notificações"></button></div></div>' +
+    '<div class="lbl">Este aparelho</div><div class="grp">' +
+    '<div class="it"><span class="m"><b>Pareado com</b></span><span class="v">' + esc(MAQUINA || "Frota") + '</span></div>' +
+    '<div class="it"><span class="m"><b>Conexão</b></span><span class="v">' + esc(conexao) + '</span></div></div>';
 }
 
-/* Um cartão de atenção (aprovação, pergunta, gate, turno mudo). R4: o mesmo
-   cartão aparece no início e dentro da conversa dona dele; as ações são as
-   mesmas (delegação de clique do documento). */
+// ---------------- início: a cara da frota ----------------
+function renderHero() {
+  if (!Core) return;
+  var seen = S.off && S.snapAt ? Core.seenAgo(Date.now(), S.snapAt) : null;
+  var p = Core.fleetPulse(S.snap, S.off, seen);
+  var sig = JSON.stringify(p);
+  if (!sigChanged("hero", sig)) return;
+  var cls = p.state === "off" ? "dorme" : p.state === "roda" || (p.state === "pede" && S.snap && (S.snap.running || []).length) ? "viva" : "";
+  var svg = faceSvg(SHAPES[0], FLEET_TINT[p.state] || FLEET_TINT.calma, cls);
+  $("#heroFace").innerHTML = svg;
+  $("#miniFace").innerHTML = svg;
+  var el = $("#pulse");
+  el.className = "pulse " + p.state;
+  el.innerHTML = '<span class="d"></span><span class="t">' + esc(p.label) + '</span>' + ico(ICO.chev, 2.4).replace("<svg ", '<svg class="chev" ');
+}
+
+/* Um cartão de decisão (aprovação, pergunta, gate, turno mudo). R4: o mesmo
+   cartão aparece na folha do início e ancorado dentro da conversa dona dele; as
+   ações são as mesmas (delegação de clique do documento). Depois do toque o
+   cartão diz "aguardando o Mac": o 202 nunca é sucesso. */
 function attentionCardHtml(a) {
-    if (S.answered[a.id]) {
-      return '<div class="card attn"><div class="cardhead"><span class="badge ' + esc(a.kind) + '">' + esc(a.kind) + '</span>' +
-        '<span class="ctx">' + ctxLine(a) + '</span></div><div class="sent">✓ Resposta enviada — aguardando o app…</div></div>';
-    }
-    var d = S.drafts[a.id];
-    if (a.kind === "question" && a.choices && a.choices.some(function (q) { return q.options && q.options.length; })) {
-      // C2 — ESCOLHA estruturada respondível do celular: radio/checkbox +
-      // "Outro" livre; a resposta viaja pelo MESMO answer_interaction (o
-      // payload sai da decisão pura buildQuestionAnswer no core.js).
-      if (!d || !d.picks) { d = S.drafts[a.id] = { picks: a.choices.map(function () { return { selected: [], other: "" }; }), atts: [] }; }
-      var qblocks = a.choices.map(function (q, qi) {
-        var opts = (q.options || []).map(function (o) {
-          var on = d.picks[qi].selected.indexOf(o.label) >= 0;
-          return '<button class="optbtn' + (on ? " on" : "") + '" data-opt="' + esc(a.id) + '" data-q="' + qi + '" data-label="' + esc(o.label) + '">' +
-            '<span>' + esc(o.label) + '</span>' + (o.description ? '<span class="od">' + esc(o.description) + '</span>' : "") + '</button>';
-        }).join("");
-        return '<div class="qblock"><p>' + fmt(q.question) + (q.multiSelect ? ' <span class="lm">múltipla</span>' : "") + '</p>' + opts +
-          '<textarea rows="1" data-qother="' + esc(a.id) + '" data-q="' + qi + '" placeholder="Outro (texto livre)…">' + esc(d.picks[qi].other || "") + '</textarea></div>';
+  if (S.answered[a.id]) {
+    return '<div class="decide"><div class="ctx">' + ctxLine(a) + '</div>' +
+      '<div class="sent"><span class="dots"><i></i><i></i><i></i></span>Resposta enviada, aguardando o Mac confirmar…</div></div>';
+  }
+  var d = S.drafts[a.id];
+  if (a.kind === "question" && a.choices && a.choices.some(function (q) { return q.options && q.options.length; })) {
+    // C2 — ESCOLHA estruturada respondível do celular: radio/checkbox +
+    // "Outro" livre; a resposta viaja pelo MESMO answer_interaction (o
+    // payload sai da decisão pura buildQuestionAnswer no core.js).
+    if (!d || !d.picks) { d = S.drafts[a.id] = { picks: a.choices.map(function () { return { selected: [], other: "" }; }), atts: [] }; }
+    var qblocks = a.choices.map(function (q, qi) {
+      var opts = (q.options || []).map(function (o) {
+        var on = d.picks[qi].selected.indexOf(o.label) >= 0;
+        return '<button class="optbtn' + (on ? " on" : "") + '" data-opt="' + esc(a.id) + '" data-q="' + qi + '" data-label="' + esc(o.label) + '">' +
+          '<span class="r' + (q.multiSelect ? " sq" : "") + '"></span><span><b>' + esc(o.label) + '</b>' +
+          (o.description ? '<span class="od">' + esc(o.description) + '</span>' : "") + '</span></button>';
       }).join("");
-      var ready = Core ? !!Core.buildQuestionAnswer(a.choices, d.picks) : true;
-      return '<div class="card attn"><div class="cardhead"><span class="badge question">pergunta</span>' +
-        '<span class="ctx">' + ctxLine(a) + '</span></div>' + qblocks +
-        '<div class="actions"><button class="btn primary" data-answerq="' + esc(a.id) + '"' + (ready ? "" : " disabled") + '>Responder</button></div></div>';
-    }
-    if (a.kind === "gate" || a.kind === "question") {
-      var qs = a.questions || [];
-      if (!d) { d = S.drafts[a.id] = { texts: qs.map(function () { return ""; }), atts: [] }; }
-      var blocks = qs.map(function (q, i) {
-        return '<div class="qblock"><p>' + fmt(q) + '</p>' +
-          '<textarea rows="1" data-gate="' + esc(a.id) + '" data-q="' + i + '" placeholder="Sua resposta…">' + esc(d.texts[i] || "") + '</textarea></div>';
-      }).join("");
-      var chips = d.atts.map(function (t, i) { return chipHtml(a.id, i, t); }).join("");
-      var label = a.kind === "gate" ? "Responder e retomar" : "Responder";
-      return '<div class="card attn"><div class="cardhead"><span class="badge ' + esc(a.kind) + '">' + (a.kind === "gate" ? "gate" : "pergunta") + '</span>' +
-        '<span class="ctx">' + ctxLine(a) + '</span></div>' + blocks +
-        '<div class="chips" data-chips="' + esc(a.id) + '">' + chips + '</div>' +
-        '<div class="actions"><button class="btn icon" data-cam="' + esc(a.id) + '" aria-label="Anexar foto ou PDF">📷</button>' +
-        '<button class="btn primary" data-answer="' + esc(a.id) + '">' + label + '</button></div></div>';
-    }
-    if (a.kind === "stalled") {
-      // turno mudo (watchdog): informativo + "Parar" via stop_turn (whitelisted)
-      return '<div class="card attn"><div class="cardhead"><span class="badge approval">mudo</span>' +
-        '<span class="ctx">' + ctxLine(a) + '</span></div>' +
-        '<div class="meta">Turno sem sinal de vida há ' + (a.minutes != null ? Number(a.minutes) : "?") + ' min — pode ter travado.</div>' +
-        '<div class="actions"><button class="btn danger" data-stop="' + esc(a.convId || "") + '" data-stopkind="stop_turn">Parar</button></div></div>';
-    }
-    // approval
-    return '<div class="card attn"><div class="cardhead"><span class="badge approval">aprovação</span>' +
-      '<span class="ctx">' + ctxLine(a) + (a.toolName ? ' · <span class="mono">' + esc(a.toolName) + "</span>" : "") + '</span></div>' +
-      '<pre class="cmd">' + esc(a.command || "(comando não informado)") + '</pre>' +
-      '<div class="actions"><button class="btn danger" data-deny="' + esc(a.id) + '">Negar</button>' +
-      '<button class="btn ok" data-approve="' + esc(a.id) + '">Aprovar</button></div></div>';
+      return '<div class="qblock"><p>' + fmt(q.question) + (q.multiSelect ? ' <span class="multi">(pode marcar mais de uma)</span>' : "") + '</p>' + opts +
+        '<textarea rows="1" data-qother="' + esc(a.id) + '" data-q="' + qi + '" placeholder="Outro (texto livre)">' + esc(d.picks[qi].other || "") + '</textarea></div>';
+    }).join("");
+    var ready = Core ? !!Core.buildQuestionAnswer(a.choices, d.picks) : true;
+    return '<div class="decide"><div class="kind">Pergunta</div><div class="ctx">' + ctxLine(a) + '</div>' + qblocks +
+      '<div class="actions"><button class="btn primary" data-answerq="' + esc(a.id) + '"' + (ready ? "" : " disabled") + '>Responder</button></div></div>';
+  }
+  if (a.kind === "gate" || a.kind === "question") {
+    var qs = a.questions || [];
+    if (!d) { d = S.drafts[a.id] = { texts: qs.map(function () { return ""; }), atts: [] }; }
+    var blocks = qs.map(function (q, i) {
+      return '<div class="qblock"><p>' + fmt(q) + '</p>' +
+        '<textarea rows="1" data-gate="' + esc(a.id) + '" data-q="' + i + '" placeholder="Sua resposta">' + esc(d.texts[i] || "") + '</textarea></div>';
+    }).join("");
+    var chips = d.atts.map(function (t, i) { return chipHtml(a.id, i, t); }).join("");
+    var label = a.kind === "gate" ? "Responder e retomar" : "Responder";
+    return '<div class="decide"><div class="kind">' + (a.kind === "gate" ? "Missão esperando você" : "Pergunta") + '</div>' +
+      '<div class="ctx">' + ctxLine(a) + '</div>' + blocks +
+      '<div class="chips" data-chips="' + esc(a.id) + '">' + chips + '</div>' +
+      '<div class="actions"><button class="btn icon" data-cam="' + esc(a.id) + '" aria-label="Anexar foto ou PDF">' + ico(ICO.clip) + '</button>' +
+      '<button class="btn primary" data-answer="' + esc(a.id) + '">' + label + '</button></div></div>';
+  }
+  if (a.kind === "stalled") {
+    // turno mudo (watchdog): informativo + "Parar" via stop_turn (whitelisted)
+    return '<div class="decide"><div class="kind">Turno mudo</div><div class="ctx">' + ctxLine(a) + '</div>' +
+      '<div class="qblock"><p>Sem sinal de vida há ' + (a.minutes != null ? Number(a.minutes) : "?") + ' min. Pode ter travado.</p></div>' +
+      '<div class="actions"><button class="btn danger" data-stop="' + esc(a.convId || "") + '" data-stopkind="stop_turn">Parar</button></div></div>';
+  }
+  // approval
+  return '<div class="decide"><div class="kind">Pede aprovação</div>' +
+    '<div class="ctx">' + ctxLine(a) + (a.toolName ? ' · <span class="mono">' + esc(a.toolName) + "</span>" : "") + '</div>' +
+    '<pre class="cmd">' + esc(a.command || "(comando não informado)") + '</pre>' +
+    '<div class="actions"><button class="btn danger" data-deny="' + esc(a.id) + '">Negar</button>' +
+    '<button class="btn primary" data-approve="' + esc(a.id) + '">Aprovar</button></div></div>';
 }
 
-/* Atenção mudou (resposta enviada, opção marcada): o início e a conversa aberta
-   desenham os mesmos cartões. */
+/* Atenção mudou (resposta enviada, opção marcada): a linha do início, a folha
+   aberta e a conversa aberta desenham o mesmo pedido. */
 function rerenderAttention() {
-  S.sigs.attention = null;
-  renderAttention();
+  S.sigs.conversas = null;
+  S.sigs.sheet = null;
+  renderConversas();
+  renderSheetAttn();
   if (S.screen === "chat") renderChatAttention();
 }
 
+// ---------------- painel ----------------
+function openChatAttrs(convId, projectId, agent) {
+  return ' data-openchat="' + esc(convId) + '" data-pid="' + esc(projectId) + '" data-agent="' + esc(agent) + '"';
+}
 function renderRunning() {
   var running = (S.snap && S.snap.running) || [];
   var missions = (S.snap && S.snap.missions) || [];
-  var sig = JSON.stringify([running, missions]);
+  var sig = JSON.stringify([running, missions, S.off]);
   if (!sigChanged("running", sig)) return;
   var host = $("#running");
   if (!running.length) { host.innerHTML = '<div class="empty">Nenhum agente em execução.</div>'; return; }
   host.innerHTML = running.map(function (r) {
-    var h = '<div class="card run"><div class="top"><span class="kind">' + esc(r.kind) + '</span>' +
-      '<span class="label">' + esc(r.label) + '</span></div>' +
-      '<div class="now"><b>Agora:</b> ' + esc(r.detail) + '</div>';
+    var elapsed = r.startedAt ? ago(r.startedAt) : "";
+    var h = '<div class="it col"><div class="head">' + faceFor(r.convId, r.projectId, true) +
+      '<span class="m"><b>' + esc(r.label) + '</b><small class="now">' + esc(r.detail) + '</small></span>' +
+      (elapsed ? '<span class="v">' + esc(elapsed) + '</span>' : "") + '</div>';
     var m = null;
     if (r.kind === "missão") {
       for (var i = 0; i < missions.length; i++) if (missions[i].convId === r.convId) m = missions[i];
     }
-    if (m) {
-      h += '<div class="phases">' + m.phases.map(function (p, i) {
-        return '<div class="phase ' + esc(p.status) + '"><span class="pd"></span>' +
-          '<span class="pl">' + esc(p.label) + ' <span style="color:var(--muted-foreground)">· ' + esc(agentName(p.agent)) + '</span></span>' +
-          (p.costUsd ? '<span class="pc">' + esc(usd(p.costUsd)) + '</span>' : "") + '</div>';
-      }).join("") + '</div>';
-      h += '<div class="meta">' + esc(usd(m.costTotal)) + (m.maxCostUsd ? " / teto " + esc(usd(m.maxCostUsd)) : "") + '</div>';
-    } else if (r.missionPhases) {
-      h += '<div class="phases">' + r.missionPhases.map(function (p) {
-        return '<div class="phase ' + esc(p.status) + '"><span class="pd"></span><span class="pl">' + esc(p.label) + '</span></div>';
-      }).join("") + '</div>';
+    var fases = m ? m.phases : r.missionPhases;
+    if (fases && fases.length) {
+      h += '<div class="phases">' + fases.map(function (p) { return '<i class="' + esc(p.status) + '"></i>'; }).join("") + '</div>' +
+        '<div class="phaselbl">' + fases.map(function (p) { return '<span>' + esc(p.label) + '</span>'; }).join("") + '</div>';
     }
-    h += '<div class="meta">' + [r.projectName ? esc(r.projectName) : null, esc(agentName(r.agent)), r.startedAt ? esc(ago(r.startedAt)) : null]
-      .filter(Boolean).join(" · ") + '</div>';
-    h += '<div class="actions">';
-    if (r.kind === "turno" && r.projectId) {
-      h += '<button class="btn" data-openchat="' + esc(r.convId) + '" data-pid="' + esc(r.projectId) + '" data-agent="' + esc(r.agent) + '">Abrir conversa</button>';
-    }
+    var meta = [r.projectName ? esc(r.projectName) : null, esc(agentName(r.agent)), r.kind === "missão" ? "missão" : null,
+      m ? esc(usd(m.costTotal)) + (m.maxCostUsd ? " de " + esc(usd(m.maxCostUsd)) : "") : null].filter(Boolean).join(" · ");
+    h += '<div class="meta">' + meta + '</div><div class="actions">';
     // C2 — semântica honesta do Parar (mesma do app): turno FINALIZANDO não é
     // interrompível — em vez do botão, o motivo (decisão pura no core.js).
     var disp = Core ? Core.stopDisposition(r)
       : (r.finalizing ? { can: false, label: "Finalizando…", reason: "Turno finalizando, não dá mais para interromper." }
                       : { can: true, label: "Parar", reason: null });
-    if (disp.can) {
-      h += '<button class="btn danger" data-stop="' + esc(r.convId) + '" data-stopkind="' + (r.kind === "missão" ? "stop_mission" : "stop_turn") + '">Parar</button>';
-    } else {
-      h += '<span class="meta">' + esc(disp.reason || disp.label) + '</span>';
+    if (!disp.can) h += '<span class="meta" style="margin:0 auto 0 0;align-self:center">' + esc(disp.reason || disp.label) + '</span>';
+    if (r.kind === "turno" && r.projectId) {
+      h += '<button class="btn small"' + openChatAttrs(r.convId, r.projectId, r.agent) + '>Abrir conversa</button>';
     }
-    h += '</div></div>';
-    return h;
+    if (disp.can) {
+      h += '<button class="btn small danger" data-stop="' + esc(r.convId) + '" data-stopkind="' + (r.kind === "missão" ? "stop_mission" : "stop_turn") + '">Parar</button>';
+    }
+    return h + '</div></div>';
   }).join("");
 }
 
 function renderLastTurns() {
   var ts = (S.snap && S.snap.lastTurns) || [];
-  var sig = JSON.stringify(ts);
+  var sig = JSON.stringify([ts, S.off]);
   if (!sigChanged("lastTurns", sig)) return;
   var host = $("#lastTurns");
   if (!ts.length) { host.innerHTML = '<div class="empty">Nenhum turno encerrado ainda.</div>'; return; }
+  var convs = Core ? Core.homeConversations(S.snap, null) : [];
   host.innerHTML = ts.map(function (t) {
     // A frase vem PRONTA do desktop (fraseDoTurno, lib/turnReceipt): sem
     // recibo ela ja e o desfecho — turno de primeiro plano, helper desligado
     // ou prazo estourado nao geram frase (ADR-055). Nunca card mudo, e a regra
     // mora num lugar so em vez de ser reescrita aqui.
-    return '<div class="card dl"><span class="task">' + esc(t.frase) +
-      '<div class="meta">' + [t.projectName ? esc(t.projectName) : null, esc(t.title), esc(ago(t.at))].filter(Boolean).join(" · ") + '</div></span>' +
-      (t.ok ? "" : '<span class="cost">falhou</span>') + '</div>';
+    var c = null;
+    for (var i = 0; i < convs.length; i++) if (convs[i].convId === t.convId) c = convs[i];
+    var inner = faceFor(t.convId, t.projectId, false) +
+      '<span class="m"><b>' + esc(t.frase) + '</b><small>' + [t.projectName ? esc(t.projectName) : null, esc(t.title)].filter(Boolean).join(" · ") + '</small></span>' +
+      '<span class="v' + (t.ok ? "" : " bad") + '">' + (t.ok ? esc(ago(t.at)) : "falhou") + '</span>';
+    return c && c.agent
+      ? '<button class="it"' + openChatAttrs(t.convId, t.projectId, c.agent) + '>' + inner + '</button>'
+      : '<div class="it">' + inner + '</div>';
   }).join("");
 }
 
@@ -1343,9 +1522,9 @@ function renderDeliveries() {
   var host = $("#deliveries");
   if (!dl.length) { host.innerHTML = '<div class="empty">Sem entregas recentes.</div>'; return; }
   host.innerHTML = dl.map(function (d) {
-    return '<div class="card dl"><span class="task">' + esc(d.task) +
-      '<div class="meta">' + [d.projectName ? esc(d.projectName) : null, esc(agentName(d.agent)), esc(ago(d.createdAt))].filter(Boolean).join(" · ") + '</div></span>' +
-      (d.costUsd != null ? '<span class="cost">' + esc(usd(d.costUsd)) + '</span>' : "") + '</div>';
+    return '<div class="it"><span class="m"><b>' + esc(d.task) + '</b><small>' +
+      [d.projectName ? esc(d.projectName) : null, esc(agentName(d.agent)), esc(ago(d.createdAt))].filter(Boolean).join(" · ") + '</small></span>' +
+      (d.costUsd != null ? '<span class="v">' + esc(usd(d.costUsd)) + '</span>' : "") + '</div>';
   }).join("");
 }
 
@@ -1355,60 +1534,94 @@ function renderDeliveries() {
 
 function renderProjects() {
   var ps = (S.snap && S.snap.projects) || [];
-  var sig = JSON.stringify(ps);
+  var sig = JSON.stringify(ps.map(function (p) { return [p.id, p.name, (p.agents || []).length]; }));
   if (!sigChanged("projects", sig)) return;
   var host = $("#projects");
   if (!ps.length) { host.innerHTML = '<div class="empty">Nenhum projeto no app ainda.</div>'; return; }
   host.innerHTML = ps.map(function (p) {
-    return '<button class="card proj" data-proj="' + esc(p.id) + '">' +
-      '<span class="nm">' + esc(p.name) + '</span>' +
-      '<span class="lm">' + p.agents.length + ' agent' + (p.agents.length === 1 ? "" : "s") + '</span>' +
-      '<span class="ar">›</span></button>';
+    var n = (p.agents || []).length;
+    return '<button class="it" data-proj="' + esc(p.id) + '"><span class="fchip" style="border:0;padding:0;height:auto"><i style="background:' + tintOf(p.id) + '"></i></span>' +
+      '<span class="m"><b>' + esc(p.name) + '</b></span>' +
+      '<span class="v">' + n + (n === 1 ? " motor" : " motores") + '</span><span class="v chev">' + ico(ICO.chev, 2.2) + '</span></button>';
   }).join("");
 }
 
 function renderCost() {
   var v = S.snap && S.snap.costs ? S.snap.costs.totalUsd : 0;
   $("#costTotal").textContent = usd(v);
+  $("#statRun").textContent = String(((S.snap && S.snap.running) || []).length);
+  $("#statAttn").textContent = String(((S.snap && S.snap.attention) || []).length);
+  $("#painelSub").textContent = MAQUINA || "Frota";
 }
 
+// ---------------- início: conversas ----------------
 /* R4 — conversas de todos os projetos (snapshot projects[].recent), ordem e
-   motor decididos no core (homeConversations). Filtro por projeto lembrado. */
+   motor decididos no core (homeConversations), prévia também (convPreview).
+   Quem pede você abre a FOLHA de decisão; o resto abre a conversa. Filtro por
+   projeto lembrado. */
 var LS_FILTRO = "mc.companion.filtroProjeto";
+function rowHtml(o) {
+  var attrs = o.attrs || "";
+  var inner = (o.tone === "pede" ? '<span class="mark"></span>' : "") + o.face +
+    '<span class="mid"><span class="l1"><span class="tt">' + esc(o.title) + '</span>' +
+    (o.tag ? '<span class="tag">' + esc(o.tag) + '</span>' : "") +
+    '<span class="when">' + esc(o.when || "") + '</span></span>' +
+    '<span class="l2">' + (o.tone === "roda" ? '<span class="dots"><i></i><i></i><i></i></span>' : "") +
+    '<span class="t">' + esc(o.text || "") + '</span></span></span>';
+  var cls = "rowc " + (o.tone || "") + (o.dead ? " semmotor" : "");
+  return o.dead ? '<div class="' + cls + '" title="' + esc(o.dead) + '">' + inner + '</div>'
+    : '<button class="' + cls + '"' + attrs + '>' + inner + '</button>';
+}
 function renderConversas() {
   var ps = (S.snap && S.snap.projects) || [];
   var filtro = lsGet(LS_FILTRO) || "";
   if (filtro && !ps.some(function (p) { return p.id === filtro; })) filtro = "";
   var lista = Core ? Core.homeConversations(S.snap, filtro || null) : [];
-  var sig = JSON.stringify([filtro, ps.map(function (p) { return [p.id, p.name]; }), lista]);
+  var att = (S.snap && S.snap.attention) || [];
+  var minuto = Math.floor(Date.now() / 60000);
+  var sig = JSON.stringify([filtro, ps.map(function (p) { return [p.id, p.name]; }), lista, att, S.answered, S.off, minuto,
+    (S.snap && S.snap.running) || []]);
   if (!sigChanged("conversas", sig)) return;
   $("#convFilter").innerHTML = ps.length > 1
-    ? ['<button class="pick' + (filtro ? "" : " on") + '" data-cfiltro="">Todos</button>'].concat(ps.map(function (p) {
-        return '<button class="pick' + (filtro === p.id ? " on" : "") + '" data-cfiltro="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+    ? ['<button class="fchip' + (filtro ? "" : " on") + '" data-cfiltro="">Todos</button>'].concat(ps.map(function (p) {
+        return '<button class="fchip' + (filtro === p.id ? " on" : "") + '" data-cfiltro="' + esc(p.id) + '"><i style="background:' + tintOf(p.id) + '"></i>' + esc(p.name) + '</button>';
       })).join("")
     : "";
   var host = $("#conversas");
   if (!S.snap) { host.innerHTML = '<div class="empty">Conectando ao Mac…</div>'; return; }
-  if (!lista.length) {
-    host.innerHTML = '<div class="empty">Nenhuma conversa ainda. Use “Nova conversa” para começar uma no seu Mac.</div>';
-    return;
-  }
-  host.innerHTML = lista.map(function (c) {
-    var tag = c.pedeVoce ? '<span class="cv-tag pede">pede você</span>'
-      : c.running ? '<span class="cv-tag roda">rodando</span>' : "";
-    var meta = [esc(c.projectName), c.agent ? esc(agentName(c.agent)) : "sem motor", c.updatedAt ? esc(ago(c.updatedAt)) : null]
-      .filter(Boolean).join(" · ");
-    var inner = '<span class="cv-main"><span class="cv-title" style="display:block">' + esc(c.title) + '</span>' +
-      '<span class="cv-meta" style="display:block">' + meta + '</span></span>' + tag;
-    return c.agent
-      ? '<button class="card conv" data-openchat="' + esc(c.convId) + '" data-pid="' + esc(c.projectId) + '" data-agent="' + esc(c.agent) + '">' + inner + '</button>'
-      : '<div class="card conv" title="Nenhum motor disponível nesta máquina">' + inner + '</div>';
+  // pedido sem linha de conversa (metas do projeto ainda não carregadas no
+  // desktop, ou pedido sem conversa): nunca fica inalcançável, ganha linha própria
+  var naLista = {};
+  lista.forEach(function (c) { naLista[c.convId] = 1; });
+  var orfas = att.filter(function (a) {
+    return !(a.convId && naLista[a.convId]) && (!filtro || a.projectId === filtro);
+  });
+  var h = orfas.map(function (a) {
+    var prev = Core ? Core.convPreview({ convId: a.convId }, { attention: [a] }) : { tone: "pede", text: "" };
+    return rowHtml({ face: faceFor(a.convId || a.id, a.projectId, false), title: a.projectName || "Frota",
+      tag: agentName(a.agent), tone: "pede", when: "",
+      text: S.answered[a.id] ? "Resposta enviada, aguardando o Mac…" : prev.text,
+      attrs: ' data-attnid="' + esc(a.id) + '"' });
   }).join("");
+  h += lista.map(function (c) {
+    var prev = Core ? Core.convPreview(c, S.snap) : { tone: "", text: "" };
+    var pedidos = att.filter(function (a) { return a.convId === c.convId; });
+    var enviado = pedidos.length && pedidos.every(function (a) { return S.answered[a.id]; });
+    return rowHtml({
+      face: faceFor(c.convId, c.projectId, c.running),
+      title: c.title, tag: c.projectName, tone: prev.tone,
+      when: Core ? Core.shortAgo(Date.now(), c.updatedAt) : "",
+      text: enviado ? "Resposta enviada, aguardando o Mac…" : prev.text,
+      dead: c.agent ? null : "Nenhum motor disponível nesta máquina",
+      attrs: pedidos.length ? ' data-attnconv="' + esc(c.convId) + '"' : openChatAttrs(c.convId, c.projectId, c.agent || "")
+    });
+  }).join("");
+  host.innerHTML = h || '<div class="empty">Nenhuma conversa ainda. Toque em “Nova conversa” para começar uma no seu Mac.</div>';
 }
 
 function renderBrief() {
-  // Início (R4): pede você → conversas. Painel: agora → acabou → entregue.
-  renderAttention();
+  // Início (R4): a cara da frota → conversas. Painel: agora → acabou → entregue.
+  renderHero();
   renderConversas();
   renderRunning();
   renderLastTurns();
@@ -1430,21 +1643,20 @@ function renderAgents() {
       $("#agentList").innerHTML = '<div class="empty">Conectando ao Mac…</div>';
       return;
     }
-    // projeto saiu do app: rota morta volta pro briefing (replace: sem
+    // projeto saiu do app: rota morta volta pro início (replace: sem
     // entrada fantasma no histórico)
-    history.replaceState(null, "", location.pathname + location.search + "#/");
-    showScreen("brief");
+    navReplace({ screen: "brief" });
     return;
   }
-  $("#agentsTitle").textContent = p.name + " — escolher agent";
+  $("#agentsTitle").textContent = p.name;
   $("#agentList").innerHTML = (p.agents.length ? p.agents : []).map(function (a) {
     var id = typeof a === "string" ? a : a.agent; // compat com snapshot antigo
     var conv = (a && a.deskConvId) || "";
-    return '<button class="card agentbtn" data-pickagent="' + esc(id) + '" data-pid="' + esc(p.id) + '" data-conv="' + esc(conv) + '">' +
-      '<span class="glyph">' + esc(agentName(id).slice(0, 2).toUpperCase()) + '</span>' +
-      '<span style="flex:1; text-align:left">' + esc(agentName(id)) + '</span>' +
-      (conv ? '<span class="lm">histórico</span>' : '') + '</button>';
-  }).join("") || '<div class="empty">Nenhum agent disponível nesta máquina.</div>';
+    return '<button class="it" data-pickagent="' + esc(id) + '" data-pid="' + esc(p.id) + '" data-conv="' + esc(conv) + '">' +
+      faceFor(conv || (p.id + id), p.id, false) +
+      '<span class="m"><b>' + esc(agentName(id)) + '</b><small>' + (conv ? "Continuar a conversa da mesa" : "Mesa ainda sem conversa") + '</small></span>' +
+      '<span class="v chev">' + ico(ICO.chev, 2.2) + '</span></button>';
+  }).join("") || '<div class="empty">Nenhum motor disponível nesta máquina.</div>';
 }
 
 // ---------------- lançar tarefa (C2) ----------------
@@ -1476,11 +1688,13 @@ function onActionResult(d) {
         L.actionSentAt = null;
         L.status = null;
         $("#launchText").value = "";
-        showNote("✓ " + (d.message || "Tarefa lançada."));
+        showNote(d.message || "Tarefa lançada.");
+        // troca a entrada da folha pela conversa: o voltar cai no início, não
+        // na folha de lançamento já usada
         if (d.projectId && d.agent && d.convId) {
-          nav({ screen: "chat", projectId: d.projectId, agent: d.agent, convId: d.convId });
+          navReplace({ screen: "chat", projectId: d.projectId, agent: d.agent, convId: d.convId });
         } else {
-          nav({ screen: "brief" });
+          navReplace({ screen: "brief" });
         }
       } else {
         // recusado: o próximo envio é OUTRO gesto (id novo); motivo na cara
@@ -1491,7 +1705,7 @@ function onActionResult(d) {
       }
       return;
     }
-    showNote((d.ok ? "✓ " : "✕ ") + (d.message || "Resultado da tarefa"));
+    showNote(d.message || "Resultado da tarefa");
     return;
   }
   // C3 — veredito do send_message: aceite adota o convId REAL (mesa que ainda
@@ -1511,7 +1725,7 @@ function onActionResult(d) {
         if (!S.chat.explicitConv) lsSet(convKey(S.chat.projectId, S.chat.agent), S.chat.convId);
         fetchConv();
       }
-      if (S.screen !== "chat") showNote("✓ " + (d.message || "Mensagem enviada."));
+      if (S.screen !== "chat") showNote(d.message || "Mensagem enviada.");
       return;
     }
     // só mexe no fio/rascunho se o eco pendente ainda é DESTE chat (navegar
@@ -1524,10 +1738,10 @@ function onActionResult(d) {
       if (ct && !ct.value && pend.text) { ct.value = pend.text; autoGrow(ct); }
       renderChatItems();
     }
-    showNote("✕ " + (d.message || "O Mac recusou a mensagem."));
+    showNote(d.message || "O Mac recusou a mensagem.");
     return;
   }
-  if (pend || d.message) showNote((d.ok ? "✓ " : "") + (d.message || ""));
+  if (pend || d.message) showNote(d.message || "");
 }
 
 function openLaunch(pid) {
@@ -1545,8 +1759,10 @@ function renderLaunch() {
   var ps = (S.snap && S.snap.projects) || [];
   // projeto escolhido que sumiu do app: desmarca (fail-closed na UI também)
   if (L.projectId && ps.length && !ps.some(function (p) { return p.id === L.projectId; })) L.projectId = null;
+  // um projeto só: já vem escolhido (um toque a menos)
+  if (!L.projectId && ps.length === 1) L.projectId = ps[0].id;
   $("#launchProjects").innerHTML = ps.length ? ps.map(function (p) {
-    return '<button class="pick' + (L.projectId === p.id ? " on" : "") + '" data-lproj="' + esc(p.id) + '">' + esc(p.name) + '</button>';
+    return '<button class="fchip' + (L.projectId === p.id ? " on" : "") + '" data-lproj="' + esc(p.id) + '"><i style="background:' + tintOf(p.id) + '"></i>' + esc(p.name) + '</button>';
   }).join("") : '<div class="empty">' + (S.snap ? "Nenhum projeto no app." : "Conectando ao Mac…") + '</div>';
   // pilotos: Especialistas globais + agents utilizáveis do projeto escolhido
   var pilots = [];
@@ -1564,15 +1780,16 @@ function renderLaunch() {
   }
   if (L.pilot && !pilots.some(function (p) { return pilotKey(p) === pilotKey(L.pilot); })) L.pilot = null;
   $("#launchPilots").innerHTML = pilots.length ? pilots.map(function (p) {
-    var extra = p.kind === "spec" ? "<small>" + esc(agentName(p.backend)) + "</small>" : "";
-    return '<button class="pick' + (pilotKey(L.pilot) === pilotKey(p) ? " on" : "") + '" data-lpilot="' + esc(pilotKey(p)) + '" data-backend="' + esc(p.backend) + '">' + esc(p.name) + extra + '</button>';
-  }).join("") : '<div class="empty">' + (L.projectId ? "Nenhum agent disponível." : "Escolha um projeto primeiro.") + '</div>';
+    return '<button class="pilot' + (pilotKey(L.pilot) === pilotKey(p) ? " on" : "") + '" data-lpilot="' + esc(pilotKey(p)) + '" data-backend="' + esc(p.backend) + '">' +
+      faceFor(pilotKey(p), L.projectId, false) + '<b>' + esc(p.name) + '</b>' +
+      '<small>' + (p.kind === "spec" ? esc(agentName(p.backend)) : "motor") + '</small></button>';
+  }).join("") : '<div class="empty">' + (L.projectId ? "Nenhum motor disponível." : "Escolha um projeto primeiro.") + '</div>';
   var st = $("#launchStatus");
   st.className = L.status ? L.status.cls : "";
   st.textContent = L.status ? L.status.msg : "";
   var text = $("#launchText").value.trim();
   $("#launchGo").disabled = !!L.busy || !L.projectId || !L.pilot || !text;
-  $("#launchGo").textContent = L.busy ? "Lançando…" : "Lançar";
+  $("#launchGo").textContent = L.busy ? "Lançando no Mac…" : "Lançar";
 }
 
 function submitLaunch() {
@@ -1649,6 +1866,7 @@ function openChat(projectId, agent, convId) {
   if (S.chat && S.chat.projectId === projectId && S.chat.agent === agent &&
       (!convId || S.chat.convId === convId)) {
     showScreen("chat");
+    renderChatHead();
     renderChatItems();
     if (S.chat.convId) fetchConv();
     return;
@@ -1666,15 +1884,20 @@ function openChat(projectId, agent, convId) {
   var explicit = !!(convId && convId !== desk);
   S.chat = { projectId: projectId, projectName: name, agent: agent, convId: cid || null,
              explicitConv: explicit, items: [], echo: [], atts: [], sending: false,
-             waitStart: null, fb: {}, winStart: 0, total: null, olderBusy: false };
+             waitStart: null, fb: {}, open: {}, winStart: 0, total: null, olderBusy: false };
   // persiste SÓ a conversa de MESA: um convId explícito de "Abrir conversa"
   // pode ser um turno do desktop — gravá-lo envenenaria o fallback da mesa.
   if (cid && (!convId || convId === desk)) lsSet(convKey(projectId, agent), cid);
-  $("#chatTitle").textContent = name + " · " + agentName(agent);
   $("#chatText").value = "";
+  autoGrow($("#chatText"));
+  syncSend();
+  S.sigs.chatHead = null;
+  renderChatHead();
   renderChatChips();
+  $("#chatItems").innerHTML = "";
   renderChatItems();
   showScreen("chat");
+  scrollChatEnd();
   if (S.chat.convId) fetchConv(); else bindChatConv();
 }
 /* Sem convId até o desktop criar a conversa da mesa: adota o deskConvId assim
@@ -1764,7 +1987,7 @@ function blobImgHtml(path, name) {
     if (blobCache[p]) return '<img src="' + esc(blobCache[p]) + '" alt="' + esc(name || "") + '">';
     return '<img data-blob="' + esc(p) + '" alt="' + esc(name || "") + '">';
   }
-  return '<span class="chip"><span class="file">📄</span><span class="nm">' + esc(name || "anexo") + '</span></span>';
+  return '<span class="chip"><span class="file">' + ico(ICO.doc) + '</span><span class="nm">' + esc(name || "anexo") + '</span></span>';
 }
 function hydrateBlobs(scope) {
   var imgs = (scope || document).querySelectorAll("img[data-blob]");
@@ -1780,7 +2003,7 @@ function hydrateBlobs(scope) {
       // levas ao longo dos renders seguintes.
       var ph = document.createElement("span");
       ph.className = "chip";
-      ph.innerHTML = '<span class="file">🖼</span><span class="nm">imagem indisponível</span>';
+      ph.innerHTML = '<span class="file">' + ico(ICO.doc) + '</span><span class="nm">imagem indisponível</span>';
       if (img.parentNode) img.parentNode.replaceChild(ph, img);
     });
   });
@@ -1793,16 +2016,26 @@ function toolLine(it) {
   else if (inp && typeof inp === "object" && typeof inp.pattern === "string") summary = inp.pattern;
   else if (inp != null) { try { summary = JSON.stringify(inp); } catch (e) { summary = ""; } }
   if (summary.length > 140) summary = summary.slice(0, 140) + "…";
-  var res = it.result ? "  → " + (it.result.ok ? "" : "✗ ") + it.result.lines + " linha" + (it.result.lines === 1 ? "" : "s") : "";
-  var h = '<div class="ci-tool"><span class="tn">▸ ' + esc(it.name) + '</span>  ' + esc(summary) + esc(res) + '</div>';
-  // C3 — evidência VISUAL da tool agora aparece de verdade no celular (antes
-  // era só o texto "2 capturas"); path fora da allowlist vira chip.
+  var falhou = it.result && it.result.ok === false;
+  var res = it.result ? "  → " + (falhou ? "falhou, " : "") + it.result.lines + " linha" + (it.result.lines === 1 ? "" : "s") : "";
+  var h = '<div class="ln' + (falhou ? " bad" : "") + '"><b>' + esc(it.name) + '</b>  ' + esc(summary) + esc(res) + '</div>';
+  // C3 — evidência VISUAL da tool aparece de verdade no celular; path fora da
+  // allowlist vira chip.
   if (Array.isArray(it.images) && it.images.length) {
     h += '<div class="ci-imgs">' + it.images.map(function (p) {
       return blobImgHtml(p, "captura");
     }).join("") + '</div>';
   }
   return h;
+}
+/* Ferramentas seguidas num grupo só (core: groupThreadItems + toolGroupLabel).
+   Aberto/fechado é gesto da pessoa: sobrevive aos re-renders por id do grupo.
+   Grupo com captura nasce aberto, porque imagem escondida é evidência perdida. */
+function toolGroupHtml(g) {
+  var temImagem = g.items.some(function (t) { return Array.isArray(t.images) && t.images.length; });
+  var aberto = S.chat && S.chat.open && S.chat.open[g.id] != null ? S.chat.open[g.id] : temImagem;
+  return '<details class="acts" data-gid="' + esc(g.id) + '"' + (aberto ? " open" : "") + '><summary>' + ico(ICO.chev, 2.4) +
+    esc(Core.toolGroupLabel(g.items)) + '</summary>' + g.items.map(toolLine).join("") + '</details>';
 }
 function chatItemHtml(it) {
   switch (it.kind) {
@@ -1819,14 +2052,15 @@ function chatItemHtml(it) {
     // C3 — markdown de verdade no fio (subset seguro do core.js); sem o core,
     // degrada pro fmt() mínimo de sempre
     case "text": return '<div class="ci-text md">' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
-    case "tool": return toolLine(it);
+    case "tools": return toolGroupHtml(it);
+    case "tool": return '<details class="acts" open><summary>' + ico(ICO.chev, 2.4) + esc(it.name || "ação") + '</summary>' + toolLine(it) + '</details>';
     case "result": {
       // ADR-199: envelope de bastidor (sem texto, custo nem token) fechado no
       // meio do pedido não é turno; o desktop também não desenha.
       var u = it.usage || {};
       if (it.ok && !(it.text || "").trim() && !it.costUsd &&
           !u.input && !u.output && !u.cacheRead && !u.cacheCreation) return "";
-      var bits = [it.ok ? "✓ turno concluído" : "✗ turno falhou"];
+      var bits = [it.ok ? "Turno concluído" : "Turno falhou"];
       if (typeof it.costUsd === "number") bits.push(usd(it.costUsd));
       if (typeof it.durationMs === "number") bits.push(Math.round(it.durationMs / 1000) + "s");
       // 👍/👎 (P6): só em turno OK de conversa conhecida — a ação whitelisted
@@ -1835,16 +2069,16 @@ function chatItemHtml(it) {
       if (it.ok && S.chat && S.chat.convId) {
         var v = S.chat.fb[it.id];
         fb = '<span class="fbrow">' +
-          '<button class="fb' + (v === "up" ? " on" : "") + '" data-fb="up" data-fbid="' + esc(it.id) + '" aria-label="Boa resposta">👍</button>' +
-          '<button class="fb' + (v === "down" ? " on" : "") + '" data-fb="down" data-fbid="' + esc(it.id) + '" aria-label="Faltou algo">👎</button></span>';
+          '<button class="fb' + (v === "up" ? " on" : "") + '" data-fb="up" data-fbid="' + esc(it.id) + '" aria-label="Boa resposta">' + ico(ICO.up, 1.8) + '</button>' +
+          '<button class="fb' + (v === "down" ? " on" : "") + '" data-fb="down" data-fbid="' + esc(it.id) + '" aria-label="Faltou algo">' + ico(ICO.down, 1.8) + '</button></span>';
       }
-      return '<div class="ci-result' + (it.ok ? "" : " bad") + '">' + esc(bits.join(" · ")) + fb + '</div>';
+      return '<div class="ci-result' + (it.ok ? "" : " bad") + '"><span>' + esc(bits.join(" · ")) + '</span>' + fb + '</div>';
     }
     case "notice": return '<div class="ci-notice">' + esc(it.message) + '</div>';
     case "error": return '<div class="ci-error">' + esc(it.message) + '</div>';
     // parecer de Especialista (advice): antes era invisível no celular
-    case "advice": return '<div class="ci-text md"><div class="lm" style="margin-bottom:4px">parecer · ' + esc(it.personaName || "Especialista") + '</div>' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
-    case "cancelled": return '<div class="ci-notice">— interrompido —</div>';
+    case "advice": return '<div class="ci-text md"><div class="who">Parecer de ' + esc(it.personaName || "Especialista") + '</div>' + (Core ? Core.renderMarkdown(it.text) : fmt(it.text)) + '</div>';
+    case "cancelled": return '<div class="ci-notice">Interrompido</div>';
     case "limit": return '<div class="ci-limit">' + esc(it.message) + (it.resetHint ? '<div class="meta">' + esc(it.resetHint) + '</div>' : "") + '</div>';
     default: return "";
   }
@@ -1885,14 +2119,15 @@ function renderChatItems() {
   if (!S.chat) return;
   renderChatAttention();
   var host = $("#chatItems");
+  var sc = $("#chatScroll");
   // auto-scroll respeitando leitura: só acompanha se JÁ estava no fim
-  var atBottom = innerHeight + scrollY >= document.body.scrollHeight - 80;
+  var atBottom = sc.scrollTop + sc.clientHeight >= sc.scrollHeight - 80;
   var all = S.chat.items.concat(S.chat.echo);
-  var h = all.map(chatItemHtml).join("");
+  var h = (Core ? Core.groupThreadItems(all) : all).map(chatItemHtml).join("");
   // C3 — janela do fio: há itens ANTES da faixa carregada → botão de paginar
   if (S.chat.winStart > 0) {
-    h = '<div id="loadOlderWrap"><button class="btn" id="loadOlder"' + (S.chat.olderBusy ? " disabled" : "") + '>' +
-      (S.chat.olderBusy ? "Carregando…" : "↑ Carregar anteriores (" + Number(S.chat.winStart) + ")") + '</button></div>' + h;
+    h = '<div id="loadOlderWrap"><button id="loadOlder"' + (S.chat.olderBusy ? " disabled" : "") + '>' +
+      (S.chat.olderBusy ? "Carregando…" : "Carregar anteriores (" + Number(S.chat.winStart) + ")") + '</button></div>' + h;
   }
   var run = chatRunning();
   if (S.chat.sending) {
@@ -1902,23 +2137,29 @@ function renderChatItems() {
     // tempo 2: turno vivo — dots + tempo REAL de trabalho (startedAt do
     // running[]) + a tool corrente quando houver
     var elapsed = run && Core ? Core.elapsedLabel(Date.now(), run.startedAt) : "";
-    h += '<div class="typing"><span class="dots"><i></i><i></i><i></i></span>' +
-      '<span>' + esc(agentName(S.chat.agent)) + ' trabalhando' + (elapsed ? " " + esc(elapsed) : "") + '…</span>' +
-      (run && run.detail ? '<span class="tool">⚙ ' + esc(run.detail) + '</span>' : '') + '</div>';
+    h += '<div class="typing">' + faceFor(S.chat.convId || (S.chat.projectId + S.chat.agent), S.chat.projectId, true) +
+      '<span class="dots"><i></i><i></i><i></i></span>' +
+      (run && run.detail ? '<span class="tool">' + esc(run.detail) + '</span>'
+        : '<span class="lbl">' + esc(agentName(S.chat.agent)) + ' trabalhando' + (elapsed ? " " + esc(elapsed) : "") + '…</span>') + '</div>';
   }
   if (!h) {
-    h = '<div class="chatempty">' +
+    h = '<div class="chatempty">' + faceFor(S.chat.convId || (S.chat.projectId + S.chat.agent), S.chat.projectId, false) +
       (S.chat.convId ? 'Carregando conversa…'
-        : 'Mesa de ' + esc(agentName(S.chat.agent)) + ' — diga o que precisa.<div class="sugchips">' +
+        : 'Mesa de ' + esc(agentName(S.chat.agent)) + '. Diga o que precisa.<div class="sugchips">' +
           SUGGESTION_CHIPS.map(function (s) { return '<button class="sug" data-sug="' + esc(s) + '">' + esc(s) + '</button>'; }).join("") +
           '</div>') + '</div>';
   }
   host.innerHTML = h;
   hydrateBlobs(host); // imagens do fio: fetch autenticado → objectURL
   $("#chatHint").textContent = S.chat.convId || S.chat.sending || S.chat.waitStart ? "" : "O turno roda de verdade no projeto, direto do seu Mac.";
-  var dot = $("#chatDot");
-  if (dot) dot.className = "dot" + (run || S.chat.sending || S.chat.waitStart ? " busy" : "");
-  if (atBottom) window.scrollTo(0, document.body.scrollHeight);
+  renderChatHead();
+  if (atBottom) scrollChatEnd();
+}
+function scrollChatEnd() { var sc = $("#chatScroll"); sc.scrollTop = sc.scrollHeight; }
+/* o botão de enviar só acende com texto: alvo morto não convida ao toque */
+function syncSend() {
+  var t = $("#chatText");
+  $("#chatSend").disabled = !t.value.trim() || !!(S.chat && S.chat.sending);
 }
 /* C3 — "carregar anteriores": pede ao servidor a página que termina onde a
    faixa carregada começa e emenda na frente, mantendo a leitura no lugar. */
@@ -1927,7 +2168,7 @@ function loadOlderPage() {
   S.chat.olderBusy = true;
   var id = S.chat.convId;
   renderChatItems();
-  var heightBefore = document.body.scrollHeight;
+  var heightBefore = $("#chatScroll").scrollHeight;
   apiConv(id, S.chat.winStart).then(function (conv) {
     if (!S.chat || S.chat.convId !== id) return;
     S.chat.olderBusy = false;
@@ -1941,7 +2182,8 @@ function loadOlderPage() {
     if (typeof conv.total === "number") S.chat.total = conv.total;
     renderChatItems();
     // compensa a altura injetada acima: a leitura fica onde estava
-    window.scrollTo(0, scrollY + (document.body.scrollHeight - heightBefore));
+    var sc = $("#chatScroll");
+    sc.scrollTop = sc.scrollTop + (sc.scrollHeight - heightBefore);
   }).catch(function () {
     if (!S.chat || S.chat.convId !== id) return;
     S.chat.olderBusy = false;
@@ -1983,7 +2225,7 @@ function sendChat() {
   autoGrow($("#chatText"));
   renderChatChips();
   renderChatItems();
-  window.scrollTo(0, document.body.scrollHeight);
+  scrollChatEnd();
   // C3 — actionId POR GESTO (mesma infra de idempotência do C2): o veredito
   // honesto do Mac volta pelo action-result — recusa derruba o eco e devolve
   // o rascunho, aceite traz o convId real (conversa de mesa recém-criada).
@@ -2021,9 +2263,9 @@ function sendChat() {
       autoGrow($("#chatText"));
       renderChatChips();
       renderChatItems();
-      alert("Falha ao enviar: " + (e && e.message ? e.message : e));
+      showNote("Falha ao enviar: " + (e && e.message ? e.message : e));
     })
-    .then(function () { btn.disabled = false; });
+    .then(function () { syncSend(); });
 }
 
 // ---------------- anexos (gate + chat compartilham o input) ----------------
@@ -2045,7 +2287,7 @@ function anexarArquivo(f, ctx) {
       var host = document.querySelector('[data-chips="' + CSS.escape(ctx.id) + '"]');
       if (host) host.innerHTML = S.drafts[ctx.id].atts.map(function (t, i) { return chipHtml(ctx.id, i, t); }).join("");
     }
-  }).catch(function (e) { alert("Falha no anexo: " + (e && e.message ? e.message : e)); });
+  }).catch(function (e) { showNote("Falha no anexo: " + (e && e.message ? e.message : e)); });
 }
 $("#filePick").addEventListener("change", function () {
   var f = this.files && this.files[0];
@@ -2053,7 +2295,7 @@ $("#filePick").addEventListener("change", function () {
   if (!f || !ctx) return;
   var triagem = Core ? Core.triagemDeArquivos([f]) : { aceitos: [f], recusados: [] };
   var recusa = Core ? Core.avisoDeRecusa(triagem.recusados) : null;
-  if (recusa) { alert("Não anexei: " + recusa + "."); return; }
+  if (recusa) { showNote("Não anexei: " + recusa + "."); return; }
   anexarArquivo(triagem.aceitos[0], ctx);
 });
 
@@ -2091,7 +2333,7 @@ document.addEventListener("drop", function (ev) {
     : { aceitos: Array.prototype.slice.call(ev.dataTransfer.files || []), recusados: [] };
   triagem.aceitos.forEach(function (f) { anexarArquivo(f, { kind: "chat" }); });
   var recusa = Core && Core.avisoDeRecusa(triagem.recusados);
-  if (recusa) alert("Não anexei: " + recusa + ".");
+  if (recusa) showNote("Não anexei: " + recusa + ".");
 });
 
 // ---------------- eventos (delegação) ----------------
@@ -2099,6 +2341,7 @@ document.addEventListener("input", function (ev) {
   var t = ev.target;
   if (t.tagName !== "TEXTAREA") return;
   autoGrow(t);
+  if (t.id === "chatText") syncSend();
   var gid = t.getAttribute("data-gate");
   if (gid && S.drafts[gid]) S.drafts[gid].texts[Number(t.getAttribute("data-q"))] = t.value;
   // C2 — "Outro" da pergunta estruturada: guarda no rascunho e re-arma o
@@ -2121,6 +2364,31 @@ document.addEventListener("click", function (ev) {
   if (ev.target.closest && ev.target.closest("#loadOlder")) { loadOlderPage(); return; }
   var fil = ev.target.closest ? ev.target.closest("[data-cfiltro]") : null;
   if (fil) { lsSet(LS_FILTRO, fil.getAttribute("data-cfiltro")); renderConversas(); return; }
+  // casca: véu fecha a folha, "‹" volta uma tela, Ajustes, tema e notificações
+  var casca = ev.target.closest ? ev.target.closest("#scrim,[data-back],#btnPrefs,[data-settheme],#swNotif,[data-attnconv],[data-attnid],[data-goto]") : null;
+  if (casca) {
+    if (casca.id === "scrim") { closeSheet(); return; }
+    if (casca.hasAttribute("data-back")) { goBack(); return; }
+    if (casca.id === "btnPrefs") { openSheet({ kind: "prefs" }, prefsHtml()); return; }
+    if (casca.id === "swNotif") { toggleNotif(); return; }
+    if (casca.hasAttribute("data-settheme")) {
+      var modo = casca.getAttribute("data-settheme");
+      if (modo === "system") { try { localStorage.removeItem(LS_THEME); } catch (e) {} } else lsSet(LS_THEME, modo);
+      applyTheme();
+      $("#sheet").innerHTML = '<div class="grab"></div>' + prefsHtml();
+      return;
+    }
+    // linha que pede você: a decisão sobe numa folha, sem sair do início
+    if (casca.hasAttribute("data-attnconv")) { openAttnSheet(casca.getAttribute("data-attnconv"), null); return; }
+    if (casca.hasAttribute("data-attnid")) { openAttnSheet(null, casca.getAttribute("data-attnid")); return; }
+    if (casca.hasAttribute("data-goto")) {
+      // a entrada da folha vira a da conversa: o voltar cai direto no início
+      hideSheetEl();
+      navReplace({ screen: "chat", projectId: casca.getAttribute("data-pid"),
+                   agent: casca.getAttribute("data-agent"), convId: casca.getAttribute("data-goto") });
+      return;
+    }
+  }
   var el = ev.target.closest ? ev.target.closest("[data-nav],[data-proj],[data-pickagent],[data-answer],[data-approve],[data-deny],[data-stop],[data-openchat],[data-cam],[data-rmatt],[data-sug],[data-fb],[data-lproj],[data-lpilot],[data-opt],[data-answerq]") : null;
   if (!el) return;
 
@@ -2168,7 +2436,7 @@ document.addEventListener("click", function (ev) {
     el.disabled = true;
     apiAction({ kind: "answer_interaction", id: qaid, answer: payload })
       .then(function () { S.answered[qaid] = true; rerenderAttention(); })
-      .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
+      .catch(function (e) { el.disabled = false; showNote("Falha ao responder: " + (e && e.message ? e.message : e)); });
     return;
   }
 
@@ -2237,7 +2505,7 @@ document.addEventListener("click", function (ev) {
       p = apiAction({ kind: "answer_interaction", id: id, answer: { answers: answers.map(function (x) { return { header: "", selected: [x.text] }; }) } });
     }
     p.then(function () { S.answered[id] = true; rerenderAttention(); })
-      .catch(function (e) { el.disabled = false; alert("Falha ao responder: " + (e && e.message ? e.message : e)); });
+      .catch(function (e) { el.disabled = false; showNote("Falha ao responder: " + (e && e.message ? e.message : e)); });
     return;
   }
 
@@ -2247,7 +2515,7 @@ document.addEventListener("click", function (ev) {
     el.disabled = true;
     apiAction({ kind: "answer_interaction", id: aid, answer: { allow: allow, message: allow ? undefined : "Negado pelo celular (Companion)." } })
       .then(function () { S.answered[aid] = true; rerenderAttention(); })
-      .catch(function (e) { el.disabled = false; alert("Falha: " + (e && e.message ? e.message : e)); });
+      .catch(function (e) { el.disabled = false; showNote("Falha: " + (e && e.message ? e.message : e)); });
     return;
   }
 
@@ -2278,6 +2546,26 @@ document.addEventListener("click", function (ev) {
 });
 
 $("#chatSend").addEventListener("click", sendChat);
+// aberto/fechado de um grupo de ações é gesto da pessoa: lembrado por grupo
+document.addEventListener("toggle", function (ev) {
+  var d = ev.target;
+  if (!d || !d.getAttribute || !S.chat) return;
+  var gid = d.getAttribute("data-gid");
+  if (gid) S.chat.open[gid] = d.open;
+}, true);
+// o herói sai de cena → a barra do início vira vidro com o título
+$("#homeScroll").addEventListener("scroll", function () {
+  $("#topbar").classList.toggle("solid", this.scrollTop > 190);
+}, { passive: true });
+/* Teclado: onde interactive-widget não vale (iOS), o visualViewport diz a altura
+   útil e a casca encolhe junto, então o campo de mensagem nunca fica por baixo. */
+if (window.visualViewport) {
+  var ajustaAltura = function () {
+    document.documentElement.style.setProperty("--vh", Math.round(visualViewport.height) + "px");
+    if (S.screen === "chat") scrollChatEnd();
+  };
+  visualViewport.addEventListener("resize", ajustaAltura);
+}
 $("#chatCam").addEventListener("click", function () { pickAttachment({ kind: "chat" }); });
 $("#btnLaunch").addEventListener("click", function () { nav({ screen: "launch" }); });
 $("#launchGo").addEventListener("click", submitLaunch);
@@ -2307,11 +2595,6 @@ function applyTheme() {
   var meta = document.querySelector('meta[name="theme-color"]');
   if (meta) meta.setAttribute("content", eff === "light" ? "#fbfbfa" : "#0a0b0d");
 }
-$("#btnTheme").addEventListener("click", function () {
-  var eff = Core ? Core.effectiveTheme(lsGet(LS_THEME), systemDark()) : "dark";
-  lsSet(LS_THEME, eff === "dark" ? "light" : "dark");
-  applyTheme();
-});
 try {
   if (window.matchMedia) {
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
@@ -2322,11 +2605,11 @@ applyTheme();
 // ---------------- boot ----------------
 initToken();
 renderBell();
-/* R5: com dois Macs, o cabeçalho diz em qual você está. */
-if (MAQUINA) {
-  $("#maquina").textContent = "· " + MAQUINA;
-  $("#wordmark").title = "Frota em " + MAQUINA;
-}
+/* R5: com dois Macs, a cara do topo diz em qual você está. */
+if (MAQUINA) $("#heroWho").textContent = MAQUINA;
+syncSend();
+// a primeira tela (inclusive F5 numa conversa) nasce no lugar, sem deslizar
+setTimeout(function () { $("#app").classList.remove("noanim"); }, 60);
 /* PWA (C1): service worker mínimo — cacheia SÓ o shell (dados nunca). Em
    contexto inseguro (http na LAN) navigator.serviceWorker nem existe: degrada
    sem drama, o banner de offline continua cobrindo a honestidade. */

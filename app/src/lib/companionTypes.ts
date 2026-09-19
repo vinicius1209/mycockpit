@@ -141,6 +141,10 @@ export interface CompanionConversa {
   /** Há algo em `attention` para esta conversa: aprovação, pergunta, gate ou
    *  turno parado sem notícia. */
   pedeVoce: boolean
+  /** Prévia da linha no celular: a frase PRONTA do último turno encerrado
+   *  (mesma regra de `CompanionTurn.frase`). Ausente quando o feed do sino não
+   *  guarda turno desta conversa; a página não inventa texto no lugar. */
+  frase?: string
 }
 
 export interface CompanionProject {

@@ -13,7 +13,7 @@
    shell + banner honesto, nunca tela branca.
    ============================================================ */
 
-var CACHE = "frota-companion-shell-v6"; /* 18/09: soltar arquivo na conversa */
+var CACHE = "frota-companion-shell-v7"; /* 19/09: cara de app nativo (início, folhas, fio) */
 var SHELL = [
   "/",
   "/core.js",

@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Frota · Companion com cara de app nativo (mock)</title>
+<!--
+  MOCK de validação, não é a página real. Abre direto pelo caminho (file://),
+  sem servidor. No computador mostra a moldura do celular e os controles; num
+  celular de verdade ocupa a tela inteira.
+  Tokens: os mesmos do Companion atual (que copiam app/src/index.css).
+-->
+<style>
+:root {
+  --background: #fbfbfa; --rail: #f3f3f1; --foreground: #16181b; --card: #ffffff;
+  --muted: #6b7076; --faint: #a3a7ac; --accent: #efefec;
+  --border: rgba(0,0,0,.08); --border-strong: rgba(0,0,0,.14);
+  --brass: #a9742b; --brass-soft: rgba(169,116,43,.12); --brass-fg: #fbf6ee;
+  --st-running: #2f8fbf; --st-queued: #c1861f; --st-success: #1f9d6b; --st-error: #cf4a3e;
+  --scrim: rgba(10,11,13,.38);
+  --sans: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", Roboto, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, "Roboto Mono", monospace;
+  --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px);
+  --ease: cubic-bezier(.32,.72,0,1);
+}
+:root[data-theme="dark"] {
+  --background: #0a0b0d; --rail: #101216; --foreground: #e7e8ea; --card: #141619;
+  --muted: #9aa0a7; --faint: #5f656c; --accent: #1e2126;
+  --border: rgba(255,255,255,.08); --border-strong: rgba(255,255,255,.14);
+  --brass: #e4a862; --brass-soft: rgba(228,168,98,.14); --brass-fg: #1a1306;
+  --st-running: #5bb8e8; --st-queued: #d99138; --st-success: #5bd6a0; --st-error: #f2766b;
+  --scrim: rgba(0,0,0,.6);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; margin: 0; }
+body { font-family: var(--sans); color: var(--foreground); -webkit-font-smoothing: antialiased; background: #d9d8d4; }
+:root[data-theme="dark"] body { background: #1b1d21; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+textarea { font: inherit; color: inherit; }
+
+/* ---------- palco (só no computador) ---------- */
+.stage { min-height: 100%; display: flex; gap: 40px; justify-content: center; align-items: flex-start; padding: 32px; }
+.notes { width: 380px; font-size: 14px; line-height: 1.5; color: var(--foreground); }
+.notes h1 { font-size: 20px; margin: 0 0 4px; }
+.notes h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+.notes p { margin: 0 0 8px; color: var(--muted); }
+.notes ol, .notes ul { margin: 0; padding-left: 18px; }
+.notes li { margin: 0 0 7px; }
+.notes li b { font-weight: 600; }
+.notes code { font-family: var(--mono); font-size: 12px; background: rgba(127,127,127,.16); border-radius: 4px; padding: 1px 4px; }
+.ctl { display: flex; flex-wrap: wrap; gap: 6px; }
+.ctl button { border: 1px solid var(--border-strong); background: var(--card); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+.ctl button.on { background: var(--foreground); color: var(--background); border-color: transparent; }
+
+.phone {
+  position: sticky; top: 32px; flex: none; width: 402px; height: 860px; border-radius: 54px; padding: 10px;
+  background: #0b0b0c; box-shadow: 0 30px 80px rgba(0,0,0,.35), inset 0 0 0 2px #2a2b2e;
+}
+.phone::before { content: ""; position: absolute; z-index: 60; top: 22px; left: 50%; width: 112px; height: 32px; margin-left: -56px; border-radius: 20px; background: #000; }
+.phone .app { --sat: 54px; --sab: 22px; border-radius: 45px; }
+@media (max-width: 760px) {
+  .stage { padding: 0; display: block; height: 100%; }
+  .notes { display: none; }
+  .phone { position: static; width: 100%; height: 100%; border-radius: 0; padding: 0; box-shadow: none; }
+  .phone::before { display: none; }
+  .phone .app { --sat: env(safe-area-inset-top, 0px); --sab: env(safe-area-inset-bottom, 0px); border-radius: 0; }
+}
+
+/* ---------- app ---------- */
+.app { position: relative; width: 100%; height: 100%; overflow: hidden; background: var(--background); color: var(--foreground); font-size: 16px; line-height: 1.4; }
+.screen { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--background); transition: transform .42s var(--ease), opacity .42s var(--ease); will-change: transform; }
+.screen.push { transform: translateX(100%); box-shadow: -1px 0 0 var(--border); }
+.screen.push.in { transform: none; }
+#home.under { transform: translateX(-22%); opacity: .6; }
+.scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+.scroll::-webkit-scrollbar { display: none; }
+
+/* barra de topo: nasce transparente, vira vidro quando o herói sai de cena */
+.topbar { position: absolute; z-index: 5; left: 0; right: 0; top: 0; padding: calc(var(--sat) + 6px) 12px 8px; display: flex; align-items: center; gap: 8px; min-height: calc(var(--sat) + 50px); }
+.topbar::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: 0; transition: opacity .2s; background: color-mix(in srgb, var(--background) 82%, transparent); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4); border-bottom: 1px solid var(--border); }
+.topbar.solid::before { opacity: 1; }
+.topbar .mini { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 16px; opacity: 0; transform: translateY(4px); transition: .2s; }
+.topbar.solid .mini { opacity: 1; transform: none; }
+.topbar .sp { flex: 1; }
+.ib { width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center; color: var(--muted); flex: none; }
+.ib:active { background: var(--accent); }
+.ib svg { width: 22px; height: 22px; }
+
+/* herói: a cara da frota neste Mac */
+.hero { padding: calc(var(--sat) + 30px) 20px 10px; text-align: center; }
+.hero .face { width: 124px; height: 124px; }
+.hero .who { margin-top: 12px; font-size: 17px; color: var(--muted); }
+.pulse { display: inline-flex; align-items: center; gap: 7px; margin-top: 10px; padding: 7px 8px 7px 12px; border-radius: 999px; background: var(--accent); font-size: 14px; color: var(--foreground); }
+.pulse .chev { color: var(--faint); width: 16px; height: 16px; }
+.pulse .d { width: 7px; height: 7px; border-radius: 9px; background: var(--st-success); }
+.pulse.pede .d { background: var(--st-queued); }
+.pulse.off { color: var(--muted); } .pulse.off .d { background: var(--st-error); }
+
+.filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 20px 6px; scrollbar-width: none; }
+.filters::-webkit-scrollbar { display: none; }
+.fchip { flex: none; display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 14px; border-radius: 999px; font-size: 14px; color: var(--muted); background: transparent; border: 1px solid var(--border-strong); }
+.fchip.on { background: var(--foreground); color: var(--background); border-color: transparent; }
+.fchip i { width: 8px; height: 8px; border-radius: 9px; }
+
+/* linha de conversa */
+.list { padding: 4px 0 calc(var(--sab) + 96px); }
+.rowc { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; padding: 13px 20px; position: relative; }
+.rowc:active { background: var(--accent); }
+.rowc .face { width: 52px; height: 52px; flex: none; }
+.rowc .mid { flex: 1; min-width: 0; }
+.rowc .l1 { display: flex; align-items: center; gap: 8px; }
+.rowc .tt { font-size: 17px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 0; }
+.tag { flex: none; max-width: 92px; font-size: 12.5px; color: var(--muted); background: var(--accent); border-radius: 7px; padding: 2px 7px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rowc .when { margin-left: auto; flex: none; font-size: 13px; color: var(--faint); padding-left: 6px; }
+.rowc .l2 { margin-top: 3px; font-size: 15px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 6px; }
+.rowc .l2 span { overflow: hidden; text-overflow: ellipsis; }
+.rowc.pede .l2 { color: var(--st-queued); }
+.rowc.falhou .l2 { color: var(--st-error); }
+.rowc.roda .l2 { color: var(--st-running); }
+.rowc .mark { position: absolute; left: 7px; top: 50%; width: 7px; height: 7px; margin-top: -3px; border-radius: 9px; background: var(--st-queued); }
+.app.stale .list { opacity: .55; }
+.empty { text-align: center; color: var(--muted); font-size: 15px; padding: 40px 30px; }
+
+.fab { position: absolute; z-index: 6; right: 18px; bottom: calc(var(--sab) + 18px); height: 54px; padding: 0 20px 0 16px; border-radius: 999px; display: flex; align-items: center; gap: 8px; background: var(--brass); color: var(--brass-fg); font-weight: 600; font-size: 16px; box-shadow: 0 8px 24px rgba(0,0,0,.22); transition: transform .15s; }
+.fab:active { transform: scale(.96); }
+.fab svg { width: 22px; height: 22px; }
+
+/* caras */
+.face { display: block; overflow: visible; }
+.face .eyes { transform-box: fill-box; transform-origin: center; animation: blink 5.2s infinite; }
+.face.viva .body { transform-box: fill-box; transform-origin: 50% 80%; animation: respira 2.4s ease-in-out infinite; }
+.face.dorme .eyes { animation: none; transform: scaleY(.16); }
+@keyframes blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(.1); } }
+@keyframes respira { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.045, .965); } }
+
+/* ---------- conversa ---------- */
+.nav { flex: none; display: flex; align-items: center; gap: 4px; padding: calc(var(--sat) + 4px) 8px 8px; background: color-mix(in srgb, var(--background) 86%, transparent); backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); border-bottom: 1px solid var(--border); z-index: 3; }
+.nav .face { width: 34px; height: 34px; flex: none; }
+.nav .ttl { flex: 1; min-width: 0; padding-left: 6px; }
+.nav .ttl b { display: block; font-size: 16px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav .ttl small { display: block; font-size: 12.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav .ttl small.roda { color: var(--st-running); }
+.stop { height: 34px; padding: 0 12px; border-radius: 999px; font-size: 14px; font-weight: 600; color: var(--st-error); background: color-mix(in srgb, var(--st-error) 12%, transparent); display: flex; align-items: center; gap: 6px; }
+.stop i { width: 10px; height: 10px; border-radius: 2px; background: currentColor; }
+
+.thread { padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 12px; }
+.bub { align-self: flex-end; max-width: 84%; background: var(--accent); border-radius: 20px 20px 6px 20px; padding: 10px 14px; font-size: 16px; overflow-wrap: anywhere; }
+.bub .att { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; color: var(--muted); background: var(--background); border-radius: 9px; padding: 4px 9px; }
+.cap { align-self: flex-end; margin-top: -8px; font-size: 12px; color: var(--faint); padding-right: 6px; }
+.say { font-size: 16px; line-height: 1.5; overflow-wrap: anywhere; }
+.say p { margin: 0 0 8px; } .say p:last-child { margin: 0; }
+.say h4 { margin: 12px 0 6px; font-size: 16px; }
+.say ol { margin: 0 0 8px; padding-left: 22px; }
+.say code { font-family: var(--mono); font-size: 13.5px; background: var(--accent); border-radius: 5px; padding: 1px 5px; }
+.say pre { margin: 8px 0; padding: 11px 13px; border-radius: 12px; background: var(--rail); border: 1px solid var(--border); font-family: var(--mono); font-size: 13px; overflow-x: auto; }
+details.acts { border-radius: 12px; background: var(--rail); font-size: 14px; color: var(--muted); }
+details.acts summary { list-style: none; display: flex; align-items: center; gap: 8px; padding: 9px 12px; cursor: pointer; }
+details.acts summary::-webkit-details-marker { display: none; }
+details.acts summary svg { width: 16px; height: 16px; transition: transform .2s; color: var(--faint); }
+details.acts[open] summary svg { transform: rotate(90deg); }
+details.acts .ln { font-family: var(--mono); font-size: 12.5px; padding: 6px 12px 6px 36px; border-top: 1px solid var(--border); white-space: nowrap; overflow-x: auto; }
+details.acts .ln b { color: var(--st-running); font-weight: 500; }
+.sys { align-self: center; font-size: 12.5px; color: var(--faint); text-align: center; }
+.sys.ok::before { content: "✓ "; color: var(--st-success); }
+.typing { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--muted); }
+.typing .face { width: 26px; height: 26px; }
+.dots { display: inline-flex; gap: 3px; } .dots i { width: 5px; height: 5px; border-radius: 9px; background: var(--muted); animation: tb 1.2s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: .18s; } .dots i:nth-child(3) { animation-delay: .36s; }
+@keyframes tb { 0%, 70%, 100% { opacity: .25; transform: none; } 35% { opacity: 1; transform: translateY(-2px); } }
+.toolp { font-family: var(--mono); font-size: 12px; color: var(--st-running); background: color-mix(in srgb, var(--st-running) 12%, transparent); border-radius: 7px; padding: 2px 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.dock { flex: none; padding: 0 12px calc(var(--sab) + 10px); background: var(--background); }
+.dock .decide { margin-bottom: 10px; }
+.composer { display: flex; align-items: flex-end; gap: 8px; }
+.composer .plus { width: 42px; height: 42px; border-radius: 999px; background: var(--accent); display: grid; place-items: center; color: var(--muted); flex: none; }
+.composer .plus svg, .send svg { width: 22px; height: 22px; }
+.field { flex: 1; display: flex; align-items: flex-end; min-height: 42px; border-radius: 21px; background: var(--accent); padding: 0 5px 0 15px; }
+.field textarea { flex: 1; min-width: 0; border: 0; outline: 0; resize: none; background: none; font-size: 16px; line-height: 22px; padding: 10px 0; max-height: 130px; }
+.field textarea::placeholder { color: var(--faint); }
+.send { width: 32px; height: 32px; margin: 5px 0; border-radius: 999px; background: var(--brass); color: var(--brass-fg); display: grid; place-items: center; flex: none; transition: .15s; }
+.send[disabled] { background: var(--border-strong); color: var(--background); }
+
+/* cartão de decisão (o mesmo no início e dentro da conversa) */
+.decide { border-radius: 18px; background: var(--card); border: 1px solid color-mix(in srgb, var(--st-queued) 40%, transparent); padding: 14px; }
+.decide .kind { font-size: 12px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--st-queued); }
+.decide .ctx { font-size: 13px; color: var(--muted); margin-top: 2px; }
+.decide .q { font-size: 16px; margin: 12px 0 8px; }
+.decide pre { margin: 10px 0 0; padding: 11px 13px; border-radius: 12px; background: var(--rail); font-family: var(--mono); font-size: 13.5px; white-space: pre-wrap; word-break: break-word; }
+.decide textarea { width: 100%; border: 0; outline: 0; resize: none; border-radius: 12px; background: var(--accent); padding: 11px 13px; font-size: 16px; }
+.opt { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; padding: 12px 13px; border-radius: 12px; background: var(--accent); margin-top: 8px; border: 1.5px solid transparent; }
+.opt .r { width: 20px; height: 20px; flex: none; border-radius: 99px; border: 2px solid var(--faint); }
+.opt.on { border-color: var(--brass); background: var(--brass-soft); }
+.opt.on .r { border: 6px solid var(--brass); }
+.opt b { display: block; font-weight: 600; font-size: 15.5px; } .opt small { color: var(--muted); font-size: 13.5px; }
+.acts2 { display: flex; gap: 10px; margin-top: 14px; }
+.bt { flex: 1; height: 50px; border-radius: 14px; font-size: 16px; font-weight: 600; background: var(--accent); transition: transform .12s; }
+.bt:active { transform: scale(.98); }
+.bt.pri { background: var(--brass); color: var(--brass-fg); }
+.bt.neg { color: var(--st-error); }
+.bt[disabled] { opacity: .4; pointer-events: none; }
+.bt.link { background: none; color: var(--muted); height: 40px; font-weight: 500; font-size: 15px; }
+.wait { display: flex; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); padding: 6px 2px; }
+
+/* ---------- folhas (bottom sheet) ---------- */
+.scrim { position: absolute; inset: 0; z-index: 20; background: var(--scrim); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.scrim.on { opacity: 1; pointer-events: auto; }
+.sheet { position: absolute; z-index: 21; left: 0; right: 0; bottom: 0; max-height: 88%; overflow-y: auto; background: var(--background); border-radius: 26px 26px 0 0; padding: 8px 16px calc(var(--sab) + 16px); transform: translateY(105%); transition: transform .42s var(--ease); scrollbar-width: none; }
+.sheet.on { transform: none; }
+.sheet .grab { width: 38px; height: 5px; border-radius: 9px; background: var(--border-strong); margin: 0 auto 14px; }
+.sheet h3 { margin: 0 4px 14px; font-size: 20px; letter-spacing: -.01em; }
+.lbl { font-size: 13px; color: var(--muted); margin: 16px 4px 8px; }
+.hs { display: flex; gap: 8px; overflow-x: auto; margin: 0 -16px; padding: 0 16px; scrollbar-width: none; }
+.hs::-webkit-scrollbar { display: none; }
+.pilot { flex: none; width: 96px; padding: 10px 4px 8px; border-radius: 16px; text-align: center; border: 1.5px solid transparent; }
+.pilot .face { width: 48px; height: 48px; margin: 0 auto 6px; }
+.pilot b { display: block; font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pilot small { font-size: 12px; color: var(--muted); }
+.pilot.on { background: var(--brass-soft); border-color: var(--brass); }
+.sheet textarea.big { width: 100%; min-height: 96px; margin-top: 16px; border: 0; outline: 0; resize: none; border-radius: 16px; background: var(--accent); padding: 13px 15px; font-size: 16px; }
+.fine { font-size: 13px; color: var(--muted); text-align: center; margin-top: 10px; }
+
+/* listas agrupadas (painel, ajustes) */
+.grp { border-radius: 16px; background: var(--card); border: 1px solid var(--border); overflow: hidden; }
+.it { display: flex; align-items: center; gap: 12px; padding: 13px 14px; font-size: 16px; min-height: 52px; }
+.it + .it { border-top: 1px solid var(--border); }
+.it .face { width: 36px; height: 36px; flex: none; }
+.it .m { flex: 1; min-width: 0; } .it .m b { display: block; font-weight: 500; font-size: 15.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.it .m small { display: block; font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.it .v { font-size: 14px; color: var(--muted); font-variant-numeric: tabular-nums; flex: none; }
+.it .v.bad { color: var(--st-error); }
+.seg { display: flex; background: var(--accent); border-radius: 10px; padding: 2px; }
+.seg button { padding: 6px 11px; border-radius: 8px; font-size: 14px; color: var(--muted); }
+.seg button.on { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.sw { width: 50px; height: 30px; border-radius: 99px; background: var(--border-strong); position: relative; transition: .2s; flex: none; }
+.sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 26px; height: 26px; border-radius: 99px; background: #fff; transition: .2s var(--ease); box-shadow: 0 1px 3px rgba(0,0,0,.25); }
+.sw.on { background: var(--st-success); } .sw.on::after { transform: translateX(20px); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 16px 16px 0; }
+.stat { border-radius: 16px; background: var(--card); border: 1px solid var(--border); padding: 12px; }
+.stat b { display: block; white-space: nowrap; font-size: 19px; font-weight: 650; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.stat small { font-size: 12.5px; color: var(--muted); }
+.pad { padding: 0 16px calc(var(--sab) + 30px); }
+.phs { display: flex; gap: 4px; margin-top: 7px; } .phs i { flex: 1; height: 4px; border-radius: 9px; background: var(--border-strong); }
+.phs i.done { background: var(--st-success); } .phs i.running { background: var(--st-running); animation: tb 1.6s infinite; }
+
+.toast { position: absolute; z-index: 30; left: 50%; bottom: calc(var(--sab) + 88px); transform: translate(-50%, 20px); opacity: 0; transition: .3s var(--ease); background: var(--foreground); color: var(--background); font-size: 14.5px; padding: 10px 16px; border-radius: 999px; white-space: nowrap; pointer-events: none; }
+.toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .sheet, .scrim { transition-duration: .01s; }
+  .face .eyes, .face.viva .body, .dots i, .phs i.running { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="stage">
+  <aside class="notes">
+    <h1>Companion com cara de app nativo</h1>
+    <p>Mock navegável. Toque nas linhas, no botão de nova conversa, na pílula de estado e no ícone de ajustes. Dados são os mesmos do <code>?mock=1</code> atual.</p>
+
+    <h2>Simular</h2>
+    <div class="ctl" id="ctlFleet">
+      <button data-fleet="pede" class="on">Pede você</button>
+      <button data-fleet="calma">Frota calma</button>
+      <button data-fleet="offline">Mac fora do ar</button>
+    </div>
+    <div class="ctl" id="ctlFormas" style="margin-top:8px">
+      <button data-formas="piloto" class="on">Forma por piloto</button>
+      <button data-formas="conversa">Forma por conversa</button>
+    </div>
+    <div class="ctl" id="ctlTheme" style="margin-top:8px">
+      <button data-theme="light" class="on">Claro</button>
+      <button data-theme="dark">Escuro</button>
+    </div>
+
+    <h2>O que achei no Companion de hoje</h2>
+    <ol>
+      <li><b>As conversas ficam abaixo da dobra.</b> Os cartões de "pede você" abrem como formulários inteiros e ocupam a primeira tela toda. Com 3 pendências, a lista só aparece depois de 1100px de rolagem.</li>
+      <li><b>Tudo é cartão com borda.</b> Conversa, entrega, projeto e execução têm o mesmo peso visual. Nada guia o olho, e a linha não tem identidade (sem cara, sem cor).</li>
+      <li><b>Cromo empilhado.</b> Cabeçalho, barra da conversa (com <code>top: 52px</code> fixo no código) e rodapé de custo somam três faixas fixas. No chat o conteúdo passa por baixo da barra e vaza.</li>
+      <li><b>Navegação de site.</b> "‹ Conversas" é um link de texto, a troca de tela é um corte seco, "Nova conversa" é uma página inteira. Não há empurrar, folha, nem barra que encolhe.</li>
+      <li><b>Emoji como ícone</b> (🔔 📷 ◐ ➤ ⛶). Muda de desenho a cada sistema e o alvo de toque tem 24px.</li>
+      <li><b>Cada ferramenta é uma linha solta no fio.</b> Num turno real são dezenas. No celular isso vira ruído e empurra a resposta para longe.</li>
+      <li><b>Texto pequeno para toque.</b> Metadados em 11 a 12px, mono em caixa alta por toda parte. Lê como painel de instrumento, não como conversa.</li>
+    </ol>
+
+    <h2>O que o mock propõe</h2>
+    <ul>
+      <li><b>Início igual à referência:</b> a cara da frota deste Mac no topo (cor e olhos dizem o estado real: calma, pede você, fora do ar), depois só linhas de conversa. Sem cartões.</li>
+      <li><b>Cara por conversa:</b> forma vem de quem pilota (especialista ou motor), cor vem do projeto, ambas por hash do id, sem comparar nome de motor. O botão "Forma por conversa" mostra a alternativa com mais variedade e menos significado. Quem está rodando respira, todas piscam, e com movimento reduzido ficam paradas.</li>
+      <li><b>Decisão em folha:</b> linha que pede você sobe para o topo em âmbar. Tocar abre a folha com o mesmo cartão de decisão, que também fica ancorado acima do campo dentro da conversa. Depois do toque, o estado é "aguardando o Mac" até o veredito chegar.</li>
+      <li><b>Uma barra só por tela.</b> O herói encolhe numa barra de vidro ao rolar. Custo e execuções moram no Painel, que abre pela pílula de estado.</li>
+      <li><b>Conversa de mensageiro:</b> bolha só para você, texto do agente solto, ferramentas agrupadas em "N ações" que expande, campo fixo embaixo com alvo de 42px.</li>
+      <li><b>Nova conversa e Ajustes são folhas</b>, não páginas. O voltar do Android continua funcionando porque as rotas por hash ficam como estão.</li>
+    </ul>
+
+    <h2>O que isso pede do código</h2>
+    <ul>
+      <li>Quase tudo é <code>index.html</code> (CSS e render). Rotas, ordem das conversas e atalhos seguem no <code>core.js</code> como hoje.</li>
+      <li><b>Uma mudança de snapshot:</b> a linha de prévia. <code>projects[].recent[]</code> hoje não traz texto. A proposta é um campo <code>frase</code> pronto do desktop (mesma regra de <code>CompanionTurn.frase</code>), para não reimplementar regra na página.</li>
+      <li>Escala de fonte do celular (13, 15, 16, 17, 20) é diferente da do app. Se aprovar, registro numa ADR em vez de contornar o guia.</li>
+    </ul>
+  </aside>
+
+  <div class="phone"><div class="app" id="app">
+
+    <!-- INÍCIO -->
+    <section class="screen" id="home">
+      <div class="topbar" id="topbar">
+        <div class="mini"><span id="miniFace"></span>Conversas</div>
+        <span class="sp"></span>
+        <button class="ib" id="btnPrefs" aria-label="Ajustes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg></button>
+      </div>
+      <div class="scroll" id="homeScroll">
+        <div class="hero">
+          <div id="heroFace" style="display:inline-block"></div>
+          <div class="who">MacBook do Vinicius</div>
+          <button class="pulse" id="pulse"></button>
+        </div>
+        <div class="filters" id="filters"></div>
+        <div class="list" id="list"></div>
+      </div>
+      <button class="fab" id="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Nova conversa</button>
+    </section>
+
+    <!-- CONVERSA -->
+    <section class="screen push" id="chat">
+      <div class="nav">
+        <button class="ib" data-back aria-label="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <span id="chatFace"></span>
+        <div class="ttl"><b id="chatTitle"></b><small id="chatSub"></small></div>
+        <button class="stop" id="chatStop" hidden><i></i>Parar</button>
+      </div>
+      <div class="scroll" id="chatScroll"><div class="thread" id="thread"></div></div>
+      <div class="dock">
+        <div id="chatDecide"></div>
+        <div class="composer">
+          <button class="plus" aria-label="Anexar foto ou arquivo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <div class="field">
+            <textarea id="msg" rows="1" placeholder="Mensagem"></textarea>
+            <button class="send" id="send" disabled aria-label="Enviar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PAINEL -->
+    <section class="screen push" id="painel">
+      <div class="nav">
+        <button class="ib" data-back aria-label="Voltar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+        <div class="ttl"><b>Painel</b><small>MacBook do Vinicius</small></div>
+      </div>
+      <div class="scroll" id="painelBody"></div>
+    </section>
+
+    <div class="scrim" id="scrim"></div>
+    <div class="sheet" id="sheet"></div>
+    <div class="toast" id="toast"></div>
+  </div></div>
+</div>
+
+<script>
+"use strict";
+/* ============ dados (os mesmos do ?mock=1 do Companion, com a prévia proposta) ============ */
+var MIN = 60000;
+var PROJECTS = [{ id: "p1", name: "mycockpit" }, { id: "p2", name: "site-maclan" }, { id: "p3", name: "loja-api" }];
+var MOTORS = [{ id: "claude-code", name: "Claude Code" }, { id: "codex", name: "Codex" }, { id: "agy", name: "Antigravity" }];
+var SPECS = [{ id: "revisor", name: "Revisor", backend: "claude-code" }, { id: "arquiteto", name: "Arquiteto", backend: "codex" }];
+var TINTS = ["#8b5cf0", "#ec6b2d", "#56b8a6", "#f0a03c", "#4e9ce8", "#5cc47a"];
+
+function seed() {
+  return {
+    convs: [
+      { id: "conv-t1", pid: "p2", agent: "codex", title: "Ajustar formulário de contato", frase: "Executando comando…", at: 1 * MIN, running: true, attn: "apr-77" },
+      { id: "conv-t2", pid: "p1", agent: "claude-code", title: "Estratégia de cache do snapshot", frase: "Qual estratégia de cache prefere?", at: 9 * MIN, attn: "q-12" },
+      { id: "conv-m1", pid: "p1", agent: "codex", pilot: "arquiteto", title: "Migrar settings pro SQLite", frase: "Planejar…", at: 11 * MIN, running: true, attn: "gate-m1", mission: true },
+      { id: "conv-t9", pid: "p1", agent: "claude-code", title: "Atualizar dependências", frase: "Finalizando…", at: 2 * MIN, running: true },
+      { id: "c1", pid: "p1", agent: "claude-code", pilot: "revisor", title: "Revisar o parser do diff", frase: "Extraiu o parser pra lib/ e cobriu o caso vazio.", at: 4 * MIN },
+      { id: "c4", pid: "p3", agent: "agy", title: "Webhook do pagamento", frase: "Adicionou a verificação de assinatura e o teste de replay.", at: 26 * MIN },
+      { id: "c2", pid: "p2", agent: "claude-code", title: "Ajustar o CSS do herói", frase: "Turno concluído", at: 40 * MIN },
+      { id: "c3", pid: "p1", agent: "claude-code", title: "Subir o worker", frase: "Turno falhou", at: 180 * MIN, failed: true }
+    ],
+    attn: {
+      "apr-77": { kind: "approval", tool: "Bash", command: "rm -rf node_modules && bun install" },
+      "q-12": { kind: "question", q: "Qual estratégia de cache prefere?", options: [["TTL curto", "30s, simples e honesto"], ["Invalidação por evento", "Mais preciso, mais código"]] },
+      "gate-m1": { kind: "gate", phase: "Planejar", q: "O plano prevê tocar no schema do banco. Posso seguir com a migração?" }
+    }
+  };
+}
+var S = { formas: "piloto", data: seed(), fleet: "pede", filtro: "", chat: null, pick: {}, waiting: {}, launch: null, notif: true };
+
+/* ============ caras ============ */
+var SHAPES = [
+  { d: '<circle cx="32" cy="32" r="27"/>', x: 40, y: 22, s: 1 },
+  { d: '<rect x="3" y="12" width="58" height="40" rx="20"/>', x: 43, y: 25, s: .9 },
+  { d: '<circle cx="21" cy="35" r="13"/><circle cx="37" cy="27" r="15"/><circle cx="48" cy="39" r="11"/><rect x="10" y="35" width="49" height="17" rx="8.5"/>', x: 40, y: 27, s: .8 },
+  { d: '<path d="M32 4C39 17 55 27 55 40a23 23 0 0 1-46 0C9 27 25 17 32 4Z"/>', x: 38, y: 37, s: .82 },
+  { d: '<rect x="6" y="6" width="52" height="52" rx="15"/>', x: 40, y: 21, s: .92 },
+  { d: '<path d="M32 12 54 51H10Z" stroke-width="10" stroke-linejoin="round"/>', x: 37, y: 41, s: .7 }
+];
+function hash(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
+/* No mock a forma segue a ordem da lista, só pra garantir variedade com 3 motores;
+   na página real é hash do id (sem comparar nome de motor). */
+function shapeOf(key) { var i = MOTORS.concat(SPECS).findIndex(function (m) { return m.id === key; }); return SHAPES[(i < 0 ? hash(key) : i + 1) % SHAPES.length]; }
+function tintOf(pid) { var i = PROJECTS.findIndex(function (p) { return p.id === pid; }); return TINTS[(i < 0 ? hash(pid) : i) % TINTS.length]; }
+function face(shape, color, cls) {
+  var e = function (dx, dy) {
+    return '<rect x="' + (shape.x + dx - 2) + '" y="' + (shape.y + dy - 5.5) + '" width="4" height="11" rx="2" transform="rotate(-20 ' + (shape.x + dx) + " " + (shape.y + dy) + ')"/>';
+  };
+  var k = shape.s, o = "translate(" + shape.x * (1 - k) + " " + shape.y * (1 - k) + ") scale(" + k + ")";
+  return '<svg class="face ' + (cls || "") + '" viewBox="0 0 64 64" aria-hidden="true"><g class="body" fill="' + color + '" stroke="' + color + '" stroke-width="0">' + shape.d +
+    '</g><g transform="' + o + '"><g class="eyes" fill="#fff" style="animation-delay:-' + (hash(color + shape.d) % 50) / 10 + 's">' + e(-5.5, 1.5) + e(5.5, -1.5) + "</g></g></svg>";
+}
+function convFace(c, extra) { return face(S.formas === "conversa" ? SHAPES[hash(c.id + c.title) % SHAPES.length] : shapeOf(c.pilot || c.agent), tintOf(c.pid), (c.running ? "viva " : "") + (S.fleet === "offline" ? "dorme " : "") + (extra || "")); }
+
+/* ============ helpers ============ */
+function $(s) { return document.querySelector(s); }
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+function ago(ms) { var m = Math.round(ms / MIN); return m < 1 ? "agora" : m < 60 ? m + " min" : Math.round(m / 60) + " h"; }
+function pname(id) { return (PROJECTS.find(function (p) { return p.id === id; }) || {}).name || "?"; }
+function who(c) { var sp = SPECS.find(function (x) { return x.id === c.pilot; }); return sp ? sp.name : mname(c.agent); }
+function mname(id) { return (MOTORS.find(function (m) { return m.id === id; }) || {}).name || id; }
+function conv(id) { return S.data.convs.find(function (c) { return c.id === id; }); }
+function pending(c) { return c.attn && S.data.attn[c.attn] ? S.data.attn[c.attn] : null; }
+var CHEV = '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
+function toast(msg) { var t = $("#toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove("on"); }, 2600); }
+
+/* ============ início ============ */
+function renderHome() {
+  var cs = S.data.convs, off = S.fleet === "offline";
+  var nPede = cs.filter(pending).length, nRoda = cs.filter(function (c) { return c.running; }).length;
+  $("#app").classList.toggle("stale", off);
+  var cor = off ? "#8a9099" : nPede ? "#e0a04a" : "#5cc47a";
+  $("#heroFace").innerHTML = face(SHAPES[0], cor, off ? "dorme" : nRoda ? "viva" : "");
+  $("#miniFace").innerHTML = face(SHAPES[0], cor, off ? "dorme" : "").replace('class="face', 'style="width:26px;height:26px" class="face');
+  var p = $("#pulse");
+  p.className = "pulse" + (off ? " off" : nPede ? " pede" : "");
+  p.innerHTML = '<span class="d"></span>' + (off ? "Sem conexão com o Mac · visto há 3 min"
+    : (nPede ? nPede + (nPede === 1 ? " pede você" : " pedem você") + " · " : "") + (nRoda ? nRoda + " rodando" : "nada rodando") + (nPede ? "" : " · US$ 4,21 hoje")) + CHEV;
+
+  $("#filters").innerHTML = '<button class="fchip' + (S.filtro ? "" : " on") + '" data-f="">Todos</button>' + PROJECTS.map(function (pr) {
+    return '<button class="fchip' + (S.filtro === pr.id ? " on" : "") + '" data-f="' + pr.id + '"><i style="background:' + tintOf(pr.id) + '"></i>' + esc(pr.name) + "</button>";
+  }).join("");
+
+  var lista = cs.filter(function (c) { return !S.filtro || c.pid === S.filtro; }).slice().sort(function (a, b) {
+    return (pending(b) ? 1 : 0) - (pending(a) ? 1 : 0) || (b.running ? 1 : 0) - (a.running ? 1 : 0) || a.at - b.at;
+  });
+  $("#list").innerHTML = lista.length ? lista.map(function (c) {
+    var a = pending(c), wait = S.waiting[c.id];
+    var cls = a ? "pede" : c.failed ? "falhou" : c.running ? "roda" : "";
+    var l2 = wait ? "Resposta enviada, aguardando o Mac…"
+      : a ? (a.kind === "approval" ? "Pede aprovação: " + a.command : a.q) : c.frase;
+    return '<button class="rowc ' + cls + '" data-conv="' + c.id + '">' + (a ? '<span class="mark"></span>' : "") + convFace(c) +
+      '<span class="mid"><span class="l1"><span class="tt">' + esc(c.title) + '</span><span class="tag">' + esc(pname(c.pid)) + '</span><span class="when">' + ago(c.at) + "</span></span>" +
+      '<span class="l2">' + (c.running && !a ? '<span class="dots"><i></i><i></i><i></i></span>' : "") + "<span>" + esc(l2) + "</span></span></span></button>";
+  }).join("") : '<div class="empty">Nenhuma conversa neste projeto ainda.</div>';
+}
+
+/* ============ cartão de decisão ============ */
+function decideHtml(c, inSheet) {
+  var a = pending(c); if (!a) return "";
+  if (S.waiting[c.id]) return '<div class="decide"><div class="wait"><span class="dots"><i></i><i></i><i></i></span>Resposta enviada, aguardando o Mac confirmar…</div></div>';
+  var ctx = esc(pname(c.pid)) + " · " + esc(who(c));
+  var h = '<div class="decide">';
+  if (a.kind === "approval") {
+    h += '<div class="kind">Pede aprovação</div><div class="ctx">' + ctx + " · " + esc(a.tool) + '</div><pre>' + esc(a.command) + "</pre>" +
+      '<div class="acts2"><button class="bt neg" data-ans="deny" data-c="' + c.id + '">Negar</button><button class="bt pri" data-ans="approve" data-c="' + c.id + '">Aprovar</button></div>';
+  } else if (a.kind === "question") {
+    h += '<div class="kind">Pergunta</div><div class="ctx">' + ctx + '</div><div class="q">' + esc(a.q) + "</div>" +
+      a.options.map(function (o, i) {
+        return '<button class="opt' + (S.pick[c.id] === i ? " on" : "") + '" data-opt="' + i + '" data-c="' + c.id + '"><span class="r"></span><span><b>' + esc(o[0]) + "</b><small>" + esc(o[1]) + "</small></span></button>";
+      }).join("") +
+      '<div class="acts2"><button class="bt pri" data-ans="answer" data-c="' + c.id + '"' + (S.pick[c.id] == null ? " disabled" : "") + ">Responder</button></div>";
+  } else {
+    h += '<div class="kind">Missão parada no portão</div><div class="ctx">' + ctx + " · fase " + esc(a.phase) + '</div><div class="q">' + esc(a.q) + "</div>" +
+      '<textarea rows="2" placeholder="Sua resposta"></textarea>' +
+      '<div class="acts2"><button class="bt pri" data-ans="answer" data-c="' + c.id + '">Responder e retomar</button></div>';
+  }
+  if (inSheet) h += '<button class="bt link" style="width:100%;margin-top:4px" data-goto="' + c.id + '">Ver a conversa</button>';
+  return h + "</div>";
+}
+function answer(cid, kind) {
+  var c = conv(cid); S.waiting[cid] = true; redecide(c);
+  // O 202 nunca é sucesso: a tela espera o veredito do Mac antes de dar por feito.
+  setTimeout(function () {
+    delete S.waiting[cid]; delete S.data.attn[c.attn]; c.attn = null;
+    if (kind === "deny") { c.frase = "Comando negado por você."; } else { c.running = true; c.frase = "Retomando…"; }
+    closeSheet(); renderHome(); if (S.chat === cid) openChat(cid, true);
+    toast(kind === "deny" ? "Negado no Mac" : kind === "approve" ? "Aprovado no Mac" : "Resposta entregue");
+    syncFleetCtl();
+  }, 1300);
+}
+function redecide(c) {
+  renderHome();
+  if (S.sheet === "attn") $("#sheet").innerHTML = '<div class="grab"></div>' + decideHtml(c, true);
+  if (S.chat === c.id) $("#chatDecide").innerHTML = decideHtml(c, false);
+}
+
+/* ============ folhas ============ */
+function openSheet(kind, html) { S.sheet = kind; $("#sheet").innerHTML = '<div class="grab"></div>' + html; $("#sheet").classList.add("on"); $("#scrim").classList.add("on"); }
+function closeSheet() { S.sheet = null; $("#sheet").classList.remove("on"); $("#scrim").classList.remove("on"); }
+
+function launchHtml() {
+  var L = S.launch;
+  var pilots = MOTORS.map(function (m) { return { key: "m:" + m.id, name: m.name, sub: "motor", agent: m.id }; })
+    .concat(SPECS.map(function (s) { return { key: "s:" + s.id, name: s.name, sub: mname(s.backend), agent: s.backend, spec: s.id }; }));
+  return "<h3>Nova conversa</h3><div class='lbl'>Projeto</div><div class='hs'>" + PROJECTS.map(function (p) {
+      return '<button class="fchip' + (L.pid === p.id ? " on" : "") + '" data-lp="' + p.id + '"><i style="background:' + tintOf(p.id) + '"></i>' + esc(p.name) + "</button>";
+    }).join("") + "</div><div class='lbl'>Quem pilota</div><div class='hs'>" + pilots.map(function (p) {
+      return '<button class="pilot' + (L.pilot === p.key ? " on" : "") + '" data-pl="' + p.key + '" data-agent="' + p.agent + '" data-spec="' + (p.spec || "") + '">' + face(shapeOf(p.spec || p.agent), tintOf(L.pid)) + "<b>" + esc(p.name) + "</b><small>" + esc(p.sub) + "</small></button>";
+    }).join("") + '</div><textarea class="big" id="launchText" placeholder="O que precisa ser feito?">' + esc(L.text) + "</textarea>" +
+    '<div class="acts2"><button class="bt pri" id="launchGo"' + (L.text.trim() && !L.busy ? "" : " disabled") + ">" + (L.busy ? "Lançando no Mac…" : "Lançar") + "</button></div>" +
+    '<div class="fine">Vira uma conversa nova na Frota, rodando de verdade no seu Mac.</div>';
+}
+function prefsHtml() {
+  var th = document.documentElement.getAttribute("data-theme");
+  return "<h3>Ajustes</h3><div class='grp'>" +
+    '<div class="it"><span class="m"><b>Tema</b></span><span class="seg"><button data-theme="light" class="' + (th === "light" ? "on" : "") + '">Claro</button><button data-theme="dark" class="' + (th === "dark" ? "on" : "") + '">Escuro</button></span></div>' +
+    '<div class="it"><span class="m"><b>Notificações</b><small>Avisar quando a frota pedir você</small></span><button class="sw' + (S.notif ? " on" : "") + '" id="swNotif" aria-label="Notificações"></button></div>' +
+    "</div><div class='lbl'>Este aparelho</div><div class='grp'>" +
+    '<div class="it"><span class="m"><b>Pareado com</b></span><span class="v">MacBook do Vinicius</span></div>' +
+    '<div class="it"><span class="m"><b>Endereço</b></span><span class="v">macbook.tail1234.ts.net</span></div></div>';
+}
+
+/* ============ conversa ============ */
+var ARROW = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg>';
+function acts(list) {
+  return '<details class="acts"><summary>' + ARROW + list.length + " ações · " + list.map(function (l) { return l[0]; }).join(", ") + "</summary>" +
+    list.map(function (l) { return '<div class="ln"><b>' + l[0] + "</b> " + esc(l[1]) + "</div>"; }).join("") + "</details>";
+}
+function threadHtml(c) {
+  if (c.id === "conv-t1") return '<div class="bub">O formulário de contato não envia no Safari. Investiga?<br><span class="att">▣ print-safari.png</span></div>' +
+    '<div class="say"><p>Vou investigar. Primeiro olho o handler do <b>submit</b> e o <code>fetch</code> usado.</p><h4>Plano</h4><ol><li>Reproduzir no Safari</li><li>Ler o handler</li></ol><pre>form.addEventListener("submit", onSubmit)</pre></div>' +
+    acts([["Grep", "onSubmit em src/ → 3 linhas"], ["Bash", "bun test contact-form → 12 linhas"]]) +
+    '<div class="sys">Contexto compactado (78% do limite)</div>' +
+    '<div class="say"><p>Achei: o Safari bloqueia <code>FormData</code> com input file vazio. Corrigindo com um guard antes do append.</p></div>';
+  return '<div class="bub">' + esc(c.title) + "</div>" + (c.running ? "" : '<div class="say"><p>' + esc(c.frase) + "</p></div>" +
+    (c.failed ? '<div class="sys" style="color:var(--st-error)">Turno falhou · 38s</div>' : '<div class="sys ok">Turno concluído · US$ 0,18 · 3 min</div>'));
+}
+function typingHtml(c) {
+  return '<div class="typing" id="typing">' + convFace(c) + '<span class="dots"><i></i><i></i><i></i></span><span class="toolp">' + esc(c.frase) + "</span></div>";
+}
+function openChat(id, keep) {
+  var c = conv(id); S.chat = id;
+  $("#chatFace").innerHTML = convFace(c);
+  $("#chatTitle").textContent = c.title;
+  var sub = $("#chatSub");
+  sub.textContent = c.running ? who(c) + " · trabalhando há " + ago(c.at + 3 * MIN) : pname(c.pid) + " · " + who(c);
+  sub.className = c.running ? "roda" : "";
+  $("#chatStop").hidden = !c.running;
+  if (!keep) $("#thread").innerHTML = threadHtml(c);
+  var t = $("#typing"); if (t) t.remove();
+  if (c.running) $("#thread").insertAdjacentHTML("beforeend", typingHtml(c));
+  $("#chatDecide").innerHTML = decideHtml(c, false);
+  push("chat");
+  setTimeout(function () { var s = $("#chatScroll"); s.scrollTop = s.scrollHeight; }, 30);
+}
+function sendMsg() {
+  var ta = $("#msg"), text = ta.value.trim(); if (!text) return;
+  var c = conv(S.chat), th = $("#thread"), t = $("#typing"); if (t) t.remove();
+  th.insertAdjacentHTML("beforeend", '<div class="bub">' + esc(text) + '</div><div class="cap" id="cap">enviando…</div>');
+  ta.value = ""; ta.style.height = "auto"; $("#send").disabled = true;
+  var s = $("#chatScroll"); s.scrollTop = s.scrollHeight;
+  setTimeout(function () { $("#cap").textContent = "entregue ao Mac"; c.running = true; c.frase = "Analisando a tarefa…"; openChat(c.id, true); renderHome(); }, 700);
+  setTimeout(function () {
+    var cap = $("#cap"); if (cap) cap.remove();
+    c.running = false; c.frase = "Resposta simulada do mock."; c.at = 0;
+    var ty = $("#typing"); if (ty) ty.remove();
+    th.insertAdjacentHTML("beforeend", '<div class="say"><p>Resposta simulada (mock) para: ' + esc(text) + '</p></div><div class="sys ok">Turno concluído · US$ 0,01 · 3s</div>');
+    openChat(c.id, true); renderHome();
+  }, 3200);
+}
+
+/* ============ painel ============ */
+function renderPainel() {
+  var cs = S.data.convs, run = cs.filter(function (c) { return c.running; });
+  var done = cs.filter(function (c) { return !c.running && !pending(c); });
+  $("#painelBody").innerHTML = '<div class="stats"><div class="stat"><b>US$ 4,21</b><small>custo hoje</small></div><div class="stat"><b>' + run.length + '</b><small>rodando</small></div><div class="stat"><b>' + cs.filter(pending).length + "</b><small>pedem você</small></div></div><div class='pad'>" +
+    "<div class='lbl'>Agora</div><div class='grp'>" + (run.map(function (c) {
+      return '<button class="it" data-conv="' + c.id + '" style="width:100%;text-align:left">' + convFace(c) + '<span class="m"><b>' + esc(c.title) + "</b><small>" + esc(c.frase) + "</small>" +
+        (c.mission ? '<span class="phs"><i class="done"></i><i class="running"></i><i></i><i></i></span>' : "") + '</span><span class="v">' + ago(c.at + 3 * MIN) + "</span></button>";
+    }).join("") || '<div class="it"><span class="m"><small>Nenhum agente em execução.</small></span></div>') + "</div>" +
+    "<div class='lbl'>Acabou há pouco</div><div class='grp'>" + done.map(function (c) {
+      return '<button class="it" data-conv="' + c.id + '" style="width:100%;text-align:left">' + convFace(c) + '<span class="m"><b>' + esc(c.frase) + "</b><small>" + esc(pname(c.pid)) + " · " + esc(c.title) + '</small></span><span class="v' + (c.failed ? " bad" : "") + '">' + (c.failed ? "falhou" : "há " + ago(c.at)) + "</span></button>";
+    }).join("") + "</div>" +
+    "<div class='lbl'>Custo por projeto</div><div class='grp'>" +
+    '<div class="it"><span class="m"><b>mycockpit</b></span><span class="v">US$ 3,10</span></div><div class="it"><span class="m"><b>site-maclan</b></span><span class="v">US$ 1,11</span></div></div></div>';
+}
+
+/* ============ navegação ============ */
+function push(id) { $("#" + id).classList.add("in"); $("#home").classList.add("under"); }
+function pop() { document.querySelectorAll(".screen.push.in").forEach(function (s) { s.classList.remove("in"); }); $("#home").classList.remove("under"); S.chat = null; }
+function setTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  document.querySelectorAll("[data-theme]").forEach(function (b) { if (b.tagName === "BUTTON") b.classList.toggle("on", b.getAttribute("data-theme") === t); });
+}
+function syncFleetCtl() {
+  var st = S.fleet === "offline" ? "offline" : S.data.convs.some(pending) ? "pede" : "calma";
+  document.querySelectorAll("#ctlFleet button").forEach(function (b) { b.classList.toggle("on", b.getAttribute("data-fleet") === st); });
+}
+
+document.addEventListener("click", function (ev) {
+  var t = ev.target.closest("button, .scrim"); if (!t) return;
+  var d = t.dataset;
+  if (t.id === "scrim") return closeSheet();
+  if (d.back != null) return pop();
+  if (d.theme) return setTheme(d.theme);
+  if (d.fleet) {
+    S.data = seed(); S.waiting = {}; S.pick = {}; S.fleet = d.fleet; closeSheet(); pop();
+    if (d.fleet === "calma") S.data.convs.forEach(function (c) { c.attn = null; });
+    renderHome(); return syncFleetCtl();
+  }
+  if (d.formas) { S.formas = d.formas; document.querySelectorAll("#ctlFormas button").forEach(function (b) { b.classList.toggle("on", b === t); }); return renderHome(); }
+  if (d.f != null) { S.filtro = d.f; return renderHome(); }
+  if (d.conv) {
+    var c = conv(d.conv);
+    if (pending(c) && !S.chat && !$("#painel").classList.contains("in")) return openSheet("attn", decideHtml(c, true));
+    $("#painel").classList.remove("in"); return openChat(c.id);
+  }
+  if (d.goto) { closeSheet(); return openChat(d.goto); }
+  if (d.opt != null) { S.pick[d.c] = Number(d.opt); return redecide(conv(d.c)); }
+  if (d.ans) return answer(d.c, d.ans);
+  if (t.id === "pulse") { renderPainel(); return push("painel"); }
+  if (t.id === "btnPrefs") return openSheet("prefs", prefsHtml());
+  if (t.id === "swNotif") { S.notif = !S.notif; return t.classList.toggle("on", S.notif); }
+  if (t.id === "fab") { S.launch = { pid: S.filtro || "p1", pilot: "m:claude-code", agent: "claude-code", text: "", busy: false }; return openSheet("launch", launchHtml()); }
+  if (d.lp) { S.launch.pid = d.lp; S.launch.text = $("#launchText").value; return openSheet("launch", launchHtml()); }
+  if (d.pl) { S.launch.pilot = d.pl; S.launch.agent = d.agent; S.launch.spec = d.spec || null; S.launch.text = $("#launchText").value; return openSheet("launch", launchHtml()); }
+  if (t.id === "launchGo") {
+    var L = S.launch; L.text = $("#launchText").value; L.busy = true; openSheet("launch", launchHtml());
+    return setTimeout(function () {
+      var n = { id: "n" + Date.now(), pid: L.pid, agent: L.agent, pilot: L.spec, title: L.text.slice(0, 44), frase: "Analisando a tarefa…", at: 0, running: true };
+      S.data.convs.unshift(n); closeSheet(); renderHome(); openChat(n.id);
+    }, 1100);
+  }
+  if (t.id === "send") return sendMsg();
+  if (t.id === "chatStop") { var cc = conv(S.chat); cc.running = false; cc.frase = "Turno interrompido por você."; openChat(cc.id, true); renderHome(); return toast("Turno interrompido"); }
+});
+document.addEventListener("input", function (ev) {
+  if (ev.target.id === "msg") { var ta = ev.target; ta.style.height = "auto"; ta.style.height = Math.min(ta.scrollHeight, 130) + "px"; $("#send").disabled = !ta.value.trim(); }
+  if (ev.target.id === "launchText") $("#launchGo").disabled = !ev.target.value.trim();
+});
+$("#homeScroll").addEventListener("scroll", function () { $("#topbar").classList.toggle("solid", this.scrollTop > 190); }, { passive: true });
+
+/* atalho pra capturas: ?tema=dark&tela=chat|sheet|painel|nova */
+var Q = new URLSearchParams(location.search);
+setTheme(Q.get("tema") || (window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+renderHome();
+if (Q.get("tela") === "chat") openChat("conv-t1");
+if (Q.get("tela") === "sheet") openSheet("attn", decideHtml(conv("conv-t2"), true));
+if (Q.get("tela") === "painel") { renderPainel(); push("painel"); }
+if (Q.get("tela") === "nova") $("#fab").click();
+</script>
+</body>
+</html>

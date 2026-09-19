@@ -7865,3 +7865,60 @@ considerou.
   token de duração também é testada, inclusive os casos que valem o padrão em
   vez de zero — `var(--dur)` sem definição já virou transição instantânea sem
   erro uma vez (ADR-179), e zero é "sem animação" disfarçado de animação.
+
+### ADR-219 · O Companion tem cara de app, e o celular tem a escala dele
+
+- **Contexto (19/09/2026):** a página do celular funcionava, mas lia como site:
+  com três pedidos pendentes as conversas só apareciam depois de uns 1100px de
+  rolagem, tudo era cartão com o mesmo peso, três faixas fixas disputavam a
+  tela (cabeçalho, barra da conversa com `top: 52px` cravado, rodapé de custo),
+  a troca de tela era um corte seco, ícone era emoji, e cada ferramenta do turno
+  era uma linha solta no fio. A referência aprovada foi um mensageiro: uma cara
+  no topo e linhas de conversa. Mock validado em
+  `docs/mocks/companion-nativo.html`.
+- **Decisão:** (1) o início é a **cara da frota deste Mac** (cor e olhos dizem o
+  estado real: calma, rodando, pede você, fora do ar) e uma lista de conversas
+  sem cartão; (2) cada conversa tem uma **cara**: forma por hash do id da
+  conversa, cor por hash do id do projeto, nunca por nome de motor; (3) o que
+  pede você sobe ao topo da lista e abre numa **folha** com o mesmo cartão de
+  decisão que fica ancorado acima do campo dentro da conversa; (4) painel,
+  agents e conversa **empurram** por cima do início; "Nova conversa" e Ajustes
+  são folhas; (5) ferramentas seguidas viram um grupo que expande
+  (`groupThreadItems`, `toolGroupLabel` no `core.js`); (6) o snapshot ganha
+  `projects[].recent[].frase`, a frase pronta do último turno encerrado, tirada
+  do mesmo feed do sino que já alimenta `lastTurns` (`frasesDoFeed`).
+- **A escala do celular:** a página do Companion usa **13, 14, 15, 16, 17 e 20**
+  px. Ela não entra na escala fechada do §3 do STYLEGUIDE (11 a 14), que é de
+  um app de desktop lido a um braço de distância com ponteiro. No celular o
+  texto de leitura é 16 (abaixo disso o iOS dá zoom ao focar um campo), a linha
+  de lista é 17 com peso, metadado é 13, e alvo de toque tem pelo menos 42px.
+  Meio-pixel continua proibido. A guarda `check-type-scale` varre `app/src` e
+  não alcança `src-tauri/companion/`, então nada foi afrouxado: a régua do app
+  segue a mesma, e esta é a régua escrita da página.
+- **Alcance:** a forma da cara veio da conversa e não de quem pilota (como o
+  mock sugeria) porque o snapshot não carrega o especialista da conversa, e com
+  um motor só todas as linhas sairiam iguais. Se o piloto passar a viajar no
+  snapshot, a forma pode migrar sem tocar na cor. A prévia da linha nunca é
+  inventada: pedido pendente mostra o próprio pedido, turno vivo mostra o
+  `detail` do `running`, conversa parada mostra a `frase`, e sem nenhuma das
+  três a linha fica sem segunda frase. Pedido cuja conversa não está nas
+  recentes (metas do projeto ainda não carregadas no desktop) ganha linha
+  própria, para nunca ficar inalcançável.
+- **Consequência:** a navegação passou de `location.hash =` para
+  `history.pushState` com a profundidade no `state.d`, que é o que deixa o "‹" e
+  o fechar da folha usarem `history.back()` sem sair do app quando a pessoa
+  entrou direto numa URL funda. Folha de decisão e Ajustes empilham uma entrada
+  com o mesmo hash, então o voltar do Android fecha a folha. O lançamento troca
+  a entrada da folha pela da conversa nova (`navReplace`). A rolagem saiu da
+  janela e foi para dentro de cada tela (`#chatScroll`), e a altura da casca
+  acompanha o `visualViewport` para o teclado não cobrir o campo. O input de
+  arquivo perdeu o `capture="environment"`, que no Android forçava a câmera e
+  impedia escolher foto da galeria ou PDF.
+- **Verificação:** regras puras novas em `companionWeb.cara.test.ts` (hash,
+  hora curta, pulso da frota, prévia da linha, grupo de ferramentas) e a frase
+  em `companionProjetos.test.ts`. Fluxos conferidos em navegador automatizado
+  com `?mock=1`: folha de decisão, espera pelo veredito, envio, voltar do
+  sistema fechando folha, lançamento e voltar caindo no início, sem erro de
+  console. Falta conferir num aparelho de verdade (teclado do Android e do iOS).
+
+

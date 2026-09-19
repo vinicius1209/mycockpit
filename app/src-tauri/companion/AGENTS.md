@@ -9,7 +9,7 @@ do turno tem o dele em `app/src-tauri/src/AGENTS.md`.
 Planos e decisões: `docs/companion-plan.md` (C1 a C4 entregues),
 `docs/companion-chat-prd.md` (próxima fase: seguro, chat-first, Tailscale),
 ADR-036 (tokens em arquivo 0600), ADR-041 (Board fora do Companion), ADR-062
-(as duas metades do lado do app).
+(as duas metades do lado do app), ADR-219 (cara de app e a escala do celular).
 
 ## A lei desta camada
 
@@ -57,16 +57,35 @@ Quatro lugares, sempre juntos, com teste em cada um:
 4. Tipos em `lib/companionTypes.ts` e, se mudar o snapshot, o builder em
    `lib/companion.ts`.
 
-## Telas (R4)
+## Telas (R4, ADR-219)
 
-- `#/` (rota `brief`) é o início chat-first: pede você + conversas. `#/painel` é o
-  painel de números. Não mova atenção para o painel: o que pede decisão fica na
-  primeira tela.
-- Cartão de atenção só existe em `attentionCardHtml`; início e conversa usam a
-  mesma função, e depois de responder chame `rerenderAttention()` (redesenha os
-  dois lugares).
-- Ordem das conversas e atalhos do campo são regra pura do `core.js`
-  (`homeConversations`, `parseChatShortcut`); não reimplemente na página.
+- `#/` (rota `brief`) é o início chat-first: a cara da frota e as conversas.
+  `#/painel` é o painel de números. Não mova atenção para o painel: o que pede
+  decisão sobe ao topo da lista, na primeira tela.
+- Painel, agents e conversa EMPURRAM por cima do início (classe `.in`, animadas
+  por `transform`; não volte a usar `hidden` nelas). `#/launch` é rota de folha.
+  Folha de decisão e Ajustes não são rota: empilham uma entrada com o mesmo hash
+  (`state.sheet`) para o voltar do sistema fechá-las.
+- Navegue com `nav()`, `navReplace()` e `goBack()`. Nunca `location.hash =` nem
+  `history.back()` direto: a profundidade mora em `history.state.d`, e é ela que
+  impede o "‹" de sair do app em quem entrou por URL funda.
+- A rolagem é de cada tela (`.scroll`, `#chatScroll`), não da janela. Código que
+  acompanha o fim do fio usa `scrollChatEnd()`.
+- Cartão de decisão só existe em `attentionCardHtml`; a folha do início e a
+  conversa usam a mesma função, e depois de responder chame `rerenderAttention()`
+  (redesenha a linha, a folha e a conversa). Pedido sem linha de conversa ganha
+  linha própria em `renderConversas`: nunca deixe um pedido inalcançável.
+- Cara (`faceFor`): forma por hash do id da conversa, cor por hash do id do
+  projeto, via `Core.hashIndex`. Nunca por nome de motor. Olhos dizem estado
+  real (roda respira, fora do ar dorme) e param com `prefers-reduced-motion`.
+- Ordem das conversas, prévia da linha, pulso da frota, grupo de ferramentas e
+  atalhos do campo são regra pura do `core.js` (`homeConversations`,
+  `convPreview`, `fleetPulse`, `groupThreadItems`, `parseChatShortcut`); não
+  reimplemente na página. A prévia nunca é inventada: sem pedido, sem turno vivo
+  e sem `frase` no snapshot, a linha fica sem segunda frase.
+- Ícone é SVG inline (`ico`, `ICO`), nunca emoji. Aviso é `showNote`, nunca
+  `alert`. Tamanhos de fonte: 13, 14, 15, 16, 17, 20, sem meio-pixel; alvo de
+  toque de 42px para cima.
 - Mudou algo do shell (`index.html`, `core.js`)? Suba a versão do cache em
   `sw.js`.
 
@@ -145,7 +164,8 @@ Nada de relay, VPS ou Cloudflare sem ADR nova.
 - TS: `lib/companion.test.ts`, `companion.c2.test.ts` (ações),
   `companion.c3.test.ts` (conversa), `companion.hooks.test.ts`,
   `companionWeb.test.ts` (núcleo puro da página), `companionAparelhos.test.ts`
-  (rótulo de expiração), `companionEndereco.test.ts` (URL do QR e aviso da
+  (rótulo de expiração), `companionWeb.cara.test.ts` (cara, pulso, prévia e
+  grupo de ferramentas), `companionEndereco.test.ts` (URL do QR e aviso da
   Tailscale), `companionProjetos.test.ts` (mesa e recentes),
   `companion.board.test.ts` (Board fora do Companion).
 

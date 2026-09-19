@@ -48,7 +48,7 @@ import { ownerByRunId, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { usePresets } from "@/store/presets"
 import { DESK_TITLE_PREFIX } from "@/lib/fleet/send"
-import { projetosDoCompanion } from "@/lib/companionProjetos"
+import { frasesDoFeed, projetosDoCompanion } from "@/lib/companionProjetos"
 import { perfSpan } from "@/lib/fleet/perf"
 
 // ─────────────────────────────────────────────────────────── shape do snapshot
@@ -300,9 +300,7 @@ export function buildCompanionSnapshot(
     (a) =>
       a.kind === "agent" &&
       a.available &&
-      ["ready", "installed-auth-unknown"].includes(
-        availability(a.id, app.settings.detected),
-      ),
+      ["ready", "installed-auth-unknown"].includes(availability(a.id, app.settings.detected)),
   ).map((a) => a.id)
   const projects = projetosDoCompanion({
     projects: app.projects,
@@ -311,6 +309,7 @@ export function buildCompanionSnapshot(
     prefixoDaMesa: DESK_TITLE_PREFIX,
     rodando: (id) => chat.byId[id]?.running ?? false,
     pedeVoce: new Set(attention.map((a) => a.convId).filter((id): id is string => !!id)),
+    fraseDe: frasesDoFeed(useNotifs.getState().items),
   })
 
   // ── Especialistas GLOBAIS (C2 · lançar tarefa): valem em qualquer projeto.

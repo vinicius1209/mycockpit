@@ -36,6 +36,14 @@ describe("conversasRecentes", () => {
     expect(lista.find((c) => c.convId === "c0")?.running).toBe(true)
   })
 
+  it("leva a frase pronta do último turno, e fica sem o campo quando não há", () => {
+    const metas = [meta("com", 2), meta("sem", 1)]
+    const frases: Record<string, string> = { com: "Extraiu o parser pra lib/ e cobriu o caso vazio." }
+    const lista = conversasRecentes(metas, nunca, new Set(), 20, (id) => frases[id] ?? null)
+    expect(lista[0].frase).toBe("Extraiu o parser pra lib/ e cobriu o caso vazio.")
+    expect("frase" in lista[1]).toBe(false)
+  })
+
   it("título vazio vira Conversa, sem inventar outro nome", () => {
     const [c] = conversasRecentes([meta("x", 1, { title: "  " })], nunca, new Set())
     expect(c.title).toBe("Conversa")
