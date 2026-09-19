@@ -7251,7 +7251,13 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   algum servidor real exigir), e ler o inventário de login dos CLIs para
   afirmar "conectado" em vez de "não verificado".
 
-### ADR-202 · Imagem na aba Alterações mostra a versão do disco e abre no Lightbox
+### ADR-218 · Imagem na aba Alterações mostra a versão do disco e abre no Lightbox
+
+> **Era ADR-202, renumerada em 19/09/2026.** Duas frentes numeraram 202 no mesmo
+> dia (16/09): esta e "Configurações: um chrome só". Quem move é esta, pela
+> mesma régua do caso 214/215: a outra é citada em três pontos do código
+> (`SettingsDialog.tsx`, `settingsChrome.tsx`) e esta não era citada em lugar
+> nenhum. Fica no lugar cronológico, porque a decisão é de 16/09 e só o id mudou.
 
 - **Contexto (16/09/2026):** o estudo do Maestri deixou 22 quadros `.jpg` e um
   `.mp4` na working tree. Expandir qualquer um na aba Alterações dizia só

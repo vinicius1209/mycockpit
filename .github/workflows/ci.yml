@@ -35,6 +35,8 @@ jobs:
         run: node scripts/check-marca.mjs
       - name: guia sem arquivo:linha (§0)
         run: node scripts/check-guia-sem-linha.mjs
+      - name: adr sem número repetido
+        run: node scripts/check-adr-unico.mjs
       - name: superfícies das Configurações (catraca)
         run: node scripts/check-superficies.mjs
       - name: primitivas de superfície (§12 · vendor só em components/ui)

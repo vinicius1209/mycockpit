@@ -65,6 +65,12 @@ de correção/status no topo, depois confira `docs/decisions.md` e os call sites
   migração, e **confira a versão máxima real no arquivo** antes de numerar.
   Tabela nova de frontend: `ensure*Tables(db)` + `addColumn` de
   `src/lib/db/schema.ts` (re-exportado por `src/lib/db.ts`).
+- **Número de ADR é identidade**, e colidiu duas vezes em dois dias (202 e 214):
+  duas frentes abrem `docs/decisions.md`, leem a mesma última linha e somam um.
+  Confira o máximo real antes de numerar; `bun run check` agora cobra
+  (`check-adr-unico.mjs`). Se colidir, quem renumera é a **menos citada no
+  código**, com nota dizendo que mudou, e fica no lugar cronológico: muda o id,
+  não a data.
 - **Árvore compartilhada.** Outra frente pode estar em andamento na working
   tree. Toque só no que é da sua tarefa, nunca reverta o que não é seu, e
   **nunca afrouxe um teste existente** — se ele quebrou, o refactor está errado.
