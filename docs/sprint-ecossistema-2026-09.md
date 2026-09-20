@@ -145,7 +145,7 @@ na política de TI, e o Android só mantém uma VPN ativa por vez.
 | A7 | **Companion chat-first**: lista de conversas com "pede você", conversa em balões, aprovação e parar como botões na conversa, anexar foto, atalhos ("/parar", "/btw"), números e missões numa aba secundária; usa só ações que já existem | M/G | A1 |
 | A8 | **Dois Macs**: um atalho por Mac (simples) ou seletor dentro do Companion (CORS + token por Mac) | M | A4 |
 | A5 | TLS no próprio app com o certificado do `ts.net` (tira o `serve` do caminho) | G | A4 |
-| A6 | Aviso com o celular fechado (Web Push saindo do Mac, opt-in) | M/G | A4 |
+| A6 | Aviso com o celular fechado (Web Push saindo do Mac, opt-in) · **entregue em 19/09** (ADR-221; o PRD tinha isto como não-objetivo e o dono reabriu) | M/G | A4 |
 | A2 | Papel "só leitura" por aparelho | M | fim da fila |
 | A3 | `/api/info` com capabilities | P/M | fim da fila |
 

@@ -7973,3 +7973,48 @@ considerou.
   aceita: o `serde_json` serializa chaves em ordem alfabética (o `Map` dele é
   BTreeMap) e o SQLite preserva a ordem do documento. Os termos são idênticos, e
   o teste passou a cobrar isso em vez de igualdade byte a byte, que era falsa.
+
+### ADR-221 · O aviso com a tela fechada passa por um serviço de terceiro, cifrado
+
+- **Contexto (19/09/2026):** o Companion só avisava com a PÁGINA aberta
+  (vibração e título piscando; notificação nativa quando o contexto permite).
+  Com o Firefox fechado ou o aparelho bloqueado, um pedido de aprovação esperava
+  calado, que é justamente o caso do celular no bolso. A tabela da sprint
+  listava o A6 como história, e o PRD do Companion listava "Web Push com o
+  celular fechado" em Não-objetivos: divergência que, pela lei do repositório,
+  só o dono do produto resolve. Ele decidiu fazer, ciente do custo.
+- **O custo, dito na cara:** não existe aviso com o navegador fechado sem passar
+  pelo serviço de push DELE (Mozilla, no Android do usuário). Num produto
+  local-first isso é escolha consciente, não detalhe. O que mitiga: o conteúdo
+  é cifrado ponta a ponta pela RFC 8291 (ECDH P-256 + HKDF-SHA256 + AES128GCM),
+  então o serviço entrega bytes que só o aparelho abre. O que NÃO se esconde: o
+  serviço vê que houve um aviso, a hora e o tamanho; e o Mac precisa de internet
+  no momento do aviso, não só da tailnet.
+- **Decisão:** transporte próprio em `companion_push.rs` (RFC 8291 + VAPID da
+  RFC 8292), sem crate de push pronta, porque o que precisamos é pequeno e o
+  teste é o vetor da própria norma. A chave VAPID do Mac nasce uma vez em 0600,
+  como o arquivo de aparelhos, e a inscrição mora DENTRO do aparelho pareado:
+  revogar o aparelho leva o aviso junto, porque é a mesma linha.
+- **Opt-in de verdade:** interruptor próprio na página, separado do aviso com a
+  página aberta, e só onde pode funcionar (service worker, PushManager e
+  contexto seguro). Sem o gesto no aparelho, o Mac não tem para onde mandar.
+  Falha nunca deixa o interruptor ligado mentindo, e o estado é relido do
+  NAVEGADOR (não de um palpite nosso no `localStorage`).
+- **Quem decide avisar é o app** (`lib/companionAviso.ts`), não o transporte:
+  só o que pede você, um aviso por episódio, e nada quando alguma página está
+  aberta (lá o aviso já existe). Episódio resolvido sai da memória, então se
+  voltar avisa de novo. Vários pedidos novos viram um aviso só com a contagem.
+- **Limites:** a contagem de conexões é do SERVIDOR, não por aparelho — com dois
+  celulares e um com a página aberta, o outro não recebe naquela rodada.
+  Inscrição que o navegador descartou (404/410) sai do arquivo sozinha; outras
+  falhas de entrega vão para o log com o motivo, nunca em silêncio.
+- **Verificação:** o vetor da RFC 8291 §5 no teste do Rust, com o valor
+  esperado conferido antes contra a implementação de referência `http_ece`
+  (npm) — não é o nosso código conversando consigo mesmo. Mais: cabeçalho da
+  RFC 8188 nos lugares certos, texto claro ausente do corpo, chave ou segredo
+  estranhos falhando fechado, aviso grande demais falhando ANTES de sair da
+  máquina, JWT ES256 com `aud` da origem do endpoint, arquivo de aparelhos
+  anterior ao A6 ainda lendo, e 8 testes da regra de quando avisar.
+  `cargo test` 902, vitest 4.527, `tsc -b --force`, `bun run check`.
+- **Divisões que isto exigiu:** `lib/companion.ts` 612 → 564 (os carregamentos
+  preguiçosos do snapshot viraram `companionExtras.ts`).

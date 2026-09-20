@@ -247,12 +247,30 @@ aparece em logs públicos de certificado (Certificate Transparency).
 - **Aceite:** dois Companions instalados convivem (origens diferentes, tokens
   diferentes) sem um derrubar o outro.
 
+## A6 · Aviso com a tela fechada (entregue em 19/09/2026)
+
+Era não-objetivo por decisão de escopo, e o dono do produto reabriu em 19/09
+sabendo o custo: não existe aviso com o navegador fechado sem passar pelo
+serviço de push do próprio navegador. O conteúdo vai cifrado ponta a ponta
+(RFC 8291), então o serviço transporta bytes que só o aparelho abre; o que ele
+vê é que houve aviso, quando e de que tamanho. O raciocínio inteiro está na
+ADR-221.
+
+- Transporte em `companion_push.rs` (RFC 8291 + VAPID da RFC 8292), testado
+  contra o vetor da própria norma.
+- Opt-in por aparelho, na folha de Ajustes, separado do aviso com a página
+  aberta e só onde pode funcionar.
+- Quem decide avisar é o app (`lib/companionAviso.ts`): só o que pede você, um
+  aviso por episódio, nada quando alguma página está aberta.
+- **Aceite:** com a página fechada e o aparelho bloqueado, um pedido de
+  aprovação novo vira notificação que abre a conversa certa; o mesmo pedido não
+  avisa duas vezes; desligar o interruptor para de avisar nos dois lados.
+
 ## Não-objetivos (agora)
 
 - TLS dentro do app, relay próprio, VPS, Cloudflare Tunnel.
 - Papel "só leitura" e `/api/info` com capabilities (sem outra pessoa, sem versões
   diferentes; ficam no fim da fila).
-- Web Push com o celular fechado.
 - Seletor de vários Macs dentro de um Companion só (CORS + tokens por Mac).
 - Telegram, WhatsApp ou qualquer bot de mensageiro como canal.
 
