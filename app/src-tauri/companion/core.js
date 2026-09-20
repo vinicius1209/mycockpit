@@ -686,6 +686,37 @@
       .join(", ");
   }
 
+  // ---------------- A6 · aviso com a tela fechada ----------------
+  // A chave pública do Mac chega em base64url e o navegador quer bytes; e a
+  // inscrição que ele devolve tem as chaves aninhadas, enquanto o Mac guarda
+  // plano. As duas conversões são regra, então moram aqui e têm teste.
+  function chaveDoServidorParaBytes(b64) {
+    var texto = String(b64 == null ? "" : b64).trim();
+    if (!texto) return null;
+    var padded = texto.replace(/-/g, "+").replace(/_/g, "/");
+    while (padded.length % 4) padded += "=";
+    var cru;
+    try {
+      cru = atob(padded);
+    } catch (e) {
+      return null;
+    }
+    var bytes = new Uint8Array(cru.length);
+    for (var i = 0; i < cru.length; i++) bytes[i] = cru.charCodeAt(i);
+    // P-256 sem compressão: 65 bytes começando em 0x04. Qualquer outra coisa o
+    // navegador recusaria depois, com erro pior de entender.
+    if (bytes.length !== 65 || bytes[0] !== 4) return null;
+    return bytes;
+  }
+  // `PushSubscription.toJSON()` → o que o Mac guarda. Inscrição sem as duas
+  // chaves não serve para cifrar, e mandar assim só adiaria o erro.
+  function corpoDaInscricao(json) {
+    var sub = json || {};
+    var chaves = sub.keys || {};
+    if (!sub.endpoint || !chaves.p256dh || !chaves.auth) return null;
+    return { endpoint: String(sub.endpoint), p256dh: String(chaves.p256dh), auth: String(chaves.auth) };
+  }
+
   return {
     machineName: machineName,
     notificationTitle: notificationTitle,
@@ -725,5 +756,7 @@
     triagemDeArquivos: triagemDeArquivos,
     rotuloDaSoltura: rotuloDaSoltura,
     avisoDeRecusa: avisoDeRecusa,
+    chaveDoServidorParaBytes: chaveDoServidorParaBytes,
+    corpoDaInscricao: corpoDaInscricao,
   };
 });

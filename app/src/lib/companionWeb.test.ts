@@ -823,3 +823,45 @@ describe("soltar arquivo na página do Companion", () => {
     expect(core.rotuloDaSoltura(3)).toBe("Solte para anexar · 3 itens")
   })
 })
+
+describe("A6 · inscrição do aviso com a tela fechada", () => {
+  // Chave pública real de VAPID (P-256 sem compressão, 65 bytes).
+  const CHAVE =
+    "BP4z9KsN6nGRTbVYI_c7VJSPQTBtkgcy27mlmlMoZIIgDll6e3vCYLocInmYWAmS6TlzAC8wEqKK6PBru3jl7A8"
+
+  it("a chave do Mac vira os 65 bytes que o navegador pede", () => {
+    const bytes = core.chaveDoServidorParaBytes(CHAVE)
+    expect(bytes).toBeInstanceOf(Uint8Array)
+    expect(bytes!.length).toBe(65)
+    expect(bytes![0]).toBe(4)
+  })
+
+  it("chave ausente, torta ou comprimida não vira inscrição", () => {
+    expect(core.chaveDoServidorParaBytes(null)).toBeNull()
+    expect(core.chaveDoServidorParaBytes("  ")).toBeNull()
+    expect(core.chaveDoServidorParaBytes("não é base64 %%%")).toBeNull()
+    // 33 bytes começando em 0x02 é o formato comprimido: válido como ponto,
+    // inútil aqui, e o erro tem que aparecer ANTES de chamar o navegador.
+    expect(core.chaveDoServidorParaBytes(btoa(String.fromCharCode(2, ...Array(32).fill(7))))).toBeNull()
+  })
+
+  it("a inscrição do navegador vira o que o Mac guarda, plana", () => {
+    expect(
+      core.corpoDaInscricao({
+        endpoint: "https://updates.push.services.mozilla.com/wpush/v2/gAAA",
+        keys: { p256dh: "BCVx", auth: "BTBZ" },
+      }),
+    ).toEqual({
+      endpoint: "https://updates.push.services.mozilla.com/wpush/v2/gAAA",
+      p256dh: "BCVx",
+      auth: "BTBZ",
+    })
+  })
+
+  it("inscrição sem as duas chaves é recusada aqui, não lá na frente", () => {
+    expect(core.corpoDaInscricao(null)).toBeNull()
+    expect(core.corpoDaInscricao({ endpoint: "https://x/y" })).toBeNull()
+    expect(core.corpoDaInscricao({ endpoint: "https://x/y", keys: { p256dh: "a" } })).toBeNull()
+    expect(core.corpoDaInscricao({ keys: { p256dh: "a", auth: "b" } })).toBeNull()
+  })
+})

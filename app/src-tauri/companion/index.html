@@ -825,6 +825,27 @@ function apiAction(body) {
     if (r.status !== 202) return r.text().then(function (t) { throw new Error(t || ("action " + r.status)); });
   });
 }
+/* A6 — as duas chamadas do aviso com a tela fechada. Mesma postura das
+   outras: 401 derruba a credencial, erro vira mensagem legível. */
+function apiPushChave() {
+  return fetch("/api/push/chave", { headers: authHeaders() }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) throw new Error("chave de aviso " + r.status);
+    return r.json();
+  });
+}
+function apiPushInscricao(metodo, corpo) {
+  return fetch("/api/push", {
+    method: metodo,
+    headers: corpo
+      ? Object.assign({ "Content-Type": "application/json" }, authHeaders())
+      : authHeaders(),
+    body: corpo ? JSON.stringify(corpo) : undefined,
+  }).then(function (r) {
+    if (r.status === 401) { onUnauthorized(); throw new Error("401"); }
+    if (!r.ok) return r.text().then(function (t) { throw new Error(t || ("push " + r.status)); });
+  });
+}
 function apiUpload(file) {
   if (MOCK) {
     return new Promise(function (res) {
@@ -1012,6 +1033,92 @@ function toggleNotif() {
   renderBell();
   if (!canNativeNotify()) noteDegradedNotif();
 }
+// ---------------- A6 · aviso com a tela fechada (Web Push) ----------------
+/* O canal acima só existe com a página ABERTA. Este funciona com o Firefox
+   fechado e o aparelho bloqueado: o Mac cifra o aviso (RFC 8291) e o serviço de
+   push do navegador entrega. Opt-in de verdade, por aparelho: sem o gesto aqui,
+   o Mac não tem para onde mandar. Desligar desinscreve nos dois lados.
+
+   Sem service worker, sem PushManager ou em contexto inseguro (http da LAN), o
+   interruptor não aparece: prometer aviso que não chega é pior que não ter. */
+function podePush() {
+  return (
+    !MOCK &&
+    typeof navigator !== "undefined" &&
+    "serviceWorker" in navigator &&
+    typeof PushManager !== "undefined" &&
+    window.isSecureContext === true
+  );
+}
+function inscricaoAtual() {
+  if (!podePush()) return Promise.resolve(null);
+  return navigator.serviceWorker.ready
+    .then(function (reg) { return reg.pushManager.getSubscription(); })
+    .catch(function () { return null; });
+}
+function renderPush() {
+  var sw = $("#swPush");
+  if (sw) sw.classList.toggle("on", !!S.pushOn);
+}
+function conferirPush() {
+  inscricaoAtual().then(function (sub) {
+    S.pushOn = !!sub;
+    renderPush();
+  });
+}
+function ligarPush() {
+  var reg = null;
+  return navigator.serviceWorker.ready
+    .then(function (r) {
+      reg = r;
+      return typeof Notification === "undefined" || Notification.permission === "granted"
+        ? Notification.permission
+        : Notification.requestPermission();
+    })
+    .then(function (permissao) {
+      if (permissao !== "granted") throw new Error("permissão negada");
+      return apiPushChave();
+    })
+    .then(function (r) {
+      var bytes = Core && Core.chaveDoServidorParaBytes(r && r.chave);
+      if (!bytes) throw new Error("o Mac não devolveu uma chave de aviso válida");
+      return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes });
+    })
+    .then(function (sub) {
+      var corpo = Core && Core.corpoDaInscricao(sub.toJSON());
+      if (!corpo) throw new Error("inscrição veio sem as chaves");
+      return apiPushInscricao("POST", corpo);
+    });
+}
+function desligarPush() {
+  return inscricaoAtual()
+    .then(function (sub) { return sub ? sub.unsubscribe() : true; })
+    .then(function () { return apiPushInscricao("DELETE", null); });
+}
+function togglePush() {
+  if (S.pushBusy) return;
+  S.pushBusy = true;
+  var ligando = !S.pushOn;
+  var passo = ligando ? ligarPush() : desligarPush();
+  passo
+    .then(function () {
+      S.pushOn = ligando;
+      showNote(ligando
+        ? "Vou avisar neste aparelho mesmo com a tela apagada."
+        : "Não aviso mais com a tela apagada neste aparelho.");
+    })
+    .catch(function (e) {
+      // Falhou é falhou: o interruptor não pode ficar ligado mentindo.
+      S.pushOn = false;
+      showNote("Não consegui ligar o aviso com a tela fechada: " + (e && e.message ? e.message : e));
+    })
+    .then(function () {
+      S.pushBusy = false;
+      renderPush();
+      conferirPush();
+    });
+}
+
 /* título piscando enquanto a aba está em background (para ao voltar) */
 var baseTitle = document.title, titleFlashTimer = null, titleFlashOn = false;
 function startTitleFlash(count) {
@@ -1358,7 +1465,12 @@ function prefsHtml() {
   return '<h3>Ajustes</h3><div class="grp">' +
     '<div class="it"><span class="m"><b>Tema</b></span><span class="seg">' + seg("system", "Sistema") + seg("light", "Claro") + seg("dark", "Escuro") + '</span></div>' +
     '<div class="it"><span class="m"><b>Notificações</b><small>Avisar quando a frota pedir você</small></span>' +
-    '<button class="sw' + (notifOn() ? " on" : "") + '" id="swNotif" role="switch" aria-label="Notificações"></button></div></div>' +
+    '<button class="sw' + (notifOn() ? " on" : "") + '" id="swNotif" role="switch" aria-label="Notificações"></button></div>' +
+    (podePush()
+      ? '<div class="it"><span class="m"><b>Avisar com a tela fechada</b><small>Chega com o navegador fechado. O aviso vai cifrado pelo serviço de push do navegador.</small></span>' +
+        '<button class="sw' + (S.pushOn ? " on" : "") + '" id="swPush" role="switch" aria-label="Avisar com a tela fechada"></button></div>'
+      : '') +
+    '</div>' +
     '<div class="lbl">Este aparelho</div><div class="grp">' +
     '<div class="it"><span class="m"><b>Pareado com</b></span><span class="v">' + esc(MAQUINA || "Frota") + '</span></div>' +
     '<div class="it"><span class="m"><b>Conexão</b></span><span class="v">' + esc(conexao) + '</span></div></div>';
@@ -2365,12 +2477,19 @@ document.addEventListener("click", function (ev) {
   var fil = ev.target.closest ? ev.target.closest("[data-cfiltro]") : null;
   if (fil) { lsSet(LS_FILTRO, fil.getAttribute("data-cfiltro")); renderConversas(); return; }
   // casca: véu fecha a folha, "‹" volta uma tela, Ajustes, tema e notificações
-  var casca = ev.target.closest ? ev.target.closest("#scrim,[data-back],#btnPrefs,[data-settheme],#swNotif,[data-attnconv],[data-attnid],[data-goto]") : null;
+  var casca = ev.target.closest ? ev.target.closest("#scrim,[data-back],#btnPrefs,[data-settheme],#swNotif,#swPush,[data-attnconv],[data-attnid],[data-goto]") : null;
   if (casca) {
     if (casca.id === "scrim") { closeSheet(); return; }
     if (casca.hasAttribute("data-back")) { goBack(); return; }
-    if (casca.id === "btnPrefs") { openSheet({ kind: "prefs" }, prefsHtml()); return; }
+    if (casca.id === "btnPrefs") {
+      openSheet({ kind: "prefs" }, prefsHtml());
+      // Quem sabe se o aparelho está inscrito é o NAVEGADOR: reler ao abrir
+      // evita interruptor mentindo depois de limpar dados ou trocar de aparelho.
+      conferirPush();
+      return;
+    }
     if (casca.id === "swNotif") { toggleNotif(); return; }
+    if (casca.id === "swPush") { togglePush(); return; }
     if (casca.hasAttribute("data-settheme")) {
       var modo = casca.getAttribute("data-settheme");
       if (modo === "system") { try { localStorage.removeItem(LS_THEME); } catch (e) {} } else lsSet(LS_THEME, modo);
@@ -2614,7 +2733,12 @@ setTimeout(function () { $("#app").classList.remove("noanim"); }, 60);
    contexto inseguro (http na LAN) navigator.serviceWorker nem existe: degrada
    sem drama, o banner de offline continua cobrindo a honestidade. */
 if (!MOCK && "serviceWorker" in navigator) {
-  try { navigator.serviceWorker.register("sw.js"); } catch (e) {}
+  try {
+    navigator.serviceWorker.register("sw.js");
+    // A6: o interruptor do aviso com a tela fechada nasce refletindo o que o
+    // NAVEGADOR sabe, não um palpite guardado por nós.
+    conferirPush();
+  } catch (e) {}
 }
 /* C4 — pareamento v2: #pair=<token de uso único> na URL dispara a troca pelo
    token definitivo (com aceite humano no Mac). O fragment some da URL já. */

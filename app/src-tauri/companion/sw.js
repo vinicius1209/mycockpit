@@ -13,7 +13,7 @@
    shell + banner honesto, nunca tela branca.
    ============================================================ */
 
-var CACHE = "frota-companion-shell-v7"; /* 19/09: cara de app nativo (início, folhas, fio) */
+var CACHE = "frota-companion-shell-v8"; /* 19/09: aviso com a tela fechada (A6) */
 var SHELL = [
   "/",
   "/core.js",
@@ -61,6 +61,59 @@ self.addEventListener("fetch", function (e) {
         if (e.request.mode === "navigate") return caches.match("/");
         return Promise.reject(new Error("offline sem cache"));
       });
+    })
+  );
+});
+
+/* ============================================================
+   A6 · aviso com a tela fechada.
+
+   O Mac cifra o aviso ponta a ponta (RFC 8291) e o serviço de push do
+   navegador só transporta bytes. Aqui ele chega decifrado pelo próprio
+   navegador, e a única coisa que o worker faz é mostrar e, no toque, levar à
+   tela certa.
+
+   Push sem corpo legível não vira notificação inventada: mostra o aviso
+   genérico, porque prometer o que não se sabe é pior do que dizer pouco.
+   ============================================================ */
+
+self.addEventListener("push", function (e) {
+  var aviso = { titulo: "FROTA", corpo: "Algo pede você.", url: "/", tag: "frota" };
+  try {
+    var lido = e.data ? e.data.json() : null;
+    if (lido && typeof lido === "object") {
+      aviso.titulo = String(lido.titulo || aviso.titulo);
+      aviso.corpo = String(lido.corpo || aviso.corpo);
+      aviso.url = String(lido.url || aviso.url);
+      aviso.tag = String(lido.tag || aviso.tag);
+    }
+  } catch (err) { /* corpo ilegível: segue o genérico */ }
+  e.waitUntil(
+    self.registration.showNotification(aviso.titulo, {
+      body: aviso.corpo,
+      tag: aviso.tag,
+      renotify: true,
+      icon: "/icon-192.png",
+      badge: "/icon-192.png",
+      data: { url: aviso.url },
+    })
+  );
+});
+
+/* Tocar leva à conversa: reusa a aba aberta quando existe (navegar nela é mais
+   rápido e não multiplica sessões), senão abre uma. */
+self.addEventListener("notificationclick", function (e) {
+  e.notification.close();
+  var destino = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function (janelas) {
+      for (var i = 0; i < janelas.length; i++) {
+        var j = janelas[i];
+        if (new URL(j.url).origin === self.location.origin) {
+          return j.navigate(destino).then(function (c) { return c && c.focus() })
+        }
+      }
+      return self.clients.openWindow(destino);
     })
   );
 });

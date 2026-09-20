@@ -149,6 +149,10 @@ declare global {
       recusados: { nome: string; motivo: string }[]
     }
     rotuloDaSoltura(quantos: number | null | undefined): string | null
+    chaveDoServidorParaBytes(b64: string | null | undefined): Uint8Array | null
+    corpoDaInscricao(
+      json: { endpoint?: string; keys?: { p256dh?: string; auth?: string } } | null | undefined,
+    ): { endpoint: string; p256dh: string; auth: string } | null
     avisoDeRecusa(
       recusados: { nome: string; motivo: string }[] | null | undefined,
     ): string | null
