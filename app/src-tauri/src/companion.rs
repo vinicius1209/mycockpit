@@ -14,7 +14,7 @@
 //! há 30 dias sai do conjunto de credenciais; o arquivo nasce 0600.
 
 use crate::attachments::{self, Attachment};
-use crate::{companion_maquina, companion_rede};
+use crate::{companion_maquina, companion_push, companion_rede};
 use axum::{
     extract::{
         ws::{Message, WebSocket},
@@ -104,6 +104,11 @@ struct Device {
     paired_at: u64,
     /// Epoch ms da última requisição autenticada (None = nunca visto pós-boot).
     last_seen_at: Option<u64>,
+    /// A6 — inscrição de Web Push deste aparelho, quando ele aceitou receber
+    /// aviso com a tela fechada. `None` = não aceitou (o padrão: a decisão é
+    /// humana, e opt-in nunca se presume).
+    #[serde(default)]
+    push: Option<companion_push::Subscricao>,
 }
 
 /// Conjunto VIVO de credenciais aceitas pelo guard: o legado (se ainda existe)
@@ -832,6 +837,8 @@ pub async fn companion_pair_decide(
         token,
         paired_at: now_epoch_ms(),
         last_seen_at: None,
+        // Aparelho novo não recebe aviso com a tela fechada até pedir (A6).
+        push: None,
     };
     let devices = state
         .auth
@@ -964,6 +971,9 @@ fn build_router(ctx: Ctx, guard_state: Guard) -> Router {
         .route("/ws", get(ws_upgrade))
         .route("/action", post(post_action))
         .route("/attachment", post(post_attachment))
+        // A6 — o aparelho se inscreve (e desiste) do aviso com a tela fechada.
+        .route("/push", post(post_push).delete(delete_push))
+        .route("/push/chave", get(get_push_chave))
         .layer(middleware::from_fn_with_state(guard_state.clone(), guard))
         .layer(DefaultBodyLimit::max(BODY_CAP));
     // C4 — pareamento v2: rotas SEM Bearer (a credencial ainda não existe; o
@@ -1777,6 +1787,134 @@ fn resolve_uploads(uploads: &HashMap<String, Attachment>, ids: &[String]) -> Res
 }
 
 /// POST /api/attachment — multipart (campo `file` + `convId` opcional), cap
+// ---------------- A6 · aviso com a tela fechada ----------------
+//
+// O aparelho se inscreve no serviço de push do NAVEGADOR dele e nos entrega o
+// endereço + as chaves. Guardamos isso junto do aparelho pareado (mesmo arquivo
+// 0600): inscrição é credencial de entrega, não pode viver solta. Revogar o
+// aparelho leva a inscrição junto, porque é a mesma linha.
+
+/// A chave pública deste Mac, que o celular precisa para se inscrever.
+async fn get_push_chave(AxState(ctx): AxState<Ctx>) -> Response {
+    match chave_vapid(&ctx.app) {
+        Ok(chave) => Json(json!({ "chave": companion_push::chave_publica_b64(&chave) })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// O aparelho aceitou receber aviso com a tela fechada.
+async fn post_push(
+    AxState(ctx): AxState<Ctx>,
+    principal: Option<Extension<AuthPrincipal>>,
+    Json(body): Json<Value>,
+) -> Response {
+    let Some(Extension(AuthPrincipal(id))) = principal else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    let sub: companion_push::Subscricao = match serde_json::from_value(body) {
+        Ok(s) => s,
+        Err(e) => return (StatusCode::BAD_REQUEST, format!("inscrição inválida: {e}")).into_response(),
+    };
+    // Endpoint que não é https (ou não é URL) nunca entra no arquivo: o erro
+    // aparece aqui, não na hora de avisar.
+    if let Err(e) = companion_push::origem_do_endpoint(&sub.endpoint) {
+        return (StatusCode::BAD_REQUEST, e).into_response();
+    }
+    match guardar_push(&ctx.app, &id, Some(sub)) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// O aparelho desistiu do aviso (ou o navegador trocou a inscrição).
+async fn delete_push(
+    AxState(ctx): AxState<Ctx>,
+    principal: Option<Extension<AuthPrincipal>>,
+) -> Response {
+    let Some(Extension(AuthPrincipal(id))) = principal else {
+        return StatusCode::UNAUTHORIZED.into_response();
+    };
+    match guardar_push(&ctx.app, &id, None) {
+        Ok(()) => StatusCode::NO_CONTENT.into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e).into_response(),
+    }
+}
+
+/// Grava a inscrição (ou a tira) no aparelho pareado, em disco e no conjunto
+/// vivo do guard — senão avisar dependeria de reiniciar o servidor.
+fn guardar_push(
+    app: &AppHandle,
+    device_id: &str,
+    sub: Option<companion_push::Subscricao>,
+) -> Result<(), String> {
+    let mut devices = load_devices(app);
+    aplicar_push(&mut devices, device_id, sub.clone())?;
+    save_devices(app, &devices)?;
+    let state = app.state::<CompanionState>();
+    if let Ok(mut auth) = state.auth.lock() {
+        if let Some(d) = auth.devices.iter_mut().find(|d| d.id == device_id) {
+            d.push = sub;
+        }
+    }
+    Ok(())
+}
+
+/// Regra pura da inscrição: entra (ou sai) no aparelho certo, e aparelho que
+/// não está mais pareado é erro, não silêncio — a credencial de entrega não
+/// pode sobreviver ao vínculo que a autorizou.
+fn aplicar_push(
+    devices: &mut [Device],
+    device_id: &str,
+    sub: Option<companion_push::Subscricao>,
+) -> Result<(), String> {
+    let Some(d) = devices.iter_mut().find(|d| d.id == device_id) else {
+        return Err("aparelho não está mais pareado".into());
+    };
+    d.push = sub;
+    Ok(())
+}
+
+fn chave_vapid(app: &AppHandle) -> Result<p256::SecretKey, String> {
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))?;
+    companion_push::chave_do_mac(&dir)
+}
+
+/// Front → Rust: manda o aviso aos aparelhos inscritos. QUEM decide avisar é o
+/// app (ele conhece a frota e o que é episódio novo); aqui é só transporte.
+/// Devolve quantos receberam, e inscrição morta sai do arquivo na hora.
+#[tauri::command]
+pub async fn companion_push_avisar(
+    app: AppHandle,
+    aviso: companion_push::Aviso,
+) -> Result<usize, String> {
+    let chave = chave_vapid(&app)?;
+    let agora_s = now_epoch_ms() / 1_000;
+    let inscritos: Vec<(String, companion_push::Subscricao)> = load_devices(&app)
+        .into_iter()
+        .filter_map(|d| d.push.map(|p| (d.id, p)))
+        .collect();
+    let mut entregues = 0usize;
+    let mut mortas: Vec<String> = Vec::new();
+    for (id, sub) in inscritos {
+        match companion_push::enviar(&sub, &aviso, &chave, agora_s).await {
+            companion_push::Entrega::Entregue => entregues += 1,
+            companion_push::Entrega::InscricaoMorta => mortas.push(id),
+            companion_push::Entrega::Falhou(motivo) => {
+                log::warn!("[companion] aviso não saiu para {id}: {motivo}");
+            }
+        }
+    }
+    for id in mortas {
+        // O navegador do aparelho descartou a inscrição: guardar não adianta, e
+        // tentar de novo a cada aviso só gasta rede.
+        let _ = guardar_push(&app, &id, None);
+    }
+    Ok(entregues)
+}
+
 /// 10MB, só imagem/PDF (allowlist do save_to_disk). Salva pelo MESMO núcleo
 /// dos anexos do desktop e devolve só {attachmentId} (nunca o path).
 async fn post_attachment(AxState(ctx): AxState<Ctx>, mut mp: Multipart) -> Response {
@@ -2681,6 +2819,53 @@ mod tests {
         ));
     }
 
+    fn aparelho(id: &str) -> Device {
+        Device {
+            id: id.into(),
+            name: "S24".into(),
+            token: "feedfacefeedfacefeedfacefeedface".into(),
+            paired_at: 1,
+            last_seen_at: None,
+            push: None,
+        }
+    }
+
+    fn inscricao() -> companion_push::Subscricao {
+        companion_push::Subscricao {
+            endpoint: "https://updates.push.services.mozilla.com/wpush/v2/gAAA".into(),
+            p256dh: "BCVxsr7N_eNgVRqvHtD0zTZsEc6-VV-JvLexhqUzORcxaOzi6-AYWXvTBHm4bjyPjs7Vd8pZGH6SRpkNtoIAiw4".into(),
+            auth: "BTBZMqHH6r4Tts7J_aSIgg".into(),
+        }
+    }
+
+    #[test]
+    fn a6_a_inscricao_entra_no_aparelho_certo_e_sai_quando_desiste() {
+        let mut devices = vec![aparelho("dev-1"), aparelho("dev-2")];
+        aplicar_push(&mut devices, "dev-2", Some(inscricao())).unwrap();
+        assert!(devices[0].push.is_none(), "o outro aparelho não foi tocado");
+        assert_eq!(devices[1].push.as_ref().unwrap(), &inscricao());
+
+        aplicar_push(&mut devices, "dev-2", None).unwrap();
+        assert!(devices[1].push.is_none());
+    }
+
+    #[test]
+    fn a6_aparelho_despareado_nao_guarda_inscricao() {
+        let mut devices = vec![aparelho("dev-1")];
+        let erro = aplicar_push(&mut devices, "sumido", Some(inscricao())).unwrap_err();
+        assert!(erro.contains("não está mais pareado"), "erro inesperado: {erro}");
+    }
+
+    #[test]
+    fn a6_aparelho_novo_nasce_sem_aviso_e_o_arquivo_sobrevive_ao_campo_novo() {
+        assert!(aparelho("dev-1").push.is_none(), "opt-in nunca se presume");
+        // Arquivo gravado ANTES do A6 (sem o campo) continua lendo.
+        let antigo = r#"[{"id":"d1","name":"S24","token":"ff","pairedAt":1,"lastSeenAt":null}]"#;
+        let lidos: Vec<Device> = serde_json::from_str(antigo).unwrap();
+        assert_eq!(lidos.len(), 1);
+        assert!(lidos[0].push.is_none());
+    }
+
     #[test]
     fn c4_auth_set_casa_legado_e_por_aparelho() {
         let a = AuthSet {
@@ -2691,6 +2876,7 @@ mod tests {
                 token: "feedfacefeedfacefeedfacefeedface".into(),
                 paired_at: 1,
                 last_seen_at: None,
+                push: None,
             }],
         };
         assert_eq!(a.match_token(TOK).as_deref(), Some("legacy"));
@@ -2720,6 +2906,7 @@ mod tests {
                 // (o `1` de antes era "pareado em 1970").
                 paired_at: now_epoch_ms(),
                 last_seen_at: None,
+                push: None,
             }],
         }));
         let r = guarded_router(Guard::with_auth(auth.clone()));
@@ -2802,8 +2989,8 @@ mod tests {
         let auth = Arc::new(Mutex::new(AuthSet {
             legacy: None,
             devices: vec![
-                Device { id: "velho".into(), name: "Android".into(), token: vencido.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 31 * dia) },
-                Device { id: "novo".into(), name: "Android".into(), token: ativo.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 2 * dia) },
+                Device { id: "velho".into(), name: "Android".into(), token: vencido.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 31 * dia) , push: None },
+                Device { id: "novo".into(), name: "Android".into(), token: ativo.into(), paired_at: agora - 90 * dia, last_seen_at: Some(agora - 2 * dia) , push: None },
             ],
         }));
         let r = guarded_router(Guard::with_auth(auth.clone()));
@@ -2818,8 +3005,8 @@ mod tests {
         let agora = now_epoch_ms();
         let dia = 24 * 60 * 60 * 1000;
         let mut devices = vec![
-            Device { id: "a".into(), name: "x".into(), token: "t1".into(), paired_at: agora - 40 * dia, last_seen_at: None },
-            Device { id: "b".into(), name: "y".into(), token: "t2".into(), paired_at: agora - 40 * dia, last_seen_at: Some(agora - dia) },
+            Device { id: "a".into(), name: "x".into(), token: "t1".into(), paired_at: agora - 40 * dia, last_seen_at: None , push: None },
+            Device { id: "b".into(), name: "y".into(), token: "t2".into(), paired_at: agora - 40 * dia, last_seen_at: Some(agora - dia) , push: None },
         ];
         assert_eq!(remover_vencidos(&mut devices, agora), 1);
         assert_eq!(devices[0].id, "b");

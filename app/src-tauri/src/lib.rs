@@ -29,6 +29,7 @@ mod codex_appserver;
 mod codex_resume_guard;
 mod companion;
 mod companion_maquina;
+mod companion_push;
 mod companion_rede;
 mod companion_tailnet;
 mod context;
@@ -1077,6 +1078,7 @@ pub fn run() {
             companion::companion_list_devices,
             companion::companion_pair_decide,
             companion::companion_revoke_device,
+            companion::companion_push_avisar,
             companion::set_companion_snapshot,
             companion::companion_conv_updated,
             companion::companion_action_result
