@@ -8,7 +8,7 @@
   "arquivos": {
     "components/chat/ChatPanel.tsx": 1063,
     "components/chat/MessageList.tsx": 1487,
-    "lib/companion.ts": 612,
+    "lib/companion.ts": 564,
     "lib/db.ts": 2023,
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 806,

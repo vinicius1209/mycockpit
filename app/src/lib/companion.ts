@@ -13,17 +13,21 @@
 // doc). NÃO depende de nenhuma superfície montada: tudo sai dos stores direto.
 
 import { invoke } from "@tauri-apps/api/core"
+import { avisarNoCelular } from "@/lib/companionAviso"
+import {
+  extrasAtuais,
+  maybeLoadDeskMetas,
+  maybeLoadSpecialists,
+  maybeRefreshExtras,
+  zerarExtras,
+} from "@/lib/companionExtras"
 import type { CompanionDevicesInfo } from "@/lib/companionAparelhos"
 import type { CompanionInfo } from "@/lib/companionEndereco"
 import { listen } from "@tauri-apps/api/event"
 import { AGENTS, availability } from "@/lib/agents"
 import { projectForCwd, sessionPlace } from "@/lib/externalSessions"
 import type { ApprovalData, QuestionData } from "@/lib/interaction"
-import {
-  isTauri,
-  loadLedger,
-  listRecentDeliveries,
-} from "@/lib/db"
+import { isTauri } from "@/lib/db"
 import { ledgerCostsForToday } from "@/lib/companionCosts"
 export * from "@/lib/companionTypes"
 import {
@@ -352,72 +356,20 @@ export function buildCompanionSnapshot(
 
 /** Coalescing do push: no máx. 1 invoke a cada 500ms (≤2Hz). */
 const PUSH_MIN_INTERVAL_MS = 500
-/** Cache do ledger/entregas: re-lê o DB no máx. a cada 30s. */
-const EXTRAS_TTL_MS = 30_000
-
 let started = false
 let unsubs: (() => void)[] = []
 let pushTimer: ReturnType<typeof setTimeout> | null = null
 let lastPushAt = 0
 let lastSentKey: string | null = null
-let extrasCache: CompanionExtras = EMPTY_EXTRAS
-let extrasAt = 0
-
-/** Metas de conversa de TODOS os projetos, carregadas lazy (1x por projeto):
- *  o deskConvId do snapshot sai de conversationsByProject, mas o desktop só
- *  carrega metas sob demanda — sem este empurrão, projetos nunca abertos na
- *  sessão apareceriam sem mesa no celular. loadProjectConversations é no-op
- *  quando já carregado; o setState dela dispara novo push sozinho. */
-const metasRequested = new Set<string>()
-function maybeLoadDeskMetas(): void {
-  const chat = useChat.getState()
-  for (const p of useApp.getState().projects) {
-    if (metasRequested.has(p.id) || chat.conversationsByProject[p.id]) continue
-    metasRequested.add(p.id)
-    void chat.loadProjectConversations(p.id).catch(() => {
-      metasRequested.delete(p.id) // falhou → tenta de novo no próximo push
-    })
-  }
-}
-
-/** Especialistas no snapshot (C2): garante os presets GLOBAIS carregados no
- *  store — headless, o CommandConsole (que faz o load no desktop) pode nunca
- *  montar. Só dispara quando o store ainda não carregou NADA (loaded false):
- *  nunca sobrescreve um load por-projeto já feito pela UI. Falhou → tenta de
- *  novo no próximo push. */
-let specialistsRequested = false
-function maybeLoadSpecialists(): void {
-  if (specialistsRequested || usePresets.getState().loaded) return
-  specialistsRequested = true
-  void usePresets
-    .getState()
-    .load(null)
-    .catch(() => {
-      specialistsRequested = false
-    })
-}
-
-function maybeRefreshExtras(): void {
-  if (Date.now() - extrasAt < EXTRAS_TTL_MS) return
-  extrasAt = Date.now()
-  const startOfToday = new Date()
-  startOfToday.setHours(0, 0, 0, 0)
-  void Promise.all([loadLedger(startOfToday.getTime()), listRecentDeliveries(6)])
-    .then(([ledger, deliveries]) => {
-      extrasCache = { ledger, deliveries }
-      schedulePush() // dados novos → re-empurra (dedupe segura se nada mudou)
-    })
-    .catch(() => {})
-}
 
 function pushNow(): void {
   const endSpan = perfSpan("companion") // S7 (no-op sem mc.office.perf)
   try {
     lastPushAt = Date.now()
-    maybeRefreshExtras()
+    maybeRefreshExtras(schedulePush)
     maybeLoadDeskMetas()
     maybeLoadSpecialists()
-    const snapshot = buildCompanionSnapshot(extrasCache)
+    const snapshot = buildCompanionSnapshot(extrasAtuais())
     // dedupe ESTRUTURAL antes do invoke (mesmo padrão do updateTray): o subscribe
     // dispara a cada set dos stores, mas só atravessamos a ponte quando o payload
     // muda de verdade.
@@ -427,6 +379,11 @@ function pushNow(): void {
     invoke("set_companion_snapshot", { snapshot }).catch(() => {
       lastSentKey = null // comando pode não existir ainda — não trava o dedupe
     })
+    // A6: o que PEDE VOCÊ também vai ao celular com a tela fechada. A regra
+    // (episódio novo, um aviso só, e nada quando a página está aberta) mora em
+    // `companionAviso.ts`; aqui é só o gatilho, no mesmo ponto onde o snapshot
+    // muda de verdade.
+    void avisarNoCelular(snapshot)
   } finally {
     endSpan()
   }
@@ -504,17 +461,12 @@ export function stopCompanionBridge(): void {
     pushTimer = null
   }
   clearPings()
-  metasRequested.clear()
-  specialistsRequested = false
+  zerarExtras()
   lastPushAt = 0
   lastSentKey = null
-  extrasCache = EMPTY_EXTRAS
-  extrasAt = 0
 }
 
 // ─────────────────────────────── servidor (comandos Rust) + gate pelo setting
-
-
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
