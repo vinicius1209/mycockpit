@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Aba Conversa · hoje vs proposta</title>
+<style>
+  /* Tokens do tema escuro, copiados de app/src/index.css (21/09/2026). */
+  :root{
+    --background:#0a0b0d;--rail:#0c0d10;--card:#141619;--secondary:#191c20;--accent:#1e2126;
+    --foreground:#e7e8ea;--muted-foreground:#9aa0a7;--faint:#687078;
+    --border:rgba(255,255,255,.08);--divisor:rgba(255,255,255,.032);
+    --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
+    --brass:#e4a862;--st-error:#f2766b;--st-warning:#e4a862;
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 60px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:880px}
+  .palco{display:flex;gap:28px;margin-top:24px;align-items:flex-start;flex-wrap:wrap}
+  .coluna{width:380px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin-bottom:10px;display:flex;gap:8px;align-items:center}
+  .legenda b{color:var(--foreground);font-weight:500}
+  .painel{background:var(--card);border-radius:12px;box-shadow:0 1px 2px rgba(0,0,0,.4),0 0 0 1px var(--border);height:760px;display:flex;flex-direction:column;overflow:hidden}
+  .abas{display:flex;gap:4px;padding:8px 10px 6px}
+  .aba{flex:1;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--faint)}
+  .aba.ativa{background:var(--sel);color:var(--foreground)}
+  .aba svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .rolagem{flex:1;overflow:auto}
+  .label{font:11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .dim{color:var(--muted-foreground)} .faint{color:var(--faint)}
+  .chip{height:24px;padding:0 8px;border-radius:6px;display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--foreground);background:none;border:0;cursor:default}
+  .chip:hover{background:var(--sel-hover)}
+  .chip.borda{box-shadow:inset 0 0 0 1px var(--border)}
+  svg.i{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  /* ---------- HOJE ---------- */
+  .hoje .topo{display:flex;align-items:center;min-height:44px;padding:0 20px;gap:6px}
+  .hoje .topo .txt{flex:1;font-size:11px;color:var(--muted-foreground)}
+  .hoje section{padding:10px 20px 14px}
+  .hoje section .label{margin-bottom:10px;display:block}
+  .hoje .pedido{font-size:13px;color:rgba(231,232,234,.85);line-height:1.6}
+  .hoje .acoes{display:flex;gap:4px;margin-top:8px;margin-left:-4px}
+  .plano{border-radius:10px;box-shadow:inset 0 0 0 1px var(--border);padding:10px 12px}
+  .plano .cab{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+  .etapa{display:flex;gap:8px;padding:4px 0;font-size:12px;line-height:1.45}
+  .etapa.feita{color:var(--muted-foreground)}
+  .nota{position:relative;margin:6px 20px 0;padding:8px 10px;border-radius:8px;background:rgba(242,118,107,.07);box-shadow:inset 0 0 0 1px rgba(242,118,107,.22);font-size:11.5px;line-height:1.45;color:#f0b9b3}
+  .nota b{color:#ffd6d1;font-weight:500}
+
+  /* ---------- PROPOSTA ---------- */
+  .agora{padding:14px 20px 14px;border-bottom:1px solid var(--divisor)}
+  .agora .linha1{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .pulso{width:6px;height:6px;border-radius:50%;background:rgba(231,232,234,.45);animation:pulso 1.6s ease-in-out infinite}
+  @keyframes pulso{50%{opacity:.35}}
+  .agora .pedido{font-size:13px;line-height:1.55;color:var(--foreground);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .progresso{margin-top:10px;display:flex;align-items:center;gap:8px;font-size:12px}
+  .barra{flex:1;height:3px;border-radius:2px;background:var(--sel);overflow:hidden}
+  .barra i{display:block;height:100%;background:rgba(231,232,234,.55)}
+  .secao{padding:12px 12px 4px}
+  .secao > .cab{display:flex;align-items:center;gap:8px;padding:0 8px 8px}
+  .secao > .cab .label{flex:1}
+  .turno{position:relative;display:grid;grid-template-columns:44px 1fr;gap:0 8px;padding:8px;border-radius:8px}
+  .turno:hover{background:var(--sel-hover)}
+  .turno.atual{background:var(--sel)}
+  .turno .hora{font:11px/1.6 var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;padding-top:1px}
+  .turno .pedido{font-size:12.5px;line-height:1.45;color:rgba(231,232,234,.88);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .turno .fatos{grid-column:2;display:flex;flex-wrap:wrap;gap:2px 8px;margin-top:4px;font:11px/1.5 var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;align-items:center}
+  .turno .fatos .estado{font-family:var(--sans);display:inline-flex;align-items:center;gap:4px}
+  .turno .fatos .erro{color:var(--st-error)} .turno .fatos .aviso{color:var(--st-warning)}
+  .turno .resposta{grid-column:2;margin-top:5px;font-size:12px;line-height:1.5;color:var(--muted-foreground);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .turno .planinho{grid-column:2;margin-top:6px;display:inline-flex;align-items:center;gap:6px;font-size:11.5px;color:var(--muted-foreground)}
+  .trilho{position:absolute;left:29px;top:30px;bottom:-8px;width:1px;background:var(--border)}
+  .turno:last-child .trilho{display:none}
+  .leitura{margin:4px 20px 16px;padding:10px 12px;border-radius:10px;box-shadow:inset 0 0 0 1px var(--border);font-size:12px;line-height:1.5}
+  .leitura .t{display:flex;gap:8px;align-items:flex-start}
+  .leitura .acoes{margin-top:8px;display:flex;gap:6px;margin-left:21px}
+  .fixados{padding:4px 20px 16px}
+  .fixado{display:flex;gap:8px;padding:4px 0;font-size:12px;line-height:1.5}
+  .fixado i{width:4px;height:4px;border-radius:50%;background:var(--muted-foreground);margin-top:8px;flex:none}
+  .porque{margin-top:26px;max-width:1180px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .porque div{background:var(--card);border-radius:10px;padding:14px 16px;box-shadow:0 0 0 1px var(--border);font-size:12.5px;line-height:1.55;color:var(--muted-foreground)}
+  .porque b{display:block;color:var(--foreground);font-weight:500;margin-bottom:4px;font-size:13px}
+</style>
+</head>
+<body>
+<h1>Aba Conversa: hoje e proposta</h1>
+<p class="sub">Dados reais desta conversa (21/09/2026, banco do app): 12 pedidos, US$ 19,36, 5 commits. À esquerda, o que a aba mostra hoje. No meio, a proposta durante um turno. À direita, a proposta em repouso, com o estado honesto da leitura automática.</p>
+
+<div class="palco">
+
+<!-- ======================= HOJE ======================= -->
+<div class="coluna hoje">
+  <div class="legenda"><b>Hoje</b> · build #419</div>
+  <div class="painel">
+    <div class="abas">
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></div>
+      <div class="aba ativa"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M12 9v6M9 12h6"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M14 4v16"/></svg></div>
+    </div>
+    <div class="topo"><span class="txt">Fatos do fio · leitura indisponível</span>
+      <span class="chip"><svg class="i" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2 5.3M20 4v7h-7"/></svg>Atualizar</span>
+      <span class="chip"><svg class="i" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>Ajustar</span></div>
+    <div class="rolagem">
+      <section><span class="label">Pedido que abriu a conversa</span>
+        <p class="pedido">compara as imagens. Uma é do VsCode e outra é da nossa aplicação. O que voce observa que a nossa esta falha / errada ?</p>
+        <div class="acoes"><span class="chip">Copiar</span><span class="chip">Fontes</span><span class="chip">Ver no fio</span></div>
+      </section>
+      <div class="nota"><b>Fixo para sempre.</b> É a PRIMEIRA mensagem, de 3 horas e 11 pedidos atrás. Só aparece porque o "Rumo atual" depende da leitura automática, que nunca funciona em conversa real.</div>
+      <section><span class="label">Último desfecho</span>
+        <p style="display:flex;gap:8px;align-items:center;font-size:12px;color:rgba(231,232,234,.85)"><svg class="i dim" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></svg>Turno concluído</p>
+      </section>
+      <div class="nota"><b>Um estado sem conteúdo, e só o último.</b> Não diz o que concluiu, quanto levou nem quanto custou. O resumo que viria aqui também é da leitura automática.</div>
+      <section><span class="label">Etapas</span>
+        <div class="plano">
+          <div class="cab"><svg class="i" style="color:var(--brass)" viewBox="0 0 24 24"><path d="m4 7 2 2 3-3M4 17l2 2 3-3M13 8h7M13 18h7"/></svg><span class="label">Plano 2/5</span></div>
+          <div class="etapa feita"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>Contrato: kind de DeferredWork vira enum normalizado</div>
+          <div class="etapa"><svg class="i dim" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.5"/></svg>Codex: terminal que sobrevive ao turno emite DeferredWork</div>
+          <div class="etapa feita"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>Índice: só DeferredWork e processo gerenciado entram</div>
+          <div class="etapa"><svg class="i dim" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.5"/></svg>ADR-200: nota de correção</div>
+          <div class="etapa"><svg class="i dim" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="1.5"/></svg>Suítes completas, build de teste e commit</div>
+        </div>
+      </section>
+      <div class="nota"><b>As cinco foram concluídas.</b> Três atualizações se perderam às 18:22 (a escuta morava numa tela que caiu). E o ícone de "sem conclusão registrada" não tem legenda: parece "em andamento".</div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= PROPOSTA: VIVO ======================= -->
+<div class="coluna">
+  <div class="legenda"><b>Proposta</b> · durante um turno</div>
+  <div class="painel">
+    <div class="abas">
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></div>
+      <div class="aba ativa"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M12 9v6M9 12h6"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M14 4v16"/></svg></div>
+    </div>
+    <div class="agora">
+      <div class="linha1"><span class="pulso"></span><span class="label" style="flex:1">Agora · pedido das 18:12</span><span class="mono dim" style="font-size:11px">9min 40s</span></div>
+      <p class="pedido">pode fazer o trabalho em sequencia, testando, validando</p>
+      <div class="progresso"><span class="mono dim">Plano 3/5</span><span class="barra"><i style="width:60%"></i></span><span class="dim" style="font-size:12px">ADR-200: nota de correção</span></div>
+    </div>
+    <div class="rolagem">
+      <div class="secao">
+        <div class="cab"><span class="label">Histórico · 8 pedidos</span><span class="mono faint" style="font-size:11px">US$ 8,45 · 21min de trabalho</span></div>
+
+        <div class="turno atual"><span class="trilho"></span><span class="hora">18:12</span>
+          <p class="pedido">pode fazer o trabalho em sequencia, testando, validando</p>
+          <div class="fatos"><span class="estado"><span class="pulso"></span>rodando</span><span>41 ações</span><span>18 arquivos</span></div>
+          <span class="planinho"><svg class="i" style="color:var(--brass)" viewBox="0 0 24 24"><path d="m4 7 2 2 3-3M4 17l2 2 3-3M13 8h7M13 18h7"/></svg>Plano 3/5 · ver etapas</span>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:10</span>
+          <p class="pedido">acho que o certo é identificar trabalho de sub agentes, de terminais, de processos de forma agnostica…</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>1min 00s</span><span>US$ 0,71</span><span>9 ações</span></div>
+          <p class="resposta">Concordo: demorar mais de 3s é só duração, não diz nada sobre rodar em segundo plano.</p>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:04</span>
+          <p class="pedido">pode corrigir então, e commitar/finalizar seu trabalho no final</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>6min 02s</span><span>US$ 1,69</span><span>16 ações</span><span>2 commits</span></div>
+          <p class="resposta">Corrigi os cinco pontos da vista e commitei tudo em dois commits, no branch fix/copiar-nativo…</p>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:01</span>
+          <p class="pedido">vou mandar imagem na ordem ok? a primeira e aba em si, depois que eu clico em um comando abra essa segunda…</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>43s</span><span>US$ 0,29</span><span>2 imagens</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">17:48</span>
+          <p class="pedido">boa, faça isso, mas entenda que o intuito dessa aba é eu ter visibilidade justamente das coisas que são executadas em background</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>6min 23s</span><span>US$ 2,46</span><span>29 ações</span><span>9 arquivos</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">17:35</span>
+          <p class="pedido">boa, ficou show demais! Agora sobre a aba de "Bastidores", como voce avalia ela?</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>54s</span><span>US$ 0,43</span><span>3 imagens</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">17:24</span>
+          <p class="pedido">resolva os problemas</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>5min 38s</span><span>US$ 2,03</span><span>31 ações</span><span>6 arquivos</span></div>
+        </div>
+        <div class="turno"><span class="hora">17:23</span>
+          <p class="pedido">compara as imagens. Uma é do VsCode e outra é da nossa aplicação. O que voce observa que a nossa esta falha / errada ?</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>52s</span><span>US$ 0,84</span><span>2 imagens</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= PROPOSTA: REPOUSO ======================= -->
+<div class="coluna">
+  <div class="legenda"><b>Proposta</b> · em repouso, com interrupção e fixados</div>
+  <div class="painel">
+    <div class="abas">
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M4 6a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/></svg></div>
+      <div class="aba ativa"><svg viewBox="0 0 24 24"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h6a4 4 0 0 0 0-8h-4a4 4 0 0 1 0-8"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/><path d="M12 9v6M9 12h6"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg></div>
+      <div class="aba"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M14 4v16"/></svg></div>
+    </div>
+    <div class="agora">
+      <div class="linha1"><svg class="i dim" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg><span class="label" style="flex:1">Último pedido · 18:36</span><span class="mono dim" style="font-size:11px">há 1h 51min</span></div>
+      <p class="pedido">ok, acho que podemos ir commitando sim, deixando tudo limpo</p>
+      <div class="progresso" style="font-size:12px"><span class="dim">concluído em 50s · US$ 0,73 · 3 commits</span></div>
+    </div>
+    <div class="rolagem">
+      <div class="secao">
+        <div class="cab"><span class="label">Histórico · 12 pedidos</span><span class="mono faint" style="font-size:11px">US$ 19,36 · 46min de trabalho</span></div>
+        <div class="turno atual"><span class="trilho"></span><span class="hora">18:36</span>
+          <p class="pedido">ok, acho que podemos ir commitando sim, deixando tudo limpo</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>50s</span><span>US$ 0,73</span><span>3 commits</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:28</span>
+          <p class="pedido">sim, quero e aproveite para analisar o motivo do Frota ficar com tela preta quando tentei abrir o sidebar…</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>6min 53s</span><span>US$ 3,14</span><span>22 ações</span><span>12 arquivos</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:26</span>
+          <p class="pedido">essa forma de fica mostrando "sintetizando resposta após X ações…" e do nada ele muda para "trabalhando"…</p>
+          <div class="fatos"><span class="estado aviso"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="m6.5 6.5 11 11"/></svg>interrompido</span><span>você fechou a Frota · retomado às 18:26</span></div>
+        </div>
+        <div class="turno"><span class="trilho"></span><span class="hora">18:12</span>
+          <p class="pedido">pode fazer o trabalho em sequencia, testando, validando</p>
+          <div class="fatos"><span class="estado"><svg class="i" viewBox="0 0 24 24"><path d="m5 12 4.5 4.5L19 7"/></svg>concluído</span><span>13min 43s</span><span>US$ 6,47</span><span>78 ações</span><span>24 arquivos</span></div>
+          <span class="planinho"><svg class="i" style="color:var(--brass)" viewBox="0 0 24 24"><path d="m4 7 2 2 3-3M4 17l2 2 3-3M13 8h7M13 18h7"/></svg>Plano 5/5 · ver etapas</span>
+        </div>
+        <div class="turno"><span class="hora">17:23</span>
+          <p class="pedido faint" style="font-size:12px">… mais 8 pedidos · mostrar todos</p>
+        </div>
+      </div>
+
+      <div class="secao" style="padding-bottom:0"><div class="cab"><span class="label">Fixado por você</span><span class="chip" style="margin-right:-8px">Editar</span></div></div>
+      <div class="fixados">
+        <div class="fixado"><i></i><span>Não commitar em <span class="mono">main</span>; tudo em branch.</span></div>
+        <div class="fixado"><i></i><span>Guardas só mudam por ADR.</span></div>
+        <p class="faint" style="font-size:11px;margin-top:6px">Anotação sua nesta aba. Não é enviada ao agente.</p>
+      </div>
+
+      <div class="leitura">
+        <div class="t"><svg class="i dim" style="margin-top:2px" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+          <span><span style="color:var(--foreground)">Resumo automático indisponível nesta conversa.</span><br><span class="dim">Ela é maior do que o modelo local consegue ler de uma vez (recusou 79 vezes hoje). O histórico acima não depende dele.</span></span></div>
+        <div class="acoes"><span class="chip borda">Tentar de novo</span><span class="chip">Desligar o resumo</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="porque">
+  <div><b>1. O esqueleto vira o histórico, que é fato</b>Pedido, desfecho, duração, custo, ações, arquivos e commits já estão no fio. Não precisam de modelo nenhum, nunca ficam "indisponíveis" e respondem à pergunta que você faz à aba: "o que aconteceu aqui?".</div>
+  <div><b>2. "Agora" é o ÚLTIMO pedido, não o primeiro</b>O topo acompanha o turno corrente, com o plano vivo em uma linha. As etapas completas moram dentro do turno que as criou: plano antigo deixa de parecer órfão no pé da aba.</div>
+  <div><b>3. O resumo automático vira enfeite opcional, e diz a verdade</b>Quando funciona, acrescenta "rumo" e "em aberto" acima do histórico. Quando não, explica o motivo em português e sai da frente. "Ajustar leitura" vira "Fixado por você", à vista, dizendo que é anotação e não instrução ao agente.</div>
+</div>
+</body>
+</html>
