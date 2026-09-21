@@ -57,7 +57,10 @@ export function IdentityDoor({
   }, [open])
 
   return (
-    <div ref={wrapRef} className="relative">
+    // `data-foco-proprio`: o cartão do composer foca o editor em qualquer clique
+    // dentro dele, e este painel mora dentro do cartão. Sem a marca, o campo de
+    // busca do seletor nunca segurava o cursor (ver `ComposerShell`).
+    <div ref={wrapRef} data-foco-proprio className="relative">
       <Button
         variant="ghost"
         size="padrao"

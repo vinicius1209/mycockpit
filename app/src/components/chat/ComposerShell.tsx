@@ -51,7 +51,20 @@ export function ComposerShell({
       // dentro da janela (CamadaDeArrasto, R8).
       data-composer-card={focusRing ? "" : undefined}
       data-arrasto-alvo={focusRing ? "composer" : undefined}
-      onClick={focusRing ? onCardClick : undefined}
+      // Clique no cartão foca o editor, MENOS quando nasce numa região que é
+      // dona do próprio foco (`data-foco-proprio`). O seletor de identidade
+      // renderiza o painel AQUI DENTRO, sem portal, então o clique nele
+      // borbulhava até o cartão e o editor tomava o cursor de volta: abria o
+      // seletor, e o que se digitava na busca de modelo caía na mensagem. O
+      // `editor.focus()` do Lexical é adiado, por isso vencia até o autoFocus.
+      onClick={
+        focusRing
+          ? (e) => {
+              if ((e.target as HTMLElement).closest("[data-foco-proprio]")) return
+              onCardClick?.()
+            }
+          : undefined
+      }
       className={
         focusRing
           ? cn(

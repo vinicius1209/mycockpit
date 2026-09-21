@@ -145,9 +145,9 @@ export function IdentityPicker({
   return (
     <div className="w-[460px] max-w-[calc(100vw-2rem)]">
       {/* key={effectiveDest}: remonta o Command inteiro (busca + lista) ao
-          trocar de agent — zera filtro e scroll de graça, e devolve o foco pro
-          CommandInput (autoFocus do mount novo). A régua de esforço fica FORA
-          do Command de propósito: não depende de cmdk, não precisa remontar. */}
+          trocar de agent, zerando filtro e scroll de graça. A régua de esforço
+          fica FORA do Command de propósito: não depende de cmdk, não precisa
+          remontar. */}
       <Command
         key={effectiveDest}
         label="Buscar modelo"
@@ -178,8 +178,22 @@ export function IdentityPicker({
           </div>
         ) : (
           <div title={modelTitle}>
+            {/* A busca NUNCA é desabilitada, nem com o turno em voo.
+                `modelLocked` significa "não dá pra TROCAR o modelo agora", e
+                isso é garantido item a item (`disabled` em cada CommandItem
+                abaixo). Desabilitar o campo também travava OLHAR a lista, que
+                nunca foi restrição: o sintoma era abrir o seletor durante um
+                turno, digitar o nome do modelo, e o texto cair na mensagem
+                porque o campo não aceitava nada. Uma flag com dois sentidos.
+
+                autoFocus porque o painel é um cartão à mão (`IdentityDoor`),
+                sem a gestão de foco de um popover de verdade: ninguém aponta o
+                cursor pra cá. E no WebKit do macOS clicar num <button> NÃO tira
+                o foco de onde ele está, então sem isto o cursor fica no editor
+                do composer. Monta junto com o painel (render condicional) e
+                remonta no `key={effectiveDest}`. */}
             <CommandInput
-              disabled={modelLocked}
+              autoFocus
               placeholder={`Buscar modelo do ${agentLogoLabel(effectiveDest)}…`}
             />
           </div>
