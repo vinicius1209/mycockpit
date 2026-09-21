@@ -8,7 +8,7 @@
 > se absorve são REGRAS.
 
 > Leitura focada no Chat UI experimental e sua comparação com nossa execução
-> headless: [`orca-chat-ui-vs-mycockpit-headless.md`](./orca-chat-ui-vs-mycockpit-headless.md).
+> headless: [`orca-chat-ui-vs-frota-headless.md`](./orca-chat-ui-vs-frota-headless.md).
 
 ## O que o Orca é
 
@@ -34,7 +34,7 @@ Fallback final: PTY oculto digitando `/usage` e regex no TUI. Política de
 poll madura: 15min, floor 30s, backoff por streak, stale-drop 30min MAS 24h
 se a falha foi 429 ("quota é informativa; snapshot velho > 'Limited'").
 **Custo em $ e rate-limit são pipelines separados** — não misturar.
-→ Candidato a frente própria no MyCockpit: barata, provada, e custo é nossa
+→ Candidato a frente própria na Frota: barata, provada, e custo é nossa
 feature central. "Quanto da janela do plano queimei" hoje não existe aqui.
 
 ### 2. Eixos de registry que o nosso não tem

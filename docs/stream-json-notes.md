@@ -23,7 +23,7 @@ Rodando com `--allowedTools "Read,Glob,Grep"`, o agent **mesmo assim executou `B
 | `--dangerously-skip-permissions` / `--allow-dangerously-skip-permissions` | Bypassa **tudo**. Só em confiança total. |
 | `--add-dir` | Permite tools acessarem diretórios extras. |
 
-**Implicação para o MyCockpit (ADR-009 / `agent-runner.md` §7):** a política de permissão
+**Implicação para a Frota (ADR-009 / `agent-runner.md` §7):** a política de permissão
 por projeto **não** pode se apoiar em `--allowedTools` para restringir. Para *remover*
 capacidade perigosa, usar `--disallowedTools` (ou `--tools`). Para gating interativo fino
 mid-run, o caminho é o callback `canUseTool` do **Agent SDK** (reavaliar ADR-006).
@@ -59,7 +59,7 @@ Tipos realmente emitidos nesta versão (todos tratados sem crash):
 
 - Não há prompt interativo em `-p`. Restrição real = `--disallowedTools`/`--tools`;
   auto-aprovação = `--allowedTools`; bypass total = `--dangerously-skip-permissions`.
-- Default são do MyCockpit (M5): remover tools perigosas via `--disallowedTools` por
+- Default são da Frota (M5): remover tools perigosas via `--disallowedTools` por
   projeto + `--permission-mode` adequado. Confirmar interação com o `settings.json` do
   usuário (que tem `acceptEdits` global e hooks).
 

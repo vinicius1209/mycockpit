@@ -15,7 +15,7 @@
 
 ## 1. Visão
 
-O Office é uma **segunda superfície** do MyCockpit/Frota: um escritório isométrico
+O Office é uma **segunda superfície** da Frota: um escritório isométrico
 onde cada **projeto é uma sala**, cada sala tem **mesas para os agents** (Claude,
 Codex, Antigravity), e o usuário é o **boss** — um avatar que anda pelo escritório
 (WASD/setas + click-to-move), entra nas salas e vai até a mesa de um agent para

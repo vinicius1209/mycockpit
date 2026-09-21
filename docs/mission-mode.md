@@ -1,7 +1,7 @@
 # Modo Mission — times heterogêneos de agents (design + avaliação)
 
 > Estudo completo do [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent)
-> (OMO) por 3 agentes (arquitetura, filosofia/UX, encaixe no MyCockpit) + síntese.
+> (OMO) por 3 agentes (arquitetura, filosofia/UX, encaixe na Frota) + síntese.
 > Pergunta do produto: *"Opus planeja → Gemini executa front → Codex faz X →
 > Opus revisa"* — vale construir? Como? Data: 2026-07-12.
 
@@ -51,7 +51,7 @@ por si — o SDD já tem skills e agents próprios definidos; o Mission é um
 do Linear** como um tipo de run (igual o Fusion é acionável do composer), não
 uma nova superfície no switcher. O OMO mesmo aprendeu a lição das primitivas:
 a v2 do Team Mode deles abandonou o tmux acoplado e virou "script-driven +
-git worktree por membro" — exatamente o que o MyCockpit **já tem**.
+git worktree por membro" — exatamente o que a Frota **já tem**.
 
 Reuso estimado: **runtime 100%** (run_agent/adapters já são agnósticos),
 handoff 100%, worktrees 100%, padrão de store do Fusion ~70%. Código novo:
@@ -95,7 +95,7 @@ handoff 100%, worktrees 100%, padrão de store do Fusion ~70%. Código novo:
 | Coordenação por arquivos (mailbox/estado em JSON) | Injeção de resultado via `dispatchInternalPrompt` |
 | Worktree por membro (Team Mode v2) | MCPs wired no plugin |
 
-A diferença estrutural: o OMO orquestra *sessões de um harness*; o MyCockpit
+A diferença estrutural: o OMO orquestra *sessões de um harness*; a Frota
 orquestra **processos de CLIs distintas** — que é exatamente o que
 `run_agent()` + `AgentAdapter` já fazem. Nossa versão do "task tool" é spawn
 de subprocess; nossa versão do handoff é `buildHandoff()` + **o worktree/git
@@ -116,7 +116,7 @@ O buraco real: **especialização heterogênea sequencial** — "Opus planeja,
 Gemini/agy executa UI, Codex mexe no backend, Opus revisa o diff". Nenhuma
 superfície atual expressa isso. E o argumento econômico do OMO se aplica:
 executar com modelo mais barato e planejar/revisar com o mais capaz otimiza
-US$/entrega — que é literalmente a métrica-assinatura do MyCockpit.
+US$/entrega — que é literalmente a métrica-assinatura da Frota.
 
 ### Contra-argumentos (levados a sério)
 1. **Proliferação de modos.** Linear/Fusion/SDD já exigem explicação; um 4º

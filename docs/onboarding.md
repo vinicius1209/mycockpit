@@ -137,7 +137,7 @@ projetos de exemplo é PULADO — o passo 5 adiciona o primeiro projeto real.
 ```
 ┌──────────────────────────────────────────────┐
 │                                              │
-│                 ◉  MyCockpit                 │
+│                 ◉  Frota                 │
 │      Seu cockpit de code agents no macOS     │
 │                                              │
 │   Vamos verificar suas ferramentas e         │

@@ -122,5 +122,3 @@ Antes de contribuir ou alterar código, consulte a documentação canônica:
 - [`docs/STYLEGUIDE.md`](./docs/STYLEGUIDE.md): guia de design, escala tipográfica e paleta;
 - [`docs/decisions.md`](./docs/decisions.md): histórico de todas as ADRs de arquitetura;
 - [`docs/architecture.md`](./docs/architecture.md): mapa vivo de donos de estado e contratos.
-
-> **Nota de marca:** O nome público e visível do produto é **Frota**. Nomes persistidos como `mycockpit.db`, `.mycockpit/`, `mc.app` e `dev.vinicius.mycockpit` são identificadores de sistema intencionalmente mantidos por compatibilidade.

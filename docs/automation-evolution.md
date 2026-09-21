@@ -9,7 +9,7 @@
 
 A sidebar dele é orientada a OBJETOS globais, não só a conversas: "Agendado" e
 "Pull requests" são coleções cross-project de primeira classe, acima da lista de
-projetos. No MyCockpit de hoje, a sidebar só conhece projeto→conversa/feature; o
+projetos. Na Frota de hoje, a sidebar só conhece projeto→conversa/feature; o
 que é global vive escondido no switcher (Painel) ou não existe (agendamentos).
 A lição NÃO é copiar o menu — é reconhecer que **trabalho recorrente e PRs são
 entidades do cockpit**, tanto quanto conversas.

@@ -3,7 +3,7 @@
 > 12/08/2026. **Correção de premissa**: não é projeto do usuário — é clone
 > read-only de OSS do **Block** (`github.com/block/buzz`, Apache-2.0, commit
 > único squashed). Copiar REGRAS é livre; código literal exige atribuição.
-> "Levar do MyCockpit pro Buzz" seria PR upstream (DCO + CLA), não absorção.
+> "Levar da Frota pro Buzz" seria PR upstream (DCO + CLA), não absorção.
 
 ## O que é
 Workspace self-hostável onde humanos e agentes dividem as mesmas salas, e
@@ -14,7 +14,7 @@ auditoria próprios — "escopado por identidade, não por flag de permissão".
 
 ## Maturidade (o contraste que importa)
 
-| | Buzz | MyCockpit |
+| | Buzz | Frota |
 |---|---|---|
 | testes Rust | **6.506** | 381 |
 | specs Playwright | **134** | 2 |
@@ -49,7 +49,7 @@ auditoria próprios — "escopado por identidade, não por flag de permissão".
    'ainda não há intro' é ignorância — anunciar ignorância no prazo é o que
    produz a história errada."*
 
-## Trazer pro MyCockpit (ranqueado)
+## Trazer pra Frota (ranqueado)
 
 **B1 — Lints de estilo como ratchet de CI (altíssimo / baixíssimo).**
 `check-px-text-core.mjs` (proíbe px E rem arbitrário em fonte),

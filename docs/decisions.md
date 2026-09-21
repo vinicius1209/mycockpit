@@ -8018,3 +8018,112 @@ considerou.
   `cargo test` 902, vitest 4.527, `tsc -b --force`, `bun run check`.
 - **Divisões que isto exigiu:** `lib/companion.ts` 612 → 564 (os carregamentos
   preguiçosos do snapshot viraram `companionExtras.ts`).
+
+### ADR-222 · O nome é Frota até no que ninguém lê, e a compatibilidade tem prazo
+
+- **Contexto (21/09/2026):** o produto se chama Frota desde sempre na tela, mas
+  quatro nomes persistidos continuavam dizendo MyCockpit: o identificador do
+  bundle (`dev.vinicius.mycockpit`), o banco (`mycockpit.db`), a pasta do
+  projeto (`.mycockpit/`) e o prefixo dos servers MCP (`mc-*`). O `README.md`
+  registrava isso como escolha, na "Nota de marca", e ela dizia, literalmente:
+  > *"O nome público e visível do produto é **Frota**. Nomes persistidos como
+  > `mycockpit.db`, `.mycockpit/`, `mc.app` e `dev.vinicius.mycockpit` são
+  > identificadores de sistema intencionalmente mantidos por compatibilidade."*
+
+  Esta ADR **revoga** essa nota, e ela sai do README. Fica aqui inteira porque
+  decisão revogada se guarda onde as decisões moram, não num arquivo de backup
+  que ninguém abre. A nota não estava errada sobre `mc.app`, eu é que estava: não
+  é nome de bundle (o bundle é `Frota.app`, `tauri.conf.json:3`), é a chave do
+  `localStorage` onde o zustand persiste o estado do app, lida antes do React em
+  `main.tsx:23`, `browser.tsx:14` e `tray.tsx:23`.
+- **A decisão:** o dono do produto quer o nome em TUDO, sem exceção por
+  compatibilidade. Eu recomendei deixar de fora a camada que troca o
+  identificador do bundle (ganho cosmético, e é a única operação irreversível da
+  lista); ele reafirmou. Reafirmação é decisão, e a discussão fecha aqui.
+- **O que isto destrava:** a memória durável do projeto
+  (`docs/memoria-do-projeto-spec.md`) precisa de `.frota/memory/` versionada no
+  git. Sem o rename da pasta, a Frota passaria a ter DUAS casas no repositório
+  para a mesma preocupação, e `.mycockpit/.gitignore` é `*` com allowlist, então
+  uma `memory/` criada lá dentro nasceria fora do git. O rename deixou de ser
+  cosmético e virou pré-condição de arquitetura.
+- **A regra que sobra:** a única exceção permanente é a SQL das migrações.
+  Migração é história e não se edita, nem num comentário, porque a string já
+  rodou no banco de alguém. Toda outra exceção é temporária, tem prazo escrito
+  na baseline da catraca, e sai junto com a janela de compatibilidade.
+- **O custo, dito na cara:** trocar o identificador muda `app_data_dir()`, e
+  isso não é só o caminho do banco. (1) O banco precisa de cópia explícita no
+  boot, antes de o plugin SQL abrir, no mesmo padrão do snapshot de backup que
+  já existe em `lib.rs:137-178`; copiar, nunca mover. (2) O caçador de órfãos
+  casa processo pelo caminho do perfil (`browser_orfaos.rs:25`), então Chromium
+  vivo com perfil sob a raiz antiga deixa de ser reconhecido como nosso e fica
+  comendo CPU invisível: a varredura aceita as duas raízes durante a janela.
+  (3) O macOS chaveia TCC por bundle id, então microfone e reconhecimento de
+  fala voltam a pedir permissão. (4) O bundle antigo continua instalado, e dois
+  `Frota.app` com identidades diferentes deixam escrever no banco errado sem
+  perceber. (5) O Keychain guarda o OAuth dos MCPs sob o serviço
+  `dev.vinicius.mycockpit.mcp-oauth` (`mcp_auth.rs:28`): renomear sem migrar
+  obriga a religar cada server OAuth na mão. (6) Os hooks instalados em
+  `~/.claude/settings.json` mandam
+  `X-Mycockpit-Run`, e trocar sem janela quebraria a correlação SEM erro na
+  tela, que é o "rodando falso" que este repositório proíbe.
+- **Nomes persistidos que NÃO estão sob o identificador, e por isso são fáceis
+  de esquecer:** a chave `localStorage` `mc.app`, que perde tema e estado do app
+  se trocar sem ler as duas; e `MISSION_PLAN_FORMAT = "mycockpit.flight-plan"`
+  (`missionPlans.ts:13`), que é discriminador de formato GRAVADO dentro de plano
+  de missão salvo, então trocar sem aceitar o valor antigo na leitura faz plano
+  velho deixar de ser reconhecido. Os dois entram na mesma regra da janela:
+  escreve o novo, lê os dois, fecha depois por ADR.
+- **Ordem, e por que a irreversível é a última:** catraca de lint primeiro (com
+  a baseline no estado de hoje, para nada novo entrar), depois texto, pasta,
+  contrato de processo, e só então a identidade do app. Quando a camada
+  irreversível rodar, tudo o mais já está estável e o único suspeito é ela.
+  O plano completo, com as quatro camadas e os gates, está em
+  `docs/frota-rename-plan.md`.
+- **Verificação:** a catraca (`scripts/lints/nomeDoProduto.mjs`) entra ANTES da
+  primeira substituição e cobre em `bun run check` e na CI; a baseline só desce.
+  O gate da camada irreversível não é suíte verde: é o banco antigo intacto E o
+  banco novo com as mesmas conversas, custos e lições, mais um órfão de perfil
+  antigo ainda sendo detectado.
+- **CORREÇÃO (21/09/2026, mesmo dia), o que o gate não pegou:** o primeiro
+  build depois da troca abriu com a frota vazia e "Adicionar projeto" falhando
+  em silêncio. O gate acima estava satisfeito, e é por isso que ele não bastou:
+  ele olhava os dois bancos, e os dois estavam certos. O que estava errado era
+  **quem abria qual**.
+
+  O custo (1) foi lido como "copiar o arquivo". São três coisas, e só a
+  primeira tinha sido feita:
+
+  1. *A cópia do banco.* Feita, e correta: `frota.db` nasceu com os 81M.
+  2. *O nome do banco nos SETE lugares onde ele é dito.* A troca pegou só
+     `add_migrations` em `lib.rs`. Ficaram para trás o `DB_URL` do TS
+     (`lib/db.ts`) e seis leitores do Rust (`quit`, `companion`,
+     `mcp_control`, `plugin_mcp`, `agent`, `conversation_items`). Como o TS é
+     quem abre a conexão do app, o plugin SQL criou um banco NOVO e vazio com
+     o nome antigo DENTRO do diretório novo, e sem nenhuma migração aplicada
+     (elas estavam registradas no outro nome). Nada falhou: as tabelas que o TS
+     cria em runtime nasceram, as que vêm de `Migration` não, e o app ficou
+     lendo um banco de 4kB ao lado de um de 81M. **Zero erro no log.**
+  3. *As árvores que o banco endereça por caminho RELATIVO ao `app_data_dir`*
+     (`attachments/`, `evidence/`, 58M). Ficaram no diretório antigo, quer
+     dizer: banco certo, arquivo faltando em todo anexo de conversa anterior.
+     O doc-comment da migração afirmava que esses caminhos eram ABSOLUTOS e por
+     isso continuariam resolvendo; eram relativos (`attachments.rs:28`,
+     `evidence.rs:18`). A afirmação errada é o que fechou a questão cedo.
+
+  **A lei que sai disto:** *trocar um nome persistido não é trocar a string, é
+  trocar todos os leitores dela.* O comentário `// DEVE bater com
+  add_migrations no lib.rs` em `lib/db.ts` era o elo entre os dois lados, e
+  comentário não é elo. Virou teste de contrato (`lib/db.contrato.test.ts`),
+  no mesmo padrão do registry de `Capabilities`: ele lê as duas fontes e prova
+  que o TS abre o `BANCO` que o Rust migra, e que nenhum leitor do Rust usa
+  literal. Foi ele que encontrou o sexto leitor, que o grep humano perdeu.
+
+  **Por que não virou variável de ambiente,** que foi a pergunta natural: o
+  nome do banco não varia por ambiente, por máquina nem por build. Env var só
+  acrescentaria um jeito novo de os dois lados divergirem (env do app ≠ env do
+  plugin SQL) sem resolver o que quebrou, que era a ausência de prova mecânica.
+  Constante única + teste de contrato é o instrumento; configuração não é.
+
+  **E o gate cresce:** banco novo aberto PELO APP com as conversas à vista, e
+  um anexo de conversa anterior ao rename abrindo de verdade. "Os dois bancos
+  estão certos" não é gate de migração; "o app está lendo o certo, inteiro" é.

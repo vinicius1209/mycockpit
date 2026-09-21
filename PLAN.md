@@ -1,4 +1,4 @@
-# MyCockpit — Plano (fonte de verdade)
+# Frota — Plano (fonte de verdade)
 
 > Documento vivo. Capturado a partir de uma entrevista de discovery em **junho/2026**.
 > Decisões com rationale completo estão em [`docs/decisions.md`](./docs/decisions.md).
@@ -41,7 +41,7 @@ agents por projeto.
 
 ## 4. Princípio de arquitetura: camada fina
 
-O MyCockpit é, no v0.1, um **front-end do `claude` CLI já instalado e autenticado**.
+A Frota é, no v0.1, um **front-end do `claude` CLI já instalado e autenticado**.
 Reaproveita auth/assinatura, não gerencia API key, não reimplementa terminal/git/MCP.
 Constrói nativo só onde agrega — **em etapas**. Detalhes em
 [`docs/architecture.md`](./docs/architecture.md).
@@ -95,7 +95,7 @@ quando entrarem agents sem saída estruturada e/ou um terminal interativo de ver
 
 ### Caminho feliz (aceite do v0.1)
 
-> Abro o MyCockpit → escolho a pasta `prime-sales-hub` → vejo o contexto do projeto →
+> Abro a Frota → escolho a pasta `prime-sales-hub` → vejo o contexto do projeto →
 > digito *"adicione o campo X na tabela Y seguindo as regras do projeto"* com destino
 > **Claude Code** → vejo o agent **ler, editar e rodar o lint como cartões no chat** →
 > reviso → respondo *"agora roda os testes"* e ele segue **na mesma sessão** →

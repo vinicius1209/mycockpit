@@ -264,7 +264,7 @@
 > Status: visão registrada em 11/08/2026, palavras do usuário: o companion
 > "devia ser muito mais profissional… lançar tarefa, falar com os agentes, ter
 > comportamento de um aplicativo mesmo — botão de voltar que volta. Tem que ser
-> uma coisa que me ajude a falar com o MyCockpit em qualquer cômodo da casa."
+> uma coisa que me ajude a falar com a Frota em qualquer cômodo da casa."
 > Este arquivo guarda a visão e o esqueleto; NÃO está em execução — a frente
 > ativa é `office-removal-plan.md` (que preserva a ponte de dados de que o
 > companion depende).

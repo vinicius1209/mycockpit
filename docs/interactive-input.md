@@ -1,7 +1,7 @@
 # Interação pendente — o agente pede input no meio do turno (padrão unificado)
 
 > Problema: quando o agente chama uma tool que precisa de VOCÊ no meio do turno
-> (aprovar comando, responder pergunta estruturada, aprovar plano), o MyCockpit
+> (aprovar comando, responder pergunta estruturada, aprovar plano), a Frota
 > ou erra (AskUserQuestion → turno morre) ou já resolve pontual (aprovação).
 > Este doc define UMA abstração — "interação pendente" — que cobre todos os
 > casos sob o mesmo guarda-chuva. Data: 2026-07-13.

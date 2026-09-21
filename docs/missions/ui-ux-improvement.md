@@ -1,4 +1,4 @@
-# MISSÃO — UI/UX Improvement (MyCockpit)
+# MISSÃO — UI/UX Improvement (Frota)
 
 > **Status:** ✅ CONCLUÍDA — avaliada por um time de 10 agents (ver `ui-ux-evaluation.md`); Ondas **P0 + P1 + P2** implementadas (commits 117ed22 / 9ad558d / este). Merge e features caras de LLM (semantic-diff/tags/summaries/confidence) **reprovadas com justificativa**.
 > **Aberta:** 2026-06-28 · **Fonte:** relatório de um revisor externo de UI/UX.
@@ -8,7 +8,7 @@
 
 ## 1. Context
 
-MyCockpit é um cockpit desktop/web-like para trabalhar com agents de código em vários projetos. Três modos: **Linear** (single-agent conversacional), **Fusion** (multi-agent: N candidatos respondem, um juiz avalia, o usuário escolhe/confirma), **SDD** (spec-driven, futuro). A UI já tem direção visual forte (minimal, premium, tipo Linear/ChatGPT), mas precisa de mais clareza de UX, hierarquia, comunicação de estado e uma experiência de decisão do Fusion mais poderosa. **Não é redesign do zero** — melhorar preservando a identidade.
+Frota é um cockpit desktop/web-like para trabalhar com agents de código em vários projetos. Três modos: **Linear** (single-agent conversacional), **Fusion** (multi-agent: N candidatos respondem, um juiz avalia, o usuário escolhe/confirma), **SDD** (spec-driven, futuro). A UI já tem direção visual forte (minimal, premium, tipo Linear/ChatGPT), mas precisa de mais clareza de UX, hierarquia, comunicação de estado e uma experiência de decisão do Fusion mais poderosa. **Não é redesign do zero** — melhorar preservando a identidade.
 
 ## 2. Product Vision
 

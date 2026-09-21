@@ -1,4 +1,4 @@
-# MyCockpit — Design System
+# Frota — Design System
 
 > Direção visual do app. Os tokens abaixo são a fonte de verdade para `globals.css`.
 > Princípio: **refinamento por precisão**, não por intensidade.

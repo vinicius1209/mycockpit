@@ -24,7 +24,7 @@
   no fallback plano, sem árvore inventada.
 - MCP interno uniforme `mc-work` para Claude e Codex, com `work_plan`,
   `work_update`, `process_start`, `process_poll` e `process_stop`.
-- Processos externos pertencem ao MyCockpit: PID, grupo de processos,
+- Processos externos pertencem à Frota: PID, grupo de processos,
   stdout/stderr em tail, parar e repetir. Um processo que estava vivo no replay
   vira `órfão`, nunca aparece falsamente como ainda executando.
 - Reação removida dos fragmentos intermediários. Há uma única faixa de emojis no

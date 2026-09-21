@@ -40,7 +40,7 @@ Fonte: [waku.sh](https://waku.sh/) · [github.com/egoist/waku](https://github.co
 
 Dados da API do GitHub em 13/08/2026:
 
-| | Waku (egoist) | MyCockpit |
+| | Waku (egoist) | Frota |
 |---|---|---|
 | criado | **2026-07-31** (13 dias) | 2026-06-25 (~7 semanas) |
 | linguagem | Rust 3,35 MB · **Swift 152 KB** · TS 123 KB | TS/TSX 62,5k LOC · Rust 29,9k LOC |
@@ -171,7 +171,7 @@ GPL-3.0** (disponibilização de fonte + share-alike), apesar do crate anunciar
 Apache-2.0. O relator até ofereceu PR de 3 linhas. **A issue segue aberta, sem
 resposta de mantenedor.**
 
-Para o MyCockpit — **produto proprietário de compra única** — isso não é uma
+Para a Frota — **produto proprietário de compra única** — isso não é uma
 ressalva, é um **impedimento**: a alternativa a resolver essa questão é abrir
 o código do produto que a gente vende. Não é coincidência que o `egoist/waku`
 seja **GPL-3.0**: é o desfecho natural de quem constrói sobre GPUI hoje.
@@ -183,7 +183,7 @@ fechar amanhã.
 
 Todo. O discurso do Waku é contra **Electron**, e nós não somos Electron.
 
-| | Electron (Xirp, Orca) | **MyCockpit (Tauri/WKWebView)** | GPUI (Waku) |
+| | Electron (Xirp, Orca) | **Frota (Tauri/WKWebView)** | GPUI (Waku) |
 |---|---|---|---|
 | bundle | Xirp: **474 MB** (medido em `competitors-xirp.md`) | **21 MB** (`builds/test/latest/Frota.app`, medido) | binário Rust; sem release público pra medir |
 | RAM na abertura | ~450 MB (benchmarks 2026) | ~85 MB (classe Tauri) | menor |
@@ -428,7 +428,7 @@ resolve §4.1-4.3**. Não é um trade-off — é uma comparação de um lado só
 | **Orca** (stably.ai) | Electron + React, daemon próprio, 15 entry points | webview (Chromium) | grande | webview |
 | **Xirp** (Spotify) | Electron + React, daemon Node, tmux | webview (Chromium) | **474 MB** | webview |
 | **Buzz** (Block) | **Tauri 2 + React** + 28 crates Rust + Flutter | **webview** | — | webview |
-| **MyCockpit** | Tauri 2 + React 19 | webview (WKWebView) | **21 MB** | webview |
+| **Frota** | Tauri 2 + React 19 | webview (WKWebView) | **21 MB** | webview |
 | **Waku** (egoist) | Rust + GPUI (+ Swift) | **GPU nativa** | — | 13 dias de vida |
 
 ### "Alguém abandonou o webview?"

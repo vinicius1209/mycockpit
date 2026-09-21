@@ -1,6 +1,6 @@
-# Autonomia & Auto-aprendizado — o norte do MyCockpit
+# Autonomia & Auto-aprendizado — o norte da Frota
 
-> Visão: o MyCockpit não é só uma interface pra CLIs de agents — é um
+> Visão: a Frota não é só uma interface pra CLIs de agents — é um
 > **cockpit de trabalho autônomo multi-agente** que **fica mais esperto com o
 > uso**. Loops, times, modos (Linear/Fusion/Mission/SDD), auto-search e
 > auto-aprendizado. Este doc separa as duas dimensões (rodar sozinho ×
@@ -51,13 +51,13 @@ Investigado (doc oficial do Claude Code): é **viável e é o jeito certo**. Flu
 ```
 Claude quer rodar `python script.py`  (em vez de errar "requires approval")
   → claude -p PAUSA e chama a tool approval_prompt de um MCP server local
-  → MyCockpit mostra "Aprovar / Negar" (com o comando exato)
+  → Frota mostra "Aprovar / Negar" (com o comando exato)
   → você decide → a tool devolve {behavior: allow|deny}  → o turno CONTINUA
 ```
 - Bloqueia esperando (turno vivo, sem timeout por padrão); funciona com
   `-p --output-format stream-json`. Aprovar libera **só aquele comando** (não a
   sessão). Pode até sanitizar o input antes de aprovar.
-- **Custo**: MyCockpit hospedar um MCP server stdio + IPC pra UI + wire
+- **Custo**: Frota hospedar um MCP server stdio + IPC pra UI + wire
   `--mcp-config` + `--permission-prompt-tool` no adapter Claude + modal que
   pausa o fio. Complexidade média-alta. Codex headless não tem equivalente
   direto (só sandbox modes) — degradação: no Codex fica no esquema atual.
@@ -149,10 +149,10 @@ Isso mantém o ruído baixo e mata o over-engineering que afunda sistemas
 Correção de rumo (pedido do usuário 2026-07-13): o aprendizado NÃO pode ficar
 preso aos gates do SDD. O **Linear** é onde é o trabalho do dia a dia, e lá o
 sinal não é "passou no teste" — é **o feedback do usuário**. E deve virar
-lição/skill no **domínio do MyCockpit**, desacoplado do SDD.
+lição/skill no **domínio da Frota**, desacoplado do SDD.
 
 ### A arquitetura que resolve: MEMÓRIA (uma) × FONTES DE SINAL (várias)
-A camada de aprendizado é do domínio MyCockpit, **mode-agnostic**. Cada modo só
+A camada de aprendizado é do domínio Frota, **mode-agnostic**. Cada modo só
 contribui um sinal diferente pra MESMA tabela `lessons` (que já tem `source`):
 
 | Modo | Sinal | Vira |

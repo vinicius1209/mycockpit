@@ -87,7 +87,7 @@ namespace `session/<nome-memorável>`, config git POR PROJETO (branch base,
 auto-run, carregar dirs ignorados), ciclo completo na UI (create/fork/delete
 pareado com a sessão, checkout de PR em worktree, conflitos tratados).
 
-## Top 5 lições pro MyCockpit (valor/custo)
+## Top 5 lições pra Frota (valor/custo)
 
 1. **Hooks fail-open como canal push de status** — endpoint nosso + scripts
    gerados com bearer/timeout 1s/erro engolido; `permissionRequest` síncrono

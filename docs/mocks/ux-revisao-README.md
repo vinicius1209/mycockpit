@@ -1,4 +1,4 @@
-# UX revisão — MyCockpit: como fazer diferente
+# UX revisão — Frota: como fazer diferente
 
 > **Mock estático de revisão de UI/UX** — mesma base (tokens, HTML, dados) do app, com
 > **decisões de UX alteradas**. 6 telas navegáveis no topo, anotações ①…⑨ no rodapé

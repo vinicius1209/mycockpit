@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-O MyCockpit trata MCP como uma capability do projeto, e não como uma
+A Frota trata MCP como uma capability do projeto, e não como uma
 configuração acidental do CLI que estiver aberto. O control plane descobre
 servidores existentes, normaliza os formatos, testa disponibilidade, guarda a
 política por projeto e monta uma configuração efêmera para cada run.
@@ -151,7 +151,7 @@ Um servidor sai do roteamento por duas causas independentes, e a UI diz qual é
 | `literalSecret` | "contém valor literal ou expansão específica do CLI de origem". | Migrar para wrapper/Keychain ou `${VAR}`. |
 
 **Exceção desde a A2 (`mcp-auth-plan.md`): `oauth` deixa de bloquear quando
-existe login do MyCockpit.** Com credencial nossa no Keychain, o servidor passa
+existe login da Frota.** Com credencial nossa no Keychain, o servidor passa
 a ser roteado pelos DOIS motores através de um **proxy MCP local**
 (`mcp_proxy.rs`): o agent recebe um server stdio sem URL e sem credencial, e o
 app acrescenta o `Authorization: Bearer` na saída. A trava só cai para `oauth` e

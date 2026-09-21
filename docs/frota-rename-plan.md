@@ -1,6 +1,6 @@
 # Plano de migração de marca — MyCockpit → Frota
 
-Status: **fase de MARCA VISÍVEL entregue em 22/08/2026** (guarda no CI). As fases de identificador e persistência seguem deliberadamente adiadas — ver "O que NÃO foi feito, e por quê".  
+Status: **fase de MARCA VISÍVEL entregue em 22/08/2026** (guarda no CI). Em **21/09/2026 o dono decidiu renomear TUDO**, inclusive identificador, banco e contratos persistidos: ver "A virada de 21/09/2026" no fim, que revoga a matriz de nomes abaixo e a seção "O que NÃO foi feito, e por quê". O texto original fica como história.  
 Escopo: marca pública, app, empacotamento, documentação, compatibilidade e ambiente de demonstração
 
 ## Decisão
@@ -31,6 +31,11 @@ categorias diferentes:
   `mycockpit.flight-plan`, scripts de hooks e o sidecar `mycockpit-stt`.
 
 ## Matriz de nomes
+
+> **REVOGADA em 21/09/2026.** Toda linha "manter" abaixo virou "renomear". A
+> matriz vigente está em "A virada de 21/09/2026", no fim deste documento. Esta
+> fica porque o raciocínio dela ainda explica o CUSTO de cada troca, que não
+> mudou: só a decisão mudou.
 
 | Superfície | Decisão | Motivo |
 | --- | --- | --- |
@@ -318,3 +323,154 @@ por um CI verde. O job lista as guardas UMA A UMA, então a agregada do
 **A lição é sobre a forma da guarda, não sobre o esquecimento:** uma lista
 duplicada em dois lugares diverge, e diverge em silêncio. Só apareceu porque
 alguém foi contar.
+
+---
+
+# A virada de 21/09/2026
+
+> **Decisão do dono:** *"quero que o projeto se chame FROTA e não mais MyCockpit"*,
+> e depois, explicitamente: *"iremos RENOMEAR TUDO, ou seja `mycockpit.db` →
+> `frota.db` e assim por diante"*. Registrada em **ADR-222**.
+> **Isto revoga:** a matriz de nomes acima, a seção "O que NÃO foi feito, e por
+> quê", e a "Nota de marca" que vivia no `README.md` (removida, e guardada
+> inteira dentro da ADR-222).
+
+Eu recomendei deixar a camada do identificador de fora, pelo mesmo argumento que
+o plano de agosto já fazia: o usuário não vê o bundle id, e a migração custa o
+mesmo agora ou depois. O dono reafirmou. Reafirmação é decisão, e o argumento
+fecha aqui.
+
+O que mudou de verdade não foi o gosto, foi a arquitetura: a **memória durável
+do projeto** (`docs/memoria-do-projeto-spec.md`) precisa de `.frota/memory/`
+versionada no git. Sem renomear a pasta, a Frota passa a ter duas casas no
+repositório para a mesma preocupação, e `.mycockpit/.gitignore` é `*` com
+allowlist, então uma `memory/` criada lá dentro nasce fora do git. O rename
+deixou de ser cosmético.
+
+## Matriz vigente
+
+Toda linha renomeia. A coluna que importa agora é **como**, não **se**.
+
+| Superfície | Onde | Como |
+|---|---|---|
+| `.mycockpit/` → `.frota/` | 240 referências, 26 construções do path na mão | centralizar a resolução da raiz em UMA função que conhece os dois nomes; repo próprio por `git mv`, repo de terceiro por gesto |
+| Banco `mycockpit.db` → `frota.db` | `lib.rs:144`, `lib.rs:883`, backups `lib.rs:152` | cópia de db+wal+shm no boot, antes de o plugin SQL abrir, no padrão de `lib.rs:137-178`. **Copiar, nunca mover** |
+| Bundle id `dev.vinicius.mycockpit` → `dev.vinicius.frota` | `tauri.conf.json:5` | por último, e só depois do resto estável. Arrasta os cinco itens da §"O que o identificador carrega" |
+| Keychain `dev.vinicius.mycockpit.mcp-oauth` | `mcp_auth.rs:28` | ler os dois serviços por uma versão, reescrever no novo ao renovar. Sem isso, cada server OAuth pede login de novo |
+| localStorage `mc.app` | `main.tsx:23`, `browser.tsx:14`, `tray.tsx:23` | ler os dois, escrever no novo. É lido ANTES do React para não piscar tema: cuidado com a ordem |
+| `MISSION_PLAN_FORMAT = "mycockpit.flight-plan"` | `missionPlans.ts:13` | discriminador GRAVADO dentro de plano salvo. Aceitar o valor antigo na leitura para sempre, ou até migração explícita dos arquivos |
+| Servers `mc-context`/`mc-work`/`mc-approval`/`mc-tools` → `frota-*` | `context_gateway.rs:16`, `work_gateway.rs:19`, `approval.rs:51`, `tool_gateway.rs:22` | os quatro num commit só. Tool names mudam de `mcp__mc_context__*` para `mcp__frota_context__*`, e allowlist salva no settings do usuário para de casar |
+| 8 vars `MYCOCKPIT_*` → `FROTA_*` | uma `const` por var, menos `MYCOCKPIT_RUN_ID` (5 arquivos) | escreve o novo, aceita os dois na leitura |
+| Headers `X-Mycockpit-*` → `X-Frota-*` | `hooks_install.rs:347` | **o mais perigoso**: o snippet está instalado em `~/.claude/settings.json` dos DOIS Macs. Aceitar os dois headers desde o dia um |
+| sidecar `mycockpit-stt` | build, bundle e runtime | nome coordenado nos três; troca junto ou não troca |
+| texto, comentário, doc, fixture | ~300 arquivos | varredura, depois da catraca |
+| **SQL de migração** | `lib.rs`, `conversation_items.rs:31` e vizinhas | **não muda, nunca.** Migração é história: a string já rodou no banco de alguém. Única exceção permanente da catraca |
+
+## O que o identificador carrega, além do caminho do banco
+
+Trocar `identifier` muda `app_data_dir()`, e isso arrasta cinco coisas. Três não
+estavam mapeadas no plano de agosto:
+
+1. **O banco.** Sem cópia explícita, o app abre num diretório vazio, cria banco
+   novo e roda as 59 migrações do zero, com suas conversas, custos e lições
+   intactos no diretório antigo e invisíveis.
+2. **Os perfis de navegador.** Vivem em `app_data_dir/browser-profiles/<uuid>`,
+   e o caçador de órfãos casa processo **pelo caminho do perfil**
+   (`browser_orfaos.rs:25`); `browser_orfaos.rs:123` tem teste afirmando que
+   raiz diferente não devolve órfão nenhum. Trocar o identificador faz qualquer
+   Chromium vivo com perfil antigo deixar de ser reconhecido como nosso: fica
+   com `ppid=1` comendo CPU e o app não o enxerga para matar. A varredura
+   precisa aceitar as duas raízes durante a janela.
+3. **As permissões do macOS.** `Info.plist` declara
+   `NSMicrophoneUsageDescription` e `NSSpeechRecognitionUsageDescription`, e o
+   TCC é chaveado por bundle id: microfone e reconhecimento de fala voltam a
+   pedir permissão.
+4. **O Keychain.** O OAuth dos MCPs (`mcp_auth.rs:28`) e o certificado
+   auto-assinado da ADR-201.
+5. **Dois apps instalados.** O bundle antigo continua no disco com identidade
+   diferente, e dá para abrir o velho sem perceber, escrevendo no banco antigo.
+   Remover o bundle antigo faz parte do mesmo gesto.
+
+## A catraca, e o que precisa mudar nela
+
+`scripts/check-marca.mjs` já existe e já roda no CI, mas o **comentário de
+cabeçalho dela codifica a decisão revogada**: lista `mycockpit.db`, `.mycockpit/`,
+`mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan` e `mc-work` sob
+"PERSISTÊNCIA: NÃO MUDAM". Enquanto essa linha existir, a guarda ensina o
+contrário do que foi decidido, e o próximo agente a obedece.
+
+A guarda também varre só `app/src`, só `MyCockpit` com maiúsculas, e só fora de
+comentário e de teste. Isso era correto para "marca visível"; para "o nome sai de
+tudo", ela precisa:
+
+- varrer `app/src`, `app/src-tauri/src`, `scripts/`, `docs/` e a raiz;
+- pegar qualquer casing (`mycockpit`, `MyCockpit`, `MYCOCKPIT`);
+- trocar a allowlist por construção (minúsculas ficam de fora) por **baseline
+  JSON que só desce**, no molde de `file-size-baseline.json`;
+- manter UMA exceção permanente, a SQL de migração, e dar **prazo escrito** às
+  exceções da janela de compatibilidade.
+
+A catraca com baseline no estado de hoje é o **passo 1**, antes da primeira
+substituição. Sem ela, cada camada entregue é uma janela para o nome voltar.
+
+## Ordem
+
+> **Andamento em 21/09/2026:** passos 1 a 7 ENTREGUES e verificados
+> (`cargo test` 937, `bun run test` 4.568, `tsc -b --force` 0, `bun run check`
+> verde). A catraca saiu de 1.239 para **780** ocorrências. O passo 8 é o que
+> falta, e ele espera os DOIS Macs rodarem o build novo: fechar a janela antes
+> disso faz o app do outro Mac deixar de reconhecer o próprio hook.
+
+| passo | o quê | gate |
+|---|---|---|
+| 1 | Catraca ampliada, baseline = estado de hoje. Cabeçalho de `check-marca.mjs` reescrito para refletir a ADR-222 | `bun run check` verde e acusando "mycockpit" novo em qualquer casing |
+| 2 | Texto (comentário, doc, fixture) | suítes completas verdes, baseline desce |
+| 3 | `.mycockpit/` → `.frota/`, raiz centralizada, leitura dupla, `!memory/` na allowlist do `.gitignore` | app abre em repo `.frota/` e em repo `.mycockpit/` |
+| 4 | Vars, headers, servers MCP, com janela | run real em Claude Code e Codex, hook correlacionado NA TELA |
+| 5 | **Memória durável destravada** (Fase 1 de `memoria-do-projeto-spec.md`) | `.frota/memory/` existe e está no git |
+| 6 | `mc.app`, `mycockpit.flight-plan`, sidecar: leitura dupla e escrita no novo | tema não pisca, plano de missão antigo ainda abre |
+| 7 | Identificador e nome do banco | banco antigo intacto **E** banco novo com as mesmas conversas, custos e lições; órfão de perfil antigo ainda detectado; OAuth dos MCPs sem pedir login |
+| 8 | Fim da janela: leituras duplas saem, por ADR | catraca sem exceção temporária |
+
+A irreversível é a última de propósito: quando ela rodar, tudo o mais já está
+estável, e se algo quebrar o único suspeito é ela.
+
+## O que a execução acrescentou ao plano (21/09/2026)
+
+Sete coisas que só apareceram ao mexer, e que o plano não previa:
+
+1. **O caçador de órfãos casa processo pelo caminho do perfil**
+   (`browser_orfaos.rs`), e o identificador É esse caminho. Sem aceitar as duas
+   raízes, um Chromium de antes do rename some da varredura. Tem contraprova em
+   teste: com só a raiz nova, o órfão da captura REAL do incidente desaparece.
+2. **`entry_is_ours` identifica nosso hook pelo caminho do script.** Renomear
+   `mycockpit-hook.sh` sem reconhecer o nome antigo faria a instalação somar a
+   entrada nova SEM remover a velha: o hook dispararia DUAS vezes por evento.
+3. **`ORIGINAL_MARKER` guarda a statusline original da pessoa** dentro do script
+   que instalamos. É a única cópia. Trocar sem ler os dois perde o comando dela.
+4. **O slot da statusline casava por path exato.** Com o nome novo, uma
+   statusline já instalada viraria "não instalada", e instalar de novo
+   encadearia o NOSSO script velho como se fosse de terceiro.
+5. **`DOCTRINE_PATH` era constante no front e vai DENTRO do prompt.** Num
+   projeto legado mandaria o agente ler um arquivo que não existe. Virou campo
+   resolvido (`Doctrine.path`), e o mesmo valeu para a copy da tela
+   (`ProjectConfig.pasta`).
+6. **O marcador de órfão no `ps`** (`FROTA_RUN_ID=`) não acha processo spawnado
+   antes do upgrade. O app passou a setar as duas variáveis, e a busca aceita as
+   duas.
+7. **O `sqlite3` do macOS (3.51) acusa `malformed inverted index` no FTS** do
+   banco construído pelo SQLite 3.46 do app. É FALSO ALARME (o check pela 3.46
+   diz `ok`), mas quase virou caça a uma corrupção inexistente no meio da
+   migração do banco. Não use o CLI do sistema como gate deste banco.
+
+## Ainda aberto
+
+- **Passo 8**, que espera os dois Macs no build novo.
+- **`CONTATO_VAPID`** (`companion_push.rs`) aponta para
+  `github.com/vinicius1209/mycockpit`. A URL está CERTA: o repositório ainda se
+  chama assim. Só muda com `gh repo rename` (o GitHub redireciona o nome
+  antigo). Separado disso: o repo é PRIVADO, então essa URL não abre para o
+  serviço de push, que é justamente quem deveria poder falar com o dono se algo
+  der errado. Decisão de produto, não do rename.
+- **~145 ocorrências em código de produção** que são comentário e identificador
+  interno, sem contrato nenhum. Limpeza tranquila, a catraca cobra o resto.

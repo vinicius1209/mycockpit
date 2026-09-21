@@ -1,13 +1,13 @@
-# Orca Chat UI vs. MyCockpit headless
+# Orca Chat UI vs. Frota headless
 
 > **Status:** memória arquitetural versionada  
 > **Data da leitura:** 24/08/2026  
 > **Snapshots comparados:** Orca `09ec516ae50b7b83fa65343d9ad96159e3fe71fc` e
-> MyCockpit `9b1a5b3d0b68ae22f6ce8203f77cd9f594946383`
+> Frota `9b1a5b3d0b68ae22f6ce8203f77cd9f594946383`
 
 ## Conclusão curta
 
-Sim: o MyCockpit executa os agentes em modo **headless**, isto é, sem abrir ou
+Sim: a Frota executa os agentes em modo **headless**, isto é, sem abrir ou
 embutir a interface TUI interativa do Claude Code, Codex ou Agy.
 
 O Orca experimental faz outra escolha. Ele mantém a TUI real dentro de um PTY e
@@ -18,7 +18,7 @@ Em uma frase:
 
 ```text
 Orca       = terminal/TUI real + transcript do provider projetado como chat
-MyCockpit  = protocolo headless estruturado + eventos normalizados virando chat
+Frota  = protocolo headless estruturado + eventos normalizados virando chat
 ```
 
 Essa diferença não é apenas visual. Ela define quem controla a sessão, de onde
@@ -31,14 +31,14 @@ Headless não quer dizer necessariamente “mão única” ou “sem interação
 dizer que não dependemos de uma TUI visível e de suas sequências de teclado para
 operar o agente.
 
-Hoje o MyCockpit usa três formas de transporte headless:
+Hoje a Frota usa três formas de transporte headless:
 
 | Agente / modo | Transporte | Continuidade nativa | Interação durante o turno |
 |---|---|---|---|
-| Claude | `claude -p --output-format stream-json` | `--resume` | `ask_user` e aprovação pelos MCPs efêmeros do MyCockpit |
+| Claude | `claude -p --output-format stream-json` | `--resume` | `ask_user` e aprovação pelos MCPs efêmeros da Frota |
 | Codex Padrão | `codex app-server`, JSON-RPC/NDJSON por stdio | `thread/resume` | Bidirecional; pode pedir aprovação e aguardar a resposta |
 | Codex nos demais modos | `codex exec --json` | `codex exec resume` | Mão única; não pausa para aprovação |
-| Agy | `agy -p --output-format stream-json` | Sem resume nativo confiável | Contexto reapresentado pelo MyCockpit; limitações são expostas honestamente |
+| Agy | `agy -p --output-format stream-json` | Sem resume nativo confiável | Contexto reapresentado pelo Frota; limitações são expostas honestamente |
 
 O `codex app-server` continua sendo headless: não há TUI. A diferença é que seu
 protocolo é bidirecional. Portanto, **headless não é sinônimo de one-shot**.
@@ -113,7 +113,7 @@ snapshot estudado, a busca por referências não mostrou essa rota conectada ao
 fluxo de produção do Chat UI. Portanto, ela não deve ser descrita como a fonte
 normal das mensagens: a rota principal é o transcript nativo do provider.
 
-## Como o MyCockpit funciona
+## Como a Frota funciona
 
 O modelo mental atual é o inverso:
 
@@ -137,7 +137,7 @@ AgentEvent normalizado
 UI/Fio Vivo             SQLite/transcript
 ```
 
-### 1. A UI conhece eventos do MyCockpit, não telas de terminal
+### 1. A UI conhece eventos da Frota, não telas de terminal
 
 Claude, Codex e Agy emitem formatos diferentes. Os adapters Rust traduzem esses
 formatos para `AgentEvent`: `session`, `text`, `tool`, `tool_result`,
@@ -149,11 +149,11 @@ o schema histórico de um arquivo de transcript do provider.
 
 ### 2. Cada envio abre ou retoma uma execução headless
 
-O MyCockpit não mantém um terminal invisível como autoridade principal. Ele
+A Frota não mantém um terminal invisível como autoridade principal. Ele
 inicia um processo/protocolo adequado ao turno e tenta retomar a sessão nativa
 quando o provider oferece essa capacidade.
 
-O caminho Codex Padrão merece atenção: o MyCockpit usa `app-server` porque
+O caminho Codex Padrão merece atenção: a Frota usa `app-server` porque
 `codex exec` é mão única e, sem TTY, não consegue parar para pedir aprovação. Se
 o `app-server` falhar antes de o turno começar, o runner cai para `codex exec` e
 emite um aviso visível sobre a perda do gate naquele turno.
@@ -161,7 +161,7 @@ emite um aviso visível sobre a perda do gate naquele turno.
 ### 3. A persistência e a continuidade pertencem ao aplicativo
 
 A sessão nativa do provider é uma otimização importante, mas não é a única
-memória. O MyCockpit conserva e reapresenta contexto por meio de:
+memória. A Frota conserva e reapresenta contexto por meio de:
 
 - transcript e estado da conversa em SQLite;
 - doutrina e instruções do projeto;
@@ -172,22 +172,22 @@ memória. O MyCockpit conserva e reapresenta contexto por meio de:
 
 Isso permite que a conversa sobreviva a uma troca de modelo ou provider sem
 fingir que Claude e Codex compartilham a mesma sessão nativa. Não compartilham.
-O que atravessa a troca é o contexto controlado pelo MyCockpit.
+O que atravessa a troca é o contexto controlado pelo Frota.
 
 ### 4. O revezamento entre agentes é transacional
 
-Na troca de provider, o MyCockpit registra a intenção de transplante, inicia o
+Na troca de provider, a Frota registra a intenção de transplante, inicia o
 destino com o contexto preparado e só confirma a mudança quando o destino emite
 sua primeira `session`. Uma falha anterior a esse ponto não deve apagar a origem
 nem produzir uma falsa continuidade.
 
 O Chat UI do Orca, isoladamente, não resolve esse problema. Ele preserva muito
-bem a sessão TUI de um provider e a representa como chat; o MyCockpit trata a
+bem a sessão TUI de um provider e a representa como chat; a Frota trata a
 continuidade **entre** providers como responsabilidade do produto.
 
 ## Comparação direta
 
-| Dimensão | Orca Chat UI | MyCockpit |
+| Dimensão | Orca Chat UI | Frota |
 |---|---|---|
 | Autoridade da execução | Sessão PTY/TUI mantida pelo Orca | Runner/protocolo headless por turno |
 | Aparência do chat | Projeção sobre o terminal existente | Interface nativa do domínio do app |
@@ -211,9 +211,9 @@ do objetivo do produto:
   estrutura do Orca é melhor;
 - para construir uma **plataforma de coordenação de agentes**, com memória,
   ferramentas, custos e handoff controlados pelo produto, a estrutura do
-  MyCockpit é melhor.
+  Frota é melhor.
 
-Para a proposta concreta do MyCockpit, a escolha recomendada é manter a
+Para a proposta concreta da Frota, a escolha recomendada é manter a
 arquitetura **headless e event-first**.
 
 ### Resultado por critério
@@ -222,16 +222,16 @@ arquitetura **headless e event-first**.
 |---|---|---|
 | Fidelidade ao comportamento nativo da TUI | Orca | A sessão real do terminal continua sendo executada |
 | Compatibilidade inicial com muitos CLIs | Orca | Um novo CLI pode funcionar como terminal antes de ganhar um decoder completo |
-| Manutenção e previsibilidade do domínio | MyCockpit | A UI depende de `AgentEvent`, não de telas e sequências de teclado |
-| Representação de tools, custos e tarefas | MyCockpit | Os conceitos são eventos estruturados e persistíveis |
-| Memória e troca entre providers | MyCockpit | A continuidade pertence ao aplicativo, não a uma sessão nativa isolada |
-| Políticas e permissões do produto | MyCockpit | O app possui canais e estados explícitos para interação e aprovação |
-| Observabilidade e auditoria | MyCockpit | Runner, eventos e persistência formam um contrato controlado pelo produto |
+| Manutenção e previsibilidade do domínio | Frota | A UI depende de `AgentEvent`, não de telas e sequências de teclado |
+| Representação de tools, custos e tarefas | Frota | Os conceitos são eventos estruturados e persistíveis |
+| Memória e troca entre providers | Frota | A continuidade pertence ao aplicativo, não a uma sessão nativa isolada |
+| Políticas e permissões do produto | Frota | O app possui canais e estados explícitos para interação e aprovação |
+| Observabilidade e auditoria | Frota | Runner, eventos e persistência formam um contrato controlado pelo produto |
 | Sobrevivência a uma feature nova da TUI | Orca | Mesmo que o Chat UI não entenda a novidade, o terminal ainda pode exibi-la |
 
-### Por que o MyCockpit é melhor para este produto
+### Por que a Frota é melhor para este produto
 
-O fluxo principal do MyCockpit possui uma fronteira arquitetural mais limpa:
+O fluxo principal da Frota possui uma fronteira arquitetural mais limpa:
 
 ```text
 protocolo estruturado -> adapter -> AgentEvent -> UI + persistência
@@ -264,7 +264,7 @@ Isso faz do Orca uma estrutura melhor para um produto cujo contrato principal é
 “executar qualquer agent de terminal com fidelidade”. Não é uma arquitetura
 inferior; ela otimiza outro problema.
 
-### Desvantagens reais do MyCockpit
+### Desvantagens reais da Frota
 
 A escolha headless também tem custos que não devem ser escondidos:
 
@@ -279,12 +279,12 @@ A escolha headless também tem custos que não devem ser escondidos:
 
 ### Veredito
 
-Se fosse necessário escolher apenas uma estrutura para o MyCockpit, a escolha de
+Se fosse necessário escolher apenas uma estrutura para a Frota, a escolha de
 engenharia seria:
 
-> **MyCockpit headless/event-first como núcleo do produto.**
+> **Frota headless/event-first como núcleo do produto.**
 
-A recomendação não é transformar o MyCockpit em um clone da arquitetura do Orca.
+A recomendação não é transformar a Frota em um clone da arquitetura do Orca.
 É adotar um híbrido assimétrico, preservando uma única autoridade principal:
 
 1. manter eventos normalizados e SQLite como fonte do produto;
@@ -295,9 +295,9 @@ A recomendação não é transformar o MyCockpit em um clone da arquitetura do O
    aprovação, interação e tarefas diferidas;
 5. recorrer a PTY somente para um agent sem protocolo estruturado suficiente.
 
-Em síntese: **o Orca vence como terminal universal; o MyCockpit vence como
+Em síntese: **o Orca vence como terminal universal; a Frota vence como
 plataforma de coordenação de agentes. Para o produto que estamos construindo, a
-estrutura do MyCockpit é a melhor base.**
+estrutura da Frota é a melhor base.**
 
 ## O que faz sentido aprender com o Orca
 
@@ -312,7 +312,7 @@ estrutura do MyCockpit é a melhor base.**
    reconstrução integral do transcript a cada atualização.
 4. **Estado honesto de sessão.** Separar “processo vivo”, “turno trabalhando”,
    “aguardando usuário”, “sessão retomada” e “fallback iniciado”.
-5. **Adaptador desconhecido não some silenciosamente.** O MyCockpit já segue
+5. **Adaptador desconhecido não some silenciosamente.** A Frota já segue
    essa regra ao converter eventos novos em `Unknown`.
 
 ### Não importar como arquitetura padrão
@@ -321,13 +321,13 @@ estrutura do MyCockpit é a melhor base.**
    isso adicionaria duas fontes de verdade e muito estado concorrente.
 2. **Transcript do provider como banco principal do produto.** Ele é útil para
    recuperação e auditoria, mas não deve substituir o transcript normalizado e
-   a memória controlada pelo MyCockpit.
+   a memória controlada pelo Frota.
 3. **Interação por teclas como contrato de domínio.** Menus e prompts textuais
    mudam mais facilmente que eventos/protocolos explícitos.
 
 ## Decisão arquitetural registrada
 
-O MyCockpit deve continuar **headless e event-first** como caminho principal.
+A Frota deve continuar **headless e event-first** como caminho principal.
 
 Um possível leitor de transcripts nativos pode ser útil no futuro como camada de
 recuperação, auditoria ou importação de uma sessão externa. Ele não deve virar a
@@ -358,7 +358,7 @@ capability/fallback explícito, não uma dependência escondida de todos os agen
   implementação de fallback por scrollback, sem rota produtiva encontrada no
   snapshot.
 
-### MyCockpit
+### Frota
 
 - `app/src-tauri/src/agent.rs`: seleção do runner e fallback do Codex
   `app-server` para `exec`.
@@ -377,9 +377,9 @@ capability/fallback explícito, não uma dependência escondida de todos os agen
 
 Revisar este documento se ocorrer qualquer uma destas mudanças:
 
-- o MyCockpit adotar terminal/PTY embutido;
+- a Frota adotar terminal/PTY embutido;
 - `codex app-server` substituir `codex exec` em todos os modos;
 - Claude ou Agy ganharem um protocolo bidirecional estável usado pelo app;
 - transcripts nativos passarem a participar da recuperação de conversas;
 - o Orca retirar o PTY como autoridade do Chat UI;
-- o handoff deixar de ser controlado pelo MyCockpit.
+- o handoff deixar de ser controlado pelo Frota.

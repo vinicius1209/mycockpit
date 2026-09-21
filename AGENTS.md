@@ -24,7 +24,7 @@ já custou retrabalho — não se abre camada por precaução.
 
 ## O que é
 
-**Frota** (nunca "MyCockpit" em texto que o usuário lê ou que vai num prompt),
+**Frota**, em tudo e sem exceção por compatibilidade (ADR-222),
 app Tauri 2 + React 19 + TypeScript, SQLite via `@tauri-apps/plugin-sql`,
 zustand, vitest. Backend Rust em `app/src-tauri`. Compra única, Mac e Linux,
 local-first. É um **cockpit de decisão**: a UI mostra o estado real da frota e
@@ -161,5 +161,8 @@ uma guarda dispara, a saída diz o arquivo, a linha e o alvo.
 - Introduzir TanStack Query em superfície que segue store + efeito.
 - Mexer em número de migração sem conferir a máxima real no `lib.rs`.
 - Editar uma baseline de catraca pra cima (`file-size`, `geometria`).
-- Escrever "MyCockpit" em string que a pessoa lê ou que vai num prompt.
+- Reintroduzir "mycockpit" em qualquer lugar. A catraca `check-marca.mjs`
+  cobra em `bun run check` e na CI, e o número **só desce**. Arquivo novo que
+  precise citar o nome antigo (a leitura dupla da janela) entra em `_janela`
+  na baseline, COM o motivo escrito. Exceção permanente: SQL de migração.
 - Commitar sem que a pessoa tenha pedido.

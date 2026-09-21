@@ -116,7 +116,7 @@ de replay-safe (D1.5) dita por outra casa.
 
 ### Comparativo curto
 
-| Regra | Warp (fonte) | Claude Code CLI (uso) | IDEs com agent (produto) | MyCockpit (decisão) |
+| Regra | Warp (fonte) | Claude Code CLI (uso) | IDEs com agent (produto) | Frota (decisão) |
 |---|---|---|---|---|
 | Onde mora o "agora" | faixa de 1 linha colada ao input, altura travada, some sozinha | linha única no rodapé, acima do prompt | painel/lista de agents à parte | linha viva no fim do fio (junto do composer) é a ÚNICA dona (B2.2) |
 | Estabilidade do tempo | arredonda p/ segundo inteiro + monoespaçada; sem largura reservada | verbo + tempo na mesma linha, sem quebra | tempo relativo, pouco preciso | `tabular-nums` + largura mínima + `shrink-0`; quem trunca é o nome (B2.1) |

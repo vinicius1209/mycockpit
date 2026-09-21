@@ -53,7 +53,7 @@
 >    arquivo de config, fora de argv, cifrado em repouso e apagável num gesto* —
 >    e **não** entrega isolamento entre apps. A garantia central do plano (o
 >    agent nunca recebe credencial) continua de pé; a que **não** se pode
->    afirmar é "só o MyCockpit lê". Mesma causa raiz do **ADR-013**, mesmo
+>    afirmar é "só a Frota lê". Mesma causa raiz do **ADR-013**, mesmo
 >    conserto: Developer ID.
 > 6. **Nenhum HTTP client no grafo.** O app fala HTTP por `curl` (`catalog.rs`,
 >    `browser.rs`, `detect.rs`, `mcp_control.rs`). Como token em argv é
@@ -95,7 +95,7 @@ não existe pro Codex, e o app não tem como consertar — ele não é dono de n
 O MCP tem especificação de autorização própria (OAuth 2.1 com PKCE, descoberta
 por metadata, registro dinâmico de cliente). Nada impede o app de rodar o fluxo
 inteiro. O que muda é a responsabilidade: quem guarda token, renova e revoga
-passa a ser o MyCockpit.
+passa a ser a Frota.
 
 ## O problema que decide o desenho: como entregar o token ao agent
 
@@ -141,7 +141,7 @@ processo do app**. Ganhos que caem de bônus:
   nós", não "nativo-apenas").
 
 ### A3 — Honestidade e limites
-- Card mostra QUEM autenticou: "login do MyCockpit" vs "login nativo do CLI"
+- Card mostra QUEM autenticou: "login da Frota" vs "login nativo do CLI"
   (hoje só existe o segundo, e a mensagem nem diz isso direito).
 - Servidor com SSE/WS segue fora até o proxy falar streaming (registrar).
 - Sem login, comportamento de hoje, intacto.
