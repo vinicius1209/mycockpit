@@ -6,9 +6,9 @@
 // Contêiner (`IndiceDeBastidores`) lê os stores; `IndiceView` recebe por props,
 // para o teste renderizar sem o estado congelado do SSR.
 
-import { useEffect, useState, type KeyboardEvent } from "react"
+import { Fragment, useEffect, useState, type KeyboardEvent } from "react"
 import { Pin, SquareTerminal } from "lucide-react"
-import { PontoDeEstado, RotuloDeTempo } from "@/components/bastidores/BastidorVista"
+import { PontoDeEstado, RotuloDeTempo, TIPO } from "@/components/bastidores/BastidorVista"
 import { useBastidoresDaConversa } from "@/components/bastidores/useBastidoresDaConversa"
 import { Button } from "@/components/ui/button"
 import type { Bastidor } from "@/lib/bastidores"
@@ -84,17 +84,23 @@ export function IndiceView({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-8 items-center gap-2 pt-1 pr-2.5 pb-2 pl-5">
-        <p className="min-w-0 flex-1 text-[12px] text-muted-foreground">
-          {vivos ? `${vivos} em andamento nesta conversa` : "Nada em andamento nesta conversa."}
-        </p>
-        {onVoltar && (
-          <Button type="button" variant="ghost" size="chip" onClick={onVoltar} className="text-muted-foreground hover:text-foreground">
-            <SquareTerminal className="size-3.5" />
-            Voltar ao terminal ({abertas.length})
-          </Button>
-        )}
-      </div>
+      {/* A aba existe para acompanhar o que roda em segundo plano: a frase de
+          cima fala SÓ do que está vivo. Com a lista cheia de terminados ela
+          não diz "nada em andamento" por cima deles (parecia estado vazio
+          contradizendo a lista): quem fala ali é o rótulo da seção. */}
+      {(vivos > 0 || lista.length === 0 || onVoltar) && (
+        <div className="flex min-h-8 items-center gap-2 pt-1 pr-2.5 pb-2 pl-5">
+          <p className={cn("min-w-0 flex-1 text-[12px]", vivos ? "font-medium text-foreground" : "text-muted-foreground")}>
+            {vivos ? `${vivos} em andamento nesta conversa` : lista.length === 0 ? "Nada em andamento nesta conversa." : ""}
+          </p>
+          {onVoltar && (
+            <Button type="button" variant="ghost" size="chip" onClick={onVoltar} className="text-muted-foreground hover:text-foreground">
+              <SquareTerminal className="size-3.5" />
+              Voltar ao terminal ({abertas.length})
+            </Button>
+          )}
+        </div>
+      )}
       <ul
         role="listbox"
         aria-label="Trabalhos desta conversa"
@@ -109,52 +115,70 @@ export function IndiceView({
         )}
         {lista.map((b, i) => {
           const aberta = abertas.includes(b.itemId)
+          // Vivos vêm primeiro na lista (`bastidoresDaConversa`): o rótulo entra
+          // uma vez, na fronteira, e só fala do que acabou.
+          const abreTerminados = b.estado !== "vivo" && (i === 0 || lista[i - 1].estado === "vivo")
           return (
-            <li
-              key={b.itemId}
-              role="option"
-              aria-selected={i === sel}
-              onClick={() => {
-                setSel(i)
-                onAbrir(b.itemId)
-              }}
-              className={cn(
-                "group/indice flex h-8 cursor-pointer items-center gap-2 rounded-md px-2.5",
-                i === sel ? "bg-sel" : "hover:bg-sel-hover",
+            <Fragment key={b.itemId}>
+              {abreTerminados && (
+                <li role="presentation" className={cn("label-mono px-2.5 pb-1.5", i === 0 ? "pt-2" : "pt-4")}>
+                  Terminou há pouco
+                </li>
               )}
-            >
-              <PontoDeEstado estado={b.estado} />
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-[13px]",
-                  aberta ? "font-medium text-foreground" : "text-foreground/85",
-                )}
-                title={b.titulo}
-              >
-                {b.titulo}
-              </span>
-              <RotuloDeTempo b={b} />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icone-chip"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  onFixar(b.itemId)
+              <li
+                role="option"
+                aria-selected={i === sel}
+                onClick={() => {
+                  setSel(i)
+                  onAbrir(b.itemId)
                 }}
-                title="Abrir em outra aba do terminal"
-                aria-label={`Abrir ${b.titulo} em outra aba`}
-                className="text-muted-foreground opacity-0 group-hover/indice:opacity-100 focus-visible:opacity-100 hover:text-foreground"
+                className={cn(
+                  "group/indice flex h-8 cursor-pointer items-center gap-2 rounded-md px-2.5",
+                  i === sel ? "bg-sel" : "hover:bg-sel-hover",
+                )}
               >
-                <Pin className="size-3.5" />
-              </Button>
-            </li>
+                <PontoDeEstado estado={b.estado} />
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate text-[13px]",
+                    aberta ? "font-medium text-foreground" : "text-foreground/85",
+                  )}
+                  title={b.titulo}
+                >
+                  {b.titulo}
+                </span>
+                {/* O que roda de verdade em segundo plano (tarefa, subagente,
+                    processo) diz o que é. Comando comum do turno é o caso sem
+                    marca: ele só está aqui porque demorou. */}
+                {b.tipo !== "comando" && (
+                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{TIPO[b.tipo]}</span>
+                )}
+                {/* Trilho direito: o tempo OU o gesto. Com `opacity-0` o botão
+                    reservava 24px invisíveis em toda linha e o título truncava
+                    ao lado de um vazio (mesmo defeito da lista de alterações). */}
+                <RotuloDeTempo b={b} className="group-hover/indice:hidden" />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icone-chip"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onFixar(b.itemId)
+                  }}
+                  title="Abrir em outra aba do terminal"
+                  aria-label={`Abrir ${b.titulo} em outra aba`}
+                  className="hidden text-muted-foreground group-hover/indice:inline-flex hover:text-foreground"
+                >
+                  <Pin className="size-3.5" />
+                </Button>
+              </li>
+            </Fragment>
           )
         })}
       </ul>
       {lista.length > 0 && (
         <p className="border-t border-border/40 px-5 py-2 text-[11px] text-muted-foreground">
-          ↑↓ percorre · Enter abre no terminal · F abre em outra aba · Esc fecha as vistas
+          ↑↓ · Enter abre no terminal · F outra aba · Esc fecha
         </p>
       )}
     </div>

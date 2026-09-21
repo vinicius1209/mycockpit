@@ -2,7 +2,10 @@
 // você não rola para cima (quem sobe para ler não é puxado de volta).
 
 import { useLayoutEffect, useRef, type ReactNode } from "react"
+import { Copy } from "lucide-react"
+import { Button } from "@/components/ui/button"
 import type { SaidaViva } from "@/lib/bastidores"
+import { copyText } from "@/lib/clipboard"
 
 export function SaidaDeLog({
   saida,
@@ -41,9 +44,27 @@ export function SaidaDeLog({
         <p className="text-terminal-dim">Linhas anteriores foram omitidas para manter a vista leve.</p>
       )}
       {texto ? (
-        <pre data-selectable className="font-mono break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
-          {texto}
-        </pre>
+        // A saída é o que se veio ler: o texto mais forte da vista.
+        <div className="group/saida">
+          {/* Faixa de altura ZERO colada no topo da rolagem: o botão acompanha quem
+              lê uma saída comprida sem reservar linha nem largura do log. */}
+          <div className="sticky top-0 z-10 flex h-0 justify-end">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icone-chip"
+              onClick={() => void copyText(texto, "Saída copiada")}
+              title="Copiar a saída"
+              aria-label="Copiar a saída"
+              className="bg-terminal-raised text-terminal-dim opacity-0 group-hover/saida:opacity-100 focus-visible:opacity-100 hover:bg-terminal-line hover:text-terminal-strong dark:hover:bg-terminal-line"
+            >
+              <Copy className="size-3.5" />
+            </Button>
+          </div>
+          <pre data-selectable className="font-mono break-words whitespace-pre-wrap text-terminal-strong [overflow-wrap:anywhere]">
+            {texto}
+          </pre>
+        </div>
       ) : (
         <p className="text-terminal-dim">{vazio}</p>
       )}

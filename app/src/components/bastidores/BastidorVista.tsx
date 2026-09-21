@@ -7,8 +7,9 @@
 // como texto. Nada aqui abre shell ou manda tecla para processo.
 
 import type { ReactNode } from "react"
-import { Check, CircleAlert, CircleSlash, X } from "lucide-react"
-import { Elapsed } from "@/components/chat/LiveTime"
+import { X } from "lucide-react"
+import { CabecaDaVista, TituloNoCorpo } from "@/components/bastidores/CabecaDaVista"
+import { PontoDeEstado, TIPO } from "@/components/bastidores/partes"
 import { SaidaDeLog } from "@/components/bastidores/SaidaDeLog"
 import { useSaidaDeArquivo } from "@/components/bastidores/useSaidaDeArquivo"
 import { Button } from "@/components/ui/button"
@@ -16,72 +17,12 @@ import {
   SAIDA_VAZIA,
   somarTexto,
   type Bastidor,
-  type EstadoDeBastidor,
   type PassoDeSubagente,
   type SaidaViva,
 } from "@/lib/bastidores"
-import { fmtDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
-export const TIPO: Record<Bastidor["tipo"], string> = {
-  tarefa: "tarefa",
-  subagente: "subagente",
-  comando: "comando",
-  processo: "processo",
-}
-
-export const ESTADO: Record<Exclude<EstadoDeBastidor, "vivo">, string> = {
-  concluido: "concluído",
-  interrompido: "interrompido",
-  falhou: "falhou",
-}
-
-/** O glifo do estado. `tom="terminal"` é o mesmo glifo na superfície escura. */
-export function PontoDeEstado({ estado, tom = "app" }: { estado: EstadoDeBastidor; tom?: "app" | "terminal" }) {
-  if (estado === "vivo") {
-    return (
-      <span
-        aria-hidden
-        className={cn(
-          "size-1.5 shrink-0 animate-cockpit-pulse rounded-full",
-          tom === "terminal" ? "bg-terminal-prompt" : "bg-foreground/45",
-        )}
-      />
-    )
-  }
-  const Icone = estado === "concluido" ? Check : estado === "falhou" ? CircleAlert : CircleSlash
-  return (
-    <Icone
-      aria-hidden
-      className={cn(
-        "size-3 shrink-0",
-        // Verde é marco raro (§2): concluído é estado de lista, fica neutro.
-        estado === "falhou"
-          ? tom === "terminal" ? "text-terminal-error" : "text-st-error"
-          : tom === "terminal" ? "text-terminal-dim" : "text-muted-foreground",
-      )}
-    />
-  )
-}
-
-export function duracaoDe(b: Bastidor): string | null {
-  return b.atualizadoEm > b.desde ? fmtDuration(b.atualizadoEm - b.desde) : null
-}
-
-/** Vivo conta o tempo; terminado mostra quanto durou. O estado já está no
- *  ícone à esquerda, então a palavra ("concluído") fica para o leitor de tela e
- *  para o `title`, sem repetir o ícone em texto em cada linha. */
-export function RotuloDeTempo({ b, className }: { b: Bastidor; className?: string }) {
-  const classe = cn("shrink-0 font-mono text-[11px] text-muted-foreground", className)
-  if (b.estado === "vivo") return <Elapsed since={b.desde} className={classe} />
-  const durou = duracaoDe(b)
-  return (
-    <span className={classe} title={durou ? `${ESTADO[b.estado]} em ${durou}` : ESTADO[b.estado]}>
-      <span className="sr-only">{ESTADO[b.estado]}{durou ? " em " : ""}</span>
-      {durou}
-    </span>
-  )
-}
+export { ESTADO, PontoDeEstado, RotuloDeTempo, TIPO, duracaoDe } from "@/components/bastidores/partes"
 
 /** Por que acabou, quando o motor matou o trabalho junto com o turno. */
 function avisoDeFim(b: Bastidor): string | null {
@@ -92,39 +33,19 @@ function avisoDeFim(b: Bastidor): string | null {
   return "Este trabalho foi interrompido."
 }
 
-/** O começo de toda vista: o prompt com a linha de comando e o detalhe. */
-function Cabeca({ b }: { b: Bastidor }) {
-  if (!b.comando && !b.detalhe) return null
-  return (
-    <div className="mb-1">
-      {b.comando && (
-        <p className="break-words whitespace-pre-wrap [overflow-wrap:anywhere]">
-          <span aria-hidden className="text-terminal-prompt">❯ </span>
-          <span className="text-terminal-strong">{b.comando}</span>
-        </p>
-      )}
-      {b.detalhe && <p className="text-terminal-dim">{b.detalhe}</p>}
-    </div>
-  )
-}
-
-/** A última linha: cursor enquanto vive, estado e duração quando acaba. */
+/** A última linha: o cursor enquanto vive. Terminado não ganha linha aqui: o
+ *  estado e a duração já estão no rodapé (abas) ou na faixa da vista (lado a
+ *  lado), e "concluído · 1min 27s" aparecia duas vezes na mesma tela. */
 function Fim({ b }: { b: Bastidor }) {
-  if (b.estado === "vivo") return <span aria-hidden className="terminal-cursor mt-0.5 inline-block h-[1.1em] w-[0.6em] bg-terminal-prompt align-[-2px]" />
-  const durou = duracaoDe(b)
-  return (
-    <p className={cn("mt-1", b.estado === "falhou" ? "text-terminal-error" : "text-terminal-dim")}>
-      {ESTADO[b.estado]}
-      {durou ? ` · ${durou}` : ""}
-    </p>
-  )
+  if (b.estado !== "vivo") return null
+  return <span aria-hidden className="terminal-cursor mt-0.5 inline-block h-[1.1em] w-[0.6em] bg-terminal-prompt align-[-2px]" />
 }
 
 /** Corpo sem log (passos, espera, aviso): mesma tipografia do terminal. */
 function Texto({ b, children }: { b: Bastidor; children: ReactNode }) {
   return (
     <div data-selectable className="min-h-0 flex-1 overflow-auto px-3.5 py-3">
-      <Cabeca b={b} />
+      <CabecaDaVista b={b} />
       {children}
       <Fim b={b} />
     </div>
@@ -132,7 +53,7 @@ function Texto({ b, children }: { b: Bastidor; children: ReactNode }) {
 }
 
 function Log({ b, saida, vazio }: { b: Bastidor; saida: SaidaViva; vazio: string }) {
-  return <SaidaDeLog saida={saida} vazio={vazio} cabeca={<Cabeca b={b} />} fim={<Fim b={b} />} />
+  return <SaidaDeLog saida={saida} vazio={vazio} cabeca={<CabecaDaVista b={b} />} fim={<Fim b={b} />} />
 }
 
 function VistaDeArquivo({ caminho, b }: { caminho: string; b: Bastidor }) {
@@ -205,6 +126,7 @@ export function BastidorVista({
   b,
   corpo,
   comCabecalho = false,
+  tituloNoCorpo = false,
   emFoco = false,
   onFocar,
   onFechar,
@@ -212,6 +134,8 @@ export function BastidorVista({
   b: Bastidor
   corpo: CorpoDaVista
   comCabecalho?: boolean
+  /** As abas cortam o título: aí o corpo o traz inteiro. */
+  tituloNoCorpo?: boolean
   emFoco?: boolean
   onFocar?: () => void
   onFechar?: () => void
@@ -241,7 +165,6 @@ export function BastidorVista({
           >
             {b.titulo}
           </span>
-          <RotuloDeTempo b={b} className="text-terminal-dim" />
           {onFechar && (
             <Button
               type="button"
@@ -257,29 +180,31 @@ export function BastidorVista({
           )}
         </header>
       )}
-      {b.fonte.tipo === "arquivo" ? (
-        <VistaDeArquivo caminho={b.fonte.caminho} b={b} />
-      ) : b.fonte.tipo === "resultado" ? (
-        <VistaDeResultado b={b} resultado={corpo.resultado} />
-      ) : b.fonte.tipo === "stream" ? (
-        <Log b={b} saida={corpo.saida ?? SAIDA_VAZIA} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída chegou."} />
-      ) : b.fonte.tipo === "processo" ? (
-        <Log
-          b={b}
-          saida={somarTexto(SAIDA_VAZIA, `${corpo.processoOutput ?? ""}\n`)}
-          vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "O processo não escreveu nada."}
-        />
-      ) : b.fonte.tipo === "passos" ? (
-        <Passos passos={corpo.passos ?? []} b={b} />
-      ) : (
-        <Texto b={b}>
-          <p className="text-terminal-dim">
-            {b.estado === "vivo"
-              ? "Este motor só entrega a saída quando o trabalho termina."
-              : "O motor não entregou saída para este trabalho. O resultado, se houver, está na conversa."}
-          </p>
-        </Texto>
-      )}
+      <TituloNoCorpo.Provider value={tituloNoCorpo && !comCabecalho}>
+        {b.fonte.tipo === "arquivo" ? (
+          <VistaDeArquivo caminho={b.fonte.caminho} b={b} />
+        ) : b.fonte.tipo === "resultado" ? (
+          <VistaDeResultado b={b} resultado={corpo.resultado} />
+        ) : b.fonte.tipo === "stream" ? (
+          <Log b={b} saida={corpo.saida ?? SAIDA_VAZIA} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída chegou."} />
+        ) : b.fonte.tipo === "processo" ? (
+          <Log
+            b={b}
+            saida={somarTexto(SAIDA_VAZIA, `${corpo.processoOutput ?? ""}\n`)}
+            vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "O processo não escreveu nada."}
+          />
+        ) : b.fonte.tipo === "passos" ? (
+          <Passos passos={corpo.passos ?? []} b={b} />
+        ) : (
+          <Texto b={b}>
+            <p className="text-terminal-dim">
+              {b.estado === "vivo"
+                ? "Este motor só entrega a saída quando o trabalho termina."
+                : "O motor não entregou saída para este trabalho. O resultado, se houver, está na conversa."}
+            </p>
+          </Texto>
+        )}
+      </TituloNoCorpo.Provider>
       {aviso && <Rodape texto={aviso} />}
     </section>
   )

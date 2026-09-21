@@ -72,4 +72,33 @@ describe("IndiceView", () => {
     expect(opcoes).toEqual(['aria-selected="false"', 'aria-selected="true"'])
     expect(html).toMatch(/font-medium text-foreground" title="revisão"/)
   })
+
+  it("só terminados: a lista não diz que está vazia por cima deles", () => {
+    // Visto na tela em 21/09/2026: "Nada em andamento nesta conversa." em cima
+    // de sete linhas concluídas parecia estado vazio contradizendo a lista.
+    const html = render([b("a", "deploy", "concluido"), b("b", "revisão", "falhou")], [])
+    expect(html).not.toContain("Nada em andamento")
+    expect(html.match(/Terminou há pouco/g)).toHaveLength(1)
+  })
+
+  it("com vivos e terminados, o rótulo entra uma vez, na fronteira", () => {
+    const html = render([b("a", "deploy"), b("b", "revisão", "concluido"), b("c", "lint", "concluido")], [])
+    expect(html).toContain("1 em andamento nesta conversa")
+    expect(html.indexOf("deploy")).toBeLessThan(html.indexOf("Terminou há pouco"))
+    expect(html.indexOf("Terminou há pouco")).toBeLessThan(html.indexOf("revisão"))
+    expect(html.match(/Terminou há pouco/g)).toHaveLength(1)
+  })
+
+  it("marca o que roda em segundo plano de verdade, e o comando comum fica sem marca", () => {
+    const comando: Bastidor = { ...b("c", "Typecheck and run the guide lints", "concluido"), tipo: "comando" }
+    const html = render([{ ...b("s", "Explorar o painel"), tipo: "subagente" }, comando], [])
+    expect(html).toContain(">subagente<")
+    expect(html).not.toContain(">comando<")
+  })
+
+  it("o gesto de fixar não reserva largura enquanto está escondido", () => {
+    const html = render([b("a", "deploy")], [])
+    expect(html).not.toContain("opacity-0")
+    expect(html).toContain("group-hover/indice:inline-flex")
+  })
 })

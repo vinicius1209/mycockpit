@@ -122,4 +122,64 @@ describe("TerminalView", () => {
     expect(html.indexOf("bun run test:e2e")).toBeLessThan(html.indexOf("cx 2"))
     expect(html).toContain("terminal-cursor")
   })
+
+  // Payload real: o comando da captura de 21/09/2026, um heredoc que ocupava
+  // 80% da vista e deixava a saída no rodapé.
+  const HEREDOC = [
+    "python3 - <<'EOF'",
+    "p='src/components/layout/DiffIndex.tsx'",
+    "L=open(p).read().split('\\n')",
+    "# reindent seção 1",
+    "for i in range(a+1,b):",
+    "    if L[i]: L[i]='  '+L[i]",
+    "open(p,'w').write('\\n'.join(L))",
+    "EOF",
+  ].join("\n")
+  const LONGO: Bastidor = {
+    ...COMANDO,
+    titulo: "Reindent and mirror the rule on the unstaged section, then typecheck",
+    comando: HEREDOC,
+    estado: "concluido",
+    atualizadoEm: T0 + 10_000,
+  }
+
+  it("comando longo nasce recolhido: quem manda na vista é a saída", () => {
+    const html = render([LONGO], ["t-codex"])
+    expect(html).toContain("python3 - &lt;&lt;&#x27;EOF&#x27;")
+    expect(html).toContain("L=open(p)")
+    expect(html).not.toContain("if L[i]")
+    expect(html).toContain("Ver o comando inteiro (8 linhas)")
+    expect(html).toContain('aria-label="Copiar o comando"')
+    expect(html).toContain('aria-label="Copiar a saída"')
+  })
+
+  it("comando curto aparece inteiro, sem botão de expandir", () => {
+    const html = render([{ ...COMANDO, comando: "bun run test:e2e" }], ["t-codex"])
+    expect(html).not.toContain("Ver o comando inteiro")
+  })
+
+  it("uma vista só é um detalhe: volta escrita, título uma vez, nenhuma aba", () => {
+    // Build #415: a aba e o corpo diziam o mesmo título, um em cima do outro.
+    const html = render([LONGO], ["t-codex"])
+    expect(html).not.toContain('role="tab"')
+    expect(html).toContain(">Bastidores</button>")
+    expect(html.match(/then typecheck</g)).toHaveLength(1)
+    expect(html).not.toContain("←→ abas")
+  })
+
+  it("com várias abas o corpo traz o título inteiro; lado a lado a faixa já traz", () => {
+    const abas = render([LONGO, SUBAGENTE], ["t-codex", SUBAGENTE.itemId])
+    expect(abas).toContain("then typecheck</p>")
+    expect(abas).toContain("←→ abas")
+    const lado = render([LONGO, SUBAGENTE], ["t-codex", SUBAGENTE.itemId], 0, true)
+    expect(lado).not.toContain("then typecheck</p>")
+  })
+
+  it("o estado abre a vista, numa linha só com duração, hora e tipo, e não repete", () => {
+    const html = render([LONGO], ["t-codex"])
+    expect(html.match(/concluído/g)).toHaveLength(1)
+    expect(html).toMatch(/concluído · 10s<\/span><span>· começou às \d\d:\d\d<\/span><span>· comando</)
+    expect(html.indexOf("concluído")).toBeLessThan(html.indexOf("python3"))
+    expect(html).not.toContain("<footer")
+  })
 })
