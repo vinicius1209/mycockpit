@@ -1,5 +1,5 @@
 // MIGRAÇÃO das personas: SQLite (agent_presets, global e invisível ao git) →
-// arquivos `~/.mycockpit/agents/*.md`. O ponto delicado é o ID: conversas
+// arquivos `~/.frota/agents/*.md`. O ponto delicado é o ID: conversas
 // antigas carimbaram o UUID da tabela, então o arquivo migrado precisa
 // PRESERVAR esse id no frontmatter — senão elas passariam a achar que a persona
 // foi apagada e o usuário levaria um aviso falso de "preset apagado".
@@ -164,7 +164,7 @@ describe("alocação de slug", () => {
   it("não sobrescreve a persona GLOBAL escondida por uma do projeto", async () => {
     // A lista da UI é deduplicada (projeto vence global no mesmo slug). Se a
     // alocação de slug olhasse só pra ela, criar uma global chamada "Revisor"
-    // acharia o slug livre e gravaria por cima do ~/.mycockpit/agents/revisor.md
+    // acharia o slug livre e gravaria por cima do ~/.frota/agents/revisor.md
     // que existe e está apenas SOMBREADO. Perda silenciosa de arquivo.
     h.arquivos = [
       { slug: "revisor", scope: "global", content: "---\nname: Revisor\n---\nantigo" },

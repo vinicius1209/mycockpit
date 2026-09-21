@@ -1,4 +1,4 @@
-//! `.mycockpit/` — a pasta do PRÓPRIO app no projeto, o análogo de `.claude/`
+//! `.frota/` — a pasta do PRÓPRIO app no projeto, o análogo de `.claude/`
 //! sem depender de fornecedor. Mora aqui:
 //!   - `config.toml`   — config por projeto (modo / helper / permissão / dirs);
 //!   - `instructions.md` — a DOUTRINA do projeto, que o app injeta no prompt de
@@ -15,17 +15,50 @@
 //!
 //! Git: a pasta nasceu 100% local (`.gitignore` = `*`). Desde a decisão de
 //! jul/2026 ela é SELETIVA — doutrina e personas são versionadas (revisáveis em
-//! PR, viajam no clone), o resto segue fora. Ver `MYCOCKPIT_GITIGNORE`.
+//! PR, viajam no clone), o resto segue fora. Ver `FROTA_GITIGNORE`.
 
 use serde::Serialize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use toml_edit::{value, DocumentMut};
 
-/// Conteúdo do `.mycockpit/.gitignore`. Ignora tudo e reabre exceções: a ordem
+/// Nome da pasta da Frota num projeto.
+pub const PASTA: &str = ".frota";
+
+/// O nome LEGADO, que ainda se lê durante a janela do rename (ADR-222). A
+/// pasta existe em todo projeto aberto antes de 21/09/2026, e nesses projetos
+/// `instructions.md`, `agents/` e `commands/` estão COMMITADOS: o app não
+/// renomeia diretório de repositório de terceiro sem gesto humano.
+pub const PASTA_LEGADA: &str = ".mycockpit";
+
+/// A pasta da Frota neste projeto, em UM lugar só.
+///
+/// `.frota/` quando ela existe; `.mycockpit/` quando só a legada existe; e
+/// `.frota/` quando nenhuma existe, que é o que se CRIA daqui pra frente.
+///
+/// Isto é o trabalho do rename. Antes, 26 pontos montavam esse caminho na mão,
+/// e era isso que fazia trocar o nome doer: a decisão de onde a pasta mora
+/// estava espalhada em vez de ter dono. Quem precisa do caminho pergunta aqui.
+pub fn nome_da_pasta(base: &Path) -> &str {
+    base.file_name().and_then(|n| n.to_str()).unwrap_or(PASTA)
+}
+
+pub fn pasta_da_frota(root: &Path) -> PathBuf {
+    let nova = root.join(PASTA);
+    if nova.is_dir() {
+        return nova;
+    }
+    let legada = root.join(PASTA_LEGADA);
+    if legada.is_dir() {
+        return legada;
+    }
+    nova
+}
+
+/// Conteúdo do `.frota/.gitignore`. Ignora tudo e reabre exceções: a ordem
 /// importa (git precisa "desingorar" a PASTA antes dos arquivos dentro dela,
 /// senão o `*` — que casa em qualquer nível — continua vencendo).
-const MYCOCKPIT_GITIGNORE: &str = "\
-# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
+const FROTA_GITIGNORE: &str = "\
+# Pasta da Frota. Local por padrão: contexto exportado, missões e worktrees
 # não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina,
 # as personas e os comandos do projeto devem viajar no clone e ser revisáveis em PR.
 *
@@ -44,7 +77,7 @@ const LEGACY_GITIGNORE: &str = "*";
 /// Versão jul/2026 do `.gitignore` (antes de `commands/` existir). Também
 /// elegível a upgrade automático: foi o APP que a escreveu, não o usuário.
 const GITIGNORE_JUL2026: &str = "\
-# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
+# Pasta da Frota. Local por padrão: contexto exportado, missões e worktrees
 # não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina
 # e as personas do projeto devem viajar no clone e ser revisáveis em PR.
 *
@@ -54,26 +87,33 @@ const GITIGNORE_JUL2026: &str = "\
 !agents/*.md
 ";
 
-/// Cria `dir` e garante o `.gitignore` do `.mycockpit/`: escreve se faltar,
+/// Cria `dir` e garante o `.gitignore` do `.frota/`: escreve se faltar,
 /// faz upgrade se for uma versão que o PRÓPRIO app escreveu (o `*` legado ou a
 /// versão jul/2026 sem `commands/`), e NÃO TOCA se o usuário editou.
-/// `pub(crate)`: skills.rs grava `.mycockpit/commands/` sob o mesmo contrato.
-pub(crate) fn ensure_mycockpit_dir(dir: &Path) -> Result<(), String> {
+/// `pub(crate)`: skills.rs grava `.frota/commands/` sob o mesmo contrato.
+pub(crate) fn ensure_frota_dir(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let gi = dir.join(".gitignore");
     match std::fs::read_to_string(&gi) {
         Ok(cur) if cur.trim() == LEGACY_GITIGNORE || cur == GITIGNORE_JUL2026 => {
-            crate::fsx::write_atomic(&gi, MYCOCKPIT_GITIGNORE)
+            crate::fsx::write_atomic(&gi, FROTA_GITIGNORE)
         }
         Ok(_) => Ok(()), // conteúdo autoral (ou já novo): preservado
-        Err(_) => crate::fsx::write_atomic(&gi, MYCOCKPIT_GITIGNORE),
+        Err(_) => crate::fsx::write_atomic(&gi, FROTA_GITIGNORE),
     }
 }
 
 #[derive(Serialize, Default)]
-pub struct McConfig {
-    /// `.mycockpit/config.toml` existe no disco?
+pub struct ProjectConfig {
+    /// `.frota/config.toml` existe no disco?
     pub exists: bool,
+    /// O NOME da pasta da Frota neste projeto: `.frota` normalmente, `.mycockpit`
+    /// num projeto que ainda não migrou.
+    ///
+    /// Vai para a tela ("salvo em …/config.toml", a lista de comandos e a de
+    /// personas). Um literal no front mentiria no projeto legado, e a lei da
+    /// casa é estado real, nunca teatro (ADR-222).
+    pub pasta: String,
     pub mode: Option<String>,
     /// "haiku" | "off" (None = chave ausente → front aplica default).
     pub helper: Option<String>,
@@ -99,10 +139,16 @@ fn toml_str_array(doc: &DocumentMut, key: &str) -> Vec<String> {
 }
 
 #[tauri::command]
-pub fn read_mycockpit_config(path: String) -> Result<McConfig, String> {
-    let cfg = Path::new(&path).join(".mycockpit").join("config.toml");
+pub fn read_project_config(path: String) -> Result<ProjectConfig, String> {
+    let base = pasta_da_frota(Path::new(&path));
+    let pasta = nome_da_pasta(&base).to_string();
+    let cfg = base.join("config.toml");
     let Ok(text) = std::fs::read_to_string(&cfg) else {
-        return Ok(McConfig::default()); // exists: false
+        // Sem arquivo ainda: o nome da pasta vai mesmo assim, é onde ele NASCERIA.
+        return Ok(ProjectConfig {
+            pasta,
+            ..Default::default()
+        });
     };
     // TOML inválido NÃO vira "tudo default" em silêncio: o arquivo é editável à
     // mão; mascarar um typo esconderia a config real (o front loga o warn).
@@ -110,8 +156,9 @@ pub fn read_mycockpit_config(path: String) -> Result<McConfig, String> {
         .parse::<DocumentMut>()
         .map_err(|e| format!("config.toml inválido: {e}"))?;
     let get = |k: &str| doc.get(k).and_then(|v| v.as_str()).map(str::to_string);
-    Ok(McConfig {
+    Ok(ProjectConfig {
         exists: true,
+        pasta,
         mode: get("mode"),
         helper: get("helper"),
         permission: get("permission"),
@@ -120,13 +167,13 @@ pub fn read_mycockpit_config(path: String) -> Result<McConfig, String> {
 }
 
 /// Resolve as pastas extras liberadas para um `cwd` (que pode ser um worktree
-/// sob `.mycockpit/worktrees/…`): sobe a árvore até achar `.mycockpit/config.toml`,
+/// sob `.frota/worktrees/…`): sobe a árvore até achar `.frota/config.toml`,
 /// resolve paths relativos contra a RAIZ do projeto, canoniza e descarta os que
 /// não existem. Chamado no spawn (`run_agent`) → vira `--add-dir` em cada adapter.
 pub fn resolve_extra_dirs(cwd: &str) -> Vec<String> {
     let mut cur: &Path = Path::new(cwd);
     loop {
-        let cfg = cur.join(".mycockpit").join("config.toml");
+        let cfg = pasta_da_frota(cur).join("config.toml");
         if cfg.is_file() {
             return read_and_resolve(&cfg, cur);
         }
@@ -160,18 +207,18 @@ fn read_and_resolve(cfg: &Path, project_root: &Path) -> Vec<String> {
         .collect()
 }
 
-/// Escreve as chaves fornecidas em `.mycockpit/config.toml`, criando a pasta
+/// Escreve as chaves fornecidas em `.frota/config.toml`, criando a pasta
 /// (com `.gitignore` = `*`) e o arquivo se não existirem. Round-trip via toml_edit.
 #[tauri::command]
-pub fn write_mycockpit_config(
+pub fn write_project_config(
     path: String,
     mode: Option<String>,
     helper: Option<String>,
     permission: Option<String>,
     extra_dirs: Option<Vec<String>>,
 ) -> Result<(), String> {
-    let dir = Path::new(&path).join(".mycockpit");
-    ensure_mycockpit_dir(&dir)?;
+    let dir = pasta_da_frota(Path::new(&path));
+    ensure_frota_dir(&dir)?;
 
     let cfg = dir.join("config.toml");
     let mut doc = match std::fs::read_to_string(&cfg) {
@@ -213,39 +260,55 @@ pub fn write_mycockpit_config(
     Ok(())
 }
 
-// ---------------- Doutrina do projeto (.mycockpit/instructions.md) ----------------
+// ---------------- Doutrina do projeto (.frota/instructions.md) ----------------
 //
 // O app INJETA este arquivo no prompt (bloco no 1º turno, como a persona), então
 // ele vale para claude, codex e agy igualmente. Não confundir com `CLAUDE.md` /
 // `AGENTS.md`: aqueles são lidos pela própria CLI, cada um só pelo seu dono, e o
 // app nunca os injeta — só os inventaria no painel.
 
-/// Nome do arquivo de doutrina dentro de `.mycockpit/`.
+/// Nome do arquivo de doutrina dentro de `.frota/`.
 pub const DOCTRINE_FILE: &str = "instructions.md";
 
 #[derive(Serialize, Default)]
+#[serde(rename_all = "camelCase")]
 pub struct Doctrine {
     pub exists: bool,
     /// Conteúdo INTEGRAL (o editor grava de volta o que leu — truncar aqui
     /// perderia texto do usuário no round-trip). O corte p/ o prompt é no front.
     pub content: String,
     pub bytes: usize,
+    /// Caminho RELATIVO de onde a doutrina foi lida (`.frota/instructions.md`
+    /// ou, em projeto que ainda não migrou, `.frota/instructions.md`).
+    ///
+    /// Não é enfeite: este rótulo entra NO PROMPT (`<doutrina fonte=...>` em
+    /// `doctrine.ts`). Uma constante no front cravaria o nome novo e mandaria o
+    /// agente ler um arquivo que não existe no projeto legado, que é
+    /// exatamente o "estado real, nunca teatro" que a casa proíbe.
+    pub path: String,
 }
 
 #[tauri::command]
 pub fn read_project_doctrine(path: String) -> Result<Doctrine, String> {
     let root = crate::skills::validate_project_path(&path)?;
-    let f = root.join(".mycockpit").join(DOCTRINE_FILE);
+    let base = pasta_da_frota(&root);
+    let rel = format!("{}/{DOCTRINE_FILE}", nome_da_pasta(&base));
+    let f = base.join(DOCTRINE_FILE);
     match std::fs::read_to_string(&f) {
         Ok(content) => Ok(Doctrine {
             exists: true,
             bytes: content.len(),
             content,
+            path: rel,
         }),
         // ausente é estado NORMAL (projeto sem doutrina) → exists: false.
         // Erro de leitura real (permissão) também cai aqui; o painel oferece
         // criar, e o write dirá a verdade se o disco estiver bloqueado.
-        Err(_) => Ok(Doctrine::default()),
+        // O path vai mesmo assim: é onde a doutrina SERIA criada.
+        Err(_) => Ok(Doctrine {
+            path: rel,
+            ..Default::default()
+        }),
     }
 }
 
@@ -272,16 +335,16 @@ pub fn read_doctrine_seed(path: String, name: String) -> Result<String, String> 
 #[tauri::command]
 pub fn write_project_doctrine(path: String, content: String) -> Result<(), String> {
     let root = crate::skills::validate_project_path(&path)?;
-    let dir = root.join(".mycockpit");
-    ensure_mycockpit_dir(&dir)?;
+    let dir = pasta_da_frota(&root);
+    ensure_frota_dir(&dir)?;
     crate::fsx::write_atomic(&dir.join(DOCTRINE_FILE), &content)
 }
 
-// ---------------- Personas (.mycockpit/agents/*.md) ----------------
+// ---------------- Personas (.frota/agents/*.md) ----------------
 //
 // Arquivo é a FONTE (mesmo padrão do config.toml). Dois escopos, como o
-// `.claude/commands`: do PROJETO (`<projeto>/.mycockpit/agents/`) e GLOBAL do
-// usuário (`~/.mycockpit/agents/`), com o do projeto vencendo no mesmo slug —
+// `.claude/commands`: do PROJETO (`<projeto>/.frota/agents/`) e GLOBAL do
+// usuário (`~/.frota/agents/`), com o do projeto vencendo no mesmo slug —
 // o desempate é feito no front, que é onde tem teste barato.
 //
 // O Rust aqui é deliberadamente burro: lista, lê e grava texto. Frontmatter,
@@ -316,18 +379,18 @@ fn safe_slug(slug: &str) -> Result<&str, String> {
     Ok(slug)
 }
 
-/// Pasta de personas do escopo. `global` mora em ~/.mycockpit/agents (não é
+/// Pasta de personas do escopo. `global` mora em ~/.frota/agents (não é
 /// repositório: não leva .gitignore).
 fn agents_dir(scope: &str, project_path: Option<&str>) -> Result<std::path::PathBuf, String> {
     match scope {
         "global" => {
             let home = std::env::var("HOME").map_err(|_| "sem HOME".to_string())?;
-            Ok(Path::new(&home).join(".mycockpit").join("agents"))
+            Ok(pasta_da_frota(Path::new(&home)).join("agents"))
         }
         "projeto" => {
             let p = project_path.ok_or_else(|| "escopo de projeto sem projeto".to_string())?;
             let root = crate::skills::validate_project_path(p)?;
-            Ok(root.join(".mycockpit").join("agents"))
+            Ok(pasta_da_frota(&root).join("agents"))
         }
         other => Err(format!("escopo desconhecido: '{other}'")),
     }
@@ -401,7 +464,7 @@ pub fn write_agent_def(
     let dir = agents_dir(&scope, project_path.as_deref())?;
     if scope == "projeto" {
         if let Some(parent) = dir.parent() {
-            ensure_mycockpit_dir(parent)?;
+            ensure_frota_dir(parent)?;
         }
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -430,10 +493,10 @@ pub fn delete_agent_def(
 // ---------------- Export do contexto de conversa ----------------
 //
 // O frontend guarda a conversa (itens JSON) no SQLite e RENDERIZA o markdown;
-// aqui só gravamos com segurança em `.mycockpit/context/<conv_id>.md` — arquivo
+// aqui só gravamos com segurança em `.frota/context/<conv_id>.md` — arquivo
 // legível por qualquer code agent, referenciado pelo caminho relativo no prompt.
 
-/// Máximo de exports retidos em `.mycockpit/context/` (limpeza best-effort).
+/// Máximo de exports retidos em `.frota/context/` (limpeza best-effort).
 const MAX_CONTEXT_FILES: usize = 30;
 
 /// conv_id vira NOME DE ARQUIVO: só `[a-zA-Z0-9_-]`, senão Err — nada de
@@ -454,7 +517,7 @@ fn safe_conv_id(conv_id: &str) -> Result<&str, String> {
 }
 
 /// Garante `dir` existente com um `.gitignore` auto-ignorante (`*`) dentro —
-/// mesmo padrão do `.mycockpit/` acima: 100% local, nunca vaza pro git.
+/// mesmo padrão do `.frota/` acima: 100% local, nunca vaza pro git.
 fn ensure_ignored_dir(dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
     let gi = dir.join(".gitignore");
@@ -502,7 +565,7 @@ pub struct ContextBundlePaths {
 }
 
 /// Exporta o markdown (renderizado pelo front) da conversa pra
-/// `.mycockpit/context/<conv_id>.md` (write atômico, sobrescreve re-export).
+/// `.frota/context/<conv_id>.md` (write atômico, sobrescreve re-export).
 /// Devolve o caminho RELATIVO — é o que vai pro prompt do agent.
 ///
 /// `command(async)` NÃO é enfeite: comando Tauri SEM `async` roda na THREAD
@@ -520,20 +583,21 @@ pub fn export_conv_context(
 ) -> Result<String, String> {
     let id = safe_conv_id(&conv_id)?;
     let root = crate::skills::validate_project_path(&project_path)?;
-    // `.mycockpit/` também ganha o .gitignore (o export pode rodar antes de
-    // qualquer config ser escrita — padrão do write_mycockpit_config).
-    ensure_mycockpit_dir(&root.join(".mycockpit"))?;
-    let dir = root.join(".mycockpit").join("context");
+    // A pasta da Frota também ganha o .gitignore (o export pode rodar antes de
+    // qualquer config ser escrita, padrão do write_project_config).
+    let base = pasta_da_frota(&root);
+    ensure_frota_dir(&base)?;
+    let dir = base.join("context");
     ensure_ignored_dir(&dir)?;
     crate::fsx::write_atomic(&dir.join(format!("{id}.md")), &markdown)?;
     trim_old_exports(&dir, MAX_CONTEXT_FILES);
-    Ok(format!(".mycockpit/context/{id}.md"))
+    Ok(format!("{}/context/{id}.md", nome_da_pasta(&base)))
 }
 
 /// Exporta, numa única fronteira validada, as duas camadas da memória híbrida:
 /// - `<conv>.md`: transcript humano, completo e legível por qualquer agent;
 /// - `<conv>.handoff.json`: índice estruturado/compacto, lido pelo prompt ou
-///   pelas tools do MCP `mc-context`.
+///   pelas tools do MCP `frota-context`.
 ///
 /// O JSON é validado antes de qualquer write e recebe um teto generoso, mas
 /// finito: o manifesto é índice, nunca um segundo transcript disfarçado.
@@ -562,8 +626,9 @@ pub fn export_context_bundle(
 
     let id = safe_conv_id(&conv_id)?;
     let root = crate::skills::validate_project_path(&project_path)?;
-    ensure_mycockpit_dir(&root.join(".mycockpit"))?;
-    let dir = root.join(".mycockpit").join("context");
+    let base = pasta_da_frota(&root);
+    ensure_frota_dir(&base)?;
+    let dir = base.join("context");
     ensure_ignored_dir(&dir)?;
 
     let transcript_name = format!("{id}.md");
@@ -573,8 +638,8 @@ pub fn export_context_bundle(
     trim_old_exports(&dir, MAX_CONTEXT_FILES);
 
     Ok(ContextBundlePaths {
-        transcript_path: format!(".mycockpit/context/{transcript_name}"),
-        manifest_path: format!(".mycockpit/context/{manifest_name}"),
+        transcript_path: format!("{}/context/{transcript_name}", nome_da_pasta(&base)),
+        manifest_path: format!("{}/context/{manifest_name}", nome_da_pasta(&base)),
     })
 }
 
@@ -594,8 +659,8 @@ mod tests {
     #[test]
     fn gitignore_novo_versiona_doutrina_e_personas() {
         let tmp = tmp_project("gi-novo");
-        let dir = tmp.join(".mycockpit");
-        ensure_mycockpit_dir(&dir).unwrap();
+        let dir = tmp.join(PASTA);
+        ensure_frota_dir(&dir).unwrap();
         let gi = std::fs::read_to_string(dir.join(".gitignore")).unwrap();
         // ignora tudo…
         assert!(gi.lines().any(|l| l == "*"));
@@ -611,12 +676,12 @@ mod tests {
     #[test]
     fn gitignore_legado_ganha_upgrade_mas_edicao_autoral_fica_de_pe() {
         let tmp = tmp_project("gi-upgrade");
-        let dir = tmp.join(".mycockpit");
+        let dir = tmp.join(PASTA);
         std::fs::create_dir_all(&dir).unwrap();
 
         // legado exato ("*") → upgrade (projetos que já rodaram o app antigo).
         std::fs::write(dir.join(".gitignore"), "*\n").unwrap();
-        ensure_mycockpit_dir(&dir).unwrap();
+        ensure_frota_dir(&dir).unwrap();
         assert!(std::fs::read_to_string(dir.join(".gitignore"))
             .unwrap()
             .contains("!instructions.md"));
@@ -624,7 +689,7 @@ mod tests {
         // conteúdo AUTORAL → intocado (não é nosso direito reescrever).
         let autoral = "*\n!minhas-notas.md\n";
         std::fs::write(dir.join(".gitignore"), autoral).unwrap();
-        ensure_mycockpit_dir(&dir).unwrap();
+        ensure_frota_dir(&dir).unwrap();
         assert_eq!(
             std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
             autoral
@@ -652,7 +717,7 @@ mod tests {
         // escrever a doutrina também instala o .gitignore seletivo (o arquivo
         // precisa ser rastreável desde o 1º save, senão nasce ignorado).
         assert!(
-            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+            std::fs::read_to_string(tmp.join(PASTA).join(".gitignore"))
                 .unwrap()
                 .contains("!instructions.md")
         );
@@ -710,7 +775,7 @@ mod tests {
             md.into(),
         )
         .unwrap();
-        assert!(escrito.ends_with(".mycockpit/agents/revisor.md"));
+        assert!(escrito.ends_with(&format!("{PASTA}/agents/revisor.md")));
 
         let defs: Vec<_> = read_agent_defs(Some(pp.clone()))
             .into_iter()
@@ -725,7 +790,7 @@ mod tests {
         // gravar persona instala o .gitignore seletivo: a pasta é VERSIONADA,
         // então ela não pode nascer ignorada pelo `*` legado.
         assert!(
-            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+            std::fs::read_to_string(tmp.join(PASTA).join(".gitignore"))
                 .unwrap()
                 .contains("!agents/")
         );
@@ -765,7 +830,7 @@ mod tests {
     fn arquivo_com_nome_fora_da_disciplina_e_ignorado_nao_renomeado() {
         let tmp = tmp_project("agents-estranho");
         let pp = tmp.to_string_lossy().to_string();
-        let dir = tmp.join(".mycockpit").join("agents");
+        let dir = tmp.join(PASTA).join("agents");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("Nome Estranho.md"), "x").unwrap();
         std::fs::write(dir.join("ok.md"), "y").unwrap();
@@ -802,8 +867,8 @@ mod tests {
 
         // export cria dir + gitignore + arquivo e devolve o RELATIVO.
         let rel = export_conv_context(pp.clone(), "conv-1".into(), "# Oi\n".into()).unwrap();
-        assert_eq!(rel, ".mycockpit/context/conv-1.md");
-        let dir = tmp.join(".mycockpit").join("context");
+        assert_eq!(rel, format!("{PASTA}/context/conv-1.md"));
+        let dir = tmp.join(PASTA).join("context");
         // o contexto exportado é descartável: a subpasta segue 100% local.
         assert_eq!(
             std::fs::read_to_string(dir.join(".gitignore")).unwrap(),
@@ -811,7 +876,7 @@ mod tests {
         );
         // a pasta-mãe é SELETIVA (doutrina/personas versionadas) — antes era "*".
         assert!(
-            std::fs::read_to_string(tmp.join(".mycockpit").join(".gitignore"))
+            std::fs::read_to_string(tmp.join(PASTA).join(".gitignore"))
                 .unwrap()
                 .contains("!instructions.md")
         );
@@ -849,12 +914,12 @@ mod tests {
             r#"{"version":1,"pending_request":"continue"}"#.into(),
         )
         .unwrap();
-        assert_eq!(paths.transcript_path, ".mycockpit/context/conv-2.md");
+        assert_eq!(paths.transcript_path, format!("{PASTA}/context/conv-2.md"));
         assert_eq!(
             paths.manifest_path,
-            ".mycockpit/context/conv-2.handoff.json"
+            format!("{PASTA}/context/conv-2.handoff.json")
         );
-        let dir = tmp.join(".mycockpit/context");
+        let dir = tmp.join(PASTA).join("context");
         assert_eq!(
             std::fs::read_to_string(dir.join("conv-2.md")).unwrap(),
             "# Memória\n"
@@ -903,5 +968,59 @@ mod tests {
     fn filetime_set(p: &Path, t: std::time::SystemTime) -> std::io::Result<()> {
         let f = std::fs::OpenOptions::new().write(true).open(p)?;
         f.set_modified(t)
+    }
+}
+
+#[cfg(test)]
+mod testes_pasta_da_frota {
+    use super::{pasta_da_frota, PASTA, PASTA_LEGADA};
+
+    fn tmp(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("frota-pasta-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn projeto_sem_nenhuma_das_duas_nasce_em_frota() {
+        let root = tmp("nova");
+        assert_eq!(pasta_da_frota(&root), root.join(PASTA));
+    }
+
+    #[test]
+    fn projeto_ja_migrado_usa_frota() {
+        let root = tmp("migrado");
+        std::fs::create_dir_all(root.join(PASTA)).unwrap();
+        assert_eq!(pasta_da_frota(&root), root.join(PASTA));
+    }
+
+    #[test]
+    fn projeto_legado_continua_lendo_mycockpit() {
+        // A janela do rename: projeto aberto antes de 21/09/2026 tem doutrina,
+        // personas e comandos COMMITADOS em `.frota/`. Quebrar a leitura
+        // deles seria o app decidindo renomear repositório de terceiro sozinho.
+        let root = tmp("legado");
+        std::fs::create_dir_all(root.join(PASTA_LEGADA)).unwrap();
+        assert_eq!(pasta_da_frota(&root), root.join(PASTA_LEGADA));
+    }
+
+    #[test]
+    fn com_as_duas_a_nova_ganha() {
+        // Durante a migração as duas coexistem por um instante. A nova manda,
+        // senão o app escreveria na pasta que está saindo.
+        let root = tmp("ambas");
+        std::fs::create_dir_all(root.join(PASTA)).unwrap();
+        std::fs::create_dir_all(root.join(PASTA_LEGADA)).unwrap();
+        assert_eq!(pasta_da_frota(&root), root.join(PASTA));
+    }
+
+    #[test]
+    fn arquivo_com_o_nome_da_pasta_nao_engana() {
+        // `.frota` como ARQUIVO não é a pasta: cai para a legada.
+        let root = tmp("arquivo");
+        std::fs::write(root.join(PASTA), "nao sou pasta").unwrap();
+        std::fs::create_dir_all(root.join(PASTA_LEGADA)).unwrap();
+        assert_eq!(pasta_da_frota(&root), root.join(PASTA_LEGADA));
     }
 }

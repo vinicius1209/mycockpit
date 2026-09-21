@@ -23,7 +23,7 @@ function session(): BrowserSession {
     pid: 22627,
     endpoint: "http://127.0.0.1:62934",
     browser: "Chrome/149.0.7827.55",
-    userDataDir: "/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1",
+    userDataDir: "/Users/me/Library/Application Support/Frota/browser-profiles/proj-1",
     binary:
       "/Users/me/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     windowVisible: false,

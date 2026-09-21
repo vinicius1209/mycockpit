@@ -24,6 +24,7 @@ import {
 import type { AgentDef, PresetScope } from "@/lib/agentDefs"
 import { usePresets } from "@/store/presets"
 import { cn } from "@/lib/utils"
+import { caminhoNaPasta } from "@/lib/frotaDir"
 
 const SELECT_TRIGGER =
   "h-8 gap-1.5 rounded-md border bg-secondary/40 px-2.5 text-[13px] text-foreground data-[size=default]:h-8"
@@ -408,7 +409,7 @@ export function CreateView({
             Grava em{" "}
             <span className="font-mono">
               {scope === "projeto"
-                ? ".mycockpit/agents"
+                ? caminhoNaPasta("agents")
                 : "~/.mycockpit/agents"}
             </span>
             . Editar o arquivo à mão também vale, o app relê.

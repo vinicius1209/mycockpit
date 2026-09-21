@@ -1,4 +1,4 @@
-//! Tray e popover compacto do MyCockpit.
+//! Tray e popover compacto da Frota.
 //!
 //! Clique primário abre o instrumento compacto; clique secundário mantém um
 //! menu nativo como fallback. O frontend publica um snapshot tipado, usado por

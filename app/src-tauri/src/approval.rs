@@ -15,7 +15,7 @@
 //! ARQUITETURA (loop completo claude → MCP → app → UI → volta):
 //!   1. O ClaudeAdapter registra ESTE binário como um MCP server stdio (subcomando
 //!      `approval-server`) via `--mcp-config`. No modo Padrão aponta também
-//!      `--permission-prompt-tool mcp__mc-approval__approval_prompt`.
+//!      `--permission-prompt-tool mcp__frota-approval__approval_prompt`.
 //!   2. Quando o claude precisa de você (aprovar OU perguntar), ele CHAMA a tool
 //!      correspondente e BLOQUEIA esperando a resposta (turno vivo, sem timeout).
 //!   3. O MCP server (subprocesso) lê o path do socket em `MYCOCKPIT_APPROVAL_SOCK`,
@@ -47,15 +47,15 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::oneshot;
 
-/// Nome do server MCP — casa com `--mcp-config` e os nomes `mcp__mc-approval__*`.
-pub const MCP_SERVER_NAME: &str = "mc-approval";
+/// Nome do server MCP — casa com `--mcp-config` e os nomes `mcp__frota-approval__*`.
+pub const MCP_SERVER_NAME: &str = "frota-approval";
 /// Tool de PERMISSÃO (vai no `--permission-prompt-tool`, só no modo Padrão).
 pub const APPROVAL_TOOL: &str = "approval_prompt";
 /// Tool de CONTEÚDO (listada em tools/list, chamada direta pelo modelo). Registrada
 /// em TODOS os modos com MCP ligado. NÃO vai no `--permission-prompt-tool`.
 pub const ASK_USER_TOOL: &str = "ask_user";
 /// Env que carrega o path do socket do app → MCP server (subprocesso do claude).
-pub const SOCK_ENV: &str = "MYCOCKPIT_APPROVAL_SOCK";
+pub const SOCK_ENV: &str = "FROTA_APPROVAL_SOCK";
 
 // ----------------------------------------------------------------------------
 // Contrato do socket + evento: pedido {id, kind, data}, resposta {id, answer}.

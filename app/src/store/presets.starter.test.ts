@@ -1,7 +1,7 @@
 // Equipe inicial (installStarterTeam): semeia 6 especialistas GLOBAIS no
 // primeiro uso e é IDEMPOTENTE — rodar de novo não duplica nem sobrescreve o
 // que já existe. Reusa o CRUD (create → saveAgentDef), então grava arquivos
-// `.mycockpit/agents/*.md` normais.
+// `.frota/agents/*.md` normais.
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentDef } from "@/lib/agentDefs"

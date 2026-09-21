@@ -10,7 +10,7 @@ import { writeSkill, type SkillDraft } from "@/lib/skills"
 interface SkillDraftDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  /** Caminho do projeto ativo (onde grava `.mycockpit/commands/`). */
+  /** Caminho do projeto ativo (onde grava `.frota/commands/`). */
   projectPath: string | null
   /** Rascunho do Haiku; null enquanto ainda está rascunhando (loading). */
   draft: SkillDraft | null

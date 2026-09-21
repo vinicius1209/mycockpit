@@ -15,7 +15,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 vi.mock("@/store/app", () => ({
   useActiveProject: vi.fn(() => ({
     id: "p1",
-    name: "MyCockpit",
+    name: "Frota",
     path: "/Users/vinicius/projetos/mycockpit",
   })),
   useApp: Object.assign(

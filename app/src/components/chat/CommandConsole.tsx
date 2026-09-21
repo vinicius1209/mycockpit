@@ -161,7 +161,7 @@ export function CommandConsole({
   const permissionMode = useApp((s) =>
     permProject
       ? resolvePermission(
-          s.mycockpit[permProject.id]?.permission,
+          s.projectConfigs[permProject.id]?.permission,
           s.projects.find((p) => p.id === permProject.id)?.permissionMode,
         )
       : "padrao",

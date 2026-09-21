@@ -35,7 +35,7 @@ export function useSlashCommands({
 }: {
   project: Project | null
   /** Agent EFETIVO da conversa: a descoberta é por motor (a casa
-   *  .mycockpit/commands vale pra todos; cada motor soma a convenção nativa). */
+   *  .frota/commands vale pra todos; cada motor soma a convenção nativa). */
   agent: string
   value: string
   setValue: React.Dispatch<React.SetStateAction<string>>

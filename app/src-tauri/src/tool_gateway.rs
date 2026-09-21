@@ -19,7 +19,7 @@ use crate::plugin_protocol::{read_value, write_value};
 use crate::plugin_runtime::PluginRuntimeRegistry;
 use crate::resource_broker::{EffectiveResourceAccess, ResourceLeaseRegistry};
 
-pub const MCP_SERVER_NAME: &str = "mc-tools";
+pub const MCP_SERVER_NAME: &str = "frota-tools";
 pub const SOCK_ENV: &str = "FROTA_TOOL_SOCK";
 const SUBCOMMAND: &str = "tool-server";
 const MCP_PROTOCOL_VERSION: &str = "2025-06-18";
@@ -337,7 +337,7 @@ async fn handle_parent_request(
         Err(error) => json!({ "ok": false, "error": error }),
     };
     if let Err(error) = write_value(&mut write, &response).await {
-        log::warn!("não consegui responder ao processo mc-tools: {error}");
+        log::warn!("não consegui responder ao processo frota-tools: {error}");
     }
 }
 

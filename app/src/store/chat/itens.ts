@@ -37,7 +37,7 @@ type ChatItemBody =
       /** Síntese final do subagente, mantida dentro do nó que o criou em vez de
        *  virar uma fala solta do executor principal. */
       agentSummary?: string
-      /** Processo externo cujo ciclo de vida pertence ao MyCockpit. */
+      /** Processo externo cujo ciclo de vida pertence à Frota. */
       managedProcess?: ManagedProcess
       /** Trabalho DIFERIDO do provider (tool Workflow/background task): nó com
        *  ciclo de vida PRÓPRIO, assíncrono ao turno (deferred-work-plan D1.2). */

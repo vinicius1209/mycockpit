@@ -21,8 +21,23 @@ pub struct NavegadorOrfao {
 /// viva é reconhecida pelo pid OU pelo grupo: o app lança por `zsh -lc` num
 /// grupo próprio, e o pid guardado pode ser o do shell. Auxiliares (`--type=`)
 /// ficam de fora: encerrar o principal leva os auxiliares junto.
-pub fn orfaos_no_ps(ps: &str, raiz_dos_perfis: &str, vivos: &HashSet<u32>) -> Vec<NavegadorOrfao> {
-    let marca = format!("--user-data-dir={}/", raiz_dos_perfis.trim_end_matches('/'));
+/// A mesma caça, sobre MAIS DE UMA raiz de perfis.
+///
+/// Existe porque o identificador do bundle mudou (ADR-222) e ele É o caminho
+/// de `app_data_dir`. Um Chromium ainda vivo com perfil sob a raiz ANTIGA
+/// deixaria de ser reconhecido como nosso: ficaria com `ppid=1` comendo CPU e
+/// o app não o enxergaria para encerrar. Isso é o cenário de carga fantasma,
+/// que aqui já custou diagnóstico, e a única coisa que o evita é aceitar as
+/// duas raízes durante a janela.
+pub fn orfaos_no_ps_em(
+    ps: &str,
+    raizes: &[&str],
+    vivos: &HashSet<u32>,
+) -> Vec<NavegadorOrfao> {
+    let marcas: Vec<String> = raizes
+        .iter()
+        .map(|r| format!("--user-data-dir={}/", r.trim_end_matches('/')))
+        .collect();
     ps.lines()
         .filter_map(|linha| {
             let linha = linha.trim_start();
@@ -33,7 +48,10 @@ pub fn orfaos_no_ps(ps: &str, raiz_dos_perfis: &str, vivos: &HashSet<u32>) -> Ve
             if comando.contains("--type=") || vivos.contains(&pid) || vivos.contains(&grupo) {
                 return None;
             }
-            let depois = comando.split_once(&marca)?.1;
+            let depois = marcas
+                .iter()
+                .find_map(|marca| comando.split_once(marca.as_str()))?
+                .1;
             let project_id: String = depois
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
@@ -43,14 +61,23 @@ pub fn orfaos_no_ps(ps: &str, raiz_dos_perfis: &str, vivos: &HashSet<u32>) -> Ve
         .collect()
 }
 
-fn raiz_dos_perfis(app: &tauri::AppHandle) -> Result<String, String> {
-    Ok(app
+/// As raízes de perfil a varrer: a de hoje e a do identificador legado, que é
+/// irmã dela no mesmo diretório pai.
+fn raizes_dos_perfis(app: &tauri::AppHandle) -> Result<Vec<String>, String> {
+    let dados = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("sem app_data_dir: {e}"))?
-        .join("browser-profiles")
-        .to_string_lossy()
-        .into_owned())
+        .map_err(|e| format!("sem app_data_dir: {e}"))?;
+    let mut raizes = vec![dados.join("browser-profiles").to_string_lossy().into_owned()];
+    if let Some(pai) = dados.parent() {
+        raizes.push(
+            pai.join(crate::ID_LEGADO)
+                .join("browser-profiles")
+                .to_string_lossy()
+                .into_owned(),
+        );
+    }
+    Ok(raizes)
 }
 
 fn tabela_de_processos() -> String {
@@ -65,7 +92,9 @@ fn orfaos_agora(app: &tauri::AppHandle) -> Result<Vec<NavegadorOrfao>, String> {
     let vivos: HashSet<u32> = app
         .state::<Arc<crate::browser::BrowserRegistry>>()
         .pids();
-    Ok(orfaos_no_ps(&tabela_de_processos(), &raiz_dos_perfis(app)?, &vivos))
+    let raizes = raizes_dos_perfis(app)?;
+    let refs: Vec<&str> = raizes.iter().map(String::as_str).collect();
+    Ok(orfaos_no_ps_em(&tabela_de_processos(), &refs, &vivos))
 }
 
 #[tauri::command]
@@ -101,7 +130,7 @@ mod tests {
 
     #[test]
     fn acha_so_o_processo_principal_do_perfil_com_o_projeto() {
-        let orfaos = orfaos_no_ps(PS_REAL, RAIZ, &HashSet::new());
+        let orfaos = orfaos_no_ps_em(PS_REAL, &[RAIZ], &HashSet::new());
         assert_eq!(
             orfaos,
             vec![NavegadorOrfao { pid: 60940, project_id: "54c053f3-9117-4522-a151-42015673bbfc".into() }]
@@ -111,17 +140,46 @@ mod tests {
     #[test]
     fn sessao_viva_do_app_nao_e_orfa() {
         let pelo_pid: HashSet<u32> = [60940].into_iter().collect();
-        assert!(orfaos_no_ps(PS_REAL, RAIZ, &pelo_pid).is_empty());
+        assert!(orfaos_no_ps_em(PS_REAL, &[RAIZ], &pelo_pid).is_empty());
         // pid guardado do shell que lançou: o grupo ainda reconhece a sessão
         let linha_sem_exec = "61001 61000 /Chromium --user-data-dir=/Users/exemplo/Library/Application Support/dev.vinicius.mycockpit/browser-profiles/abc-1 about:blank\n";
         let pelo_grupo: HashSet<u32> = [61000].into_iter().collect();
-        assert!(orfaos_no_ps(linha_sem_exec, RAIZ, &pelo_grupo).is_empty());
+        assert!(orfaos_no_ps_em(linha_sem_exec, &[RAIZ], &pelo_grupo).is_empty());
     }
 
     #[test]
     fn chromium_de_outro_perfil_ou_outro_app_fica_de_fora() {
-        assert!(orfaos_no_ps(PS_REAL, "/Users/exemplo/outro-app/browser-profiles", &HashSet::new()).is_empty());
+        assert!(orfaos_no_ps_em(PS_REAL, &["/Users/exemplo/outro-app/browser-profiles"], &HashSet::new()).is_empty());
         let chrome_pessoal = "  812     1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/exemplo/Library/Application Support/Google/Chrome\n";
-        assert!(orfaos_no_ps(chrome_pessoal, RAIZ, &HashSet::new()).is_empty());
+        assert!(orfaos_no_ps_em(chrome_pessoal, &[RAIZ], &HashSet::new()).is_empty());
+    }
+
+    /// A raiz NOVA, irmã da real no mesmo pai. A antiga (`RAIZ`) é a que está
+    /// na captura de `ps` de verdade, colhida do incidente.
+    const RAIZ_NOVA: &str = "/Users/exemplo/Library/Application Support/dev.vinicius.frota/browser-profiles";
+
+    #[test]
+    fn orfao_com_perfil_da_raiz_ANTIGA_continua_sendo_visto() {
+        // O identificador do bundle mudou, e ele é o caminho de app_data_dir.
+        // Se a caça olhasse só a raiz nova, este Chromium ficaria com ppid=1
+        // comendo CPU e invisível para o app (ADR-222).
+        let achados = orfaos_no_ps_em(PS_REAL, &[RAIZ_NOVA, RAIZ], &HashSet::new());
+        assert!(
+            !achados.is_empty(),
+            "órfão de antes do rename sumiu da varredura"
+        );
+    }
+
+    #[test]
+    fn so_a_raiz_nova_perde_o_orfao_antigo() {
+        // O contraprova do teste acima: é exatamente isto que a raiz dupla evita.
+        assert!(orfaos_no_ps_em(PS_REAL, &[RAIZ_NOVA], &HashSet::new()).is_empty());
+    }
+
+    #[test]
+    fn raiz_dupla_nao_afrouxa_o_filtro_de_terceiro() {
+        // Chrome pessoal do usuário continua fora, com as duas raízes.
+        let chrome_pessoal = "  812     1 /Applications/Google Chrome.app/Contents/MacOS/Google Chrome --user-data-dir=/Users/exemplo/Library/Application Support/Google/Chrome\n";
+        assert!(orfaos_no_ps_em(chrome_pessoal, &[RAIZ_NOVA, RAIZ], &HashSet::new()).is_empty());
     }
 }

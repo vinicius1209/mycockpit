@@ -20,7 +20,7 @@ pub struct RunRequest {
     pub system_prompt: Option<String>,
     pub cwd: String,
     pub resume: Option<String>,
-    /// "MyCockpit resume": texto PRONTO montado pelo front (recap + ponteiro pro
+    /// "Frota resume": texto PRONTO montado pelo front (recap + ponteiro pro
     /// transcript), usado SÓ no restart pós-resume-falho (degradação graciosa do
     /// run_agent). Quando o resume nativo funciona, este campo é ignorado. None =
     /// comportamento antigo (recomeça sem contexto).
@@ -34,7 +34,7 @@ pub struct RunRequest {
     /// `supports_attachment` (garantido pelo run_agent). O adapter só decide a sintaxe.
     pub attachments: Vec<Attachment>,
     /// Pastas extras liberadas ao agent (fora do cwd), JÁ resolvidas para paths
-    /// absolutos existentes (por `mycockpit::resolve_extra_dirs`). Cada adapter
+    /// absolutos existentes (por `frota_dir::resolve_extra_dirs`). Cada adapter
     /// emite `--add-dir <dir>` — o gate de diretório é fixo no spawn (headless).
     pub extra_dirs: Vec<String>,
     /// Interação inline (só Claude): quando presente, registra o MCP server (socket)
@@ -46,7 +46,7 @@ pub struct RunRequest {
     /// MCP read-only de memória/contexto. É provider-agnostic: Claude e Codex
     /// registram o mesmo server; Agy degrada pelos ponteiros no próprio prompt.
     pub context_gateway: Option<crate::context_gateway::GatewayConfig>,
-    /// MCP de trabalho/processos gerenciado pelo MyCockpit. Mesmo contrato no
+    /// MCP de trabalho/processos gerenciado pelo Frota. Mesmo contrato no
     /// Claude e Codex; ausente em providers sem MCP.
     pub work_gateway: Option<crate::work_gateway::GatewayConfig>,
     /// Materialização por-run do Tool Catalog da Frota. O catálogo é montado
@@ -140,7 +140,7 @@ impl Permission {
 }
 
 /// Convenção NATIVA de descoberta de comandos "/" de um motor. A casa
-/// (`.mycockpit/commands`) é agnóstica e vale pra todo agent; isto aqui é só o
+/// (`.frota/commands`) é agnóstica e vale pra todo agent; isto aqui é só o
 /// que cada motor soma por conta própria. `sources.rs` consulta a capability
 /// `command_sources` e casa NESTE enum — nunca no nome do agent.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -565,12 +565,12 @@ pub struct Capabilities {
     /// Evidência disponível para a superfície NATIVA do provider. A fonte
     /// existe em todo adapter; o que varia é se conseguimos enumerá-la.
     pub native_tool_inventory: ToolInventoryEvidence,
-    /// Fala MCP e recebe o `mc-work` (processos longos + planos vivos).
+    /// Fala MCP e recebe o `frota-work` (processos longos + planos vivos).
     pub work_mcp: bool,
     /// O servidor precisa de cadastro global, mas recebe o socket pelo ambiente
     /// de CADA filho. Não altera o escopo dos MCPs externos.
     pub work_mcp_global_env: bool,
-    /// Recebe o `mc-context` (memória read-only por MCP).
+    /// Recebe o `frota-context` (memória read-only por MCP).
     pub context_mcp: bool,
     /// Até ONDE o app consegue instalar um MCP externo neste motor.
     ///
@@ -588,7 +588,7 @@ pub struct Capabilities {
     /// o que executa os comandos. Espelho TS: `sandboxProprio` em
     /// lib/agents.ts (teste-gêmeo `agents.sandbox.test.ts`).
     pub sandbox_proprio: SandboxProprio,
-    /// Interação inline via `mc-approval` (ask_user + permission-prompt-tool).
+    /// Interação inline via `frota-approval` (ask_user + permission-prompt-tool).
     pub inline_interaction: bool,
     /// Emite background tasks que sobrevivem ao turno (`system/task_*`,
     /// ADR-028). false = nunca inventar nó diferido pra este motor.
@@ -955,7 +955,7 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // `command_sources` vazio), e `native_slash` só muda comportamento para
     // comando vindo da fonte NATIVA declarada. Declarar `true` com fonte
     // nenhuma prometeria um caminho que não existe; a casa
-    // (`.mycockpit/commands`) o agy não conhece e segue expandindo app-side.
+    // (`.frota/commands`) o agy não conhece e segue expandindo app-side.
     native_slash: false,
     command_sources: &[],
     command_inventory: None,
@@ -1890,8 +1890,8 @@ impl AgentAdapter for ClaudeAdapter {
             }
         }
         // MCPs internos, ambos efêmeros e por-run:
-        // - mc-approval: interação inline exclusiva do Claude;
-        // - mc-context: memória read-only compartilhada também com o Codex.
+        // - frota-approval: interação inline exclusiva do Claude;
+        // - frota-context: memória read-only compartilhada também com o Codex.
         // FusionRo segue sem TODO MCP por contrato (candidato sem efeito externo).
         let mcp_on = !matches!(req.permission, Permission::FusionRo);
         if mcp_on {
@@ -2720,7 +2720,7 @@ impl AgentAdapter for CodexAdapter {
         self.resume = req.resume.clone();
         self.usage_seen = req.usage_baseline;
         let mut cmd = Command::new("codex");
-        // Config por-run: o mesmo MCP `mc-context` do Claude, sem escrever no
+        // Config por-run: o mesmo MCP `frota-context` do Claude, sem escrever no
         // config global do usuário. Precisa vir ANTES do subcomando `exec`.
         if !matches!(req.permission, Permission::FusionRo) {
             req.mcp_plan.configure_codex(&mut cmd);
@@ -2737,8 +2737,8 @@ impl AgentAdapter for CodexAdapter {
         // TODO `-c` VAI ANTES DO SUBCOMANDO (codex 0.147, empírico 13/08/2026).
         // Os overrides passados DEPOIS de `exec` não fazem merge: eles
         // SUBSTITUEM os globais, e a tabela `mcp_servers` inteira evapora — o
-        // turno roda sem mc-work e sem mc-context, e o agente responde "o MCP
-        // mc-work não está exposto nesta sessão". Provado isolando a variável:
+        // turno roda sem frota-work e sem frota-context, e o agente responde "o MCP
+        // frota-work não está exposto nesta sessão". Provado isolando a variável:
         // com `-c model_reasoning_effort=high` DEPOIS de `exec`, zero MCP
         // server sobe; a MESMA flag antes de `exec`, os dois sobem — e o
         // effort continua aplicado nos dois casos (rollout do codex com
@@ -4374,7 +4374,7 @@ mod tests {
         let mut r = req(Permission::Padrao, false);
         r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
             server_bin: "/app/frota".into(),
-            socket: "/tmp/mc-tools.sock".into(),
+            socket: "/tmp/frota-tools.sock".into(),
         });
         let mut a = ClaudeAdapter::default();
         let args = argv(&a.build_command(&r).unwrap());
@@ -4385,7 +4385,7 @@ mod tests {
             .expect("config MCP efêmero");
         assert!(config.contains(crate::tool_gateway::MCP_SERVER_NAME));
         assert!(config.contains("tool-server"));
-        assert!(config.contains("/tmp/mc-tools.sock"));
+        assert!(config.contains("/tmp/frota-tools.sock"));
         assert!(
             !args
                 .windows(2)
@@ -5034,7 +5034,7 @@ mod tests {
         let exec = args.iter().position(|x| x == "exec").unwrap();
         let cfg = args
             .iter()
-            .position(|x| x.contains("mcp_servers.mc-context.command"))
+            .position(|x| x.contains("mcp_servers.frota-context.command"))
             .unwrap();
         assert!(cfg < exec);
         assert!(args.iter().any(|x| x.contains("context-server")));
@@ -5045,18 +5045,18 @@ mod tests {
         let mut r = req(Permission::Padrao, false);
         r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
             server_bin: "/app/frota".into(),
-            socket: "/tmp/mc-tools.sock".into(),
+            socket: "/tmp/frota-tools.sock".into(),
         });
         let mut a = CodexAdapter::default();
         let args = argv(&a.build_command(&r).unwrap());
         let exec = args.iter().position(|arg| arg == "exec").unwrap();
         let config = args
             .iter()
-            .position(|arg| arg.contains("mcp_servers.mc-tools.command"))
+            .position(|arg| arg.contains("mcp_servers.frota-tools.command"))
             .unwrap();
         assert!(config < exec);
         assert!(args.iter().any(|arg| arg.contains("tool-server")));
-        assert!(args.iter().any(|arg| arg.contains("/tmp/mc-tools.sock")));
+        assert!(args.iter().any(|arg| arg.contains("/tmp/frota-tools.sock")));
     }
 
     #[test]
@@ -5088,8 +5088,8 @@ mod tests {
 
     /// REGRESSÃO (codex 0.147, 13/08/2026): `-c` depois do subcomando `exec`
     /// SUBSTITUI os overrides globais em vez de somar — e leva junto a tabela
-    /// `mcp_servers`. O turno rodava sem mc-work e sem mc-context, e o agente
-    /// respondia "o MCP mc-work não está exposto nesta sessão" (bug real do
+    /// `mcp_servers`. O turno rodava sem frota-work e sem frota-context, e o agente
+    /// respondia "o MCP frota-work não está exposto nesta sessão" (bug real do
     /// usuário, conversa do prime-sales-hub). Provado isolando a variável: com
     /// `-c model_reasoning_effort` DEPOIS de `exec`, zero MCP server sobe;
     /// antes, os dois sobem e o effort segue aplicado. Este teste vale por
@@ -5107,7 +5107,7 @@ mod tests {
         });
         r.work_gateway = Some(crate::work_gateway::GatewayConfig {
             server_bin: "/app/mycockpit".into(),
-            socket: "/tmp/mc-work-regressao.sock".into(),
+            socket: "/tmp/frota-work-regressao.sock".into(),
         });
         let mut a = CodexAdapter::default();
         let args = argv(&a.build_command(&r).unwrap());
@@ -6558,7 +6558,7 @@ mod tests {
     fn matriz_de_canais_por_agent() {
         let claude = capabilities_of("claude-code").unwrap();
         // claude 2.1.219: --append-system-prompt documentado (já era o canal
-        // dos nudges) + resume nativo + mc-context.
+        // dos nudges) + resume nativo + frota-context.
         assert!(claude.system_channel);
         assert!(claude.session_resume);
         assert!(claude.context_mcp);
@@ -6573,7 +6573,7 @@ mod tests {
         let agy = capabilities_of("agy").unwrap();
         // agy 1.1.13: nenhum canal system além do `-p` (o `--help` não expõe
         // outro), e MCP só por config GLOBAL — nada por-run pra registrar o
-        // mc-context. Resume, esse SIM existe: `--conversation <ID>` retomou a
+        // frota-context. Resume, esse SIM existe: `--conversation <ID>` retomou a
         // conversa (step_index continuou 6→8 e o modelo lembrou o turno
         // anterior, medido 14/08/2026).
         assert!(!agy.system_channel);
@@ -6638,7 +6638,7 @@ mod tests {
         r.system_prompt = Some("<doutrina>regras</doutrina>".to_string());
         r.work_gateway = Some(crate::work_gateway::GatewayConfig {
             server_bin: "/app/mycockpit".into(),
-            socket: "/tmp/mc-work.sock".into(),
+            socket: "/tmp/frota-work.sock".into(),
         });
         let mut a = ClaudeAdapter::default();
         let args = argv(&a.build_command(&r).unwrap());
@@ -6648,7 +6648,7 @@ mod tests {
             .map(|pair| pair[1].clone())
             .expect("canal system emitido");
         let doutrina = system.find("<doutrina>regras</doutrina>").unwrap();
-        let nudge = system.find("mc-work").expect("nudge do mc-work no canal");
+        let nudge = system.find("frota-work").expect("nudge do frota-work no canal");
         assert!(doutrina < nudge, "identidade/regras antes da telemetria");
         // o corpo (posicional após `--`) segue só o pedido.
         assert_eq!(args.last().unwrap(), "faça X");
@@ -6913,11 +6913,11 @@ mod tests {
             });
             r.work_gateway = Some(crate::work_gateway::GatewayConfig {
                 server_bin: "/app/mycockpit".into(),
-                socket: "/tmp/mc-work-contrato.sock".into(),
+                socket: "/tmp/frota-work-contrato.sock".into(),
             });
             r.approval = Some((
                 "/app/mycockpit".into(),
-                "/tmp/mc-approval-contrato.sock".into(),
+                "/tmp/frota-approval-contrato.sock".into(),
             ));
             r.mcp_plan = crate::mcp_control::McpRunPlan {
                 managed: true,
@@ -6938,7 +6938,7 @@ mod tests {
             assert_eq!(
                 inherited_work,
                 caps.work_mcp_global_env
-                    .then(|| std::ffi::OsStr::new("/tmp/mc-work-contrato.sock")),
+                    .then(|| std::ffi::OsStr::new("/tmp/frota-work-contrato.sock")),
                 "{agent}: socket global precisa chegar exatamente pelo ambiente do filho",
             );
             let args = argv(&command);
@@ -7026,17 +7026,17 @@ mod tests {
             assert_eq!(
                 blob.contains(crate::work_gateway::MCP_SERVER_NAME) || inherited_work.is_some(),
                 caps.work_mcp,
-                "{agent}: work_mcp declarado ≠ injeção do mc-work no comando"
+                "{agent}: work_mcp declarado ≠ injeção do frota-work no comando"
             );
             assert_eq!(
                 blob.contains(crate::context_gateway::MCP_SERVER_NAME),
                 caps.context_mcp,
-                "{agent}: context_mcp declarado ≠ injeção do mc-context no comando"
+                "{agent}: context_mcp declarado ≠ injeção do frota-context no comando"
             );
             assert_eq!(
                 blob.contains(crate::approval::MCP_SERVER_NAME),
                 caps.inline_interaction,
-                "{agent}: inline_interaction declarado ≠ mc-approval no comando"
+                "{agent}: inline_interaction declarado ≠ frota-approval no comando"
             );
             assert_eq!(
                 blob.contains("mcx-claude-hostinger"),

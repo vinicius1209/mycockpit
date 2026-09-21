@@ -13,7 +13,7 @@ export type FonteDaSaida =
   | { tipo: "arquivo"; caminho: string }
   /** Deltas do próprio stream do turno (terminal do Codex). */
   | { tipo: "stream"; toolId: string }
-  /** Saída que o `mc-work` já mantém no item. */
+  /** Saída que o `frota-work` já mantém no item. */
   | { tipo: "processo" }
   /** Comando que roda no turno: a saída chega inteira no resultado dele. */
   | { tipo: "resultado" }

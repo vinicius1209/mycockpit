@@ -16,6 +16,8 @@
 // Instalar dependência e gerar artefato costumam ser efeito colateral honesto
 // de fazer o trabalho. O defeito é o silêncio, não a mudança.
 
+import { sobAPasta } from "@/lib/frotaDir"
+
 /** Normaliza para comparar: o handoff às vezes escreve `./x`, o git escreve `x`. */
 function normaliza(p: string): string {
   return p.trim().replace(/^\.\//, "").replace(/^\/+/, "")
@@ -55,5 +57,5 @@ export function cruzarArquivos(
  *  trabalho. O handoff da fase vive aqui dentro e apareceria como "não
  *  declarado" em toda missão — ruído que ensinaria a ignorar o aviso. */
 export function ehRuidoDoMotor(p: string): boolean {
-  return normaliza(p).startsWith(".mycockpit/")
+  return sobAPasta(normaliza(p))
 }

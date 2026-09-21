@@ -5,7 +5,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { updateProjectPermission } from "@/lib/db"
-import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { writeProjectConfig } from "@/lib/configDoProjeto"
 import { useApp } from "@/store/app"
 import type { Project } from "@/lib/types"
 import {
@@ -19,8 +19,8 @@ vi.mock("@/lib/db", () => ({
   isTauri: () => true,
   updateProjectPermission: vi.fn(async () => {}),
 }))
-vi.mock("@/lib/mycockpit", () => ({
-  writeMycockpitConfig: vi.fn(async () => {}),
+vi.mock("@/lib/configDoProjeto", () => ({
+  writeProjectConfig: vi.fn(async () => {}),
 }))
 
 const proj: Project = {
@@ -32,9 +32,9 @@ const proj: Project = {
 }
 
 beforeEach(() => {
-  useApp.setState({ projects: [proj], mycockpit: {} })
+  useApp.setState({ projects: [proj], projectConfigs: {} })
   vi.mocked(updateProjectPermission).mockClear()
-  vi.mocked(writeMycockpitConfig).mockClear()
+  vi.mocked(writeProjectConfig).mockClear()
 })
 
 describe("effectivePermission", () => {
@@ -44,8 +44,8 @@ describe("effectivePermission", () => {
 
   it("o config do .mycockpit VENCE o cache (é a verdade que o Rust lê)", () => {
     useApp.setState({
-      mycockpit: {
-        px: { exists: true, permission: "liberado", helper: "haiku", mode: "linear", extraDirs: [] },
+      projectConfigs: {
+        px: { exists: true, pasta: ".frota", permission: "liberado", helper: "haiku", mode: "linear", extraDirs: [] },
       },
     })
     expect(effectivePermission(proj)).toBe("liberado")
@@ -67,23 +67,23 @@ describe("setProjectPermissionEverywhere", () => {
     expect(useApp.getState().projects[0].permissionMode).toBe("liberado")
     // 2. SQLite — cache entre boots
     expect(updateProjectPermission).toHaveBeenCalledWith("px", "liberado")
-    // 3. .mycockpit/config.toml — a verdade do spawn
-    expect(writeMycockpitConfig).toHaveBeenCalledWith("/repo", {
+    // 3. .frota/config.toml — a verdade do spawn
+    expect(writeProjectConfig).toHaveBeenCalledWith("/repo", {
       permission: "liberado",
     })
   })
 
   it("reflete no config em memória (o effectivePermission já vê)", () => {
     setProjectPermissionEverywhere(proj, "leitura")
-    expect(useApp.getState().mycockpit.px?.permission).toBe("leitura")
+    expect(useApp.getState().projectConfigs.px?.permission).toBe("leitura")
     expect(effectivePermission(useApp.getState().projects[0])).toBe("leitura")
   })
 
   it("preserva o resto do config ao trocar só a permissão", () => {
     useApp.setState({
-      mycockpit: {
+      projectConfigs: {
         px: {
-          exists: true,
+          exists: true, pasta: ".frota",
           permission: "padrao",
           helper: null,
           // Valor OPACO de propósito: não é "linear", que é o default que a
@@ -95,7 +95,7 @@ describe("setProjectPermissionEverywhere", () => {
       },
     })
     setProjectPermissionEverywhere(proj, "liberado")
-    const cfg = useApp.getState().mycockpit.px
+    const cfg = useApp.getState().projectConfigs.px
     expect(cfg?.helper).toBeNull()
     expect(cfg?.mode).toBe("sdd")
     expect(cfg?.extraDirs).toEqual(["/outro"])

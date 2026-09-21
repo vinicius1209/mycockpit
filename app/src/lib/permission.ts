@@ -1,5 +1,5 @@
 import { updateProjectPermission } from "@/lib/db"
-import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { writeProjectConfig } from "@/lib/configDoProjeto"
 import { useApp, type ProjectConfig } from "@/store/app"
 import type { PermissionMode, Project } from "@/lib/types"
 
@@ -24,7 +24,7 @@ export const PERMISSION_DESCRIPTION: Record<PermissionMode, string> = {
   liberado: "O agente executa e escreve sem pedir confirmação",
 }
 
-/** A PRECEDÊNCIA, escrita UMA vez: o `.mycockpit/config.toml` (aqui já em
+/** A PRECEDÊNCIA, escrita UMA vez: o `.frota/config.toml` (aqui já em
  *  memória) vence o cache do SQLite, e sem os dois o modo é "padrao" — nunca
  *  fail-open pra "liberado".
  *
@@ -47,7 +47,7 @@ export function resolvePermission(
 export function effectivePermission(project: Project | null): PermissionMode {
   if (!project) return "padrao"
   return resolvePermission(
-    useApp.getState().mycockpit[project.id]?.permission,
+    useApp.getState().projectConfigs[project.id]?.permission,
     project.permissionMode,
   )
 }
@@ -55,7 +55,7 @@ export function effectivePermission(project: Project | null): PermissionMode {
 /** Troca a permissão do PROJETO nas TRÊS camadas que têm de concordar:
  *  1. store em memória — é de lá que o envio lê `project.permissionMode`;
  *  2. SQLite — cache entre boots;
- *  3. `.mycockpit/config.toml` — a VERDADE, o Rust resolve no spawn.
+ *  3. `.frota/config.toml` — a VERDADE, o Rust resolve no spawn.
  *
  *  Fonte única: o painel de contexto e a linha de execução do composer chamam
  *  aqui. Antes o trio vivia inline no ContextPanel; com dois chamadores, uma
@@ -75,16 +75,17 @@ export function setProjectPermissionEverywhere(
   // Spread do config EXISTENTE (não campo-a-campo com `??`): `helper: null`
   // significa "sugestões desligadas" e um `?? "haiku"` religaria em silêncio
   // cada vez que você trocasse a permissão. Defaults só quando não há config.
-  const cur = app.mycockpit[project.id]
+  const cur = app.projectConfigs[project.id]
   const next: ProjectConfig = cur
     ? { ...cur, exists: true, permission: mode }
     : {
         exists: true,
+        pasta: ".frota",
         permission: mode,
         helper: "haiku",
         mode: "linear",
         extraDirs: [],
       }
-  app.setMycockpit(project.id, next)
-  void writeMycockpitConfig(project.path, { permission: mode })
+  app.setProjectConfig(project.id, next)
+  void writeProjectConfig(project.path, { permission: mode })
 }

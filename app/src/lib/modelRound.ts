@@ -135,7 +135,7 @@ async function modelUsages(): Promise<ModelUsage[]> {
     model: c.model,
     where: `conversa ${c.title}`,
   }))
-  // Personas: o espelho em memória dos arquivos .mycockpit/agents/*.md. Store
+  // Personas: o espelho em memória dos arquivos .frota/agents/*.md. Store
   // não carregado = nenhuma persona relatada, nunca uma inventada.
   for (const p of usePresets.getState().list)
     if (p.model) out.push({ agent: p.backend, model: p.model, where: `persona ${p.name}` })

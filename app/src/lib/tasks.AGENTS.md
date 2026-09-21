@@ -26,7 +26,7 @@ Escopo: `tasks.ts`, `TaskChecklist`, `LivePlanCard`, marcos de plano em
 `__fixtures__/plano-encerrado-4-de-7.json`. Cobre terminal, pedido novo,
 replay sem processo e preservação da contagem.
 
-Este contrato independe do provider. A capacidade de emitir `mc-work` continua
+Este contrato independe do provider. A capacidade de emitir `frota-work` continua
 vindo do registry de capabilities. A reconciliação visual não habilita canal
 de trabalho em um motor que ainda não o possui.
 

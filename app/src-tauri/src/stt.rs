@@ -1,4 +1,4 @@
-// Ditado on-device: o cockpit fala com o sidecar Swift (mycockpit-stt) pelo
+// Ditado on-device: o cockpit fala com o sidecar Swift (frota-stt) pelo
 // mesmo padrão dos agents: spawn + JSON por linha + linha de vida via stdin.
 // start abre o mic (espera "ready"); stop manda "STOP" e devolve o texto final;
 // cancel descarta. UMA gravação por vez (sessão global).
@@ -217,11 +217,11 @@ async fn clear_stopping(session: &SttSession, id: u64) {
 fn sidecar_path() -> Result<std::path::PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| e.to_string())?;
     let dir = exe.parent().ok_or("executável sem diretório")?;
-    let bundled = dir.join("mycockpit-stt");
+    let bundled = dir.join("frota-stt");
     if bundled.exists() {
         return Ok(bundled);
     }
-    let dev = dir.join("../../bin/mycockpit-stt-aarch64-apple-darwin");
+    let dev = dir.join("../../bin/frota-stt-aarch64-apple-darwin");
     if dev.exists() {
         return Ok(dev);
     }
@@ -634,7 +634,7 @@ mod tests {
         entries.filter_map(|e| e.ok()).map(|e| e.path()).find(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .is_some_and(|n| n.starts_with("mycockpit-stt-"))
+                .is_some_and(|n| n.starts_with("frota-stt-"))
         })
     }
 
@@ -644,7 +644,7 @@ mod tests {
             return;
         }
         let Some(bin) = sidecar_bin() else {
-            eprintln!("[stt] PULADO: sidecar não compilado (bin/mycockpit-stt-*)");
+            eprintln!("[stt] PULADO: sidecar não compilado (bin/frota-stt-*)");
             return;
         };
         let bytes = std::fs::read(&bin).expect("ler o binário do sidecar");

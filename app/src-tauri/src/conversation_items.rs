@@ -234,7 +234,7 @@ pub const FTS_BACKFILL: &str = "INSERT INTO conversation_item_fts(rowid, convers
 fn database_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
     app.path()
         .app_data_dir()
-        .map(|dir| dir.join("mycockpit.db"))
+        .map(|dir| dir.join(crate::BANCO))
         .map_err(|error| error.to_string())
 }
 

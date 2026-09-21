@@ -1,8 +1,9 @@
-// Snapshot v2 da missão em `.mycockpit/missions/<slug>/run-state.json`.
+// Snapshot v2 da missão em `.frota/missions/<slug>/run-state.json`.
 // Congela plano, visitas, transições, gate e recovery a cada marco. Persistência
 // é best-effort: falha de IO nunca derruba o run.
 
 import { invoke } from "@tauri-apps/api/core"
+import { caminhoNaPasta } from "@/lib/frotaDir"
 import type { CostSource } from "@/lib/agent"
 import { activePointerPath, runStatePath } from "@/lib/missionPaths"
 import { snapshotMissionPlan } from "@/lib/missionPlans"
@@ -438,7 +439,7 @@ export async function readInterruptedFor(
   return readRunState(cwd, dir)
 }
 
-/** Garante que `.mycockpit/.gitignore` (=`*`) exista no cwd da missão. O
+/** Garante que `.frota/.gitignore` (=`*`) exista no cwd da missão. O
  *  onboarding do projeto semeia isso, mas um worktree fresco (cwd de missão sem
  *  onboarding) não teria — e os artefatos de missão ficariam rastreáveis no git.
  *  Best-effort e SEM clobber: só escreve se o arquivo estiver AUSENTE. */
@@ -454,7 +455,7 @@ export async function ensureMissionsGitignore(cwd: string): Promise<void> {
     try {
       await invoke("write_mission_state", {
         cwd,
-        relPath: ".mycockpit/.gitignore",
+        relPath: caminhoNaPasta(".gitignore"),
         content: "*\n",
       })
     } catch (err) {

@@ -6,12 +6,13 @@ import "@fontsource-variable/geist-mono"
 import "./index.css"
 import { BrowserPanel } from "@/components/browser/BrowserPanel"
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
+import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 
 const dark = (() => {
   try {
-    const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+    const persisted = lerEstadoPersistido() as { state?: Record<string, unknown> } | null
     return persisted?.state?.theme !== "light"
   } catch {
     return true

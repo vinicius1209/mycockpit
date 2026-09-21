@@ -10,17 +10,18 @@ import App from "./App.tsx"
 import { AppContextMenu } from "@/components/common/AppContextMenu"
 import { CopiaDeTabela } from "@/components/common/CopiaDeTabela"
 import { installRuntimeLogging } from "@/lib/runtimeLogging"
+import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 // Antes do primeiro render: erros do React/WebView precisam sobreviver à tela
 // preta e chegar ao arquivo rotativo da release.
 installRuntimeLogging()
 
-// Tema persistido (mc.app via zustand persist) aplicado ANTES do React p/ não
+// Tema persistido (frota.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo. O popover da tray
 // tem seu próprio entry (tray.tsx) — este só monta o App.
 const dark = (() => {
   try {
-    const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+    const persisted = lerEstadoPersistido() as { state?: Record<string, unknown> } | null
     if (persisted?.state?.themePreference === "system") {
       return matchMedia("(prefers-color-scheme: dark)").matches
     }

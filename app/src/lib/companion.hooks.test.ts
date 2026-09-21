@@ -48,7 +48,7 @@ beforeEach(() => {
     projects: [
       {
         id: "px",
-        name: "MyCockpit",
+        name: "Frota",
         path: "/Users/v/projetos/mycockpit",
         createdAt: 0,
       },
@@ -86,7 +86,7 @@ describe("snapshot do Companion com permissão de hook", () => {
     // mas com origem: motor + projeto resolvido pelo cwd.
     expect(at?.agent).toBe("codex")
     expect(at?.projectId).toBe("px")
-    expect(at?.projectName).toBe("MyCockpit (terminal)")
+    expect(at?.projectName).toBe("Frota (terminal)")
     expect(at?.toolName).toBe("Bash")
     expect(at?.command).toBe("rm -rf /tmp/build")
   })

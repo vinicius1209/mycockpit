@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Canal de builds do MyCockpit: testes numerados até você aprovar → promote
+# Canal de builds da Frota: testes numerados até você aprovar → promote
 # vira o oficial (em /Applications + builds/official + tag no git).
 #
 #   ./scripts/build.sh            build de TESTE (nº sequencial + sha)

@@ -79,7 +79,7 @@ export function PhaseReceiptBlock({
   const doc = usePhaseHandoff(open, cwd, dir, index, phase.def.persona)
   const diff = useDiffDoWorktree(open, cwd)
   // Sem diff (não perguntei / não é repo) a lista sai VAZIA: silêncio, nunca
-  // "você escondeu". O ruído do próprio motor (.mycockpit/) fica de fora.
+  // "você escondeu". O ruído do próprio motor (.frota/) fica de fora.
   const naoDeclarados = diff
     ? cruzarArquivos(doc?.files_touched ?? [], diff).naoDeclarados.filter(
         (f) => !ehRuidoDoMotor(f),

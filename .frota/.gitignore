@@ -1,6 +1,7 @@
-# Pasta do MyCockpit. Local por padrão: contexto exportado, missões e worktrees
-# não vão pro git. As exceções abaixo são VERSIONADAS de propósito — a doutrina,
-# as personas e os comandos do projeto devem viajar no clone e ser revisáveis em PR.
+# Pasta da Frota. Local por padrão: contexto exportado, missões e worktrees
+# não vão pro git. As exceções abaixo são VERSIONADAS de propósito: a doutrina,
+# as personas, os comandos e a memória durável do projeto devem viajar no clone
+# e ser revisáveis em PR.
 *
 !.gitignore
 !instructions.md
@@ -8,3 +9,5 @@
 !agents/*.md
 !commands/
 !commands/*.md
+!memory/
+!memory/*.md

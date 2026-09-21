@@ -1,4 +1,4 @@
-// Testes da doutrina do projeto (.mycockpit/instructions.md) — o núcleo puro:
+// Testes da doutrina do projeto (.frota/instructions.md) — o núcleo puro:
 // o bloco injetado no prompt e a decisão de QUANDO injetar.
 
 import { describe, expect, it, vi } from "vitest"
@@ -140,7 +140,7 @@ describe("decideDoctrine (canal + frescor, H1/H4)", () => {
   })
 
   it("H4: ledger zerado (restart) numa conversa já rodada RE-INJETA com o prefixo (edição com o app fechado não se perde)", () => {
-    // O cenário exato do review gate: usuário edita .mycockpit/instructions.md
+    // O cenário exato do review gate: usuário edita .frota/instructions.md
     // com o app FECHADO; reabre; o ledger efêmero voltou vazio. Sem isto, o
     // envio carimbava o fingerprint atual SEM injetar e a edição nunca chegava
     // ao motor (contradizia a promessa "nunca perda" do plano). O custo é UM

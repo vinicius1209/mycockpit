@@ -2,7 +2,7 @@
 name = "m0-stream-json"
 version = "0.1.0"
 edition = "2021"
-description = "Spike M0 do MyCockpit: dirige o `claude` CLI em modo headless e parseia o stream-json."
+description = "Spike M0 da Frota: dirige o `claude` CLI em modo headless e parseia o stream-json."
 
 [dependencies]
 serde_json = "1"

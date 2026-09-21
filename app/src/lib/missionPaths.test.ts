@@ -49,20 +49,20 @@ describe("missionSlug", () => {
 })
 
 describe("caminhos derivados", () => {
-  it("isolam a missão sob .mycockpit/missions/<slug>/", () => {
+  it("isolam a missão sob .frota/missions/<slug>/", () => {
     const dir = missionDir("2026-07-24-abc123-tarefa")
-    expect(dir).toBe(".mycockpit/missions/2026-07-24-abc123-tarefa")
+    expect(dir).toBe(".frota/missions/2026-07-24-abc123-tarefa")
     expect(handoffFileName(dir, 2, "reviewer")).toBe(
-      ".mycockpit/missions/2026-07-24-abc123-tarefa/2-reviewer.json",
+      ".frota/missions/2026-07-24-abc123-tarefa/2-reviewer.json",
     )
     expect(runStatePath(dir)).toBe(
-      ".mycockpit/missions/2026-07-24-abc123-tarefa/run-state.json",
+      ".frota/missions/2026-07-24-abc123-tarefa/run-state.json",
     )
   })
 
   it("o ponteiro da conversa vive na raiz de missions/", () => {
     expect(activePointerPath("conv-9")).toBe(
-      ".mycockpit/missions/active-conv-9.json",
+      ".frota/missions/active-conv-9.json",
     )
   })
 })

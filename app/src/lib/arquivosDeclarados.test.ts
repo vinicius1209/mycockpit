@@ -55,7 +55,7 @@ describe("cruzarArquivos", () => {
 
 describe("ehRuidoDoMotor", () => {
   it("o handoff da própria missão não conta como 'não declarado'", () => {
-    // Ele vive em .mycockpit/missions/... e apareceria em TODA missão. Aviso
+    // Ele vive em .frota/missions/... e apareceria em TODA missão. Aviso
     // que aparece sempre ensina a ignorar o aviso.
     expect(ehRuidoDoMotor(".mycockpit/missions/x/0-planner.json")).toBe(true)
     expect(ehRuidoDoMotor("./.mycockpit/context/y.md")).toBe(true)

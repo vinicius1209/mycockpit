@@ -47,7 +47,7 @@ export async function generateSuggestionsImpl(get: Get, convId: string) {
     console.warn("[sugestões] projeto não encontrado p/ convId", convId, c.projectId)
     return
   }
-  // modelo helper por projeto (.mycockpit/config.toml); null = off
+  // modelo helper por projeto (.frota/config.toml); null = off
   const helperModel = helperDoProjeto(c.projectId)
   if (!helperModel) return
   // token desta geração: se um novo run começar enquanto geramos, descartamos.

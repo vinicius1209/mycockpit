@@ -39,11 +39,11 @@ test("o app BOOTA e RENDERIZA (sem tela preta / loop de render)", async ({
   // e o expect estoura no timeout → FALHA (é isso que unit test não pega).
   //
   // Âncora resiliente aos dois caminhos de boot no browser:
-  //  - onboarding (1º run, onboarded=false): overlay "MyCockpit"
+  //  - onboarding (1º run, onboarded=false): overlay "Frota"
   //  - já onboardado: sidebar com o header "Projetos"
   const anchor = page
     .getByText("Projetos", { exact: true })
-    .or(page.getByRole("heading", { name: "MyCockpit" }))
+    .or(page.getByRole("heading", { name: "Frota" }))
   await expect(anchor.first()).toBeVisible({ timeout: 10_000 })
 
   // O root de fato tem árvore montada (não uma casca vazia).

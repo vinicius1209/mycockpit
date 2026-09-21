@@ -27,6 +27,7 @@ use hkdf::Hkdf;
 use p256::ecdsa::signature::Signer;
 use p256::ecdsa::{Signature, SigningKey};
 use p256::elliptic_curve::sec1::ToSec1Point;
+use p256::elliptic_curve::Generate;
 use p256::{PublicKey, SecretKey};
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -114,7 +115,7 @@ pub fn cifrar(
     let cifra = Aes128Gcm::new_from_slice(&cek).map_err(|e| format!("chave AES inválida: {e}"))?;
     let cifrado = cifra
         .encrypt(
-            Nonce::from_slice(&nonce),
+            &Nonce::from(nonce),
             Payload {
                 msg: &claro,
                 aad: b"",
@@ -321,7 +322,7 @@ pub fn chave_do_mac(dir: &std::path::Path) -> Result<SecretKey, String> {
         // aparelho, o que é melhor do que o aviso parar de funcionar em
         // silêncio para sempre.
     }
-    let nova = SecretKey::random(&mut rand::rng());
+    let nova = SecretKey::generate_from_rng(&mut rand::rng());
     let corpo = serde_json::to_string(&VapidGuardado {
         privada: B64.encode(nova.to_bytes()),
     })
@@ -372,7 +373,7 @@ pub async fn enviar(sub: &Subscricao, aviso: &Aviso, chave: &SecretKey, agora_s:
         use rand::Rng;
         rand::rng().fill_bytes(&mut salt);
     }
-    let efemera = SecretKey::random(&mut rand::rng());
+    let efemera = SecretKey::generate_from_rng(&mut rand::rng());
     let corpo = match cifrar(sub, &texto, salt, &efemera) {
         Ok(c) => c,
         Err(e) => return Entrega::Falhou(e),

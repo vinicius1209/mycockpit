@@ -3,7 +3,7 @@
 //! O app passa a ser DONO de um Chromium por projeto, em segundo plano por
 //! padrão: spawn com
 //! `--remote-debugging-port=0` e perfil persistente próprio, ciclo de vida no
-//! `ProcessRegistry` do mc-work (process group, tail, TERM antes de KILL,
+//! `ProcessRegistry` do frota-work (process group, tail, TERM antes de KILL,
 //! kill_all no quit) e endpoint CDP publicado para quem roteia MCP
 //! (`mcp_control::plan_for_run` injeta `--cdp-endpoint`).
 //!
@@ -85,7 +85,7 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(3);
 pub struct BrowserSession {
     pub project_id: String,
     pub project_path: String,
-    /// Id do processo no `ProcessRegistry` (o mesmo eixo do mc-work).
+    /// Id do processo no `ProcessRegistry` (o mesmo eixo do frota-work).
     pub process_id: String,
     pub pid: u32,
     /// O que o MCP recebe em `--cdp-endpoint` (`http://127.0.0.1:<porta>`).
@@ -705,13 +705,13 @@ mod tests {
     fn comando_cita_o_binario_com_espaco_e_o_perfil_do_projeto() {
         let cmd = browser_command(
             "/Users/me/Library/Caches/ms-playwright/chromium-1228/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
-            "/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1",
+            "/Users/me/Library/Application Support/Frota/browser-profiles/proj-1",
             false,
         );
         assert!(cmd.starts_with("'/Users/me/Library/Caches"));
         assert!(cmd.contains("'--remote-debugging-port=0'"));
         assert!(cmd.contains("'--remote-debugging-address=127.0.0.1'"));
-        assert!(cmd.contains("'--user-data-dir=/Users/me/Library/Application Support/MyCockpit/browser-profiles/proj-1'"));
+        assert!(cmd.contains("'--user-data-dir=/Users/me/Library/Application Support/Frota/browser-profiles/proj-1'"));
         assert!(cmd.contains("'--headless=new'"));
         let visible = browser_command("/usr/bin/chromium", "/tmp/profile", true);
         assert!(!visible.contains("--headless"));

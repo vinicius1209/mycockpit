@@ -26,9 +26,9 @@ const h = vi.hoisted(() => ({
   erro: vi.fn(),
 }))
 
-vi.mock("@/lib/mycockpit", async (orig) => ({
-  ...(await orig<typeof import("@/lib/mycockpit")>()),
-  writeMycockpitConfig: h.write,
+vi.mock("@/lib/configDoProjeto", async (orig) => ({
+  ...(await orig<typeof import("@/lib/configDoProjeto")>()),
+  writeProjectConfig: h.write,
 }))
 
 vi.mock("sonner", () => ({
@@ -55,7 +55,7 @@ const projeto: Project = {
 }
 
 /** A pasta que o `detectBlockedDir` extraiu e que o clique gravou de verdade no
- *  `.mycockpit/config.toml` (mtime 16 Ago 17:47). */
+ *  `.frota/config.toml` (mtime 16 Ago 17:47). */
 const PASTA = "/Users/viniciusmachado/.gemini/antigravity-cli"
 
 /** O prompt do item `#24`, o mesmo que reapareceu como `#48`. */
@@ -127,7 +127,7 @@ beforeEach(() => {
   h.sucesso.mockClear()
   h.erro.mockClear()
   turnos.length = 0
-  useApp.setState({ projects: [projeto], mycockpit: {} })
+  useApp.setState({ projects: [projeto], projectConfigs: {} })
   useChat.setState({ byId: { [CONV]: conversa() }, activeId: CONV })
 })
 
@@ -137,7 +137,7 @@ describe("liberar a pasta com o turno EM VOO", () => {
     expect(await clicarLiberar()).toBe("turno-em-voo")
     // a metade que o botão de fato entrega continua entregue:
     expect(h.write).toHaveBeenCalledWith(projeto.path, { extraDirs: [PASTA] })
-    expect(useApp.getState().mycockpit[PROJ]?.extraDirs).toEqual([PASTA])
+    expect(useApp.getState().projectConfigs[PROJ]?.extraDirs).toEqual([PASTA])
     // a metade impossível não acontece:
     expect(turnos).toEqual([])
   })
@@ -210,9 +210,9 @@ describe("liberar a pasta com a conversa PARADA", () => {
 
   it("pasta já liberada (dois cliques) só limpa o aviso", async () => {
     useApp.setState({
-      mycockpit: {
+      projectConfigs: {
         [PROJ]: {
-          exists: true,
+          exists: true, pasta: ".frota",
           permission: "liberado",
           helper: "haiku",
           mode: "linear",
@@ -234,6 +234,6 @@ describe("liberar a pasta com a conversa PARADA", () => {
     )
     // reenviar com a pasta ainda barrada só repetiria o turno que já falhou.
     expect(turnos).toEqual([])
-    expect(useApp.getState().mycockpit[PROJ]).toBeUndefined()
+    expect(useApp.getState().projectConfigs[PROJ]).toBeUndefined()
   })
 })

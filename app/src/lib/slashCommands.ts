@@ -1,7 +1,7 @@
 // Comandos "/" honestos por fonte×motor. O único caso em que o `/nome` viaja
 // CRU pro CLI é conversa claude-code com comando de fonte claude (o `claude -p`
 // interpreta nativamente, preservando frontmatter rico que a expansão perderia).
-// QUALQUER outra combinação — comando da casa (.mycockpit/commands) em qualquer
+// QUALQUER outra combinação — comando da casa (.frota/commands) em qualquer
 // motor, prompt do codex, qualquer coisa em conversa codex/agy — expande
 // APP-SIDE: o texto enviado vira o corpo do .md (sem frontmatter), com
 // $ARGUMENTS substituído. Sem isso o /nome ia como texto literal que o motor
@@ -15,7 +15,7 @@ import type { InstructionSourceClaim } from "@/lib/tooling"
 
 // ---------------------------------------------------------------------------
 // Comandos BUILTIN do app (source "app") — comandos de PRIMEIRA CLASSE do
-// MyCockpit, definidos em código, visíveis no popover "/" de TODA conversa
+// Frota, definidos em código, visíveis no popover "/" de TODA conversa
 // (chip "app"). Eles NÃO são texto: são AÇÃO — as duas superfícies de envio
 // (ChatPanel.handleSend e lib/fleet/send.sendFromDesk) interceptam ANTES
 // da expansão de .md e nunca deixam o /nome viajar cru pro motor. O primeiro
@@ -316,7 +316,7 @@ export function commandBadges(
 }
 
 /** Copy do empty-state do "/" por agent da conversa: a casa
- *  (.mycockpit/commands) sempre aparece; a convenção nativa do motor vem da
+ *  (.frota/commands) sempre aparece; a convenção nativa do motor vem da
  *  definição no registry (`slashEmptyExtra`), não de comparação de nome.
  *  Sem travessão (regra da casa). */
 export function slashEmptyHint(agent: string): string {

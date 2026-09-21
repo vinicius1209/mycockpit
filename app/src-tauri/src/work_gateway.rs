@@ -1,7 +1,7 @@
 //! MCP interno de trabalho vivo.
 //!
 //! O provider relata o trabalho interno com a granularidade que possui. Para
-//! processos externos, o MyCockpit precisa ser o dono: este módulo oferece um
+//! processos externos, a Frota precisa ser a dona: este módulo oferece um
 //! server MCP por-run e mantém os filhos no processo Tauri, com PID, tail,
 //! poll/stop/retry e eventos ao frontend.
 
@@ -16,13 +16,13 @@ use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::process::Command;
 
-pub const MCP_SERVER_NAME: &str = "mc-work";
+pub const MCP_SERVER_NAME: &str = "frota-work";
 pub const PROCESS_START_TOOL: &str = "process_start";
 pub const PROCESS_POLL_TOOL: &str = "process_poll";
 pub const PROCESS_STOP_TOOL: &str = "process_stop";
 pub const WORK_PLAN_TOOL: &str = "work_plan";
 pub const WORK_UPDATE_TOOL: &str = "work_update";
-pub const SOCK_ENV: &str = "MYCOCKPIT_WORK_SOCK";
+pub const SOCK_ENV: &str = "FROTA_WORK_SOCK";
 
 const TAIL_LINES: usize = 240;
 const TAIL_BYTES: usize = 256 * 1024;
@@ -564,9 +564,9 @@ fn socket_candidates(run_id: &str) -> [PathBuf; 3] {
     let short: String = run_id.chars().take(8).collect();
     let dir = std::env::temp_dir();
     [
-        dir.join(format!("mc-work-{short}.sock")),
-        dir.join(format!("mc-work-{short}-1.sock")),
-        dir.join(format!("mc-work-{short}-2.sock")),
+        dir.join(format!("frota-work-{short}.sock")),
+        dir.join(format!("frota-work-{short}-1.sock")),
+        dir.join(format!("frota-work-{short}-2.sock")),
     ]
 }
 
@@ -1032,12 +1032,12 @@ mod tests {
     #[test]
     fn gateway_codex_e_claude_apontam_o_mesmo_server() {
         let cfg = GatewayConfig {
-            server_bin: "/Applications/MyCockpit".into(),
-            socket: "/tmp/mc-work.sock".into(),
+            server_bin: "/Applications/Frota".into(),
+            socket: "/tmp/frota-work.sock".into(),
         };
         assert_eq!(
             cfg.claude_server_json()["command"],
-            "/Applications/MyCockpit"
+            "/Applications/Frota"
         );
         let mut cmd = Command::new("codex");
         cfg.configure_codex(&mut cmd);

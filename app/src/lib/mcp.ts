@@ -307,7 +307,7 @@ export function mcpPortabilityNotices(
     McpServer,
     "managed" | "portable" | "nativeReason" | "literalSecret" | "sourceAgent"
   >,
-  /** Há login do MyCockpit neste servidor? Com login, o motivo `oauth` deixa
+  /** Há login da Frota neste servidor? Com login, o motivo `oauth` deixa
    *  de valer: quem autentica passa a ser o app, e o proxy roteia pros dois
    *  motores (A2). As demais causas seguem intactas. */
   autenticadoPeloApp = false,
@@ -343,7 +343,7 @@ export function mcpPortabilityNotices(
 
 // ---- login do app (A1) -----------------------------------------------------
 
-/** Espelho de `McpAuthState` (mcp_auth.rs). Quem autenticou é o MyCockpit, não
+/** Espelho de `McpAuthState` (mcp_auth.rs). Quem autenticou é a Frota, não
  *  o CLI de origem. */
 export type McpAuthState = "sem-login" | "conectado" | "expirado"
 

@@ -38,9 +38,9 @@ describe("a faixa mostra o modo do projeto que VAI RODAR", () => {
     expect(modoMarcado(await montar())).toBe("Só lê")
   })
 
-  it("o .mycockpit/config.toml do dono vence o cache do SQLite", async () => {
+  it("o config.toml do projeto do dono vence o cache do SQLite", async () => {
     app.projects = [projeto(PROJ_FOCO, "liberado"), projeto(PROJ_DONO, "leitura")]
-    app.mycockpit = { [PROJ_DONO]: config("padrao") }
+    app.projectConfigs = { [PROJ_DONO]: config("padrao") }
     expect(modoMarcado(await montar())).toBe("Pede")
   })
 
@@ -59,7 +59,7 @@ describe("a faixa mostra o modo do projeto que VAI RODAR", () => {
   })
 
   it("sem projeto nenhum, o letreiro cai em Pede e não quebra", async () => {
-    // Sem projeto não há `.mycockpit` onde gravar (`ExecutionRow` resolve
+    // Sem projeto não há `.frota` onde gravar (`ExecutionRow` resolve
     // `mode = "padrao"` direto, sem consultar o store) — o guard de verdade é
     // em runtime (`pick()`: `if (!project) return`, os três botões do painel
     // continuam `disabled={!project}`), mas o painel só existe com o clique

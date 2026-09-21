@@ -9,7 +9,7 @@ import type { McpAgentState, McpServer } from "@/lib/mcp"
 export interface BrowserSession {
   projectId: string
   projectPath: string
-  /** Id no registry de processos do app (mesmo eixo do mc-work). */
+  /** Id no registry de processos do app (mesmo eixo do frota-work). */
   processId: string
   pid: number
   /** O que o MCP recebe em `--cdp-endpoint`. */

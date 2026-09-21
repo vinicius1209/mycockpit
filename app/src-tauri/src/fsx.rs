@@ -1,5 +1,5 @@
 //! Escrita atômica de TEXTO (tmp + rename no mesmo diretório). Os arquivos de
-//! `.mycockpit/` (config, doutrina, contexto exportado) são lidos pelo app E
+//! `.frota/` (config, doutrina, contexto exportado) são lidos pelo app E
 //! pelos agents em paralelo: um `fs::write` direto (truncate+write) deixa o
 //! leitor ver o arquivo truncado no meio. O rename
 //! no mesmo filesystem é atômico; aceitamos last-writer-wins, nunca corrupção.

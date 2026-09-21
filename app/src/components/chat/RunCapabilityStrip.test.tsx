@@ -34,7 +34,7 @@ const manifest: EffectiveRunManifest = {
       observedCount: 12,
     },
     {
-      id: "mc-work",
+      id: "frota-work",
       label: "Trabalho e processos",
       kind: "frota-gateway",
       transport: "mcp",

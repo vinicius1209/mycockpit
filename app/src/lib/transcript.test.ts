@@ -109,7 +109,7 @@ describe("buildMemoryPrompt (agy sem resume)", () => {
   })
 })
 
-describe("shouldAttachResumeFallback (MyCockpit resume)", () => {
+describe("shouldAttachResumeFallback (Frota resume)", () => {
   const items: ChatItem[] = [user("adiciona o botão"), text("Botão adicionado.")]
 
   it("conv com itens + sessionId (claude/codex): anexa", () => {

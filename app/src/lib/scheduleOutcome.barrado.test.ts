@@ -34,7 +34,7 @@ const INCIDENTE: ChatItem[] = [
     text: "MCP tool call requires approval, but approval policy is never",
     lines: 1,
   }),
-  { kind: "text", id: "x2", text: "A telemetria mc-work…", ts: 3 } as ChatItem,
+  { kind: "text", id: "x2", text: "A telemetria frota-work…", ts: 3 } as ChatItem,
   tool("js", { ok: false, text: "", lines: 0 }),
   tool("context_read", { ok: false, text: "", lines: 0 }),
   // As DUAS que passaram, e é por elas que "alguma tool passou" não serve de

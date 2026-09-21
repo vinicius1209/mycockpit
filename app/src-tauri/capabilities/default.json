@@ -2,7 +2,11 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "enables the default permissions",
-  "windows": ["main", "tray-popover", "browser-panel-*"],
+  "windows": [
+    "main",
+    "tray-popover",
+    "browser-panel-*"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -26,6 +30,7 @@
     "opener:default",
     "opener:allow-open-url",
     "clipboard-manager:allow-read-text",
+    "clipboard-manager:allow-write-text",
     "notification:default",
     "log:default"
   ]

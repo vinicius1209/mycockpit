@@ -10,7 +10,22 @@ import type {
 } from "@/lib/missionTypes"
 import { validateMissionGraph } from "@/lib/missionGraph"
 
-export const MISSION_PLAN_FORMAT = "mycockpit.flight-plan"
+export const MISSION_PLAN_FORMAT = "frota.flight-plan"
+
+/**
+ * O discriminador LEGADO. Ele não é um nome interno: está GRAVADO dentro de
+ * todo plano de voo que você já exportou, e o arquivo está no disco de quem
+ * exportou. Recusar o valor antigo transformaria plano salvo em "arquivo
+ * inválido" sem nenhum aviso que explicasse o porquê (ADR-222).
+ *
+ * A exportação já escreve o nome novo; a leitura aceita os dois.
+ */
+export const MISSION_PLAN_FORMAT_LEGADO = "mycockpit.flight-plan"
+
+/** O arquivo se declara um Plano de voo, na grafia nova ou na antiga? */
+export function ehFormatoDePlano(valor: unknown): boolean {
+  return valor === MISSION_PLAN_FORMAT || valor === MISSION_PLAN_FORMAT_LEGADO
+}
 export const MISSION_PLAN_EXPORT_VERSION = 1
 
 export interface MissionPlanExport {
@@ -356,7 +371,7 @@ export function parseMissionPlan(raw: string):
   }
   if (
     !isRecord(value) ||
-    value.format !== MISSION_PLAN_FORMAT ||
+    !ehFormatoDePlano(value.format) ||
     value.version !== MISSION_PLAN_EXPORT_VERSION ||
     !isRecord(value.plan)
   ) {

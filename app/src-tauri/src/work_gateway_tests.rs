@@ -5,7 +5,7 @@ fn run_id() -> String {
     format!("{:032x}", rand::random::<u128>())
 }
 
-// Payload real publicado via mc-work neste fio em 08/09/2026.
+// Payload real publicado via frota-work neste fio em 08/09/2026.
 fn plan() -> Value {
     json!({"tasks":[{"id":"contrato-agy","title":"Verificar o suporte real do Agy e definir a identidade do canal","status":"in_progress"}]})
 }

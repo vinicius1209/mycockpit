@@ -57,7 +57,7 @@ beforeEach(() => {
     projects: [
       {
         id: "px",
-        name: "MyCockpit",
+        name: "Frota",
         path: "/Users/v/projetos/mycockpit",
         createdAt: 0,
       },
@@ -75,7 +75,7 @@ describe("announceArrival de permissão de hook (sessão externa)", () => {
     expect(notifyHookPermission).toHaveBeenCalledWith(
       expect.objectContaining({
         engine: "Claude",
-        place: "MyCockpit",
+        place: "Frota",
         projectId: "px",
         toolName: "Bash",
       }),

@@ -268,7 +268,7 @@ fn launch_for(
                     .path()
                     .app_data_dir()
                     .map_err(|error| format!("banco de grants indisponível: {error}"))?
-                    .join("mycockpit.db")
+                    .join(crate::BANCO)
                     .to_string_lossy()
                     .to_string(),
             })?);

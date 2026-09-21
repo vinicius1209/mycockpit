@@ -82,7 +82,7 @@ function makeMission(partial: Partial<MissionRun> = {}): MissionRun {
   }
 }
 
-/** Persona de fixture com o shape REAL do AgentDef (arquivo .mycockpit/agents). */
+/** Persona de fixture com o shape REAL do AgentDef (arquivo .frota/agents). */
 function makeSpecialist(partial: Partial<AgentDef> & { id: string }): AgentDef {
   return {
     name: partial.id,

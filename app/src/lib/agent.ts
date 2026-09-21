@@ -128,7 +128,7 @@ export async function runAgent(
   onEvent: (e: AgentEvent) => void,
   /** "Planejar primeiro" (plan mode por turno): o motor segura os writes. */
   planFirstOrOptions: boolean | RunAgentOptions = false,
-  /** MyCockpit resume: memória da conversa que o motor SÓ usa se o resume
+  /** Frota resume: memória da conversa que o motor SÓ usa se o resume
    *  nativo falhar (prepende ao prompt no restart e emite `resume://fallback`).
    *  null = comportamento atual (falha do resume vira erro). */
   legacyMemoryFallback: string | null = null,

@@ -24,7 +24,7 @@ fn build_stt_sidecar() {
     println!("cargo:rerun-if-changed=stt/Info.plist");
     let src = Path::new("stt/main.swift");
     let plist = Path::new("stt/Info.plist");
-    let out = Path::new("bin/mycockpit-stt-aarch64-apple-darwin");
+    let out = Path::new("bin/frota-stt-aarch64-apple-darwin");
     let needs = match (
         src.metadata().and_then(|m| m.modified()),
         plist.metadata().and_then(|m| m.modified()),
@@ -43,7 +43,7 @@ fn build_stt_sidecar() {
             "-O",
             "stt/main.swift",
             "-o",
-            "bin/mycockpit-stt-aarch64-apple-darwin",
+            "bin/frota-stt-aarch64-apple-darwin",
             "-Xlinker",
             "-sectcreate",
             "-Xlinker",

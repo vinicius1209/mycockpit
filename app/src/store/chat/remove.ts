@@ -38,7 +38,7 @@ type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
  * Por que isto existe: enquanto isolar era um gesto deliberado no menu, o lixo
  * era raro e consciente. Desde que o FORK passou a isolar sozinho
  * (store/chat/clone.ts), toda tentativa descartada deixava
- * `.mycockpit/worktrees/<slug>` e um branch `mycockpit/<slug>` para trás — e o
+ * `.frota/worktrees/<slug>` e um branch `mycockpit/<slug>` para trás — e o
  * branch sobrevivia até à remoção manual da pasta. Criar automático obriga a
  * recolher automático.
  *

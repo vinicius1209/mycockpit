@@ -55,7 +55,7 @@ mod mcp_proxy;
 mod model_list;
 mod model_smoke;
 mod modes;
-mod mycockpit;
+mod frota_dir;
 mod notch;
 mod opencode_acp;
 mod opencode_auth;
@@ -132,16 +132,134 @@ pub fn run_plugin_mcp_server() {
     plugin_mcp::run_mcp_server();
 }
 
+/// Nome do arquivo do banco.
+pub const BANCO: &str = "frota.db";
+
+/// O nome LEGADO do banco, e o identificador LEGADO do bundle. Os dois mudaram
+/// em 21/09/2026 (ADR-222), e o identificador É o diretório de dados: trocar
+/// sem migrar faria o app abrir num diretório vazio, criar banco novo e rodar
+/// as migrações do zero, com as conversas, custos e lições da pessoa intactas
+/// no diretório antigo e invisíveis.
+pub const BANCO_LEGADO: &str = "mycockpit.db";
+pub const ID_LEGADO: &str = "dev.vinicius.mycockpit";
+
+/// As três partes de um banco SQLite em WAL. Copiar só o `.db` deixaria para
+/// trás transações que ainda vivem no log.
+const PARTES: [&str; 3] = ["db", "db-wal", "db-shm"];
+
+/// As árvores de blob que o banco endereça por caminho RELATIVO ao
+/// `app_data_dir` (`attachments/<conv>/<hash>.<ext>`, `evidence/<conv>/...`).
+/// Como o relativo é resolvido a partir do diretório NOVO, elas têm que vir
+/// junto com o banco: deixá-las para trás transforma anexo e evidência de
+/// conversa antiga em arquivo faltando, com o banco inteiro e correto.
+const ARVORES: [&str; 2] = ["attachments", "evidence"];
+
+/// Traz o banco do diretório/nome antigos para os novos, UMA vez.
+///
+/// Núcleo puro (recebe os dois diretórios) para o teste não precisar de
+/// `AppHandle`. Roda antes de o plugin SQL abrir, que é a mesma janela em que
+/// `backup_database` opera: db+wal+shm quiescentes.
+///
+/// **Copia e nunca move.** O diretório antigo fica inteiro para que voltar
+/// para a versão anterior do app ache o banco onde ele estava. Quem apaga o
+/// antigo é a pessoa, depois de conferir que o novo está bom.
+///
+/// Devolve `true` quando copiou o banco.
+fn migrar_banco_entre(novo_dir: &std::path::Path, legado_dir: &std::path::Path) -> Result<bool, String> {
+    if novo_dir.join(BANCO).exists() {
+        return Ok(false); // já migrado (ou instalação nova que já nasceu no nome novo)
+    }
+    // Candidatos, em ordem: mesmo diretório com nome velho (rename só do
+    // arquivo) e diretório velho com nome velho (rename dos dois).
+    let origem = [novo_dir.join(BANCO_LEGADO), legado_dir.join(BANCO_LEGADO)]
+        .into_iter()
+        .find(|p| p.exists());
+    let Some(origem) = origem else {
+        return Ok(false); // instalação nova: nada a migrar
+    };
+    let base_origem = origem.with_extension("");
+    std::fs::create_dir_all(novo_dir).map_err(|e| e.to_string())?;
+    for ext in PARTES {
+        let src = base_origem.with_extension(ext);
+        if !src.exists() {
+            continue; // sem WAL/SHM é estado normal (banco fechado limpo)
+        }
+        let dst = novo_dir.join(format!("frota.{ext}"));
+        std::fs::copy(&src, &dst).map_err(|e| format!("cópia de {ext} falhou: {e}"))?;
+    }
+    Ok(true)
+}
+
+/// Copia uma árvore inteira, criando o que falta. Idempotente por arquivo:
+/// destino que já existe é pulado, então rodar de novo não desfaz nada que o
+/// app já escreveu no lugar novo.
+fn copiar_arvore(de: &std::path::Path, para: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(para).map_err(|e| e.to_string())?;
+    for entrada in std::fs::read_dir(de).map_err(|e| e.to_string())? {
+        let entrada = entrada.map_err(|e| e.to_string())?;
+        let destino = para.join(entrada.file_name());
+        let tipo = entrada.file_type().map_err(|e| e.to_string())?;
+        if tipo.is_dir() {
+            copiar_arvore(&entrada.path(), &destino)?;
+        } else if tipo.is_file() && !destino.exists() {
+            std::fs::copy(entrada.path(), &destino).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Traz `attachments/` e `evidence/` do diretório legado, cada uma com gate
+/// próprio: o banco pode já ter migrado numa versão anterior desta função, e
+/// nesse caso as árvores ainda estão para trás. Devolve as que copiou.
+fn migrar_arvores_entre(
+    novo_dir: &std::path::Path,
+    legado_dir: &std::path::Path,
+) -> Result<Vec<&'static str>, String> {
+    let mut trazidas = Vec::new();
+    for nome in ARVORES {
+        let destino = novo_dir.join(nome);
+        if destino.exists() {
+            continue; // já veio (ou o app já criou a dele no lugar novo)
+        }
+        let origem = legado_dir.join(nome);
+        if !origem.is_dir() {
+            continue; // instalação nova, ou nunca houve anexo/evidência
+        }
+        copiar_arvore(&origem, &destino).map_err(|e| format!("{nome}: {e}"))?;
+        trazidas.push(nome);
+    }
+    Ok(trazidas)
+}
+
+/// A versão que fala com o Tauri. O diretório legado é irmão do novo: o
+/// identificador do bundle é o último componente do caminho.
+fn migrar_banco(app: &tauri::AppHandle) -> Result<bool, String> {
+    let novo = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))?;
+    let Some(legado) = novo.parent().map(|pai| pai.join(ID_LEGADO)) else {
+        return Ok(false);
+    };
+    let copiou = migrar_banco_entre(&novo, &legado)?;
+    // As árvores vêm mesmo quando o banco já estava migrado: são gates
+    // independentes, e errar isso deixa o banco certo apontando para o vazio.
+    for nome in migrar_arvores_entre(&novo, &legado)? {
+        log::info!("árvore {nome} migrada para o diretório novo");
+    }
+    Ok(copiou)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 /// Backup rotativo do banco no boot (rede de segurança contra perda de dados).
 /// Copia db + WAL + SHM (snapshot consistente: roda antes do plugin SQL abrir)
-/// para app_data_dir/backups/mycockpit-{1..3}.db, no máx. 1x a cada ~20h.
+/// para app_data_dir/backups/frota-{1..3}.db, no máx. 1x a cada ~20h.
 fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
     let data = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("sem app_data_dir: {e}"))?;
-    let db = data.join("mycockpit.db");
+    let db = data.join(BANCO);
     if !db.exists() {
         return Ok(()); // primeira execução: nada a proteger ainda
     }
@@ -149,7 +267,7 @@ fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
 
     // já tem backup fresco (<20h)? então não gira (1 backup por dia de uso).
-    let newest = dir.join("mycockpit-1.db");
+    let newest = dir.join("frota-1.db");
     if let Ok(meta) = std::fs::metadata(&newest) {
         if let Ok(modified) = meta.modified() {
             if let Ok(age) = std::time::SystemTime::now().duration_since(modified) {
@@ -162,16 +280,16 @@ fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
 
     // rotação 2→3, 1→2 (o 3 mais antigo cai), depois copia o atual pro 1.
     for (from, to) in [(2u8, 3u8), (1, 2)] {
-        for ext in ["db", "db-wal", "db-shm"] {
-            let src = dir.join(format!("mycockpit-{from}.{ext}"));
+        for ext in PARTES {
+            let src = dir.join(format!("frota-{from}.{ext}"));
             if src.exists() {
-                let _ = std::fs::rename(&src, dir.join(format!("mycockpit-{to}.{ext}")));
+                let _ = std::fs::rename(&src, dir.join(format!("frota-{to}.{ext}")));
             }
         }
     }
-    for ext in ["db", "db-wal", "db-shm"] {
-        let src = data.join(format!("mycockpit.{ext}"));
-        let dst = dir.join(format!("mycockpit-1.{ext}"));
+    for ext in PARTES {
+        let src = data.join(format!("frota.{ext}"));
+        let dst = dir.join(format!("frota-1.{ext}"));
         if src.exists() {
             std::fs::copy(&src, &dst).map_err(|e| e.to_string())?;
         } else {
@@ -773,6 +891,16 @@ pub fn run() {
         )
         .plugin(tauri_plugin_decorum::init())
         .setup(|app| {
+            // O banco vem do diretório/nome antigos ANTES de tudo: o backup
+            // logo abaixo e o plugin SQL adiante precisam achá-lo já no lugar
+            // novo. Falha aqui NÃO bloqueia o boot, mas grita no log: seguir
+            // com banco vazio em silêncio seria perder o histórico sem aviso.
+            match migrar_banco(app.handle()) {
+                Ok(true) => log::info!("banco migrado para o nome novo ({BANCO})"),
+                Ok(false) => {}
+                Err(e) => log::error!("migração do banco falhou: {e}"),
+            }
+
             // Backup rotativo do banco ANTES de qualquer escrita da sessão (o
             // plugin SQL só abre depois, então db+wal+shm estão quiescentes).
             // Rede de segurança contra corrupção/perda: nunca bloqueia o boot.
@@ -880,7 +1008,7 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             SqlBuilder::default()
-                .add_migrations("sqlite:mycockpit.db", migrations)
+                .add_migrations(&format!("sqlite:{BANCO}"), migrations)
                 .build(),
         )
         .manage(agent::RunRegistry::default())
@@ -961,16 +1089,16 @@ pub fn run() {
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             pricing::model_price,
-            mycockpit::read_mycockpit_config,
-            mycockpit::write_mycockpit_config,
-            mycockpit::read_project_doctrine,
-            mycockpit::write_project_doctrine,
-            mycockpit::read_doctrine_seed,
-            mycockpit::read_agent_defs,
-            mycockpit::write_agent_def,
-            mycockpit::delete_agent_def,
-            mycockpit::export_conv_context,
-            mycockpit::export_context_bundle,
+            frota_dir::read_project_config,
+            frota_dir::write_project_config,
+            frota_dir::read_project_doctrine,
+            frota_dir::write_project_doctrine,
+            frota_dir::read_doctrine_seed,
+            frota_dir::read_agent_defs,
+            frota_dir::write_agent_def,
+            frota_dir::delete_agent_def,
+            frota_dir::export_conv_context,
+            frota_dir::export_context_bundle,
             sources::read_project_sources,
             sources::read_text_file,
             sources::read_project_file_bytes,
@@ -1107,4 +1235,192 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod testes_migracao_do_banco {
+    use super::{migrar_banco_entre, BANCO, BANCO_LEGADO, PARTES};
+    use std::path::PathBuf;
+
+    fn tmp(tag: &str) -> (PathBuf, PathBuf) {
+        let raiz = std::env::temp_dir().join(format!(
+            "frota-migra-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let novo = raiz.join("dev.vinicius.frota");
+        let legado = raiz.join(super::ID_LEGADO);
+        std::fs::create_dir_all(&novo).unwrap();
+        std::fs::create_dir_all(&legado).unwrap();
+        (novo, legado)
+    }
+
+    /// Banco legado com as TRÊS partes do WAL, cada uma com conteúdo próprio.
+    fn semear(dir: &PathBuf) {
+        for (ext, corpo) in [("db", "pagina"), ("db-wal", "log"), ("db-shm", "mapa")] {
+            std::fs::write(dir.join(format!("mycockpit.{ext}")), corpo).unwrap();
+        }
+    }
+
+    #[test]
+    fn copia_as_tres_partes_do_wal() {
+        // Copiar só o .db deixaria para trás transação que ainda vive no log.
+        let (novo, legado) = tmp("tres");
+        semear(&legado);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        for (ext, corpo) in [("db", "pagina"), ("db-wal", "log"), ("db-shm", "mapa")] {
+            let f = novo.join(format!("frota.{ext}"));
+            assert!(f.exists(), "faltou frota.{ext}");
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), corpo);
+        }
+    }
+
+    #[test]
+    fn copia_e_nunca_move() {
+        // O diretório antigo fica inteiro: é o rollback para a versão
+        // anterior do app, que procura o banco onde ele estava.
+        let (novo, legado) = tmp("copia");
+        semear(&legado);
+        migrar_banco_entre(&novo, &legado).unwrap();
+        for ext in PARTES {
+            assert!(
+                legado.join(format!("mycockpit.{ext}")).exists(),
+                "o banco antigo sumiu: {ext}"
+            );
+        }
+    }
+
+    #[test]
+    fn nao_sobrescreve_banco_novo_ja_existente() {
+        // Segundo boot. Sobrescrever aqui apagaria tudo que a pessoa fez desde
+        // a migração, que é a pior falha possível desta função.
+        let (novo, legado) = tmp("segundo");
+        semear(&legado);
+        std::fs::write(novo.join(BANCO), "trabalho novo").unwrap();
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(novo.join(BANCO)).unwrap(),
+            "trabalho novo"
+        );
+    }
+
+    #[test]
+    fn e_idempotente() {
+        let (novo, legado) = tmp("idem");
+        semear(&legado);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(std::fs::read_to_string(novo.join(BANCO)).unwrap(), "pagina");
+    }
+
+    #[test]
+    fn instalacao_nova_nao_inventa_banco() {
+        let (novo, legado) = tmp("nova");
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(!novo.join(BANCO).exists());
+    }
+
+    #[test]
+    fn banco_fechado_limpo_migra_sem_wal() {
+        // Sem WAL/SHM é estado NORMAL (banco fechado direito). Não é erro.
+        let (novo, legado) = tmp("semwal");
+        std::fs::write(legado.join(BANCO_LEGADO), "pagina").unwrap();
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(novo.join(BANCO).exists());
+        assert!(!novo.join("frota.db-wal").exists());
+    }
+
+    #[test]
+    fn nome_velho_no_diretorio_novo_tambem_migra() {
+        // Caso do identificador inalterado e só o arquivo renomeado.
+        let (novo, legado) = tmp("mesmodir");
+        semear(&novo);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(std::fs::read_to_string(novo.join(BANCO)).unwrap(), "pagina");
+    }
+
+    use super::migrar_arvores_entre;
+
+    /// Anexo e evidência de uma conversa, no layout real
+    /// (`<arvore>/<convId>/<arquivo>`).
+    fn semear_arvores(dir: &PathBuf) {
+        for (arvore, arquivo, corpo) in [
+            ("attachments", "a1b2c3d4.png", "pixels"),
+            ("evidence", "tool-0.txt", "saida"),
+        ] {
+            let conv = dir.join(arvore).join("conv-1");
+            std::fs::create_dir_all(&conv).unwrap();
+            std::fs::write(conv.join(arquivo), corpo).unwrap();
+        }
+    }
+
+    #[test]
+    fn traz_anexos_e_evidencias_junto_com_o_banco() {
+        // O banco endereça os dois por caminho RELATIVO ao app_data_dir. Com o
+        // diretório novo vazio, todo anexo de conversa antiga vira arquivo
+        // faltando, com o banco inteiro e correto.
+        let (novo, legado) = tmp("arvores");
+        semear_arvores(&legado);
+        let trazidas = migrar_arvores_entre(&novo, &legado).unwrap();
+        assert_eq!(trazidas, vec!["attachments", "evidence"]);
+        assert_eq!(
+            std::fs::read_to_string(novo.join("attachments/conv-1/a1b2c3d4.png")).unwrap(),
+            "pixels"
+        );
+        assert_eq!(
+            std::fs::read_to_string(novo.join("evidence/conv-1/tool-0.txt")).unwrap(),
+            "saida"
+        );
+    }
+
+    #[test]
+    fn as_arvores_tem_gate_proprio_e_nao_dependem_do_banco() {
+        // Este é o estado real de 21/09/2026: o banco JÁ migrou num boot
+        // anterior, e as árvores ficaram para trás. Se o gate fosse o do
+        // banco, elas nunca viriam.
+        let (novo, legado) = tmp("gate");
+        semear(&legado);
+        semear_arvores(&legado);
+        migrar_banco_entre(&novo, &legado).unwrap();
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap(), "banco já migrou");
+        assert_eq!(
+            migrar_arvores_entre(&novo, &legado).unwrap(),
+            vec!["attachments", "evidence"]
+        );
+    }
+
+    #[test]
+    fn nao_pisa_em_arvore_que_o_app_ja_criou() {
+        // Sobrescrever aqui apagaria anexo gravado depois do rename.
+        let (novo, legado) = tmp("pisa");
+        semear_arvores(&legado);
+        let conv = novo.join("attachments/conv-2");
+        std::fs::create_dir_all(&conv).unwrap();
+        std::fs::write(conv.join("novo.png"), "recente").unwrap();
+
+        assert_eq!(migrar_arvores_entre(&novo, &legado).unwrap(), vec!["evidence"]);
+        assert_eq!(
+            std::fs::read_to_string(conv.join("novo.png")).unwrap(),
+            "recente"
+        );
+    }
+
+    #[test]
+    fn arvores_copiam_e_nunca_movem() {
+        let (novo, legado) = tmp("arvcopia");
+        semear_arvores(&legado);
+        migrar_arvores_entre(&novo, &legado).unwrap();
+        assert!(legado.join("attachments/conv-1/a1b2c3d4.png").exists());
+        assert!(legado.join("evidence/conv-1/tool-0.txt").exists());
+    }
+
+    #[test]
+    fn instalacao_nova_nao_inventa_arvore() {
+        let (novo, legado) = tmp("arvnova");
+        assert!(migrar_arvores_entre(&novo, &legado).unwrap().is_empty());
+        assert!(!novo.join("attachments").exists());
+    }
 }

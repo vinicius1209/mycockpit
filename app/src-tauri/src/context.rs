@@ -30,7 +30,7 @@ pub struct ClaudeDir {
 pub struct ProjectContext {
     pub files: Vec<ContextFile>,
     pub claude_dir: ClaudeDir,
-    /// Nº de comandos "/" da CASA (.mycockpit/commands/*.md) — onde a skill
+    /// Nº de comandos "/" da CASA (.frota/commands/*.md) — onde a skill
     /// promovida (write_skill) mora desde a virada agnóstica.
     pub mycockpit_commands: usize,
     /// Nº de servidores MCP em .mcp.json (None = arquivo ausente).
@@ -114,7 +114,7 @@ fn read_project_context_sync(path: &str) -> ProjectContext {
     ProjectContext {
         files: vec![read("CLAUDE.md"), read("AGENTS.md")],
         claude_dir,
-        mycockpit_commands: count_md(&base.join(".mycockpit").join("commands")),
+        mycockpit_commands: count_md(&crate::frota_dir::pasta_da_frota(base).join("commands")),
         mcp_servers,
     }
 }

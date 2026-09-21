@@ -3,12 +3,14 @@
 // com nomes fixos por ÍNDICE de fase, então duas missões no mesmo cwd se
 // SOBRESCREVIAM (o executor de uma missão nova esmagava o handoff de outra —
 // perda de histórico, avisada pelo próprio agente). Agora cada missão ganha
-// `.mycockpit/missions/<slug>/…`: slug único → zero colisão, histórico
-// preservado. Consolidado sob `.mycockpit/` (a pasta do app por projeto, já
+// `.frota/missions/<slug>/…`: slug único → zero colisão, histórico
+// preservado. Consolidado sob `.frota/` (a pasta do app por projeto, já
 // gitignorada com `*`), aposentando o `.mission/` da raiz. Puro e testável.
 
-/** Raiz das missões, sob a pasta do app (`.mycockpit/` já é `*` no gitignore). */
-export const MISSIONS_ROOT = ".mycockpit/missions"
+import { caminhoNaPasta } from "@/lib/frotaDir"
+
+/** Raiz das missões, sob a pasta do app (ela já é `*` no gitignore). */
+export const MISSIONS_ROOT = caminhoNaPasta("missions")
 
 /** slugify defensivo: minúsculo, sem acento, não-alfanumérico → "-", colapsa,
  *  apara e limita o tamanho (nomes de pasta previsíveis e sem surpresa de FS). */

@@ -1,5 +1,5 @@
 // Missão sobrevive a restart (P1 confiabilidade): o pipeline persiste um
-// snapshot v2 em .mycockpit/missions/<id>/run-state.json a cada MARCO; no boot, uma
+// snapshot v2 em .frota/missions/<id>/run-state.json a cada MARCO; no boot, uma
 // conversa cujo arquivo ficou `running` SEM run em memória ganha a oferta de
 // RETOMADA (retomar re-roda da fase corrente com os custos anteriores somados;
 // descartar marca abandoned e não re-oferece). Modelado no

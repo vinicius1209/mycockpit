@@ -13,7 +13,7 @@
 //  • motor SEM canal → os mesmos blocos entram no corpo, na cascata (quem você
 //    é → as regras deste projeto → o que já aprendemos → o pedido).
 //
-// A doutrina do projeto (`.mycockpit/instructions.md`) é injetada pelo APP, o
+// A doutrina do projeto (`.frota/instructions.md`) é injetada pelo APP, o
 // que é justamente o que a faz valer igual nos três motores. Best-effort: sem
 // arquivo, ou com falha de disco, o turno segue sem o bloco.
 

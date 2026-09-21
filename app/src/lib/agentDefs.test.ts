@@ -1,4 +1,4 @@
-// Personas em arquivo (.mycockpit/agents/*.md) — o núcleo puro: frontmatter,
+// Personas em arquivo (.frota/agents/*.md) — o núcleo puro: frontmatter,
 // slug, serialização e a precedência projeto > global.
 
 import { describe, expect, it, vi } from "vitest"

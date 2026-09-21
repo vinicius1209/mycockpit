@@ -442,7 +442,7 @@ export function SuggestionChips(props: {
   // e reage tanto ao default global quanto à config do projeto.
   const temHelper = useApp((s) =>
     projectId ? resolverHelper({
-      cfg: s.mycockpit[projectId],
+      cfg: s.projectConfigs[projectId],
       global: s.settings.helperModel,
     }) !== null : false,
   )

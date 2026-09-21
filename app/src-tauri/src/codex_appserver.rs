@@ -942,7 +942,7 @@ pub async fn run(
         &request(
             ID_INITIALIZE,
             "initialize",
-            json!({ "clientInfo": { "name": "mycockpit", "version": env!("CARGO_PKG_VERSION") } }),
+            json!({ "clientInfo": { "name": "frota", "version": env!("CARGO_PKG_VERSION") } }),
         ),
     )
     .await
@@ -1371,7 +1371,7 @@ mod tests {
         let subcommand = args.iter().position(|x| x == "app-server").unwrap();
         let cfg = args
             .iter()
-            .position(|x| x.contains("mcp_servers.mc-context.command"))
+            .position(|x| x.contains("mcp_servers.frota-context.command"))
             .unwrap();
         assert!(cfg < subcommand);
         assert!(args.iter().any(|x| x.contains("context-server")));
@@ -1382,7 +1382,7 @@ mod tests {
         let mut r = req(Permission::Padrao);
         r.tool_gateway = Some(crate::tool_gateway::GatewayConfig {
             server_bin: "/app/frota".into(),
-            socket: "/tmp/mc-tools.sock".into(),
+            socket: "/tmp/frota-tools.sock".into(),
         });
         let cmd = app_server_command(&r);
         let args: Vec<String> = cmd
@@ -1393,11 +1393,11 @@ mod tests {
         let subcommand = args.iter().position(|arg| arg == "app-server").unwrap();
         let config = args
             .iter()
-            .position(|arg| arg.contains("mcp_servers.mc-tools.command"))
+            .position(|arg| arg.contains("mcp_servers.frota-tools.command"))
             .unwrap();
         assert!(config < subcommand);
         assert!(args.iter().any(|arg| arg.contains("tool-server")));
-        assert!(args.iter().any(|arg| arg.contains("/tmp/mc-tools.sock")));
+        assert!(args.iter().any(|arg| arg.contains("/tmp/frota-tools.sock")));
     }
 
     #[test]

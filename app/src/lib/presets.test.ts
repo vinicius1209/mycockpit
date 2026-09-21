@@ -1,6 +1,6 @@
 // Sprint 3 · E2 — Agent Presets: digest canônico estável, bloco de persona só
 // no 1º turno, preflight FAIL-CLOSED de skills e verificação de drift no
-// resume/transplant. O disco (getAgentDef, que lê .mycockpit/agents) e o
+// resume/transplant. O disco (getAgentDef, que lê .frota/agents) e o
 // inventário (readProjectCommands) são mockados; o núcleo puro roda de verdade
 // (sha256 via crypto.subtle).
 

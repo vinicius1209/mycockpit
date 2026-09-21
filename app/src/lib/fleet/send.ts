@@ -353,7 +353,7 @@ async function sendFromDeskPrepared(
   // do ChatPanel: motor com `systemChannel` recebe persona+doutrina pelo canal
   // SYSTEM do CLI (re-enviadas a cada spawn); sem canal, blocos no corpo.
   const sysChannel = engineDef(agent)?.systemChannel ?? false
-  // DOUTRINA do projeto (.mycockpit/instructions.md): paridade com o
+  // DOUTRINA do projeto (.frota/instructions.md): paridade com o
   // handleSend do ChatPanel — a mesa e o celular mandam sob as MESMAS regras
   // (1º turno + frescor H4 pra motor sem canal; todo spawn no canal system).
   const doctrine = decideDoctrine({
@@ -452,7 +452,7 @@ async function sendFromDeskPrepared(
     }
     promptText = buildMemoryPrompt(conv.items, pointer, promptText)
   }
-  // MyCockpit resume (claude/codex com sessão): monta o fallback de memória que
+  // Frota resume (claude/codex com sessão): monta o fallback de memória que
   // o MOTOR só usa se o resume nativo falhar — o prompt normal NÃO muda.
   let memoryFallback: string | null = null
   if (shouldAttachResumeFallback(agent, conv.items, sessionId)) {

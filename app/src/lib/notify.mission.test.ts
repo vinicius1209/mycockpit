@@ -59,7 +59,7 @@ function seed() {
   })
   useApp.setState({
     projects: [
-      { id: PROJ, name: "MyCockpit", path: "/tmp/p" },
+      { id: PROJ, name: "Frota", path: "/tmp/p" },
     ] as unknown as ReturnType<typeof useApp.getState>["projects"],
   })
 }
@@ -122,7 +122,7 @@ describe("notifyMissionEnd · copy e canais por desfecho", () => {
     expect(n.kind).toBe("run_done")
     expect(n.title).toBe("Missão · refactor do parser")
     expect(n.subtitle).toContain("US$ 3.20")
-    expect(n.subtitle).toContain("MyCockpit")
+    expect(n.subtitle).toContain("Frota")
     expect(n.projectId).toBe(PROJ)
     expect(n.convId).toBe(CONV)
     expect(h.native[0].title).toContain("missão concluída")
@@ -180,13 +180,13 @@ describe("notifyMissionEnd · copy e canais por desfecho", () => {
 
 describe("notifyMissionRecovery · a missão está esperando VOCÊ", () => {
   it("feed 'gate' (família âmbar) + nativa explicando a pausa e o gesto", async () => {
-    notifyMissionRecovery(CONV, "MyCockpit", "Executar")
+    notifyMissionRecovery(CONV, "Frota", "Executar")
     await flush()
     const n = feed()[0]
     expect(n.kind).toBe("gate")
     expect(n.subtitle).toContain("Recuperação pendente")
     expect(n.subtitle).toContain("Executar")
-    expect(n.subtitle).toContain("MyCockpit")
+    expect(n.subtitle).toContain("Frota")
     expect(h.native[0].body).toContain("pausada")
     expect(h.native[0].body).toContain("outro agent")
   })

@@ -11,7 +11,7 @@ import { deleteSchedulesOfProject } from "@/lib/db/schedules"
 
 export { addColumn } from "@/lib/db/schema"
 
-const DB_URL = "sqlite:mycockpit.db" // DEVE bater com add_migrations no lib.rs
+const DB_URL = "sqlite:frota.db" // DEVE bater com add_migrations no lib.rs
 
 let dbPromise: Promise<Database> | null = null
 
@@ -408,7 +408,7 @@ async function ensureLearningTables(db: Database): Promise<void> {
 }
 
 // ── Índice de MISSÕES (histórico navegável) ──────────────────────────────
-// A missão grava seus artefatos em disco (.mycockpit/missions/<slug>/ — pasta
+// A missão grava seus artefatos em disco (.frota/missions/<slug>/ — pasta
 // isolada, ver lib/missionPaths). Este é o ÍNDICE durável: sobrevive a mover/
 // apagar pasta, lista o histórico sem varrer o FS e guarda o `dir` de cada
 // missão pro viewer no app. Frontend-created (idempotente), como as tabelas de
@@ -1429,7 +1429,7 @@ export async function reinforceLessons(ids: string[]): Promise<void> {
 
 // ---------------- agent_presets: LEGADO, só leitura para migrar ----------------
 // As personas viviam aqui (Sprint 3 · E2) e desde jul/2026 moram em arquivo —
-// `.mycockpit/agents/*.md`, ver lib/agentDefs e ADR-025. Sobrou a LEITURA, que
+// `.frota/agents/*.md`, ver lib/agentDefs e ADR-025. Sobrou a LEITURA, que
 // alimenta a migração uma vez por sessão; não há mais caminho de escrita, então
 // esta tabela é histórico, não estado. O CREATE IF NOT EXISTS fica porque numa
 // instalação nova a tabela não existe e o SELECT precisa devolver vazio, não
@@ -1442,7 +1442,7 @@ export interface AgentPreset {
   name: string
   personalityMd: string
   /** Nomes de skills/comandos do projeto (o preflight valida contra o
-   *  inventário real POR AGENT: .mycockpit/commands + as convenções nativas
+   *  inventário real POR AGENT: .frota/commands + as convenções nativas
    *  do backend do preset). */
   skills: string[]
   policy: string | null
@@ -1564,7 +1564,7 @@ const PRESET_COLUMNS =
   "id, name, personality_md, skills_json, policy, backend, model, effort, digest, version, created_at, updated_at"
 
 /** LEGADO: a única leitura que sobrou da tabela agent_presets. As personas
- *  moram em arquivo desde jul/2026 (.mycockpit/agents — lib/agentDefs); esta
+ *  moram em arquivo desde jul/2026 (.frota/agents — lib/agentDefs); esta
  *  função existe só como ORIGEM DA MIGRAÇÃO (store/presets.migrarLegado). Não
  *  há mais caminho de escrita: a tabela é histórico, não estado. */
 export async function listPresets(): Promise<AgentPreset[]> {

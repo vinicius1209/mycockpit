@@ -1,4 +1,4 @@
-// CONSELHEIRO INLINE (Especialistas E1) — uma persona de `.mycockpit/agents` é
+// CONSELHEIRO INLINE (Especialistas E1) — uma persona de `.frota/agents` é
 // chamada NO MEIO da conversa (`@aline revisa isso`), lê o contexto/diff ATUAL e
 // devolve um PARECER inline, marcado como dela. É o oposto de
 // `resolveFirstTurnPersona` (lib/presets), que injeta a persona no turno-1 como

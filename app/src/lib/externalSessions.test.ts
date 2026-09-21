@@ -58,7 +58,7 @@ describe("status de sessão externa vira copy honesta", () => {
 
 describe("projeto pelo cwd", () => {
   const projects = [
-    { path: "/Users/v/projetos/mycockpit", name: "MyCockpit" },
+    { path: "/Users/v/projetos/mycockpit", name: "Frota" },
     { path: "/Users/v/projetos/mycockpit/vendor", name: "Vendor" },
     { path: "/Users/v/projetos/outro", name: "Outro" },
   ]
@@ -69,7 +69,7 @@ describe("projeto pelo cwd", () => {
     )
     expect(
       projectForCwd("/Users/v/projetos/mycockpit/app/src", projects)?.name,
-    ).toBe("MyCockpit")
+    ).toBe("Frota")
   })
 
   it("prefixo é por SEGMENTO: /a/b não engole /a/bc", () => {
@@ -94,7 +94,7 @@ describe("projeto pelo cwd", () => {
   })
 
   it("sessionPlace degrada pro basename do cwd", () => {
-    expect(sessionPlace(sess(), projects)).toBe("MyCockpit")
+    expect(sessionPlace(sess(), projects)).toBe("Frota")
     expect(sessionPlace(sess({ cwd: "/tmp/spike-x/" }), projects)).toBe(
       "spike-x",
     )

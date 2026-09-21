@@ -1,5 +1,5 @@
 //! SKILLS (M5): promover um workflow vencedor a um `/command` reutilizável.
-//! Grava `.mycockpit/commands/<slug>.md` — a casa AGNÓSTICA: a skill promovida
+//! Grava `<pasta da Frota>/commands/<slug>.md`, a casa AGNÓSTICA: a skill promovida
 //! vale em TODOS os motores (claude/codex/agy) via expansão app-side, não só no
 //! Claude Code. `.claude/commands` continua sendo LIDO pela descoberta (nada
 //! quebra pra quem já tem arquivos lá); só o writer mudou de endereço. SEMPRE
@@ -66,7 +66,7 @@ pub fn sanitize_name(name: &str) -> Result<String, String> {
 /// DIRETÓRIO, e não pode ser uma raiz larga demais ("/" ou o próprio HOME) —
 /// senão o comando vira uma primitiva de escrita arbitrária no filesystem.
 /// Devolve o caminho CANÔNICO (symlinks resolvidos) p/ compor o destino.
-/// `pub(crate)`: mycockpit::export_conv_context reusa a MESMA validação.
+/// `pub(crate)`: frota_dir::export_conv_context reusa a MESMA validação.
 pub(crate) fn validate_project_path(project_path: &str) -> Result<PathBuf, String> {
     let trimmed = project_path.trim();
     if trimmed.is_empty() {
@@ -96,10 +96,10 @@ pub(crate) fn validate_project_path(project_path: &str) -> Result<PathBuf, Strin
     Ok(canon)
 }
 
-/// Grava uma skill em `<project_path>/.mycockpit/commands/<slug>.md` (atômico).
+/// Grava uma skill em `<project_path>/<pasta da Frota>/commands/<slug>.md` (atômico).
 /// Por padrão NÃO sobrescreve (`overwrite=false`): se já existir, erra claro —
 /// a skill promovida é um artefato humano, não some por acidente. Devolve o
-/// caminho RELATIVO (`.mycockpit/commands/<slug>.md`) p/ o toast do front.
+/// caminho RELATIVO (`<pasta>/commands/<slug>.md`) p/ o toast do front.
 #[tauri::command]
 pub fn write_skill(
     project_path: String,
@@ -109,24 +109,25 @@ pub fn write_skill(
 ) -> Result<String, String> {
     let slug = sanitize_name(&name)?;
     let root = validate_project_path(&project_path)?;
-    // garante o .mycockpit/ com o .gitignore da casa (commands/ é versionado:
+    // garante a pasta da Frota com o .gitignore da casa (commands/ é versionado:
     // a skill promovida deve viajar no clone, como a doutrina e as personas).
-    crate::mycockpit::ensure_mycockpit_dir(&root.join(".mycockpit"))?;
-    let dir = root.join(".mycockpit").join("commands");
+    let base = crate::frota_dir::pasta_da_frota(&root);
+    crate::frota_dir::ensure_frota_dir(&base)?;
+    let dir = base.join("commands");
     let file = dir.join(format!("{slug}.md"));
     if file.exists() && !overwrite.unwrap_or(false) {
         return Err(format!(
             "já existe uma skill com o slug '{slug}' (nomes parecidos podem resolver pro mesmo slug)"
         ));
     }
-    std::fs::create_dir_all(&dir).map_err(|e| format!("não criei .mycockpit/commands: {e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("não criei a pasta commands: {e}"))?;
     let body = if content.ends_with('\n') {
         content
     } else {
         format!("{content}\n")
     };
     crate::fsx::write_atomic(&file, &body)?;
-    Ok(format!(".mycockpit/commands/{slug}.md"))
+    Ok(format!("{}/commands/{slug}.md", crate::frota_dir::nome_da_pasta(&base)))
 }
 
 #[cfg(test)]
@@ -197,10 +198,10 @@ mod tests {
         let pp = tmp.to_string_lossy().to_string();
 
         let rel = write_skill(pp.clone(), "Minha Skill".into(), "# passos".into(), None).unwrap();
-        assert_eq!(rel, ".mycockpit/commands/minha-skill.md");
-        assert!(tmp.join(".mycockpit/commands/minha-skill.md").exists());
+        assert_eq!(rel, format!("{}/commands/minha-skill.md", crate::frota_dir::PASTA));
+        assert!(tmp.join(crate::frota_dir::PASTA).join("commands/minha-skill.md").exists());
         // a casa nasce com o .gitignore que VERSIONA commands/ (a skill viaja no clone)
-        let gi = std::fs::read_to_string(tmp.join(".mycockpit/.gitignore")).unwrap();
+        let gi = std::fs::read_to_string(tmp.join(crate::frota_dir::PASTA).join(".gitignore")).unwrap();
         assert!(
             gi.contains("!commands/"),
             "gitignore sem exceção de commands/: {gi}"
@@ -212,8 +213,8 @@ mod tests {
 
         // com overwrite=true → grava.
         let rel2 = write_skill(pp, "Minha Skill".into(), "novo".into(), Some(true)).unwrap();
-        assert_eq!(rel2, ".mycockpit/commands/minha-skill.md");
-        let got = std::fs::read_to_string(tmp.join(".mycockpit/commands/minha-skill.md")).unwrap();
+        assert_eq!(rel2, format!("{}/commands/minha-skill.md", crate::frota_dir::PASTA));
+        let got = std::fs::read_to_string(tmp.join(crate::frota_dir::PASTA).join("commands/minha-skill.md")).unwrap();
         assert_eq!(got, "novo\n");
 
         let _ = std::fs::remove_dir_all(&tmp);

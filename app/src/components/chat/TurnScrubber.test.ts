@@ -19,8 +19,8 @@ import type { ChatItem } from "@/store/chat"
 describe("deriveTurnTicks", () => {
   it("deriva marcadores para turnos do usuário e do agente", () => {
     const items: ChatItem[] = [
-      { kind: "user", id: "u1", text: "Como fazer cache no MyCockpit?" },
-      { kind: "text", id: "a1", text: "O MyCockpit possui o módulo cacheDoTurno.ts." },
+      { kind: "user", id: "u1", text: "Como fazer cache na Frota?" },
+      { kind: "text", id: "a1", text: "A Frota possui o módulo cacheDoTurno.ts." },
     ]
 
     const nodes = buildNodes(items)

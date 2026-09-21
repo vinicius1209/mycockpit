@@ -3,7 +3,7 @@
 //
 // Liberar a pasta é DUAS coisas, e elas têm prazos diferentes:
 //
-//  1. **Persistir** o `extra_dirs` no `.mycockpit/config.toml` + memória. Vale
+//  1. **Persistir** o `extra_dirs` no `.frota/config.toml` + memória. Vale
 //     imediatamente, e é o que o botão promete de verdade.
 //  2. **Reenviar** o último pedido. Isso é um TURNO NOVO, e só cabe com a
 //     conversa parada: o `--add-dir` entra no `build_command` do spawn
@@ -19,7 +19,7 @@
 // caminho de falha, e no componente ela não tinha teste nenhum.
 
 import { toast } from "sonner"
-import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { writeProjectConfig } from "@/lib/configDoProjeto"
 import { avisoDeDescarte, PASTA_LIBERADA } from "@/lib/sendOrigin"
 import type { Project } from "@/lib/types"
 import { useApp } from "@/store/app"
@@ -30,7 +30,7 @@ import { useChat } from "@/store/chat"
 export type ResultadoDaLiberacao =
   /** A pasta já estava no `extra_dirs` (corrida de dois cliques). */
   | "ja-liberada"
-  /** O `.mycockpit/config.toml` não aceitou a escrita. Nada mudou. */
+  /** O `.frota/config.toml` não aceitou a escrita. Nada mudou. */
   | "falha-ao-salvar"
   /** Persistiu, mas o turno está vivo: reenviar agora duplicaria o trabalho. */
   | "turno-em-voo"
@@ -50,7 +50,7 @@ export async function allowBlockedDir(args: {
 }): Promise<ResultadoDaLiberacao> {
   const { convId, project, dir } = args
   const app = useApp.getState()
-  const cur = app.mycockpit[project.id]
+  const cur = app.projectConfigs[project.id]
   if (cur?.extraDirs?.includes(dir)) {
     // já liberado (corrida) → só limpa o aviso.
     if (convId) useChat.getState().clearBlockedDir(convId)
@@ -58,13 +58,15 @@ export async function allowBlockedDir(args: {
   }
   const next = [...(cur?.extraDirs ?? []), dir]
   try {
-    await writeMycockpitConfig(project.path, { extraDirs: next })
+    await writeProjectConfig(project.path, { extraDirs: next })
   } catch {
     toast.error("Não consegui salvar a pasta permitida no config.")
     return "falha-ao-salvar"
   }
-  app.setMycockpit(project.id, {
+  app.setProjectConfig(project.id, {
     exists: true,
+    // Sem config lido do Rust ainda: a pasta é a de hoje, que é onde a escrita foi.
+    pasta: cur?.pasta ?? ".frota",
     permission: cur?.permission ?? project.permissionMode ?? "padrao",
     helper: cur?.helper ?? "haiku",
     mode: cur?.mode ?? "linear",

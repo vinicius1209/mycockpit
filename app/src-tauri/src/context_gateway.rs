@@ -1,4 +1,4 @@
-//! MCP read-only de memória/contexto do MyCockpit.
+//! MCP read-only de memória/contexto da Frota.
 //!
 //! O prompt recebe só um working set compacto. Esta camada é o "pull": qualquer
 //! provider que fale MCP pode consultar o manifesto, buscar no histórico SQLite
@@ -13,14 +13,14 @@ use std::path::{Path, PathBuf};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
-pub const MCP_SERVER_NAME: &str = "mc-context";
+pub const MCP_SERVER_NAME: &str = "frota-context";
 pub const MANIFEST_TOOL: &str = "context_manifest";
 pub const SEARCH_TOOL: &str = "context_search";
 pub const READ_TOOL: &str = "context_read";
 
-pub const ROOT_ENV: &str = "MYCOCKPIT_CONTEXT_ROOT";
-pub const CONV_ENV: &str = "MYCOCKPIT_CONTEXT_CONV_ID";
-pub const DB_ENV: &str = "MYCOCKPIT_CONTEXT_DB";
+pub const ROOT_ENV: &str = "FROTA_CONTEXT_ROOT";
+pub const CONV_ENV: &str = "FROTA_CONTEXT_CONV_ID";
+pub const DB_ENV: &str = "FROTA_CONTEXT_DB";
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_KNOWN_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
@@ -290,8 +290,10 @@ fn read_manifest_from_env() -> Result<String, String> {
 
 fn read_manifest(root: &Path, conv: &str) -> Result<String, String> {
     safe_conv_id(conv)?;
-    let path = root
-        .join(".mycockpit")
+    // Mesma resolução do app, e não um literal: o gateway roda em OUTRO
+    // processo, e se ele não enxergasse `.frota/` o agente perderia o handoff
+    // exatamente nos projetos já migrados (ADR-222).
+    let path = crate::frota_dir::pasta_da_frota(root)
         .join("context")
         .join(format!("{conv}.handoff.json"));
     let md =
@@ -737,7 +739,7 @@ mod tests {
     use super::*;
 
     fn temp_root(tag: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!("mc-context-{tag}-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("frota-context-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         std::fs::create_dir_all(root.join(".mycockpit/context")).unwrap();
         root
@@ -796,10 +798,10 @@ mod tests {
         let mut cmd = Command::new("codex");
         cfg.configure_codex(&mut cmd);
         let dbg = format!("{cmd:?}");
-        assert!(dbg.contains("mcp_servers.mc-context.command"));
-        assert!(dbg.contains("mcp_servers.mc-context.env.MYCOCKPIT_CONTEXT_ROOT"));
-        assert!(dbg.contains("mcp_servers.mc-context.env.MYCOCKPIT_CONTEXT_CONV_ID"));
-        assert!(dbg.contains("mcp_servers.mc-context.env.MYCOCKPIT_CONTEXT_DB"));
+        assert!(dbg.contains("mcp_servers.frota-context.command"));
+        assert!(dbg.contains("mcp_servers.frota-context.env.FROTA_CONTEXT_ROOT"));
+        assert!(dbg.contains("mcp_servers.frota-context.env.FROTA_CONTEXT_CONV_ID"));
+        assert!(dbg.contains("mcp_servers.frota-context.env.FROTA_CONTEXT_DB"));
         assert!(dbg.contains("context-server"));
         assert!(dbg.contains(ROOT_ENV));
         assert!(dbg.contains(DB_ENV));
@@ -1070,7 +1072,7 @@ mod tests {
     /// ou no `pontuar`.
     ///
     /// ```sh
-    /// cp "$HOME/Library/Application Support/dev.vinicius.mycockpit/mycockpit.db" /tmp/fid.db
+    /// cp "$HOME/Library/Application Support/dev.vinicius.frota/mycockpit.db" /tmp/fid.db
     /// BENCH_DB=/tmp/fid.db cargo test --release fidelidade -- --ignored --nocapture
     /// ```
     ///

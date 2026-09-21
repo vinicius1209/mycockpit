@@ -968,7 +968,7 @@ fn server_id(source: &str, scope: &str, name: &str) -> String {
 fn db_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
-        .map(|p| p.join("mycockpit.db"))
+        .map(|p| p.join(crate::BANCO))
         .map_err(|e| format!("sem app_data_dir: {e}"))
 }
 
@@ -1139,7 +1139,7 @@ fn subir_proxy(
     Some((config, listener))
 }
 
-/// O servidor deixa de ser nativo-apenas porque o MyCockpit tem login próprio?
+/// O servidor deixa de ser nativo-apenas porque a Frota tem login próprio?
 ///
 /// É a virada da A2: com credencial nossa, o `native_reason: oauth` para de
 /// bloquear e o servidor passa a ser roteável pros DOIS motores através do
@@ -1594,8 +1594,8 @@ async fn discover_live_with_status(
         }
     }
     out.push(DiscoveredServer {
-        id: "internal:run:mc-context".into(),
-        name: "mc-context".into(),
+        id: "internal:run:frota-context".into(),
+        name: "frota-context".into(),
         source: "mycockpit".into(),
         scope: "run".into(),
         source_agent: None,
@@ -1604,8 +1604,8 @@ async fn discover_live_with_status(
         launch: None,
     });
     out.push(DiscoveredServer {
-        id: "internal:run:mc-approval".into(),
-        name: "mc-approval".into(),
+        id: "internal:run:frota-approval".into(),
+        name: "frota-approval".into(),
         source: "mycockpit".into(),
         scope: "run".into(),
         source_agent: Some("claude-code".into()),
@@ -2353,7 +2353,7 @@ async fn probe_stdio(config: &McpLaunchConfig, project_path: &str) -> ProbeOutco
                 "params": {
                     "protocolVersion": "2025-06-18",
                     "capabilities": {},
-                    "clientInfo": {"name":"mycockpit-health","version":"1.0.0"}
+                    "clientInfo": {"name":"frota-health","version":"1.0.0"}
                 }
             }),
         )
@@ -2447,7 +2447,7 @@ async fn probe_http(config: &McpLaunchConfig) -> ProbeOutcome {
                 "--header",
                 "Accept: application/json, text/event-stream",
                 "--data",
-                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"mycockpit-health","version":"1.0.0"}}}"#,
+                r#"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"frota-health","version":"1.0.0"}}}"#,
                 url,
             ])
             .output(),
@@ -2880,7 +2880,7 @@ pub async fn plan_for_run(
             }
             continue;
         };
-        // Com login do MyCockpit, um servidor OAuth deixa de ser nativo-apenas:
+        // Com login da Frota, um servidor OAuth deixa de ser nativo-apenas:
         // ele passa a ser roteável pelos dois motores através do proxy local.
         let via_proxy = roteavel_por_proxy(server, agent);
         if !via_proxy && !server.compatible(agent) {
@@ -3373,7 +3373,7 @@ mod tests {
     /// OAuth e NENHUM valor literal. A trava é correta (o token vive no
     /// keychain do CLI que logou), mas a causa é `native_reason`, não segredo
     /// literal — a UI precisa dos dois motivos separados pra não mentir.
-    /// A1+A2: com login do MyCockpit, um MCP OAuth deixa de ser nativo-apenas e
+    /// A1+A2: com login da Frota, um MCP OAuth deixa de ser nativo-apenas e
     /// passa a ser roteável pelos DOIS motores (pelo proxy). Sem login, nada
     /// muda — a trava de hoje continua exatamente onde estava.
     #[test]
@@ -3967,13 +3967,19 @@ mod tests {
     fn nomes_dos_mcps_internos_do_app_sao_reservados() {
         let mut plan = McpRunPlan {
             managed: true,
-            selected: vec![runtime("mc-work", "mcx-claude-user-mc-work-1a2b3c4d")],
+            // O nome do servidor do USUÁRIO colide com um nosso: ele NÃO pode
+            // ganhar o slug amigável, senão disable e configure cairiam na
+            // mesma tabela. O nome sai do registry, nunca de literal.
+            selected: vec![runtime(
+                crate::work_gateway::MCP_SERVER_NAME,
+                "mcx-claude-user-frota-work-1a2b3c4d",
+            )],
             ..Default::default()
         };
         apply_friendly_runtime_names(&mut plan);
         assert_eq!(
             plan.selected[0].runtime_name,
-            "mcx-claude-user-mc-work-1a2b3c4d"
+            "mcx-claude-user-frota-work-1a2b3c4d"
         );
     }
 
@@ -4145,7 +4151,7 @@ mod tests {
         let conn = conn_with_registry();
         insert_registry_server(&conn, "claude:user:hostinger-abc", true, true);
         insert_registry_server(&conn, "claude:user:literal-def", true, false);
-        insert_registry_server(&conn, "internal:run:mc-context", false, false);
+        insert_registry_server(&conn, "internal:run:frota-context", false, false);
 
         // Servidor conhecido: o caminho rápido resolve tudo pelo SQLite.
         let ok = registry_server(&conn, "claude:user:hostinger-abc")
@@ -4164,7 +4170,7 @@ mod tests {
         assert!(validate_enable_from_registry(&literal, "codex")
             .unwrap_err()
             .contains("não portável"));
-        let internal = registry_server(&conn, "internal:run:mc-context")
+        let internal = registry_server(&conn, "internal:run:frota-context")
             .unwrap()
             .unwrap();
         assert!(validate_enable_from_registry(&internal, "codex")

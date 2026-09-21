@@ -25,7 +25,14 @@ use tokio::process::Command;
 
 /// Serviço do item no Keychain. A conta é o `server_id` do registry, então dois
 /// MCPs distintos nunca compartilham credencial.
-const KEYCHAIN_SERVICE: &str = "dev.vinicius.mycockpit.mcp-oauth";
+const KEYCHAIN_SERVICE: &str = "dev.vinicius.frota.mcp-oauth";
+
+/// O serviço LEGADO. Todo login de MCP feito antes de 21/09/2026 está guardado
+/// sob ele (ADR-222), e item de Keychain não se renomeia sozinho. A leitura
+/// cai aqui quando o serviço novo não tem nada, e a próxima gravação já vai
+/// para o novo: quem já estava logado continua logado, sem refazer o OAuth de
+/// cada servidor na mão.
+const KEYCHAIN_SERVICE_LEGADO: &str = "dev.vinicius.mycockpit.mcp-oauth";
 /// Margem para considerar um token "expirado" antes da hora: evita mandar na
 /// rede um access token que morre no meio do voo.
 const EXPIRY_SKEW_SECS: i64 = 60;
@@ -689,6 +696,14 @@ fn entry(server_id: &str) -> Result<keyring::Entry, String> {
         .map_err(|e| format!("Keychain indisponível: {e}"))
 }
 
+/// O item no serviço LEGADO. Só a LEITURA passa por aqui: gravar e apagar
+/// continuam no serviço novo, então a credencial migra sozinha no primeiro
+/// refresh de token.
+fn entry_legado(server_id: &str) -> Result<keyring::Entry, String> {
+    keyring::Entry::new(KEYCHAIN_SERVICE_LEGADO, server_id)
+        .map_err(|e| format!("Keychain indisponível: {e}"))
+}
+
 /// Cópia em memória do que está no Keychain, por `server_id`.
 ///
 /// Cada leitura do Keychain pode virar um prompt de senha (quando a ACL do item
@@ -705,12 +720,21 @@ fn cache() -> &'static Mutex<HashMap<String, Option<StoredTokens>>> {
 
 fn ler_keychain(server_id: &str) -> Result<Option<StoredTokens>, String> {
     match entry(server_id)?.get_password() {
-        Ok(blob) => serde_json::from_str(&blob)
-            .map(Some)
-            .map_err(|e| format!("credencial guardada ilegível (faça login de novo): {e}")),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Ok(blob) => decodificar_credencial(&blob).map(Some),
+        // Nada no serviço novo: pode ser login de antes do rename. Só então
+        // olha o legado, para não pagar um prompt de senha a mais no caso comum.
+        Err(keyring::Error::NoEntry) => match entry_legado(server_id)?.get_password() {
+            Ok(blob) => decodificar_credencial(&blob).map(Some),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(e) => Err(format!("falha ao ler o Keychain: {e}")),
+        },
         Err(e) => Err(format!("falha ao ler o Keychain: {e}")),
     }
+}
+
+fn decodificar_credencial(blob: &str) -> Result<StoredTokens, String> {
+    serde_json::from_str(blob)
+        .map_err(|e| format!("credencial guardada ilegível (faça login de novo): {e}"))
 }
 
 pub fn load_tokens(server_id: &str) -> Result<Option<StoredTokens>, String> {

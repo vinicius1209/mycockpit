@@ -1,5 +1,5 @@
 // Viewer dos artefatos de uma missão (onda 3): lê a pasta isolada
-// (.mycockpit/missions/<slug>/) e mostra plano/relatórios/handoffs NO APP —
+// (.frota/missions/<slug>/) e mostra plano/relatórios/handoffs NO APP —
 // resolve o "concern 2" (o plano deixava de ser legível: virava um teaser no
 // chat + um plan.md gitignorado que só abria no Finder). Painel de arquivos à
 // esquerda, conteúdo à direita (Markdown p/ .md, código p/ o resto), com

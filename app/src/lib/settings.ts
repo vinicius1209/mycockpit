@@ -16,7 +16,7 @@ import {
 
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
-// POR-PROJETO (.mycockpit/config.toml), que segue vivendo no ContextPanel.
+// POR-PROJETO (.frota/config.toml), que segue vivendo no ContextPanel.
 export interface GlobalSettings {
   /** Escala de leitura do transcript (0.8–1.6). Não altera chrome nem composer;
    *  atalhos padrão: ⌘/Ctrl +, ⌘/Ctrl - e ⌘/Ctrl 0. */

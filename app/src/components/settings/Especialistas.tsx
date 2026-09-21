@@ -4,7 +4,7 @@
 // como invocar) e criar (form + preview ao vivo + seletor de estilo DiceBear +
 // "variar" + rubrica + categoria + escopo). Reusa o CRUD existente (usePresets
 // create/update/remove → saveAgentDef); NÃO reimplementa disco. Fonte de
-// verdade continua o arquivo .mycockpit/agents/*.md. Referência: o mock
+// verdade continua o arquivo .frota/agents/*.md. Referência: o mock
 // docs/mocks/marketplace.html.
 
 import { SectionHeader } from "@/components/settings/parts"

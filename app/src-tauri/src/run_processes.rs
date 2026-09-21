@@ -19,7 +19,13 @@ pub(crate) struct ProcessEntry {
 
 #[cfg(unix)]
 pub(crate) fn parse_process_entries(ps: &str, run_id: &str) -> Vec<ProcessEntry> {
+    // OS DOIS marcadores. O app seta as duas variáveis (hook_sessions), mas um
+    // processo spawnado por uma versão ANTERIOR ao rename carrega só a legada.
+    // Casar só a nova faria esse processo sumir do caçador de órfãos e ficar
+    // com ppid=1 comendo CPU sem ninguém enxergar, que é o cenário de carga
+    // fantasma que já custou diagnóstico aqui (ADR-222).
     let marker = format!("{}={run_id}", crate::hook_sessions::RUN_ENV);
+    let marker_legado = format!("{}={run_id}", crate::hook_sessions::RUN_ENV_LEGADO);
     ps.lines()
         .filter_map(|line| {
             let mut fields = line.split_whitespace();
@@ -29,7 +35,7 @@ pub(crate) fn parse_process_entries(ps: &str, run_id: &str) -> Vec<ProcessEntry>
             if pid <= 1 {
                 return None;
             }
-            let has_marker = fields.any(|field| field == marker);
+            let has_marker = fields.any(|field| field == marker || field == marker_legado);
             Some(ProcessEntry {
                 pid,
                 ppid,

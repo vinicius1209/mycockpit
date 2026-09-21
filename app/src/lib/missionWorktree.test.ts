@@ -35,7 +35,7 @@ describe("ensureMissionCwd (MH1.4)", () => {
 
   it("sem worktree: CRIA pelo mesmo mecanismo do toggle (projectPath + convId) e devolve o path/branch", async () => {
     // payload REAL do create_worktree (git.rs): worktree sob
-    // .mycockpit/worktrees/<slug>, branch mycockpit/<slug> (slug do convId).
+    // .frota/worktrees/<slug>, branch mycockpit/<slug> (slug do convId).
     const create = vi.fn(async () => ({
       path: "/proj/.mycockpit/worktrees/conv-1",
       branch: "mycockpit/conv-1",

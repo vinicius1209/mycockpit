@@ -1,4 +1,4 @@
-//! Credenciais de provedores do OpenCode, conduzidas pelo MyCockpit.
+//! Credenciais de provedores do OpenCode, conduzidas pelo Frota.
 //!
 //! O app é dono da UX, mas não duplica o segredo: quem persiste continua sendo
 //! o `opencode providers login`, no cofre/formato oficial dele. Chaves entram

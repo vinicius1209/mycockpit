@@ -183,7 +183,7 @@ pub async fn run(
     if let Err(e) = write(&stdin, &request(INIT, "initialize", json!({
         "protocolVersion": 1,
         "clientCapabilities": { "fs": { "readTextFile": false, "writeTextFile": false }, "terminal": false },
-        "clientInfo": { "name": "mycockpit", "version": env!("CARGO_PKG_VERSION") }
+        "clientInfo": { "name": "frota", "version": env!("CARGO_PKG_VERSION") }
     }))).await {
         return Outcome::startup(format!("falha no handshake ACP: {e}"));
     }

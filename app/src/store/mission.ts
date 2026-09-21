@@ -429,7 +429,7 @@ export const useMission = create<MissionState>((set, get) => {
       // desligada. Mesma régua das sugestões e do recibo de turno.
       const helperModel = helperDoProjeto(projectId)
 
-      // Doutrina do projeto (.mycockpit/instructions.md) — lida UMA vez e
+      // Doutrina do projeto (.frota/instructions.md) — lida UMA vez e
       // injetada em TODAS as fases: cada fase é um run novo de CLI e a maioria
       // roda em codex/agy, que não leem CLAUDE.md. Lê da RAIZ do projeto, não do
       // worktree (o worktree só teria o arquivo depois do 1º commit dele).
@@ -438,7 +438,7 @@ export const useMission = create<MissionState>((set, get) => {
       )
 
       // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
-      // (o onboarding pode não ter semeado o .mycockpit/.gitignore ali).
+      // (o onboarding pode não ter semeado o .frota/.gitignore ali).
       void ensureMissionsGitignore(cwd)
 
       // marco: largada no fio da conversa (task + resumo do preset). O launcher

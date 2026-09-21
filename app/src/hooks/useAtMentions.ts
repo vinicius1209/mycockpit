@@ -1,8 +1,10 @@
+import { sobAPasta } from "@/lib/frotaDir"
+
 /** Regra ÚNICA de arquivo mencionável no "@": os `.md` das duas pastas de
  *  agents ficam fora (já entram como persona ou são contexto de code agent
  *  externo). */
 export function isMentionableFile(f: string): boolean {
-  return !f.startsWith(".claude/agents/") && !f.startsWith(".mycockpit/agents/")
+  return !f.startsWith(".claude/agents/") && !sobAPasta(f, "agents/")
 }
 
 /** Item de menção do composer (editor Lexical): só valor + tipo (o menu

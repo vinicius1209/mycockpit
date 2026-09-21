@@ -3,6 +3,8 @@ import { DEFAULT_MISSION_PRESETS } from "@/lib/missionDefaults"
 import type { MissionPhaseDef, MissionPreset } from "@/lib/missionTypes"
 import {
   autoLayoutMissionPlan,
+  MISSION_PLAN_FORMAT,
+  MISSION_PLAN_FORMAT_LEGADO,
   enableGraphMode,
   graphFromPhases,
   missionPlanMode,
@@ -156,5 +158,34 @@ describe("Planos de voo", () => {
     ).toEqual([
       "O teto de custo precisa ser maior que zero ou ficar vazio.",
     ])
+  })
+})
+
+describe("janela do rename: formato do plano de voo", () => {
+  /** Um export REAL, montado pelo próprio serializador, com o formato trocado. */
+  function exportadoCom(formato: string): string {
+    const real = JSON.parse(serializeMissionPlan(preset()))
+    return JSON.stringify({ ...real, format: formato })
+  }
+
+  it("aceita plano exportado com o discriminador ANTIGO", () => {
+    // `projectConfigs.flight-plan` está gravado DENTRO de todo plano já exportado,
+    // e o arquivo está no disco de quem exportou. Recusar viraria "arquivo
+    // inválido" sem explicação (ADR-222).
+    const r = parseMissionPlan(exportadoCom(MISSION_PLAN_FORMAT_LEGADO))
+    expect(r.ok, r.ok ? "" : r.error).toBe(true)
+  })
+
+  it("aceita plano com o discriminador novo", () => {
+    expect(parseMissionPlan(serializeMissionPlan(preset())).ok).toBe(true)
+  })
+
+  it("recusa discriminador de outro produto", () => {
+    expect(parseMissionPlan(exportadoCom("outro.flight-plan")).ok).toBe(false)
+  })
+
+  it("exporta sempre com o nome novo", () => {
+    expect(MISSION_PLAN_FORMAT).toBe("frota.flight-plan")
+    expect(JSON.parse(serializeMissionPlan(preset())).format).toBe(MISSION_PLAN_FORMAT)
   })
 })

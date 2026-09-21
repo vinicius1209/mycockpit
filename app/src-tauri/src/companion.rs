@@ -1315,7 +1315,7 @@ async fn get_conv(
         Some(Err(_)) => return (StatusCode::BAD_REQUEST, "before inválido").into_response(),
     };
     let db = match ctx.app.path().app_data_dir() {
-        Ok(d) => d.join("mycockpit.db"),
+        Ok(d) => d.join(crate::BANCO),
         Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
     // rusqlite é sync → spawn_blocking pra não segurar o executor do axum.

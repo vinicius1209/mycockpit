@@ -371,7 +371,7 @@ pub async fn run_agent(
     prompt: String,
     cwd: String,
     resume: Option<String>,
-    // "MyCockpit resume": recap pronto do front (`memoryFallback` no invoke), usado
+    // "Frota resume": recap pronto do front (`memoryFallback` no invoke), usado
     // SÓ se o resume nativo falhar. Option = default: invoke antigo/sem o campo
     // desserializa como None (mesmo padrão do plan_first; nunca quebra turno velho).
     memory_fallback: Option<String>,
@@ -510,9 +510,9 @@ pub async fn run_agent(
     if mcp_plan.force_readonly {
         permission = adapters::Permission::Leitura;
     }
-    // pastas extras liberadas: lidas do .mycockpit/config.toml do projeto que
+    // pastas extras liberadas: lidas do .frota/config.toml do projeto que
     // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
-    let extra_dirs = crate::mycockpit::resolve_extra_dirs(&cwd);
+    let extra_dirs = crate::frota_dir::resolve_extra_dirs(&cwd);
     // Interação PENDENTE inline (capability `inline_interaction`, hoje só o
     // Claude): sobe um socket por-run + registra o listener que vira cada
     // pedido num evento `interaction://request`. Cobre 2 kinds: `approval` (só
@@ -570,7 +570,7 @@ pub async fn run_agent(
                         .path()
                         .app_data_dir()
                         .ok()
-                        .map(|p| p.join("mycockpit.db").to_string_lossy().to_string()),
+                        .map(|p| p.join(crate::BANCO).to_string_lossy().to_string()),
                 })
         };
     // Substrato uniforme de trabalho/processos. O listener vive pelo run inteiro;
@@ -849,7 +849,7 @@ pub async fn run_agent(
 
     // OpenCode em Padrão: ACP bidirecional. O transporte histórico `run`
     // auto-rejeita ferramentas sem consultar o usuário; ACP pausa e encaminha
-    // a decisão para os cards de interação do MyCockpit. Anexos ainda usam o
+    // a decisão para os cards de interação da Frota. Anexos ainda usam o
     // `-f` auditado do transporte antigo até serem embutidos no prompt ACP.
     if agent == "opencode"
         && matches!(permission, adapters::Permission::Padrao)
@@ -943,7 +943,7 @@ pub async fn run_agent(
         let _ = on_event.send(AgentEvent::Notice {
             message: message.to_string(),
         });
-        // "MyCockpit resume": avisa o front que o resume nativo falhou e o run
+        // "Frota resume": avisa o front que o resume nativo falhou e o run
         // recomeçou (ZERA o session_id da conversa). SÓ é emitido neste
         // caminho — quando o resume funciona, nada disso acontece.
         let _ = app.emit(
@@ -1157,7 +1157,7 @@ fn compose_mcp_preamble(
         ));
     }
     if global_work && !has_work_gateway && last_fingerprint == Some("work-channel:on") {
-        sections.push("O acompanhamento por mc-work está indisponível neste turno. Não envie atualizações ao canal anunciado anteriormente.".into());
+        sections.push("O acompanhamento por frota-work está indisponível neste turno. Não envie atualizações ao canal anunciado anteriormente.".into());
     }
     let announced = if announce_mcp || (work_changed && last_fingerprint != fingerprint.as_deref())
     {
@@ -1950,7 +1950,7 @@ mod tests {
         assert_eq!(next, None);
         let (off, fp) =
             compose_mcp_preamble("continue".into(), false, &plan, caps, true, fp.as_deref());
-        assert!(off.contains("mc-work está indisponível"));
+        assert!(off.contains("frota-work está indisponível"));
         assert!(!off.contains("MCPs externos"));
         assert_eq!(fp.as_deref(), Some("work-channel:off"));
         let (again, _) =
@@ -1966,7 +1966,7 @@ mod tests {
         assert!(out.starts_with(
             "Ferramentas MCP desta sessão:\n- playwright: Playwright (MCP roteado pela Frota)"
         ));
-        // Bloco único: o anúncio e a telemetria do mc-work compartilham o
+        // Bloco único: o anúncio e a telemetria do frota-work compartilham o
         // mesmo preâmbulo, com um único separador antes do prompt.
         assert!(out.contains("TELEMETRIA DE TRABALHO: "));
         assert_eq!(out.matches("\n\n---\n\n").count(), 1);

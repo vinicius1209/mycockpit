@@ -1,5 +1,5 @@
 // Leitura dos artefatos de UMA missão pro viewer no app (onda 3). As pastas de
-// missão (.mycockpit/missions/<slug>/) são gitignoradas — o app lê direto do
+// missão (.frota/missions/<slug>/) são gitignoradas — o app lê direto do
 // disco via comandos Rust escopados. Resolve o "concern 2": o plano/relatórios
 // deixam de ser um arquivo gitignorado que só dá pra abrir no Finder.
 

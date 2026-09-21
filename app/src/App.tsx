@@ -529,7 +529,7 @@ export default function App() {
     }
   }, [])
 
-  // MyCockpit resume: o motor avisa quando o resume NATIVO falhou e o run
+  // Frota resume: o motor avisa quando o resume NATIVO falhou e o run
   // reiniciou fresh. Zera a sessão morta da conversa (o novo run emite
   // `session` e grava a nova). O aviso pro usuário (com ou sem memória do
   // Frota) já vem como Notice do próprio motor (agent.rs/codex_appserver.rs)
@@ -586,7 +586,7 @@ export default function App() {
     }
   }, [])
 
-  // Config do projeto ativo (.mycockpit/config.toml vence o cache do SQLite).
+  // Config do projeto ativo (.frota/config.toml vence o cache do SQLite).
   useProjectConfig(activeProjectId)
 
   return (

@@ -1,4 +1,4 @@
-// DOUTRINA DO PROJETO no painel — o editor de `.mycockpit/instructions.md`.
+// DOUTRINA DO PROJETO no painel — o editor de `.frota/instructions.md`.
 //
 // Por que tem UI própria em vez de "edite o arquivo à mão": a doutrina é a única
 // instrução que alcança TODOS os agents (o app injeta), então ela precisa ser

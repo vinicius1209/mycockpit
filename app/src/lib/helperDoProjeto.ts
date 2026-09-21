@@ -11,8 +11,8 @@
 //
 // A cadeia inteira tem duas metades, e só a segunda mora aqui:
 //
-// 1. `hooks/useProjectConfig.ts` PRODUZ `mycockpit[projectId].helper` lendo
-//    `.mycockpit/config.toml` do projeto ativo: `"off"` vira `null`, e ausência
+// 1. `hooks/useProjectConfig.ts` PRODUZ `projectConfigs[projectId].helper` lendo
+//    `.frota/config.toml` do projeto ativo: `"off"` vira `null`, e ausência
 //    cai no default global. Ele já dobrou o global lá dentro.
 // 2. Este módulo RESOLVE para quem consome: com a config do projeto carregada,
 //    ela manda (já é a resolução final); sem ela — projeto não-ativo, config
@@ -27,7 +27,7 @@ import type { ProjectConfig } from "@/store/appTypes"
 
 /** As duas fontes, sem store no meio — é o que torna a regra testável. */
 export interface FontesDoHelper {
-  /** Espelho de `.mycockpit/config.toml` do projeto, ou `undefined` quando a
+  /** Espelho de `.frota/config.toml` do projeto, ou `undefined` quando a
    *  config nunca foi lida (projeto não-ativo é o caso comum). */
   cfg: Pick<ProjectConfig, "helper"> | undefined
   /** Default global (Configurações › Sugestões; `null` = desligado). */
@@ -45,7 +45,7 @@ export function helperDoProjeto(projectId: string | undefined | null): string | 
   if (!projectId) return null
   const app = useApp.getState()
   return resolverHelper({
-    cfg: app.mycockpit[projectId],
+    cfg: app.projectConfigs[projectId],
     global: app.settings.helperModel,
   })
 }

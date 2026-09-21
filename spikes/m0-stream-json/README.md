@@ -3,7 +3,7 @@
 > **Por que este spike existe:** é o **único ponto que pode mudar o plano** do v0.1.
 > Antes de investir em UI, precisamos provar que dá para dirigir o `claude` em modo
 > headless e parsear o stream de eventos de forma confiável. Se isto roda, o coração
-> do MyCockpit está provado.
+> da Frota está provado.
 
 ## O que ele faz
 

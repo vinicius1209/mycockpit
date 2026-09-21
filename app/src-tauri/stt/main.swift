@@ -1,4 +1,4 @@
-// mycockpit-stt: sidecar de ditado ON-DEVICE (pt-BR) do MyCockpit.
+// frota-stt: sidecar de ditado ON-DEVICE (pt-BR) da Frota.
 // O cockpit fala com ele igual fala com os agents: spawn + JSON por linha.
 //
 //   stdin:  "STOP"   → encerra o áudio e devolve o texto final
@@ -226,7 +226,7 @@ while !args.isEmpty {
 /// Teste puro da REGRA 1, embutido no próprio binário: o projeto não tem
 /// harness Swift (o sidecar é um único arquivo compilado pelo build.rs), então
 /// a suíte vive aqui e é executada pelo `cargo test` (stt.rs) rodando
-/// `mycockpit-stt --selftest`. Sai 0 se tudo passa; imprime cada falha.
+/// `frota-stt --selftest`. Sai 0 se tudo passa; imprime cada falha.
 func runSelfTest() -> Int32 {
     // (nome, candidato, melhor visto, esperado)
     let cases: [(String, String, String, String)] = [
@@ -382,7 +382,7 @@ guard recognizer.supportsOnDeviceRecognition else {
 // ---- REGRA 2 (parte 1): arquivo temporário da sessão ───────────────────────
 
 /// Prefixo dos arquivos de sessão (usado também na varredura de sobras).
-let audioPrefix = "mycockpit-stt-"
+let audioPrefix = "frota-stt-"
 let audioURL = FileManager.default.temporaryDirectory
     .appendingPathComponent("\(audioPrefix)\(UUID().uuidString).caf")
 

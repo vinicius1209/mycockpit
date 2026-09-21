@@ -94,10 +94,18 @@ fn write_endpoint_file(app: &AppHandle, port: u16, token: &str) -> Result<(), St
 
 /// Header com o EVENTO do hook (setado pelo script gerado; necessário pro
 /// dialeto do agy, cujo payload não carrega o nome do evento).
-const EVENT_HEADER: &str = "x-mycockpit-event";
-/// Header com o run id do app (env `MYCOCKPIT_RUN_ID` herdada pelo hook):
+const EVENT_HEADER: &str = "x-frota-event";
+/// Header com o run id do app (env `FROTA_RUN_ID` herdada pelo hook):
 /// presente = run spawnado pelo PRÓPRIO app → não é sessão externa.
-const RUN_HEADER: &str = "x-mycockpit-run";
+const RUN_HEADER: &str = "x-frota-run";
+
+/// Os nomes LEGADOS dos dois headers. O snippet instalado em
+/// `~/.claude/settings.json` de cada máquina manda `X-Mycockpit-*`, e ele não
+/// se atualiza sozinho. Sem aceitar os dois, o hook antigo continuaria POSTando
+/// e o app o descartaria SEM ERRO NA TELA: turno sem hook, ninguém sabe por
+/// quê. Isso é "rodando falso", que a casa proíbe (ADR-222).
+const EVENT_HEADER_LEGADO: &str = "x-mycockpit-event";
+const RUN_HEADER_LEGADO: &str = "x-mycockpit-run";
 
 fn header_str(headers: &HeaderMap, name: &str) -> Option<String> {
     headers
@@ -138,8 +146,10 @@ async fn hook_post(
         // corpo não-JSON: aceito-e-ignorado (fail-open do lado do script).
         return StatusCode::NO_CONTENT.into_response();
     };
-    let run = header_str(&headers, RUN_HEADER);
-    let event = header_str(&headers, EVENT_HEADER);
+    let run = header_str(&headers, RUN_HEADER)
+        .or_else(|| header_str(&headers, RUN_HEADER_LEGADO));
+    let event = header_str(&headers, EVENT_HEADER)
+        .or_else(|| header_str(&headers, EVENT_HEADER_LEGADO));
     // H2 — permissão síncrona: se ESTE payload é o evento de permissão do
     // dialeto, o round-trip segura a resposta até a decisão humana.
     if let Some(decision) = crate::hook_sessions::permission_roundtrip(

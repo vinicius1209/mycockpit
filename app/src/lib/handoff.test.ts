@@ -26,13 +26,13 @@ const refs: ContextReference[] = [
   {
     kind: "manifest",
     uri: "context://conversation/c1/manifest",
-    path: ".mycockpit/context/c1.handoff.json",
+    path: ".frota/context/c1.handoff.json",
     description: "Índice",
   },
   {
     kind: "transcript",
     uri: "context://conversation/c1/transcript",
-    path: ".mycockpit/context/c1.md",
+    path: ".frota/context/c1.md",
     description: "Transcrição",
   },
 ]
@@ -123,7 +123,7 @@ describe("renderHybridHandoff", () => {
     )
     expect(prompt.startsWith("<persona>revisor</persona>")).toBe(true)
     expect(prompt).toContain("context_manifest")
-    expect(prompt).toContain(".mycockpit/context/c1.md")
+    expect(prompt).toContain(".frota/context/c1.md")
     expect(prompt.match(/faça a migração/g)).toHaveLength(1)
     expect(prompt.endsWith("faça a migração")).toBe(true)
   })
@@ -145,8 +145,8 @@ describe("prepareHybridHandoff", () => {
         _markdown: string,
         _manifest: string,
       ) => ({
-        transcriptPath: ".mycockpit/context/c1.md",
-        manifestPath: ".mycockpit/context/c1.handoff.json",
+        transcriptPath: ".frota/context/c1.md",
+        manifestPath: ".frota/context/c1.handoff.json",
       }),
     )
     const prepared = await prepareHybridHandoff({
@@ -185,7 +185,7 @@ describe("prepareHybridHandoff", () => {
       },
     })
     expect(prepared.paths).toBeNull()
-    expect(prepared.prompt).not.toContain(".mycockpit/context/c1.md")
+    expect(prepared.prompt).not.toContain(".frota/context/c1.md")
     expect(prepared.prompt).toContain("context://conversation/c1")
     expect(prepared.prompt).toContain("faça B")
   })
@@ -205,7 +205,7 @@ describe("prepareHybridHandoff", () => {
       },
     })
     expect(prepared.envelope.references).toEqual([])
-    expect(prepared.prompt).not.toContain("mc-context")
+    expect(prepared.prompt).not.toContain("frota-context")
     expect(prepared.prompt).not.toContain("context://conversation")
     expect(prepared.prompt).toContain("faça B")
   })

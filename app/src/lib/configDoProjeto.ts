@@ -1,8 +1,12 @@
 import { invoke } from "@tauri-apps/api/core"
 
-/** Espelha McConfig do Rust (.mycockpit/config.toml). null = chave ausente. */
-export interface McConfigRaw {
+/** Espelha ProjectConfig do Rust (frota_dir.rs) (.frota/config.toml). null = chave ausente. */
+export interface ProjectConfigRaw {
   exists: boolean
+  /** Nome da pasta da Frota NESTE projeto, resolvido pelo Rust (pode ser o
+   *  nome legado num projeto que ainda não migrou). Vai para a tela: literal
+   *  no front mentiria nesse caso. */
+  pasta: string
   mode: string | null
   helper: string | null
   permission: string | null
@@ -10,13 +14,13 @@ export interface McConfigRaw {
   extra_dirs: string[]
 }
 
-export async function readMycockpitConfig(path: string): Promise<McConfigRaw> {
-  return invoke<McConfigRaw>("read_mycockpit_config", { path })
+export async function readProjectConfig(path: string): Promise<ProjectConfigRaw> {
+  return invoke<ProjectConfigRaw>("read_project_config", { path })
 }
 
-/** Escreve as chaves fornecidas; auto-scaffold de .mycockpit/ + .gitignore.
+/** Escreve as chaves fornecidas; auto-scaffold de .frota/ + .gitignore.
  *  extra_dirs: passe o array (mesmo vazio, p/ limpar); undefined = não mexe. */
-export async function writeMycockpitConfig(
+export async function writeProjectConfig(
   path: string,
   patch: {
     mode?: string
@@ -25,7 +29,7 @@ export async function writeMycockpitConfig(
     extraDirs?: string[]
   },
 ): Promise<void> {
-  await invoke("write_mycockpit_config", {
+  await invoke("write_project_config", {
     path,
     mode: patch.mode ?? null,
     helper: patch.helper ?? null,

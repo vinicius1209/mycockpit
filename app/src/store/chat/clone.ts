@@ -145,7 +145,7 @@ async function commitClonedConversation(
  *
  * O que o worktree É, sem promessa a mais: `git worktree add -b
  * mycockpit/<slug>` a partir do **HEAD** (ver `git.rs:create_worktree_sync`),
- * dentro de `.mycockpit/worktrees/` (que já nasce gitignorado). Ou seja, o
+ * dentro de `.frota/worktrees/` (que já nasce gitignorado). Ou seja, o
  * fork começa do último commit — mudança NÃO-COMMITADA da origem não vem
  * junto, e o toast diz isso em vez de deixar a pessoa descobrir na marra.
  *

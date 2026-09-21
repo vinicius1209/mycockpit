@@ -72,7 +72,7 @@ export interface PhasePromptInput {
   entryCriteria?: string[]
   /** Checklist de pronto específico desta fase. */
   exitCriteria?: string[]
-  /** Doutrina do projeto (.mycockpit/instructions.md), já em bloco. Vale em
+  /** Doutrina do projeto (.frota/instructions.md), já em bloco. Vale em
    *  TODAS as fases: cada fase é um run novo de CLI, e a maioria delas roda em
    *  codex/agy, que não leem CLAUDE.md. null = projeto sem doutrina. */
   doctrineBlock?: string | null

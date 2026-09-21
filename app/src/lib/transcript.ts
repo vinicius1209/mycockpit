@@ -1,6 +1,6 @@
 // Memória PLENA da conversa, consultável por QUALQUER agent via arquivo (pull):
 // renderTranscript gera o markdown completo (sem truncar) que o backend grava em
-// .mycockpit/context/<convId>.md (export_conv_context, escrita atômica +
+// .frota/context/<convId>.md (export_conv_context, escrita atômica +
 // gitignore). As retomadas normais e o /compactar projetam o push por
 // significado (`memoriaDaConversa`); superfícies laterais ainda podem usar
 // `serializeContext`. Aqui mora o transcript pleno + o ponteiro + a montagem do
@@ -159,7 +159,7 @@ export const RESUME_FALLBACK_BUDGET = 3_000
 export const RESUME_FALLBACK_NOTE =
   "A sessão nativa desta conversa expirou; o contexto acima é a memória do Frota — continue a conversa normalmente."
 
-/** Decide se o envio leva `memoryFallback` (MyCockpit resume): só quando o run
+/** Decide se o envio leva `memoryFallback` (Frota resume): só quando o run
  *  VAI tentar resume nativo — motor com a capability `sessionResume` (H5:
  *  derivado do registry, nunca de `agent === "agy"`), conversa com histórico E
  *  sessionId. Motor sem resume fica de fora (a memória dele já vai em TODO
@@ -222,7 +222,7 @@ export function buildResumeFallback(
   return parts.join("\n\n")
 }
 
-/** Grava a memória plena em .mycockpit/context/<convId>.md (backend: escrita
+/** Grava a memória plena em .frota/context/<convId>.md (backend: escrita
  *  atômica + gitignore) e devolve o caminho RELATIVO a `projectPath`. Pode
  *  lançar (convId inválido, disco) — os callers tratam como best-effort. */
 export async function exportConvContext(

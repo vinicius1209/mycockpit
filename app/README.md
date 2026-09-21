@@ -1,4 +1,4 @@
-# MyCockpit — app (M1)
+# Frota — app (M1)
 
 App desktop **Tauri 2 + React 19 + TypeScript + Vite 8 + Tailwind v4 + shadcn/ui**.
 Este é o **esqueleto do M1**: shell de três painéis, design system "cockpit", console

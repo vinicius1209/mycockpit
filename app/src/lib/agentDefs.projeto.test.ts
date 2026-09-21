@@ -1,4 +1,4 @@
-// Os Especialistas DO PROJETO (`.mycockpit/agents/*.md`) são lidos pelo mesmo
+// Os Especialistas DO PROJETO (`.frota/agents/*.md`) são lidos pelo mesmo
 // parser que a UI usa. Arquivo escrito à mão com frontmatter torto não quebra o
 // app: ele degrada para o default e a persona chega sem voz, sem rubrica e sem
 // cor. Este teste lê os arquivos REAIS, não uma cópia, então editá-los errado
@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { categoryColor } from "@/lib/avatar"
 import { defFieldsFrom } from "@/lib/agentDefs"
 
-const ARQUIVOS = import.meta.glob("../../../.mycockpit/agents/*.md", {
+const ARQUIVOS = import.meta.glob("../../../.frota/agents/*.md", {
   query: "?raw",
   import: "default",
   eager: true,

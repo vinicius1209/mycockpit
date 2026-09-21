@@ -3,10 +3,10 @@ use super::*;
 #[test]
 fn reativacao_preserva_a_entrada_em_vez_de_tentar_instalar_sobre_ela() {
     assert_eq!(
-        crate::mcp_instalacao::enable_argv("agy", "mc-work").unwrap(),
-        ["agy", "mcp", "enable", "mc-work"]
+        crate::mcp_instalacao::enable_argv("agy", "frota-work").unwrap(),
+        ["agy", "mcp", "enable", "frota-work"]
     );
-    assert!(crate::mcp_instalacao::enable_argv("desconhecido", "mc-work").is_none());
+    assert!(crate::mcp_instalacao::enable_argv("desconhecido", "frota-work").is_none());
 }
 
 #[test]

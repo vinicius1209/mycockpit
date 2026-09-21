@@ -1,4 +1,4 @@
-//! Spike M0 — MyCockpit
+//! Spike M0 — Frota
 //!
 //! Objetivo: provar que dá para (1) executar o `claude` CLI em modo headless,
 //! (2) ler o stream-json (JSONL) linha a linha e (3) classificar/renderizar os
@@ -151,7 +151,7 @@ fn main() {
 }
 
 /// Classifica um evento JSON e imprime uma renderização legível
-/// (simulando o que o chat do MyCockpit mostraria como cartão).
+/// (simulando o que o chat da Frota mostraria como cartão).
 fn handle_event(
     v: &Value,
     counts: &mut BTreeMap<String, u32>,

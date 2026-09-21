@@ -1,3 +1,4 @@
+import { CHAVE_APP } from "@/lib/chaveDoApp"
 import { create } from "zustand"
 import { persist } from "zustand/middleware"
 import { migratePersistedApp, type ViewMode } from "@/store/appMigracao"
@@ -81,8 +82,8 @@ export interface AppState {
    *  faixa some sozinha quando a fila esvazia. */
   decisionsOpen: boolean
   ready: boolean
-  /** Config por projeto vinda de .mycockpit/config.toml (Fase 1). */
-  mycockpit: Record<string, ProjectConfig>
+  /** Config por projeto vinda de .frota/config.toml (Fase 1). */
+  projectConfigs: Record<string, ProjectConfig>
   /** Agents com limite de uso atingido (id → hint de reset), cross-conversa. */
   limitedAgents: Record<string, string | null>
   /** Contadores-gatilho dos launchers do composer (Launchpad pede, o
@@ -119,8 +120,8 @@ export interface AppState {
   reorderProjects: (dragId: string, overId: string) => void
   /** S1.2 — teclado/context menu: move o projeto uma posição (cima/baixo). */
   moveProject: (id: string, delta: -1 | 1) => void
-  setMycockpit: (id: string, cfg: ProjectConfig) => void
-  patchMycockpit: (id: string, patch: Partial<ProjectConfig>) => void
+  setProjectConfig: (id: string, cfg: ProjectConfig) => void
+  patchProjectConfig: (id: string, patch: Partial<ProjectConfig>) => void
   toggleTheme: () => void
   toggleSidebar: () => void
   toggleContext: () => void
@@ -196,7 +197,7 @@ export const useApp = create<AppState>()(
       fleetOpen: false,
       decisionsOpen: false,
       ready: false,
-      mycockpit: {},
+      projectConfigs: {},
       limitedAgents: {},
       missionLaunchRequested: 0,
       fusionLaunchRequested: 0,
@@ -267,13 +268,13 @@ export const useApp = create<AppState>()(
         set({ projects: next })
         void dbPersistProjectOrder(next.map((p) => p.id))
       },
-      setMycockpit: (id, cfg) =>
-        set((s) => ({ mycockpit: { ...s.mycockpit, [id]: cfg } })),
-      patchMycockpit: (id, patch) =>
+      setProjectConfig: (id, cfg) =>
+        set((s) => ({ projectConfigs: { ...s.projectConfigs, [id]: cfg } })),
+      patchProjectConfig: (id, patch) =>
         set((s) => {
-          const cur = s.mycockpit[id]
+          const cur = s.projectConfigs[id]
           if (!cur) return {}
-          return { mycockpit: { ...s.mycockpit, [id]: { ...cur, ...patch } } }
+          return { projectConfigs: { ...s.projectConfigs, [id]: { ...cur, ...patch } } }
         }),
       setTheme: (themePreference) => {
         const theme = currentTheme(themePreference)
@@ -402,7 +403,7 @@ export const useApp = create<AppState>()(
       },
     }),
     {
-      name: "mc.app",
+      name: CHAVE_APP,
       version: 5,
       // SÓ preferências: nunca persistir projects/mycockpit/limitedAgents/ready/
       // activeProjectId — esses vêm do banco no boot.

@@ -480,7 +480,7 @@ mod tests {
         let entry = global_entry(output, "computer-use").unwrap().unwrap();
         assert_eq!(entry.command_line, "/App Com Espaços mcp");
         assert!(entry.enabled);
-        assert!(global_entry(output, "mc-work").unwrap().is_none());
+        assert!(global_entry(output, "frota-work").unwrap().is_none());
         assert_eq!(
             global_entry(AGY_CAPTURE, "computer-use")
                 .unwrap()

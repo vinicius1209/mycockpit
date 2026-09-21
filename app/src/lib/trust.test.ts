@@ -79,7 +79,7 @@ describe("H3 — instrução maliciosa plantada fica DENTRO da moldura", () => {
     )
   })
 
-  it("buildResumeFallback (transcript de retomada do MyCockpit resume)", () => {
+  it("buildResumeFallback (transcript de retomada da Frota resume)", () => {
     esperaConfinado(buildResumeFallback(fioComMalicia(), null), MALICIA)
   })
 

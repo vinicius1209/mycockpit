@@ -169,7 +169,7 @@ function comDoutrina(content: string) {
   })
 }
 
-/** Volta ao default: projeto sem `.mycockpit/instructions.md`. */
+/** Volta ao default: projeto sem `.frota/instructions.md`. */
 function semDoutrina() {
   vi.mocked(readDoctrine).mockResolvedValue({
     exists: false,
@@ -400,7 +400,7 @@ describe("sendFromDesk — coreografia do run", () => {
     expect(call[12]).toBeTruthy()
   })
 
-  // ── Doutrina do projeto (.mycockpit/instructions.md) ──
+  // ── Doutrina do projeto (.frota/instructions.md) ──
   // A mesa manda pelo MESMO cano do chat: sem isto, enviar do Escritório
   // rodaria sem as regras do projeto — o mesmo bug que as lições já tiveram.
   // H1: o CANAL agora é por capability — claude (systemChannel) recebe pelo

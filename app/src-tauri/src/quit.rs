@@ -327,7 +327,7 @@ fn persisted_enabled_schedules(app: &AppHandle) -> Result<usize, String> {
         .path()
         .app_data_dir()
         .map_err(|error| error.to_string())?
-        .join("mycockpit.db");
+        .join(crate::BANCO);
     let connection = rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
         .map_err(|error| error.to_string())?;
     connection

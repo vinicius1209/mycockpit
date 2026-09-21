@@ -27,7 +27,14 @@ use tauri::{AppHandle, Emitter, Manager, State};
 /// idempotente; o volume é minúsculo).
 pub const SESSIONS_EVENT: &str = "hooks://sessions";
 /// Env que o app seta nos runs que ELE spawna (correlação, hooks-plan §4.7).
-pub const RUN_ENV: &str = "MYCOCKPIT_RUN_ID";
+pub const RUN_ENV: &str = "FROTA_RUN_ID";
+
+/// O nome LEGADO da mesma variável. O snippet de hook instalado em
+/// `~/.claude/settings.json` de cada máquina cita `${MYCOCKPIT_RUN_ID}`, e ele
+/// não se atualiza sozinho. Enquanto houver snippet antigo rodando, o app
+/// SETA AS DUAS: o hook velho continua correlacionando o run em vez de virar
+/// fantasma no Painel, calado (ADR-222). Sai quando a janela fechar.
+pub const RUN_ENV_LEGADO: &str = "MYCOCKPIT_RUN_ID";
 
 /// Marca um spawn como NOSSO: a env é herdada pelos hooks globais do CLI, que
 /// a mandam no header `X-Mycockpit-Run` — e o `ingest`/`permission_roundtrip`
@@ -38,6 +45,7 @@ pub const RUN_ENV: &str = "MYCOCKPIT_RUN_ID";
 /// meta-tarefas (o gateway só exige NÃO-VAZIO).
 pub fn correlate_run(cmd: &mut tokio::process::Command, run_id: &str) {
     cmd.env(RUN_ENV, run_id);
+    cmd.env(RUN_ENV_LEGADO, run_id);
 }
 
 /// Sessão externa sem sinal há mais que isto é podada (o CLI pode ter morrido
@@ -591,7 +599,7 @@ pub async fn permission_roundtrip(
     if event != crate::hooks_install::permission_event_name(dialect) {
         return None;
     }
-    // run do PRÓPRIO app: o gate inline (mc-approval / app-server) já cobre —
+    // run do PRÓPRIO app: o gate inline (frota-approval / app-server) já cobre —
     // devolve `ask` na hora, sem segurar nem duplicar card.
     if run_header.is_some_and(|r| !r.trim().is_empty()) {
         return Some(decision_body(dialect, &HookDecision::Ask));

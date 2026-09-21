@@ -34,8 +34,8 @@ Thumbs.db
 builds/
 
 # Artefatos de missão (transientes: handoffs/plano/relatórios/run-state por
-# missão). Desde jul/2026 vivem em .mycockpit/missions/<slug>/ (isolados por
-# missão) e já são cobertos pelo .mycockpit/.gitignore (=*). O .mission/ antigo
+# missão). Desde jul/2026 vivem em .frota/missions/<slug>/ (isolados por
+# missão) e já são cobertos pelo .frota/.gitignore (=*). O .mission/ antigo
 # (fixo, sobrescrevível) foi aposentado.
 
 # Sessões locais do Claude Code (transcripts/estado — nunca versionar)

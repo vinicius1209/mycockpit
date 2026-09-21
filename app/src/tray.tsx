@@ -10,6 +10,7 @@ import "@fontsource-variable/geist-mono"
 import "./index.css"
 import { TraySurface } from "@/components/tray/TraySurface"
 import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
+import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 // O popover da tray é OUTRO webview: a guarda do menu do motor é por janela, e
 // a da janela principal não alcança aqui (ADR-042). Este painel não tem campo
@@ -17,10 +18,10 @@ import { instalarGuardaDoMenuNativo } from "@/lib/nativeMenu"
 // pior que menu ausente.
 instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 
-// Tema persistido (mc.app via zustand persist) aplicado antes do React.
+// Tema persistido (frota.app via zustand persist) aplicado antes do React.
 const dark = (() => {
   try {
-    const persisted = JSON.parse(localStorage.getItem("mc.app") ?? "null")
+    const persisted = lerEstadoPersistido() as { state?: Record<string, unknown> } | null
     if (persisted?.state?.themePreference === "system") return matchMedia("(prefers-color-scheme: dark)").matches
     return persisted?.state?.theme !== "light"
   } catch {

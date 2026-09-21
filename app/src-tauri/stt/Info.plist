@@ -5,7 +5,7 @@
   <key>CFBundleIdentifier</key>
   <string>dev.vinicius.mycockpit.stt</string>
   <key>CFBundleName</key>
-  <string>mycockpit-stt</string>
+  <string>frota-stt</string>
   <key>NSMicrophoneUsageDescription</key>
   <string>Ditado de prompts na Frota (o áudio não sai do seu Mac).</string>
   <key>NSSpeechRecognitionUsageDescription</key>

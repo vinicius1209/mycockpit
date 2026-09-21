@@ -49,7 +49,7 @@ import {
 } from "@/components/layout/DoctrineSection"
 import type { ProjectSources } from "@/lib/sources"
 import { open as openDialog } from "@tauri-apps/plugin-dialog"
-import { writeMycockpitConfig } from "@/lib/mycockpit"
+import { writeProjectConfig } from "@/lib/configDoProjeto"
 import { isTauri } from "@/lib/db"
 import { controle } from "@/components/ui/controle"
 import { cn, formatDisplayPath } from "@/lib/utils"
@@ -72,29 +72,29 @@ export function ContextoDoProjeto({
   const [showAgentCtx, setShowAgentCtx] = useState(false)
   const [detail, setDetail] = useState<DetailTarget | null>(null)
 
-  const setMycockpit = useApp((s) => s.setMycockpit)
-  const cfg = useApp((s) => (project ? s.mycockpit[project.id] : undefined))
+  const setProjectConfig = useApp((s) => s.setProjectConfig)
+  const cfg = useApp((s) => (project ? s.projectConfigs[project.id] : undefined))
 
   // upsert da config do projeto em memória (cria com defaults se ainda não há)
   function upsertConfig(patch: Partial<ProjectConfig>) {
     if (!project) return
     const cur: ProjectConfig = cfg ?? {
-      exists: true,
+      exists: true, pasta: ".frota",
       permission: project.permissionMode ?? "padrao",
       helper: "haiku",
       mode: "linear",
       extraDirs: [],
     }
-    setMycockpit(project.id, { ...cur, ...patch, exists: true })
+    setProjectConfig(project.id, { ...cur, ...patch, exists: true })
   }
 
   /** Adiciona/remove pastas liberadas (viram --add-dir no próximo turno). Persiste
-   *  no .mycockpit/config.toml; o Rust resolve no spawn. Aplica ao PRÓXIMO envio
+   *  no .frota/config.toml; o Rust resolve no spawn. Aplica ao PRÓXIMO envio
    *  (o gate de diretório do CLI é fixo no spawn — não expande mid-run). */
   function setExtraDirs(dirs: string[]) {
     if (!project) return
     upsertConfig({ extraDirs: dirs })
-    void writeMycockpitConfig(project.path, { extraDirs: dirs })
+    void writeProjectConfig(project.path, { extraDirs: dirs })
   }
 
   async function onAddExtraDir() {
@@ -257,7 +257,7 @@ export function ContextoDoProjeto({
   
                 {cfg?.exists && (
                   <p className="text-[11px] text-muted-foreground/55">
-                    salvo em <span className="font-mono">.mycockpit/config.toml</span>
+                    salvo em <span className="font-mono">{cfg.pasta}/config.toml</span>
                   </p>
                 )}
               </div>
@@ -402,7 +402,7 @@ export function ContextoDoProjeto({
                       <div className="flex h-7 items-center justify-between rounded-md px-2.5">
                         <span className="flex items-center gap-2 font-mono text-[13px] text-foreground/90">
                           <FolderGit2 className="size-3.5 text-muted-foreground" />
-                          .mycockpit/commands
+                          {cfg?.pasta ?? ".frota"}/commands
                         </span>
                         <span className="text-[11px] text-muted-foreground/70">
                           {ctx.mycockpit_commands}{" "}
@@ -434,7 +434,7 @@ export function ContextoDoProjeto({
             </Section>
   
             {/* Fase 2, fontes REAIS indexadas (não copiadas). "Subagents", não
-                "Personas": persona do app é preset (.mycockpit/agents), e ter duas
+                "Personas": persona do app é preset (pasta da Frota, agents/), e ter duas
                 seções com o mesmo nome e donos diferentes confundia. Isto aqui é
                 CONTEXTO EXTERNO lido por code agents (.claude/agents, AGENTS.md),
                 não os especialistas do app, que é o que o "@" do composer menciona. */}

@@ -1,12 +1,12 @@
-// PERSONAS EM ARQUIVO — `.mycockpit/agents/<slug>.md`, o `.claude/agents` do
+// PERSONAS EM ARQUIVO — `.frota/agents/<slug>.md`, o `.claude/agents` do
 // próprio app. Antes as personas (agent_presets) viviam só no SQLite: não
 // entravam no git, não eram revisáveis em PR, não viajavam no clone e eram
 // GLOBAIS (a mesma lista em todo projeto, sem jeito de ter uma persona que só
 // faz sentido num repo).
 //
 // Padrão da casa, o mesmo do `config.toml`: o ARQUIVO é a fonte de verdade.
-// Dois escopos, como `.claude/commands`: do projeto (`<projeto>/.mycockpit/
-// agents/`) e global do usuário (`~/.mycockpit/agents/`), com o do projeto
+// Dois escopos, como `.claude/commands`: do projeto (`<projeto>/.frota/
+// agents/`) e global do usuário (`~/.frota/agents/`), com o do projeto
 // vencendo no mesmo slug.
 //
 // O digest continua sendo a identidade comportamental (lib/presets.presetDigest)
@@ -28,7 +28,7 @@ export interface AgentDef extends AgentPreset {
   path: string
 }
 
-/** O que o Rust devolve por arquivo (mycockpit.rs::AgentDefFile). */
+/** O que o Rust devolve por arquivo (projectConfigs.rs::AgentDefFile). */
 interface AgentDefFile {
   slug: string
   scope: PresetScope

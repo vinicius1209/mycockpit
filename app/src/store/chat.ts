@@ -397,7 +397,7 @@ export interface ChatState {
     attachments: Attachment[],
   ) => void
   handleEvent: (convId: string, e: AgentEvent) => void
-  /** Telemetria do MCP mc-work (fora do Channel do provider). */
+  /** Telemetria do MCP frota-work (fora do Channel do provider). */
   handleWorkEvent: (event: WorkEvent) => void
   /** Alterna uma reação no resultado terminal do turno e persiste a conversa. */
   toggleTurnReaction: (
@@ -1576,7 +1576,7 @@ export const useChat = create<ChatState>((set, get) => {
           ? useApp.getState().projects.find((p) => p.id === cur.projectId)
           : undefined
         if (cur && proj && !cur.blockedDir) {
-          const allowed = useApp.getState().mycockpit[cur.projectId]?.extraDirs ?? []
+          const allowed = useApp.getState().projectConfigs[cur.projectId]?.extraDirs ?? []
           const dir = detectBlockedDir(e.text, proj.path, allowed)
           if (dir) patch(convId, { blockedDir: dir })
         }
@@ -1769,7 +1769,7 @@ export const useChat = create<ChatState>((set, get) => {
                   description: task.description,
                   activeForm: task.title,
                 },
-                toolId: `mc-work:create:${taskId}`,
+                toolId: `frota-work:create:${taskId}`,
                 ts: Date.now(),
               })
             }
@@ -1779,7 +1779,7 @@ export const useChat = create<ChatState>((set, get) => {
                 id: uid(),
                 name: "TaskUpdate",
                 input: { taskId, status: task.status },
-                toolId: `mc-work:update:${taskId}:${task.status}`,
+                toolId: `frota-work:update:${taskId}:${task.status}`,
                 ts: Date.now(),
               })
             }
@@ -1805,7 +1805,7 @@ export const useChat = create<ChatState>((set, get) => {
               subject: task.title,
               description: task.description,
             },
-            toolId: `mc-work:update:${taskId}:${Date.now()}`,
+            toolId: `frota-work:update:${taskId}:${Date.now()}`,
             ts: Date.now(),
           }
           return {

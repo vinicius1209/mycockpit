@@ -108,7 +108,7 @@ pub async fn git_diff(cwd: String) -> GitDiff {
 // ---------------- Worktree isolado por conversa (v2.5) ----------------
 //
 // O cockpit dirige, então CRIA o worktree determinístico (não delega pro agent).
-// Cada conversa isolada roda num `git worktree` próprio sob `.mycockpit/worktrees/`
+// Cada conversa isolada roda num `git worktree` próprio sob `.frota/worktrees/`
 // (gitignored → não suja a main tree), num branch `mycockpit/<slug>`.
 
 /// git -C <cwd> <args> com a MENSAGEM de erro (stderr) no Err (p/ o front mostrar).
@@ -146,15 +146,16 @@ fn create_worktree_sync(project_path: String, conv_id: String) -> Result<Worktre
     } else {
         slug
     };
-    let branch = format!("mycockpit/{slug}");
-    let path = Path::new(&project_path)
-        .join(".mycockpit")
+    // Worktree criado antes de 21/09/2026 tem branch `mycockpit/<slug>` e fica
+    // órfão do prefixo novo. O dono aceitou o custo; a limpeza é manual.
+    let branch = format!("frota/{slug}");
+    let path = crate::frota_dir::pasta_da_frota(Path::new(&project_path))
         .join("worktrees")
         .join(&slug);
     let path_str = path.to_string_lossy().to_string();
 
-    // garante que .mycockpit/ é ignorado (senão o worktree apareceria na main tree).
-    let mc = Path::new(&project_path).join(".mycockpit");
+    // garante que a pasta da Frota é ignorada (senão o worktree apareceria na main tree).
+    let mc = crate::frota_dir::pasta_da_frota(Path::new(&project_path));
     let _ = std::fs::create_dir_all(&mc);
     let ignore = mc.join(".gitignore");
     if !ignore.exists() {

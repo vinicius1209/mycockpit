@@ -14,9 +14,13 @@ export interface TranscriptRevealRequest {
   nonce: number
 }
 
-/** Config por projeto (espelho resolvido de .mycockpit/config.toml, Fase 1). */
+/** Config por projeto (espelho resolvido de .frota/config.toml, Fase 1). */
 export interface ProjectConfig {
   exists: boolean
+  /** Nome da pasta da Frota NESTE projeto, resolvido pelo Rust (pode ser o
+   *  nome legado num projeto que ainda não migrou). A tela mostra o caminho
+   *  real, nunca um literal que mentiria nesse caso. */
+  pasta: string
   permission: PermissionMode
   helper: string | null
   mode: string

@@ -1,4 +1,4 @@
-// Carrega a config do projeto ativo de `.mycockpit/config.toml` — a FONTE DE
+// Carrega a config do projeto ativo de `.frota/config.toml` — a FONTE DE
 // VERDADE do projeto — e sincroniza o cache de permissão que o `run_claude` lê
 // antes de spawnar.
 //
@@ -15,7 +15,7 @@
 
 import { useEffect } from "react"
 import { isTauri, updateProjectPermission } from "@/lib/db"
-import { readMycockpitConfig } from "@/lib/mycockpit"
+import { readProjectConfig } from "@/lib/configDoProjeto"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import type { PermissionMode } from "@/lib/types"
@@ -25,10 +25,11 @@ export function useProjectConfig(activeProjectId: string | null) {
     if (!activeProjectId || !isTauri()) return
     const proj = useApp.getState().projects.find((p) => p.id === activeProjectId)
     if (!proj) return
-    void readMycockpitConfig(proj.path)
+    void readProjectConfig(proj.path)
       .then((raw) => {
         const resolved: ProjectConfig = {
           exists: raw.exists,
+          pasta: raw.pasta,
           permission:
             (raw.permission as PermissionMode) ??
             proj.permissionMode ??
@@ -40,7 +41,7 @@ export function useProjectConfig(activeProjectId: string | null) {
           mode: raw.mode ?? "linear",
           extraDirs: raw.extra_dirs ?? [],
         }
-        useApp.getState().setMycockpit(proj.id, resolved)
+        useApp.getState().setProjectConfig(proj.id, resolved)
         if (raw.exists && resolved.permission !== proj.permissionMode) {
           useApp.getState().setProjectPermission(proj.id, resolved.permission)
           void updateProjectPermission(proj.id, resolved.permission)

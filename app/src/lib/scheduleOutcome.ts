@@ -84,7 +84,7 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>
  * # O `ok` que mentiu três vezes (04, 06 e 09/09/2026)
  *
  * A automação "Pendencias na Prime" rodou com o sandbox duplo: todo comando de
- * shell morria com `sandbox_apply: Operation not permitted` e a tool do mc-work
+ * shell morria com `sandbox_apply: Operation not permitted` e a tool do frota-work
  * voltava "requires approval, but approval policy is never". O Codex não
  * FALHOU: ele NARROU a impossibilidade e saiu com `is_error: false`. O
  * `turnOutcome` só olha o item terminal, então leu `ok`, o sino ficou mudo e o

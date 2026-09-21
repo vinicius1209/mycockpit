@@ -46,7 +46,7 @@ export function projeto(
 }
 
 export function config(permission: PermissionMode): ProjectConfig {
-  return { exists: true, permission, helper: "haiku", mode: "linear", extraDirs: [] }
+  return { exists: true, pasta: ".frota", permission, helper: "haiku", mode: "linear", extraDirs: [] }
 }
 
 /** Conversa como o store a guarda (`ConvState`), com os campos que o composer
@@ -97,7 +97,7 @@ const SETTINGS_PADRAO = {
 export const app = {
   projects: [] as Project[],
   activeProjectId: PROJ_FOCO as string | null,
-  mycockpit: {} as Record<string, ProjectConfig>,
+  projectConfigs: {} as Record<string, ProjectConfig>,
   limitedAgents: {} as Record<string, string>,
   missionLaunchRequested: 0,
   fusionLaunchRequested: 0,
@@ -127,7 +127,7 @@ export const enviados: {
 export function resetarBancada() {
   app.projects = [projeto(PROJ_FOCO, "padrao"), projeto(PROJ_DONO, "padrao")]
   app.activeProjectId = PROJ_FOCO
-  app.mycockpit = {}
+  app.projectConfigs = {}
   app.limitedAgents = {}
   app.settings = { ...SETTINGS_PADRAO }
   chat.activeId = CONV

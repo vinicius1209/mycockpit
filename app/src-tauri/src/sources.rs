@@ -281,7 +281,7 @@ fn scoped_file_path(
     let mut allowed: Vec<std::path::PathBuf> = Vec::new();
     if let Ok(r) = std::fs::canonicalize(&root) {
         // Também autoriza as pastas extras vinculadas a este projeto (extra_dirs)
-        for extra in crate::mycockpit::resolve_extra_dirs(&root) {
+        for extra in crate::frota_dir::resolve_extra_dirs(&root) {
             if let Ok(e) = std::fs::canonicalize(extra) {
                 allowed.push(e);
             }
@@ -359,7 +359,7 @@ fn read_project_file_bytes_scoped(
     Ok(bytes)
 }
 
-/// Opção invocável por "/": comando da casa (.mycockpit/commands), comando
+/// Opção invocável por "/": comando da casa (.frota/commands), comando
 /// nativo do motor (.claude/commands, ~/.codex/prompts) ou skill
 /// (.claude/skills). `body` é o markdown INTEIRO do arquivo (frontmatter
 /// incluso) — o front expande app-side quando o motor da conversa não
@@ -487,7 +487,7 @@ fn collect_plugin_skills(
     }));
 }
 
-/// Descoberta POR AGENT da conversa. A casa (.mycockpit/commands, agnóstica)
+/// Descoberta POR AGENT da conversa. A casa (.frota/commands, agnóstica)
 /// vale pra qualquer motor; a convenção NATIVA de cada um vem da capability
 /// `command_sources` do registry (adapters.rs) — este código não conhece nome
 /// de agent, só o enum de convenções (G1.1 do capability-registry-plan).
@@ -519,7 +519,7 @@ pub(crate) fn collect_agent_inventory(
     let mut diagnostics = Vec::new();
     // casa agnóstica primeiro (projeto, depois global): vence o dedup.
     collect_commands(
-        &project.join(".mycockpit").join("commands"),
+        &crate::frota_dir::pasta_da_frota(project).join("commands"),
         "",
         "project",
         "mycockpit",
@@ -527,7 +527,7 @@ pub(crate) fn collect_agent_inventory(
     );
     if let Some(h) = home {
         collect_commands(
-            &h.join(".mycockpit").join("commands"),
+            &crate::frota_dir::pasta_da_frota(h).join("commands"),
             "",
             "global",
             "mycockpit",
@@ -660,7 +660,7 @@ fn walk_files(base: &Path, dir: &Path, out: &mut Vec<String>, depth: usize) {
 
 /// Persiste um arquivo de estado da missão no worktree (P1 confiabilidade:
 /// missão sobrevive a restart). Agora recebe o `rel_path` (ex.:
-/// `.mycockpit/missions/<slug>/run-state.json`) pra ISOLAR cada missão numa
+/// `.frota/missions/<slug>/run-state.json`) pra ISOLAR cada missão numa
 /// pasta própria — antes o nome fixo `.mission/run-state.json` fazia missões no
 /// mesmo cwd se SOBRESCREVEREM. ESCOPADO: `rel_path` tem que ser relativo e não
 /// pode escapar do cwd (sem `..`, sem absoluto; o pai canônico tem que começar
@@ -692,7 +692,7 @@ pub fn write_mission_state(cwd: String, rel_path: String, content: String) -> Re
     crate::fsx::write_atomic(&target, &content)
 }
 
-/// Lista os arquivos de UMA pasta de missão (`.mycockpit/missions/<slug>/`).
+/// Lista os arquivos de UMA pasta de missão (`.frota/missions/<slug>/`).
 /// As pastas de missão são gitignoradas, então a busca normal do projeto NÃO
 /// as enxerga — daí este walker escopado. Devolve caminhos
 /// RELATIVOS ao rel_dir (ex.: "plan.md", "reports/05.md", "2-reviewer.json").
@@ -727,7 +727,7 @@ mod tests {
     use super::*;
 
     /// Fixture: projeto + "home" falso em tmpdir com as TRÊS convenções
-    /// (.mycockpit/commands, .claude/commands+skills, ~/.codex/prompts).
+    /// (.frota/commands, .claude/commands+skills, ~/.codex/prompts).
     fn slash_fixture(tag: &str) -> (std::path::PathBuf, std::path::PathBuf) {
         let base = std::env::temp_dir().join(format!("mc-slash-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);

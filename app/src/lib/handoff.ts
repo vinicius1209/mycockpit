@@ -1,7 +1,7 @@
 // Continuidade híbrida entre providers.
 //
 // PUSH: um working set pequeno (estado, falha, arquivos, histórico recente).
-// PULL: manifesto + transcript no disco e MCP mc-context para buscar no SQLite
+// PULL: manifesto + transcript no disco e MCP frota-context para buscar no SQLite
 // e expandir somente as referências necessárias.
 
 import { invoke } from "@tauri-apps/api/core"
@@ -14,6 +14,7 @@ import { toolDigest } from "@/lib/fusion"
 import { renderTranscript } from "@/lib/transcript"
 import { conteudoDaMoldura, frameHistory } from "@/lib/trust"
 import type { ChatItem } from "@/store/chat"
+import { caminhoNaPasta } from "@/lib/frotaDir"
 
 /** Piso do que o revezamento leva do fio (~2k tokens). Era o orçamento inteiro
  *  do contrato v1; no v2 é o mínimo, para janela desconhecida não levar MENOS
@@ -329,11 +330,11 @@ export function renderHybridHandoff(
       )
     }
     // H5 — decisão por capability, nunca por nome: motor com `contextMcp`
-    // recebe as instruções do mc-context; sem (agy, motor desconhecido),
+    // recebe as instruções do frota-context; sem (agy, motor desconhecido),
     // degrada honesto pros ponteiros de ARQUIVO (leitura direta).
     if (agentDef(envelope.target_agent)?.contextMcp) {
       state.push(
-        `- MCP \`mc-context\`: comece por \`context_manifest\`; use \`context_search\` e \`context_read\` para expandir somente evidências relevantes.`,
+        `- MCP \`frota-context\`: comece por \`context_manifest\`; use \`context_search\` e \`context_read\` para expandir somente evidências relevantes.`,
       )
     } else {
       state.push("- Use a ferramenta de leitura nos arquivos acima para expandir o contexto.")
@@ -375,8 +376,10 @@ export async function prepareHybridHandoff(
   const diff = await getDiff(input.cwd).catch(
     (): GitDiff => ({ isRepo: false, branch: null, files: [] }),
   )
-  const predictedTranscript = `.mycockpit/context/${input.convId}.md`
-  const predictedManifest = `.mycockpit/context/${input.convId}.handoff.json`
+  // Predição com o nome NOVO. Em projeto legado o backend devolve o path
+  // real e o bloco abaixo regrava: a honestidade do manifesto já é tratada.
+  const predictedTranscript = caminhoNaPasta(`context/${input.convId}.md`)
+  const predictedManifest = caminhoNaPasta(`context/${input.convId}.handoff.json`)
   const durableRefs: ContextReference[] = [
     {
       kind: "manifest",
@@ -391,14 +394,14 @@ export async function prepareHybridHandoff(
       description: "Transcrição completa do fio",
     },
   ]
-  // H5 — a referência de SQLite via mc-context só é prometida a motor com a
+  // H5 — a referência de SQLite via frota-context só é prometida a motor com a
   // capability (antes: `targetAgent !== "agy"`, que mentiria pra um motor novo
   // sem MCP). Fail-closed: desconhecido não ganha ponteiro que não alcança.
   if (agentDef(input.targetAgent)?.contextMcp) {
     durableRefs.push({
       kind: "conversation",
       uri: `context://conversation/${input.convId}`,
-      description: "Histórico SQLite consultável pelo mc-context",
+      description: "Histórico SQLite consultável pelo frota-context",
     })
   }
   let envelope = buildContextEnvelope({

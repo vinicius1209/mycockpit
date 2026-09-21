@@ -1,5 +1,5 @@
 // Store das PERSONAS (antigos agent_presets): espelho em memória dos arquivos
-// `.mycockpit/agents/*.md` pro composer (seletor) e pras Settings (CRUD).
+// `.frota/agents/*.md` pro composer (seletor) e pras Settings (CRUD).
 //
 // A fonte de verdade mudou de lugar: era a tabela agent_presets do SQLite,
 // agora é o ARQUIVO (lib/agentDefs) — versionável, revisável em PR e com escopo

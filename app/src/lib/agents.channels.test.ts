@@ -25,7 +25,7 @@ const MATRIZ: Record<
   { systemChannel: boolean; sessionResume: boolean; contextMcp: boolean }
 > = {
   // claude 2.1.219: --append-system-prompt documentado (já era o canal dos
-  // nudges de MCP) + resume nativo + mc-context.
+  // nudges de MCP) + resume nativo + frota-context.
   "claude-code": { systemChannel: true, sessionResume: true, contextMcp: true },
   // codex 0.146: `-c developer_instructions` existe (achado por strings, não
   // documentado) e funciona em sessão NOVA, mas no `exec resume` a instrução
@@ -43,7 +43,7 @@ const MATRIZ: Record<
 
 describe("canais e continuidade por agent (espelho das capabilities do Rust)", () => {
   for (const [id, esperado] of Object.entries(MATRIZ)) {
-    it(`${id}: system=${esperado.systemChannel} resume=${esperado.sessionResume} mc-context=${esperado.contextMcp}`, () => {
+    it(`${id}: system=${esperado.systemChannel} resume=${esperado.sessionResume} frota-context=${esperado.contextMcp}`, () => {
       const def = agentDef(id)
       expect(def, `${id} precisa existir no registry`).toBeTruthy()
       expect(def?.systemChannel).toBe(esperado.systemChannel)

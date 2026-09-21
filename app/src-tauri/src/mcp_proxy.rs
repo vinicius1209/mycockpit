@@ -27,7 +27,7 @@ use crate::mcp_auth::{self, OauthConfig, StoredTokens};
 
 /// Subcomando do próprio binário, no mesmo padrão de `work-server`.
 pub const SUBCOMANDO: &str = "mcp-proxy-server";
-pub const SOCK_ENV: &str = "MYCOCKPIT_MCP_PROXY_SOCK";
+pub const SOCK_ENV: &str = "FROTA_MCP_PROXY_SOCK";
 
 /// Versão do protocolo anunciada pelo proxy ao agent local. É a mesma que o
 /// health check HTTP do control plane já usa.
@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn o_agent_recebe_server_local_sem_url_e_sem_credencial() {
         let config = ProxyConfig {
-            server_bin: "/Applications/MyCockpit".into(),
+            server_bin: "/Applications/Frota".into(),
             socket: "/tmp/mc-mcpx.sock".into(),
         };
         let launch = config.launch();
@@ -572,7 +572,7 @@ mod tests {
     #[test]
     fn os_dois_motores_recebem_o_socket_do_proxy() {
         let config = ProxyConfig {
-            server_bin: "/Applications/MyCockpit".into(),
+            server_bin: "/Applications/Frota".into(),
             socket: "/tmp/mc-mcpx-abc.sock".into(),
         };
         let launch = config.launch();
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn overrides_do_codex_apontam_o_mesmo_server_local_sem_segredo() {
         let config = ProxyConfig {
-            server_bin: "/Applications/MyCockpit".into(),
+            server_bin: "/Applications/Frota".into(),
             socket: "/tmp/mc-mcpx.sock".into(),
         };
         let mut cmd = Command::new("codex");

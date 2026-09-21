@@ -32,7 +32,7 @@ export interface AgentDef {
    *  cru; qualquer outra combinação expande app-side (lib/slashCommands). */
   nativeSlash: boolean
   /** Fonte NATIVA de comandos "/" deste motor (valor de SlashCommand.source).
-   *  null = motor sem convenção própria (só a casa .mycockpit/commands). */
+   *  null = motor sem convenção própria (só a casa .frota/commands). */
   nativeCommandSource: string | null
   /** Sufixo do empty-state do "/" citando a convenção nativa (copy pt-BR,
    *  inclui a pontuação final). null = a frase da casa termina em ponto. */
@@ -47,7 +47,7 @@ export interface AgentDef {
    *  todo turno (doctrine.ts). Decide COMPORTAMENTO no lugar de `id === "agy"`
    *  (H5: agnóstico de nome). */
   sessionResume: boolean
-  /** Recebe o MCP read-only `mc-context` (espelho de `context_mcp`). false =
+  /** Recebe o MCP read-only `frota-context` (espelho de `context_mcp`). false =
    *  handoff degrada pra ponteiros de ARQUIVO (leitura direta), sem prometer
    *  um MCP que o motor não alcança. */
   contextMcp: boolean

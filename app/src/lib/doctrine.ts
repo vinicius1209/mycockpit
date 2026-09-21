@@ -1,4 +1,4 @@
-// DOUTRINA DO PROJETO — `.mycockpit/instructions.md`, o arquivo de instrução do
+// DOUTRINA DO PROJETO — `.frota/instructions.md`, o arquivo de instrução do
 // PRÓPRIO app. Existe porque instrução era a única camada do contexto que não
 // era agnóstica: `CLAUDE.md` só o Claude Code lê, `AGENTS.md` só o Codex, o agy
 // não lê nenhum dos dois, e o app NUNCA injetou nenhum deles — só os inventaria

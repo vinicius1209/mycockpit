@@ -108,7 +108,7 @@ async fn inspect(agent: &str) -> Result<SetupState, String> {
 async fn refresh(agent: &str) -> WorkMcpSetup {
     let (state, detail) = match inspect(agent).await {
         Ok(SetupState::Conflict) => (SetupState::Conflict, Some(
-            "Já existe uma entrada mc-work com outra configuração. Ajuste-a no CLI antes de conectar.".into())),
+            "Já existe uma entrada frota-work com outra configuração. Ajuste-a no CLI antes de conectar.".into())),
         Ok(state) => (state, None),
         Err(error) => (SetupState::Unavailable, Some(error)),
     };
