@@ -1,4 +1,4 @@
-# CI mínima do MyCockpit: o projeto que cobra gates de verificação passa a ter
+# CI mínima da Frota: o projeto que cobra gates de verificação passa a ter
 # os próprios. Front (tsc + lint + testes) em ubuntu; Rust em macOS (plataforma
 # real do app, com swiftc pro sidecar de ditado); guardas de estilo num job
 # separado, pra falha de lint nunca ser confundida com falha de teste.

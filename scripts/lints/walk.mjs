@@ -10,17 +10,21 @@ const IGNORADOS = new Set(["node_modules", "dist", ".git", "target", "coverage"]
 
 /**
  * @param {string} dir
+ * @param {Iterable<string>} [ignorarTambem] pastas a pular ALÉM do default.
+ *   A catraca de marca varre a raiz do repo e precisa pular `builds/`, que as
+ *   guardas de `app/src` nunca alcançam.
  * @returns {Promise<string[]>} caminhos absolutos
  */
-export async function listarArquivos(dir) {
+export async function listarArquivos(dir, ignorarTambem) {
+  const ignorados = ignorarTambem ? new Set([...IGNORADOS, ...ignorarTambem]) : IGNORADOS;
   /** @type {string[]} */
   const out = [];
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (IGNORADOS.has(entry.name)) continue;
+    if (ignorados.has(entry.name)) continue;
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      out.push(...(await listarArquivos(full)));
+      out.push(...(await listarArquivos(full, ignorarTambem)));
     } else if (entry.isFile()) {
       out.push(full);
     }
