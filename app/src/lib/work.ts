@@ -35,12 +35,39 @@ export interface ManagedProcess {
  *  `stopped` da task-notification, o Done sem conclusão e o replay caem aqui). */
 export type DeferredWorkStatus = "running" | "completed" | "interrupted"
 
+/** O QUE é um trabalho diferido, no vocabulário do contrato. Espelho de
+ *  `DeferredKind` em `src-tauri/src/agent.rs`: quem traduz o termo do motor
+ *  (`local_bash`, `local_agent`...) é o adapter, nunca código genérico. */
+export type DeferredKind = "terminal" | "subagent" | "workflow" | "other"
+
+const DEFERRED_KINDS: ReadonlySet<string> = new Set(["terminal", "subagent", "workflow", "other"])
+
+/** Conversas gravadas ANTES do contrato (até 21/09/2026) guardaram o
+ *  `task_type` cru do motor da época. Só esta leitura conhece esses valores, e
+ *  só para não reclassificar o que já está no banco. */
+const KIND_GRAVADO_ANTES: Record<string, DeferredKind> = {
+  local_bash: "terminal",
+  bash: "terminal",
+  local_agent: "subagent",
+  local_workflow: "workflow",
+}
+
+/** O tipo de um trabalho diferido, venha ele do stream ou do banco. Valor que
+ *  ninguém conhece vira `other`: degradação honesta, nunca um chute. */
+export function deferredKind(d: { kind: string | null }): DeferredKind | null {
+  if (!d.kind) return null
+  if (DEFERRED_KINDS.has(d.kind)) return d.kind as DeferredKind
+  return KIND_GRAVADO_ANTES[d.kind] ?? "other"
+}
+
 export interface DeferredWork {
   /** task_id do CLI. */
   id: string
   /** tool_use_id do tool_use `Workflow` que o criou (parentesco no Fio Vivo). */
   toolUseId: string | null
-  /** task_type do CLI (ex. local_workflow). */
+  /** Tipo normalizado pelo adapter (`DeferredKind`). É `string` porque item
+   *  gravado antes do contrato traz o termo cru do motor da época: leia SEMPRE
+   *  por `deferredKind(d)`, nunca compare este campo. */
   kind: string | null
   /** Nome humano (workflow_name/description). */
   name: string | null

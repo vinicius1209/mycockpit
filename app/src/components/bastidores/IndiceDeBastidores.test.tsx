@@ -89,11 +89,10 @@ describe("IndiceView", () => {
     expect(html.match(/Terminou há pouco/g)).toHaveLength(1)
   })
 
-  it("marca o que roda em segundo plano de verdade, e o comando comum fica sem marca", () => {
-    const comando: Bastidor = { ...b("c", "Typecheck and run the guide lints", "concluido"), tipo: "comando" }
-    const html = render([{ ...b("s", "Explorar o painel"), tipo: "subagente" }, comando], [])
+  it("cada linha diz de que espécie é o trabalho", () => {
+    const html = render([{ ...b("s", "Explorar o painel"), tipo: "subagente" }, { ...b("t", "bun run dev"), tipo: "terminal" }], [])
     expect(html).toContain(">subagente<")
-    expect(html).not.toContain(">comando<")
+    expect(html).toContain(">terminal<")
   })
 
   it("o gesto de fixar não reserva largura enquanto está escondido", () => {

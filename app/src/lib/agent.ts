@@ -1,4 +1,5 @@
 import type { CausaDoCorte } from "@/lib/corte"
+import type { DeferredKind } from "@/lib/work"
 import { invoke, Channel } from "@tauri-apps/api/core"
 import type { Attachment } from "@/lib/attachments"
 import { agentDef } from "@/lib/agents"
@@ -63,7 +64,7 @@ export type AgentEvent =
       type: "deferred_work"
       id: string
       tool_use_id: string | null
-      kind: string | null
+      kind: DeferredKind | null
       name: string | null
       status: "running" | "progress" | "completed" | "stopped"
       summary: string | null

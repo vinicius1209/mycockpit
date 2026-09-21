@@ -23,11 +23,11 @@
 //! aviso visível — nunca um turno morto.
 
 use crate::adapters::{Permission, RunRequest};
-use crate::agent::{AgentEvent, RunRegistry};
+use crate::agent::{AgentEvent, DeferredKind, DeferredStatus, RunRegistry};
 use crate::approval::{DirectInteractions, PendingApprovals};
 use crate::pricing::NormalizedUsage;
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::process::Stdio;
 use std::sync::Arc;
 use tauri::ipc::Channel;
@@ -164,6 +164,12 @@ pub struct StreamState {
     /// Evidência visual (browser-plan B1): destino em disco dos blocos image
     /// que vierem no `result` de um mcpToolCall. None = degrada sem evidência.
     evidence: Option<crate::evidence::EvidenceSink>,
+    /// `commandExecution` que começou e ainda não fechou: id → linha de comando.
+    comandos_abertos: HashMap<String, String>,
+    /// Dos abertos, os que CEDERAM o controle (passaram do `yield_time_ms`): o
+    /// modelo já seguiu adiante e eles continuam rodando. Já viraram
+    /// `DeferredWork`; o fim deles fecha o mesmo trabalho.
+    comandos_cedidos: HashSet<String>,
 }
 
 impl StreamState {
@@ -405,7 +411,27 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
             }]
         }
         "item/completed" => match params.get("item") {
-            Some(item) => map_item_completed(item, st),
+            Some(item) => {
+                let mut out = map_item_completed(item, st);
+                // Fim de um terminal que tinha cedido o controle: fecha o
+                // trabalho diferido que ele virou, com o desfecho real.
+                if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
+                    let comando = st.comandos_abertos.remove(id);
+                    if st.comandos_cedidos.remove(id) {
+                        let ok = item
+                            .get("exitCode")
+                            .and_then(|x| x.as_i64())
+                            .map(|c| c == 0)
+                            .unwrap_or(true);
+                        out.push(terminal_cedido(
+                            id,
+                            comando,
+                            if ok { DeferredStatus::Completed } else { DeferredStatus::Stopped },
+                        ));
+                    }
+                }
+                out
+            }
             None => vec![],
         },
         // codex 0.154.0 (binário real, ADR-200): o `exec_command` que passa do
@@ -422,7 +448,34 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
             }
         }
         "item/started" => match params.get("item") {
-            Some(item) => map_item_started(item),
+            Some(item) => {
+                let tipo = item.get("type").and_then(|x| x.as_str()).unwrap_or("");
+                let mut out = Vec::new();
+                match tipo {
+                    "commandExecution" => {
+                        if let Some(id) = item.get("id").and_then(|x| x.as_str()) {
+                            let comando = item
+                                .get("command")
+                                .and_then(|x| x.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            st.comandos_abertos.insert(id.to_string(), comando);
+                        }
+                    }
+                    // O modelo só volta a falar ou a raciocinar DEPOIS que a
+                    // tool devolveu o controle. Comando ainda aberto nessa hora
+                    // cedeu (passou do `yield_time_ms`) e segue rodando: é
+                    // trabalho em segundo plano, no mesmo contrato dos outros
+                    // motores. O Codex não tem campo que diga isso; o sinal é a
+                    // ordem dos itens (captura real em `testdata/codex-0.154.0/
+                    // background-terminal-appserver.jsonl`). Outra tool
+                    // começando NÃO é sinal: tools podem rodar em paralelo.
+                    "agentMessage" | "reasoning" => out.extend(ceder_comandos_abertos(st)),
+                    _ => {}
+                }
+                out.extend(map_item_started(item));
+                out
+            }
             None => vec![],
         },
         "thread/tokenUsage/updated" => {
@@ -466,6 +519,15 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
             let model = st.model.clone().unwrap_or_default();
             let (cost_usd, cost_source) = crate::pricing::estimate(&model, &nu);
             let mut out = Vec::new();
+            // O app-server da Frota é por turno e cai aqui (ADR-200): comando
+            // ainda aberto morre junto. Dizer "rodando" depois disso seria
+            // teatro, então ele fecha como interrompido ANTES do Result.
+            let mut abertos: Vec<(String, String)> = st.comandos_abertos.drain().collect();
+            abertos.sort();
+            st.comandos_cedidos.clear();
+            for (id, comando) in abertos {
+                out.push(terminal_cedido(&id, Some(comando), DeferredStatus::Stopped));
+            }
             if !had_usage || nu.input.max(nu.cached_input) == 0 {
                 out.push(AgentEvent::ContextUnavailable);
             }
@@ -492,6 +554,41 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
         // stream aqui é conversacional, não um log de turno como no `exec`.
         _ => vec![],
     }
+}
+
+/// O `DeferredWork` de um terminal do Codex. `id` e `tool_use_id` são o id do
+/// próprio item: é por ele que o front acha o comando que lançou e a saída ao
+/// vivo (`ToolOutput`) desse terminal.
+fn terminal_cedido(id: &str, comando: Option<String>, status: DeferredStatus) -> AgentEvent {
+    AgentEvent::DeferredWork {
+        id: id.to_string(),
+        tool_use_id: Some(id.to_string()),
+        kind: Some(DeferredKind::Terminal),
+        name: comando.filter(|c| !c.trim().is_empty()),
+        status,
+        summary: None,
+        output_file: None,
+        progress: None,
+    }
+}
+
+/// Marca como cedido todo comando aberto que ainda não era, em ordem estável.
+fn ceder_comandos_abertos(st: &mut StreamState) -> Vec<AgentEvent> {
+    let mut novos: Vec<String> = st
+        .comandos_abertos
+        .keys()
+        .filter(|id| !st.comandos_cedidos.contains(*id))
+        .cloned()
+        .collect();
+    novos.sort();
+    novos
+        .into_iter()
+        .map(|id| {
+            st.comandos_cedidos.insert(id.clone());
+            let comando = st.comandos_abertos.get(&id).cloned();
+            terminal_cedido(&id, comando, DeferredStatus::Running)
+        })
+        .collect()
 }
 
 /// Mensagem de erro estruturada de uma notificação `error`.
@@ -1243,6 +1340,86 @@ mod tests {
             }
         }
         assert_eq!(saida, "cx 2\ncx 3\ncx 4\ncx 5\ncx 6\nfim\n");
+    }
+
+    /// Mesma captura: o comando ainda estava aberto quando o modelo voltou a
+    /// falar (`agentMessage` m2), então cedeu o controle. Vira trabalho em
+    /// segundo plano no contrato comum, e fecha como interrompido no
+    /// `turn/completed`, porque o app-server da Frota cai ali.
+    #[test]
+    fn terminal_que_cede_o_controle_vira_trabalho_diferido_e_morre_com_o_turno() {
+        let captura = include_str!("../testdata/codex-0.154.0/background-terminal-appserver.jsonl");
+        let mut st = StreamState::new(None);
+        let mut trilha: Vec<String> = Vec::new();
+        for linha in captura.lines() {
+            let Ok(v) = serde_json::from_str::<Value>(linha) else { continue };
+            let Some(method) = v.get("method").and_then(Value::as_str) else { continue };
+            let params = v.get("params").cloned().unwrap_or(Value::Null);
+            for ev in map_notification(method, &params, &mut st) {
+                match ev {
+                    AgentEvent::Tool { id, .. } => trilha.push(format!("tool:{id}")),
+                    AgentEvent::DeferredWork { id, tool_use_id, kind, name, status, .. } => {
+                        assert_eq!(tool_use_id.as_deref(), Some(id.as_str()));
+                        assert_eq!(kind, Some(DeferredKind::Terminal));
+                        assert!(name.unwrap_or_default().contains("echo cx"), "nome = linha de comando");
+                        trilha.push(format!("diferido:{id}:{status:?}"));
+                    }
+                    AgentEvent::Result { .. } => trilha.push("result".into()),
+                    _ => {}
+                }
+            }
+        }
+        // O `item/completed` tardio da captura (o app-server dela seguiu vivo)
+        // reemite a Tool com o resultado, mas NÃO reabre o diferido já fechado.
+        assert_eq!(
+            trilha,
+            vec![
+                "tool:call-1",
+                "diferido:call-1:Running",
+                "diferido:call-1:Stopped",
+                "result",
+                "tool:call-1",
+            ]
+        );
+    }
+
+    /// Comando comum: fecha antes de o modelo voltar a falar. Não é segundo
+    /// plano, por mais que demore, e não vira trabalho diferido.
+    #[test]
+    fn comando_que_fecha_antes_de_o_modelo_seguir_nao_vira_diferido() {
+        let mut st = StreamState::default();
+        let mut evs = Vec::new();
+        for (m, p) in [
+            ("item/started", json!({ "item": { "type": "commandExecution", "id": "c1", "command": "bun run test" }})),
+            ("item/completed", json!({ "item": { "type": "commandExecution", "id": "c1", "command": "bun run test", "exitCode": 0, "aggregatedOutput": "ok" }})),
+            ("item/started", json!({ "item": { "type": "agentMessage", "id": "m1", "text": "" }})),
+            ("turn/completed", json!({})),
+        ] {
+            evs.extend(map_notification(m, &p, &mut st));
+        }
+        assert!(!evs.iter().any(|e| matches!(e, AgentEvent::DeferredWork { .. })));
+    }
+
+    /// Terminal cedido que termina DENTRO do turno fecha com o desfecho real.
+    #[test]
+    fn terminal_cedido_que_termina_no_turno_fecha_com_o_exit_code() {
+        let mut st = StreamState::default();
+        let mut status = Vec::new();
+        for (m, p) in [
+            ("item/started", json!({ "item": { "type": "commandExecution", "id": "c1", "command": "sleep 30; false" }})),
+            ("item/started", json!({ "item": { "type": "reasoning", "id": "r1" }})),
+            ("item/started", json!({ "item": { "type": "agentMessage", "id": "m1", "text": "" }})),
+            ("item/completed", json!({ "item": { "type": "commandExecution", "id": "c1", "command": "sleep 30; false", "exitCode": 1 }})),
+            ("turn/completed", json!({})),
+        ] {
+            for ev in map_notification(m, &p, &mut st) {
+                if let AgentEvent::DeferredWork { status: s, .. } = ev {
+                    status.push(format!("{s:?}"));
+                }
+            }
+        }
+        // Um Running só (o segundo item não repete), e o fim pelo exit code.
+        assert_eq!(status, vec!["Running", "Stopped"]);
     }
 
     use super::*;

@@ -99,6 +99,7 @@ import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
 import { Markdown } from "@/components/common/Markdown"
 import {
+  deferredRetryTitle,
   pendingDeferred,
   useChat,
   type ChatItem,
@@ -548,11 +549,7 @@ const ToolLine = memo(function ToolLine({
                       e.stopPropagation()
                       onRetry(item)
                     }}
-                    title={item.deferred
-                      ? item.deferred.kind === "local_workflow" || item.deferred.kind === "workflow"
-                        ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
-                        : "Retoma a verificação do trabalho em background interrompido"
-                      : undefined}
+                    title={item.deferred ? deferredRetryTitle(item.deferred) : undefined}
                     className="inline-flex items-center gap-1 rounded border px-2 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <RotateCcw className="size-3" /> {item.deferred ? "Retomar" : "Repetir etapa"}

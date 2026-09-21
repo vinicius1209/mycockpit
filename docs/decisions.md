@@ -7177,6 +7177,42 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
     sem tinta. O terminal é só leitura: a Frota traduz o que o motor já
     entrega (sem PTY nem emulador; as capturas reais não trazem ANSI porque
     os motores rodam comandos sem TTY).
+  - **Correção (21/09/2026, builds #415 a #417, pedido do usuário): o que
+    entra é o que o CONTRATO diz que está em segundo plano, não o que demora.**
+    Revoga a regra do build #387. Com todo Bash acima de 3 s (ou com saída ao
+    vivo) na lista, o índice virava o histórico de comandos do turno e o
+    trabalho de segundo plano de verdade sumia no meio. Critério novo, igual
+    para todo motor: entra o trabalho que sobrevive ao gesto que o lançou, ou
+    seja, `DeferredWork` (que cada adapter emite quando o SEU motor devolve a
+    conversa e o trabalho segue) e processo gerenciado pela Frota. Comando
+    comum fica no fio, onde já tem cartão. Saem `COMANDO_LONGO_MS`, o
+    parâmetro `agora` e o relógio de 3 s do hook.
+    - `kind` do `DeferredWork` deixa de ser o `task_type` cru do Claude e vira
+      enum do contrato (`DeferredKind`: `terminal`, `subagent`, `workflow`,
+      `other`; Rust em `agent.rs`, espelho em `lib/work.ts`, testes gêmeos). O
+      front decidia "é subagente" com `kind.includes("agent")`, vocabulário de
+      um fornecedor em código genérico. Quem traduz agora é o adapter
+      (`claude_task_kind`); tipo desconhecido cai em `other` e aparece como
+      tarefa genérica. Conversa gravada antes guarda o termo cru: só
+      `deferredKind()` conhece esses valores, e só para ler o banco.
+    - Codex passa a emitir `DeferredWork { kind: terminal }`. Ele não tem
+      campo que diga "foi para segundo plano"; o sinal é a ordem dos itens na
+      captura real (`codex-0.154.0/background-terminal-appserver.jsonl`): o
+      `commandExecution` ainda aberto quando um `agentMessage` ou `reasoning`
+      começa cedeu o controle (passou do `yield_time_ms`). Outra tool
+      começando não é sinal, porque tools rodam em paralelo. O `id` do
+      diferido é o id do item, e é por ele que a vista acha o comando e a
+      saída ao vivo. No `turn/completed` o que estiver aberto fecha como
+      interrompido antes do `Result`, porque o app-server da Frota cai ali.
+    - Tipos do índice: `terminal`, `subagente`, `workflow`, `processo` e
+      `tarefa` (o genérico). Toda linha diz o seu, já que tudo ali é segundo
+      plano. A fonte `resultado` continua existindo na vista, sem derivação
+      que a produza.
+    - Na mesma rodada a vista virou leitura de acompanhamento: estado na
+      primeira linha do corpo, comando longo recolhido e em tom médio, saída
+      como texto mais forte, uma vista só como detalhe (cabeçalho com a volta
+      escrita) em vez de faixa de uma aba, e "Terminou há pouco" no índice no
+      lugar de "Nada em andamento" por cima de itens terminados.
 - **Limites:** parar um item pelo motor fica para a fase B4 (Claude exige
   transporte bidirecional; Codex exige manter o app-server vivo). Shell do
   Claude e terminal do Codex só vivem durante o turno no modo headless, e a

@@ -37,7 +37,7 @@ const SUBAGENTE: Bastidor = {
 }
 const COMANDO: Bastidor = {
   itemId: "t-codex",
-  tipo: "comando",
+  tipo: "terminal",
   titulo: "for i in 1 2 3 4 5 6; do echo cx $i; sleep 2; done; echo fim",
   detalhe: null,
   comando: null,
@@ -91,7 +91,7 @@ describe("TerminalView", () => {
     const html = render([COMANDO, SUBAGENTE, TAREFA], ["t-codex", "deferred-a25537ec2c0bf1ccd", "deferred-btirvhvcs"], 1)
     expect(html.match(/role="tab"/g)).toHaveLength(3)
     expect(html.match(/aria-selected="true"/g)).toHaveLength(1)
-    expect(html.match(/<section aria-label="(comando|subagente|tarefa):/g)).toHaveLength(1)
+    expect(html.match(/<section aria-label="(terminal|subagente|tarefa):/g)).toHaveLength(1)
     expect(html).toContain("11k tokens")
   })
 
@@ -99,7 +99,7 @@ describe("TerminalView", () => {
     const html = render([COMANDO, SUBAGENTE, TAREFA], ["t-codex", "deferred-a25537ec2c0bf1ccd", "deferred-btirvhvcs"], 1, true)
     expect(html.match(/data-slot="resizable-panel-group"/g)).toHaveLength(1)
     expect(html.match(/data-em-foco="true"/g)).toHaveLength(1)
-    expect(html.match(/<section aria-label="(comando|subagente|tarefa):/g)).toHaveLength(3)
+    expect(html.match(/<section aria-label="(terminal|subagente|tarefa):/g)).toHaveLength(3)
     expect(html).toContain("11k tokens")
   })
 
@@ -178,7 +178,7 @@ describe("TerminalView", () => {
   it("o estado abre a vista, numa linha só com duração, hora e tipo, e não repete", () => {
     const html = render([LONGO], ["t-codex"])
     expect(html.match(/concluído/g)).toHaveLength(1)
-    expect(html).toMatch(/concluído · 10s<\/span><span>· começou às \d\d:\d\d<\/span><span>· comando</)
+    expect(html).toMatch(/concluído · 10s<\/span><span>· começou às \d\d:\d\d<\/span><span>· terminal</)
     expect(html.indexOf("concluído")).toBeLessThan(html.indexOf("python3"))
     expect(html).not.toContain("<footer")
   })

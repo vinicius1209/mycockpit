@@ -31,7 +31,7 @@ export function abrirBastidores(convId?: string | null, itemId?: string): void {
         .filter((k) => k.startsWith(prefixo))
         .map((k) => k.slice(prefixo.length)),
     )
-    const lista = bastidoresDaConversa(items, comStream, Date.now())
+    const lista = bastidoresDaConversa(items, comStream)
     alvo = (lista.find((b) => b.estado === "vivo") ?? lista[0])?.itemId
   }
   if (!alvo) {

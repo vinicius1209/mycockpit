@@ -27,7 +27,7 @@ export { ESTADO, PontoDeEstado, RotuloDeTempo, TIPO, duracaoDe } from "@/compone
 /** Por que acabou, quando o motor matou o trabalho junto com o turno. */
 function avisoDeFim(b: Bastidor): string | null {
   if (b.estado !== "interrompido") return null
-  if (b.tipo === "tarefa" || b.tipo === "comando") {
+  if (b.tipo === "terminal" || b.tipo === "tarefa") {
     return "O motor encerrou este trabalho. Sem terminal aberto, comandos em segundo plano terminam junto com o turno."
   }
   return "Este trabalho foi interrompido."

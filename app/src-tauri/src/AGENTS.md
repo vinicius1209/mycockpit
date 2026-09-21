@@ -164,6 +164,14 @@ parado, no máximo 6 seguidores. Acaba em `bastidor_parar`, quando o `Channel`
 falha (janela fechou) ou quando o arquivo some. Saída ao vivo de tool pelo
 stream (`AgentEvent::ToolOutput`) nunca vira item do fio.
 
+Quem decide o que É segundo plano é o adapter, emitindo `DeferredWork` com
+`kind` do contrato (`DeferredKind`), nunca o termo cru do motor: o front só
+lista o que chega assim. Claude traduz o `task_type` em `claude_task_kind`.
+Codex não tem campo para isso, então `codex_appserver.rs` lê a ordem dos itens
+(comando ainda aberto quando o modelo volta a falar cedeu o controle) e fecha o
+que sobrar como interrompido no `turn/completed`. Motor novo com trabalho em
+segundo plano entra por aqui, com captura real em `testdata/`.
+
 ## Navegador do projeto (ADR-131, ADR-147)
 
 O Chromium é da Frota (`browser.rs`): um por projeto, perfil persistente,

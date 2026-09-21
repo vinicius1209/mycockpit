@@ -3,7 +3,7 @@
 //! `agent::run_agent`. O adapter varia só em 2 pontos: montar o `Command` e
 //! mapear cada linha JSON → `AgentEvent`. O Claude porta a lógica atual 1:1.
 
-use crate::agent::{AgentEvent, CostSource, DeferredStatus};
+use crate::agent::{AgentEvent, CostSource, DeferredKind, DeferredStatus};
 use crate::attachments::{Attachment, AttachmentKind};
 use std::path::PathBuf;
 use tokio::process::Command;
@@ -1766,9 +1766,21 @@ pub struct ClaudeAdapter {
 
 /// O nascimento de uma task em primeiro plano, para emitir se ela for para o
 /// segundo plano depois.
+/// `task_type` do Claude Code → tipo do contrato. Valores colhidos das capturas
+/// reais (`testdata/claude-2.1.2xx`): `local_bash`, `local_agent`,
+/// `local_workflow`. Tipo novo do CLI cai em `Other`, nunca num chute.
+fn claude_task_kind(task_type: &str) -> DeferredKind {
+    match task_type {
+        "local_bash" => DeferredKind::Terminal,
+        "local_agent" => DeferredKind::Subagent,
+        "local_workflow" => DeferredKind::Workflow,
+        _ => DeferredKind::Other,
+    }
+}
+
 struct TarefaEmPrimeiroPlano {
     tool_use_id: Option<String>,
-    kind: Option<String>,
+    kind: Option<DeferredKind>,
     name: Option<String>,
 }
 
@@ -2169,7 +2181,7 @@ impl AgentAdapter for ClaudeAdapter {
                                 kind: t
                                     .get("task_type")
                                     .and_then(|x| x.as_str())
-                                    .map(str::to_string),
+                                    .map(claude_task_kind),
                                 name: t
                                     .get("description")
                                     .and_then(|x| x.as_str())
@@ -2195,7 +2207,7 @@ impl AgentAdapter for ClaudeAdapter {
                     let kind = v
                         .get("task_type")
                         .and_then(|x| x.as_str())
-                        .map(str::to_string);
+                        .map(claude_task_kind);
                     let name = v
                         .get("workflow_name")
                         .and_then(|x| x.as_str())
@@ -2555,7 +2567,7 @@ impl AgentAdapter for ClaudeAdapter {
                             out.push(AgentEvent::DeferredWork {
                                 id: task_id,
                                 tool_use_id: Some(id),
-                                kind: Some("bash".to_string()),
+                                kind: Some(DeferredKind::Terminal),
                                 name: None,
                                 status: DeferredStatus::Running,
                                 summary: None,
@@ -3581,7 +3593,7 @@ impl AgyAdapter {
                         out.push(AgentEvent::DeferredWork {
                             id: task_id,
                             tool_use_id: Some(id.clone()),
-                            kind: Some("bash".to_string()),
+                            kind: Some(DeferredKind::Terminal),
                             name: None,
                             status: DeferredStatus::Running,
                             summary: None,
@@ -4633,7 +4645,7 @@ mod tests {
                     tool_use_id.as_deref(),
                     Some("toolu_01MmPxeoK9vhakStdhGbVywn")
                 );
-                assert_eq!(kind.as_deref(), Some("local_workflow"));
+                assert_eq!(*kind, Some(DeferredKind::Workflow));
                 // workflow_name vence a description como nome humano
                 assert_eq!(name.as_deref(), Some("spike-ping"));
                 assert!(matches!(status, DeferredStatus::Running));
@@ -4855,7 +4867,7 @@ mod tests {
                     tool_use_id.as_deref(),
                     Some("toolu_01T3cSiZKnzUhyzaVHiNbtMa")
                 );
-                assert_eq!(kind.as_deref(), Some("bash"));
+                assert_eq!(*kind, Some(DeferredKind::Terminal));
                 assert_eq!(
                     output_file.as_deref(),
                     Some("/private/tmp/claude-501/-Users-viniciusmachado-projetos-mycockpit/c03399e2-c987-48b7-bfb3-8d393f14c82a/tasks/b3pbaal2v.output")

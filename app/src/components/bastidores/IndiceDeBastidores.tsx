@@ -147,13 +147,11 @@ export function IndiceView({
                 >
                   {b.titulo}
                 </span>
-                {/* O que roda de verdade em segundo plano (tarefa, subagente,
-                    processo) diz o que é. Comando comum do turno é o caso sem
-                    marca: ele só está aqui porque demorou. */}
-                {b.tipo !== "comando" && (
-                  <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{TIPO[b.tipo]}</span>
-                )}
-                {/* Trilho direito: o tempo OU o gesto. Com `opacity-0` o botão
+                {/* Tudo aqui roda em segundo plano (é o critério de entrada), então
+                  a linha diz de que espécie é: terminal, subagente, workflow,
+                  processo. */}
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground/70">{TIPO[b.tipo]}</span>
+              {/* Trilho direito: o tempo OU o gesto. Com `opacity-0` o botão
                     reservava 24px invisíveis em toda linha e o título truncava
                     ao lado de um vazio (mesmo defeito da lista de alterações). */}
                 <RotuloDeTempo b={b} className="group-hover/indice:hidden" />

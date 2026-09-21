@@ -1,19 +1,25 @@
-import type { DeferredWork } from "@/lib/work"
+import { deferredKind, type DeferredKind, type DeferredWork } from "@/lib/work"
 
-/** `task_type` do provider → palavra que um humano usa (background-status B2.3:
- *  `local_agent` cru vazava pra tela). Tipo desconhecido segue cru: traduzir o
- *  que não se conhece seria inventar. */
-const DEFERRED_KIND_LABEL: Record<string, string> = {
-  local_workflow: "workflow",
-  local_agent: "subagente",
+/** Tipo do contrato → palavra que um humano usa (background-status B2.3:
+ *  `local_agent` cru vazava pra tela). `other` não tem palavra: o motor disse
+ *  algo que o contrato não conhece, e inventar nome seria mentir. */
+const DEFERRED_KIND_LABEL: Record<DeferredKind, string | null> = {
+  terminal: "terminal",
+  subagent: "subagente",
+  workflow: "workflow",
+  other: null,
 }
 
 /** Nome humano de um trabalho diferido pro copy da UI (nunca id cru quando há
  *  alternativa melhor). */
 export function deferredLabel(d: DeferredWork): string {
   if (d.name) return d.name
-  if (d.kind) return DEFERRED_KIND_LABEL[d.kind] ?? d.kind
-  return d.id
+  const kind = deferredKind(d)
+  const palavra = kind && DEFERRED_KIND_LABEL[kind]
+  if (palavra) return palavra
+  // Termo cru de item antigo que ninguém conhece segue cru; o `other` do
+  // contrato não é palavra pra tela.
+  return d.kind && d.kind !== "other" ? d.kind : d.id
 }
 
 /** Rótulo cortado pro tamanho que cabe na linha viva sem empurrar o cronômetro
@@ -81,9 +87,17 @@ export function deferredStopWarning(works: DeferredWork[]): string | undefined {
  *  cache via resumeFromRunId; Bash/outros não prometem cache inexistente. */
 export function deferredResumePrompt(d: DeferredWork): string | null {
   if (d.status !== "interrupted") return null
-  return (d.kind === "local_workflow" || d.kind === "workflow")
+  return deferredKind(d) === "workflow"
     ? `Retome o trabalho em background "${deferredLabel(d)}" de onde parou, reaproveitando o que já foi executado: use a tool Workflow com o resumeFromRunId indicado na task-notification desta conversa (chamadas agent() concluídas voltam do cache). NÃO relance do zero.`
     : `O trabalho em background "${deferredLabel(d)}" foi interrompido antes da conclusão. Inspecione o estado atual do ambiente e decida os próximos passos.`
+}
+
+/** O que o botão "Retomar" de um trabalho diferido promete, no `title`. Mesma
+ *  fronteira do prompt acima: só workflow reaproveita cache. */
+export function deferredRetryTitle(d: DeferredWork): string {
+  return deferredKind(d) === "workflow"
+    ? "Retoma o trabalho em background de onde parou, reaproveitando o cache do workflow (não relança do zero)"
+    : "Retoma a verificação do trabalho em background interrompido"
 }
 
 /** Extrai o contador de progresso (usage.total_tokens) do `progress` cru do

@@ -87,14 +87,15 @@ const COMANDO_CODEX = {
 } as ChatItem
 
 describe("bastidoresDaConversa", () => {
-  it("shell em segundo plano vira tarefa com o arquivo de saída e sem duplicar o lançador", () => {
+  it("shell em segundo plano vira terminal com o arquivo de saída e sem duplicar o lançador", () => {
     const lista = bastidoresDaConversa(
       [LANCADOR_DO_SHELL, SHELL],
       new Set(["toolu_01RFbjqTZ3qCvvjFW6bCiqZs"]),
     )
     expect(lista).toHaveLength(1)
     expect(lista[0]).toMatchObject({
-      tipo: "tarefa",
+      // `local_bash` é o termo gravado antes do contrato: lido como terminal.
+      tipo: "terminal",
       estado: "vivo",
       fonte: { tipo: "arquivo", caminho: SHELL_CAMPOS.outputFile },
     })
@@ -118,16 +119,9 @@ describe("bastidoresDaConversa", () => {
     ])
   })
 
-  it("comando recente entra quando já mandou saída ao vivo pelo stream", () => {
-    // Regra de 16/09/2026: comando também entra quando demora (teste abaixo);
-    // o recente, sem saída ao vivo, continua fora.
-    const agora = COMANDO_CODEX.ts! + 500
-    expect(bastidoresDaConversa([COMANDO_CODEX], new Set(), agora)).toEqual([])
-    const [b] = bastidoresDaConversa([COMANDO_CODEX], new Set(["item-cmd-1"]), agora)
-    expect(b).toMatchObject({ tipo: "comando", fonte: { tipo: "stream", toolId: "item-cmd-1" } })
-  })
-
-  it("comando que demora entra com a linha de comando; o rápido fica só no fio", () => {
+  it("comando do turno não entra: nem demorando, nem com saída ao vivo", () => {
+    // Decisão de 21/09/2026: duração não é segundo plano. Até aqui entrava todo
+    // Bash acima de 3 s, e o índice virava a lista de comandos do turno.
     // Formato do item Bash gravado na conversa real de 16/09/2026.
     const bash = (id: string, durou: number | null, extra: Record<string, unknown> = {}) =>
       ({
@@ -141,24 +135,37 @@ describe("bastidoresDaConversa", () => {
         ...extra,
       }) as ChatItem
     const lista = bastidoresDaConversa(
-      [
-        bash("rapido", 240),
-        bash("longo", 31_000),
-        bash("vivo-novo", null),
-        bash("vivo-velho", null, { ts: T0 - 10_000 }),
-        bash("do-subagente", 31_000, { parentToolId: "toolu_pai" }),
-      ],
-      new Set(),
-      T0 + 1_000,
+      [bash("rapido", 240), bash("longo", 31_000), bash("vivo-velho", null, { ts: T0 - 10_000 }), COMANDO_CODEX],
+      new Set(["item-cmd-1", "toolu_longo"]),
     )
-    expect(lista.map((b) => b.itemId)).toEqual(["vivo-velho", "longo"])
-    expect(lista[1]).toMatchObject({
-      tipo: "comando",
-      titulo: "Run full suite",
-      comando: "cd app && bun run test > /tmp/g-test.out 2>&1",
-      estado: "concluido",
-      fonte: { tipo: "resultado" },
+    expect(lista).toEqual([])
+  })
+
+  it("terminal que cedeu o controle entra como qualquer diferido e lê a saída do stream do lançador", () => {
+    // O que o adapter do Codex emite para o comando da captura
+    // codex-0.154.0/background-terminal-appserver.jsonl: mesmo id do item.
+    const terminal = diferido({
+      id: "item-cmd-1",
+      toolUseId: "item-cmd-1",
+      kind: "terminal",
+      name: "for i in 1 2 3 4 5 6; do echo cx $i; sleep 2; done; echo fim",
     })
+    const lista = bastidoresDaConversa([COMANDO_CODEX, terminal], new Set(["item-cmd-1"]))
+    expect(lista).toHaveLength(1)
+    expect(lista[0]).toMatchObject({
+      tipo: "terminal",
+      estado: "vivo",
+      comando: "for i in 1 2 3 4 5 6; do echo cx $i; sleep 2; done; echo fim",
+      fonte: { tipo: "stream", toolId: "item-cmd-1" },
+    })
+    // Sem saída ainda, não finge log.
+    expect(bastidoresDaConversa([COMANDO_CODEX, terminal])[0].fonte).toEqual({ tipo: "sem-saida" })
+  })
+
+  it("tipo que o contrato não conhece vira tarefa genérica, nunca um chute", () => {
+    expect(bastidoresDaConversa([diferido({ id: "x", kind: "other" })])[0].tipo).toBe("tarefa")
+    expect(bastidoresDaConversa([diferido({ id: "y", kind: "remote_thing" })])[0].tipo).toBe("tarefa")
+    expect(bastidoresDaConversa([diferido({ id: "z", kind: null })])[0].tipo).toBe("tarefa")
   })
 
   it("tarefa em segundo plano traz o comando do lançador", () => {
@@ -175,7 +182,7 @@ describe("bastidoresDaConversa", () => {
       diferido({ ...SHELL_CAMPOS, id: `fim-${i}`, status: "completed", updatedAt: T0 + i }),
     )
     const lista = bastidoresDaConversa([SHELL, SUBAGENTE, ...terminados])
-    expect(lista.slice(0, 2).map((b) => b.tipo)).toEqual(["subagente", "tarefa"])
+    expect(lista.slice(0, 2).map((b) => b.tipo)).toEqual(["subagente", "terminal"])
     expect(lista).toHaveLength(2 + TERMINADOS_NO_INDICE)
   })
 
@@ -200,7 +207,7 @@ describe("bastidoresDaConversa", () => {
     expect(lista.map((b) => b.itemId)).toEqual([`deferred-${SHELL_CAMPOS.id}`])
   })
 
-  it("comando gravado com task-fantasma aparece como comando, não some junto", () => {
+  it("task-fantasma gravada até o #386 não entra, e o comando comum dela também não", () => {
     const fantasma = diferido({
       id: "blbkztkpq",
       toolUseId: "toolu_01NdNhLc73uxxwvsGEkVgPBW",
@@ -219,8 +226,7 @@ describe("bastidoresDaConversa", () => {
       activityAt: T0 + 82_000,
       result: { ok: true, text: "teste #385 pronto", lines: 1 },
     } as ChatItem
-    const lista = bastidoresDaConversa([comando, fantasma], new Set(), T0 + 90_000)
-    expect(lista.map((b) => [b.itemId, b.tipo])).toEqual([["t-build", "comando"]])
+    expect(bastidoresDaConversa([comando, fantasma])).toEqual([])
   })
 
   it("resumo igual ao nome não vira detalhe repetido", () => {

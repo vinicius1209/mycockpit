@@ -171,6 +171,22 @@ pub enum DeferredStatus {
     Stopped,
 }
 
+/// O QUE é um trabalho diferido, no vocabulário do contrato e não no do motor.
+/// Cada adapter traduz o seu (`local_bash`, `local_agent`, `local_workflow` no
+/// Claude; comando que cedeu o controle no Codex): código genérico nunca lê o
+/// termo cru de um fornecedor. Espelho TS: `DeferredKind` em `src/lib/work.ts`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeferredKind {
+    /// Shell/terminal que segue rodando depois que o motor retomou a conversa.
+    Terminal,
+    Subagent,
+    Workflow,
+    /// O motor disse um tipo que o contrato ainda não conhece. Degradação
+    /// honesta: aparece como trabalho genérico, nunca como um dos de cima.
+    Other,
+}
+
 /// Evento normalizado enviado ao frontend.
 #[derive(Clone, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -271,8 +287,9 @@ pub enum AgentEvent {
     DeferredWork {
         id: String,
         tool_use_id: Option<String>,
-        /// task_type do CLI (ex. "local_workflow").
-        kind: Option<String>,
+        /// Tipo normalizado. `None` = o evento não disse (ex. a notificação
+        /// injetada no `--resume`); o front conserva o que já sabia.
+        kind: Option<DeferredKind>,
         /// Nome humano (workflow_name/description do task_started).
         name: Option<String>,
         status: DeferredStatus,

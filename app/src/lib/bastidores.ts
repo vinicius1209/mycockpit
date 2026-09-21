@@ -3,19 +3,39 @@
 // de onde vem a saída que a vista vai mostrar, e quando não há saída ao vivo
 // isso vira texto honesto, não um log vazio "rodando".
 
+import { deferredKind, type DeferredKind } from "@/lib/work"
 import type { ChatItem } from "@/store/chat"
 
-export type TipoDeBastidor = "tarefa" | "subagente" | "comando" | "processo"
+/** `tarefa` é o diferido cujo tipo o motor não disse (ou o contrato não
+ *  conhece): aparece como trabalho genérico, nunca como um dos outros. */
+export type TipoDeBastidor = "terminal" | "subagente" | "workflow" | "tarefa" | "processo"
+
+const TIPO_DO_DIFERIDO: Record<DeferredKind, TipoDeBastidor> = {
+  terminal: "terminal",
+  subagent: "subagente",
+  workflow: "workflow",
+  other: "tarefa",
+}
+
+const TITULO_SEM_NOME: Record<TipoDeBastidor, string> = {
+  terminal: "Terminal em segundo plano",
+  subagente: "Subagente",
+  workflow: "Workflow",
+  tarefa: "Tarefa em segundo plano",
+  processo: "Processo",
+}
 export type EstadoDeBastidor = "vivo" | "concluido" | "interrompido" | "falhou"
 
 export type FonteDaSaida =
   /** Arquivo que o motor escreve ao vivo (shell em segundo plano do Claude). */
   | { tipo: "arquivo"; caminho: string }
-  /** Deltas do próprio stream do turno (terminal do Codex). */
+  /** Deltas do próprio stream do turno, pelo id da tool que lançou. */
   | { tipo: "stream"; toolId: string }
   /** Saída que o `frota-work` já mantém no item. */
   | { tipo: "processo" }
-  /** Comando que roda no turno: a saída chega inteira no resultado dele. */
+  /** A saída chega inteira no resultado do item. Nenhuma derivação produz
+   *  esta fonte desde 21/09/2026 (comando do turno saiu do índice); a vista
+   *  ainda sabe mostrá-la. */
   | { tipo: "resultado" }
   /** Passos do subagente, pelos itens filhos. */
   | { tipo: "passos"; paiId: string }
@@ -41,10 +61,6 @@ type ToolItem = Extract<ChatItem, { kind: "tool" }>
 /** Terminados que ainda aparecem no índice: o suficiente para ler o que acabou
  *  de acabar sem virar um histórico. */
 export const TERMINADOS_NO_INDICE = 8
-
-/** Comando comum entra no índice a partir desta duração. O que acaba antes cabe
- *  no cartão do fio e só piscaria na lista (grep, ls, sed). */
-export const COMANDO_LONGO_MS = 3_000
 
 function uma(texto: string | null | undefined, max = 120): string | null {
   const linha = texto?.trim().split("\n")[0]?.trim()
@@ -82,50 +98,51 @@ function comandoDa(it: ToolItem | undefined): string | null {
 }
 
 /** A lista de uma conversa: vivos primeiro (mais recente no topo), depois os
- *  últimos terminados que têm o que abrir. Terminado sem saída nenhuma não
- *  entra: a vista dele seria vazia, e é assim que a Frota guardou, até o build
- *  #386, cada Bash comum que o Claude abria como task em primeiro plano.
- *  `comStream` = toolIds que já mandaram saída ao vivo. `agora` mede a idade do
- *  comando vivo; sem ele, todo comando vivo conta como longo. Puro. */
+ *  últimos terminados que têm o que abrir.
+ *
+ *  Entra SÓ o que sobrevive ao gesto que o lançou, e quem diz isso é o
+ *  contrato, igual para todo motor: trabalho diferido (`deferred`, que cada
+ *  adapter emite quando o SEU motor devolve a conversa e o trabalho segue) e
+ *  processo gerenciado pela Frota (`managedProcess`). Comando comum do turno
+ *  não entra, por mais que demore: duração não é segundo plano, e ele já tem
+ *  cartão no fio. Até 21/09/2026 entrava todo Bash acima de 3 s ou com saída
+ *  ao vivo, e o índice virava a lista de comandos do turno.
+ *
+ *  Terminado sem saída nenhuma não entra: a vista dele seria vazia, e é assim
+ *  que a Frota guardou, até o build #386, cada Bash comum que o Claude abria
+ *  como task em primeiro plano. `comStream` = toolIds que já mandaram saída ao
+ *  vivo. Puro. */
 export function bastidoresDaConversa(
   items: ChatItem[],
   comStream: ReadonlySet<string> = new Set(),
-  agora = Number.POSITIVE_INFINITY,
 ): Bastidor[] {
   const out: Bastidor[] = []
-  const lancadores = new Set<string>()
   const porToolId = new Map<string, ToolItem>()
   for (const it of items) {
-    if (it.kind !== "tool") continue
-    // Tarefa terminada sem arquivo nem passos não entra (ver abaixo), então não
-    // esconde o comando que a lançou: é ele que aparece, com o resultado.
-    const d = it.deferred
-    const vazia = d && d.status !== "running" && !d.outputFile && !(d.kind ?? "").includes("agent")
-    if (d?.toolUseId && !vazia) lancadores.add(d.toolUseId)
-    if (it.toolId) porToolId.set(it.toolId, it)
+    if (it.kind === "tool" && it.toolId) porToolId.set(it.toolId, it)
   }
   for (const it of items) {
     if (it.kind !== "tool") continue
-    const desde = it.ts ?? 0
-    const atualizadoEm = it.activityAt ?? desde
     if (it.deferred) {
       const d = it.deferred
-      const subagente = (d.kind ?? "").includes("agent")
+      const tipo = TIPO_DO_DIFERIDO[deferredKind(d) ?? "other"]
       out.push({
         itemId: it.id,
-        tipo: subagente ? "subagente" : "tarefa",
-        titulo: uma(d.name) ?? (subagente ? "Subagente" : "Tarefa em segundo plano"),
+        tipo,
+        titulo: uma(d.name) ?? TITULO_SEM_NOME[tipo],
         // O motor repete o nome no resumo quando não tem o que dizer.
         detalhe: uma(d.summary) === uma(d.name) ? null : uma(d.summary),
         comando: d.toolUseId ? comandoDa(porToolId.get(d.toolUseId)) : null,
         estado: d.status === "running" ? "vivo" : d.status === "completed" ? "concluido" : "interrompido",
         desde: d.startedAt,
         atualizadoEm: d.updatedAt,
-        fonte: subagente && d.toolUseId
+        fonte: tipo === "subagente" && d.toolUseId
           ? { tipo: "passos", paiId: d.toolUseId }
           : d.outputFile
             ? { tipo: "arquivo", caminho: d.outputFile }
-            : { tipo: "sem-saida" },
+            : d.toolUseId && comStream.has(d.toolUseId)
+              ? { tipo: "stream", toolId: d.toolUseId }
+              : { tipo: "sem-saida" },
         tokens: d.tokens,
       })
       continue
@@ -135,7 +152,7 @@ export function bastidoresDaConversa(
       out.push({
         itemId: it.id,
         tipo: "processo",
-        titulo: uma(p.label) ?? uma(p.command) ?? "Processo",
+        titulo: uma(p.label) ?? uma(p.command) ?? TITULO_SEM_NOME.processo,
         detalhe: null,
         comando: p.command || null,
         estado:
@@ -151,28 +168,7 @@ export function bastidoresDaConversa(
         fonte: { tipo: "processo" },
         tokens: null,
       })
-      continue
     }
-    // Comando do turno: entra quando manda saída ao vivo ou quando demora. O
-    // lançador de um trabalho em segundo plano já aparece como tarefa, e o
-    // comando de um subagente mora nos passos dele: nenhum entra duas vezes.
-    const comando = comandoDa(it)
-    if (comando == null || it.parentToolId || (it.toolId && lancadores.has(it.toolId))) continue
-    const aoVivo = !!it.toolId && comStream.has(it.toolId)
-    const duracao = (it.result ? atualizadoEm : agora) - desde
-    if (!aoVivo && !(duracao >= COMANDO_LONGO_MS)) continue
-    out.push({
-      itemId: it.id,
-      tipo: "comando",
-      titulo: uma(campo(it.input, "description")) ?? uma(comando) ?? it.name,
-      detalhe: null,
-      comando,
-      estado: estadoDaTool(it),
-      desde,
-      atualizadoEm,
-      fonte: aoVivo && it.toolId ? { tipo: "stream", toolId: it.toolId } : { tipo: "resultado" },
-      tokens: null,
-    })
   }
   const vivos = out.filter((b) => b.estado === "vivo").sort((a, b) => b.desde - a.desde)
   const terminados = out

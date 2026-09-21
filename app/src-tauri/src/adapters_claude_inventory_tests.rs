@@ -149,12 +149,13 @@ fn subagente_da_fixture_segue_em_segundo_plano_e_o_bash_dele_nao() {
     let ids: Vec<String> = replay(BACKGROUND_AGENT)
         .into_iter()
         .filter_map(|e| match e {
-            AgentEvent::DeferredWork { id, kind: Some(k), .. } => Some(format!("{id}:{k}")),
+            AgentEvent::DeferredWork { id, kind: Some(k), .. } => Some(format!("{id}:{k:?}")),
             _ => None,
         })
         .collect();
-    assert!(ids.iter().any(|i| i.ends_with(":local_agent")), "{ids:?}");
-    assert!(!ids.iter().any(|i| i.ends_with(":local_bash")), "{ids:?}");
+    // O `task_type` cru (`local_agent`, `local_bash`) sai traduzido pelo adapter.
+    assert!(ids.iter().any(|i| i.ends_with(":Subagent")), "{ids:?}");
+    assert!(!ids.iter().any(|i| i.ends_with(":Terminal")), "{ids:?}");
 }
 
 #[test]
@@ -183,4 +184,27 @@ fn task_em_primeiro_plano_promovida_ao_segundo_plano_nasce_na_promocao() {
         "status": "completed", "output_file": "/tmp/claude-501/x/tasks/b1.output"
     }));
     assert!(matches!(fim.as_slice(), [AgentEvent::DeferredWork { status: DeferredStatus::Completed, .. }]));
+}
+
+/// O `task_type` do Claude é vocabulário DELE: sai traduzido para o contrato, e
+/// tipo que o CLI inventar amanhã cai em `Other`, nunca num chute.
+#[test]
+fn task_type_do_claude_vira_tipo_do_contrato() {
+    use crate::agent::DeferredKind;
+    assert_eq!(claude_task_kind("local_bash"), DeferredKind::Terminal);
+    assert_eq!(claude_task_kind("local_agent"), DeferredKind::Subagent);
+    assert_eq!(claude_task_kind("local_workflow"), DeferredKind::Workflow);
+    assert_eq!(claude_task_kind("remote_thing"), DeferredKind::Other);
+}
+
+/// Gêmeo de `DeferredKind` em `src/lib/work.ts` (`deferredKind.test.ts`): é
+/// ESTE texto que atravessa o Channel.
+#[test]
+fn tipo_do_diferido_atravessa_o_fio_em_snake_case() {
+    use crate::agent::DeferredKind;
+    let fio = |k: DeferredKind| serde_json::to_value(k).unwrap();
+    assert_eq!(fio(DeferredKind::Terminal), "terminal");
+    assert_eq!(fio(DeferredKind::Subagent), "subagent");
+    assert_eq!(fio(DeferredKind::Workflow), "workflow");
+    assert_eq!(fio(DeferredKind::Other), "other");
 }

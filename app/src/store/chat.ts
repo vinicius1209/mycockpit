@@ -40,11 +40,11 @@ import {
 export { selectRunLiveness, type RunLiveness } from "@/store/chat/runLiveness"
 import {
   deferredLabel, deferredLiveLine, deferredStopWarning,
-  deferredResumePrompt, progressTokens, type LiveWorkLine,
+  deferredResumePrompt, deferredRetryTitle, progressTokens, type LiveWorkLine,
 } from "@/store/chat/deferredLive"
 export {
   deferredLabel, deferredLiveLine, deferredStopWarning,
-  deferredResumePrompt, progressTokens, type LiveWorkLine,
+  deferredResumePrompt, deferredRetryTitle, progressTokens, type LiveWorkLine,
 }
 import { warnPresetDrift } from "@/lib/presets"
 import { perfSpan } from "@/lib/fleet/perf"

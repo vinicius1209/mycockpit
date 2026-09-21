@@ -9,9 +9,10 @@ import { fmtDuration } from "@/lib/format"
 import { cn } from "@/lib/utils"
 
 export const TIPO: Record<Bastidor["tipo"], string> = {
-  tarefa: "tarefa",
+  terminal: "terminal",
   subagente: "subagente",
-  comando: "comando",
+  workflow: "workflow",
+  tarefa: "tarefa",
   processo: "processo",
 }
 
