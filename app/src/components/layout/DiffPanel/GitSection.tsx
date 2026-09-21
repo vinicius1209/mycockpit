@@ -305,21 +305,28 @@ export function GitFileRow({
 
         <FilePathLabel path={file.path} />
 
-        {/* Delta de linhas (+ e -) */}
-        {renderDelta ? (
-          renderDelta(file.additions, file.deletions)
-        ) : (
-          <span className="ml-auto flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums">
-            {file.additions > 0 && <span>+{file.additions}</span>}
-            {file.deletions > 0 && (
-              <span className="text-st-error">−{file.deletions}</span>
-            )}
-          </span>
-        )}
+        {/* Delta de linhas (+ e -). Cede o trilho direito às ações enquanto
+            elas aparecem: o trilho mostra o número OU os gestos, nunca empurra
+            um pro lado do outro. */}
+        <span className="ml-auto flex shrink-0 group-hover/row:hidden group-has-[:focus-visible]/row:hidden">
+          {renderDelta ? (
+            renderDelta(file.additions, file.deletions)
+          ) : (
+            <span className="flex shrink-0 items-center gap-1 font-mono text-[11px] tabular-nums">
+              {file.additions > 0 && <span>+{file.additions}</span>}
+              {file.deletions > 0 && (
+                <span className="text-st-error">−{file.deletions}</span>
+              )}
+            </span>
+          )}
+        </span>
       </button>
 
-      {/* Ações no hover da linha estilo VS Code / Zed */}
-      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
+      {/* Ações no hover da linha estilo VS Code / Zed. `hidden`, não
+          `opacity-0`: invisíveis elas ainda reservavam ~80px em TODA linha, e
+          o nome do arquivo truncava ao lado de um vazio. Foco por teclado na
+          linha também as revela, senão o Tab nunca chegaria nelas. */}
+      <div className="hidden shrink-0 items-center gap-0.5 group-hover/row:flex group-has-[:focus-visible]/row:flex">
         {file.staged ? (
           <button
             type="button"

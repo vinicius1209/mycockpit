@@ -177,22 +177,22 @@ export function CommitComposer({
         </div>
       )}
 
+      {/* O commit é A ação do painel: ocupa a largura toda, e o contador só
+          divide a linha com ele enquanto há título. */}
       <div className="mt-2 flex items-center gap-2">
-        <div className="min-w-0 flex-1">
-          {titleLen > 0 && (
-            <span
-              className={cn(
-                "font-mono text-[11px] tabular-nums",
-                isTitleLong ? "text-st-warning" : "text-muted-foreground",
-              )}
-              title="Tamanho recomendado do título: até 72 caracteres"
-            >
-              {titleLen}/72
-            </span>
-          )}
-        </div>
+        {titleLen > 0 && (
+          <span
+            className={cn(
+              "shrink-0 font-mono text-[11px] tabular-nums",
+              isTitleLong ? "text-st-warning" : "text-muted-foreground",
+            )}
+            title="Tamanho recomendado do título: até 72 caracteres"
+          >
+            {titleLen}/72
+          </span>
+        )}
 
-        <div className="flex items-stretch">
+        <div className="flex min-w-0 flex-1 items-stretch">
           <Button
             type="button"
             variant="outline"
@@ -201,7 +201,7 @@ export function CommitComposer({
             disabled={busy || !title.trim()}
             title={`${commitLabel} (⌘Enter)`}
             className={cn(
-              "rounded-r-none px-3",
+              "min-w-0 flex-1 rounded-r-none px-3",
               amend && "border-st-warning/60 text-st-warning",
             )}
           >

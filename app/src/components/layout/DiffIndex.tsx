@@ -296,96 +296,102 @@ export function DiffIndex({
               </div>
             ) : (
               <div className="flex flex-col">
-                {/* Seção 1: Staged Changes */}
-                <GitSection
-                  title="Preparadas"
-                  count={staged.length}
-                  isOpen={stagedOpen}
-                  onToggle={() => setStagedOpen(!stagedOpen)}
-                  actions={
-                    staged.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handleUnstageAll()
-                        }}
-                        title="Desfazer toda a preparação"
-                        aria-label="Desfazer toda a preparação"
-                        className={cn(
-                          controle("chip", { quadrado: true }),
-                          "text-muted-foreground hover:bg-accent hover:text-foreground",
-                        )}
-                      >
-                        <Minus className="size-3" />
-                      </button>
-                    )
-                  }
-                >
-                  <GitFileList
-                    cwd={cwd}
-                    files={staged}
-                    viewMode={viewMode}
-                    activePath={abertoNaAba}
-                    onOpenFile={(p) => openDiffTab(p)}
-                    onReload={reload}
-                    renderDelta={renderFileDelta}
-                  />
-                </GitSection>
-
-                {/* Seção 2: Changes (Unstaged) */}
-                <GitSection
-                  title="Alterações"
-                  count={unstaged.length}
-                  isOpen={unstagedOpen}
-                  onToggle={() => setUnstagedOpen(!unstagedOpen)}
-                  actions={
-                    unstaged.length > 0 && (
-                      <div className="flex items-center gap-0.5">
+                {/* Seção 1: Staged Changes. Vazia ela não aparece: um
+                    cabeçalho mais "nenhum arquivo" só empurrava a lista que
+                    importa pra baixo. Ela nasce quando algo é preparado. */}
+                {staged.length > 0 && (
+                  <GitSection
+                    title="Preparadas"
+                    count={staged.length}
+                    isOpen={stagedOpen}
+                    onToggle={() => setStagedOpen(!stagedOpen)}
+                    actions={
+                      staged.length > 0 && (
                         <button
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation()
-                            void handleDiscardAll()
+                            void handleUnstageAll()
                           }}
-                          title="Descartar alterações não preparadas"
-                          aria-label="Descartar alterações não preparadas"
-                          className={cn(
-                            controle("chip", { quadrado: true }),
-                            "text-muted-foreground hover:bg-accent hover:text-st-error",
-                          )}
-                        >
-                          <RotateCcw className="size-3" />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            void handleStageAll()
-                          }}
-                          title="Preparar todas as alterações"
-                          aria-label="Preparar todas as alterações"
+                          title="Desfazer toda a preparação"
+                          aria-label="Desfazer toda a preparação"
                           className={cn(
                             controle("chip", { quadrado: true }),
                             "text-muted-foreground hover:bg-accent hover:text-foreground",
                           )}
                         >
-                          <Plus className="size-3" />
+                          <Minus className="size-3" />
                         </button>
-                      </div>
-                    )
-                  }
-                >
-                  <GitFileList
-                    cwd={cwd}
-                    files={unstaged}
-                    viewMode={viewMode}
-                    activePath={abertoNaAba}
-                    onOpenFile={(p) => openDiffTab(p)}
-                    onReload={reload}
-                    renderDelta={renderFileDelta}
-                  />
-                </GitSection>
+                      )
+                    }
+                  >
+                    <GitFileList
+                      cwd={cwd}
+                      files={staged}
+                      viewMode={viewMode}
+                      activePath={abertoNaAba}
+                      onOpenFile={(p) => openDiffTab(p)}
+                      onReload={reload}
+                      renderDelta={renderFileDelta}
+                    />
+                  </GitSection>
+                )}
+
+                {/* Seção 2: Changes (Unstaged). Mesma regra: vazia, não aparece. */}
+                {unstaged.length > 0 && (
+                  <GitSection
+                    title="Alterações"
+                    count={unstaged.length}
+                    isOpen={unstagedOpen}
+                    onToggle={() => setUnstagedOpen(!unstagedOpen)}
+                    actions={
+                      unstaged.length > 0 && (
+                        <div className="flex items-center gap-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void handleDiscardAll()
+                            }}
+                            title="Descartar alterações não preparadas"
+                            aria-label="Descartar alterações não preparadas"
+                            className={cn(
+                              controle("chip", { quadrado: true }),
+                              "text-muted-foreground hover:bg-accent hover:text-st-error",
+                            )}
+                          >
+                            <RotateCcw className="size-3" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void handleStageAll()
+                            }}
+                            title="Preparar todas as alterações"
+                            aria-label="Preparar todas as alterações"
+                            className={cn(
+                              controle("chip", { quadrado: true }),
+                              "text-muted-foreground hover:bg-accent hover:text-foreground",
+                            )}
+                          >
+                            <Plus className="size-3" />
+                          </button>
+                        </div>
+                      )
+                    }
+                  >
+                    <GitFileList
+                      cwd={cwd}
+                      files={unstaged}
+                      viewMode={viewMode}
+                      activePath={abertoNaAba}
+                      onOpenFile={(p) => openDiffTab(p)}
+                      onReload={reload}
+                      renderDelta={renderFileDelta}
+                    />
+                  </GitSection>
+                )}
               </div>
             )}
           </div>
@@ -425,10 +431,7 @@ export function DiffIndex({
               </button>
             </div>
           ) : (
-            <div className="flex shrink-0 items-center justify-between border-t border-border/40 px-3 py-2">
-              <span className="text-[11px] text-muted-foreground">
-                {totalChanges} {totalChanges === 1 ? "arquivo alterado" : "arquivos alterados"}
-              </span>
+            <div className="flex shrink-0 items-center justify-end border-t border-border/40 px-3 py-2">
               <button
                 type="button"
                 onClick={() => setPrOpen(true)}

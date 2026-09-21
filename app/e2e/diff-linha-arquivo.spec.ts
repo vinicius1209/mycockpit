@@ -15,8 +15,10 @@ import { FILE_LABEL_CLS } from "../src/components/layout/DiffPanel/parts"
 //     `console-2026-08-06T18-49-27-114Z.log`);
 //  2. os dois truncando → nada colidia, mas o NOME era cortado numa coluna
 //     estreita, que é o dado que a linha existe pra mostrar;
-//  3. esta → o diretório cede tudo primeiro, o nome trunca por último, e o
-//     `overflow-hidden` garante que nada pinte por cima do contador.
+//  3. `shrink-[9999]` no diretório → passava aqui, mas no app sobrava um toco
+//     ilegível (`a…`) ao lado de um nome já cortado;
+//  4. esta → a ordem vem da quebra de linha: sem espaço pro piso do diretório
+//     ele cai pra segunda linha, escondida, e o nome só trunca sozinho.
 //
 // As classes vêm IMPORTADAS de `parts.tsx`. Reescrevê-las aqui testaria a
 // cópia, não o componente — e foi por não ter medida nenhuma que isso regrediu.
@@ -28,6 +30,13 @@ const CASOS = [
     nome: "longo",
     base: "console-2026-08-06T18-49-27-114Z.log",
     dir: ".mycockpit/",
+  },
+  // Colhido da tela (21/09/2026): o nome cabia, mas aparecia cortado com `a…`
+  // de diretório ao lado.
+  {
+    nome: "captura",
+    base: "IdentityDoor.foco.test.tsx",
+    dir: "app/src/components/chat/",
   },
 ]
 
@@ -44,6 +53,7 @@ test("o nome do arquivo NUNCA pinta por cima do contador", async ({ page }) => {
         colide: boolean
         nomeCortado: boolean
         dirVisivel: boolean
+        dirLargura: number
       }[] = []
       const palco = document.createElement("div")
       palco.style.cssText = "position:fixed;top:-9999px;left:0"
@@ -64,6 +74,12 @@ test("o nome do arquivo NUNCA pinta por cima do contador", async ({ page }) => {
           const base = q("base"),
             dir = q("dir"),
             cnt = q("cnt")
+          // Visível = dentro da caixa do host. O diretório que quebrou de
+          // linha continua tendo largura, só que abaixo do corte do host.
+          const host = base.parentElement!.getBoundingClientRect()
+          const dr = dir.getBoundingClientRect()
+          const dirVisivel =
+            Math.round(dr.width) > 0 && dr.top < host.bottom - 1
           out.push({
             caso: c.nome,
             largura,
@@ -71,7 +87,8 @@ test("o nome do arquivo NUNCA pinta por cima do contador", async ({ page }) => {
               base.getBoundingClientRect().right >
               cnt.getBoundingClientRect().left + 1,
             nomeCortado: base.scrollWidth > base.clientWidth + 1,
-            dirVisivel: Math.round(dir.getBoundingClientRect().width) > 0,
+            dirVisivel,
+            dirLargura: dr.width,
           })
         }
       }
@@ -98,4 +115,16 @@ test("o nome do arquivo NUNCA pinta por cima do contador", async ({ page }) => {
     (m) => m.caso === "longo" && m.largura === 240,
   )!
   expect(apertado.dirVisivel).toBe(false)
+
+  // Nome que CABE na linha nunca é cortado pra dar lugar ao diretório, e o
+  // diretório nunca aparece como toco: ou tem largura legível, ou some.
+  const captura = medidas.find(
+    (m) => m.caso === "captura" && m.largura === 300,
+  )!
+  expect(captura.nomeCortado).toBe(false)
+  for (const m of medidas) {
+    if (m.dirVisivel) {
+      expect(m.dirLargura, `${m.caso} @ ${m.largura}px`).toBeGreaterThan(40)
+    }
+  }
 })

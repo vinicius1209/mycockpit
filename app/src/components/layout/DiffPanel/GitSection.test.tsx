@@ -75,6 +75,23 @@ describe("GitSection", () => {
     expect(html).toContain('aria-label="Descartar src/new.ts"')
   })
 
+  it("as ações da linha não reservam largura enquanto estão escondidas", () => {
+    const html = renderToStaticMarkup(
+      createElement(GitFileRow, {
+        cwd: "/fake",
+        file: fileUnstaged,
+        onOpenFile: vi.fn(),
+        onReload: vi.fn(),
+      }),
+    )
+    // Visto na tela: com `opacity-0` elas ocupavam ~80px invisíveis em toda
+    // linha e o nome do arquivo truncava ao lado de um vazio.
+    expect(html).not.toContain("opacity-0")
+    expect(html).toContain("hidden shrink-0")
+    expect(html).toContain("group-hover/row:flex")
+    expect(html).toContain("group-has-[:focus-visible]/row:flex")
+  })
+
   it("renderiza lista em árvore", () => {
     const html = renderToStaticMarkup(
       createElement(GitFileList, {
