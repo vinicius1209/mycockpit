@@ -64,7 +64,7 @@ describe("WorkingIndicator — indicador de atividade viva", () => {
     expect(html).toContain("está trabalhando…")
   })
 
-  it("mostra sintetizando resposta após N ações quando todas as ferramentas terminaram", () => {
+  it("entre uma ferramenta e outra o verbo NÃO muda: as ações viram contador ao lado do relógio", () => {
     const html = renderToStaticMarkup(
       createElement(WorkingIndicator, {
         agent: "agy",
@@ -88,7 +88,11 @@ describe("WorkingIndicator — indicador de atividade viva", () => {
         ],
       }),
     )
-    expect(html).toContain("sintetizando resposta após 14 ações…")
+    // Até 21/09/2026 aqui a frase virava "sintetizando resposta após 14
+    // ações…" e voltava atrás na ferramenta seguinte: inferência, não fato.
+    expect(html).toContain("está trabalhando…")
+    expect(html).not.toContain("sintetizando")
+    expect(html).toContain("14 ações ·")
   })
 
   it("troca o genérico por estado factual do processo quando o turno fica mudo", () => {

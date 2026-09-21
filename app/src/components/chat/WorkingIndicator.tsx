@@ -37,7 +37,8 @@ export function summarizeWorkingNodes(nodes?: Node[]): {
 
 /** Indicador "trabalhando…" estilo Slack/typing: o avatar do executor no mesmo
  *  gutter das mensagens + "está trabalhando…" com dots escalonados + cronômetro.
- *  `finalizando…` mantém o formato (só troca o verbo). Com trabalho DIFERIDO
+ *  `finalizando…` mantém o formato (só troca o verbo). As ações concluídas
+ *  entram como CONTADOR ao lado do cronômetro, nunca como frase nova. Com trabalho DIFERIDO
  *  vivo (deferred-work-plan D1.3), o rótulo fica honesto: o CLI segura o turno
  *  aberto enquanto o background task roda — o spinner mudo virava mentira.
  *
@@ -96,25 +97,16 @@ export function WorkingIndicator({
   const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
   const live = deferredLiveLine(deferred)
   const stalled = !live && stalledSince != null
-  const { hasUnfinishedTool, completedToolsCount } = summarizeWorkingNodes(nodes)
-  const label = live
-    ? live.text
-    : finalizing
-      ? "finalizando…"
-      : !hasUnfinishedTool && completedToolsCount > 0
-        ? completedToolsCount === 1
-          ? "sintetizando resposta após 1 ação…"
-          : `sintetizando resposta após ${completedToolsCount} ações…`
-        : "está trabalhando…"
-  // Crossfade quando a FASE da frase troca, não o número: "após 3 ações" →
-  // "após 4" não re-entra. Montar não anima (ADR-179).
-  const fase = live
-    ? "fundo"
-    : finalizing
-      ? "finalizando"
-      : !hasUnfinishedTool && completedToolsCount > 0
-        ? "sintetizando"
-        : "trabalhando"
+  const { completedToolsCount } = summarizeWorkingNodes(nodes)
+  // O VERBO não muda por causa de ferramenta. Até 21/09/2026 a linha dizia
+  // "sintetizando resposta após N ações…" sempre que não havia tool aberta, e
+  // voltava para "está trabalhando…" na tool seguinte: num turno de 30 ações
+  // eram 60 trocas com crossfade, e a frase era inferência, não fato (entre
+  // duas tools o modelo está decidindo a próxima, não escrevendo a resposta).
+  // A frase só troca por evento REAL: trabalho em segundo plano, `finalizando`
+  // e turno mudo. O que anda no lugar é o número, ao lado do cronômetro.
+  const label = live ? live.text : finalizing ? "finalizando…" : "está trabalhando…"
+  const fase = live ? "fundo" : finalizing ? "finalizando" : "trabalhando"
   const trocouFase = useTrocou(fase)
   // O relógio pertence ao que está ESCRITO na linha: com background vivo é o
   // trabalho nomeado (o turno zera o startedAt no `result`, e era justo aí que
@@ -190,10 +182,17 @@ export function WorkingIndicator({
           />
         ))}
       </span>
+      {/* Fato que anda no lugar: dígitos de largura fixa, sem crossfade. Some
+          com trabalho em segundo plano, onde a linha fala de OUTRO relógio. */}
+      {!live && !stalled && completedToolsCount > 0 && (
+        <span className="shrink-0 font-mono text-foreground/70 tabular-nums">
+          {completedToolsCount} {completedToolsCount === 1 ? "ação" : "ações"} ·
+        </span>
+      )}
       {since != null && (
         <Elapsed
           since={since}
-          className="ml-1 min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
+          className="min-w-[4.5rem] shrink-0 font-mono text-foreground/70"
         />
       )}
     </div>
