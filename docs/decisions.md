@@ -8163,3 +8163,48 @@ considerou.
   **E o gate cresce:** banco novo aberto PELO APP com as conversas à vista, e
   um anexo de conversa anterior ao rename abrindo de verdade. "Os dois bancos
   estão certos" não é gate de migração; "o app está lendo o certo, inteiro" é.
+
+### ADR-223 · O que quebra, quebra no seu lugar: fronteiras de erro por área, e a linha viva para de inventar fase
+
+- **Contexto (21/09/2026, build #418):** abrir o painel direito deixou a janela
+  inteira PRETA. No `Frota.log`: `Layout not found for Panel context`, lançado
+  por `getSize()` dentro de um efeito (`useLarguraDoTerminal`, a régua que
+  alarga o painel para o terminal dos Bastidores). O ref do painel já existe no
+  commit em que ele monta, mas o grupo do `react-resizable-panels` só registra
+  o layout dele depois, e até lá a biblioteca lança. O app não tinha NENHUMA
+  fronteira de erro (só a do editor Lexical): qualquer exceção de render ou de
+  efeito subia até a raiz e o React desmontava tudo. O pedido do usuário: "se
+  algo quebra no sidebar, numa aba, eu não quero que a Frota quebre; as coisas
+  precisam quebrar de forma bonita no seu devido lugar".
+- **Decisão:**
+  - **Causa:** o efeito espera o painel entrar no layout (até 8 quadros) e, se
+    não entrar, desiste sem mexer. É o "fail-closed no efeito" da casa: efeito
+    com pré-condição faltando não age, e não lança.
+  - **Contenção:** `components/common/Fronteira.tsx`, uma fronteira de erro
+    com `area` (como a pessoa chama o lugar), `resetKey` (mudou, ela se refaz)
+    e a variante `janela`. A área que falhou mostra o que houve, a mensagem do
+    erro e "Tentar de novo"; o resto segue de pé. O erro sai por
+    `console.error`, que o `runtimeLogging` grava no log: a tela bonita nunca
+    esconde o motivo. Onde mora hoje: barra lateral, conversa, comparação de
+    ramos, aba de alterações, navegador, aba de arquivo, telas que cobrem o
+    centro, painel direito inteiro e, dentro dele, o conteúdo da aba (com
+    `resetKey` = aba, então trocar de aba sai do erro e a tira de abas nunca
+    cai junto). Na raiz (`main.tsx`) fica a última rede, que também oferece
+    recarregar a janela.
+  - **Regra que fica:** superfície nova que monta sozinha (aba, painel, tela
+    que cobre, diálogo pesado) nasce dentro de uma `Fronteira` com o nome da
+    área. Fronteira não substitui tratar o erro onde ele é esperado: é a rede
+    para o que ninguém previu.
+  - **Linha viva:** "sintetizando resposta após N ações…" saiu. Era mostrada
+    sempre que não havia tool aberta e voltava para "está trabalhando…" na tool
+    seguinte: dezenas de trocas com crossfade por turno, e a frase era
+    inferência (entre duas tools o modelo decide a próxima, não escreve a
+    resposta), ou seja, atividade inventada. O verbo agora só troca por evento
+    real (trabalho em segundo plano, `finalizando…`, turno mudo), e as ações
+    concluídas viram contador de largura fixa ao lado do cronômetro:
+    `está trabalhando… · 11 ações · 53s`.
+- **Limites:** fronteira de erro do React não pega exceção em handler de
+  evento nem em promessa solta; essas já vão para o log pelo
+  `runtimeLogging` e não desmontam a árvore. Erro dentro de portal (diálogo,
+  popover) sobe pela árvore do React, não pelo DOM, então cai na fronteira de
+  quem o renderizou.

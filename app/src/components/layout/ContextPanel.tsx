@@ -2,6 +2,7 @@
 // a entrega (P3) e a contagem de alterações que a tira anuncia. O conteúdo de
 // cada aba mora no componente dela (a aba Contexto em `ContextoDoProjeto`).
 
+import { Fronteira } from "@/components/common/Fronteira"
 import { ContextPanelTabs } from "@/components/layout/contextPanelChrome"
 import { ContextoDoProjeto } from "@/components/layout/ContextoDoProjeto"
 import { BastidoresNoPainel } from "@/components/bastidores/BastidoresNoPainel"
@@ -92,32 +93,36 @@ export function ContextPanel() {
         onSelect={selectTab}
       />
 
-      {!project ? (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
-          <p className="text-[13px] text-muted-foreground">
-            Nenhum projeto selecionado.
-          </p>
-        </div>
-      ) : tab === "arquivos" ? (
-        <ProjectFilesPanel root={activeWorktree ?? project.path} />
-      ) : tab === "conversa" ? (
-        <ActiveConversationMapPanel
-          conversationId={activeConvId}
-          projectId={project.id}
-          title={activeTitle}
-        />
-      ) : tab === "bastidores" ? (
-        <BastidoresNoPainel />
-      ) : tab === "alteracoes" ? (
-        <DiffIndex
-          cwd={activeWorktree ?? project.path}
-          delivery={delivery}
-          onRequestFix={requestDeliveryFix}
-          onCloseDelivery={closeDeliveryDiff}
-        />
-      ) : (
-        <ContextoDoProjeto project={project} readerAgent={readerAgent} />
-      )}
+      {/* Uma aba que quebra não leva a tira de abas junto: trocar de aba sai
+          do erro (`resetKey`). */}
+      <Fronteira area="esta aba" resetKey={tab}>
+        {!project ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
+            <p className="text-[13px] text-muted-foreground">
+              Nenhum projeto selecionado.
+            </p>
+          </div>
+        ) : tab === "arquivos" ? (
+          <ProjectFilesPanel root={activeWorktree ?? project.path} />
+        ) : tab === "conversa" ? (
+          <ActiveConversationMapPanel
+            conversationId={activeConvId}
+            projectId={project.id}
+            title={activeTitle}
+          />
+        ) : tab === "bastidores" ? (
+          <BastidoresNoPainel />
+        ) : tab === "alteracoes" ? (
+          <DiffIndex
+            cwd={activeWorktree ?? project.path}
+            delivery={delivery}
+            onRequestFix={requestDeliveryFix}
+            onCloseDelivery={closeDeliveryDiff}
+          />
+        ) : (
+          <ContextoDoProjeto project={project} readerAgent={readerAgent} />
+        )}
+      </Fronteira>
 
     </aside>
   )

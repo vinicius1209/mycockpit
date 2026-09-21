@@ -7,6 +7,7 @@ import "@fontsource-variable/geist-mono"
 
 import "./index.css"
 import App from "./App.tsx"
+import { Fronteira } from "@/components/common/Fronteira"
 import { AppContextMenu } from "@/components/common/AppContextMenu"
 import { CopiaDeTabela } from "@/components/common/CopiaDeTabela"
 import { installRuntimeLogging } from "@/lib/runtimeLogging"
@@ -34,7 +35,9 @@ document.documentElement.classList.toggle("dark", dark)
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <Fronteira area="a janela" variante="janela">
+      <App />
+    </Fronteira>
     {/* Botão direito é do app, nunca do motor (ADR-042). Mora no entry, e não
         dentro do App, pelo mesmo motivo do tray.tsx: a guarda do menu nativo é
         por JANELA, e o clique pode nascer dentro de qualquer portal (dialog,

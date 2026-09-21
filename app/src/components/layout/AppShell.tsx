@@ -3,6 +3,7 @@
 // ele estava no teto da catraca do §10 e a regra é dividir, nunca subir o teto.
 // O corte é natural: aqui só mora layout, e é aqui que a Fase 3 do ADR-043
 // mexeu (o inset de 8px). Estado vem do store, então não há prop drilling.
+import { Fronteira } from "@/components/common/Fronteira"
 import { lazy, Suspense } from "react"
 import { Sidebar } from "@/components/layout/Sidebar"
 import { ContextPanel } from "@/components/layout/ContextPanel"
@@ -122,7 +123,7 @@ export function AppShell() {
             minSize="190px"
             maxSize="32%"
           >
-            <Sidebar onAddProject={() => void addProjectViaDialog()} />
+            <Fronteira area="a barra lateral"><Sidebar onAddProject={() => void addProjectViaDialog()} /></Fronteira>
           </ResizablePanel>
           <ResizableHandle className={HANDLE} />
         </>
@@ -212,33 +213,33 @@ export function AppShell() {
                       "hidden",
                   )}
                 >
-                  <ChatPanel />
+                  <Fronteira area="a conversa"><ChatPanel /></Fronteira>
                 </div>
                 {viewMode === "linear" &&
                   !coberto &&
                   mainTab.kind === "conversa" &&
                   branchSplitOpen && (
                     <div className={HOST_SUPERFICIE}>
-                      <BranchSplitView />
+                      <Fronteira area="a comparação de ramos"><BranchSplitView /></Fronteira>
                     </div>
                   )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "diff" && (
                   <div className={HOST_SUPERFICIE}>
-                    <DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} />
+                    <Fronteira area="a aba de alterações" resetKey={mainTab.focusPath}><DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} /></Fronteira>
                   </div>
                 )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "navegador" && (
                   <div className={HOST_SUPERFICIE}>
-                    <NavegadorTab />
+                    <Fronteira area="o navegador"><NavegadorTab /></Fronteira>
                   </div>
                 )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "arquivo" && (
                   <div className={HOST_SUPERFICIE}>
-                    <FileTab path={mainTab.path} />
+                    <Fronteira area="a aba do arquivo" resetKey={mainTab.path}><FileTab path={mainTab.path} /></Fronteira>
                   </div>
                 )}
                 {cobertura && (
-                  <div className={HOST_SUPERFICIE}>{cobertura}</div>
+                  <div className={HOST_SUPERFICIE}><Fronteira area="esta tela">{cobertura}</Fronteira></div>
                 )}
                 {/* R2 do navegador: flutua sobre a conversa, nunca junto da aba
                     Navegador (um stream por vez). */}
@@ -262,7 +263,7 @@ export function AppShell() {
                   minSize="240px"
                   maxSize={vistasAbertas && contextPanelTab === "bastidores" ? TETO_COM_TERMINAL : "42%"}
                 >
-                  <ContextPanel />
+                  <Fronteira area="o painel lateral"><ContextPanel /></Fronteira>
                 </ResizablePanel>
               </>
             )}
