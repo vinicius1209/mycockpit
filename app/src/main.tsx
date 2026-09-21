@@ -11,11 +11,16 @@ import { Fronteira } from "@/components/common/Fronteira"
 import { AppContextMenu } from "@/components/common/AppContextMenu"
 import { CopiaDeTabela } from "@/components/common/CopiaDeTabela"
 import { installRuntimeLogging } from "@/lib/runtimeLogging"
+import { iniciarEventosDeTrabalho } from "@/lib/eventosDeTrabalho"
 import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 // Antes do primeiro render: erros do React/WebView precisam sobreviver à tela
 // preta e chegar ao arquivo rotativo da release.
 installRuntimeLogging()
+
+// Plano, etapas e processos chegam por evento: a escuta é da janela, e não de
+// uma tela que pode desmontar (ADR-223).
+iniciarEventosDeTrabalho()
 
 // Tema persistido (frota.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo. O popover da tray

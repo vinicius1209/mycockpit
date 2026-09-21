@@ -68,7 +68,6 @@ import { isTauri } from "@/lib/db"
 import { buildLearningBlocks } from "@/lib/learning"
 import { presentTool } from "@/lib/toolview"
 import {
-  listenWorkEvents,
   retryManagedProcess,
   startManagedProcess,
   stopManagedProcess,
@@ -121,21 +120,6 @@ export function ChatPanel() {
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
   const preflightRetryRef = useRef<Record<string, PreflightRetryRequest>>({})
-  useEffect(() => {
-    if (!isTauri()) return
-    let disposed = false
-    let unlisten: (() => void) | null = null
-    void listenWorkEvents((event) => useChat.getState().handleWorkEvent(event)).then(
-      (off) => {
-        if (disposed) off()
-        else unlisten = off
-      },
-    )
-    return () => {
-      disposed = true
-      unlisten?.()
-    }
-  }, [])
   const [especialistasOpen, setEspecialistasOpen] = useState(false)
 
   const items = conv.items
