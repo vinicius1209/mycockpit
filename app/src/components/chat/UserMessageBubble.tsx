@@ -8,6 +8,7 @@ import { toast } from "sonner"
 import { splitMentions } from "@/components/chat/mentions"
 import { Button } from "@/components/ui/button"
 import { usePresets } from "@/store/presets"
+import { useEspecialistas } from "@/store/especialistas"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { blocoDaCitacaoNoTexto, itemDaCitacao, separarCitacoes } from "@/lib/citacao"
@@ -27,21 +28,34 @@ export function MentionText({ text }: { text: string }) {
     () => splitMentions(text, list.map((p) => p.name)),
     [text, list],
   )
+  // O chip do `@nome` ABRE a persona: quem lê o fio meses depois quer saber
+  // quem é essa gente, e o detalhe já existe no marketplace. Persona que saiu
+  // do disco continua legível, só não clicável (não se promete tela que não
+  // vai abrir).
+  const idPorNome = useMemo(
+    () => new Map(list.map((p) => [p.name.toLowerCase(), p.id])),
+    [list],
+  )
   if (segs.length === 1 && segs[0].type === "text") return <>{text}</>
   return (
     <>
-      {segs.map((seg, i) =>
-        seg.type === "mention" ? (
-          <span
+      {segs.map((seg, i) => {
+        if (seg.type !== "mention") return <span key={i}>{seg.text}</span>
+        const chip = "rounded bg-brass/[0.12] px-1 font-medium text-brass"
+        const id = idPorNome.get(seg.name.toLowerCase())
+        if (!id) return <span key={i} className={chip}>{seg.text}</span>
+        return (
+          <button
             key={i}
-            className="rounded bg-brass/[0.12] px-1 font-medium text-brass"
+            type="button"
+            title={`Ver ${seg.name}`}
+            onClick={() => useEspecialistas.getState().abrir(id)}
+            className={cn(chip, "transition-colors hover:bg-brass/20 hover:underline")}
           >
             {seg.text}
-          </span>
-        ) : (
-          <span key={i}>{seg.text}</span>
-        ),
-      )}
+          </button>
+        )
+      })}
     </>
   )
 }

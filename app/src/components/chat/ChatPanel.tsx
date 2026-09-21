@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef } from "react"
 import { modoEfetivoDoSpawn, permissaoDoSpawn } from "@/lib/sessionMode"
 import { dispatchQueuedNow, drainQueued } from "@/components/chat/drenarFila"
 import { stopActiveConversation } from "@/components/chat/filaComposer"
@@ -10,6 +10,7 @@ import { withNotasDoTurno } from "@/lib/fleet/promptCascade"
 import { RunStatusStack } from "@/components/chat/RunStatusStack"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
+import { useEspecialistas } from "@/store/especialistas"
 import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
 import { TurnScrubber } from "@/components/chat/TurnScrubber"
 import { useChatScroll } from "@/components/chat/useChatScroll"
@@ -115,7 +116,6 @@ export function ChatPanel() {
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
   const injectedLessonsRef = useRef<Record<string, string[]>>({})
   const preflightRetryRef = useRef<Record<string, PreflightRetryRequest>>({})
-  const [especialistasOpen, setEspecialistasOpen] = useState(false)
 
   const items = conv.items
   const running = conv.running
@@ -1000,15 +1000,12 @@ export function ChatPanel() {
             missionRunning={missionRunning}
             onStop={stopActiveConversation}
             onDispatchQueue={(id) => dispatchQueuedNow(id, project?.path, handleSend)}
-            onOpenEspecialistas={() => setEspecialistasOpen(true)}
+            onOpenEspecialistas={() => useEspecialistas.getState().abrir()}
           />
         </div>
       </div>
 
-      <Especialistas
-        open={especialistasOpen}
-        onOpenChange={setEspecialistasOpen}
-      />
+      <Especialistas />
     </section>
   )
 }

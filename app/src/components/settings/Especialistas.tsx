@@ -22,6 +22,7 @@ import {
 } from "lucide-react"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { AppDialog } from "@/components/ui/app-dialog"
+import { useEspecialistas } from "@/store/especialistas"
 import { Button } from "@/components/ui/button"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { shortDigest } from "@/lib/presets"
@@ -295,12 +296,21 @@ function KV({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
 /** Miolo do marketplace (grid + detalhe + criar), reusável: vai INLINE nas
  *  Configurações e também dentro do Dialog do atalho da conversa. `onClose`
  *  presente = mostra "Fechar" (só no modo dialog). */
-export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
+export function EspecialistasContent({
+  onClose,
+  inicial,
+}: {
+  onClose?: () => void
+  /** Persona a abrir direto no detalhe (vem do `@nome` clicado no fio). */
+  inicial?: string | null
+}) {
   const list = usePresets((s) => s.list)
   const project = useActiveProject()
   const projectPath = project?.path ?? null
 
-  const [view, setView] = useState<View>({ kind: "list" })
+  const [view, setView] = useState<View>(
+    inicial ? { kind: "detail", id: inicial } : { kind: "list" },
+  )
   const [query, setQuery] = useState("")
   const [category, setCategory] = useState(ALL_CATEGORY)
   const [installing, setInstalling] = useState(false)
@@ -495,21 +505,20 @@ export function EspecialistasContent({ onClose }: { onClose?: () => void }) {
  *  Usa o <AppDialog> (size xl = a largura do marketplace); o corpo controla a
  *  própria altura/scroll via className (p-0 + altura fixa + overflow-hidden) e o
  *  X padrão do AppDialog cuida do fechar. */
-export function Especialistas({
-  open,
-  onOpenChange,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-}) {
+export function Especialistas() {
+  const aberto = useEspecialistas((s) => s.aberto)
+  const id = useEspecialistas((s) => s.id)
   return (
     <AppDialog
-      open={open}
-      onOpenChange={onOpenChange}
+      // `key`: reabrir noutra persona precisa nascer no detalhe dela, e o
+      // estado interno do miolo é `useState` (não reage a prop que muda).
+      key={id ?? "lista"}
+      open={aberto}
+      onOpenChange={(v) => (v ? undefined : useEspecialistas.getState().fechar())}
       size="xl"
       className="flex h-[min(88vh,660px)] w-[94vw] flex-col gap-0 overflow-hidden rounded-xl border-border/60 p-0 shadow-[var(--shadow-pop)]"
     >
-      <EspecialistasContent />
+      <EspecialistasContent inicial={id} />
     </AppDialog>
   )
 }
