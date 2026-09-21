@@ -94,12 +94,7 @@ import {
   type PreflightRetryRequest,
 } from "@/lib/mcpPreflightRetry"
 import { continueConversationWith } from "@/lib/chatHandoff"
-import { listAgentDefs } from "@/lib/agentDefs"
-import {
-  detectAdvisorMention,
-  resolveAdvisor,
-} from "@/lib/advisor"
-import { consultAdvisor } from "@/components/chat/consultAdvisor"
+import { consultarMencionados } from "@/components/chat/consultAdvisor"
 import { greetingFor } from "@/components/chat/greeting"
 
 export function ChatPanel() {
@@ -326,40 +321,17 @@ export function ChatPanel() {
       return
     }
     // Especialistas E1 — CONSULTA de conselheiro: `@persona` conhecida no envio
-    // dispara um parecer lateral read-only, NÃO um turno de executor. Só custa
-    // uma leitura das personas quando há um `@token` (envio comum: zero). Persona
-    // não casa → segue o fluxo normal (o `@` pode ser arquivo/texto literal).
+    // dispara parecer lateral read-only, NÃO turno de executor. A regra inteira
+    // (quem foi chamado, o que cada um recebe, a ordem) mora em
+    // `consultAdvisor.ts`; aqui fica só o desvio.
     if (/(?:^|\s)@\S/.test(text)) {
-      const defs = await listAgentDefs(project.path)
-      const mention = detectAdvisorMention(text, defs)
-      if (mention) {
-        // estado FRESCO (o await de listAgentDefs pode ter deixado o snapshot
-        // `conv` velho): um turno pode ter começado nesse meio-tempo.
-        const fresh = useChat.getState().byId[convId]
-        if (fresh?.running || fresh?.finalizing || fresh?.advising) {
-          toast("Termine o turno atual antes de pedir um parecer.")
-          return
-        }
-        // fail-closed: re-resolve pelo id (getAgentDef distingue "não existe" de
-        // "não consegui ler" — arquivo intacto vs leitura quebrada).
-        const resolved = await resolveAdvisor(project.path, mention.def.id)
-        if (resolved.status === "unreadable") {
-          toast.error(
-            `Não consegui ler a persona "${mention.def.name}" do disco. Tente de novo.`,
-          )
-          return
-        }
-        if (resolved.status === "missing") {
-          toast.error(`A persona "${mention.def.name}" não existe mais.`)
-          return
-        }
-        await consultAdvisor(convId, resolved.def, mention.question, project, {
-          text,
-          attachments,
-        })
-        onAccepted?.()
-        return
-      }
+      const consultou = await consultarMencionados({
+        convId,
+        project,
+        sent: { text, attachments },
+        aoAceitar: () => onAccepted?.(),
+      })
+      if (consultou) return
     }
     // Rodando/finalizando: mensagem SUA vai pra fila (o CLI precisa sair de fato
     // antes do próximo run; ao terminar, o finally junta as pendentes num envio

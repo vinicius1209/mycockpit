@@ -28,7 +28,7 @@ import {
   buildAdviceHandoffBlock,
   buildAdviceItem,
   buildAdvisorPrompt,
-  detectAdvisorMention,
+  detectAdvisorMentions,
   resolveAdvisor,
   runAdvisor,
 } from "./advisor"
@@ -87,43 +87,64 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
-describe("detectAdvisorMention (gatilho)", () => {
+describe("detectAdvisorMentions (gatilho)", () => {
+  const bob = () => agent({ id: "projeto:bob", name: "Bob", slug: "bob" })
+  const uma = (texto: string, agentes = [agent()]) => detectAdvisorMentions(texto, agentes)
+
   it("@persona conhecida vira consulta; o resto do texto é a pergunta", () => {
-    const m = detectAdvisorMention("@aline revisa isso aqui", [agent()])
-    expect(m).not.toBeNull()
-    expect(m!.def.id).toBe("projeto:aline")
-    expect(m!.question).toBe("revisa isso aqui")
+    const m = uma("@aline revisa isso aqui")
+    expect(m).toHaveLength(1)
+    expect(m[0].def.id).toBe("projeto:aline")
+    expect(m[0].question).toBe("revisa isso aqui")
   })
 
   it("casa por NOME também (o composer insere @<name>), colapsando o resto", () => {
-    const m = detectAdvisorMention("olha isso @Aline por favor", [agent()])
-    expect(m!.def.slug).toBe("aline")
-    expect(m!.question).toBe("olha isso por favor")
+    const m = uma("olha isso @Aline por favor")
+    expect(m[0].def.slug).toBe("aline")
+    // o que veio ANTES da menção é dela também: quem escreve assim está
+    // falando com ela desde o começo.
+    expect(m[0].question).toBe("olha isso por favor")
   })
 
-  it("sem menção de persona → null (fluxo normal do executor)", () => {
-    expect(detectAdvisorMention("revisa isso aqui", [agent()])).toBeNull()
+  it("sem menção de persona → lista vazia (fluxo normal do executor)", () => {
+    expect(uma("revisa isso aqui")).toEqual([])
   })
 
-  it("@ de arquivo/desconhecido não casa persona → null (não é consulta)", () => {
-    expect(detectAdvisorMention("@arquivo.ts muda a função", [agent()])).toBeNull()
+  it("@ de arquivo/desconhecido não casa persona → lista vazia", () => {
+    expect(uma("@arquivo.ts muda a função")).toEqual([])
   })
 
-  it("tira TODOS os @token de personas conhecidas da pergunta (não sobra @bob)", () => {
-    const bob = agent({ id: "projeto:bob", name: "Bob", slug: "bob" })
-    const m = detectAdvisorMention("@aline @bob revisa isso", [agent(), bob])
-    expect(m!.def.slug).toBe("aline") // o 1º que resolve é o consultado
-    expect(m!.question).toBe("revisa isso") // @bob não fica cru na pergunta
-    expect(m!.question).not.toContain("@")
+  it("DOIS especialistas chamados: os dois entram, cada um com o trecho dele", () => {
+    // O caso do relato de 21/09/2026: duas perguntas numa mensagem só. Antes,
+    // só a primeira era consultada, e ela recebia as duas perguntas juntas.
+    const texto =
+      "@aline da uma olhada no mock html e diz se ficou melhor.\n\n@bob e sobre o agy ser configuração global, o que tu acha?"
+    const m = detectAdvisorMentions(texto, [agent(), bob()])
+    expect(m.map((x) => x.def.slug)).toEqual(["aline", "bob"])
+    expect(m[0].question).toBe("da uma olhada no mock html e diz se ficou melhor.")
+    expect(m[1].question).toBe("e sobre o agy ser configuração global, o que tu acha?")
+    expect(m[0].question).not.toContain("agy")
   })
 
-  it("mas mantém @token que NÃO é persona (ex.: arquivo) na pergunta", () => {
-    const m = detectAdvisorMention("@aline olha o @arquivo.ts", [agent()])
-    expect(m!.question).toBe("olha o @arquivo.ts")
+  it("chamadas coladas dividem a mesma pergunta, e nenhum @persona sobra crua", () => {
+    const m = detectAdvisorMentions("@aline @bob revisa isso", [agent(), bob()])
+    expect(m.map((x) => x.def.slug)).toEqual(["aline", "bob"])
+    expect(m.map((x) => x.question)).toEqual(["revisa isso", "revisa isso"])
+    expect(m.every((x) => !x.question.includes("@"))).toBe(true)
   })
 
-  it("sem personas carregadas → null", () => {
-    expect(detectAdvisorMention("@aline oi", [])).toBeNull()
+  it("a ordem é a do texto, não a da lista de personas", () => {
+    const m = detectAdvisorMentions("@bob primeiro, @aline depois", [agent(), bob()])
+    expect(m.map((x) => x.def.slug)).toEqual(["bob", "aline"])
+  })
+
+  it("mantém @token que NÃO é persona (ex.: arquivo) na pergunta", () => {
+    const m = uma("@aline olha o @arquivo.ts")
+    expect(m[0].question).toBe("olha o @arquivo.ts")
+  })
+
+  it("sem personas no projeto não há consulta", () => {
+    expect(detectAdvisorMentions("@aline oi", [])).toEqual([])
   })
 })
 

@@ -37,43 +37,64 @@ export interface AdvisorMention {
   question: string
 }
 
-/** Detecta se `text` é uma CONSULTA de conselheiro: um `@token` que casa (por
- *  slug OU pelo nome slugificado) com uma persona conhecida. O 1º que resolve
- *  vence; o resto do texto (sem esse `@token`) vira a pergunta. null = sem
- *  menção de persona conhecida → fluxo normal do executor (o `@` pode ser um
- *  arquivo ou texto literal, não assumimos que todo `@x` é persona). PURO. */
-export function detectAdvisorMention(
+/** Detecta TODAS as consultas de conselheiro em `text`, na ordem em que
+ *  aparecem. Um `@token` casa uma persona por slug OU pelo nome slugificado;
+ *  `@` que não resolve (arquivo, texto) não vira consulta, então uma mensagem
+ *  sem persona conhecida devolve lista vazia e segue para o executor. PURO.
+ *
+ *  **Cada conselheiro recebe o trecho endereçado a ele**, e não a mensagem
+ *  inteira. O corte é o óbvio na leitura: a fatia de um `@persona` vai até o
+ *  próximo `@persona`, e a primeira fatia começa no início do texto (quem
+ *  escreve "olha isso @Aline por favor" está falando com a Aline desde o
+ *  "olha"). Menção sem texto próprio ("@aline @bob revisa isso") herda a
+ *  pergunta da próxima que tiver texto: as duas foram chamadas para a mesma
+ *  coisa.
+ *
+ *  Antes daqui só o PRIMEIRO `@persona` virava consulta, e os outros nomes eram
+ *  apagados da pergunta: chamar dois especialistas entregava um só, e o
+ *  primeiro ainda recebia a pergunta do segundo colada na dele (relato de
+ *  21/09/2026, com print). Silêncio era o pior desfecho possível. */
+export function detectAdvisorMentions(
   text: string,
   agents: AgentDef[],
-): AdvisorMention | null {
-  if (agents.length === 0) return null
-  // um `@token` casa uma persona por slug OU pelo nome slugificado.
+): AdvisorMention[] {
+  if (agents.length === 0) return []
   const known = (token: string): AgentDef | null => {
     const slug = slugify(token)
     return agents.find((a) => a.slug === slug || slugify(a.name) === slug) ?? null
   }
-  // o 1º `@token` que resolve é o conselheiro consultado.
-  let def: AgentDef | null = null
+  // Onde cada persona foi chamada, na ordem do texto.
+  const chamadas: { def: AgentDef; inicio: number; fim: number }[] = []
   const re = /(?:^|\s)@(\S+)/g
   let m: RegExpExecArray | null
   while ((m = re.exec(text)) !== null) {
-    const hit = known(m[1])
-    if (hit) {
-      def = hit
-      break
-    }
+    const def = known(m[1])
+    if (!def) continue
+    const inicio = m.index + m[0].length - m[1].length - 1 // posição do "@"
+    chamadas.push({ def, inicio, fim: m.index + m[0].length })
   }
-  if (!def) return null
-  // pergunta = o texto sem NENHUM `@token` de persona conhecida (o consultado E
-  // outros convidados citados, ex.: `@aline @bob revisa` → "revisa") — não deve
-  // sobrar `@bob` cru. `@file.ts` (não é persona) fica.
-  const question = text
-    .replace(/(^|\s)@(\S+)/g, (whole, pre: string, token: string) =>
-      known(token) ? pre : whole,
-    )
-    .replace(/\s+/g, " ")
-    .trim()
-  return { def, question }
+  if (chamadas.length === 0) return []
+  // A fatia de cada uma: da chamada até a próxima (a primeira pega o começo).
+  const limpar = (pedaco: string) =>
+    pedaco
+      .replace(/(^|\s)@(\S+)/g, (todo, antes: string, token: string) =>
+        known(token) ? antes : todo,
+      )
+      .replace(/\s+/g, " ")
+      .trim()
+  const fatias = chamadas.map((c, i) => {
+    const de = i === 0 ? 0 : c.inicio
+    const ate = i + 1 < chamadas.length ? chamadas[i + 1].inicio : text.length
+    return limpar(text.slice(de, ate))
+  })
+  // Menção sem texto próprio herda da próxima que tem; se nenhuma tem, todas
+  // ficam com o texto inteiro sem os `@persona` (é tudo o que foi dito).
+  const inteiro = limpar(text)
+  return chamadas.map((c, i) => {
+    let question = fatias[i]
+    for (let j = i + 1; !question && j < fatias.length; j++) question = fatias[j]
+    return { def: c.def, question: question || inteiro }
+  })
 }
 
 export type AdvisorResolution =
