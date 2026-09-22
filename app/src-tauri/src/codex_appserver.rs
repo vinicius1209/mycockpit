@@ -955,6 +955,9 @@ fn app_server_command(req: &RunRequest) -> Command {
         if let Some(gateway) = &req.browser_gateway {
             gateway.configure_codex(&mut cmd);
         }
+        if let Some(gateway) = &req.desktop_gateway {
+            gateway.configure_codex(&mut cmd);
+        }
         if let Some(gateway) = &req.tool_gateway {
             gateway.configure_codex(&mut cmd);
         }
@@ -1444,6 +1447,7 @@ mod tests {
             context_gateway: None,
             work_gateway: None,
             browser_gateway: None,
+            desktop_gateway: None,
             tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,

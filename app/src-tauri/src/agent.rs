@@ -649,6 +649,23 @@ pub async fn run_agent(
             socket: work.socket.clone(),
         })
     });
+    // `frota-desktop` (ADR-225): anda no socket do `frota-work`. Disponibilizado
+    // quando o controller do desktop estiver pronto (permissões concedidas).
+    let global_desktop = caps
+        .work_mcp_global_env
+        .then(|| crate::work_mcp_setup::cached_desktop(&agent))
+        .flatten();
+    let desktop_gateway = work_gateway.as_ref().and_then(|work| {
+        let pronto = crate::desktop::controller_ready()
+            && (!caps.work_mcp_global_env
+                || global_desktop
+                    .as_ref()
+                    .is_some_and(|setup| setup.state == crate::work_mcp_setup::SetupState::Configured));
+        pronto.then(|| crate::desktop_gateway::GatewayConfig {
+            server_bin: work.server_bin.clone(),
+            socket: work.socket.clone(),
+        })
+    });
     if caps.work_mcp_global_env && browser_gateway.is_none() && work_gateway.is_some() {
         mcp_plan.notices.push("Navegador da Frota indisponível neste motor: conecte o frota-browser em Configurações > Recursos locais.".into());
     }
@@ -748,6 +765,7 @@ pub async fn run_agent(
         context_gateway.is_some(),
         work_gateway.is_some(),
         browser_gateway.is_some(),
+        desktop_gateway.is_some(),
         tool_gateway.is_some(),
         &tool_catalog,
         &mcp_plan,
@@ -828,6 +846,7 @@ pub async fn run_agent(
         context_gateway,
         work_gateway,
         browser_gateway,
+        desktop_gateway,
         tool_gateway,
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),

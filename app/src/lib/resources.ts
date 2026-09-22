@@ -31,6 +31,16 @@ export async function requestDesktopPermission(
   return invoke<DesktopCapabilityStatus>("desktop_permission_request", { kind })
 }
 
+export async function desktopGrantRun(runId: string): Promise<void> {
+  if (!isTauri()) return
+  return invoke<void>("desktop_grant_run", { runId })
+}
+
+export async function desktopRevokeRun(runId: string): Promise<void> {
+  if (!isTauri()) return
+  return invoke<void>("desktop_revoke_run", { runId })
+}
+
 /** Recurso operado por uma tool. O browser do projeto é diferente de um
  * navegador que uma integração externa pode abrir por conta própria. */
 export type ResourceKind =

@@ -21,6 +21,10 @@ pub const NAVEGADOR: Canal = Canal {
     nome: crate::browser_gateway::MCP_SERVER_NAME,
     subcomando: crate::browser_gateway::SUBCOMANDO,
 };
+pub const DESKTOP: Canal = Canal {
+    nome: crate::desktop_gateway::MCP_SERVER_NAME,
+    subcomando: crate::desktop_gateway::SUBCOMANDO,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -86,6 +90,10 @@ pub fn cached(agent: &str) -> Option<WorkMcpSetup> {
 
 pub fn cached_browser(agent: &str) -> Option<WorkMcpSetup> {
     cached_canal(agent, NAVEGADOR)
+}
+
+pub fn cached_desktop(agent: &str) -> Option<WorkMcpSetup> {
+    cached_canal(agent, DESKTOP)
 }
 
 fn cached_canal(agent: &str, canal: Canal) -> Option<WorkMcpSetup> {
@@ -178,12 +186,19 @@ pub async fn browser_mcp_status(agent: String) -> WorkMcpSetup {
     refresh(&agent, NAVEGADOR).await
 }
 
+#[tauri::command]
+pub async fn desktop_mcp_status(agent: String) -> WorkMcpSetup {
+    let _operation = operations().lock().await;
+    refresh(&agent, DESKTOP).await
+}
+
 pub fn warm() {
     tauri::async_runtime::spawn(async {
         for agent in crate::adapters::registered_agents().filter(|agent| supports(agent)) {
             let _operation = operations().lock().await;
             refresh(agent, TRABALHO).await;
             refresh(agent, NAVEGADOR).await;
+            refresh(agent, DESKTOP).await;
         }
     });
 }
@@ -196,6 +211,11 @@ pub async fn set_work_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMc
 #[tauri::command]
 pub async fn set_browser_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMcpSetup, String> {
     set_canal_enabled(agent, enabled, NAVEGADOR).await
+}
+
+#[tauri::command]
+pub async fn set_desktop_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMcpSetup, String> {
+    set_canal_enabled(agent, enabled, DESKTOP).await
 }
 
 async fn set_canal_enabled(agent: String, enabled: bool, canal: Canal) -> Result<WorkMcpSetup, String> {

@@ -186,6 +186,17 @@ observar não. A captura atravessa o socket como caminho (teto de 1 MB) e vira
 bloco `image` no processo do MCP. A barra humana tem política própria
 (`politica_da_barra`): `file://` do projeto entra, `javascript:` não.
 
+## Controlador de desktop para qualquer motor (ADR-225)
+
+`desktop_gateway.rs` é o `frota-desktop`: MCP próprio servido por este binário
+(`desktop-server`) pelo MESMO socket do run (`FROTA_WORK_SOCK`), no padrão do
+`frota-work` e `frota-browser`. Disponibilizado quando o controller está pronto
+(Gravação de tela e Acessibilidade concedidas no macOS). Observar (status e
+captura de tela) é livre; pilotar (clique, movimento, digitação, atalhos,
+arraste) exige grant explícito da pessoa para o run e toma uma `DesktopPilotLease`
+exclusiva gerenciada por `desktop_broker.rs`. O drop da lease limpa teclas presas
+via `emergency_release_inputs` no `desktop_driver.rs`.
+
 ## Navegador do projeto (ADR-131, ADR-147)
 
 O Chromium é da Frota (`browser.rs`): um por projeto, perfil persistente,

@@ -37,6 +37,9 @@ mod context;
 mod context_gateway;
 mod conversation_items;
 mod desktop;
+mod desktop_broker;
+mod desktop_driver;
+mod desktop_gateway;
 mod despertador;
 mod detect;
 mod editor;
@@ -125,6 +128,12 @@ pub fn run_work_server() {
 /// qualquer motor que fale MCP, pelo socket do run.
 pub fn run_browser_server() {
     browser_gateway::run_mcp_server();
+}
+
+/// Ponto de entrada do `frota-desktop` (ADR-225): o controlador de desktop da
+/// Frota para qualquer motor que fale MCP, pelo socket do run.
+pub fn run_desktop_server() {
+    desktop_gateway::run_mcp_server();
 }
 
 /// Materializador MCP do Tool Catalog. O subprocesso só fala pelo socket do
@@ -1029,6 +1038,9 @@ pub fn run() {
         .manage(std::sync::Arc::new(
             experience_broker::ExperienceBroker::default(),
         ))
+        .manage(std::sync::Arc::new(
+            desktop_broker::DesktopBroker::default(),
+        ))
         // Navegador POR PROJETO (B2.1): só o mapa projeto → sessão viva. O
         // processo em si mora no ProcessRegistry acima, então o kill_all do
         // quit já o alcança.
@@ -1161,6 +1173,8 @@ pub fn run() {
             work_mcp_setup::set_work_mcp_enabled,
             work_mcp_setup::browser_mcp_status,
             work_mcp_setup::set_browser_mcp_enabled,
+            work_mcp_setup::desktop_mcp_status,
+            work_mcp_setup::set_desktop_mcp_enabled,
             tray::set_tray_snapshot,
             tray::get_tray_snapshot,
             tray::set_tray_preferences,
@@ -1176,6 +1190,9 @@ pub fn run() {
             experience_broker::browser_pilot_release,
             desktop::desktop_capability_status,
             desktop::desktop_permission_request,
+            desktop::desktop_grant_run,
+            desktop::desktop_revoke_run,
+            desktop::desktop_pilot_status,
             browser_cdp::browser_pages,
             browser_cdp::browser_preview_start,
             browser_cdp::browser_preview_frame,

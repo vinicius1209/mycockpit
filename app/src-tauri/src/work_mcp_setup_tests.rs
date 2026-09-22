@@ -83,3 +83,20 @@ fn o_canal_do_navegador_e_reconhecido_pelo_proprio_subcomando() {
     assert_eq!(NAVEGADOR.nome, "frota-browser");
     assert_ne!(chave("agy", TRABALHO), chave("agy", NAVEGADOR));
 }
+
+/// ADR-225: o desktop tem a MESMA receita do trabalho, só muda o subcomando.
+#[test]
+fn o_canal_do_desktop_e_reconhecido_pelo_proprio_subcomando() {
+    let binary = Path::new("/Applications/Frota.app/Contents/MacOS/app");
+    let desktop = GlobalCliEntry {
+        enabled: true,
+        transport: "stdio".into(),
+        command_line: format!("{} desktop-server", binary.display()),
+    };
+    assert_eq!(state_of_canal(Some(&desktop), binary, DESKTOP), SetupState::Configured);
+    assert_eq!(state_of_canal(Some(&desktop), binary, TRABALHO), SetupState::Conflict);
+    assert_eq!(state_of_canal(Some(&desktop), binary, NAVEGADOR), SetupState::Conflict);
+    assert_eq!(DESKTOP.nome, "frota-desktop");
+    assert_ne!(chave("agy", TRABALHO), chave("agy", DESKTOP));
+}
+

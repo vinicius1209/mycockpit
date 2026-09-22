@@ -181,6 +181,7 @@ pub fn build(
     context_gateway: bool,
     work_gateway: bool,
     browser_gateway: bool,
+    desktop_gateway: bool,
     tool_gateway: bool,
     tool_catalog: &crate::tool_gateway::ToolCatalogSnapshot,
     mcp_plan: &McpRunPlan,
@@ -239,6 +240,13 @@ pub fn build(
             crate::browser_gateway::MCP_SERVER_NAME,
             "Navegador da Frota",
             &crate::browser_gateway::TOOLS,
+        ));
+    }
+    if desktop_gateway {
+        sources.push(gateway(
+            crate::desktop_gateway::MCP_SERVER_NAME,
+            "Controle do Desktop da Frota",
+            &crate::desktop_gateway::TOOLS,
         ));
     }
     if tool_gateway {
@@ -351,6 +359,7 @@ mod tests {
             true,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &McpRunPlan::default(),
             Vec::new(),
@@ -395,6 +404,7 @@ mod tests {
             true,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &plan,
             Vec::new(),
@@ -431,6 +441,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,
@@ -473,6 +484,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &plan,
             Vec::new(),
@@ -492,6 +504,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,
@@ -532,6 +545,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,
@@ -587,6 +601,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &plan,
             vec![instruction.clone()],
@@ -603,5 +618,29 @@ mod tests {
             .sources
             .iter()
             .any(|source| source.id == "provider-mcp"));
+    }
+
+    #[test]
+    fn manifesto_com_desktop_gateway_publica_tools_da_frota() {
+        let manifest = build(
+            "engine",
+            &CLAUDE_CAPS,
+            false,
+            false,
+            false,
+            false,
+            true,
+            false,
+            &crate::tool_gateway::ToolCatalogSnapshot::default(),
+            &McpRunPlan::default(),
+            Vec::new(),
+        );
+        let desktop = manifest
+            .sources
+            .iter()
+            .find(|item| item.id == crate::desktop_gateway::MCP_SERVER_NAME)
+            .expect("encontra fonte frota-desktop");
+        assert_eq!(desktop.tool_names.len(), 7);
+        assert_eq!(desktop.enforceability, PolicyEnforceability::Hard);
     }
 }

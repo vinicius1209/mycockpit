@@ -223,13 +223,16 @@ pub(crate) async fn preflight_plugin_resources(
                         .to_string(),
                 ),
             ),
-            ResourceKind::DesktopControl => (
-                false,
-                Some(
-                    "controle do desktop aguarda o broker nativo de permissões do sistema"
-                        .to_string(),
-                ),
-            ),
+            ResourceKind::DesktopControl => {
+                let ready = crate::desktop::controller_ready();
+                (
+                    ready,
+                    (!ready).then_some(
+                        "controle do desktop indisponível; conceda as permissões de Gravação de tela e Acessibilidade no sistema operacional"
+                            .to_string(),
+                    ),
+                )
+            }
         };
         claims.push(plugin_resource_claim(plugin_key, kind, ready));
         if blocked.is_none() {

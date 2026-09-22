@@ -53,6 +53,9 @@ pub struct RunRequest {
     /// fale MCP, pelo mesmo socket do `frota-work`. None = sem navegador
     /// neste run (FusionRo, motor global sem cadastro, sem listener).
     pub browser_gateway: Option<crate::browser_gateway::GatewayConfig>,
+    /// `frota-desktop` (ADR-225): o controlador de desktop da Frota para qualquer
+    /// motor que fale MCP, pelo mesmo socket do `frota-work`.
+    pub desktop_gateway: Option<crate::desktop_gateway::GatewayConfig>,
     /// Materialização por-run do Tool Catalog da Frota. O catálogo é montado
     /// pelo app; este MCP só transporta a lista e as chamadas ao worker.
     pub tool_gateway: Option<crate::tool_gateway::GatewayConfig>,
@@ -2004,6 +2007,24 @@ impl AgentAdapter for ClaudeAdapter {
                     crate::browser_gateway::NAVIGATE_TOOL,
                 ));
             }
+            if let Some(gateway) = &req.desktop_gateway {
+                servers.insert(
+                    crate::desktop_gateway::MCP_SERVER_NAME.into(),
+                    gateway.claude_server_json(),
+                );
+                system_nudges.push(format!(
+                    "Para operar ou inspecionar o desktop, use o MCP {}: mcp__{}__{} informa a tela e status, mcp__{}__{} captura como evidência visual, mcp__{}__{} clica e mcp__{}__{} digita. Toda pilotagem exige concessão da pessoa.",
+                    crate::desktop_gateway::MCP_SERVER_NAME,
+                    crate::desktop_gateway::MCP_SERVER_NAME,
+                    crate::desktop_gateway::STATUS_TOOL,
+                    crate::desktop_gateway::MCP_SERVER_NAME,
+                    crate::desktop_gateway::CAPTURE_TOOL,
+                    crate::desktop_gateway::MCP_SERVER_NAME,
+                    crate::desktop_gateway::CLICK_TOOL,
+                    crate::desktop_gateway::MCP_SERVER_NAME,
+                    crate::desktop_gateway::TYPE_TOOL,
+                ));
+            }
             if let Some(gateway) = &req.tool_gateway {
                 servers.insert(
                     crate::tool_gateway::MCP_SERVER_NAME.into(),
@@ -2763,6 +2784,9 @@ impl AgentAdapter for CodexAdapter {
                 gateway.configure_codex(&mut cmd);
             }
             if let Some(gateway) = &req.browser_gateway {
+                gateway.configure_codex(&mut cmd);
+            }
+            if let Some(gateway) = &req.desktop_gateway {
                 gateway.configure_codex(&mut cmd);
             }
             if let Some(gateway) = &req.tool_gateway {
@@ -4220,6 +4244,7 @@ mod tests {
             context_gateway: None,
             work_gateway: None,
             browser_gateway: None,
+            desktop_gateway: None,
             tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,

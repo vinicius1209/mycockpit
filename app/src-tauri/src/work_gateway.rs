@@ -598,6 +598,7 @@ struct RunContext {
     conv_id: String,
     cwd: String,
     browser: Arc<crate::browser_gateway::BrowserGateway>,
+    desktop: Arc<crate::desktop_gateway::DesktopGateway>,
 }
 
 // O shell do registry pertence ao app, fora do sandbox nativo do provider.
@@ -639,6 +640,7 @@ impl WorkListener {
             conv_id,
             cwd,
             browser: Arc::new(crate::browser_gateway::BrowserGateway::default()),
+            desktop: Arc::new(crate::desktop_gateway::DesktopGateway::default()),
         });
         let task = tokio::spawn(async move {
             let mut requests = tokio::task::JoinSet::new();
@@ -701,6 +703,9 @@ async fn handle_request<R: tauri::Runtime>(
         "work_ready" => Ok(json!({ "ready": true, "processesAllowed": processes_allowed })),
         name if crate::browser_gateway::is_browser_tool(name) => {
             browser_request(&app, &ctx, name, &args).await
+        }
+        name if crate::desktop_gateway::is_desktop_tool(name) => {
+            desktop_request(&app, &ctx, name, &args).await
         }
         name if is_process_tool(name) && !processes_allowed => {
             Err("ferramentas de processos indisponíveis neste modo de permissão".into())
@@ -779,6 +784,18 @@ async fn browser_request<R: tauri::Runtime>(
         return Err("navegador indisponível neste runtime".into());
     };
     crate::browser_gateway::handle(app, &ctx.browser, &ctx.run_id, &ctx.conv_id, &ctx.cwd, action, args).await
+}
+
+async fn desktop_request<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    ctx: &RunContext,
+    action: &str,
+    args: &Value,
+) -> Result<Value, String> {
+    let Some(app) = (app as &dyn std::any::Any).downcast_ref::<tauri::AppHandle>() else {
+        return Err("desktop indisponível neste runtime".into());
+    };
+    crate::desktop_gateway::handle(app, &ctx.desktop, &ctx.run_id, &ctx.conv_id, action, args).await
 }
 
 #[tauri::command]

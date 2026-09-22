@@ -23,6 +23,10 @@ fn main() {
         app_lib::run_browser_server();
         return;
     }
+    if std::env::args().nth(1).as_deref() == Some("desktop-server") {
+        app_lib::run_desktop_server();
+        return;
+    }
     if std::env::args().nth(1).as_deref() == Some("tool-server") {
         app_lib::run_tool_server();
         return;

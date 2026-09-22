@@ -8302,3 +8302,30 @@ considerou.
   `testdata/`, teste de contrato de que o cadastro global e o socket batem
   (mesmo padrão do `work_mcp_setup_tests.rs`), e o fluxo "navegador desligado →
   cartão → ligar → próxima chamada funciona" provado no app, não só em teste.
+
+### ADR-225 · O controlador de desktop por run materializa pilotagem com lease RAII e salvaguarda física ✅
+- **Contexto (22/09/2026):** a Frota media as permissões do sistema operacional
+  (Gravação de tela e Acessibilidade no macOS), mas mantinha `desktop-control`
+  bloqueado (ADR-127, ADR-131). Permissão do SO concedida ao app não é acesso
+  livre para um agente. Faltava um materializador nativo por run com grant humano
+  explícito, lease RAII exclusiva e proteção contra teclas presas.
+- **Decisão:**
+  1. **Gateway MCP `frota-desktop`:** o controlador de desktop é servido pelo
+     mesmo binário via socket do run (`FROTA_WORK_SOCK`, subcomando `desktop-server`),
+     no mesmo padrão do `frota-browser` (ADR-224) e `frota-work` (ADR-173).
+  2. **Separação de observação e pilotagem:** `desktop_status` e `desktop_capture`
+     são de leitura e não exigem posse; `desktop_click`, `desktop_move`,
+     `desktop_type`, `desktop_key` e `desktop_drag` exigem grant explícito da pessoa
+     para o run e seguram uma `DesktopPilotLease` exclusiva.
+  3. **Salvaguarda fail-safe e liberação física:** o drop da `DesktopPilotLease`
+     dispara `emergency_release_inputs()`, liberando botões de mouse e teclas
+     modificadoras (Command, Option, Control, Shift) para evitar estado preso no SO
+     quando o run é cancelado ou interrompido.
+  4. **Driver nativo macOS:** síntese de mouse e teclado via CoreGraphics
+     (`CGEventCreateMouseEvent`, `CGEventCreateKeyboardEvent`, `CGEventKeyboardSetUnicodeString`),
+     captura via `/usr/sbin/screencapture` salvando em arquivo temporário com
+     permissão 0600 (sem trafegar base64 cru no IPC).
+  5. **Disponibilidade honesta:** `controllerAvailable` em `desktop.rs` e
+     `ResourceKind::DesktopControl` em `resource_broker.rs` tornam-se prontos
+     apenas quando as permissões do sistema estiverem concedidas no SO.
+

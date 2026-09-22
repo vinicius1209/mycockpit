@@ -1,8 +1,9 @@
 //! Estado real das permissões necessárias para operar o desktop.
 //!
 //! Permissão do SO e materializador são fatos diferentes. Este módulo mede e
-//! pede as permissões somente após gesto humano; enquanto a Frota não tiver um
-//! controller próprio por run, `controller_available` permanece falso.
+//! pede as permissões somente após gesto humano; o controller próprio por run
+//! (`frota-desktop`, ADR-225) é disponibilizado quando as permissões do sistema
+//! estiverem concedidas.
 
 use serde::Serialize;
 
@@ -31,10 +32,24 @@ unsafe extern "C" {
     fn AXIsProcessTrusted() -> u8;
 }
 
+pub fn controller_ready() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        let screen_recording = objc2_core_graphics::CGPreflightScreenCaptureAccess();
+        let accessibility = unsafe { AXIsProcessTrusted() != 0 };
+        screen_recording && accessibility
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        false
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn status() -> DesktopCapabilityStatus {
     let screen_recording = objc2_core_graphics::CGPreflightScreenCaptureAccess();
     let accessibility = unsafe { AXIsProcessTrusted() != 0 };
+    let controller_available = screen_recording && accessibility;
     DesktopCapabilityStatus {
         platform: "macos".into(),
         screen_recording: OsPermissionView {
@@ -49,9 +64,9 @@ fn status() -> DesktopCapabilityStatus {
             can_request: true,
             label: "Acessibilidade".into(),
         },
-        controller_available: false,
-        detail: if screen_recording && accessibility {
-            "Permissões do macOS concedidas; a Frota ainda não entrega um controller de desktop próprio aos runs."
+        controller_available,
+        detail: if controller_available {
+            "Permissões do macOS concedidas; o controller de desktop da Frota está pronto para atender os runs."
         } else {
             "Permissões incompletas; nenhuma integração recebe controle do Mac por inferência."
         }
@@ -84,6 +99,32 @@ fn status() -> DesktopCapabilityStatus {
 #[tauri::command]
 pub fn desktop_capability_status() -> DesktopCapabilityStatus {
     status()
+}
+
+#[tauri::command]
+pub fn desktop_grant_run(app: tauri::AppHandle, run_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
+    broker.grant_run(&run_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn desktop_revoke_run(app: tauri::AppHandle, run_id: String) -> Result<(), String> {
+    use tauri::Manager;
+    let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
+    broker.revoke_run(&run_id);
+    broker.release_pilot(&run_id);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn desktop_pilot_status(
+    app: tauri::AppHandle,
+) -> Result<crate::desktop_broker::DesktopPilotView, String> {
+    use tauri::Manager;
+    let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
+    Ok(broker.status())
 }
 
 #[cfg(target_os = "macos")]
@@ -135,7 +176,18 @@ mod tests {
     #[test]
     fn permissao_nao_finge_controller_materializado() {
         let measured = status();
-        assert!(!measured.controller_available);
+        if !measured.screen_recording.granted || !measured.accessibility.granted {
+            assert!(!measured.controller_available);
+        }
         assert!(!measured.detail.is_empty());
+    }
+
+    #[test]
+    fn permissao_mede_estado_real_das_capacidades() {
+        let measured = status();
+        assert_eq!(
+            measured.controller_available,
+            measured.screen_recording.granted && measured.accessibility.granted
+        );
     }
 }
