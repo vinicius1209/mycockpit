@@ -129,6 +129,34 @@ describe("consulta a um conselheiro", () => {
   })
 })
 
+describe("anexo que não chega ao especialista", () => {
+  const pdf = { path: "attachments/c1/relatorio.pdf", name: "relatorio.pdf", kind: "pdf" as const, mime: "application/pdf", bytes: 1 }
+  const img = { path: "attachments/c1/print.png", name: "print.png", kind: "image" as const, mime: "image/png", bytes: 1 }
+
+  it("motor sem PDF: uma linha no fio diz o que não chegou, e o run não o leva", async () => {
+    vi.mocked(runAdvisor).mockResolvedValue({ ok: true, text: "ok", error: null })
+    await consultAdvisor(CONV, persona({ backend: "codex" }), "revisa", { path: "/proj" }, {
+      text: "@Íris revisa",
+      attachments: [img, pdf],
+    })
+    const avisos = useChat.getState().byId[CONV].items.filter((i) => i.kind === "notice")
+    expect(avisos.map((a) => (a as { message: string }).message)).toEqual([
+      "Íris não recebeu 1 anexo deste pedido: relatorio.pdf (o Codex não lê PDF).",
+    ])
+    expect(vi.mocked(runAdvisor).mock.calls[0][0].attachments).toEqual([img])
+  })
+
+  it("com tudo entregue, nenhuma linha a mais no fio", async () => {
+    vi.mocked(runAdvisor).mockResolvedValue({ ok: true, text: "ok", error: null })
+    await consultAdvisor(CONV, persona(), "revisa", { path: "/proj" }, {
+      text: "@Íris revisa",
+      attachments: [img, pdf],
+    })
+    expect(useChat.getState().byId[CONV].items.map((i) => i.kind)).toEqual(["user", "advice"])
+    expect(vi.mocked(runAdvisor).mock.calls[0][0].attachments).toEqual([img, pdf])
+  })
+})
+
 describe("dois chamados na mesma mensagem", () => {
   it("a fila nasce no envio, cada um sai dela ao começar, e some no fim", async () => {
     const vistas: string[][] = []

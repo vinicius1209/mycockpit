@@ -16,6 +16,7 @@
 
 import { getAgentDef, slugify, type AgentDef } from "@/lib/agentDefs"
 import { runAgent } from "@/lib/agent"
+import type { Attachment } from "@/lib/attachments"
 import { isTauri } from "@/lib/db"
 import type { ChatItem } from "@/store/chat"
 
@@ -119,6 +120,87 @@ export async function resolveAdvisor(
   }
 }
 
+/** Quantos anexos de mensagens ANTERIORES o parecer recebe. Teto porque há
+ *  motor que carrega cada imagem direto no contexto (o Codex, por `-i`): a
+ *  conversa inteira de prints sairia cara sem ninguém ter pedido. */
+export const MAX_ANEXOS_ANTERIORES = 6
+
+export interface AnexosDoParecer {
+  doPedido: Attachment[]
+  anteriores: Attachment[]
+  /** Do pedido, mas o motor do especialista não lê este tipo. Não vão ao run;
+   *  o especialista fica sabendo que existem, e a pessoa vê uma linha no fio. */
+  naoEntregues?: Attachment[]
+}
+
+/** Capacidade de anexo do motor (espelho `caps` de `agentDefinition.ts`). */
+export type CapsDeAnexo = { image: boolean; pdf: boolean }
+
+function motorLe(anexo: Pick<Attachment, "kind">, caps: CapsDeAnexo | undefined): boolean {
+  if (!caps) return false
+  if (anexo.kind === "image") return caps.image
+  if (anexo.kind === "pdf") return caps.pdf
+  return false
+}
+
+/** Separa pelo que o motor do especialista lê: o do pedido que não chega é
+ *  dito (a quem pediu e a ele); o anterior que não chega sai calado, porque
+ *  ninguém o mandou para este especialista. PURO. */
+export function entregaveisAoMotor(anexos: AnexosDoParecer, caps: CapsDeAnexo | undefined): AnexosDoParecer {
+  return {
+    doPedido: anexos.doPedido.filter((a) => motorLe(a, caps)),
+    anteriores: anexos.anteriores.filter((a) => motorLe(a, caps)),
+    naoEntregues: anexos.doPedido.filter((a) => !motorLe(a, caps)),
+  }
+}
+
+/** A linha do fio quando um anexo do pedido não chega ao especialista. Só
+ *  existe nesse caso: com tudo entregue, a tela não muda. PURO. */
+export function avisoDeAnexoNaoEntregue(
+  especialista: string,
+  motor: string,
+  naoEntregues: readonly Pick<Attachment, "name" | "kind">[],
+): string | null {
+  if (!naoEntregues.length) return null
+  const tipos = [...new Set(naoEntregues.map((a) => (a.kind === "pdf" ? "PDF" : a.kind === "image" ? "imagem" : "esse tipo de arquivo")))]
+  const quantos = naoEntregues.length === 1 ? "1 anexo" : `${naoEntregues.length} anexos`
+  return `${especialista} não recebeu ${quantos} deste pedido: ${naoEntregues.map((a) => a.name).join(", ")} (o ${motor} não lê ${tipos.join(" nem ")}).`
+}
+
+/** O que o parecer recebe de anexo: os do pedido em que foi chamado e os mais
+ *  recentes das mensagens anteriores da conversa, sem repetir. PURO.
+ *
+ *  Visto em 22/09/2026 (Íris, projeto nova-lading-page): "Não consegui abrir as
+ *  duas imagens anexadas: os caminhos em `attachments/` não existem no
+ *  workspace". O parecer só listava o caminho RELATIVO à pasta de dados da
+ *  Frota e não entregava o anexo ao motor, que é quem resolve o caminho e
+ *  libera a pasta (`--add-dir`, `-i`) depois de o Rust validar o arquivo. */
+export function anexosDoParecer(
+  pedido: readonly Attachment[],
+  itens: readonly ChatItem[],
+): AnexosDoParecer {
+  const vistos = new Set<string>()
+  const doPedido = pedido.filter((a) => a.path.trim() && !vistos.has(a.path) && vistos.add(a.path))
+  const anteriores: Attachment[] = []
+  for (let i = itens.length - 1; i >= 0 && anteriores.length < MAX_ANEXOS_ANTERIORES; i--) {
+    const item = itens[i]
+    if (item.kind !== "user" || !item.attachments?.length) continue
+    for (const anexo of [...item.attachments].reverse()) {
+      if (anteriores.length >= MAX_ANEXOS_ANTERIORES) break
+      if (!anexo.path.trim() || vistos.has(anexo.path)) continue
+      vistos.add(anexo.path)
+      anteriores.push(anexo)
+    }
+  }
+  return { doPedido, anteriores }
+}
+
+/** Nome da bolha e nome do arquivo entregue: o motor recebe o segundo. */
+function linhaDoAnexo(anexo: Pick<Attachment, "name" | "path">): string {
+  const arquivo = anexo.path.split("/").pop() ?? anexo.path
+  return anexo.name && anexo.name !== arquivo ? `- ${anexo.name} (arquivo ${arquivo})` : `- ${arquivo}`
+}
+
 /** Monta o prompt do conselheiro: identidade (personalityMd) + política + o
  *  contexto JÁ serializado da conversa (o caller passa serializeContext, não
  *  reimplementamos) + a pergunta. PURO e testável. */
@@ -127,11 +209,10 @@ export function buildAdvisorPrompt(opts: {
   /** Contexto da conversa/diff já serializado (lib/fusion.serializeContext). */
   context: string
   question: string
-  /** Caminhos anexados ao envio. Só os CAMINHOS: o conselheiro roda no cwd do
-   *  projeto e lê por conta própria (fusion-ro permite leitura), então listar
-   *  basta. Vinham sendo descartados em silêncio — o fio mostrava o clipe e o
-   *  parecer opinava sem nunca ter visto o arquivo. */
-  attachments?: string[]
+  /** Os anexos que o motor recebe junto (`anexosDoParecer`). Aqui só entram
+   *  os NOMES, separados por origem: o arquivo em si o motor recebe pelo
+   *  `runAdvisor`. Listar o caminho relativo era o que enganava o agente. */
+  anexos?: AnexosDoParecer
 }): string {
   const { def, context, question } = opts
   const lines = [
@@ -156,12 +237,20 @@ export function buildAdvisorPrompt(opts: {
   }
   lines.push("</conselheiro>")
   const q = question.trim() || "Dê seu parecer sobre o estado atual da conversa."
-  const attached = (opts.attachments ?? []).filter((p) => p.trim())
-  const files = attached.length
-    ? `\n\nArquivos anexados a este pedido (leia se forem relevantes):\n${attached
-        .map((p) => `- ${p}`)
-        .join("\n")}`
-    : ""
+  const doPedido = opts.anexos?.doPedido ?? []
+  const anteriores = opts.anexos?.anteriores ?? []
+  const naoEntregues = opts.anexos?.naoEntregues ?? []
+  const files = [
+    doPedido.length
+      ? `\n\nAnexos deste pedido (a Frota entrega os arquivos junto com este pedido; abra os relevantes):\n${doPedido.map(linhaDoAnexo).join("\n")}`
+      : "",
+    anteriores.length
+      ? `\n\nAnexos de mensagens anteriores desta conversa (também entregues, só para leitura; abra se ajudarem):\n${anteriores.map(linhaDoAnexo).join("\n")}`
+      : "",
+    naoEntregues.length
+      ? `\n\nAnexos deste pedido que o seu motor não lê (existem, mas você não os recebeu; não opine como se os tivesse visto):\n${naoEntregues.map(linhaDoAnexo).join("\n")}`
+      : "",
+  ].join("")
   return `${lines.join("\n")}\n\n${context}\n\n---\n\nPergunta para o parecer:\n${q}${files}`
 }
 
@@ -179,6 +268,10 @@ export async function runAdvisor(opts: {
   def: Pick<AgentDef, "backend" | "model" | "effort">
   prompt: string
   cwd: string
+  /** Entregues ao motor como num turno normal: o Rust valida (existe, mora sob
+   *  a raiz de anexos) e o adapter dá o acesso nativo. Só leitura segue valendo
+   *  pelo `fusion-ro`. */
+  attachments?: Attachment[]
 }): Promise<RunAdvisorResult> {
   if (!isTauri()) {
     return { ok: false, text: "", error: "indisponível fora do app" }
@@ -200,7 +293,7 @@ export async function runAdvisor(opts: {
     opts.cwd,
     null, // sem resume: consulta é sessão fresca
     ADVISOR_PERMISSION,
-    [],
+    opts.attachments ?? [],
     (e) => {
       if (e.type === "text_delta") {
         buf += e.text

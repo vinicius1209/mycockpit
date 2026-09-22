@@ -25,6 +25,10 @@ import { runAgent } from "@/lib/agent"
 import { getAgentDef, type AgentDef } from "@/lib/agentDefs"
 import {
   ADVISOR_PERMISSION,
+  MAX_ANEXOS_ANTERIORES,
+  anexosDoParecer,
+  avisoDeAnexoNaoEntregue,
+  entregaveisAoMotor,
   buildAdviceHandoffBlock,
   buildAdviceItem,
   buildAdvisorPrompt,
@@ -190,30 +194,94 @@ describe("buildAdvisorPrompt (montagem)", () => {
     expect(prompt).not.toContain("Sua rubrica")
   })
 
-  it("anexos do envio entram como caminhos (o parecer sabe que existem)", () => {
+  // Payload REAL do pedido à Íris (22/09/2026, conversa 0d2e7d91): o anexo
+  // chega relativo à pasta de dados da Frota, não ao projeto. O fixture
+  // anterior usava "/proj/docs/erro.png", absoluto e inventado, e foi o que
+  // escondeu o bug (ADR-016).
+  const PRINT_1 = {
+    path: "attachments/0d2e7d91-bf65-4536-835e-3c97c201fa85/87da3d956fc61e7a.png",
+    name: "mapa-mundi.png",
+    kind: "image" as const,
+    mime: "image/png",
+    bytes: 1,
+  }
+  const PRINT_2 = { ...PRINT_1, path: "attachments/0d2e7d91-bf65-4536-835e-3c97c201fa85/521575f48cd49f99.png", name: "521575f48cd49f99.png" }
+
+  it("anexos entram pelo nome e pela origem, nunca pelo caminho relativo que enganava", () => {
     const prompt = buildAdvisorPrompt({
       def: agent(),
       context: "ctx",
       question: "revisa",
-      attachments: ["/proj/src/a.ts", "/proj/docs/erro.png"],
+      anexos: { doPedido: [PRINT_1], anteriores: [PRINT_2] },
     })
-    expect(prompt).toContain("Arquivos anexados a este pedido")
-    expect(prompt).toContain("- /proj/src/a.ts")
-    expect(prompt).toContain("- /proj/docs/erro.png")
+    expect(prompt).toContain("Anexos deste pedido")
+    expect(prompt).toContain("- mapa-mundi.png (arquivo 87da3d956fc61e7a.png)")
+    expect(prompt).toContain("Anexos de mensagens anteriores desta conversa")
+    expect(prompt).toContain("- 521575f48cd49f99.png")
+    expect(prompt).not.toContain("attachments/0d2e7d91")
   })
 
-  it("sem anexos (ou só vazios) não inventa a seção de arquivos", () => {
+  it("sem anexos não inventa a seção de arquivos", () => {
+    expect(buildAdvisorPrompt({ def: agent(), context: "ctx", question: "revisa" })).not.toContain("Anexos")
     expect(
-      buildAdvisorPrompt({ def: agent(), context: "ctx", question: "revisa" }),
-    ).not.toContain("Arquivos anexados")
-    expect(
-      buildAdvisorPrompt({
-        def: agent(),
-        context: "ctx",
-        question: "revisa",
-        attachments: ["  "],
-      }),
-    ).not.toContain("Arquivos anexados")
+      buildAdvisorPrompt({ def: agent(), context: "ctx", question: "revisa", anexos: { doPedido: [], anteriores: [] } }),
+    ).not.toContain("Anexos")
+  })
+
+  it("anteriores vêm do mais recente, sem repetir o do pedido, com teto", () => {
+    const img = (n: number) => ({ ...PRINT_1, path: `attachments/c/${n}.png`, name: `${n}.png` })
+    const itens = [
+      { kind: "user", id: "u1", text: "a", ts: 1, attachments: [img(1), img(2), img(3), img(4)] },
+      { kind: "assistant", id: "a1", text: "ok", ts: 2 },
+      { kind: "user", id: "u2", text: "b", ts: 3, attachments: [img(5), img(6), img(7), PRINT_1] },
+    ] as never
+    const { doPedido, anteriores } = anexosDoParecer([PRINT_1, PRINT_1], itens)
+    expect(doPedido).toEqual([PRINT_1])
+    expect(anteriores.map((a) => a.name)).toEqual(["7.png", "6.png", "5.png", "4.png", "3.png", "2.png"])
+    expect(anteriores).toHaveLength(MAX_ANEXOS_ANTERIORES)
+  })
+})
+
+describe("o que o motor do especialista lê", () => {
+  const img = { path: "attachments/c/print.png", name: "print.png", kind: "image" as const, mime: "image/png", bytes: 1 }
+  const pdf = { path: "attachments/c/relatorio.pdf", name: "relatorio.pdf", kind: "pdf" as const, mime: "application/pdf", bytes: 1 }
+  const pdfVelho = { ...pdf, path: "attachments/c/velho.pdf", name: "velho.pdf" }
+
+  it("motor sem PDF: o do pedido é dito, o anterior sai calado", () => {
+    const r = entregaveisAoMotor({ doPedido: [img, pdf], anteriores: [pdfVelho, img] }, { image: true, pdf: false })
+    expect(r.doPedido).toEqual([img])
+    expect(r.naoEntregues).toEqual([pdf])
+    expect(r.anteriores).toEqual([img])
+  })
+
+  it("motor que lê tudo não gera aviso nenhum: a tela não muda", () => {
+    const r = entregaveisAoMotor({ doPedido: [img, pdf], anteriores: [] }, { image: true, pdf: true })
+    expect(r.naoEntregues).toEqual([])
+    expect(avisoDeAnexoNaoEntregue("Íris", "Claude", r.naoEntregues ?? [])).toBeNull()
+  })
+
+  it("motor desconhecido não recebe anexo por omissão", () => {
+    expect(entregaveisAoMotor({ doPedido: [img], anteriores: [img] }, undefined).naoEntregues).toEqual([img])
+  })
+
+  it("a linha diz quem, quantos, quais e por quê", () => {
+    expect(avisoDeAnexoNaoEntregue("Íris", "Codex", [pdf])).toBe(
+      "Íris não recebeu 1 anexo deste pedido: relatorio.pdf (o Codex não lê PDF).",
+    )
+    expect(avisoDeAnexoNaoEntregue("Íris", "Ollama", [img, pdf])).toBe(
+      "Íris não recebeu 2 anexos deste pedido: print.png, relatorio.pdf (o Ollama não lê imagem nem PDF).",
+    )
+  })
+
+  it("o especialista sabe que o anexo existe e que não o recebeu", () => {
+    const prompt = buildAdvisorPrompt({
+      def: agent(),
+      context: "ctx",
+      question: "revisa",
+      anexos: { doPedido: [], anteriores: [], naoEntregues: [pdf] },
+    })
+    expect(prompt).toContain("não opine como se os tivesse visto")
+    expect(prompt).toContain("- relatorio.pdf")
   })
 })
 
@@ -234,6 +302,21 @@ describe("runAdvisor (read-only, sem escrita)", () => {
     expect(call[8]).toBe("fusion-ro") // permission (posição 8) = fusion-ro
     expect(call[8]).toBe(ADVISOR_PERMISSION)
     expect(call[7]).toBeNull() // resume null: sessão fresca, não toca o fio
+    expect(call[9]).toEqual([]) // sem anexo, nada entregue
+  })
+
+  it("anexos vão ao motor como num turno normal (o Rust valida e dá o acesso)", async () => {
+    emit([{ type: "text", text: "vi as imagens" }, result(true, null)])
+    const anexo = { path: "attachments/c/1.png", name: "1.png", kind: "image" as const, mime: "image/png", bytes: 1 }
+    await runAdvisor({
+      def: { backend: "claude-code", model: null, effort: null },
+      prompt: "P",
+      cwd: "/proj",
+      attachments: [anexo],
+    })
+    const call = runAgentMock.mock.calls[0]
+    expect(call[9]).toEqual([anexo])
+    expect(call[8]).toBe(ADVISOR_PERMISSION) // continua só leitura
   })
 
   it("dedup: se veio por deltas, o bloco de texto completo não duplica", async () => {

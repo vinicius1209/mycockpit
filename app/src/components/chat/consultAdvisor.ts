@@ -1,7 +1,11 @@
 import { toast } from "sonner"
 import type { Attachment } from "@/lib/attachments"
 import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
+import { agentDef as motorDef } from "@/lib/agents"
 import {
+  anexosDoParecer,
+  avisoDeAnexoNaoEntregue,
+  entregaveisAoMotor,
   buildAdviceItem,
   buildAdvisorPrompt,
   detectAdvisorMentions,
@@ -36,6 +40,15 @@ export async function consultAdvisor(
   const conversation = useChat.getState().byId[convId]
   const cwd = conversation?.worktreePath ?? project.path
   const context = serializeContext(conversation?.items ?? [])
+  // Antes da bolha deste pedido entrar: "anteriores" é o que já estava no fio.
+  // Filtrado pelo que o motor do especialista lê (o mesmo espelho que o
+  // composer usa), para dizer ANTES do run o que não vai chegar.
+  const motor = motorDef(def.backend)
+  const anexos = entregaveisAoMotor(
+    anexosDoParecer(sent.attachments, conversation?.items ?? []),
+    motor?.caps,
+  )
+  const aviso = avisoDeAnexoNaoEntregue(def.name, motor?.shortLabel ?? def.backend, anexos.naoEntregues ?? [])
   const mostrarAnexos = opts.mostrarAnexos ?? true
   await useChat.getState().appendItems(convId, [
     {
@@ -49,17 +62,22 @@ export async function consultAdvisor(
     },
   ])
   opts.aoAceitar?.()
+  if (aviso) {
+    await useChat.getState().appendItems(convId, [
+      { kind: "notice", id: crypto.randomUUID(), message: aviso, ts: Date.now() },
+    ])
+  }
   // Começou: sai da espera e passa a ter a linha de chegada própria.
   useFilaDeConselheiros.getState().tirar(convId, def.id)
   useChat.getState().setAdvising(convId, { id: def.id, name: def.name })
   try {
-    const prompt = buildAdvisorPrompt({
+    const prompt = buildAdvisorPrompt({ def, context, question, anexos })
+    const result = await runAdvisor({
       def,
-      context,
-      question,
-      attachments: sent.attachments.map((attachment) => attachment.path),
+      prompt,
+      cwd,
+      attachments: [...anexos.doPedido, ...anexos.anteriores],
     })
-    const result = await runAdvisor({ def, prompt, cwd })
     if (!result.text) {
       await registrarFalha(convId, def.name, result.error)
       return
