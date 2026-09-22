@@ -979,10 +979,30 @@ pub(crate) fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// MCPs de navegador de terceiro (Playwright, DevTools) que a config global
-/// deste motor deixa ENTRAR num run sem binding (fail-open do plano). Leitura
-/// do registry persistido, sem subprocesso: é o caminho quente do envio.
-pub(crate) fn navegadores_externos_globais(conn: &Connection, agent: &str) -> Vec<String> {
+/// Integrações de terceiro de um recurso que entram num run deste motor sem
+/// binding: cache da última leitura do CLI (cadastro global) mais o registry
+/// persistido (motores por run). Nada aqui sobe subprocesso.
+pub(crate) fn externos_do_motor(
+    app: &tauri::AppHandle,
+    agent: &str,
+    kind: crate::resource_broker::ResourceKind,
+) -> Vec<String> {
+    let mut nomes = crate::provider_mcp_inventory::externos_em_cache(agent, kind);
+    if let Ok(conn) = db(app) {
+        nomes.extend(externos_globais(&conn, agent, kind));
+    }
+    nomes.sort();
+    nomes.dedup();
+    nomes
+}
+
+/// MCPs de terceiro de um recurso (navegador: Playwright, DevTools, ADR-224
+/// §2; computador: `computer-use`, ADR-225) no registry persistido.
+pub(crate) fn externos_globais(
+    conn: &Connection,
+    agent: &str,
+    kind: crate::resource_broker::ResourceKind,
+) -> Vec<String> {
     let Ok(mut stmt) = conn.prepare(
         "SELECT name FROM mcp_servers WHERE source_agent = ?1 AND source_enabled = 1 AND scope IN ('user', 'global')",
     ) else {
@@ -993,10 +1013,7 @@ pub(crate) fn navegadores_externos_globais(conn: &Connection, agent: &str) -> Ve
     };
     let mut nomes: Vec<String> = rows
         .flatten()
-        .filter(|name| {
-            crate::resource_broker::integration_resources(name)
-                .contains(&crate::resource_broker::ResourceKind::ExternalBrowser)
-        })
+        .filter(|name| crate::resource_broker::integration_resources(name).contains(&kind))
         .collect();
     nomes.sort();
     nomes.dedup();

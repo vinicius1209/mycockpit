@@ -1,9 +1,10 @@
 //! `frota-desktop`: o controlador de desktop da Frota para qualquer motor que fale MCP,
 //! servido por este binário (`desktop-server`) pelo MESMO socket do run (`FROTA_WORK_SOCK`).
 //!
-//! A observação (status e captura de tela) é livre; ações de pilotagem (clique,
-//! movimento, digitação, atalhos de teclado e arraste) exigem concessão explícita (grant)
-//! da pessoa e uma lease RAII de piloto segurada até o fim do run.
+//! Só `desktop_status` (tamanho da tela e permissões) é livre. Ver a tela
+//! (`desktop_capture`) exige o grant da pessoa para o run; pilotar (clique,
+//! movimento, digitação, atalhos e arraste) exige o grant, uma lease exclusiva
+//! que o broker confirma a cada ação, e um modo de permissão que aja.
 
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -75,11 +76,26 @@ impl GatewayConfig {
     }
 }
 
-/// Estado do gateway de desktop por run: a lease de piloto e relógio do pedido.
+/// Ferramentas que AGEM no computador. Modo plano ou leitura não as recebe
+/// (mesma régua dos processos gerenciados, `processes_allowed`).
+pub fn is_pilot_tool(name: &str) -> bool {
+    matches!(name, CLICK_TOOL | MOVE_TOOL | TYPE_TOOL | KEY_TOOL | DRAG_TOOL)
+}
+
+/// Estado do gateway de desktop por run: a lease de piloto e o relógio do
+/// pedido. A lease guardada aqui NÃO é prova de posse: a cada ação o broker
+/// confirma que a geração dela ainda é a dona (revogar vale na hora).
 #[derive(Default)]
 pub struct DesktopGateway {
     lease: Mutex<Option<crate::desktop_broker::DesktopPilotLease>>,
     ultimo_pedido_ms: Mutex<i64>,
+}
+
+impl DesktopGateway {
+    /// O run chegou a pedir o controle (há um aviso na tela a recolher).
+    fn pediu(&self) -> bool {
+        self.ultimo_pedido_ms.lock().map(|t| *t > 0).unwrap_or(false)
+    }
 }
 
 fn now_ms() -> i64 {
@@ -89,63 +105,100 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// Assegura que o run possui grant e adquire a lease exclusiva de piloto.
+const SEM_GRANT: &str = "O controle do computador não foi liberado pela pessoa para este turno. A Frota mostrou o pedido na tela; aguarde o aceite e tente de novo, ou siga sem o computador.";
+
+/// Exige o grant da pessoa. Sem ele, registra o pedido no broker, avisa a tela
+/// (no máximo a cada 30 s) e recusa.
+fn assegurar_grant(
+    app: &tauri::AppHandle,
+    gateway: &DesktopGateway,
+    run_id: &str,
+    conv_id: &str,
+) -> Result<Arc<crate::desktop_broker::DesktopBroker>, String> {
+    use tauri::Manager;
+    let broker = app
+        .try_state::<Arc<crate::desktop_broker::DesktopBroker>>()
+        .ok_or("broker de desktop indisponível")?
+        .inner()
+        .clone();
+    if broker.has_grant(run_id) {
+        return Ok(broker);
+    }
+    // Lease de um grant já revogado: cai aqui, sem efeito físico (a posse já
+    // foi devolvida no revoke).
+    if let Ok(mut lease) = gateway.lease.lock() {
+        lease.take();
+    }
+    broker.registrar_pedido(run_id);
+    let agora = now_ms();
+    let pedir = gateway
+        .ultimo_pedido_ms
+        .lock()
+        .map(|mut t| {
+            let vence = agora - *t >= PEDIDO_INTERVALO_MS;
+            if vence {
+                *t = agora;
+            }
+            vence
+        })
+        .unwrap_or(false);
+    if pedir {
+        crate::work_gateway::emit_work(
+            app,
+            "desktop_needed",
+            json!({ "runId": run_id, "convId": conv_id }),
+        );
+    }
+    Err(SEM_GRANT.into())
+}
+
+/// Grant e posse exclusiva. Devolve o broker e a geração da posse, para a
+/// ação longa conferir a cada passo se continua dona.
 fn assegurar_lease(
     app: &tauri::AppHandle,
     gateway: &DesktopGateway,
     run_id: &str,
     conv_id: &str,
-) -> Result<(), String> {
-    use tauri::Manager;
-
+) -> Result<(Arc<crate::desktop_broker::DesktopBroker>, u64), String> {
+    let broker = assegurar_grant(app, gateway, run_id, conv_id)?;
     let mut lease = gateway
         .lease
         .lock()
         .map_err(|_| "lease indisponível".to_string())?;
-
-    if lease.is_some() {
-        return Ok(());
-    }
-
-    let broker = app.state::<Arc<crate::desktop_broker::DesktopBroker>>();
-
-    // Se o run ainda não recebeu grant da pessoa:
-    if !broker.has_grant(run_id) {
-        let agora = now_ms();
-        let pedir = gateway
-            .ultimo_pedido_ms
-            .lock()
-            .map(|mut t| {
-                if agora - *t >= PEDIDO_INTERVALO_MS {
-                    *t = agora;
-                    true
-                } else {
-                    false
-                }
-            })
-            .unwrap_or(false);
-
-        if pedir {
-            crate::work_gateway::emit_work(
-                app,
-                "desktop_needed",
-                json!({
-                    "runId": run_id,
-                    "convId": conv_id,
-                    "reason": "o agente solicitou autorização para pilotar o desktop",
-                }),
-            );
+    if let Some(atual) = lease.as_ref() {
+        if broker.is_current(atual.generation()) {
+            return Ok((broker.clone(), atual.generation()));
         }
-
-        return Err("O controle do desktop ainda não foi autorizado pela pessoa para este turno. A Frota solicitou a confirmação na tela; peça autorização à pessoa ou aguarde o aceite.".into());
     }
+    // Troca a velha pela nova; a velha cai sem efeito (não é mais a dona).
+    let nova = broker.acquire_pilot(run_id)?;
+    let generation = nova.generation();
+    *lease = Some(nova);
+    Ok((broker, generation))
+}
 
-    match broker.acquire_pilot(run_id) {
-        Ok(nova) => {
-            *lease = Some(nova);
-            Ok(())
-        }
-        Err(erro) => Err(erro),
+/// Fim do run (o `WorkListener` caiu): esquece pedido e grant, devolve a posse
+/// e recolhe o aviso da tela. Genérico no runtime porque o listener é.
+pub fn encerrar_run<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    gateway: &DesktopGateway,
+    run_id: &str,
+    conv_id: &str,
+) {
+    use tauri::Manager;
+    let had_grant = app
+        .try_state::<Arc<crate::desktop_broker::DesktopBroker>>()
+        .map(|broker| broker.end_run(run_id))
+        .unwrap_or(false);
+    if let Ok(mut lease) = gateway.lease.lock() {
+        lease.take();
+    }
+    if had_grant || gateway.pediu() {
+        crate::work_gateway::emit_work(
+            app,
+            "desktop_state",
+            json!({ "runId": run_id, "convId": conv_id, "granted": false }),
+        );
     }
 }
 
@@ -153,24 +206,45 @@ fn assegurar_lease(
 fn temp_capture_path(conv_id: &str) -> Result<PathBuf, String> {
     let dir = std::env::temp_dir().join("frota-captures");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700));
+    }
     let safe_conv: String = conv_id
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .take(16)
         .collect();
-    let nome = format!("desktop_{}_{}_{}.png", safe_conv, now_ms(), std::process::id());
+    let nome = format!("desktop_{}_{}_{}.jpg", safe_conv, now_ms(), std::process::id());
     Ok(dir.join(nome))
 }
 
+/// O driver dorme entre eventos (16 ms por caractere) e chama processos: fora
+/// das threads do runtime.
+async fn bloqueante<T: Send + 'static>(
+    f: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("falha no driver de desktop: {e}"))?
+}
+
 /// Trata uma ação do `frota-desktop` vinda pelo socket do run.
+/// `pilot_allowed` é o `processes_allowed` do run: modo plano ou leitura não
+/// age no computador, mesmo em chamada direta ao socket.
 pub async fn handle(
     app: &tauri::AppHandle,
     gateway: &DesktopGateway,
     run_id: &str,
     conv_id: &str,
+    pilot_allowed: bool,
     action: &str,
     args: &Value,
 ) -> Result<Value, String> {
+    if is_pilot_tool(action) && !pilot_allowed {
+        return Err("pilotar o computador não está disponível neste modo de permissão".into());
+    }
     match action {
         STATUS_TOOL => {
             let info = crate::desktop_driver::display_info();
@@ -183,40 +257,56 @@ pub async fn handle(
             }))
         }
         CAPTURE_TOOL => {
+            // A tela inteira mostra outros apps, senhas e notificações: ver
+            // também é gesto da pessoa, não só pilotar.
+            assegurar_grant(app, gateway, run_id, conv_id)?;
             let dest = temp_capture_path(conv_id)?;
-            let path = crate::desktop_driver::capture_screen(&dest)?;
+            let path = bloqueante(move || crate::desktop_driver::capture_screen(&dest)).await?;
             let info = crate::desktop_driver::display_info();
             Ok(json!({
-                "png_path": path.to_string_lossy(),
+                "jpeg_path": path.to_string_lossy(),
                 "width": info.width,
                 "height": info.height,
+                "unit": "pontos (as mesmas coordenadas de desktop_click)",
             }))
         }
         CLICK_TOOL => {
-            assegurar_lease(app, gateway, run_id, conv_id)?;
             let x = args.get("x").and_then(Value::as_f64).ok_or("parâmetro 'x' ausente")?;
             let y = args.get("y").and_then(Value::as_f64).ok_or("parâmetro 'y' ausente")?;
-            let button = args.get("button").and_then(Value::as_str).unwrap_or("left");
+            let button = args.get("button").and_then(Value::as_str).unwrap_or("left").to_string();
             let double = args.get("double").and_then(Value::as_bool).unwrap_or(false);
-            crate::desktop_driver::mouse_click(x, y, button, double)?;
+            assegurar_lease(app, gateway, run_id, conv_id)?;
+            let botao = button.clone();
+            bloqueante(move || crate::desktop_driver::mouse_click(x, y, &botao, double)).await?;
             Ok(json!({ "clicked": true, "x": x, "y": y, "button": button }))
         }
         MOVE_TOOL => {
-            assegurar_lease(app, gateway, run_id, conv_id)?;
             let x = args.get("x").and_then(Value::as_f64).ok_or("parâmetro 'x' ausente")?;
             let y = args.get("y").and_then(Value::as_f64).ok_or("parâmetro 'y' ausente")?;
-            crate::desktop_driver::mouse_move(x, y)?;
+            assegurar_lease(app, gateway, run_id, conv_id)?;
+            bloqueante(move || crate::desktop_driver::mouse_move(x, y)).await?;
             Ok(json!({ "moved": true, "x": x, "y": y }))
         }
         TYPE_TOOL => {
-            assegurar_lease(app, gateway, run_id, conv_id)?;
-            let text = args.get("text").and_then(Value::as_str).ok_or("parâmetro 'text' ausente")?;
-            crate::desktop_driver::type_text(text)?;
-            Ok(json!({ "typed": true, "length": text.len() }))
+            let text = args
+                .get("text")
+                .and_then(Value::as_str)
+                .ok_or("parâmetro 'text' ausente")?
+                .to_string();
+            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id)?;
+            let length = text.chars().count();
+            bloqueante(move || {
+                crate::desktop_driver::type_text(&text, &|| broker.is_current(generation))
+            })
+            .await?;
+            Ok(json!({ "typed": true, "length": length }))
         }
         KEY_TOOL => {
-            assegurar_lease(app, gateway, run_id, conv_id)?;
-            let key = args.get("key").and_then(Value::as_str).ok_or("parâmetro 'key' ausente")?;
+            let key = args
+                .get("key")
+                .and_then(Value::as_str)
+                .ok_or("parâmetro 'key' ausente")?
+                .to_string();
             let modifiers: Vec<String> = args
                 .get("modifiers")
                 .and_then(Value::as_array)
@@ -227,16 +317,23 @@ pub async fn handle(
                         .collect()
                 })
                 .unwrap_or_default();
-            crate::desktop_driver::press_key(key, &modifiers)?;
+            assegurar_lease(app, gateway, run_id, conv_id)?;
+            let (tecla, mods) = (key.clone(), modifiers.clone());
+            bloqueante(move || crate::desktop_driver::press_key(&tecla, &mods)).await?;
             Ok(json!({ "pressed": key, "modifiers": modifiers }))
         }
         DRAG_TOOL => {
-            assegurar_lease(app, gateway, run_id, conv_id)?;
             let from_x = args.get("from_x").and_then(Value::as_f64).ok_or("parâmetro 'from_x' ausente")?;
             let from_y = args.get("from_y").and_then(Value::as_f64).ok_or("parâmetro 'from_y' ausente")?;
             let to_x = args.get("to_x").and_then(Value::as_f64).ok_or("parâmetro 'to_x' ausente")?;
             let to_y = args.get("to_y").and_then(Value::as_f64).ok_or("parâmetro 'to_y' ausente")?;
-            crate::desktop_driver::mouse_drag(from_x, from_y, to_x, to_y)?;
+            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id)?;
+            bloqueante(move || {
+                crate::desktop_driver::mouse_drag(from_x, from_y, to_x, to_y, &|| {
+                    broker.is_current(generation)
+                })
+            })
+            .await?;
             Ok(json!({ "dragged": true, "from": [from_x, from_y], "to": [to_x, to_y] }))
         }
         _ => Err(format!("ferramenta de desktop desconhecida: {action}")),
@@ -276,7 +373,10 @@ async fn mcp_loop() {
             })),
             "ping" => Some(json!({})),
             "notifications/initialized" | "initialized" => None,
-            "tools/list" => Some(json!({ "tools": tool_specs() })),
+            "tools/list" => {
+                let readiness = crate::work_gateway::request_parent("work_ready", &json!({})).await;
+                Some(json!({ "tools": available_tools(readiness.as_ref()) }))
+            }
             "tools/call" => {
                 if id.as_ref().is_none_or(Value::is_null) {
                     None
@@ -324,7 +424,7 @@ fn resposta_da_tool(tool: &str, payload: Option<Value>) -> Value {
         Some(value) if value.get("ok").and_then(Value::as_bool) == Some(true) => {
             let result = value.get("result").cloned().unwrap_or(Value::Null);
             if tool == CAPTURE_TOOL {
-                if let Some(path) = result.get("png_path").and_then(Value::as_str) {
+                if let Some(path) = result.get("jpeg_path").and_then(Value::as_str) {
                     let bytes = std::fs::read(path);
                     let _ = std::fs::remove_file(path);
                     if let Ok(bytes) = bytes {
@@ -332,11 +432,11 @@ fn resposta_da_tool(tool: &str, payload: Option<Value>) -> Value {
                         let data = base64::engine::general_purpose::STANDARD.encode(bytes);
                         let mut texto = result.clone();
                         if let Some(obj) = texto.as_object_mut() {
-                            obj.remove("png_path");
+                            obj.remove("jpeg_path");
                         }
                         return json!({
                             "content": [
-                                { "type": "image", "data": data, "mimeType": "image/png" },
+                                { "type": "image", "data": data, "mimeType": "image/jpeg" },
                                 { "type": "text", "text": texto.to_string() }
                             ]
                         });
@@ -356,16 +456,30 @@ fn resposta_da_tool(tool: &str, payload: Option<Value>) -> Value {
     }
 }
 
+/// Sem o app pronto, nenhuma tool; em modo plano ou leitura, só as de ver.
+fn available_tools(readiness: Option<&Value>) -> Vec<Value> {
+    let Some(reply) =
+        readiness.filter(|reply| reply["ok"] == true && reply["result"]["ready"] == true)
+    else {
+        return Vec::new();
+    };
+    let pilot_allowed = reply["result"]["processesAllowed"] == true;
+    tool_specs()
+        .into_iter()
+        .filter(|tool| pilot_allowed || !is_pilot_tool(tool["name"].as_str().unwrap_or("")))
+        .collect()
+}
+
 fn tool_specs() -> Vec<Value> {
     vec![
         json!({
             "name": STATUS_TOOL,
-            "description": "Informa a resolução da tela principal, plataforma e status das permissões de desktop (Gravação de tela e Acessibilidade). Não requer posse.",
+            "description": "Informa o tamanho da tela principal em pontos, a plataforma e o status das permissões de desktop (Gravação de tela e Acessibilidade). Não requer liberação da pessoa.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
             "name": CAPTURE_TOOL,
-            "description": "Captura a tela inteira como imagem PNG em alta resolução. Não requer posse.",
+            "description": "Captura a tela principal como imagem JPEG em pontos (o mesmo espaço de coordenadas de desktop_click). Requer que a pessoa libere o computador para este turno.",
             "inputSchema": { "type": "object", "properties": {} }
         }),
         json!({
@@ -447,6 +561,38 @@ mod tests {
         assert!(is_desktop_tool(CAPTURE_TOOL));
         assert!(is_desktop_tool(CLICK_TOOL));
         assert!(!is_desktop_tool("browser_click"));
+        assert!(!is_pilot_tool(STATUS_TOOL));
+        assert!(!is_pilot_tool(CAPTURE_TOOL));
+        assert!(is_pilot_tool(TYPE_TOOL));
+    }
+
+    #[test]
+    fn modo_plano_ou_leitura_so_recebe_as_tools_de_ver() {
+        let nomes = |reply: Value| -> Vec<String> {
+            available_tools(Some(&reply))
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let restrito = nomes(json!({ "ok": true, "result": { "ready": true, "processesAllowed": false } }));
+        assert_eq!(restrito, vec![STATUS_TOOL, CAPTURE_TOOL]);
+        let pleno = nomes(json!({ "ok": true, "result": { "ready": true, "processesAllowed": true } }));
+        assert_eq!(pleno.len(), 7);
+        assert!(available_tools(None).is_empty(), "sem app, nenhuma tool");
+    }
+
+    #[test]
+    fn captura_vira_bloco_jpeg_e_apaga_o_arquivo() {
+        let jpeg = std::env::temp_dir().join(format!("frota-desktop-teste-{}.jpg", std::process::id()));
+        std::fs::write(&jpeg, [0xFF, 0xD8, 0xFF]).unwrap();
+        let resposta = resposta_da_tool(
+            CAPTURE_TOOL,
+            Some(json!({ "ok": true, "result": { "jpeg_path": jpeg.to_string_lossy(), "width": 1512, "height": 982 } })),
+        );
+        let blocos = resposta["content"].as_array().unwrap();
+        assert_eq!(blocos[0]["mimeType"], "image/jpeg");
+        assert!(!blocos[1]["text"].as_str().unwrap().contains("jpeg_path"));
+        assert!(!jpeg.exists());
     }
 
     #[test]

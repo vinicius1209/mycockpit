@@ -589,6 +589,9 @@ pub struct WorkListener {
     path: PathBuf,
     task: tokio::task::JoinHandle<()>,
     active: Arc<AtomicBool>,
+    /// Fim do run para o `frota-desktop` (ADR-225): grant e posse morrem com o
+    /// run, e o aviso da tela é recolhido.
+    fim_do_desktop: Option<Box<dyn FnOnce() + Send>>,
 }
 
 /// Contexto de um run no socket: quem é, onde roda e o estado do navegador
@@ -635,12 +638,18 @@ impl WorkListener {
         }
         let active = Arc::new(AtomicBool::new(true));
         let live = active.clone();
+        let desktop = Arc::new(crate::desktop_gateway::DesktopGateway::default());
+        let fim_do_desktop: Box<dyn FnOnce() + Send> = {
+            let (app, desktop) = (app.clone(), desktop.clone());
+            let (run_id, conv_id) = (run_id.clone(), conv_id.clone());
+            Box::new(move || crate::desktop_gateway::encerrar_run(&app, &desktop, &run_id, &conv_id))
+        };
         let ctx = Arc::new(RunContext {
             run_id,
             conv_id,
             cwd,
             browser: Arc::new(crate::browser_gateway::BrowserGateway::default()),
-            desktop: Arc::new(crate::desktop_gateway::DesktopGateway::default()),
+            desktop,
         });
         let task = tokio::spawn(async move {
             let mut requests = tokio::task::JoinSet::new();
@@ -655,7 +664,12 @@ impl WorkListener {
                 }
             }
         });
-        Some(Self { path, task, active })
+        Some(Self {
+            path,
+            task,
+            active,
+            fim_do_desktop: Some(fim_do_desktop),
+        })
     }
 
     pub fn path(&self) -> &Path {
@@ -668,6 +682,9 @@ impl Drop for WorkListener {
         self.active.store(false, Ordering::Release);
         self.task.abort();
         let _ = std::fs::remove_file(&self.path);
+        if let Some(fim) = self.fim_do_desktop.take() {
+            fim();
+        }
     }
 }
 
@@ -702,10 +719,10 @@ async fn handle_request<R: tauri::Runtime>(
     let answer = match action {
         "work_ready" => Ok(json!({ "ready": true, "processesAllowed": processes_allowed })),
         name if crate::browser_gateway::is_browser_tool(name) => {
-            browser_request(&app, &ctx, name, &args).await
+            browser_request(&app, &ctx, processes_allowed, name, &args).await
         }
         name if crate::desktop_gateway::is_desktop_tool(name) => {
-            desktop_request(&app, &ctx, name, &args).await
+            desktop_request(&app, &ctx, processes_allowed, name, &args).await
         }
         name if is_process_tool(name) && !processes_allowed => {
             Err("ferramentas de processos indisponíveis neste modo de permissão".into())
@@ -777,25 +794,46 @@ async fn handle_request<R: tauri::Runtime>(
 async fn browser_request<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     ctx: &RunContext,
+    processes_allowed: bool,
     action: &str,
     args: &Value,
 ) -> Result<Value, String> {
     let Some(app) = (app as &dyn std::any::Any).downcast_ref::<tauri::AppHandle>() else {
         return Err("navegador indisponível neste runtime".into());
     };
-    crate::browser_gateway::handle(app, &ctx.browser, &ctx.run_id, &ctx.conv_id, &ctx.cwd, action, args).await
+    crate::browser_gateway::handle(
+        app,
+        &ctx.browser,
+        &ctx.run_id,
+        &ctx.conv_id,
+        &ctx.cwd,
+        processes_allowed,
+        action,
+        args,
+    )
+    .await
 }
 
 async fn desktop_request<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     ctx: &RunContext,
+    processes_allowed: bool,
     action: &str,
     args: &Value,
 ) -> Result<Value, String> {
     let Some(app) = (app as &dyn std::any::Any).downcast_ref::<tauri::AppHandle>() else {
         return Err("desktop indisponível neste runtime".into());
     };
-    crate::desktop_gateway::handle(app, &ctx.desktop, &ctx.run_id, &ctx.conv_id, action, args).await
+    crate::desktop_gateway::handle(
+        app,
+        &ctx.desktop,
+        &ctx.run_id,
+        &ctx.conv_id,
+        processes_allowed,
+        action,
+        args,
+    )
+    .await
 }
 
 #[tauri::command]

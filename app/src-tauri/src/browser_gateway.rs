@@ -8,7 +8,7 @@
 //! humana; o agente ganha o direito de pedir.
 //!
 //! Tudo aqui é em cima do que a barra humana já faz (`browser_cdp`,
-//! `browser_capture`). Clique, teclado e navegação exigem a lease de piloto
+//! `browser_capture`), mais código e arquivo (`browser_script`). Clique, teclado e navegação exigem a lease de piloto
 //! (ADR-131), tomada no PRIMEIRO input e segurada até o fim do run; observar
 //! (status, snapshot, captura) não.
 
@@ -27,6 +27,11 @@ pub const CAPTURE_TOOL: &str = "browser_capture";
 pub const CLICK_TOOL: &str = "browser_click";
 pub const TYPE_TOOL: &str = "browser_type";
 pub const KEY_TOOL: &str = "browser_key";
+/// Roda JavaScript na página e devolve o valor (correção de 22/09/2026: sem
+/// isto o agente ia ao Playwright de terceiro, ver `browser_script.rs`).
+pub const EVALUATE_TOOL: &str = "browser_evaluate";
+/// Coloca arquivos do projeto ou da pasta temporária num `<input type=file>`.
+pub const UPLOAD_TOOL: &str = "browser_upload";
 
 /// Texto da página que vai ao modelo por chamada. Página inteira é contexto
 /// que ninguém pediu; quem quer mais, pede de novo com `offset`.
@@ -38,12 +43,27 @@ const PEDIDO_INTERVALO_MS: i64 = 30_000;
 pub fn is_browser_tool(name: &str) -> bool {
     matches!(
         name,
-        STATUS_TOOL | NAVIGATE_TOOL | SNAPSHOT_TOOL | CAPTURE_TOOL | CLICK_TOOL | TYPE_TOOL | KEY_TOOL
+        STATUS_TOOL
+            | NAVIGATE_TOOL
+            | SNAPSHOT_TOOL
+            | CAPTURE_TOOL
+            | CLICK_TOOL
+            | TYPE_TOOL
+            | KEY_TOOL
+            | EVALUATE_TOOL
+            | UPLOAD_TOOL
     )
 }
 
-pub const TOOLS: [&str; 7] = [
+/// Executar código e enviar arquivo são efeito além do input: só em modo que
+/// age (`processes_allowed`), como os processos gerenciados.
+pub fn is_effect_tool(name: &str) -> bool {
+    matches!(name, EVALUATE_TOOL | UPLOAD_TOOL)
+}
+
+pub const TOOLS: [&str; 9] = [
     STATUS_TOOL, NAVIGATE_TOOL, SNAPSHOT_TOOL, CAPTURE_TOOL, CLICK_TOOL, TYPE_TOOL, KEY_TOOL,
+    EVALUATE_TOOL, UPLOAD_TOOL,
 ];
 
 /// O que o motor recebe para subir o MCP. Mesmo socket do `frota-work`: a
@@ -183,9 +203,13 @@ pub async fn handle(
     run_id: &str,
     conv_id: &str,
     cwd: &str,
+    effects_allowed: bool,
     action: &str,
     args: &Value,
 ) -> Result<Value, String> {
+    if is_effect_tool(action) && !effects_allowed {
+        return Err("executar código e enviar arquivo não estão disponíveis neste modo de permissão".into());
+    }
     if action == STATUS_TOOL {
         let project_id = crate::browser::project_id_of(app, cwd)?;
         if crate::browser::live_endpoint(app, &project_id).await.is_none() {
@@ -279,6 +303,33 @@ pub async fn handle(
             .await?;
             Ok(json!({ "ok": true }))
         }
+        EVALUATE_TOOL => {
+            let expressao = args.get("expression").and_then(Value::as_str).unwrap_or("");
+            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            let valor = crate::browser_script::executar(ws, expressao).await?;
+            Ok(crate::browser_script::resultado_para_o_modelo(&valor))
+        }
+        UPLOAD_TOOL => {
+            let seletor = args
+                .get("selector")
+                .and_then(Value::as_str)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or("input[type=file]");
+            let caminhos: Vec<String> = args
+                .get("paths")
+                .and_then(Value::as_array)
+                .map(|lista| lista.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .unwrap_or_default();
+            let arquivos = crate::browser_script::arquivos_permitidos(
+                &caminhos,
+                Path::new(cwd),
+                &crate::browser_script::pastas_temporarias(),
+            )?;
+            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            let quantos = arquivos.len();
+            crate::browser_script::enviar_arquivos(ws, seletor, arquivos).await?;
+            Ok(json!({ "ok": true, "arquivos": quantos, "selector": seletor }))
+        }
         _ => Err("ação desconhecida".into()),
     }
 }
@@ -343,8 +394,12 @@ async fn mcp_loop() {
             "ping" => Some(json!({})),
             "notifications/initialized" | "initialized" => None,
             // As tools existem SEMPRE. Navegador desligado é resposta de
-            // chamada, não ausência de ferramenta: é o que permite pedir.
-            "tools/list" => Some(json!({ "tools": tool_specs() })),
+            // chamada, não ausência de ferramenta: é o que permite pedir. Só
+            // as de efeito (código e arquivo) dependem do modo do run.
+            "tools/list" => {
+                let readiness = crate::work_gateway::request_parent("work_ready", &json!({})).await;
+                Some(json!({ "tools": available_tools(readiness.as_ref()) }))
+            }
             "tools/call" => {
                 if id.as_ref().is_none_or(Value::is_null) {
                     None
@@ -410,6 +465,17 @@ fn resposta_da_tool(tool: &str, payload: Option<Value>) -> Value {
     }
 }
 
+/// Código e arquivo só quando o app confirma um modo que age; na dúvida, fora.
+fn available_tools(readiness: Option<&Value>) -> Vec<Value> {
+    let effects = readiness.is_some_and(|reply| {
+        reply["ok"] == true && reply["result"]["ready"] == true && reply["result"]["processesAllowed"] == true
+    });
+    tool_specs()
+        .into_iter()
+        .filter(|tool| effects || !is_effect_tool(tool["name"].as_str().unwrap_or("")))
+        .collect()
+}
+
 fn tool_specs() -> Vec<Value> {
     vec![
         json!({
@@ -447,6 +513,23 @@ fn tool_specs() -> Vec<Value> {
             "description": "Pressiona uma tecla (key e code do DOM, ex.: Enter/Enter, Tab/Tab). Toma o controle.",
             "inputSchema": { "type": "object", "properties": { "key": { "type": "string" }, "code": { "type": "string" } }, "required": ["key"] }
         }),
+        json!({
+            "name": EVALUATE_TOOL,
+            "description": "Roda JavaScript na página aberta e devolve o valor retornado (serializável). Aceita uma expressão ou uma função, ex.: async () => { ...; return x }; promessas são aguardadas (até 30 s). Use para testar código que precisa de navegador de verdade (canvas, File, import de módulo do dev server). Toma o controle.",
+            "inputSchema": { "type": "object", "properties": { "expression": { "type": "string" } }, "required": ["expression"] }
+        }),
+        json!({
+            "name": UPLOAD_TOOL,
+            "description": "Coloca arquivos num <input type=\"file\"> da página, como se a pessoa tivesse escolhido (dispara change). Só aceita arquivos deste projeto (caminho relativo) ou da pasta temporária. Toma o controle.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "paths": { "type": "array", "items": { "type": "string" } },
+                    "selector": { "type": "string", "description": "Seletor CSS do input; padrão: input[type=file]" }
+                },
+                "required": ["paths"]
+            }
+        }),
     ]
 }
 
@@ -455,7 +538,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn as_sete_tools_sao_as_do_contrato_e_existem_mesmo_com_o_navegador_desligado() {
+    fn as_tools_sao_as_do_contrato_e_existem_mesmo_com_o_navegador_desligado() {
         let nomes: Vec<String> = tool_specs()
             .iter()
             .map(|t| t["name"].as_str().unwrap().to_string())
@@ -465,6 +548,23 @@ mod tests {
             assert!(is_browser_tool(nome));
         }
         assert!(!is_browser_tool("process_start"));
+    }
+
+    #[test]
+    fn codigo_e_arquivo_so_aparecem_em_modo_que_age() {
+        let nomes = |reply: Option<Value>| -> Vec<String> {
+            available_tools(reply.as_ref())
+                .iter()
+                .map(|t| t["name"].as_str().unwrap().to_string())
+                .collect()
+        };
+        let pleno = nomes(Some(json!({ "ok": true, "result": { "ready": true, "processesAllowed": true } })));
+        assert_eq!(pleno, TOOLS);
+        let restrito = nomes(Some(json!({ "ok": true, "result": { "ready": true, "processesAllowed": false } })));
+        assert!(!restrito.iter().any(|n| is_effect_tool(n)));
+        assert_eq!(restrito.len(), TOOLS.len() - 2, "ver, navegar e clicar seguem valendo");
+        // Sem resposta do app, fica fora: fail-closed no efeito.
+        assert!(!nomes(None).iter().any(|n| is_effect_tool(n)));
     }
 
     #[test]

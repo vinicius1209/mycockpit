@@ -106,6 +106,18 @@ describe("RunCapabilityStrip", () => {
     expect(html).toContain("Vincule ao navegador da Frota")
   })
 
+  it("controle do computador de terceiro sai com NOME e diz onde desativar (ADR-225)", () => {
+    const html = renderToStaticMarkup(
+      createElement(RunCapabilityStrip, {
+        manifest: { ...manifest, resources: [], unobservedResources: true, externalDesktopMcps: ["computer-use"] },
+        defaultOpen: true,
+      }),
+    )
+    expect(html).toContain("computador fora da Frota: computer-use")
+    expect(html).toContain("sem pedido na tela e sem Revogar")
+    expect(html).toContain("Controle do desktop")
+  })
+
   it("registra omissão opcional em tom neutro e fora do fio", () => {
     const html = renderToStaticMarkup(
       createElement(RunCapabilityStrip, {

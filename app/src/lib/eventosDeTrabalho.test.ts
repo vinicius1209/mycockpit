@@ -16,11 +16,16 @@ const { toast, startProjectBrowser } = vi.hoisted(() => ({
 }))
 vi.mock("sonner", () => ({ toast }))
 vi.mock("@/lib/browser", () => ({ startProjectBrowser }))
+const { desktopGrantRun, desktopRevokeRun } = vi.hoisted(() => ({
+  desktopGrantRun: vi.fn(async (_runId: string) => {}),
+  desktopRevokeRun: vi.fn(async (_runId: string) => {}),
+}))
+vi.mock("@/lib/resources", () => ({ desktopGrantRun, desktopRevokeRun }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => ({ projects: [{ id: "p1", name: "Frota", path: "/repo/frota" }] }) } }))
 vi.mock("@/lib/work", () => ({ listenWorkEvents: (cb: (event: unknown) => void) => listenWorkEvents(cb) }))
 vi.mock("@/store/chat", () => ({ useChat: { getState: () => ({ handleWorkEvent }) } }))
 
-import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho, pedidoDeNavegador } from "./eventosDeTrabalho"
+import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho, pedidoDeDesktop, pedidoDeNavegador } from "./eventosDeTrabalho"
 
 beforeEach(() => {
   _resetEventosDeTrabalho()
@@ -90,5 +95,55 @@ describe("iniciarEventosDeTrabalho", () => {
       data: { projectId: "p1", session: { projectId: "p1", projectPath: "/repo/frota" } as never },
     })
     expect(toast.dismiss).toHaveBeenCalledWith("browser-needed:/repo/frota")
+  })
+})
+
+// ADR-225, correção de 22/09/2026: o Rust emitia `desktop_needed` e ninguém
+// escutava; o agente ouvia "a Frota mostrou o pedido na tela" e nada aparecia.
+describe("pedidoDeDesktop", () => {
+  type Opcoes = { id: string; duration: number; action: { label: string; onClick: () => void } }
+  const RUN = "1ae5b180-3c53-403a-b2c4-639682128e15"
+
+  beforeEach(() => {
+    toast.mockClear()
+    toast.dismiss.mockClear()
+    desktopGrantRun.mockClear()
+    desktopRevokeRun.mockClear()
+  })
+
+  it("pedido vira aviso que espera a pessoa, e liberar é o gesto dela", () => {
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: RUN, convId: "c1" } })
+    expect(toast).toHaveBeenCalledTimes(1)
+    const opcoes = toast.mock.calls[0][1] as Opcoes
+    expect(opcoes.id).toBe(`desktop-needed:${RUN}`)
+    expect(opcoes.duration).toBe(Infinity)
+    expect(desktopGrantRun).not.toHaveBeenCalled()
+    expect(opcoes.action.label).toBe("Liberar neste turno")
+    opcoes.action.onClick()
+    expect(desktopGrantRun).toHaveBeenCalledWith(RUN)
+  })
+
+  it("liberado, o pedido sai e o Revogar fica à mão", () => {
+    pedidoDeDesktop({ kind: "desktop_state", data: { runId: RUN, granted: true } })
+    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-needed:${RUN}`)
+    const opcoes = toast.mock.calls[0][1] as Opcoes
+    expect(opcoes.id).toBe(`desktop-granted:${RUN}`)
+    expect(opcoes.action.label).toBe("Revogar")
+    opcoes.action.onClick()
+    expect(desktopRevokeRun).toHaveBeenCalledWith(RUN)
+  })
+
+  it("revogado ou turno encerrado recolhe os dois avisos", () => {
+    pedidoDeDesktop({ kind: "desktop_state", data: { runId: RUN, convId: "c1", granted: false } })
+    expect(toast).not.toHaveBeenCalled()
+    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-needed:${RUN}`)
+    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-granted:${RUN}`)
+  })
+
+  it("evento sem run, ou de outro tipo, não mexe na tela", () => {
+    pedidoDeDesktop({ kind: "desktop_needed", data: {} })
+    pedidoDeDesktop({ kind: "browser_needed", data: { runId: RUN, projectPath: "/repo/frota" } })
+    expect(toast).not.toHaveBeenCalled()
+    expect(toast.dismiss).not.toHaveBeenCalled()
   })
 })

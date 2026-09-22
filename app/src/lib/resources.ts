@@ -31,6 +31,25 @@ export async function requestDesktopPermission(
   return invoke<DesktopCapabilityStatus>("desktop_permission_request", { kind })
 }
 
+/** Controle do computador de terceiro (`computer-use`) no cadastro de um
+ *  motor: entra nos turnos por fora do pedido e do Revogar da Frota. */
+export interface ExternalDesktopController {
+  name: string
+  enabled: boolean
+  /** A Frota sabe ligar e desligar pelo CLI do motor. */
+  manageable: boolean
+}
+
+export async function desktopExternalControllers(agent: string): Promise<ExternalDesktopController[]> {
+  if (!isTauri()) return []
+  return invoke<ExternalDesktopController[]>("desktop_external_controllers", { agent })
+}
+
+export async function setDesktopExternalEnabled(agent: string, name: string, enabled: boolean): Promise<void> {
+  if (!isTauri()) return
+  return invoke<void>("set_desktop_external_enabled", { agent, name, enabled })
+}
+
 export async function desktopGrantRun(runId: string): Promise<void> {
   if (!isTauri()) return
   return invoke<void>("desktop_grant_run", { runId })

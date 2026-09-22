@@ -186,16 +186,30 @@ observar não. A captura atravessa o socket como caminho (teto de 1 MB) e vira
 bloco `image` no processo do MCP. A barra humana tem política própria
 (`politica_da_barra`): `file://` do projeto entra, `javascript:` não.
 
+A cicatriz (sicredi, 22/09/2026): com o `frota-browser` no turno o agente ainda
+foi ao Playwright, porque precisava rodar código na página e a Frota não sabia.
+Paridade de ferramenta vem antes de aviso: `browser_evaluate` e
+`browser_upload` (`browser_script.rs`) são efeito, só em modo que age. E em
+motor com `run_mcp_deny` o navegador de terceiro do cadastro global SAI do
+turno quando o `frota-browser` entra (`denied_mcp_servers` no `RunRequest`);
+sem a capability, o manifesto só o nomeia.
+
 ## Controlador de desktop para qualquer motor (ADR-225)
 
 `desktop_gateway.rs` é o `frota-desktop`: MCP próprio servido por este binário
 (`desktop-server`) pelo MESMO socket do run (`FROTA_WORK_SOCK`), no padrão do
 `frota-work` e `frota-browser`. Disponibilizado quando o controller está pronto
-(Gravação de tela e Acessibilidade concedidas no macOS). Observar (status e
-captura de tela) é livre; pilotar (clique, movimento, digitação, atalhos,
-arraste) exige grant explícito da pessoa para o run e toma uma `DesktopPilotLease`
-exclusiva gerenciada por `desktop_broker.rs`. O drop da lease limpa teclas presas
-via `emergency_release_inputs` no `desktop_driver.rs`.
+(Gravação de tela e Acessibilidade concedidas no macOS). Só `desktop_status` é
+livre: capturar a tela exige o grant da pessoa para o run, e pilotar (clique,
+movimento, digitação, atalhos, arraste) exige o grant, um modo que aja
+(`processes_allowed`) e uma `DesktopPilotLease` exclusiva de `desktop_broker.rs`.
+
+A cicatriz (correção da ADR-225): a lease guardada no gateway NÃO prova posse.
+Ela tem geração, e o broker confirma `is_current` a cada ação e a cada passo de
+digitação e arraste; é isso que faz o Revogar valer na hora. Grant só nasce para
+run que pediu e está vivo, e morre na queda do `WorkListener` (`encerrar_run`).
+Quem solta botões e modificadores é o broker, e só quando a posse era mesmo
+daquela lease: lease velha cai sem efeito físico.
 
 ## Navegador do projeto (ADR-131, ADR-147)
 

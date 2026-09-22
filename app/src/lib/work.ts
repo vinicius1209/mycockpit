@@ -98,6 +98,12 @@ export interface WorkEvent {
     /** O agente pediu o navegador e ele está desligado (ADR-224): a Frota
      *  pergunta à pessoa; ligar continua gesto humano. */
     | "browser_needed"
+    /** O agente pediu o computador e a pessoa ainda não liberou (ADR-225):
+     *  vale para ESTE run, até ele terminar. */
+    | "desktop_needed"
+    /** Liberação do computador mudou para um run: `granted` true ao liberar,
+     *  false ao revogar ou quando o run termina. */
+    | "desktop_state"
   data: {
     process?: ManagedProcess
     processId?: string
@@ -110,6 +116,7 @@ export interface WorkEvent {
     projectId?: string
     projectPath?: string
     session?: BrowserSession | null
+    granted?: boolean
     tasks?: Array<{
       id: string
       title: string

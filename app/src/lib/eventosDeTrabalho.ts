@@ -12,6 +12,7 @@
 
 import { toast } from "sonner"
 import { startProjectBrowser } from "@/lib/browser"
+import { desktopGrantRun, desktopRevokeRun } from "@/lib/resources"
 import { isTauri } from "@/lib/db"
 import { listenWorkEvents, type WorkEvent } from "@/lib/work"
 import { useApp } from "@/store/app"
@@ -55,6 +56,49 @@ export function pedidoDeNavegador(event: WorkEvent): void {
   })
 }
 
+function erroEmAviso(err: unknown): void {
+  toast.error(err instanceof Error ? err.message : String(err))
+}
+
+/** O agente pediu o computador (ADR-225). Mesmo idioma do pedido de navegador:
+ *  aviso que espera a pessoa, com o gesto no botão. Fechar é não liberar.
+ *  Liberado, o aviso vira o de "pode controlar", com o Revogar à mão até o
+ *  turno acabar; quem recolhe é o Rust (`desktop_state`), nunca um timer. */
+export function pedidoDeDesktop(event: WorkEvent): void {
+  const runId = event.data.runId
+  if (!runId) return
+  const pedido = `desktop-needed:${runId}`
+  const liberado = `desktop-granted:${runId}`
+  if (event.kind === "desktop_needed") {
+    toast("O agente quer ver a tela e controlar o computador.", {
+      id: pedido,
+      description: "Liberar vale só para este turno: ele poderá capturar a tela, mover o mouse e digitar. Você pode revogar a qualquer momento.",
+      duration: Infinity,
+      closeButton: true,
+      action: {
+        label: "Liberar neste turno",
+        onClick: () => void desktopGrantRun(runId).catch(erroEmAviso),
+      },
+    })
+    return
+  }
+  if (event.kind !== "desktop_state") return
+  toast.dismiss(pedido)
+  if (!event.data.granted) {
+    toast.dismiss(liberado)
+    return
+  }
+  toast("O agente pode controlar o computador neste turno.", {
+    id: liberado,
+    description: "A liberação acaba sozinha quando o turno termina.",
+    duration: Infinity,
+    action: {
+      label: "Revogar",
+      onClick: () => void desktopRevokeRun(runId).catch(erroEmAviso),
+    },
+  })
+}
+
 /** Liga a escuta uma vez por janela e nunca desliga. Idempotente. */
 export function iniciarEventosDeTrabalho(): void {
   if (iniciada || !isTauri()) return
@@ -62,6 +106,7 @@ export function iniciarEventosDeTrabalho(): void {
   void listenWorkEvents((event) => {
     useChat.getState().handleWorkEvent(event)
     pedidoDeNavegador(event)
+    pedidoDeDesktop(event)
   }).catch((erro) => {
     // Sem escuta o plano e os processos ficam mudos: tem que aparecer no log,
     // e a próxima chamada pode tentar de novo.

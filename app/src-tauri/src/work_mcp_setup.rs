@@ -100,7 +100,7 @@ fn cached_canal(agent: &str, canal: Canal) -> Option<WorkMcpSetup> {
     cache().lock().ok()?.get(&chave(agent, canal)).cloned()
 }
 
-fn supports(agent: &str) -> bool {
+pub(crate) fn supports(agent: &str) -> bool {
     crate::adapters::capabilities_of(agent).is_some_and(|caps| caps.work_mcp_global_env)
 }
 
@@ -216,6 +216,61 @@ pub async fn set_browser_mcp_enabled(agent: String, enabled: bool) -> Result<Wor
 #[tauri::command]
 pub async fn set_desktop_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMcpSetup, String> {
     set_canal_enabled(agent, enabled, DESKTOP).await
+}
+
+/// Liga ou desliga um controle do computador de TERCEIRO (`computer-use`) no
+/// cadastro global do motor, pelo CLI dele: gesto da pessoa em Configurações,
+/// sem terminal. Só vale para nome que a Frota classifica como controle do
+/// computador; qualquer outro é recusado.
+#[tauri::command]
+pub async fn set_desktop_external_enabled(
+    agent: String,
+    name: String,
+    enabled: bool,
+) -> Result<(), String> {
+    if !crate::resource_broker::integration_resources(&name)
+        .contains(&crate::resource_broker::ResourceKind::DesktopControl)
+    {
+        return Err(format!("{name} não é um controle do computador conhecido"));
+    }
+    if !supports(&agent) {
+        return Err("este motor não tem cadastro global que a Frota altere".into());
+    }
+    let argv = if enabled {
+        crate::mcp_instalacao::enable_argv(&agent, &name)
+    } else {
+        crate::mcp_instalacao::disable_argv(&agent, &name)
+    }
+    .ok_or("este motor não tem receita para alterar o cadastro")?;
+    let _operation = operations().lock().await;
+    let output = tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        tokio::process::Command::new(&argv[0])
+            .args(&argv[1..])
+            .stdin(std::process::Stdio::null())
+            .kill_on_drop(true)
+            .output(),
+    )
+    .await;
+    // Relê o cadastro de qualquer jeito: a tela mostra o que o CLI diz agora.
+    refresh(&agent, DESKTOP).await;
+    let output = output
+        .map_err(|_| "timeout ao alterar o cadastro; estado reconsultado".to_string())?
+        .map_err(|error| error.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "o CLI recusou a alteração: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    let agora = crate::provider_mcp_inventory::externos_vistos_em_cache(
+        &agent,
+        crate::resource_broker::ResourceKind::DesktopControl,
+    );
+    if !agora.iter().any(|(nome, ligado)| *nome == name && *ligado == enabled) {
+        return Err("o CLI não confirmou a alteração; reverifique".into());
+    }
+    Ok(())
 }
 
 async fn set_canal_enabled(agent: String, enabled: bool, canal: Canal) -> Result<WorkMcpSetup, String> {

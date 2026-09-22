@@ -56,6 +56,10 @@ pub struct RunRequest {
     /// `frota-desktop` (ADR-225): o controlador de desktop da Frota para qualquer
     /// motor que fale MCP, pelo mesmo socket do `frota-work`.
     pub desktop_gateway: Option<crate::desktop_gateway::GatewayConfig>,
+    /// MCPs do cadastro global do motor que ficam FORA deste run (nome do
+    /// servidor). Só é preenchido para motor com `run_mcp_deny`; hoje leva o
+    /// navegador de terceiro quando o `frota-browser` está no turno.
+    pub denied_mcp_servers: Vec<String>,
     /// Materialização por-run do Tool Catalog da Frota. O catálogo é montado
     /// pelo app; este MCP só transporta a lista e as chamadas ao worker.
     pub tool_gateway: Option<crate::tool_gateway::GatewayConfig>,
@@ -577,6 +581,10 @@ pub struct Capabilities {
     /// O servidor precisa de cadastro global, mas recebe o socket pelo ambiente
     /// de CADA filho. Não altera o escopo dos MCPs externos.
     pub work_mcp_global_env: bool,
+    /// Aceita negar, POR RUN, as tools de um MCP que vem do cadastro global do
+    /// motor. Com ela o navegador de terceiro sai do turno quando o
+    /// `frota-browser` está presente; sem ela, o turno só o nomeia.
+    pub run_mcp_deny: bool,
     /// Recebe o `frota-context` (memória read-only por MCP).
     pub context_mcp: bool,
     /// Até ONDE o app consegue instalar um MCP externo neste motor.
@@ -769,6 +777,17 @@ impl Capabilities {
     }
 }
 
+/// Regra de permissão do Claude que casa TODAS as tools de um servidor MCP. O
+/// nome vira prefixo de tool: fora de `[A-Za-z0-9_-]` o Claude troca por `_`
+/// (é o que faz de "claude.ai Gmail" o prefixo `mcp__claude_ai_Gmail`).
+pub fn claude_mcp_rule(servidor: &str) -> String {
+    let limpo: String = servidor
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' || c == '-' { c } else { '_' })
+        .collect();
+    format!("mcp__{limpo}")
+}
+
 /// claude 2.1.219 (auditado 2026-07): o mais rico — MCP completo, background
 /// tasks, resume, stream-json e custo pronto em USD.
 pub const CLAUDE_CAPS: Capabilities = Capabilities {
@@ -776,6 +795,10 @@ pub const CLAUDE_CAPS: Capabilities = Capabilities {
     native_tool_inventory: ToolInventoryEvidence::RuntimeCount,
     work_mcp: true,
     work_mcp_global_env: false,
+    // claude 2.1.280 (medido em 22/09/2026): `mcp__playwright` no
+    // `--disallowedTools` levou o `system/init` de 219 para 194 tools, zero
+    // do Playwright; o servidor conecta, mas não oferece nada ao modelo.
+    run_mcp_deny: true,
     context_mcp: true,
     // claude 2.1.220: config MCP injetada no spawn, morre com o processo.
     mcp_escopo: McpEscopo::PorRun,
@@ -842,6 +865,7 @@ pub const CODEX_CAPS: Capabilities = Capabilities {
     native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: true,
     work_mcp_global_env: false,
+    run_mcp_deny: false,
     context_mcp: true,
     // codex 0.146: idem, config por run no exec.
     mcp_escopo: McpEscopo::PorRun,
@@ -937,6 +961,7 @@ pub const AGY_CAPS: Capabilities = Capabilities {
     // do socket/run ID. Cadastro explícito + env por filho, sem CWD como chave.
     work_mcp: true,
     work_mcp_global_env: true,
+    run_mcp_deny: false,
     context_mcp: false,
     mcp_escopo: McpEscopo::Global,
     mcp_launch_cwd: false,
@@ -1207,6 +1232,7 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     native_tool_inventory: ToolInventoryEvidence::Opaque,
     work_mcp: false,
     work_mcp_global_env: false,
+    run_mcp_deny: false,
     context_mcp: false,
     // opencode 1.18.21 (medido 26/08/2026): a chave `mcp` do `opencode.json`
     // do DIRETÓRIO vale. Provado dos dois lados: dentro do projeto o
@@ -1895,6 +1921,14 @@ impl AgentAdapter for ClaudeAdapter {
         if req.plan_first {
             cmd.arg("--permission-mode").arg("plan");
         }
+        // MCPs do cadastro global negados neste run: a regra `mcp__<servidor>`
+        // tira todas as tools dele (medido no claude 2.1.280).
+        let negados: Vec<String> = req
+            .denied_mcp_servers
+            .iter()
+            .map(|nome| claude_mcp_rule(nome))
+            .collect();
+        disallowed.extend(negados.iter().map(String::as_str));
         // disallowedTools (mesclado): o gate de escrita (por modo) + os interativos.
         cmd.arg("--disallowedTools").arg(disallowed.join(","));
 
@@ -1997,7 +2031,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto. Se ele estiver desligado, a tool pede à pessoa; não abra outro navegador por conta própria.",
+                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto, mcp__{}__{} roda JavaScript na página (canvas, File, import do dev server) e mcp__{}__{} envia arquivo a um input. Ele aparece na aba ao lado da conversa. Se estiver desligado, a tool pede à pessoa; não abra outro navegador por conta própria.",
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::SNAPSHOT_TOOL,
@@ -2005,6 +2039,10 @@ impl AgentAdapter for ClaudeAdapter {
                     crate::browser_gateway::CAPTURE_TOOL,
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::NAVIGATE_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::EVALUATE_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::UPLOAD_TOOL,
                 ));
             }
             if let Some(gateway) = &req.desktop_gateway {
@@ -2013,7 +2051,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Para operar ou inspecionar o desktop, use o MCP {}: mcp__{}__{} informa a tela e status, mcp__{}__{} captura como evidência visual, mcp__{}__{} clica e mcp__{}__{} digita. Toda pilotagem exige concessão da pessoa.",
+                    "Para operar ou inspecionar o desktop, use o MCP {}: mcp__{}__{} informa a tela e status, mcp__{}__{} captura como evidência visual, mcp__{}__{} clica e mcp__{}__{} digita. Capturar a tela e pilotar exigem que a pessoa libere o computador neste turno; sem isso a Frota mostra o pedido e a tool recusa.",
                     crate::desktop_gateway::MCP_SERVER_NAME,
                     crate::desktop_gateway::MCP_SERVER_NAME,
                     crate::desktop_gateway::STATUS_TOOL,
@@ -4245,6 +4283,7 @@ mod tests {
             work_gateway: None,
             browser_gateway: None,
             desktop_gateway: None,
+            denied_mcp_servers: Vec::new(),
             tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,
@@ -7008,6 +7047,42 @@ mod tests {
             ("opencode", "por-projeto"),
         ] {
             assert_eq!(capabilities_of(agent).unwrap().mcp_escopo.rotulo(), escopo, "{agent}");
+        }
+    }
+
+    /// Gêmeo de `agents.runMcpDeny.test.ts`. Só quem PROVOU negar um MCP do
+    /// cadastro global por run declara `true`; o resto nomeia e segue.
+    #[test]
+    fn matriz_run_mcp_deny_por_agent() {
+        for (agent, nega) in [
+            ("claude-code", true),
+            ("codex", false),
+            ("agy", false),
+            ("opencode", false),
+        ] {
+            assert_eq!(capabilities_of(agent).unwrap().run_mcp_deny, nega, "{agent}");
+        }
+    }
+
+    #[test]
+    fn regra_do_claude_casa_o_prefixo_que_ele_da_as_tools() {
+        assert_eq!(claude_mcp_rule("playwright"), "mcp__playwright");
+        assert_eq!(claude_mcp_rule("chrome-devtools"), "mcp__chrome-devtools");
+        assert_eq!(claude_mcp_rule("claude.ai Gmail"), "mcp__claude_ai_Gmail");
+    }
+
+    #[test]
+    fn negar_mcp_so_chega_ao_argv_de_quem_declara_a_capability() {
+        for agent in registered_agents() {
+            let caps = capabilities_of(agent).unwrap();
+            let mut r = req(Permission::Padrao, false);
+            r.denied_mcp_servers = vec!["playwright".into()];
+            let mut a = resolve(agent).unwrap();
+            let args = argv(&a.build_command(&r).unwrap());
+            let negou = args
+                .windows(2)
+                .any(|par| par[0] == "--disallowedTools" && par[1].split(',').any(|t| t == "mcp__playwright"));
+            assert_eq!(negou, caps.run_mcp_deny, "{agent}");
         }
     }
 

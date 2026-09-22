@@ -101,21 +101,67 @@ pub fn desktop_capability_status() -> DesktopCapabilityStatus {
     status()
 }
 
+/// Gesto da pessoa no aviso de pedido. Só vale para run que pediu e está vivo.
 #[tauri::command]
 pub fn desktop_grant_run(app: tauri::AppHandle, run_id: String) -> Result<(), String> {
     use tauri::Manager;
     let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
-    broker.grant_run(&run_id);
+    broker.grant_run(&run_id)?;
+    crate::work_gateway::emit_work(
+        &app,
+        "desktop_state",
+        serde_json::json!({ "runId": run_id, "granted": true }),
+    );
     Ok(())
 }
 
+/// Revogar vale na hora: a posse sai do run, botões e modificadores são
+/// soltos, e a ação longa em curso para no próximo passo.
 #[tauri::command]
 pub fn desktop_revoke_run(app: tauri::AppHandle, run_id: String) -> Result<(), String> {
     use tauri::Manager;
     let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
     broker.revoke_run(&run_id);
-    broker.release_pilot(&run_id);
+    crate::work_gateway::emit_work(
+        &app,
+        "desktop_state",
+        serde_json::json!({ "runId": run_id, "granted": false }),
+    );
     Ok(())
+}
+
+/// Um controle do computador de terceiro no cadastro de um motor.
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExternalDesktopController {
+    pub name: String,
+    pub enabled: bool,
+    /// Vem do cadastro global que a Frota sabe alterar pelo CLI do motor.
+    pub manageable: bool,
+}
+
+/// Controles do computador de terceiro que entram nos runs deste motor sem
+/// passar pela Frota (ADR-225). Leitura de cache e registry, sem subprocesso:
+/// a tela chama depois de reverificar o cadastro do motor.
+#[tauri::command]
+pub fn desktop_external_controllers(
+    app: tauri::AppHandle,
+    agent: String,
+) -> Vec<ExternalDesktopController> {
+    use crate::resource_broker::ResourceKind;
+    let manageable = crate::work_mcp_setup::supports(&agent);
+    let mut vistos: Vec<ExternalDesktopController> =
+        crate::provider_mcp_inventory::externos_vistos_em_cache(&agent, ResourceKind::DesktopControl)
+            .into_iter()
+            .map(|(name, enabled)| ExternalDesktopController { name, enabled, manageable })
+            .collect();
+    for name in crate::mcp_control::externos_do_motor(&app, &agent, ResourceKind::DesktopControl) {
+        if !vistos.iter().any(|v| v.name == name) {
+            vistos.push(ExternalDesktopController { name, enabled: true, manageable: false });
+        }
+    }
+    vistos.sort_by(|a, b| a.name.cmp(&b.name));
+    vistos
 }
 
 #[tauri::command]

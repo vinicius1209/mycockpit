@@ -76,6 +76,10 @@ export interface AgentDef {
   /** Canal de planos/processos; cadastro global é confirmado pelo backend. */
   workMcp: boolean
   workMcpGlobalEnv: boolean
+  /** Espelho de `run_mcp_deny` (Rust): o motor aceita negar, POR TURNO, as
+   *  tools de um MCP que vem do cadastro global dele. É o que tira o navegador
+   *  de terceiro do turno quando o da Frota está presente (ADR-224, correção). */
+  runMcpDeny: boolean
   /** Onde a config de MCP deste motor mora (espelho de `McpEscopo` no Rust).
    *  Só `por-run` aceita binding por projeto; é por este eixo que a tela diz
    *  por onde o navegador da Frota chega a cada motor (ADR-224).

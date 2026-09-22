@@ -124,6 +124,10 @@ export interface EffectiveRunManifest {
   /** MCPs de navegador de terceiro que a config do provider deixa entrar num
    *  run sem binding (ADR-224 §2). Ausente em manifests até v6. */
   externalBrowserMcps?: string[]
+  /** Controle do computador de terceiro (`computer-use`) que a config do
+   *  provider deixa entrar, fora do pedido e do Revogar (ADR-225). Ausente em
+   *  manifests anteriores a 22/09/2026. */
+  externalDesktopMcps?: string[]
   notices: string[]
   /** Ausente em manifests anteriores ao preflight tipado. */
   omissions?: EffectiveCapabilityOmission[]

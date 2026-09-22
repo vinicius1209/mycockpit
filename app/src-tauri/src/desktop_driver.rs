@@ -26,13 +26,28 @@ struct CGPoint {
 }
 
 #[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct CGSize {
+    width: f64,
+    height: f64,
+}
+
+#[cfg(target_os = "macos")]
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+struct CGRect {
+    origin: CGPoint,
+    size: CGSize,
+}
+
+#[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
 #[link(name = "CoreGraphics", kind = "framework")]
 unsafe extern "C" {
     fn AXIsProcessTrusted() -> u8;
     fn CGMainDisplayID() -> u32;
-    fn CGDisplayPixelsWide(display: u32) -> usize;
-    fn CGDisplayPixelsHigh(display: u32) -> usize;
+    fn CGDisplayBounds(display: u32) -> CGRect;
 
     fn CGEventCreateMouseEvent(
         source: *const std::ffi::c_void,
@@ -96,17 +111,21 @@ const K_CG_FLAG_OPTION: u64 = 0x00080000;
 #[cfg(target_os = "macos")]
 const K_CG_FLAG_COMMAND: u64 = 0x00100000;
 
+/// Ação longa cortada porque a posse deixou de ser do run.
+pub const INTERROMPIDO: &str =
+    "ação interrompida: o controle do computador foi revogado pela pessoa";
+
 pub fn display_info() -> DesktopDisplayInfo {
     #[cfg(target_os = "macos")]
     {
         let screen_recording = objc2_core_graphics::CGPreflightScreenCaptureAccess();
         let accessibility = unsafe { AXIsProcessTrusted() != 0 };
+        // Em PONTOS, o mesmo espaço das coordenadas do CGEvent. Antes vinha de
+        // `CGDisplayPixelsWide`, e a captura saía em pixel físico: numa tela
+        // Retina o agente mirava pela imagem e clicava no dobro.
         let (width, height) = unsafe {
-            let display = CGMainDisplayID();
-            (
-                CGDisplayPixelsWide(display) as u32,
-                CGDisplayPixelsHigh(display) as u32,
-            )
+            let bounds = CGDisplayBounds(CGMainDisplayID());
+            (bounds.size.width as u32, bounds.size.height as u32)
         };
         DesktopDisplayInfo {
             width,
@@ -128,27 +147,57 @@ pub fn display_info() -> DesktopDisplayInfo {
     }
 }
 
-/// Captura a tela inteira para um arquivo PNG temporário com permissões restritas (0600).
+/// Teto da imagem que atravessa para o motor. Um print de Retina em PNG passa
+/// de vários MB e estoura o limite de imagem do provider, derrubando o turno.
+pub const CAPTURE_MAX_BYTES: u64 = 1_500_000;
+
+/// Captura a tela principal em JPEG, redimensionada para PONTOS (o espaço do
+/// clique) e com teto de bytes, num arquivo com permissão 0600.
 pub fn capture_screen(dest: &Path) -> Result<PathBuf, String> {
     #[cfg(target_os = "macos")]
     {
-        let status = std::process::Command::new("/usr/sbin/screencapture")
-            .args(["-x", "-C"])
+        use std::process::Command;
+
+        let status = Command::new("/usr/sbin/screencapture")
+            .args(["-x", "-m", "-t", "jpg"])
             .arg(dest)
             .status()
             .map_err(|e| format!("falha ao invocar screencapture: {e}"))?;
-
-        if !status.success() {
+        if !status.success() || !dest.exists() {
             return Err("o utilitário screencapture falhou; confirme se a Gravação de tela está concedida".into());
         }
-
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o600));
+            std::fs::set_permissions(dest, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("não consegui restringir a captura: {e}"))?;
         }
 
-        Ok(dest.to_path_buf())
+        let largura = display_info().width;
+        for qualidade in ["80", "55"] {
+            let mut sips = Command::new("/usr/bin/sips");
+            if largura > 0 {
+                sips.args(["--resampleWidth", &largura.to_string()]);
+            }
+            let ok = sips
+                .args(["-s", "format", "jpeg", "-s", "formatOptions", qualidade])
+                .arg(dest)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if !ok {
+                let _ = std::fs::remove_file(dest);
+                return Err("não consegui ajustar a captura de tela ao tamanho em pontos".into());
+            }
+            let bytes = std::fs::metadata(dest).map(|m| m.len()).unwrap_or(u64::MAX);
+            if bytes <= CAPTURE_MAX_BYTES {
+                return Ok(dest.to_path_buf());
+            }
+        }
+        let _ = std::fs::remove_file(dest);
+        Err("a captura de tela passou do teto de tamanho mesmo comprimida; nada foi enviado".into())
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -239,8 +288,16 @@ pub fn mouse_click(x: f64, y: f64, button: &str, double: bool) -> Result<(), Str
     }
 }
 
-/// Arrasta o mouse de (from_x, from_y) até (to_x, to_y).
-pub fn mouse_drag(from_x: f64, from_y: f64, to_x: f64, to_y: f64) -> Result<(), String> {
+/// Arrasta o mouse de (from_x, from_y) até (to_x, to_y). `segue` é consultado
+/// a cada passo: se a posse foi revogada, para no meio (o broker já soltou o
+/// botão).
+pub fn mouse_drag(
+    from_x: f64,
+    from_y: f64,
+    to_x: f64,
+    to_y: f64,
+    segue: &dyn Fn() -> bool,
+) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     unsafe {
         let start_pos = CGPoint { x: from_x, y: from_y };
@@ -275,6 +332,9 @@ pub fn mouse_drag(from_x: f64, from_y: f64, to_x: f64, to_y: f64) -> Result<(), 
         // 3. Arraste em passos suaves
         let steps = 10;
         for step in 1..=steps {
+            if !segue() {
+                return Err(INTERROMPIDO.into());
+            }
             let factor = step as f64 / steps as f64;
             let cur_x = from_x + (to_x - from_x) * factor;
             let cur_y = from_y + (to_y - from_y) * factor;
@@ -308,16 +368,20 @@ pub fn mouse_drag(from_x: f64, from_y: f64, to_x: f64, to_y: f64) -> Result<(), 
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (from_x, from_y, to_x, to_y);
+        let _ = (from_x, from_y, to_x, to_y, segue);
         Err("arraste de mouse indisponível no Linux".into())
     }
 }
 
 /// Digita uma string Unicode completa via CGEventKeyboardSetUnicodeString.
-pub fn type_text(text: &str) -> Result<(), String> {
+/// `segue` é consultado a cada caractere: revogar para a digitação no meio.
+pub fn type_text(text: &str, segue: &dyn Fn() -> bool) -> Result<(), String> {
     #[cfg(target_os = "macos")]
     unsafe {
         for ch in text.chars() {
+            if !segue() {
+                return Err(INTERROMPIDO.into());
+            }
             let mut utf16_buf = [0u16; 2];
             let encoded = ch.encode_utf16(&mut utf16_buf);
 
@@ -343,7 +407,7 @@ pub fn type_text(text: &str) -> Result<(), String> {
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = text;
+        let _ = (text, segue);
         Err("digitação de texto indisponível no Linux".into())
     }
 }

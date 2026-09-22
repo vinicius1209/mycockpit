@@ -66,6 +66,9 @@ export function RunCapabilityStrip({
       : manifest.unobservedResources
         ? "recursos do provider não observados"
         : null,
+    manifest.externalDesktopMcps?.length
+      ? `computador fora da Frota: ${manifest.externalDesktopMcps.join(", ")}`
+      : null,
     omissions.length > 0
       ? `${omissions.length} ${omissions.length === 1 ? "capacidade não entrou" : "capacidades não entraram"}`
       : null,
@@ -203,6 +206,14 @@ export function RunCapabilityStrip({
                   <p className="py-1 text-[11px] leading-snug text-st-warning">
                     O provider pode expor recursos por configuração própria. A
                     Frota não os enumerou nem filtrou neste run.
+                  </p>
+                ) : null}
+                {manifest.externalDesktopMcps?.length ? (
+                  <p className="py-1 text-[11px] leading-snug text-st-warning">
+                    Este run pode controlar o computador por{" "}
+                    {manifest.externalDesktopMcps.join(", ")}, configurado no
+                    provider, sem pedido na tela e sem Revogar. Desative em
+                    Configurações › Recursos locais › Controle do desktop.
                   </p>
                 ) : null}
               </div>

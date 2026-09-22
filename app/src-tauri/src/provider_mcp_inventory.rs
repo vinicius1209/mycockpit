@@ -347,39 +347,65 @@ pub async fn inspect_global_entry(
         return Err("inventário global sem dialeto conhecido".into());
     }
     let output = agy_cli_output(&std::env::temp_dir().to_string_lossy()).await?;
-    lembrar_navegadores_externos(agent, &parse_agy_table(&output));
+    lembrar_externos(agent, &parse_agy_table(&output));
     global_entry(&output, name)
 }
 
-/// Navegadores de terceiro habilitados no cadastro GLOBAL de um motor, como
-/// vistos na última leitura do CLI (boot, Configurações, toggles). Cache de
-/// vida do processo: o manifesto do run LÊ daqui e nunca sobe subprocesso
-/// (`AGENTS.md` do backend). Vazio também quando nunca se leu.
-fn navegadores_externos_cache() -> &'static std::sync::Mutex<HashMap<String, Vec<String>>> {
-    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Vec<String>>>> =
-        std::sync::OnceLock::new();
+/// Integrações de terceiro (navegador, controle do computador) habilitadas no
+/// cadastro GLOBAL de um motor, como vistas na última leitura do CLI (boot,
+/// Configurações, toggles). Cache de vida do processo: o manifesto do run LÊ
+/// daqui e nunca sobe subprocesso (`AGENTS.md` do backend). Vazio também
+/// quando nunca se leu.
+type Externos = HashMap<(String, crate::resource_broker::ResourceKind), Vec<(String, bool)>>;
+
+fn externos_cache() -> &'static std::sync::Mutex<Externos> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<Externos>> = std::sync::OnceLock::new();
     CACHE.get_or_init(Default::default)
 }
 
-pub(crate) fn lembrar_navegadores_externos(agent: &str, servers: &[ProviderMcpServer]) {
-    let mut nomes: Vec<String> = servers
-        .iter()
-        .filter(|s| s.enabled && s.resource_kinds.contains(&crate::resource_broker::ResourceKind::ExternalBrowser))
-        .map(|s| s.name.clone())
-        .collect();
-    nomes.sort();
-    nomes.dedup();
-    if let Ok(mut cache) = navegadores_externos_cache().lock() {
-        cache.insert(agent.to_string(), nomes);
+const KINDS_DE_TERCEIRO: [crate::resource_broker::ResourceKind; 2] = [
+    crate::resource_broker::ResourceKind::ExternalBrowser,
+    crate::resource_broker::ResourceKind::DesktopControl,
+];
+
+pub(crate) fn lembrar_externos(agent: &str, servers: &[ProviderMcpServer]) {
+    let Ok(mut cache) = externos_cache().lock() else {
+        return;
+    };
+    for kind in KINDS_DE_TERCEIRO {
+        // Desativados também: a tela mostra e oferece reativar sem terminal.
+        let mut vistos: Vec<(String, bool)> = servers
+            .iter()
+            .filter(|s| s.resource_kinds.contains(&kind))
+            .map(|s| (s.name.clone(), s.enabled))
+            .collect();
+        vistos.sort();
+        vistos.dedup();
+        cache.insert((agent.to_string(), kind), vistos);
     }
 }
 
-pub(crate) fn navegadores_externos_em_cache(agent: &str) -> Vec<String> {
-    navegadores_externos_cache()
+/// Nome e se está habilitado, como a última leitura do CLI viu.
+pub(crate) fn externos_vistos_em_cache(
+    agent: &str,
+    kind: crate::resource_broker::ResourceKind,
+) -> Vec<(String, bool)> {
+    externos_cache()
         .lock()
         .ok()
-        .and_then(|cache| cache.get(agent).cloned())
+        .and_then(|cache| cache.get(&(agent.to_string(), kind)).cloned())
         .unwrap_or_default()
+}
+
+/// Só os habilitados: os que de fato entram num run.
+pub(crate) fn externos_em_cache(
+    agent: &str,
+    kind: crate::resource_broker::ResourceKind,
+) -> Vec<String> {
+    externos_vistos_em_cache(agent, kind)
+        .into_iter()
+        .filter_map(|(nome, ligado)| ligado.then_some(nome))
+        .collect()
 }
 
 fn checked_agy_table(output: &str) -> Result<Vec<ProviderMcpServer>, String> {
@@ -504,6 +530,37 @@ pub async fn inspect(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Saída REAL do `agy mcp list` (agy 1.2.8, 22/09/2026): o agy controlava
+    /// o computador pelo `computer-use` do Codex, fora do pedido e do Revogar
+    /// da Frota, e nada na tela dizia isso.
+    #[test]
+    fn computer_use_do_cadastro_global_vira_controle_de_terceiro_nomeado() {
+        let saida = "NAME           TYPE   STATUS   COMMAND/URL\n\
+computer-use   stdio  enabled  /Users/viniciusmachado/.codex/computer-use/Codex Computer Use.app/Contents/SharedSupport/SkyComputerUseClient.app/Contents/MacOS/SkyComputerUseClient mcp\n\
+frota-browser  stdio  enabled  /Applications/Frota.app/Contents/MacOS/app browser-server\n\
+playwright     stdio  enabled  npx @playwright/mcp@latest\n";
+        let desativado = saida.replace("computer-use   stdio  enabled ", "computer-use   stdio  disabled");
+        let servers = checked_agy_table(saida).expect("tabela reconhecida");
+        lembrar_externos("agy-teste-externos", &servers);
+        use crate::resource_broker::ResourceKind;
+        assert_eq!(
+            externos_em_cache("agy-teste-externos", ResourceKind::DesktopControl),
+            vec!["computer-use".to_string()]
+        );
+        assert_eq!(
+            externos_em_cache("agy-teste-externos", ResourceKind::ExternalBrowser),
+            vec!["playwright".to_string()],
+            "o frota-browser é da Frota, não de terceiro"
+        );
+        // Desativado some do run, mas a tela ainda o vê para reativar.
+        lembrar_externos("agy-teste-externos", &checked_agy_table(&desativado).unwrap());
+        assert!(externos_em_cache("agy-teste-externos", ResourceKind::DesktopControl).is_empty());
+        assert_eq!(
+            externos_vistos_em_cache("agy-teste-externos", ResourceKind::DesktopControl),
+            vec![("computer-use".to_string(), false)]
+        );
+    }
 
     #[test]
     fn entrada_global_preserva_caminho_com_espacos_e_nao_inventa_comando() {

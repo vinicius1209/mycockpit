@@ -36,6 +36,7 @@ mod companion_tailnet;
 mod context;
 mod context_gateway;
 mod conversation_items;
+mod browser_script;
 mod desktop;
 mod desktop_broker;
 mod desktop_driver;
@@ -1175,6 +1176,7 @@ pub fn run() {
             work_mcp_setup::set_browser_mcp_enabled,
             work_mcp_setup::desktop_mcp_status,
             work_mcp_setup::set_desktop_mcp_enabled,
+            work_mcp_setup::set_desktop_external_enabled,
             tray::set_tray_snapshot,
             tray::get_tray_snapshot,
             tray::set_tray_preferences,
@@ -1193,6 +1195,7 @@ pub fn run() {
             desktop::desktop_grant_run,
             desktop::desktop_revoke_run,
             desktop::desktop_pilot_status,
+            desktop::desktop_external_controllers,
             browser_cdp::browser_pages,
             browser_cdp::browser_preview_start,
             browser_cdp::browser_preview_frame,

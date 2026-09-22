@@ -53,6 +53,9 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "nenhum",
     workMcp: true,
     workMcpGlobalEnv: false,
+    // claude 2.1.280 (medido em 22/09/2026): `mcp__<servidor>` no
+    // `--disallowedTools` tira TODAS as tools do servidor do `system/init`.
+    runMcpDeny: true,
     mcpEscopo: "por-run",
     disputes: true,
     // claude 2.1.220: `--output-format stream-json` emite evento por ação.
@@ -119,6 +122,7 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "sistemaOperacional",
     workMcp: true,
     workMcpGlobalEnv: false,
+    runMcpDeny: false,
     mcpEscopo: "por-run",
     disputes: true,
     // codex 0.146: `exec --json` é JSONL de eventos (item por ferramenta).
@@ -186,6 +190,7 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "melhorEsforco",
     workMcp: true,
     workMcpGlobalEnv: true,
+    runMcpDeny: false,
     mcpEscopo: "global",
     disputes: false,
     structuredOutput: true,
@@ -231,6 +236,7 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "nenhum",
     workMcp: false,
     workMcpGlobalEnv: false,
+    runMcpDeny: false,
     mcpEscopo: "por-projeto",
     disputes: false,
     structuredOutput: true,
@@ -268,6 +274,7 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "nenhum",
     workMcp: false,
     workMcpGlobalEnv: false,
+    runMcpDeny: false,
     mcpEscopo: "nenhum",
     disputes: false,
     structuredOutput: false,

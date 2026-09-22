@@ -127,6 +127,20 @@ pub fn enable_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Desativa uma entrada sem apagar a configuração (reversível por
+/// `enable_argv`). Sintaxe conferida em `agy mcp disable --help`, versão 1.2.8.
+pub fn disable_argv(agent: &str, nome: &str) -> Option<Vec<String>> {
+    match agent {
+        "agy" => Some(vec![
+            "agy".into(),
+            "mcp".into(),
+            "disable".into(),
+            nome.into(),
+        ]),
+        _ => None,
+    }
+}
+
 /// O CLI deste motor autentica um MCP OAuth sozinho?
 ///
 /// Medido em 26/08/2026 nos dois: `opencode mcp` tem `auth`, `logout` e

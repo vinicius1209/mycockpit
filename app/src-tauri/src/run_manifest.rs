@@ -30,6 +30,10 @@ pub struct EffectiveRunManifest {
     /// neste run (ADR-224 §2). O fail-open continua, mas com nome: "recursos
     /// não observados" escondia um Chromium externo prestes a abrir.
     pub external_browser_mcps: Vec<String>,
+    /// Controle do computador de terceiro (`computer-use`) que a config do
+    /// provider deixa entrar neste run, fora do pedido e do Revogar da Frota
+    /// (ADR-225).
+    pub external_desktop_mcps: Vec<String>,
     pub notices: Vec<String>,
     pub omissions: Vec<EffectiveCapabilityOmission>,
     /// Redução de permissão aceita explicitamente só para este envio.
@@ -170,6 +174,17 @@ pub fn restrict_work_processes(manifest: &mut EffectiveRunManifest) {
             .retain(|name| !crate::work_gateway::is_process_tool(name));
         source.observed_count = Some(source.tool_names.len());
         source.label = "Planos e etapas".into();
+    }
+    // O navegador segue (ver, navegar, clicar), sem código nem arquivo.
+    if let Some(source) = manifest
+        .sources
+        .iter_mut()
+        .find(|source| source.id == crate::browser_gateway::MCP_SERVER_NAME)
+    {
+        source
+            .tool_names
+            .retain(|name| !crate::browser_gateway::is_effect_tool(name));
+        source.observed_count = Some(source.tool_names.len());
     }
 }
 
@@ -322,6 +337,7 @@ pub fn build(
                 .iter()
                 .any(|item| item.kind == ToolMaterializerKind::ExternalMcp),
         external_browser_mcps: Vec::new(),
+        external_desktop_mcps: Vec::new(),
         notices: mcp_plan
             .notices
             .iter()

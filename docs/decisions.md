@@ -8216,6 +8216,31 @@ considerou.
   é gesto da pessoa, fora do repositório. Verificação no app real (agy chamando
   `frota-browser`, fluxo desligado → cartão → ligar) ainda pendente; captura em
   `testdata/` entra quando ela acontecer.
+- **Correção (22/09/2026, conversa do projeto sicredi):** com o
+  `frota-browser` já no turno, o Claude abriu o Chrome do Playwright fora da
+  Frota. Lido na transcrição (sessão `407b66b2`): as tools da Frota chegaram às
+  20:23 como diferidas; às 20:38 o agente buscou direto
+  `select:mcp__playwright__…` para rodar código na página (junção de imagens em
+  PDF usa `canvas`), coisa que o `frota-browser` não fazia; e a sessão já tinha
+  30+ chamadas ao Playwright de 17 e 18/09. Aviso no prompt não compete com
+  ferramenta que falta nem com o costume do próprio contexto. Decidido pela
+  pessoa:
+  1. **`browser_evaluate` e `browser_upload`** entram no `frota-browser`
+     (`browser_script.rs`): código (expressão ou função, promessa aguardada, 30
+     s, resultado com teto) e arquivo num `<input type=file>` (só do projeto ou
+     da pasta temporária, symlink resolvido antes). Os dois são efeito: lease de
+     piloto e modo que age (`processes_allowed`); em plano ou leitura saem do
+     `tools/list`, do manifesto e o socket recusa. Provado em Chromium real
+     (`cdp_de_verdade_executa_codigo_e_envia_arquivo`, ignorado na suíte).
+  2. **Navegador de terceiro sai do turno** quando o `frota-browser` está nele,
+     no motor que declara a capability nova `run_mcp_deny` (Rust e espelho TS,
+     com gêmeo e contrato de argv). O item 2 original (nomear) vale para quem
+     não declara. Claude: `mcp__<servidor>` no `--disallowedTools`; medido no
+     2.1.280, o `system/init` foi de 219 para 194 tools, zero do Playwright.
+     Codex e agy seguem `false`: desligar um MCP global por turno no Codex pede o
+     transporte do servidor, que só o caminho gerenciado conhece, e o caminho
+     quente não sobe subprocesso. O turno registra o terceiro que saiu nos
+     avisos do manifesto.
 - **Contexto:** o navegador do projeto é da Frota (ADR-131, 147, 204, 207,
   208): processo próprio, um piloto por vez, screencast, evidência em disco,
   fail-closed quando o binding pede o navegador e ele está desligado. Mas a
@@ -8304,6 +8329,42 @@ considerou.
   cartão → ligar → próxima chamada funciona" provado no app, não só em teste.
 
 ### ADR-225 · O controlador de desktop por run materializa pilotagem com lease RAII e salvaguarda física ✅
+- **Correção (22/09/2026, revisão do commit 262ad16):** três furos na primeira
+  entrega; os itens 2 e 5 abaixo valem com esta leitura.
+  1. **Revogar não revogava.** A lease guardada no gateway do run bastava para
+     as ações seguintes, sem reconsultar o grant; o revoke liberava o slot e um
+     segundo run podia pilotar junto. Agora a lease tem **geração** e só vale
+     enquanto for a do dono atual no broker (`is_current`), conferida a cada
+     ação e a cada passo de `desktop_type`/`desktop_drag`. Revogar tira a posse
+     na hora e solta botões e modificadores; lease velha cai sem efeito físico.
+  2. **O pedido não chegava à tela.** `desktop_needed` não tinha quem escutasse
+     e `desktop_grant_run` não tinha quem chamasse, enquanto o agente ouvia "a
+     Frota solicitou a confirmação na tela". Agora o pedido é um aviso no mesmo
+     idioma do navegador (ADR-224 §1, `pedidoDeDesktop`), que espera a pessoa;
+     liberado, vira o aviso com **Revogar** até o turno acabar. Grant só existe
+     para run que pediu e está vivo; o fim do run (queda do `WorkListener`)
+     apaga grant e posse e emite `desktop_state` para recolher o aviso.
+  3. **Ver a tela inteira também é gesto.** `desktop_capture` passa a exigir o
+     grant do run (só `desktop_status` segue livre): a tela mostra outros apps,
+     senhas e notificações. A captura sai em JPEG, redimensionada para PONTOS (o
+     espaço do `CGEvent`, via `CGDisplayBounds`; antes a imagem vinha em pixel
+     de Retina e o clique errava pelo dobro), com teto de 1,5 MB. Modo plano ou
+     leitura (`processes_allowed` falso) não recebe as tools de pilotar no
+     `tools/list` e o socket as recusa mesmo em chamada direta.
+  4. **Nenhum passo por terminal.** Medido no `agy mcp list` (agy 1.2.8): o agy
+     não tinha o `frota-desktop` e controlava o computador pelo `computer-use`
+     do Codex, fora do pedido e do Revogar, sem nada na tela dizer. Agora o
+     cartão "Controle do desktop" tem uma linha por motor (`ComputadorPorMotor`,
+     mesmo componente de cadastro do navegador, `CadastroGlobalDoMotor`): motor
+     de cadastro global conecta o `frota-desktop` ali, e controle de terceiro
+     aparece com nome e com **Desativar/Reativar** pelo CLI do motor (`agy mcp
+     disable|enable`, reversível, só para nome classificado como controle do
+     computador). O manifesto do run ganha `externalDesktopMcps` e a faixa do
+     turno diz "computador fora da Frota"; com permissões dadas e o canal não
+     cadastrado, o turno avisa onde conectar.
+  - **Pendente:** a liberação física ainda posta mouse-up em (0,0); terceiro
+    vindo da config de motor por run (Claude, Codex) é nomeado, mas a Frota não
+    o altera.
 - **Contexto (22/09/2026):** a Frota media as permissões do sistema operacional
   (Gravação de tela e Acessibilidade no macOS), mas mantinha `desktop-control`
   bloqueado (ADR-127, ADR-131). Permissão do SO concedida ao app não é acesso

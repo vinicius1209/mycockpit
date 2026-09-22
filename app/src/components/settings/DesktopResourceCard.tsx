@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react"
 import { CheckCircle2, Loader2, MonitorCog, RefreshCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ComputadorPorMotor } from "@/components/settings/ComputadorPorMotor"
 import { Card, CardBody, CardHead, Selo } from "@/components/settings/parts"
 import {
   desktopCapabilityStatus,
@@ -110,9 +111,9 @@ export function DesktopResourceCard() {
       />
       <CardBody>
         <p className="text-[12px] leading-snug text-muted-foreground">
-          Permissão do sistema não é acesso para um agent. A Frota mede cada
-          requisito e só anunciará controle quando houver um materializador
-          próprio, com grant e escopo por run.
+          Permissão do sistema não é acesso para um agente. Com as duas
+          concedidas, a Frota oferece o próprio controle aos turnos, e cada
+          turno ainda pede a você antes de ver a tela ou mexer no computador.
         </p>
         {status && (
           <div className="mt-2">
@@ -131,6 +132,7 @@ export function DesktopResourceCard() {
             </p>
           </div>
         )}
+        <ComputadorPorMotor />
         {error && (
           <p role="alert" className="mt-2 text-[11px] text-st-error">
             {error}

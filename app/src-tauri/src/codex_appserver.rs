@@ -1448,6 +1448,7 @@ mod tests {
             work_gateway: None,
             browser_gateway: None,
             desktop_gateway: None,
+            denied_mcp_servers: Vec::new(),
             tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,

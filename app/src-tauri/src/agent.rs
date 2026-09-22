@@ -666,6 +666,15 @@ pub async fn run_agent(
             socket: work.socket.clone(),
         })
     });
+    // Permissões do sistema dadas, mas o motor de cadastro global não tem o
+    // `frota-desktop`: a pessoa fica sabendo onde resolver, sem terminal.
+    if caps.work_mcp_global_env
+        && desktop_gateway.is_none()
+        && work_gateway.is_some()
+        && crate::desktop::controller_ready()
+    {
+        mcp_plan.notices.push("Controle do computador da Frota indisponível neste motor: conecte o frota-desktop em Configurações > Recursos locais > Controle do desktop.".into());
+    }
     if caps.work_mcp_global_env && browser_gateway.is_none() && work_gateway.is_some() {
         mcp_plan.notices.push("Navegador da Frota indisponível neste motor: conecte o frota-browser em Configurações > Recursos locais.".into());
     }
@@ -778,14 +787,30 @@ pub async fn run_agent(
     // navegador de terceiro, o manifesto diz o NOME (ADR-224 §2): registry
     // persistido para motores por run, cache da última leitura do CLI para os
     // de cadastro global. Nada aqui sobe subprocesso.
+    // O mesmo para controle do computador de terceiro (ADR-225): o
+    // `computer-use` no cadastro do motor clica e digita por fora do pedido,
+    // do Revogar e da posse exclusiva da Frota.
+    //
+    // Navegador de terceiro com o `frota-browser` no turno SAI do turno quando
+    // o motor sabe negar por run (`run_mcp_deny`). Visto no sicredi em
+    // 22/09/2026: com os dois presentes, o agente seguiu o costume da sessão e
+    // abriu o Chrome do Playwright fora da Frota; nomear não bastou.
+    let mut denied_mcp_servers: Vec<String> = Vec::new();
     if !mcp_plan.managed && !matches!(permission, adapters::Permission::FusionRo) {
-        let mut nomes = crate::provider_mcp_inventory::navegadores_externos_em_cache(&agent);
-        if let Ok(conn) = crate::mcp_control::db(&app) {
-            nomes.extend(crate::mcp_control::navegadores_externos_globais(&conn, &agent));
+        use crate::resource_broker::ResourceKind;
+        let navegadores =
+            crate::mcp_control::externos_do_motor(&app, &agent, ResourceKind::ExternalBrowser);
+        if browser_gateway.is_some() && caps.run_mcp_deny && !navegadores.is_empty() {
+            manifest.notices.push(format!(
+                "Navegador de terceiro fora deste turno: {} (o navegador da Frota está presente).",
+                navegadores.join(", ")
+            ));
+            denied_mcp_servers = navegadores;
+        } else {
+            manifest.external_browser_mcps = navegadores;
         }
-        nomes.sort();
-        nomes.dedup();
-        manifest.external_browser_mcps = nomes;
+        manifest.external_desktop_mcps =
+            crate::mcp_control::externos_do_motor(&app, &agent, ResourceKind::DesktopControl);
     }
     let _ = on_event.send(AgentEvent::RunManifest { manifest });
     // H2 — cadência do preâmbulo por capability: canal system → corpo limpo
@@ -847,6 +872,7 @@ pub async fn run_agent(
         work_gateway,
         browser_gateway,
         desktop_gateway,
+        denied_mcp_servers,
         tool_gateway,
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),
