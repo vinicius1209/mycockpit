@@ -247,9 +247,12 @@ const TOOLS_NATIVAS_DE_NAVEGADOR = new Set([
 
 /** Comando de shell que sobe um navegador por conta própria. Playwright e
  *  Puppeteer abrem o Chromium deles; `open` no macOS e `xdg-open` no Linux
- *  entregam a URL ao navegador do sistema. */
+ *  entregam a URL ao navegador do sistema. Puppeteer só conta invocado por
+ *  `npx`: solto, o `|` de uma alternação de regex parecia pipe de shell
+ *  (sicredi, 22/09/2026: `grep -E "^(canvas|playwright|puppeteer)$"` virou
+ *  "navegador fora da Frota"). */
 const SHELL_ABRE_NAVEGADOR =
-  /(^|[\s;&|(])(npx\s+(-y\s+)?playwright\b|playwright\s+(open|test|codegen)\b|puppeteer\b|open\s+(-a\s+["']?(Google Chrome|Safari|Firefox|Chromium)|https?:)|xdg-open\s+https?:)/i
+  /(^|[\s;&|(])(npx\s+(-y\s+)?(playwright|puppeteer)\b|playwright\s+(open|test|codegen)\b|open\s+(-a\s+["']?(Google Chrome|Safari|Firefox|Chromium)|https?:)|xdg-open\s+https?:)/i
 
 /** O navegador da Frota chega ao agente pelo MCP do projeto ou pelo
  *  `frota-browser` (ADR-224). Tudo que abre navegador por fora é ESTADO que a

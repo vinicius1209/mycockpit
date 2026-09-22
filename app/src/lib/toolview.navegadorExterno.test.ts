@@ -16,6 +16,7 @@ describe("navegador fora da Frota", () => {
     for (const command of [
       "npx playwright test e2e/login.spec.ts",
       "npx -y playwright open http://localhost:3000",
+      "npx puppeteer browsers install chrome",
       "open -a 'Google Chrome' http://localhost:3000",
       "open http://localhost:5173",
       "xdg-open http://localhost:5173",
@@ -28,7 +29,14 @@ describe("navegador fora da Frota", () => {
   })
 
   it("shell comum e as demais tools não ganham a marca", () => {
-    for (const command of ["bun run test", "open docs/mocks/aba-conversa.html", "git status", "cat playwright.config.ts"]) {
+    for (const command of [
+      "bun run test",
+      "open docs/mocks/aba-conversa.html",
+      "git status",
+      "cat playwright.config.ts",
+      // Comando REAL do sicredi (22/09/2026): procura pacotes, não abre nada.
+      'echo "=== libs p/ testar imagem ===" && ls node_modules | grep -E "^(canvas|playwright|puppeteer|@playwright)$"',
+    ]) {
       expect(abreNavegadorForaDaFrota("Bash", { command }), command).toBe(false)
     }
     expect(presentTool("Read", { file_path: "a.ts" }).meta ?? "").not.toContain(META_NAVEGADOR_EXTERNO)
