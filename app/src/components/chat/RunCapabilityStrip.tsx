@@ -61,7 +61,11 @@ export function RunCapabilityStrip({
     stats.resourceCount > 0
       ? `${stats.resourceCount} ${stats.resourceCount === 1 ? "recurso" : "recursos"}`
       : null,
-    manifest.unobservedResources ? "recursos do provider não observados" : null,
+    manifest.externalBrowserMcps?.length
+      ? `navegador fora da Frota: ${manifest.externalBrowserMcps.join(", ")}`
+      : manifest.unobservedResources
+        ? "recursos do provider não observados"
+        : null,
     omissions.length > 0
       ? `${omissions.length} ${omissions.length === 1 ? "capacidade não entrou" : "capacidades não entraram"}`
       : null,
@@ -188,12 +192,19 @@ export function RunCapabilityStrip({
                     </span>
                   </div>
                 ))}
-                {manifest.unobservedResources && (
+                {manifest.externalBrowserMcps?.length ? (
+                  <p className="py-1 text-[11px] leading-snug text-st-warning">
+                    Este run pode abrir um navegador fora da Frota por{" "}
+                    {manifest.externalBrowserMcps.join(", ")}, configurado no
+                    provider. Vincule ao navegador da Frota em Configurações
+                    ou desabilite no CLI.
+                  </p>
+                ) : manifest.unobservedResources ? (
                   <p className="py-1 text-[11px] leading-snug text-st-warning">
                     O provider pode expor recursos por configuração própria. A
                     Frota não os enumerou nem filtrou neste run.
                   </p>
-                )}
+                ) : null}
               </div>
             )}
           </div>

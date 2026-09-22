@@ -94,6 +94,18 @@ describe("RunCapabilityStrip", () => {
     expect(html).toContain("não os enumerou nem filtrou neste run")
   })
 
+  it("navegador de terceiro na config do provider sai com NOME, não como aviso genérico (ADR-224)", () => {
+    const html = renderToStaticMarkup(
+      createElement(RunCapabilityStrip, {
+        manifest: { ...manifest, resources: [], unobservedResources: true, externalBrowserMcps: ["playwright"] },
+        defaultOpen: true,
+      }),
+    )
+    expect(html).toContain("navegador fora da Frota: playwright")
+    expect(html).not.toContain("recursos do provider não observados")
+    expect(html).toContain("Vincule ao navegador da Frota")
+  })
+
   it("registra omissão opcional em tom neutro e fora do fio", () => {
     const html = renderToStaticMarkup(
       createElement(RunCapabilityStrip, {

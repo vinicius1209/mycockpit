@@ -347,7 +347,39 @@ pub async fn inspect_global_entry(
         return Err("inventário global sem dialeto conhecido".into());
     }
     let output = agy_cli_output(&std::env::temp_dir().to_string_lossy()).await?;
+    lembrar_navegadores_externos(agent, &parse_agy_table(&output));
     global_entry(&output, name)
+}
+
+/// Navegadores de terceiro habilitados no cadastro GLOBAL de um motor, como
+/// vistos na última leitura do CLI (boot, Configurações, toggles). Cache de
+/// vida do processo: o manifesto do run LÊ daqui e nunca sobe subprocesso
+/// (`AGENTS.md` do backend). Vazio também quando nunca se leu.
+fn navegadores_externos_cache() -> &'static std::sync::Mutex<HashMap<String, Vec<String>>> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, Vec<String>>>> =
+        std::sync::OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+pub(crate) fn lembrar_navegadores_externos(agent: &str, servers: &[ProviderMcpServer]) {
+    let mut nomes: Vec<String> = servers
+        .iter()
+        .filter(|s| s.enabled && s.resource_kinds.contains(&crate::resource_broker::ResourceKind::ExternalBrowser))
+        .map(|s| s.name.clone())
+        .collect();
+    nomes.sort();
+    nomes.dedup();
+    if let Ok(mut cache) = navegadores_externos_cache().lock() {
+        cache.insert(agent.to_string(), nomes);
+    }
+}
+
+pub(crate) fn navegadores_externos_em_cache(agent: &str) -> Vec<String> {
+    navegadores_externos_cache()
+        .lock()
+        .ok()
+        .and_then(|cache| cache.get(agent).cloned())
+        .unwrap_or_default()
 }
 
 fn checked_agy_table(output: &str) -> Result<Vec<ProviderMcpServer>, String> {

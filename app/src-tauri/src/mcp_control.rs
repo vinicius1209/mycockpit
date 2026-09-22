@@ -979,6 +979,30 @@ pub(crate) fn db(app: &tauri::AppHandle) -> Result<Connection, String> {
     Ok(conn)
 }
 
+/// MCPs de navegador de terceiro (Playwright, DevTools) que a config global
+/// deste motor deixa ENTRAR num run sem binding (fail-open do plano). Leitura
+/// do registry persistido, sem subprocesso: é o caminho quente do envio.
+pub(crate) fn navegadores_externos_globais(conn: &Connection, agent: &str) -> Vec<String> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT name FROM mcp_servers WHERE source_agent = ?1 AND source_enabled = 1 AND scope IN ('user', 'global')",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([agent], |row| row.get::<_, String>(0)) else {
+        return Vec::new();
+    };
+    let mut nomes: Vec<String> = rows
+        .flatten()
+        .filter(|name| {
+            crate::resource_broker::integration_resources(name)
+                .contains(&crate::resource_broker::ResourceKind::ExternalBrowser)
+        })
+        .collect();
+    nomes.sort();
+    nomes.dedup();
+    nomes
+}
+
 pub(crate) fn project_id_for_path(conn: &Connection, project_path: &str) -> Result<String, String> {
     conn.query_row(
         "SELECT id FROM projects WHERE path = ?1 AND deleted_at IS NULL",

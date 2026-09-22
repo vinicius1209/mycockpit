@@ -121,6 +121,9 @@ export interface EffectiveRunManifest {
   instructions?: EffectiveInstructionSource[]
   resources: import("@/lib/resources").EffectiveResourceAccess[]
   unobservedResources: boolean
+  /** MCPs de navegador de terceiro que a config do provider deixa entrar num
+   *  run sem binding (ADR-224 §2). Ausente em manifests até v6. */
+  externalBrowserMcps?: string[]
   notices: string[]
   /** Ausente em manifests anteriores ao preflight tipado. */
   omissions?: EffectiveCapabilityOmission[]
