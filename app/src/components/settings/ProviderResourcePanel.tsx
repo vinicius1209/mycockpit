@@ -34,10 +34,21 @@ function icon(kind: Exclude<ResourceKind, "project-browser">) {
   )
 }
 
-function consequence(kind: Exclude<ResourceKind, "project-browser">): string {
-  return kind === "external-browser"
-    ? "Esta integração pode escolher perfil e janela fora da Frota. Para garantir o navegador do projeto, entregue-o por um binding MCP marcado como navegador."
-    : "Esta integração pode operar apps e janelas. Como vive no provider, a Frota observa a configuração, mas não consegue conceder ou revogar por run."
+/** A consequência diz o gesto que TEM efeito no motor (ADR-224 §4): binding
+ *  só existe em motor por run; nos outros, o caminho é desabilitar no CLI ou
+ *  conectar o frota-browser. Mandar o agy "vincular binding" era pedir um
+ *  gesto que não existe. Puro. */
+export function consequence(
+  kind: Exclude<ResourceKind, "project-browser">,
+  agents: readonly string[] = [],
+): string {
+  if (kind !== "external-browser") {
+    return "Esta integração pode operar apps e janelas. Como vive no provider, a Frota observa a configuração, mas não consegue conceder ou revogar por run."
+  }
+  const semBinding = agents.some((id) => agentDef(id)?.mcpEscopo !== "por-run")
+  return semBinding
+    ? "Esta integração abre o próprio navegador, fora da Frota. Neste motor a Frota não vincula MCP por projeto: desabilite-a no CLI ou conecte o navegador da Frota em Recursos locais."
+    : "Esta integração pode escolher perfil e janela fora da Frota. Para garantir o navegador do projeto, entregue-a por um binding MCP marcado como navegador."
 }
 
 function sourceLabel(observation: ProviderResourceObservation): string {
@@ -91,7 +102,7 @@ export function ProviderResourcePanel({
                   ))}
                 </div>
                 <p className="mt-2 text-[12px] leading-snug text-muted-foreground">
-                  {consequence(kind)}
+                  {consequence(kind, sources.map((source) => source.agent))}
                 </p>
               </CardBody>
             </Card>

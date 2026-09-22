@@ -24,6 +24,7 @@ import {
   type BrowserStatus,
   type BrowserPilotStatus,
 } from "@/lib/browser"
+import { NavegadorPorMotor } from "@/components/settings/NavegadorPorMotor"
 import { listenWorkEvents } from "@/lib/work"
 import type { McpServer } from "@/lib/mcp"
 import { cn } from "@/lib/utils"
@@ -194,10 +195,10 @@ export function ProjectBrowserCard({
       <CardBody>
         <p className="text-[12px] leading-snug text-muted-foreground">
           A Frota mantém um Chromium isolado em segundo plano, com perfil deste
-          projeto. Você observa e pilota pelo painel próprio; o run só o recebe
-          por um binding MCP marcado como navegador. Se o recurso estiver
-          desligado, o run para antes de abrir outra janela.
+          projeto. Você observa e pilota pelo painel próprio. Desligado, o agente
+          pede para ligar; ele nunca liga sozinho nem abre outra janela.
         </p>
+        <NavegadorPorMotor />
         {status?.session && pilot && (
           <p className="mt-2 text-[11px] text-muted-foreground">
             Piloto: {pilot.label}. {pilot.mode === "idle" ? "O painel ou um run pode assumir." : "Outras superfícies permanecem em observação."}

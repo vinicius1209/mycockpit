@@ -76,6 +76,11 @@ export interface AgentDef {
   /** Canal de planos/processos; cadastro global é confirmado pelo backend. */
   workMcp: boolean
   workMcpGlobalEnv: boolean
+  /** Onde a config de MCP deste motor mora (espelho de `McpEscopo` no Rust).
+   *  Só `por-run` aceita binding por projeto; é por este eixo que a tela diz
+   *  por onde o navegador da Frota chega a cada motor (ADR-224).
+   *  Teste-gêmeo: `agents.mcpEscopo.test.ts` ↔ `matriz_mcp_escopo_por_agent`. */
+  mcpEscopo: "por-run" | "por-projeto" | "global" | "nenhum"
   /** Pode disputar no Fusion: entra como complementar da liga default. O agy
    *  fica de fora porque o read-only dele é best-effort (candidato
    *  especulativo precisa de confinamento real, ADR do FusionRo). */

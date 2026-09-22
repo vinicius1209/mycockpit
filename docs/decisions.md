@@ -8211,8 +8211,11 @@ considerou.
 
 ### ADR-224 · O navegador da Frota chega a qualquer motor por um MCP próprio, e a barra humana para de fingir política
 
-- **Status:** aprovada em 21/09/2026. Cada item entra em commit próprio que
-  cita esta ADR; o que ainda não entrou está marcado abaixo.
+- **Status:** aprovada em 21/09/2026; itens 1 a 6 implementados em 22/09/2026,
+  cada um em commit próprio. O item 7 (desabilitar o Playwright global do agy)
+  é gesto da pessoa, fora do repositório. Verificação no app real (agy chamando
+  `frota-browser`, fluxo desligado → cartão → ligar) ainda pendente; captura em
+  `testdata/` entra quando ela acontecer.
 - **Contexto:** o navegador do projeto é da Frota (ADR-131, 147, 204, 207,
   208): processo próprio, um piloto por vez, screencast, evidência em disco,
   fail-closed quando o binding pede o navegador e ele está desligado. Mas a
