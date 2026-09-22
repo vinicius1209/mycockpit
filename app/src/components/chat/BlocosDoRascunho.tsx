@@ -2,12 +2,13 @@
 // colagem grande (R7) e região marcada no navegador (navegador R4). Chips na
 // faixa acima do input, junto dos anexos.
 
-import { ClipboardPaste, CornerDownRight, Crosshair, X } from "lucide-react"
+import { ClipboardPaste, CornerDownRight, Crosshair, MessageSquareQuote, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { horaDaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/citacao"
 import { rotuloDaColagem, type BlocoColagem } from "@/lib/colagem"
 import { rotuloDaMarcacao, type BlocoMarcacao } from "@/lib/marcacao"
+import { rotuloDoParecer, type BlocoParecer } from "@/lib/parecerTrazido"
 import { useComposerDrafts } from "@/store/composerDrafts"
 
 function Remover({ rotulo, onRemove }: { rotulo: string; onRemove: () => void }) {
@@ -124,6 +125,40 @@ function MarcacaoChip({
   )
 }
 
+/** Um parecer trazido para o próximo turno: quem opinou, prévia do que vai no
+ *  prompt, e o "×" que desfaz sem precisar enviar. */
+function ParecerChip({
+  bloco,
+  onRemove,
+}: {
+  bloco: BlocoParecer
+  onRemove: () => void
+}) {
+  return (
+    <span className="flex items-center gap-1.5 rounded-md border border-brass/40 bg-brass/10 px-2 py-1 text-[12px] text-brass">
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            onClick={(e) => e.stopPropagation()}
+            className="flex min-w-0 items-center gap-1.5 hover:text-brass/80"
+            title="Ver o que vai no prompt"
+          >
+            <MessageSquareQuote className="size-3 shrink-0" />
+            <span className="max-w-56 truncate">{rotuloDoParecer(bloco)}</span>
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-[520px] max-w-[calc(100vw-2rem)] p-0">
+          <pre className="max-h-72 overflow-auto p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/85">
+            {bloco.texto}
+          </pre>
+        </PopoverContent>
+      </Popover>
+      <Remover rotulo="Tirar do próximo turno" onRemove={onRemove} />
+    </span>
+  )
+}
+
 export function BlocosDoRascunho({ convId, blocos }: { convId: string; blocos: BlocoDoRascunho[] }) {
   const drafts = useComposerDrafts.getState
   return (
@@ -131,6 +166,12 @@ export function BlocosDoRascunho({ convId, blocos }: { convId: string; blocos: B
       {blocos.map((b, i) =>
         b.tipo === "citacao" ? (
           <CitacaoChip key={`${b.itemId}:${i}`} bloco={b} onRemove={() => drafts().removeBloco(convId, i)} />
+        ) : b.tipo === "parecer" ? (
+          <ParecerChip
+            key={b.id}
+            bloco={b}
+            onRemove={() => drafts().removeBloco(convId, i)}
+          />
         ) : b.tipo === "marcacao" ? (
           <MarcacaoChip
             key={b.id}

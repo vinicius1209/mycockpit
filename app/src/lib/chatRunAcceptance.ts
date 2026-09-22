@@ -3,6 +3,7 @@ import type { AgentEvent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { markLessonsUsed } from "@/lib/learning"
 import type { McpPreflightGate } from "@/lib/tooling"
+import { useComposerDrafts } from "@/store/composerDrafts"
 import { useChat } from "@/store/chat"
 import { maybeNotifyDeferredEvent } from "@/lib/notify/deferredWork"
 
@@ -123,7 +124,7 @@ export function acceptChatTurn({
   if (effortChangeNotice) {
     chat.handleEvent(convId, { type: "notice", message: effortChangeNotice })
   }
-  if (broughtAdvice) chat.takePendingAdvice(convId)
+  if (broughtAdvice) useComposerDrafts.getState().tirarPareceres(convId)
   recordLessons(lessonIds)
   if (lessonIds.length > 0) void markLessonsUsed(lessonIds)
   if (doctrineFingerprint) {

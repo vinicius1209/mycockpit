@@ -3,6 +3,7 @@ import { toast } from "sonner"
 import type { Attachment } from "@/lib/attachments"
 import { comNovaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/citacao"
 import type { BlocoMarcacao } from "@/lib/marcacao"
+import { alternarParecer, type BlocoParecer } from "@/lib/parecerTrazido"
 import {
   deleteComposerDraft,
   loadComposerDraft,
@@ -50,6 +51,13 @@ interface ComposerDraftState {
   appendText: (conversationId: string, text: string) => void
   /** Acrescenta uma citação; `false` quando o teto de citações recusou. */
   addCitacao: (conversationId: string, citacao: BlocoCitacao) => boolean
+  /** Parecer de conselheiro trazido para o próximo turno (Especialistas E1).
+   *  O MESMO gesto traz e tira: clicar de novo não acumula em dobro. */
+  alternarParecer: (conversationId: string, bloco: BlocoParecer) => void
+  /** Aceite do turno: os pareceres que viajaram saem do rascunho. Explícito
+   *  porque nem todo envio limpa o composer (fila, reenvio), e o mesmo parecer
+   *  não pode entrar em dois turnos. */
+  tirarPareceres: (conversationId: string) => void
   /** Região marcada no navegador vira bloco (navegador R4). */
   addMarcacao: (conversationId: string, marcacao: BlocoMarcacao) => void
   /** Colagem grande vira bloco (capricho R7). */
@@ -153,6 +161,19 @@ export const useComposerDrafts = create<ComposerDraftState>((set, get) => {
       const { blocos, coube } = comNovaCitacao(current.blocos ?? [], citacao)
       if (coube) patch(conversationId, { ...current, blocos })
       return coube
+    },
+    alternarParecer: (conversationId, bloco) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      patch(conversationId, {
+        ...current,
+        blocos: alternarParecer(current.blocos, bloco) as BlocoDoRascunho[],
+      })
+    },
+    tirarPareceres: (conversationId) => {
+      const current = get().byConv[conversationId] ?? EMPTY
+      const blocos = (current.blocos ?? []).filter((b) => b.tipo !== "parecer")
+      if (blocos.length === (current.blocos?.length ?? 0)) return
+      patch(conversationId, { ...current, blocos })
     },
     addMarcacao: (conversationId, marcacao) => {
       const current = get().byConv[conversationId] ?? EMPTY

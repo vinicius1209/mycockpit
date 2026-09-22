@@ -28,6 +28,7 @@ import {
   executorItems,
   needsPersonaReinject,
 } from "@/store/chat"
+import { pareceresDoRascunho } from "@/lib/parecerTrazido"
 import { allowBlockedDir } from "@/lib/dirGate"
 import { retidoPorTurnoEmVoo } from "@/lib/sendGate"
 import {
@@ -320,10 +321,8 @@ export function ChatPanel() {
       toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
       return
     }
-    // Especialistas E1 — CONSULTA de conselheiro: `@persona` conhecida no envio
-    // dispara parecer lateral read-only, NÃO turno de executor. A regra inteira
-    // (quem foi chamado, o que cada um recebe, a ordem) mora em
-    // `consultAdvisor.ts`; aqui fica só o desvio.
+    // Especialistas E1 — `@persona` no envio dispara parecer lateral read-only,
+    // NÃO turno de executor. A regra inteira mora em `consultAdvisor.ts`.
     if (/(?:^|\s)@\S/.test(text)) {
       const consultou = await consultarMencionados({
         convId,
@@ -522,7 +521,8 @@ export function ChatPanel() {
     // Especialistas E1 — "Trazer pro Executor": o parecer que você trouxe entra
     // como CONTEXTO deste turno (bloco no prompt, não bolha), acima do pedido.
     // Só é consumido quando o envio é aceito; gate de preflight preserva tudo.
-    const broughtAdvice = conv.pendingAdvice ?? null
+    // Vem do RASCUNHO (a pílula), onde é visível e removível; o aceite consome.
+    const broughtAdvice = pareceresDoRascunho(convId)
     // Por qual CANAL a instrução viaja (capability `systemChannel`). A regra e
     // o porquê moram em `canalDoTurno.ts`.
     const canal = await resolverCanalDoTurno({

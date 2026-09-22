@@ -54,9 +54,7 @@ import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/
 import { argsDaSessao, commitTransplantState, stageAgentImpl } from "@/store/chat/revezamento"
 import { comResumeFalhado } from "@/store/chat/retomada"
 import {
-  bringAdviceToExecutorImpl,
   removeAdviceImpl,
-  takePendingAdviceImpl,
 } from "@/store/chat/advice"
 import { markNotesSentImpl } from "@/store/chat/notes"
 import { reduceTerminalEvent, settleOrphanedTool } from "@/store/chat/terminalTools"
@@ -243,10 +241,6 @@ export interface ConvState extends ContextSnapshotState {
    *  parecer não chega resolve o AgentDef por esse id (fallback: nome). NÃO é
    *  `running` (não trava o envio nem finge turno de executor). Efêmero. */
   advising?: { id: string; name: string } | null
-  /** Especialistas E1: pareceres "trazidos pro Executor" e ainda não enviados —
-   *  bloco(s) que o próximo turno do executor prepende ao prompt (mesmo cano da
-   *  doutrina/lições). Efêmero (não persiste). */
-  pendingAdvice?: string
   /** Higiene de injeção (H2/H4 do prompt-hygiene-plan) — ledger POR CONVERSA
    *  do último fingerprint injetado, por chave: `doctrine` = hash do bloco de
    *  doutrina considerado no envio (H4, re-injeta só quando o arquivo muda);
@@ -467,11 +461,7 @@ export interface ChatState {
     convId: string,
     advising: { id: string; name: string } | null,
   ) => void
-  /** Especialistas E1: "Trazer pro Executor" — enfileira o bloco do parecer p/
-   *  o próximo turno do executor (acumula se houver mais de um). */
-  bringAdviceToExecutor: (convId: string, block: string) => void
   /** Especialistas E1: consome e limpa os pareceres pendentes (no envio). */
-  takePendingAdvice: (convId: string) => string | null
   /** Especialistas E1: "Dispensar" — remove o item de parecer do fio + persiste. */
   /** Carimba notas como ENTREGUES ao agente (não repetir no próximo prompt). */
   markNotesSent: (convId: string, ids: string[]) => void
@@ -2001,10 +1991,7 @@ export const useChat = create<ChatState>((set, get) => {
     // sumiu). advising é indicador visual, NÃO trava o envio nem finge turno.
     setAdvising: (convId, advising) => patch(convId, { advising }),
 
-    bringAdviceToExecutor: (convId, block) =>
-      bringAdviceToExecutorImpl(get, patch, convId, block),
 
-    takePendingAdvice: (convId) => takePendingAdviceImpl(get, patch, convId),
 
     markNotesSent: (convId, ids) => markNotesSentImpl(get, set, convId, ids),
 

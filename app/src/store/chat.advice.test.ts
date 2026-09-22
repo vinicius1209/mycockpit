@@ -70,26 +70,10 @@ beforeEach(() => {
   useChat.setState({ byId: {} })
 })
 
-describe("Trazer pro Executor (bring/take)", () => {
-  it("enfileira o bloco e o consome UMA vez no próximo turno", () => {
-    useChat.setState({ byId: { c1: conv() } })
-    useChat.getState().bringAdviceToExecutor("c1", "BLOCO-A")
-    expect(useChat.getState().byId.c1.pendingAdvice).toBe("BLOCO-A")
-
-    const taken = useChat.getState().takePendingAdvice("c1")
-    expect(taken).toBe("BLOCO-A")
-    // consumido: o próximo turno não repete o parecer.
-    expect(useChat.getState().byId.c1.pendingAdvice).toBeUndefined()
-    expect(useChat.getState().takePendingAdvice("c1")).toBeNull()
-  })
-
-  it("acumula quando mais de um parecer é trazido", () => {
-    useChat.setState({ byId: { c1: conv() } })
-    useChat.getState().bringAdviceToExecutor("c1", "BLOCO-A")
-    useChat.getState().bringAdviceToExecutor("c1", "BLOCO-B")
-    expect(useChat.getState().takePendingAdvice("c1")).toBe("BLOCO-A\n\nBLOCO-B")
-  })
-})
+// "Trazer pro Executor" deixou de morar na conversa em 21/09/2026: virou bloco
+// do rascunho (pílula visível, removível e persistida). O comportamento tem
+// teste em `lib/parecerTrazido.test.ts` e em `store/composerDrafts` — aqui
+// sobrou o que é mesmo do fio.
 
 describe("Dispensar (removeThreadItem)", () => {
   it("remove só o item de parecer do fio", () => {
