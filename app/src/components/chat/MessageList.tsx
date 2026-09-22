@@ -95,6 +95,7 @@ import {
   windowStartIndex,
 } from "@/components/chat/threadWindow"
 import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
+import { EnderecoDoConselheiro } from "@/components/chat/EnderecoDoConselheiro"
 import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
 import { Markdown } from "@/components/common/Markdown"
@@ -1032,11 +1033,7 @@ const MessageItem = memo(function MessageItem({
         {/* Endereçamento (Especialistas E1): esta fala foi PARA um conselheiro,
             não pro piloto — quem responde é outra pessoa. Metadado em sussurro
             cinza (STYLEGUIDE §2: brass é gesto, não ênfase genérica). */}
-        {it.advisorTo && (
-          <span className="text-[11px] text-muted-foreground">
-            para {it.advisorTo.name}
-          </span>
-        )}
+        {it.advisorTo && <EnderecoDoConselheiro destinatario={it.advisorTo} />}
         {it.attachments && it.attachments.length > 0 && (
           <div className="flex max-w-full flex-wrap gap-1.5">
             {it.attachments.map((a) => (

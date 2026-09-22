@@ -10,6 +10,7 @@ import {
 } from "@/lib/advisor"
 import { serializeContext } from "@/lib/fusion"
 import { useChat } from "@/store/chat"
+import { useFilaDeConselheiros } from "@/store/filaConselheiros"
 
 /** Consulta lateral: registra o pedido humano antes do run de leitura e nunca
  * entrega os eventos do conselheiro ao reducer do executor. */
@@ -48,6 +49,8 @@ export async function consultAdvisor(
     },
   ])
   opts.aoAceitar?.()
+  // Começou: sai da espera e passa a ter a linha de chegada própria.
+  useFilaDeConselheiros.getState().tirar(convId, def.id)
   useChat.getState().setAdvising(convId, { id: def.id, name: def.name })
   try {
     const prompt = buildAdvisorPrompt({
@@ -58,25 +61,39 @@ export async function consultAdvisor(
     })
     const result = await runAdvisor({ def, prompt, cwd })
     if (!result.text) {
-      toast.error(
-        result.error
-          ? `O parecer de ${def.name} falhou: ${result.error}`
-          : `O parecer de ${def.name} veio vazio.`,
-      )
+      await registrarFalha(convId, def.name, result.error)
       return
     }
     await useChat
       .getState()
       .appendItems(convId, [buildAdviceItem(def, question, result.text)])
   } catch (error) {
-    toast.error(
-      typeof error === "string" ? error : `Não consegui consultar ${def.name}.`,
+    await registrarFalha(
+      convId,
+      def.name,
+      typeof error === "string" ? error : (error as Error)?.message,
     )
   } finally {
     useChat.getState().setAdvising(convId, null)
   }
 }
 
+
+/** Conselheiro que não opinou NÃO some em silêncio: a conversa registra a
+ *  ausência no lugar onde o parecer entraria. O toast continua (é o aviso do
+ *  momento), mas quem reler o fio amanhã também fica sabendo. */
+async function registrarFalha(
+  convId: string,
+  nome: string,
+  motivo?: string | null,
+): Promise<void> {
+  const detalhe = motivo?.trim() ? `: ${motivo.trim()}` : "."
+  const message = `${nome} não opinou neste turno${detalhe}`
+  toast.error(message)
+  await useChat.getState().appendItems(convId, [
+    { kind: "notice", id: crypto.randomUUID(), message, ts: Date.now() },
+  ])
+}
 
 /** O desvio inteiro do envio quando há `@persona` no texto: quem foi chamado,
  *  o que cada um recebe e em que ordem. Devolve `true` quando a mensagem virou
@@ -123,6 +140,14 @@ export async function consultarMencionados(entrada: {
     resolvidos.push({ def: achado.def, question: chamado.question })
   }
 
+  // A FILA aparece no envio: as bolhas de todos entram juntas (dentro de cada
+  // consulta), e quem ainda não começou fica com "na fila" na própria bolha.
+  // Sem isto, durante o parecer do primeiro o segundo não existia na tela, e
+  // quem chamou dois via um só trabalhando (relato de 21/09/2026).
+  useFilaDeConselheiros
+    .getState()
+    .definir(convId, resolvidos.map(({ def }) => ({ id: def.id, name: def.name })))
+
   let aceito = false
   for (const [indice, { def, question }] of resolvidos.entries()) {
     await consultAdvisor(convId, def, question, project, sent, {
@@ -137,5 +162,6 @@ export async function consultarMencionados(entrada: {
       },
     })
   }
+  useFilaDeConselheiros.getState().limpar(convId)
   return true
 }

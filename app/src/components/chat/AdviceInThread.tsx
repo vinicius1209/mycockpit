@@ -9,10 +9,13 @@ import { CornerDownRight, MessageSquareQuote } from "lucide-react"
 import { toast } from "sonner"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
-import { buildAdviceHandoffBlock } from "@/lib/advisor"
 import { shortDigest } from "@/lib/presets"
 import { usePresets } from "@/store/presets"
 import { useChat, type ChatItem } from "@/store/chat"
+import { useComposerDrafts } from "@/store/composerDrafts"
+import { parecerJaTrazido } from "@/lib/parecerTrazido"
+import { quemVemDepois } from "@/lib/filaDeConselheiros"
+import { useFilaDeConselheiros } from "@/store/filaConselheiros"
 
 /** Linha de CHEGADA do conselheiro (Especialistas E1): enquanto o parecer não
  *  resolve (`conv.advising` setado), a persona "entra no fio" estilo Slack —
@@ -25,6 +28,11 @@ export function AdviceArrivalRow({
 }) {
   const persona = usePresets((s) =>
     s.list.find((p) => p.id === advising.id || p.name === advising.name),
+  )
+  // Com mais de um chamado, a linha de chegada também diz quem vem depois:
+  // é o que impede a segunda consulta de parecer perdida.
+  const proxima = useFilaDeConselheiros((s) =>
+    quemVemDepois(s.porConversa[useChat.getState().activeId ?? ""]),
   )
   return (
     <div className="flex gap-3 animate-cockpit-rise">
@@ -44,6 +52,7 @@ export function AdviceArrivalRow({
         </div>
         <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
           <span>está lendo o contexto</span>
+          {proxima && <span className="text-muted-foreground/70">· {proxima}</span>}
           <span className="flex items-center gap-1" aria-hidden>
             {[0, 1, 2].map((i) => (
               <span
@@ -82,6 +91,11 @@ export function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" 
     return !!c?.running || !!c?.finalizing
   })
   const canPassWheel = !!persona && !isPilot && !turnBusy
+  // Já trazido? A verdade é o rascunho (é lá que a pílula vive e persiste).
+  const trazido = useComposerDrafts((s) => {
+    const convId = useChat.getState().activeId
+    return convId ? parecerJaTrazido(s.byConv[convId]?.blocos, item.id) : false
+  })
   return (
     <div className="group/msg rounded-lg border border-brass/40 bg-brass/[0.05] px-3.5 py-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -135,20 +149,34 @@ export function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" 
         >
           Dispensar
         </button>
+        {/* O botão é ESTADO, não gatilho: depois de trazer, ele DIZ que o
+            parecer vai no próximo turno, e o mesmo clique desfaz. Antes ele
+            ficava idêntico e acumulava o mesmo parecer em silêncio. */}
         <button
           onClick={() => {
             const convId = useChat.getState().activeId
             if (!convId) return
-            useChat
-              .getState()
-              .bringAdviceToExecutor(convId, buildAdviceHandoffBlock(item))
-            toast(
-              `Parecer de ${item.personaName} vai como contexto no próximo turno.`,
-            )
+            useComposerDrafts.getState().alternarParecer(convId, {
+              tipo: "parecer",
+              id: crypto.randomUUID(),
+              itemId: item.id,
+              personaId: item.personaId,
+              personaNome: item.personaName,
+              texto: item.text,
+            })
           }}
-          className="rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+          title={
+            trazido
+              ? "Clique para tirar do próximo turno"
+              : "O parecer vai como contexto do próximo envio"
+          }
+          className={
+            trazido
+              ? "rounded-md border border-brass bg-brass/15 px-2.5 py-1 text-[12px] font-medium text-brass"
+              : "rounded-md bg-brass px-2.5 py-1 text-[12px] font-medium text-background transition-opacity hover:opacity-90"
+          }
         >
-          Trazer pro Executor
+          {trazido ? "No próximo turno ✓" : "Trazer pro Executor"}
         </button>
       </div>
     </div>

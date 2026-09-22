@@ -4,12 +4,19 @@ vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), succe
 vi.mock("@/lib/advisor", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/advisor")>()),
   runAdvisor: vi.fn(),
+  resolveAdvisor: vi.fn(),
+}))
+vi.mock("@/lib/agentDefs", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/agentDefs")>()),
+  listAgentDefs: vi.fn(),
 }))
 
-import { runAdvisor } from "@/lib/advisor"
+import { resolveAdvisor, runAdvisor } from "@/lib/advisor"
+import { listAgentDefs } from "@/lib/agentDefs"
+import { useFilaDeConselheiros } from "@/store/filaConselheiros"
 import type { AgentDef } from "@/lib/agentDefs"
 import { useChat } from "@/store/chat"
-import { consultAdvisor } from "./consultAdvisor"
+import { consultAdvisor, consultarMencionados } from "./consultAdvisor"
 
 const CONV = "c1"
 
@@ -38,6 +45,7 @@ const persona = (over: Partial<AgentDef> = {}): AgentDef => ({
 
 beforeEach(() => {
   vi.mocked(runAdvisor).mockReset()
+  useFilaDeConselheiros.setState({ porConversa: {} })
   useChat.setState({
     activeId: CONV,
     byId: {
@@ -118,5 +126,52 @@ describe("consulta a um conselheiro", () => {
     expect(bolhas.map((b) => b.advisorTo?.name)).toEqual(["Íris", "Aline"])
     expect(bolhas[0].attachments).toHaveLength(1)
     expect(bolhas[1].attachments).toBeUndefined()
+  })
+})
+
+describe("dois chamados na mesma mensagem", () => {
+  it("a fila nasce no envio, cada um sai dela ao começar, e some no fim", async () => {
+    const vistas: string[][] = []
+    vi.mocked(runAdvisor).mockImplementation(async () => {
+      vistas.push(
+        (useFilaDeConselheiros.getState().porConversa[CONV] ?? []).map((c) => c.name),
+      )
+      return { ok: true, text: "parecer", error: null }
+    })
+    vi.mocked(listAgentDefs).mockResolvedValue([
+      persona(),
+      persona({ id: "projeto:aline", name: "Aline", slug: "aline" }),
+    ])
+    vi.mocked(resolveAdvisor).mockImplementation(async (_p, id) => ({
+      status: "ok",
+      def: id === "projeto:iris" ? persona() : persona({ id: "projeto:aline", name: "Aline", slug: "aline" }),
+    }))
+
+    const virou = await consultarMencionados({
+      convId: CONV,
+      project: { path: "/proj" },
+      sent: { text: "@Íris olha o mock @Aline e o agy?", attachments: [] },
+    })
+
+    expect(virou).toBe(true)
+    // Enquanto a Íris lia, a Aline estava visível na espera; depois, ninguém.
+    expect(vistas).toEqual([["Aline"], []])
+    expect(useFilaDeConselheiros.getState().porConversa[CONV] ?? []).toEqual([])
+  })
+
+  it("quem não consegue opinar deixa linha no fio, não só um toast", async () => {
+    vi.mocked(listAgentDefs).mockResolvedValue([persona()])
+    vi.mocked(resolveAdvisor).mockResolvedValue({ status: "ok", def: persona() })
+    vi.mocked(runAdvisor).mockResolvedValue({ ok: false, text: "", error: "sem resposta" } as never)
+
+    await consultarMencionados({
+      convId: CONV,
+      project: { path: "/proj" },
+      sent: { text: "@Íris e aí?", attachments: [] },
+    })
+
+    const itens = useChat.getState().byId[CONV].items
+    const aviso = itens.find((i) => i.kind === "notice")
+    expect(aviso?.message).toBe("Íris não opinou neste turno: sem resposta")
   })
 })
