@@ -95,6 +95,9 @@ export interface WorkEvent {
     /** Navegador do projeto ligou/desligou/morreu (B2.1). Não tem `convId`:
      *  o eixo de posse é o PROJETO, então o reducer do chat o ignora. */
     | "browser_state"
+    /** O agente pediu o navegador e ele está desligado (ADR-224): a Frota
+     *  pergunta à pessoa; ligar continua gesto humano. */
+    | "browser_needed"
   data: {
     process?: ManagedProcess
     processId?: string
@@ -105,6 +108,7 @@ export interface WorkEvent {
     runId?: string
     convId?: string
     projectId?: string
+    projectPath?: string
     session?: BrowserSession | null
     tasks?: Array<{
       id: string

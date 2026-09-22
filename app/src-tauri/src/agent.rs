@@ -632,6 +632,26 @@ pub async fn run_agent(
     } else {
         None
     };
+    // `frota-browser` (ADR-224): anda no socket do `frota-work`. Motor com
+    // escopo por run recebe pelo plano; motor de cadastro global (agy) só se
+    // o cadastro do navegador estiver confirmado, mesma régua do trabalho.
+    let global_browser = caps
+        .work_mcp_global_env
+        .then(|| crate::work_mcp_setup::cached_browser(&agent))
+        .flatten();
+    let browser_gateway = work_gateway.as_ref().and_then(|work| {
+        let pronto = !caps.work_mcp_global_env
+            || global_browser
+                .as_ref()
+                .is_some_and(|setup| setup.state == crate::work_mcp_setup::SetupState::Configured);
+        pronto.then(|| crate::browser_gateway::GatewayConfig {
+            server_bin: work.server_bin.clone(),
+            socket: work.socket.clone(),
+        })
+    });
+    if caps.work_mcp_global_env && browser_gateway.is_none() && work_gateway.is_some() {
+        mcp_plan.notices.push("Navegador da Frota indisponível neste motor: conecte o frota-browser em Configurações > Recursos locais.".into());
+    }
     // Tool Catalog por-run. Discovery e preflight são sem efeito: plugin não
     // executa e navegador desligado continua desligado. Só adapters capazes de
     // receber MCP efêmero ganham o gateway; os demais degradam honestamente.
@@ -727,6 +747,7 @@ pub async fn run_agent(
         approval.is_some(),
         context_gateway.is_some(),
         work_gateway.is_some(),
+        browser_gateway.is_some(),
         tool_gateway.is_some(),
         &tool_catalog,
         &mcp_plan,
@@ -734,6 +755,19 @@ pub async fn run_agent(
     );
     if !work_processes_allowed {
         crate::run_manifest::restrict_work_processes(&mut manifest);
+    }
+    // Run sem binding deixa a config global do motor entrar inteira. Se nela há
+    // navegador de terceiro, o manifesto diz o NOME (ADR-224 §2): registry
+    // persistido para motores por run, cache da última leitura do CLI para os
+    // de cadastro global. Nada aqui sobe subprocesso.
+    if !mcp_plan.managed && !matches!(permission, adapters::Permission::FusionRo) {
+        let mut nomes = crate::provider_mcp_inventory::navegadores_externos_em_cache(&agent);
+        if let Ok(conn) = crate::mcp_control::db(&app) {
+            nomes.extend(crate::mcp_control::navegadores_externos_globais(&conn, &agent));
+        }
+        nomes.sort();
+        nomes.dedup();
+        manifest.external_browser_mcps = nomes;
     }
     let _ = on_event.send(AgentEvent::RunManifest { manifest });
     // H2 — cadência do preâmbulo por capability: canal system → corpo limpo
@@ -793,6 +827,7 @@ pub async fn run_agent(
         approval,
         context_gateway,
         work_gateway,
+        browser_gateway,
         tool_gateway,
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),

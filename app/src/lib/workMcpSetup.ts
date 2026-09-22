@@ -13,11 +13,28 @@ export const workMcpStatus = (agent: string) =>
 export const setWorkMcpEnabled = (agent: string, enabled: boolean) =>
   invoke<WorkMcpSetup>("set_work_mcp_enabled", { agent, enabled })
 
+/** `frota-browser` (ADR-224): mesma receita de cadastro global do trabalho. */
+export const browserMcpStatus = (agent: string) =>
+  invoke<WorkMcpSetup>("browser_mcp_status", { agent })
+
+export const setBrowserMcpEnabled = (agent: string, enabled: boolean) =>
+  invoke<WorkMcpSetup>("set_browser_mcp_enabled", { agent, enabled })
+
 export function workMcpAction(state: WorkMcpSetup["state"]): string | null {
   if (state === "absent") return "Conectar"
   if (state === "disabled") return "Ativar"
   if (state === "configured") return "Desconectar"
   return null
+}
+
+export function browserMcpLabel(state: WorkMcpSetup["state"]): string {
+  return {
+    absent: "Navegador da Frota não conectado",
+    configured: "Cadastro confirmado no CLI",
+    disabled: "Cadastro desativado no CLI",
+    conflict: "Configuração diferente encontrada",
+    unavailable: "Não foi possível verificar o cadastro",
+  }[state] ?? "Estado desconhecido"
 }
 
 export function workMcpLabel(state: WorkMcpSetup["state"]): string {

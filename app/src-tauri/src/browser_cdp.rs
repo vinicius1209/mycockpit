@@ -188,7 +188,7 @@ fn public_page(page: RawPage, raiz: &Path) -> BrowserPage {
     }
 }
 
-async fn raw_pages(endpoint: &str) -> Result<Vec<RawPage>, String> {
+pub(crate) async fn raw_pages(endpoint: &str) -> Result<Vec<RawPage>, String> {
     let response = timeout(
         CDP_TIMEOUT,
         reqwest::Client::new()
@@ -494,7 +494,7 @@ fn com_esquema(raw: &str) -> String {
 /// produto). `file://` entra quando o arquivo é do PROJETO: é assim que um mock
 /// em `docs/mocks/` abre no navegador da Frota sem servidor HTTP. Até
 /// 21/09/2026 era recusado junto com o `javascript:`, sem decisão escrita.
-fn politica_da_barra(raw: &str, raiz_do_projeto: &Path) -> Result<String, String> {
+pub(crate) fn politica_da_barra(raw: &str, raiz_do_projeto: &Path) -> Result<String, String> {
     if raw == "about:blank" {
         return Ok(raw.into());
     }
@@ -526,7 +526,7 @@ fn politica_da_barra(raw: &str, raiz_do_projeto: &Path) -> Result<String, String
     Ok(parsed.to_string())
 }
 
-async fn send_cdp(websocket_url: &str, commands: Vec<Value>) -> Result<(), String> {
+pub(crate) async fn send_cdp(websocket_url: &str, commands: Vec<Value>) -> Result<(), String> {
     timeout(CDP_TIMEOUT, async {
         let (mut socket, _) = tokio_tungstenite::connect_async(websocket_url)
             .await
@@ -597,25 +597,11 @@ async fn send_history(websocket_url: &str, direction: &str) -> Result<(), String
     }).await.map_err(|_| "o histórico excedeu o tempo limite".to_string())?
 }
 
-#[tauri::command]
-pub async fn browser_input(
-    app: tauri::AppHandle,
-    project_path: String,
-    target_id: String,
-    token: String,
-    action: BrowserInputAction,
-) -> Result<(), String> {
-    let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
-    app.state::<Arc<crate::experience_broker::ExperienceBroker>>()
-        .validate_human(&project_id, &token)?;
-    let websocket_url = page
-        .websocket_url
-        .as_deref()
-        .expect("target_for exige websocket");
-    if let BrowserInputAction::History { direction } = &action {
-        return send_history(websocket_url, direction).await;
-    }
-    let commands = match action {
+/// Os comandos CDP de uma ação de input, sem o transporte. Compartilhado pela
+/// barra humana e pelo `frota-browser` (ADR-224): um vocabulário de input só.
+/// `Navigate` passa pela `politica_da_barra` com a raiz do projeto.
+pub(crate) fn comandos_de_input(action: BrowserInputAction, raiz_do_projeto: &Path) -> Result<Vec<Value>, String> {
+    Ok(match action {
         BrowserInputAction::Click { x, y } => {
             let (x, y) = (finite(x)?, finite(y)?);
             vec![
@@ -651,9 +637,81 @@ pub async fn browser_input(
         }
         BrowserInputAction::History { .. } => unreachable!(),
         BrowserInputAction::Navigate { url } => vec![json!({
-            "id": 1, "method": "Page.navigate", "params": {"url": politica_da_barra(&url, Path::new(&project_path))?}
+            "id": 1, "method": "Page.navigate", "params": {"url": politica_da_barra(&url, raiz_do_projeto)?}
         })],
-    };
+    })
+}
+
+/// Manda comandos CDP à página. Nome de quem pilota, não do transporte.
+pub(crate) async fn pilotar(websocket_url: &str, commands: Vec<Value>) -> Result<(), String> {
+    send_cdp(websocket_url, commands).await
+}
+
+/// `Runtime.evaluate` com retorno por valor: o que o `frota-browser` usa para
+/// ler a página (url, título, texto visível).
+pub(crate) async fn avaliar(websocket_url: &str, expression: &str) -> Result<Value, String> {
+    timeout(CDP_TIMEOUT, async {
+        let (mut socket, _) = tokio_tungstenite::connect_async(websocket_url)
+            .await
+            .map_err(|error| format!("não consegui ler a página: {error}"))?;
+        let pedido = json!({
+            "id": 1, "method": "Runtime.evaluate",
+            "params": { "expression": expression, "returnByValue": true }
+        });
+        socket
+            .send(Message::Text(pedido.to_string().into()))
+            .await
+            .map_err(|error| format!("leitura não foi pedida: {error}"))?;
+        loop {
+            let message = socket
+                .next()
+                .await
+                .ok_or("a página encerrou o canal de leitura")?
+                .map_err(|error| format!("leitura interrompida: {error}"))?;
+            let Message::Text(text) = message else { continue };
+            let Ok(value) = serde_json::from_str::<Value>(&text) else { continue };
+            if value.get("id").and_then(Value::as_u64) != Some(1) {
+                continue;
+            }
+            if let Some(error) = value.get("error") {
+                return Err(format!("o navegador recusou a leitura: {error}"));
+            }
+            return Ok(value.pointer("/result/result/value").cloned().unwrap_or(Value::Null));
+        }
+    })
+    .await
+    .map_err(|_| "a leitura da página excedeu o tempo limite".to_string())?
+}
+
+/// A página ativa do projeto (a primeira aba do tipo `page` com canal).
+pub(crate) async fn pagina_ativa(app: &tauri::AppHandle, project_path: &str) -> Result<RawPage, String> {
+    let (_, session) = project_session(app, project_path).await?;
+    raw_pages(&session.endpoint)
+        .await?
+        .into_iter()
+        .find(|page| page.kind == "page" && page.websocket_url.is_some())
+        .ok_or_else(|| "o navegador está ligado mas não tem nenhuma página aberta".to_string())
+}
+
+#[tauri::command]
+pub async fn browser_input(
+    app: tauri::AppHandle,
+    project_path: String,
+    target_id: String,
+    token: String,
+    action: BrowserInputAction,
+) -> Result<(), String> {
+    let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
+    app.state::<Arc<crate::experience_broker::ExperienceBroker>>()
+        .validate_human(&project_id, &token)?;
+    let websocket_url = page
+        .websocket_url
+        .as_deref()
+        .expect("target_for exige websocket");
+    if let BrowserInputAction::History { direction } = &action {
+        return send_history(websocket_url, direction).await;
+    }
+    let commands = comandos_de_input(action, Path::new(&project_path))?;
     send_cdp(websocket_url, commands).await
 }
 

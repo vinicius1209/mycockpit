@@ -1,8 +1,26 @@
-//! Cadastro explícito do canal de trabalho em CLIs de configuração global.
-//! O cache nasce no boot/Configurações, nunca no caminho crítico do envio.
+//! Cadastro explícito dos canais da Frota em CLIs de configuração global:
+//! `frota-work` (ADR-173) e `frota-browser` (ADR-224), mesma receita, mesmo
+//! binário, subcomandos diferentes. O cache nasce no boot/Configurações, nunca
+//! no caminho crítico do envio.
 
 use crate::provider_mcp_inventory::{inspect_global_entry, GlobalCliEntry};
-use crate::work_gateway::MCP_SERVER_NAME;
+
+/// Um canal da Frota cadastrável no CLI: o nome do MCP e o subcomando deste
+/// binário que o serve.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Canal {
+    pub nome: &'static str,
+    pub subcomando: &'static str,
+}
+
+pub const TRABALHO: Canal = Canal {
+    nome: crate::work_gateway::MCP_SERVER_NAME,
+    subcomando: "work-server",
+};
+pub const NAVEGADOR: Canal = Canal {
+    nome: crate::browser_gateway::MCP_SERVER_NAME,
+    subcomando: crate::browser_gateway::SUBCOMANDO,
+};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -33,10 +51,18 @@ impl WorkMcpSetup {
     }
 }
 
+fn chave(agent: &str, canal: Canal) -> String {
+    format!("{agent}\u{0}{}", canal.nome)
+}
+
 pub fn invalidate(agent: &str) {
+    invalidate_canal(agent, TRABALHO);
+}
+
+pub fn invalidate_canal(agent: &str, canal: Canal) {
     match cache().lock() {
         Ok(mut cache) => {
-            cache.remove(agent);
+            cache.remove(&chave(agent, canal));
         }
         Err(error) => log::warn!("cache do acompanhamento indisponível: {error}"),
     }
@@ -55,7 +81,15 @@ fn operations() -> &'static tokio::sync::Mutex<()> {
 }
 
 pub fn cached(agent: &str) -> Option<WorkMcpSetup> {
-    cache().lock().ok()?.get(agent).cloned()
+    cached_canal(agent, TRABALHO)
+}
+
+pub fn cached_browser(agent: &str) -> Option<WorkMcpSetup> {
+    cached_canal(agent, NAVEGADOR)
+}
+
+fn cached_canal(agent: &str, canal: Canal) -> Option<WorkMcpSetup> {
+    cache().lock().ok()?.get(&chave(agent, canal)).cloned()
 }
 
 fn supports(agent: &str) -> bool {
@@ -69,12 +103,17 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+#[cfg(test)]
 fn state_of(entry: Option<&GlobalCliEntry>, binary: &Path) -> SetupState {
+    state_of_canal(entry, binary, TRABALHO)
+}
+
+fn state_of_canal(entry: Option<&GlobalCliEntry>, binary: &Path, canal: Canal) -> SetupState {
     match entry {
         None => SetupState::Absent,
         Some(entry)
             if entry.transport == "stdio"
-                && entry.command_line == format!("{} work-server", binary.display()) =>
+                && entry.command_line == format!("{} {}", binary.display(), canal.subcomando) =>
         {
             if entry.enabled {
                 SetupState::Configured
@@ -86,7 +125,7 @@ fn state_of(entry: Option<&GlobalCliEntry>, binary: &Path) -> SetupState {
     }
 }
 
-async fn inspect(agent: &str) -> Result<SetupState, String> {
+async fn inspect(agent: &str, canal: Canal) -> Result<SetupState, String> {
     if !supports(agent) {
         return Err("este motor não usa cadastro global de acompanhamento".into());
     }
@@ -101,14 +140,14 @@ async fn inspect(agent: &str) -> Result<SetupState, String> {
         return Err(format!("este canal exige CLI {minimum} ou mais recente"));
     }
     let binary = std::env::current_exe().map_err(|error| error.to_string())?;
-    let entry = inspect_global_entry(agent, MCP_SERVER_NAME).await?;
-    Ok(state_of(entry.as_ref(), &binary))
+    let entry = inspect_global_entry(agent, canal.nome).await?;
+    Ok(state_of_canal(entry.as_ref(), &binary, canal))
 }
 
-async fn refresh(agent: &str) -> WorkMcpSetup {
-    let (state, detail) = match inspect(agent).await {
-        Ok(SetupState::Conflict) => (SetupState::Conflict, Some(
-            "Já existe uma entrada frota-work com outra configuração. Ajuste-a no CLI antes de conectar.".into())),
+async fn refresh(agent: &str, canal: Canal) -> WorkMcpSetup {
+    let (state, detail) = match inspect(agent, canal).await {
+        Ok(SetupState::Conflict) => (SetupState::Conflict, Some(format!(
+            "Já existe uma entrada {} com outra configuração. Ajuste-a no CLI antes de conectar.", canal.nome))),
         Ok(state) => (state, None),
         Err(error) => (SetupState::Unavailable, Some(error)),
     };
@@ -120,7 +159,7 @@ async fn refresh(agent: &str) -> WorkMcpSetup {
     };
     match cache().lock() {
         Ok(mut cache) => {
-            cache.insert(agent.into(), snapshot.clone());
+            cache.insert(chave(agent, canal), snapshot.clone());
         }
         Err(error) => log::warn!("não foi possível guardar o cadastro do acompanhamento: {error}"),
     }
@@ -130,22 +169,38 @@ async fn refresh(agent: &str) -> WorkMcpSetup {
 #[tauri::command]
 pub async fn work_mcp_status(agent: String) -> WorkMcpSetup {
     let _operation = operations().lock().await;
-    refresh(&agent).await
+    refresh(&agent, TRABALHO).await
+}
+
+#[tauri::command]
+pub async fn browser_mcp_status(agent: String) -> WorkMcpSetup {
+    let _operation = operations().lock().await;
+    refresh(&agent, NAVEGADOR).await
 }
 
 pub fn warm() {
     tauri::async_runtime::spawn(async {
         for agent in crate::adapters::registered_agents().filter(|agent| supports(agent)) {
             let _operation = operations().lock().await;
-            refresh(agent).await;
+            refresh(agent, TRABALHO).await;
+            refresh(agent, NAVEGADOR).await;
         }
     });
 }
 
 #[tauri::command]
 pub async fn set_work_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMcpSetup, String> {
+    set_canal_enabled(agent, enabled, TRABALHO).await
+}
+
+#[tauri::command]
+pub async fn set_browser_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMcpSetup, String> {
+    set_canal_enabled(agent, enabled, NAVEGADOR).await
+}
+
+async fn set_canal_enabled(agent: String, enabled: bool, canal: Canal) -> Result<WorkMcpSetup, String> {
     let _operation = operations().lock().await;
-    let before = refresh(&agent).await;
+    let before = refresh(&agent, canal).await;
     match (&before.state, enabled) {
         (SetupState::Configured, true) | (SetupState::Absent, false) => return Ok(before),
         (SetupState::Absent, true)
@@ -158,27 +213,27 @@ pub async fn set_work_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMc
         }
     }
     let argv = if enabled && before.state == SetupState::Disabled {
-        crate::mcp_instalacao::enable_argv(&agent, MCP_SERVER_NAME)
+        crate::mcp_instalacao::enable_argv(&agent, canal.nome)
     } else if enabled {
         let binary = std::env::current_exe().map_err(|error| error.to_string())?;
         crate::mcp_instalacao::install_argv(
             &agent,
             &crate::mcp_instalacao::McpSpec {
-                nome: MCP_SERVER_NAME.into(),
+                nome: canal.nome.into(),
                 alvo: crate::mcp_instalacao::McpAlvo::Stdio {
                     comando: binary.to_string_lossy().into_owned(),
-                    args: vec!["work-server".into()],
+                    args: vec![canal.subcomando.into()],
                 },
                 headers: vec![],
                 env: vec![],
             },
         )
     } else {
-        crate::mcp_instalacao::uninstall_argv(&agent, MCP_SERVER_NAME)
+        crate::mcp_instalacao::uninstall_argv(&agent, canal.nome)
     }
     .ok_or("este motor não tem receita de cadastro global")?;
     // A cache fica pessimista durante o efeito, inclusive se houver timeout.
-    invalidate(&agent);
+    invalidate_canal(&agent, canal);
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(10),
         tokio::process::Command::new(&argv[0])
@@ -188,7 +243,7 @@ pub async fn set_work_mcp_enabled(agent: String, enabled: bool) -> Result<WorkMc
             .output(),
     )
     .await;
-    let after = refresh(&agent).await;
+    let after = refresh(&agent, canal).await;
     let output = output
         .map_err(|_| "timeout ao alterar o canal; inventário reconsultado".to_string())?
         .map_err(|error| error.to_string())?;

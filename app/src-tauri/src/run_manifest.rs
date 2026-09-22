@@ -26,6 +26,10 @@ pub struct EffectiveRunManifest {
     /// Há uma superfície do provider que a Frota não enumera por run. `true`
     /// evita que uma lista vazia de recursos pareça uma garantia de isolamento.
     pub unobserved_resources: bool,
+    /// Os MCPs de navegador de terceiro que a config do provider deixa entrar
+    /// neste run (ADR-224 §2). O fail-open continua, mas com nome: "recursos
+    /// não observados" escondia um Chromium externo prestes a abrir.
+    pub external_browser_mcps: Vec<String>,
     pub notices: Vec<String>,
     pub omissions: Vec<EffectiveCapabilityOmission>,
     /// Redução de permissão aceita explicitamente só para este envio.
@@ -176,6 +180,7 @@ pub fn build(
     approval_gateway: bool,
     context_gateway: bool,
     work_gateway: bool,
+    browser_gateway: bool,
     tool_gateway: bool,
     tool_catalog: &crate::tool_gateway::ToolCatalogSnapshot,
     mcp_plan: &McpRunPlan,
@@ -227,6 +232,13 @@ pub fn build(
                 crate::work_gateway::WORK_PLAN_TOOL,
                 crate::work_gateway::WORK_UPDATE_TOOL,
             ],
+        ));
+    }
+    if browser_gateway {
+        sources.push(gateway(
+            crate::browser_gateway::MCP_SERVER_NAME,
+            "Navegador da Frota",
+            &crate::browser_gateway::TOOLS,
         ));
     }
     if tool_gateway {
@@ -286,7 +298,7 @@ pub fn build(
     }
 
     EffectiveRunManifest {
-        schema_version: 6,
+        schema_version: 7,
         agent_id: agent_id.to_string(),
         managed_external_mcp: mcp_plan.managed,
         sources,
@@ -301,6 +313,7 @@ pub fn build(
             && materializers
                 .iter()
                 .any(|item| item.kind == ToolMaterializerKind::ExternalMcp),
+        external_browser_mcps: Vec::new(),
         notices: mcp_plan
             .notices
             .iter()
@@ -336,6 +349,7 @@ mod tests {
             false,
             false,
             true,
+            false,
             false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &McpRunPlan::default(),
@@ -380,6 +394,7 @@ mod tests {
             true,
             true,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &plan,
             Vec::new(),
@@ -420,6 +435,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &McpRunPlan::default(),
             Vec::new(),
@@ -456,6 +472,7 @@ mod tests {
             false,
             false,
             false,
+            false,
             &crate::tool_gateway::ToolCatalogSnapshot::default(),
             &plan,
             Vec::new(),
@@ -475,6 +492,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,
@@ -514,6 +532,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,
@@ -563,6 +582,7 @@ mod tests {
         let manifest = build(
             "engine",
             &CLAUDE_CAPS,
+            false,
             false,
             false,
             false,

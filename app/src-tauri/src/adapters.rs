@@ -49,6 +49,10 @@ pub struct RunRequest {
     /// MCP de trabalho/processos gerenciado pelo Frota. Mesmo contrato no
     /// Claude e Codex; ausente em providers sem MCP.
     pub work_gateway: Option<crate::work_gateway::GatewayConfig>,
+    /// `frota-browser` (ADR-224): o navegador da Frota para qualquer motor que
+    /// fale MCP, pelo mesmo socket do `frota-work`. None = sem navegador
+    /// neste run (FusionRo, motor global sem cadastro, sem listener).
+    pub browser_gateway: Option<crate::browser_gateway::GatewayConfig>,
     /// Materialização por-run do Tool Catalog da Frota. O catálogo é montado
     /// pelo app; este MCP só transporta a lista e as chamadas ao worker.
     pub tool_gateway: Option<crate::tool_gateway::GatewayConfig>,
@@ -1984,6 +1988,22 @@ impl AgentAdapter for ClaudeAdapter {
                     crate::work_gateway::WORK_UPDATE_TOOL,
                 ));
             }
+            if let Some(gateway) = &req.browser_gateway {
+                servers.insert(
+                    crate::browser_gateway::MCP_SERVER_NAME.into(),
+                    gateway.claude_server_json(),
+                );
+                system_nudges.push(format!(
+                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto. Se ele estiver desligado, a tool pede à pessoa; não abra outro navegador por conta própria.",
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::SNAPSHOT_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::CAPTURE_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::NAVIGATE_TOOL,
+                ));
+            }
             if let Some(gateway) = &req.tool_gateway {
                 servers.insert(
                     crate::tool_gateway::MCP_SERVER_NAME.into(),
@@ -2740,6 +2760,9 @@ impl AgentAdapter for CodexAdapter {
                 gateway.configure_codex(&mut cmd);
             }
             if let Some(gateway) = &req.work_gateway {
+                gateway.configure_codex(&mut cmd);
+            }
+            if let Some(gateway) = &req.browser_gateway {
                 gateway.configure_codex(&mut cmd);
             }
             if let Some(gateway) = &req.tool_gateway {
@@ -4135,6 +4158,7 @@ mod tests {
             approval: None,
             context_gateway: None,
             work_gateway: None,
+            browser_gateway: None,
             tool_gateway: None,
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,
@@ -6865,6 +6889,21 @@ mod tests {
     }
 
     // ---- registry de capabilities (G1, capability-registry-plan) ----
+
+    #[test]
+    /// Gêmeo de `agents.mcpEscopo.test.ts`: é por este eixo que a tela diz por
+    /// onde o navegador da Frota chega a cada motor (ADR-224 §4).
+    #[test]
+    fn matriz_mcp_escopo_por_agent() {
+        for (agent, escopo) in [
+            ("claude-code", "por-run"),
+            ("codex", "por-run"),
+            ("agy", "global"),
+            ("opencode", "por-projeto"),
+        ] {
+            assert_eq!(capabilities_of(agent).unwrap().mcp_escopo.rotulo(), escopo, "{agent}");
+        }
+    }
 
     #[test]
     fn matriz_work_mcp_por_agent() {

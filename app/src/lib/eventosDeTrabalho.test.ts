@@ -10,10 +10,17 @@ const listenWorkEvents = vi.fn(async (onEvent: (event: unknown) => void) => {
 })
 
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
+const { toast, startProjectBrowser } = vi.hoisted(() => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  startProjectBrowser: vi.fn(async (_path: string) => ({})),
+}))
+vi.mock("sonner", () => ({ toast }))
+vi.mock("@/lib/browser", () => ({ startProjectBrowser }))
+vi.mock("@/store/app", () => ({ useApp: { getState: () => ({ projects: [{ id: "p1", name: "Frota", path: "/repo/frota" }] }) } }))
 vi.mock("@/lib/work", () => ({ listenWorkEvents: (cb: (event: unknown) => void) => listenWorkEvents(cb) }))
 vi.mock("@/store/chat", () => ({ useChat: { getState: () => ({ handleWorkEvent }) } }))
 
-import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho } from "./eventosDeTrabalho"
+import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho, pedidoDeNavegador } from "./eventosDeTrabalho"
 
 beforeEach(() => {
   _resetEventosDeTrabalho()
@@ -51,5 +58,25 @@ describe("iniciarEventosDeTrabalho", () => {
     iniciarEventosDeTrabalho()
     expect(listenWorkEvents).toHaveBeenCalledTimes(2)
     erro.mockRestore()
+  })
+
+  it("pedido de navegador vira aviso com o gesto de ligar, nunca navegador sozinho", async () => {
+    toast.mockClear()
+    startProjectBrowser.mockClear()
+    pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: "/repo/frota" } })
+    expect(toast).toHaveBeenCalledTimes(1)
+    const [texto, opcoes] = toast.mock.calls[0] as [string, { action: { label: string; onClick: () => void } }]
+    expect(texto).toContain("Frota")
+    expect(startProjectBrowser).not.toHaveBeenCalled()
+    expect(opcoes.action.label).toBe("Ligar navegador")
+    opcoes.action.onClick()
+    expect(startProjectBrowser).toHaveBeenCalledWith("/repo/frota")
+  })
+
+  it("evento de outro tipo, ou sem caminho, não avisa", () => {
+    toast.mockClear()
+    pedidoDeNavegador({ kind: "work_update", data: { task: { id: "p1", status: "completed" } } })
+    pedidoDeNavegador({ kind: "browser_needed", data: {} })
+    expect(toast).not.toHaveBeenCalled()
   })
 })

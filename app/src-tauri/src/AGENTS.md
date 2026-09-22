@@ -172,6 +172,20 @@ Codex não tem campo para isso, então `codex_appserver.rs` lê a ordem dos iten
 que sobrar como interrompido no `turn/completed`. Motor novo com trabalho em
 segundo plano entra por aqui, com captura real em `testdata/`.
 
+## Navegador para qualquer motor (ADR-224)
+
+`browser_gateway.rs` é o `frota-browser`: MCP próprio no molde do `frota-work`,
+servido por este binário (`browser-server`) pelo MESMO socket do run
+(`FROTA_WORK_SOCK`). Claude e Codex o recebem no plano de todo turno; motor de
+cadastro global (agy) só com o cadastro `frota-browser` confirmado
+(`work_mcp_setup::NAVEGADOR`). As tools existem sempre: navegador desligado é
+resposta de chamada (`browser_needed` no canal de trabalho, a pessoa liga),
+nunca ausência de ferramenta, e nunca sobe navegador sozinho. Input toma a
+lease de piloto do broker no primeiro gesto e segura até o fim do run;
+observar não. A captura atravessa o socket como caminho (teto de 1 MB) e vira
+bloco `image` no processo do MCP. A barra humana tem política própria
+(`politica_da_barra`): `file://` do projeto entra, `javascript:` não.
+
 ## Navegador do projeto (ADR-131, ADR-147)
 
 O Chromium é da Frota (`browser.rs`): um por projeto, perfil persistente,

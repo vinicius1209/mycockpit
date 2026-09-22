@@ -591,6 +591,15 @@ pub struct WorkListener {
     active: Arc<AtomicBool>,
 }
 
+/// Contexto de um run no socket: quem é, onde roda e o estado do navegador
+/// (`frota-browser` divide o socket com o `frota-work`, ADR-224).
+struct RunContext {
+    run_id: String,
+    conv_id: String,
+    cwd: String,
+    browser: Arc<crate::browser_gateway::BrowserGateway>,
+}
+
 // O shell do registry pertence ao app, fora do sandbox nativo do provider.
 // Modos restritos continuam publicando etapas, sem ganhar esse caminho de efeito.
 pub fn processes_allowed(permission: crate::adapters::Permission, plan_first: bool) -> bool {
@@ -625,14 +634,20 @@ impl WorkListener {
         }
         let active = Arc::new(AtomicBool::new(true));
         let live = active.clone();
+        let ctx = Arc::new(RunContext {
+            run_id,
+            conv_id,
+            cwd,
+            browser: Arc::new(crate::browser_gateway::BrowserGateway::default()),
+        });
         let task = tokio::spawn(async move {
             let mut requests = tokio::task::JoinSet::new();
             loop {
                 tokio::select! {
                     accepted = listener.accept() => {
                         let Ok((stream, _)) = accepted else { break; };
-                        requests.spawn(handle_request(stream, app.clone(), run_id.clone(),
-                            conv_id.clone(), cwd.clone(), registry.clone(), live.clone(), processes_allowed));
+                        requests.spawn(handle_request(stream, app.clone(), ctx.clone(),
+                            registry.clone(), live.clone(), processes_allowed));
                     }
                     _ = requests.join_next(), if !requests.is_empty() => {}
                 }
@@ -657,13 +672,14 @@ impl Drop for WorkListener {
 async fn handle_request<R: tauri::Runtime>(
     stream: UnixStream,
     app: tauri::AppHandle<R>,
-    run_id: String,
-    conv_id: String,
-    cwd: String,
+    ctx: Arc<RunContext>,
     registry: Arc<ProcessRegistry>,
     active: Arc<AtomicBool>,
     processes_allowed: bool,
 ) {
+    let run_id = ctx.run_id.clone();
+    let conv_id = ctx.conv_id.clone();
+    let cwd = ctx.cwd.clone();
     let (rd, mut wr) = stream.into_split();
     let mut line = String::new();
     let mut reader = BufReader::new(rd.take(MAX_REQUEST_BYTES + 1));
@@ -683,6 +699,9 @@ async fn handle_request<R: tauri::Runtime>(
     let args = request.get("args").cloned().unwrap_or(Value::Null);
     let answer = match action {
         "work_ready" => Ok(json!({ "ready": true, "processesAllowed": processes_allowed })),
+        name if crate::browser_gateway::is_browser_tool(name) => {
+            browser_request(&app, &ctx, name, &args).await
+        }
         name if is_process_tool(name) && !processes_allowed => {
             Err("ferramentas de processos indisponíveis neste modo de permissão".into())
         }
@@ -748,6 +767,20 @@ async fn handle_request<R: tauri::Runtime>(
     let _ = wr.flush().await;
 }
 
+/// O gateway do navegador fala com o app pelo `AppHandle` concreto; em teste o
+/// listener roda com runtime simulado e o navegador não existe.
+async fn browser_request<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    ctx: &RunContext,
+    action: &str,
+    args: &Value,
+) -> Result<Value, String> {
+    let Some(app) = (app as &dyn std::any::Any).downcast_ref::<tauri::AppHandle>() else {
+        return Err("navegador indisponível neste runtime".into());
+    };
+    crate::browser_gateway::handle(app, &ctx.browser, &ctx.run_id, &ctx.conv_id, &ctx.cwd, action, args).await
+}
+
 #[tauri::command]
 pub fn managed_process_stop(
     app: tauri::AppHandle,
@@ -810,7 +843,7 @@ pub async fn managed_process_start(
 
 // ---- MCP stdio ------------------------------------------------------------
 
-const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
+pub(crate) const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 
 pub fn run_mcp_server() {
     let rt = tokio::runtime::Runtime::new().expect("work-server: runtime tokio");
@@ -976,7 +1009,7 @@ fn tool_specs() -> Vec<Value> {
     ]
 }
 
-async fn request_parent(action: &str, args: &Value) -> Option<Value> {
+pub(crate) async fn request_parent(action: &str, args: &Value) -> Option<Value> {
     let socket = std::env::var(SOCK_ENV).ok()?;
     request_socket(Path::new(&socket), action, args).await
 }

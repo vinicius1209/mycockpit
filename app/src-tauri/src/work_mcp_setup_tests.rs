@@ -61,3 +61,25 @@ fn transporte_e_versao_sao_precondicoes_explicitas() {
     );
     assert!(!supports("desconhecido"));
 }
+
+/// ADR-224: o navegador tem a MESMA receita do trabalho, só muda o subcomando.
+/// Entrada do work-server não conta como cadastro do navegador, e vice-versa.
+#[test]
+fn o_canal_do_navegador_e_reconhecido_pelo_proprio_subcomando() {
+    let binary = Path::new("/Applications/Frota.app/Contents/MacOS/app");
+    let navegador = GlobalCliEntry {
+        enabled: true,
+        transport: "stdio".into(),
+        command_line: format!("{} browser-server", binary.display()),
+    };
+    assert_eq!(state_of_canal(Some(&navegador), binary, NAVEGADOR), SetupState::Configured);
+    assert_eq!(state_of_canal(Some(&navegador), binary, TRABALHO), SetupState::Conflict);
+    let trabalho = GlobalCliEntry {
+        enabled: true,
+        transport: "stdio".into(),
+        command_line: format!("{} work-server", binary.display()),
+    };
+    assert_eq!(state_of_canal(Some(&trabalho), binary, NAVEGADOR), SetupState::Conflict);
+    assert_eq!(NAVEGADOR.nome, "frota-browser");
+    assert_ne!(chave("agy", TRABALHO), chave("agy", NAVEGADOR));
+}

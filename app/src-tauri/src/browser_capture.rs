@@ -64,7 +64,7 @@ pub(crate) fn nome_da_captura(url_limpa: &str) -> String {
     }
 }
 
-async fn capturar_png(websocket_url: &str) -> Result<Vec<u8>, String> {
+pub(crate) async fn capturar_png(websocket_url: &str) -> Result<Vec<u8>, String> {
     timeout(PRAZO_DA_CAPTURA, async {
         let (mut socket, _) = tokio_tungstenite::connect_async(websocket_url)
             .await

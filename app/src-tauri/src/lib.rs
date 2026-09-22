@@ -19,6 +19,7 @@ mod browser_conexao;
 mod browser_marcacao;
 mod browser_orfaos;
 mod browser_cdp;
+mod browser_gateway;
 mod browser_panel;
 mod catalog;
 mod command_inventory;
@@ -118,6 +119,12 @@ pub fn run_mcp_proxy_server() {
 /// provider que fale MCP.
 pub fn run_work_server() {
     work_gateway::run_mcp_server();
+}
+
+/// Ponto de entrada do `frota-browser` (ADR-224): o navegador da Frota para
+/// qualquer motor que fale MCP, pelo socket do run.
+pub fn run_browser_server() {
+    browser_gateway::run_mcp_server();
 }
 
 /// Materializador MCP do Tool Catalog. O subprocesso só fala pelo socket do
@@ -1152,6 +1159,8 @@ pub fn run() {
             work_gateway::managed_process_start,
             work_mcp_setup::work_mcp_status,
             work_mcp_setup::set_work_mcp_enabled,
+            work_mcp_setup::browser_mcp_status,
+            work_mcp_setup::set_browser_mcp_enabled,
             tray::set_tray_snapshot,
             tray::get_tray_snapshot,
             tray::set_tray_preferences,
