@@ -3392,6 +3392,65 @@ pub fn agy_result_error(result: &serde_json::Value) -> Option<String> {
         .map(str::to_string)
 }
 
+/// Parse da mensagem emitida pelo Antigravity / Agy ao despachar comando em background
+/// (payloads reais em bg-sleep e 22/09/2026:
+/// `Tool is running as a background task with task id: <task_id>\n...Task logs are available at: <log_path>`).
+fn parse_agy_background_task(text: &str) -> Option<(String, String)> {
+    let prefix = "Tool is running as a background task with task id: ";
+    let p_idx = text.find(prefix)?;
+    let after_prefix = &text[p_idx + prefix.len()..];
+    let end_id_idx = after_prefix.find('\n').unwrap_or(after_prefix.len());
+    let task_id = after_prefix[..end_id_idx].trim();
+    if task_id.is_empty() {
+        return None;
+    }
+    let log_marker = "Task logs are available at: ";
+    let log_idx = text.find(log_marker)?;
+    let after_log = &text[log_idx + log_marker.len()..];
+    let end_log_idx = after_log.find('\n').unwrap_or(after_log.len());
+    let mut log_path = after_log[..end_log_idx].trim();
+    if let Some(stripped) = log_path.strip_prefix("file://") {
+        log_path = stripped;
+    }
+    if log_path.is_empty() || !log_path.starts_with('/') {
+        return None;
+    }
+    Some((task_id.to_string(), log_path.to_string()))
+}
+
+/// Parse da mensagem de notificação de tarefa do Antigravity / Agy
+/// (payloads reais capturados em bg-sleep e 22/09/2026:
+/// `Task id "<id>" finished with result:` ou `Task id "<id>" was canceled with result:`).
+fn parse_agy_task_notification(text: &str) -> Option<AgentEvent> {
+    let prefix = "Task id \"";
+    let p_idx = text.find(prefix)?;
+    let after_prefix = &text[p_idx + prefix.len()..];
+    let end_id_idx = after_prefix.find('"')?;
+    let task_id = &after_prefix[..end_id_idx];
+    if task_id.is_empty() {
+        return None;
+    }
+    let status = if text.contains("finished with result:") {
+        DeferredStatus::Completed
+    } else if text.contains("was canceled with result:")
+        || text.contains("was cancelled with result:")
+    {
+        DeferredStatus::Stopped
+    } else {
+        return None;
+    };
+    Some(AgentEvent::DeferredWork {
+        id: task_id.to_string(),
+        tool_use_id: None,
+        kind: Some(DeferredKind::Terminal),
+        name: None,
+        status,
+        summary: None,
+        output_file: None,
+        progress: None,
+    })
+}
+
 impl AgyAdapter {
     /// O `result.status` do agy 1.1.13 fica contaminado depois de uma falha de
     /// ferramenta numa conversa retomada: o mesmo ERROR reaparece em turnos
@@ -3597,9 +3656,11 @@ impl AgyAdapter {
                     if full.chars().count() > 600 {
                         text.push('…');
                     }
+                    let bg_task = parse_agy_background_task(&full)
+                        .or_else(|| parse_claude_background_task(&full));
                     out.push(AgentEvent::ToolResult {
                         id: id.clone(),
-                        ok: state == "DONE" && erro.is_none(),
+                        ok: (state == "DONE" || bg_task.is_some()) && erro.is_none(),
                         text,
                         lines,
                         // B1: o agy não devolve CallToolResult com blocos
@@ -3612,7 +3673,7 @@ impl AgyAdapter {
                                 .unwrap_or(&serde_json::Value::Null),
                         ),
                     });
-                    if let Some((task_id, output_file)) = parse_claude_background_task(&full) {
+                    if let Some((task_id, output_file)) = bg_task {
                         out.push(AgentEvent::DeferredWork {
                             id: task_id,
                             tool_use_id: Some(id.clone()),
@@ -3633,7 +3694,7 @@ impl AgyAdapter {
                     .or_else(|| step.get("message").and_then(|x| x.as_str()))
                     .or_else(|| step.pointer("/message/content").and_then(|x| x.as_str()));
                 if let Some(t) = text {
-                    if let Some(ev) = parse_task_notification(t) {
+                    if let Some(ev) = parse_agy_task_notification(t).or_else(|| parse_task_notification(t)) {
                         out.push(ev);
                     }
                 }
@@ -3987,7 +4048,7 @@ impl AgentAdapter for AgyAdapter {
             // e qualquer evento novo: surfaça em vez de descartar.
             _ => {
                 if let Some(text) = user_message_text(v) {
-                    if let Some(ev) = parse_task_notification(&text) {
+                    if let Some(ev) = parse_agy_task_notification(&text).or_else(|| parse_task_notification(&text)) {
                         return vec![ev];
                     }
                 }
@@ -6020,30 +6081,33 @@ mod tests {
     #[test]
     fn agy_task_notification_e_background_task_viram_deferred_work() {
         let mut a = AgyAdapter::default();
+        // Payload REAL do Antigravity / Agy ao colocar tarefa em background:
+        let agy_bg_output = "Tool is running as a background task with task id: 62333af1-d9f9-4f27-a291-69323f63b1be/task-2\nTask Description: sleep 25 && echo terminou-o-sleep\nTask logs are available at: file:///tmp/task-2.log\n";
         let tool_line = serde_json::json!({
             "event": "step_update",
             "step_update": {
                 "step_index": 10,
                 "step_type": "tool",
                 "state": "DONE",
-                "tool_name": "bash",
+                "tool_name": "run_command",
                 "tool_info": {
-                    "output": "Command running in background with ID: agy_bg_123. Output is being written to: /tmp/agy_bg.log\n"
+                    "output": agy_bg_output
                 }
             }
         });
         let evs = a.map_line(&tool_line);
         assert!(evs.iter().any(|e| matches!(
             e,
-            AgentEvent::DeferredWork { id, status: DeferredStatus::Running, .. } if id == "agy_bg_123"
+            AgentEvent::DeferredWork { id, status: DeferredStatus::Running, .. } if id == "62333af1-d9f9-4f27-a291-69323f63b1be/task-2"
         )));
 
-        let notif_payload = "<task-notification>\n<task-id>agy_bg_123</task-id>\n<status>completed</status>\n<summary>Concluido com sucesso</summary>\n</task-notification>";
+        // Payload REAL de notificação de conclusão de tarefa do Agy:
+        let notif_payload = "[Message] timestamp=2026-09-17T13:08:05Z sender=62333af1-d9f9-4f27-a291-69323f63b1be/task-2 priority=MESSAGE_PRIORITY_HIGH content=Task id \"62333af1-d9f9-4f27-a291-69323f63b1be/task-2\" finished with result:\n\nThe command exited with code 0.\nOutput:\nterminou-o-sleep\n\nLog: file:///tmp/task-2.log";
         let user_line = serde_json::json!({
             "event": "step_update",
             "step_update": {
                 "step_index": 11,
-                "step_type": "user_input",
+                "step_type": "system_message",
                 "state": "DONE",
                 "message": notif_payload
             }
@@ -6051,7 +6115,24 @@ mod tests {
         let evs2 = a.map_line(&user_line);
         assert!(evs2.iter().any(|e| matches!(
             e,
-            AgentEvent::DeferredWork { id, status: DeferredStatus::Completed, .. } if id == "agy_bg_123"
+            AgentEvent::DeferredWork { id, status: DeferredStatus::Completed, .. } if id == "62333af1-d9f9-4f27-a291-69323f63b1be/task-2"
+        )));
+
+        // Payload REAL de notificação de cancelamento:
+        let cancel_payload = "Task id \"62333af1-d9f9-4f27-a291-69323f63b1be/task-2\" was canceled with result:\nTool execution was canceled";
+        let cancel_line = serde_json::json!({
+            "event": "step_update",
+            "step_update": {
+                "step_index": 12,
+                "step_type": "user_input",
+                "state": "DONE",
+                "message": cancel_payload
+            }
+        });
+        let evs3 = a.map_line(&cancel_line);
+        assert!(evs3.iter().any(|e| matches!(
+            e,
+            AgentEvent::DeferredWork { id, status: DeferredStatus::Stopped, .. } if id == "62333af1-d9f9-4f27-a291-69323f63b1be/task-2"
         )));
     }
 

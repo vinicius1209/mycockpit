@@ -45,7 +45,7 @@ describe("settleTerminalTools", () => {
         runId: "189a0492-555e-4322-92c7-6dd3585a6f12",
         convId: "8c34d12f-38d7-4bf8-aa13-c3f887b795be",
         command: "cd app && bunx vite preview --port 4173 --strictPort",
-        cwd: "/Users/viniciusmachado/projetos/mycockpit",
+        cwd: "/Users/viniciusmachado/projetos/frota",
         label: "Preview web da Frota (dist) para o navegador integrado",
         pid: 39791,
         status: "running",
