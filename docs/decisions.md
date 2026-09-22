@@ -8208,3 +8208,94 @@ considerou.
   `runtimeLogging` e não desmontam a árvore. Erro dentro de portal (diálogo,
   popover) sobe pela árvore do React, não pelo DOM, então cai na fronteira de
   quem o renderizou.
+
+### ADR-224 · O navegador da Frota chega a qualquer motor por um MCP próprio, e a barra humana para de fingir política
+
+- **Status:** aprovada em 21/09/2026. Cada item entra em commit próprio que
+  cita esta ADR; o que ainda não entrou está marcado abaixo.
+- **Contexto:** o navegador do projeto é da Frota (ADR-131, 147, 204, 207,
+  208): processo próprio, um piloto por vez, screencast, evidência em disco,
+  fail-closed quando o binding pede o navegador e ele está desligado. Mas a
+  capacidade só chega ao agente por MCP de terceiro (Playwright, DevTools) e
+  só em motor com escopo de MCP por run (Claude Code e Codex). Incidente de
+  21/09/2026: o agy abriu um Playwright externo. Não era bug, era a estrutura:
+  o agy só lê a configuração global dele (`~/.gemini/config/mcp_config.json`,
+  que tem `playwright` habilitado e sobe o próprio Chromium), a Frota recusa
+  binding para ele (`mcp_control.rs:352`), e a frase "abra o navegador
+  integrado" em `.frota/instructions.md` empurrava para o único navegador que
+  ele alcança. Na mesma auditoria: (a) sem nenhum binding no projeto, os MCPs
+  globais de Claude e Codex entram inteiros no run e um Playwright global abre
+  Chromium externo com um aviso genérico; (b) tool nativa de navegador do agy e
+  `npx playwright` por shell não são bloqueáveis nem detectados; (c) o
+  Playwright MCP precisa do endpoint na hora de SUBIR, então navegador desligado
+  no começo do turno é ferramenta inexistente o turno inteiro, e o agente não
+  tem como pedir "liga"; (d) a barra de endereço humana recusa `file://`
+  (`browser_cdp.rs:463`, do commit que criou a camada, sem decisão escrita), o
+  que impede abrir um mock local, enquanto o agente, que fala CDP direto, navega
+  para `file://` sem que a Frota veja; (e) Configurações aconselha ao agy um
+  gesto que não existe nele.
+- **O que NÃO está em jogo (mal-entendido registrado):** o navegador não
+  bloqueia JavaScript. É um Chromium completo; toda página roda JS. O que a
+  barra humana recusa é o ESQUEMA `javascript:` digitado como endereço
+  (`javascript:alert(1)`), que é injeção de script pela URL, sem valor de
+  produto. Continua recusado. Sobre desempenho: o motor é o Chromium de verdade,
+  sem trava; o que a pessoa vê dentro da Frota é um screencast (JPEG q68, até
+  1440×1000, aviso a cada 100 ms, `browser_cdp.rs:245`), e é o screencast que
+  tem latência e serrilhado, não o navegador. Quem quiser a tela nativa liga
+  com janela visível (`window_visible`, `browser.rs:356`): a Frota continua
+  dona e piloto; só a apresentação muda.
+- **Decisão:**
+  1. **`frota-browser`, MCP próprio da Frota, no molde do `frota-work`
+     (ADR-173):** cadastro global estável no CLI de cada motor que fala MCP,
+     identidade do run por variável de ambiente por processo, socket do app.
+     Revisa a decisão 4 do PRD (`docs/navegador-na-frota-prd.md`), tomada quando
+     só Claude e Codex contavam. Tools mínimas, todas em cima do que
+     `browser_cdp.rs`, `browser_capture.rs` e `browser_marcacao.rs` já fazem
+     para a barra humana: `browser_status`, `browser_navigate`,
+     `browser_snapshot` (árvore de acessibilidade e texto), `browser_capture`
+     (PNG que vira evidência no fio), `browser_click`, `browser_type`,
+     `browser_key`. Clique, teclado e navegação exigem a lease de piloto do
+     broker (ADR-131); observar não. Com o navegador DESLIGADO a tool não
+     falha: responde "desligado" e abre um cartão de interação "ligar o
+     navegador deste projeto?"; a pessoa liga; a próxima chamada funciona. É
+     isto que o Playwright MCP não consegue fazer, e é o que devolve ao agente o
+     direito de PEDIR sem tirar da pessoa a decisão. O agy passa a alcançar o
+     navegador da Frota por aqui; o OpenCode também, pelo `opencode.json`.
+     Playwright e DevTools MCP continuam válidos por binding para quem preferir.
+  2. **Fail-open com nome.** Run não gerenciado (projeto sem binding) passa a
+     listar no manifesto e na faixa "Capacidades deste run" os MCPs que o
+     inventário classifica como "Outro navegador" (`resource_broker.rs:299`),
+     com o gesto "vincular ao navegador da Frota" ao lado, em vez do aviso
+     genérico "recursos do provider não observados".
+  3. **Navegador externo vira estado visível no fio.** O adapter classifica no
+     stream tool nativa de navegador (`open_browser_url`, `browser_*` do agy),
+     chamada a MCP de navegador fora do plano e comando de shell que sobe
+     Playwright ou abre navegador. Vira aviso na linha da tool: "abriu um
+     navegador fora da Frota". Não bloqueia (o agy roda sem permissões e o
+     shell é livre); diz a verdade.
+  4. **Configurações diz por onde o navegador chega, por motor.** Uma linha por
+     motor: Claude e Codex "pelo MCP do projeto"; agy e OpenCode "pelo
+     `frota-browser` no cadastro global", com o botão "usar o navegador da
+     Frota" que escreve no cadastro e confirma. Some o conselho de vincular
+     binding onde o motor não aceita binding.
+  5. **`file://` na barra humana para caminhos do projeto.** `javascript:` segue
+     recusado. O inventário público mostra o caminho RELATIVO ao projeto em vez
+     de `file://…` (esconder era menos honesto que mostrar o que é do projeto);
+     caminho fora do projeto continua `file://…`. A instrução de mocks em
+     `.frota/instructions.md` volta a poder pedir o navegador integrado.
+  6. **Nome honesto.** `validate_navigation` passa a chamar `politica_da_barra`
+     (ou equivalente): é a política do que a PESSOA digita, não a política do
+     navegador. A do navegador, para o agente, é a lease do broker e nada mais.
+  7. **Enquanto o item 1 não existe:** desabilitar o `playwright` global do agy
+     (`agy mcp disable playwright`) é gesto da pessoa, fora do repositório; a
+     Frota não mexe em cadastro global sem pedido.
+- **Fora do escopo:** conter tool nativa ou shell (não há mecanismo, e criar
+  sandbox de rede para isso é outra frente); o desempenho do screencast
+  (qualidade, frame rate, latência de input) fica para uma frente própria com
+  medição, e a saída de emergência já existe (janela visível).
+- **Ordem sugerida:** 2, 6 e 5 (baratos, sem dependência); 4 junto com 1; 3
+  junto com 1, porque o adapter ganha classificação de tool de qualquer jeito.
+- **Verificação exigida:** captura real do agy chamando `frota-browser` em
+  `testdata/`, teste de contrato de que o cadastro global e o socket batem
+  (mesmo padrão do `work_mcp_setup_tests.rs`), e o fluxo "navegador desligado →
+  cartão → ligar → próxima chamada funciona" provado no app, não só em teste.
