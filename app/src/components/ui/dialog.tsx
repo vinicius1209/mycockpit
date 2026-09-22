@@ -85,10 +85,16 @@ function DialogContent({
         className="fixed inset-0 z-50 overflow-y-auto"
       >
         <div className="flex min-h-full items-center justify-center p-4">
+          {/* `grid-cols-[minmax(0,1fr)]`: sem ele a coluna implícita do grid
+              cresce até o min-content do filho, e texto `truncate` (caminho
+              de pasta longo) tem min-content = o texto INTEIRO. Visto em
+              22/09/2026 no "Adicionar projeto": o diálogo ficava com 448px e
+              o formulário vazava pela direita. O `min-w-0` da linha flex não
+              alcança essa conta; quem trava é a coluna. */}
           <DialogPrimitive.Content
             data-slot="dialog-content"
             className={cn(
-              "relative grid w-full max-w-[calc(100%-2rem)] gap-4 rounded-lg border bg-background p-6 shadow-[var(--shadow-pop)] duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+              "relative grid w-full max-w-[calc(100%-2rem)] grid-cols-[minmax(0,1fr)] gap-4 rounded-lg border bg-background p-6 shadow-[var(--shadow-pop)] duration-200 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
               className
             )}
             {...props}

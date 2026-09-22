@@ -78,7 +78,7 @@ export function AddProjectDialog() {
       onOpenChange={setOpen}
       size="md"
       title="Adicionar projeto"
-      description="Conecte uma pasta ou repositório local ao Cockpit."
+      description="Conecte uma pasta ou repositório local à Frota."
     >
       <form onSubmit={handleSubmit} className="flex flex-col gap-4 pt-1">
         {/* 1. Nome do projeto */}
