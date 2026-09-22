@@ -23,19 +23,32 @@ let iniciada = false
  *  Ligar é gesto da pessoa: um aviso com o botão, nunca um navegador que sobe
  *  sozinho. O Rust já limita a um pedido por run a cada 30 s. */
 export function pedidoDeNavegador(event: WorkEvent): void {
+  // O navegador ligou (por aqui ou por Configurações): o pedido já foi
+  // atendido e sai da tela sozinho.
+  if (event.kind === "browser_state" && event.data.session) {
+    toast.dismiss(`browser-needed:${event.data.session.projectPath}`)
+    return
+  }
   if (event.kind !== "browser_needed") return
   const path = event.data.projectPath
   if (!path) return
   const projeto = useApp.getState().projects.find((p) => p.path === path)
+  // Pedido que espera uma decisão humana não expira sozinho: visto em
+  // 22/09/2026, com 30 s o aviso já tinha sumido quando a pessoa olhou, e
+  // "nada mudou na tela". Fica até ela ligar ou fechar.
   toast(`O agente quer usar o navegador do projeto${projeto ? ` ${projeto.name}` : ""}.`, {
     id: `browser-needed:${path}`,
     description: "Ele está desligado. Ligar abre um Chromium da Frota em segundo plano; o agente tenta de novo sozinho.",
-    duration: 30_000,
+    duration: Infinity,
+    closeButton: true,
     action: {
       label: "Ligar navegador",
       onClick: () => {
         void startProjectBrowser(path)
-          .then(() => toast.success("Navegador do projeto ligado"))
+          .then(() => {
+            toast.dismiss(`browser-needed:${path}`)
+            toast.success("Navegador do projeto ligado")
+          })
           .catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
       },
     },

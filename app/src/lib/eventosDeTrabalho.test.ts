@@ -11,7 +11,7 @@ const listenWorkEvents = vi.fn(async (onEvent: (event: unknown) => void) => {
 
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
 const { toast, startProjectBrowser } = vi.hoisted(() => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
+  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() }),
   startProjectBrowser: vi.fn(async (_path: string) => ({})),
 }))
 vi.mock("sonner", () => ({ toast }))
@@ -65,8 +65,11 @@ describe("iniciarEventosDeTrabalho", () => {
     startProjectBrowser.mockClear()
     pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: "/repo/frota" } })
     expect(toast).toHaveBeenCalledTimes(1)
-    const [texto, opcoes] = toast.mock.calls[0] as [string, { action: { label: string; onClick: () => void } }]
+    const [texto, opcoes] = toast.mock.calls[0] as [string, { duration: number; action: { label: string; onClick: () => void } }]
     expect(texto).toContain("Frota")
+    // Decisão humana pendente não expira sozinha (22/09/2026: com 30 s o
+    // aviso sumia antes de a pessoa olhar).
+    expect(opcoes.duration).toBe(Infinity)
     expect(startProjectBrowser).not.toHaveBeenCalled()
     expect(opcoes.action.label).toBe("Ligar navegador")
     opcoes.action.onClick()
@@ -78,5 +81,14 @@ describe("iniciarEventosDeTrabalho", () => {
     pedidoDeNavegador({ kind: "work_update", data: { task: { id: "p1", status: "completed" } } })
     pedidoDeNavegador({ kind: "browser_needed", data: {} })
     expect(toast).not.toHaveBeenCalled()
+  })
+
+  it("o navegador ligando por qualquer caminho recolhe o pedido", () => {
+    toast.dismiss.mockClear()
+    pedidoDeNavegador({
+      kind: "browser_state",
+      data: { projectId: "p1", session: { projectId: "p1", projectPath: "/repo/frota" } as never },
+    })
+    expect(toast.dismiss).toHaveBeenCalledWith("browser-needed:/repo/frota")
   })
 })
