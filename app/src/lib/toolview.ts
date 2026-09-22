@@ -231,7 +231,52 @@ function safeJson(v: unknown): string | null {
   }
 }
 
+/** Tools nativas de navegador que motores expõem SEM passar pela Frota (o
+ *  inventário real do agy 1.2.x, `testdata/agy-1.2.2/resume.jsonl`). É registry
+ *  de NOME de tool do contrato, não comparação de motor: outro motor que
+ *  exponha o mesmo nome entra pela mesma porta. */
+const TOOLS_NATIVAS_DE_NAVEGADOR = new Set([
+  "open_browser_url",
+  "browser_subagent",
+  "browser_click_element",
+  "capture_browser_screenshot",
+  "read_browser_page",
+  "execute_browser_javascript",
+  "list_browser_pages",
+])
+
+/** Comando de shell que sobe um navegador por conta própria. Playwright e
+ *  Puppeteer abrem o Chromium deles; `open` no macOS e `xdg-open` no Linux
+ *  entregam a URL ao navegador do sistema. */
+const SHELL_ABRE_NAVEGADOR =
+  /(^|[\s;&|(])(npx\s+(-y\s+)?playwright\b|playwright\s+(open|test|codegen)\b|puppeteer\b|open\s+(-a\s+["']?(Google Chrome|Safari|Firefox|Chromium)|https?:)|xdg-open\s+https?:)/i
+
+/** O navegador da Frota chega ao agente pelo MCP do projeto ou pelo
+ *  `frota-browser` (ADR-224). Tudo que abre navegador por fora é ESTADO que a
+ *  pessoa precisa ver na linha da tool: não é bloqueável (tool nativa, shell),
+ *  então é dito. Puro. */
+export function abreNavegadorForaDaFrota(name: string, input: unknown): boolean {
+  if (TOOLS_NATIVAS_DE_NAVEGADOR.has(name) || name.startsWith("browser_")) return true
+  if (name === "Bash") {
+    const i = (input && typeof input === "object" ? input : {}) as Record<string, unknown>
+    const cmd = typeof i.command === "string" ? i.command : ""
+    return SHELL_ABRE_NAVEGADOR.test(cmd)
+  }
+  return false
+}
+
+export const META_NAVEGADOR_EXTERNO = "navegador fora da Frota"
+
 export function presentTool(name: string, input: unknown): ToolView {
+  const view = presentToolBase(name, input)
+  if (!abreNavegadorForaDaFrota(name, input)) return view
+  return {
+    ...view,
+    meta: view.meta ? `${META_NAVEGADOR_EXTERNO} · ${view.meta}` : META_NAVEGADOR_EXTERNO,
+  }
+}
+
+function presentToolBase(name: string, input: unknown): ToolView {
   const i = (input && typeof input === "object" ? input : {}) as Record<
     string,
     unknown
