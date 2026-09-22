@@ -8,6 +8,7 @@
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::path::Path;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -131,9 +132,34 @@ fn should_notify_preview(last_notice_at: i64, captured_at: i64) -> bool {
 }
 
 pub(crate) fn sanitize_page_url(raw: &str) -> String {
+    sanitize_page_url_no_projeto(raw, None)
+}
+
+/// Caminho local RELATIVO ao projeto quando o arquivo é dele (ADR-224): mock
+/// aberto pela barra aparece como `docs/mocks/x.html`, que é o que a pessoa
+/// digitou. Fora do projeto continua `file://…`: caminho da máquina não vaza
+/// para o inventário público.
+fn caminho_no_projeto(parsed: &url::Url, raiz: &Path) -> Option<String> {
+    let arquivo = parsed.to_file_path().ok()?;
+    let arquivo = arquivo.canonicalize().unwrap_or(arquivo);
+    let raiz = raiz.canonicalize().ok()?;
+    let relativo = arquivo.strip_prefix(&raiz).ok()?;
+    let texto = relativo.to_string_lossy();
+    if texto.is_empty() {
+        return None;
+    }
+    Some(texto.chars().take(512).collect())
+}
+
+pub(crate) fn sanitize_page_url_no_projeto(raw: &str, raiz: Option<&Path>) -> String {
     let Ok(mut parsed) = url::Url::parse(raw) else {
         return "Endereço indisponível".into();
     };
+    if parsed.scheme() == "file" {
+        if let Some(relativo) = raiz.and_then(|raiz| caminho_no_projeto(&parsed, raiz)) {
+            return relativo;
+        }
+    }
     match parsed.scheme() {
         "http" | "https" => {
             let _ = parsed.set_username("");
@@ -152,8 +178,8 @@ pub(crate) fn sanitize_page_url(raw: &str) -> String {
     }
 }
 
-fn public_page(page: RawPage) -> BrowserPage {
-    let url = sanitize_page_url(&page.url);
+fn public_page(page: RawPage, raiz: &Path) -> BrowserPage {
+    let url = sanitize_page_url_no_projeto(&page.url, Some(raiz));
     BrowserPage {
         id: page.id,
         title: page.title.chars().take(240).collect(),
@@ -223,7 +249,7 @@ pub async fn browser_pages(
         .await?
         .into_iter()
         .filter(|page| page.kind == "page")
-        .map(public_page)
+        .map(|page| public_page(page, Path::new(&project_path)))
         .collect())
 }
 
@@ -460,18 +486,42 @@ fn com_esquema(raw: &str) -> String {
     format!("{}://{texto}", if local { "http" } else { "https" })
 }
 
-fn validate_navigation(raw: &str) -> Result<String, String> {
+/// A política do que a PESSOA digita na barra. Não é a política do navegador:
+/// o agente fala CDP direto e a única régua dele é a lease do piloto
+/// (ADR-131). Chamava-se `validate_navigation` e enganava (ADR-224).
+///
+/// `javascript:` fica fora (injeção de script pela URL, sem valor de
+/// produto). `file://` entra quando o arquivo é do PROJETO: é assim que um mock
+/// em `docs/mocks/` abre no navegador da Frota sem servidor HTTP. Até
+/// 21/09/2026 era recusado junto com o `javascript:`, sem decisão escrita.
+fn politica_da_barra(raw: &str, raiz_do_projeto: &Path) -> Result<String, String> {
     if raw == "about:blank" {
         return Ok(raw.into());
     }
-    let raw = &com_esquema(raw);
-    let parsed = url::Url::parse(raw)
+    let raw = raw.trim();
+    // Caminho do projeto digitado cru (`docs/mocks/x.html`) vira file://.
+    let candidato = if raw.starts_with("file://") {
+        raw.to_string()
+    } else if !raw.contains("://") && Path::new(raw).extension().is_some_and(|e| e.eq_ignore_ascii_case("html") || e.eq_ignore_ascii_case("htm")) && raiz_do_projeto.join(raw).is_file() {
+        let arquivo = raiz_do_projeto.join(raw);
+        let arquivo = arquivo.canonicalize().unwrap_or(arquivo);
+        url::Url::from_file_path(arquivo).map(|u| u.to_string()).unwrap_or_else(|_| raw.to_string())
+    } else {
+        com_esquema(raw)
+    };
+    let parsed = url::Url::parse(&candidato)
         .map_err(|_| "digite um endereço, como exemplo.com ou https://exemplo.com".to_string())?;
+    if parsed.scheme() == "file" {
+        return match caminho_no_projeto(&parsed, raiz_do_projeto) {
+            Some(_) => Ok(parsed.to_string()),
+            None => Err("arquivo local só abre quando está dentro deste projeto".into()),
+        };
+    }
     if !matches!(parsed.scheme(), "http" | "https")
         || !parsed.username().is_empty()
         || parsed.password().is_some()
     {
-        return Err("a navegação aceita apenas http/https sem credenciais na URL".into());
+        return Err("a navegação aceita http/https sem credenciais na URL, ou um arquivo deste projeto".into());
     }
     Ok(parsed.to_string())
 }
@@ -601,7 +651,7 @@ pub async fn browser_input(
         }
         BrowserInputAction::History { .. } => unreachable!(),
         BrowserInputAction::Navigate { url } => vec![json!({
-            "id": 1, "method": "Page.navigate", "params": {"url": validate_navigation(&url)?}
+            "id": 1, "method": "Page.navigate", "params": {"url": politica_da_barra(&url, Path::new(&project_path))?}
         })],
     };
     send_cdp(websocket_url, commands).await
@@ -610,6 +660,10 @@ pub async fn browser_input(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn public_page_teste(page: RawPage) -> BrowserPage {
+        public_page(page, Path::new("/tmp"))
+    }
 
     #[test]
     fn url_de_exibicao_remove_credenciais_query_e_fragmento() {
@@ -627,7 +681,7 @@ mod tests {
 
     #[test]
     fn pagina_publica_nunca_entrega_a_url_bruta() {
-        let page = public_page(RawPage {
+        let page = public_page_teste(RawPage {
             id: "page-1".into(),
             title: "Conta".into(),
             url: "https://user:secret@example.com/path?token=abc#fim".into(),
@@ -648,18 +702,43 @@ mod tests {
     }
 
     #[test]
-    fn navegacao_rejeita_esquema_perigoso() {
+    fn a_barra_humana_aceita_web_e_recusa_esquema_perigoso() {
+        let raiz = std::env::temp_dir();
+        let v = |raw: &str| politica_da_barra(raw, &raiz);
         // Endereço digitado sem esquema (o caso real da barra) vira https://.
-        assert_eq!(validate_navigation("www.google.com.br").as_deref(), Ok("https://www.google.com.br/"));
-        assert_eq!(validate_navigation(" exemplo.com/busca?q=1 ").as_deref(), Ok("https://exemplo.com/busca?q=1"));
+        assert_eq!(v("www.google.com.br").as_deref(), Ok("https://www.google.com.br/"));
+        assert_eq!(v(" exemplo.com/busca?q=1 ").as_deref(), Ok("https://exemplo.com/busca?q=1"));
         // Na própria máquina o servidor é http (https só daria erro de certificado).
-        assert_eq!(validate_navigation("localhost:3981/pedidos").as_deref(), Ok("http://localhost:3981/pedidos"));
-        assert_eq!(validate_navigation("127.0.0.1:5173").as_deref(), Ok("http://127.0.0.1:5173/"));
+        assert_eq!(v("localhost:3981/pedidos").as_deref(), Ok("http://localhost:3981/pedidos"));
+        assert_eq!(v("127.0.0.1:5173").as_deref(), Ok("http://127.0.0.1:5173/"));
         assert_eq!(com_esquema("http://interno/app"), "http://interno/app");
         // Texto que não é endereço continua erro: a barra não vira busca.
-        assert!(validate_navigation("como fazer bolo").is_err());
-        assert!(validate_navigation("javascript:alert(1)").is_err());
-        assert!(validate_navigation("file:///etc/passwd").is_err());
-        assert!(validate_navigation("https://example.com").is_ok());
+        assert!(v("como fazer bolo").is_err());
+        assert!(v("javascript:alert(1)").is_err());
+        assert!(v("https://example.com").is_ok());
+    }
+
+    /// ADR-224: mock em `docs/mocks/` abre pelo caminho; arquivo fora do
+    /// projeto não. O caso real: `docs/mocks/aba-conversa.html`.
+    #[test]
+    fn a_barra_humana_abre_arquivo_do_projeto_e_so_dele() {
+        let raiz = std::env::temp_dir().join(format!("frota-barra-{}", std::process::id()));
+        std::fs::create_dir_all(raiz.join("docs/mocks")).unwrap();
+        let mock = raiz.join("docs/mocks/aba-conversa.html");
+        std::fs::write(&mock, "<!doctype html>").unwrap();
+        let esperado = url::Url::from_file_path(mock.canonicalize().unwrap()).unwrap().to_string();
+        // Caminho relativo cru, como a pessoa digita.
+        assert_eq!(politica_da_barra("docs/mocks/aba-conversa.html", &raiz).as_deref(), Ok(esperado.as_str()));
+        // file:// absoluto do projeto.
+        assert!(politica_da_barra(&esperado, &raiz).is_ok());
+        // Fora do projeto: recusado, com o motivo.
+        let fora = politica_da_barra("file:///etc/passwd", &raiz).unwrap_err();
+        assert!(fora.contains("dentro deste projeto"), "{fora}");
+        // Caminho que não existe não vira file:// por mágica.
+        assert!(politica_da_barra("docs/mocks/nao-existe.html", &raiz).is_err());
+        // No inventário público o arquivo do projeto aparece RELATIVO; o de fora, não.
+        assert_eq!(sanitize_page_url_no_projeto(&esperado, Some(&raiz)), "docs/mocks/aba-conversa.html");
+        assert_eq!(sanitize_page_url_no_projeto("file:///etc/passwd", Some(&raiz)), "file://…");
+        let _ = std::fs::remove_dir_all(&raiz);
     }
 }

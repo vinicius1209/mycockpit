@@ -103,7 +103,7 @@ async fn capturar_alvo(
     let (_, page) = crate::browser_cdp::target_for(app, project_path, target_id).await?;
     let websocket_url = page.websocket_url.as_deref().ok_or("a página não publicou um canal")?;
     let png = capturar_png(websocket_url).await?;
-    let url = crate::browser_cdp::sanitize_page_url(&page.url);
+    let url = crate::browser_cdp::sanitize_page_url_no_projeto(&page.url, Some(std::path::Path::new(project_path)));
     let title: String = page.title.chars().take(240).collect();
     Ok((png, url, title))
 }
