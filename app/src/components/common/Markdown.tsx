@@ -30,6 +30,13 @@ import { ImagemCitadaThumb } from "@/components/common/ImagemCitadaThumb"
 
 /** Botão de copiar no canto, aparece no hover. `group` = classe do grupo pai
  *  (group/code, group/table…) pra só aparecer no hover DAQUELE bloco. */
+
+/** O menu de escolha abre sob a menção clicada (vale para clique e teclado). */
+function pontoAbaixo(el: Element): { x: number; y: number } {
+  const r = el.getBoundingClientRect()
+  return { x: Math.round(r.left), y: Math.round(r.bottom) }
+}
+
 function CopyButton({
   onCopy,
   group,
@@ -187,7 +194,7 @@ function MarkdownLink({
 
     if (target) {
       e.preventDefault()
-      void abrirMencaoDeArquivo(target, project?.path)
+      void abrirMencaoDeArquivo(target, project?.path, pontoAbaixo(e.currentTarget))
     }
   }
 
@@ -294,7 +301,7 @@ function MarkdownInlineCode({
       const sel = window.getSelection()?.toString()
       if (sel && sel.trim().length > 0) return
       e.preventDefault()
-      void abrirMencaoDeArquivo(target, project?.path)
+      void abrirMencaoDeArquivo(target, project?.path, pontoAbaixo(e.currentTarget))
     }
 
     const title = formatFileOpenTooltip(target.rel)

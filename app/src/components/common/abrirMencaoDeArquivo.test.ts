@@ -18,6 +18,7 @@ vi.mock("sonner", () => ({
 
 import { useApp } from "@/store/app"
 import { emptyConv, useChat } from "@/store/chat"
+import { useEscolhaDeArquivo } from "@/store/escolhaDeArquivo"
 import { useMarkdownViewer } from "@/store/markdownViewer"
 import { abrirMencaoDeArquivo } from "./abrirMencaoDeArquivo"
 
@@ -31,6 +32,7 @@ describe("clique numa menção de arquivo abre dentro do Frota", () => {
     avisos.info.length = 0
     busca.entradas = []
     busca.falha = false
+    useEscolhaDeArquivo.getState().fechar()
     useApp.setState({ openFileTab: (path: string) => abertos.push(path) } as never)
     useChat.setState((s) => ({
       activeId: "c1",
@@ -79,6 +81,57 @@ describe("clique numa menção de arquivo abre dentro do Frota", () => {
     await abrirMencaoDeArquivo({ rel: "index.ts", line: null }, PROJETO)
     expect(abertos).toEqual([])
     expect(avisos.info[0]).toContain("2 arquivos se chamam index.ts: app/src/lib/index.ts, plugin-sdk/index.ts")
+  })
+
+  // 22/09/2026: "4 arquivos se chamam AGENTS.md", e a conversa tinha editado
+  // um deles por script no Bash (comando real, início verbatim).
+  const QUATRO_AGENTS = [
+    { relPath: "AGENTS.md", kind: "file" as const },
+    { relPath: "app/src-tauri/companion/AGENTS.md", kind: "file" as const },
+    { relPath: "app/src-tauri/src/AGENTS.md", kind: "file" as const },
+    { relPath: "app/src/components/chat/AGENTS.md", kind: "file" as const },
+  ]
+  const comBash = (command: string) =>
+    useChat.setState((s) => ({
+      byId: {
+        ...s.byId,
+        c1: { ...emptyConv("p1"), items: [{ kind: "tool", id: "b1", name: "Bash", input: { command } } as never] },
+      },
+    }))
+
+  it("caminho com pasta num comando de shell da conversa desempata", async () => {
+    comBash("python3 - <<'EOF'\np='app/src-tauri/src/AGENTS.md'\ns=open(p).read()")
+    busca.entradas = QUATRO_AGENTS
+    await abrirMencaoDeArquivo({ rel: "AGENTS.md", line: null }, PROJETO, { x: 10, y: 20 })
+    expect(abertos).toEqual(["app/src-tauri/src/AGENTS.md"])
+    expect(useEscolhaDeArquivo.getState().pedido).toBeNull()
+  })
+
+  it("caminho de shell que o índice não confirma não abre nada sozinho", async () => {
+    comBash("cat app/src-tauri/velho/AGENTS.md")
+    busca.entradas = QUATRO_AGENTS.slice(0, 2)
+    await abrirMencaoDeArquivo({ rel: "AGENTS.md", line: null }, PROJETO, { x: 10, y: 20 })
+    expect(abertos).toEqual([])
+    expect(useEscolhaDeArquivo.getState().pedido?.candidatos).toEqual([
+      "AGENTS.md",
+      "app/src-tauri/companion/AGENTS.md",
+    ])
+  })
+
+  it("sem desempate, a pessoa escolhe no ponto do clique, com os usados primeiro", async () => {
+    comBash("sed -n 1,5p app/src/components/chat/AGENTS.md; sed -n 1,5p app/src-tauri/src/AGENTS.md")
+    busca.entradas = QUATRO_AGENTS
+    await abrirMencaoDeArquivo({ rel: "AGENTS.md", line: null }, PROJETO, { x: 10, y: 20 })
+    expect(abertos).toEqual([])
+    const pedido = useEscolhaDeArquivo.getState().pedido
+    expect(pedido).toMatchObject({ x: 10, y: 20, nome: "AGENTS.md" })
+    expect(pedido?.candidatos).toEqual([
+      "app/src-tauri/src/AGENTS.md",
+      "app/src/components/chat/AGENTS.md",
+      "AGENTS.md",
+      "app/src-tauri/companion/AGENTS.md",
+    ])
+    expect(avisos.info).toEqual([])
   })
 
   it("nenhum candidato diz que não achou, e falha da busca é dita como falha", async () => {

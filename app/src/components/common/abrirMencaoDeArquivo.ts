@@ -9,17 +9,31 @@
 //
 // Nome solto (`dialog-centralizado.spec.ts`) é procurado em vez de ser tratado
 // como arquivo da raiz: primeiro nos arquivos que a conversa tocou, depois no
-// índice do projeto. Mais de um candidato não vira chute: a pessoa lê quais são.
+// índice do projeto. Mais de um candidato não vira chute: desempata pelo que a
+// conversa usou (ferramentas de arquivo E caminhos com pasta em comandos de
+// shell, só entre os que o índice confirmou), e se ainda sobrar mais de um a
+// pessoa escolhe num menu no ponto do clique. Visto em 22/09/2026: "4 arquivos
+// se chamam AGENTS.md… Abra pelo explorador", um aviso sem saída, para um
+// arquivo que a conversa tinha editado por script no Bash.
 
 import { toast } from "sonner"
 import { caminhosComONome, isImagePath, type FileTarget } from "@/lib/fileLink"
+import { arquivosCitadosEmShell } from "@/lib/caminhosEmComando"
 import { arquivosTocados } from "@/lib/mentionRank"
 import { searchProjectFileIndex } from "@/lib/projectFilesService"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useEscolhaDeArquivo } from "@/store/escolhaDeArquivo"
 import { useMarkdownViewer } from "@/store/markdownViewer"
 
 const MAX_CANDIDATOS_NO_AVISO = 3
+const MAX_CANDIDATOS_NO_MENU = 12
+
+/** Onde o menu de escolha abre: logo abaixo da menção clicada. */
+export interface PontoDoClique {
+  x: number
+  y: number
+}
 
 function raizDaConversa(projectPath: string): string {
   const chat = useChat.getState()
@@ -30,6 +44,7 @@ function raizDaConversa(projectPath: string): string {
 export async function abrirMencaoDeArquivo(
   target: FileTarget,
   projectPath: string | null | undefined,
+  ponto?: PontoDoClique,
 ): Promise<void> {
   const raizDoProjeto = projectPath?.replace(/\/+$/, "") ?? ""
   const externo = target.abs && (!raizDoProjeto || !target.abs.startsWith(`${raizDoProjeto}/`))
@@ -78,6 +93,24 @@ export async function abrirMencaoDeArquivo(
   }
   if (candidatos.length === 0) {
     toast.error(`Não achei ${target.rel} no projeto`)
+    return
+  }
+  // Desempate: o que a conversa usou, entre os que EXISTEM (o índice confirma;
+  // caminho lido de shell nunca abre sozinho um arquivo que não está aqui).
+  const usados = new Set([...arquivosTocados(itens, raiz), ...arquivosCitadosEmShell(itens, raiz)])
+  const preferidos = candidatos.filter((c) => usados.has(c))
+  if (preferidos.length === 1) {
+    abrir(preferidos[0])
+    return
+  }
+  if (ponto) {
+    const ordenados = [...preferidos, ...candidatos.filter((c) => !usados.has(c))]
+    useEscolhaDeArquivo.getState().oferecer({
+      x: ponto.x,
+      y: ponto.y,
+      nome: target.rel,
+      candidatos: ordenados.slice(0, MAX_CANDIDATOS_NO_MENU),
+    })
     return
   }
   const lista = candidatos.slice(0, MAX_CANDIDATOS_NO_AVISO).join(", ")

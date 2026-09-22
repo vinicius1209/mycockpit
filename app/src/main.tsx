@@ -9,6 +9,7 @@ import "./index.css"
 import App from "./App.tsx"
 import { Fronteira } from "@/components/common/Fronteira"
 import { AppContextMenu } from "@/components/common/AppContextMenu"
+import { EscolhaDeArquivo } from "@/components/common/EscolhaDeArquivo"
 import { CopiaDeTabela } from "@/components/common/CopiaDeTabela"
 import { installRuntimeLogging } from "@/lib/runtimeLogging"
 import { iniciarEventosDeTrabalho } from "@/lib/eventosDeTrabalho"
@@ -48,6 +49,7 @@ createRoot(document.getElementById("root")!).render(
         por JANELA, e o clique pode nascer dentro de qualquer portal (dialog,
         popover), que não descende de nenhuma árvore do App. */}
     <AppContextMenu />
+    <EscolhaDeArquivo />
     <CopiaDeTabela />
   </StrictMode>,
 )

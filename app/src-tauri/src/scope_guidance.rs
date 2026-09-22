@@ -43,6 +43,13 @@ pub fn format_scope_guidance(
         );
     }
 
+    // Visto em 22/09/2026: "o `AGENTS.md` do backend" num repositório com 4
+    // AGENTS.md. A Frota transforma a citação em link, e nome solto não diz
+    // qual abrir.
+    s.push_str(
+        "4. Citar arquivos: na resposta, escreva o caminho relativo ao workspace (ex.: `src/lib/x.ts`), não só o nome. A Frota transforma a citação em link, e um nome solto pode existir em várias pastas.\n"
+    );
+
     s
 }
 
@@ -57,6 +64,7 @@ mod tests {
         assert!(out.contains("- Diretórios extras vinculados: nenhum"));
         assert!(out.contains("ferramenta ask_user"));
         assert!(out.contains("Higiene no macOS"));
+        assert!(out.contains("caminho relativo ao workspace"));
     }
 
     #[test]
