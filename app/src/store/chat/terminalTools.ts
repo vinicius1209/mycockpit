@@ -70,6 +70,18 @@ export function settleTerminalTools(
   let changed = false
   const next = items.map((item, index) => {
     if (index <= turnStart || item.kind !== "tool" || item.result) return item
+    // Processo gerenciado é da Frota, não do turno: nasce pelo frota-work e
+    // segue vivo depois que o motor devolve a conversa (dev server, watcher).
+    // Quem fecha é o registry, pelo `process_exited`. Marcá-lo aqui era
+    // teatro: em 22/09/2026 um `vite preview` vivo e escutando na porta
+    // apareceu como "falhou · 22s" no fim do turno que o lançou.
+    if (
+      item.managedProcess &&
+      (item.managedProcess.status === "running" || item.managedProcess.status === "stopping") &&
+      terminal !== "cancelled"
+    ) {
+      return item
+    }
     changed = true
     const message =
       terminal === "cancelled"

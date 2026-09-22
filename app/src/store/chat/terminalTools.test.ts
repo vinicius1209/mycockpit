@@ -30,6 +30,40 @@ describe("settleTerminalTools", () => {
     })
   })
 
+  it("processo gerenciado vivo sobrevive ao fim do turno: quem o fecha é o registry", () => {
+    // Payload real de 22/09/2026 (process_poll): vite preview escutando na
+    // porta, e o fio dizia "falhou · 22s" porque o turno que o lançou acabou.
+    const preview: ChatItem = {
+      kind: "tool",
+      id: "t-preview",
+      name: "ManagedProcess",
+      input: { command: "cd app && bunx vite preview --port 4173 --strictPort" },
+      toolId: "frota-work:proc-37564-1",
+      ts: 1_790_081_747_417,
+      managedProcess: {
+        id: "proc-37564-1",
+        runId: "189a0492-555e-4322-92c7-6dd3585a6f12",
+        convId: "8c34d12f-38d7-4bf8-aa13-c3f887b795be",
+        command: "cd app && bunx vite preview --port 4173 --strictPort",
+        cwd: "/Users/viniciusmachado/projetos/mycockpit",
+        label: "Preview web da Frota (dist) para o navegador integrado",
+        pid: 39791,
+        status: "running",
+        exitCode: null,
+        output: "  ➜  Local:   http://localhost:4173/",
+        outputFile: "/tmp/proc-37564-1.output",
+        startedAt: 1_790_081_747_417,
+        updatedAt: 1_790_081_747_958,
+      },
+    } as ChatItem
+    const items: ChatItem[] = [{ kind: "user", id: "u1", text: "sobe o preview" }, preview]
+    const settled = settleTerminalTools(items, "done", 1_790_081_769_000)
+    expect(settled[1]).toBe(preview)
+    // Corte seu é outra coisa: o registry recebe o stop e o fio marca parou.
+    const cortado = settleTerminalTools(items, "cancelled", 1_790_081_769_000)
+    expect(cortado[1]).toMatchObject({ managedProcess: { status: "stopped" }, result: { interrupted: true } })
+  })
+
   it("não toca ferramenta concluída nem órfã de turno anterior", () => {
     const done = {
       ...INCIDENT_TOOL,
