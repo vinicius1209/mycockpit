@@ -31,7 +31,8 @@ vi.mock("@/store/app", () => ({
   ),
 }))
 
-import { ConversationMapPanel } from "./ConversationMapPanel"
+import { ConversationMapPanel, comRelogio } from "./ConversationMapPanel"
+import { historicoDePedidos } from "@/lib/conversationMap/historico"
 
 const PEDIDOS: ChatItem[] = [
   { kind: "user", id: "u1", text: "compara as imagens do VsCode e da nossa aplicação", ts: 1_000 },
@@ -105,5 +106,15 @@ describe("ConversationMapPanel", () => {
     const html = render([])
     expect(html).toContain("A conversa ainda não começou.")
     expect(html).toContain("É o histórico desta conversa.")
+  })
+
+  it("o tique do relógio só anda a duração do pedido rodando", () => {
+    const itens: ChatItem[] = [...PEDIDOS, { kind: "user", id: "u3", text: "agora", ts: 100_000 }]
+    const h = historicoDePedidos(itens, { running: true, finalizing: false }, 100_000)
+    const depois = comRelogio(h, 160_000)
+    expect(depois.pedidos[0]).toMatchObject({ estado: "rodando", duracaoMs: 60_000 })
+    // Os encerrados são o MESMO objeto: nada foi refeito.
+    expect(depois.pedidos[1]).toBe(h.pedidos[1])
+    expect(comRelogio(historicoDePedidos(PEDIDOS, { running: false, finalizing: false }), 1)).toBeTruthy()
   })
 })

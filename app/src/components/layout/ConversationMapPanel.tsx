@@ -36,6 +36,22 @@ function useAgora(rodando: boolean): number {
   return agora
 }
 
+/** Anda a duração do pedido rodando até `agora`, sem refazer a derivação. */
+export function comRelogio(
+  h: ReturnType<typeof historicoDePedidos>,
+  agora: number,
+): ReturnType<typeof historicoDePedidos> {
+  if (!h.rodando) return h
+  let extra = 0
+  const pedidos = h.pedidos.map((p) => {
+    if (p.estado !== "rodando" || p.ts == null) return p
+    const duracaoMs = Math.max(0, agora - p.ts)
+    extra += duracaoMs - (p.duracaoMs ?? 0)
+    return { ...p, duracaoMs }
+  })
+  return { ...h, pedidos, duracaoTotalMs: h.duracaoTotalMs + extra }
+}
+
 /** "12 pedidos · US$ 19,36 · 46min", com "1 rodando" quando há. Puro. */
 export function cabecalhoDoHistorico(h: ReturnType<typeof historicoDePedidos>): string {
   const n = h.pedidos.length
@@ -99,10 +115,14 @@ export function ConversationMapPanel({
       }),
     [conversationId, finalizing, items, pendingInteractions, running, title],
   )
-  const historico = useMemo(
-    () => historicoDePedidos(safeItems, { running, finalizing }, agora),
-    [items, running, finalizing, agora],
+  // O histórico só se recalcula quando o FIO muda; o tique do relógio só
+  // anda a duração do pedido que está rodando (antes o tique de 1 s refazia
+  // tudo: ~8 ms por vez na maior conversa real).
+  const derivado = useMemo(
+    () => historicoDePedidos(safeItems, { running, finalizing }),
+    [items, running, finalizing],
   )
+  const historico = useMemo(() => comRelogio(derivado, agora), [derivado, agora])
   const pins = entry?.pins ?? { schemaVersion: 1 as const, revision: 0, constraints: [] }
   const view = composeConversationMapView({
     facts,

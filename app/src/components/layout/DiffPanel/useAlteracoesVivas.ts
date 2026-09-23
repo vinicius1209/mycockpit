@@ -17,7 +17,7 @@
 // Amortecido: uma rajada de edições vira UMA leitura.
 
 import { useEffect, useRef } from "react"
-import { presentTool } from "@/lib/toolview"
+import { classificarAcao } from "@/lib/acaoDoFio"
 import type { ChatItem } from "@/store/chat"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -33,15 +33,8 @@ interface ConversaVista {
   items: readonly ChatItem[]
 }
 
-const mudaArquivo = new WeakMap<ChatItem, boolean>()
-
 function acaoQueMudouArquivo(item: ChatItem): boolean {
-  if (item.kind !== "tool" || !item.result) return false
-  const memo = mudaArquivo.get(item)
-  if (memo !== undefined) return memo
-  const muda = presentTool(item.name || "x", item.input).category === "change"
-  mudaArquivo.set(item, muda)
-  return muda
+  return item.kind === "tool" && !!item.result && classificarAcao(item).muda
 }
 
 /** Uma assinatura que só muda quando a pasta `cwd` pode ter mudado: quem está
@@ -79,10 +72,18 @@ export function useAlteracoesVivas(cwd: string, reler: () => void): void {
     }
     const pasta = (projectId: string) =>
       useApp.getState().projects.find((p) => p.id === projectId)?.path ?? null
-    let anterior = assinaturaDasMudancas(useChat.getState().byId, cwd, pasta)
+    // A 1ª assinatura (a que classifica as ações de todas as conversas da
+    // pasta) sai do caminho da montagem: abrir a aba não espera por ela.
+    let anterior: string | null = null
+    const inicial = setTimeout(() => {
+      anterior ??= assinaturaDasMudancas(useChat.getState().byId, cwd, pasta)
+    }, 0)
     const sair = useChat.subscribe((estado) => {
       const agora = assinaturaDasMudancas(estado.byId, cwd, pasta)
-      if (agora === anterior) return
+      if (anterior === null || agora === anterior) {
+        anterior = agora
+        return
+      }
       anterior = agora
       agendar()
     })
@@ -92,6 +93,7 @@ export function useAlteracoesVivas(cwd: string, reler: () => void): void {
     window.addEventListener("focus", agendar)
     document.addEventListener("visibilitychange", aoVoltar)
     return () => {
+      clearTimeout(inicial)
       sair()
       if (timer) clearTimeout(timer)
       window.removeEventListener("focus", agendar)

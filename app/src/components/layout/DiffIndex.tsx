@@ -42,6 +42,11 @@ import { confirm } from "@/lib/confirm"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
+/** Última leitura por pasta: trocar de aba e voltar mostra a lista na hora
+ *  (sem spinner) e relê por trás. Antes cada troca desmontava a aba, zerava o
+ *  estado e rodava ~6 comandos git com a tela vazia. */
+const ultimaLeitura = new Map<string, GitStatus>()
+
 export function DiffIndex({
   cwd,
   delivery,
@@ -53,8 +58,12 @@ export function DiffIndex({
   onRequestFix?: () => void
   onCloseDelivery?: () => void
 }) {
-  const [status, setStatus] = useState<GitStatus | null>(null)
+  const [status, setStatus] = useState<GitStatus | null>(() => ultimaLeitura.get(cwd) ?? null)
   const [loading, setLoading] = useState(true)
+  // Uma leitura por vez: pedido que chega no meio vira UMA releitura no fim,
+  // em vez de empilhar processos git (cliques rápidos, rajada de sinais).
+  const lendo = useRef(false)
+  const pendente = useRef(false)
   const [loadError, setLoadError] = useState<string | null>(null)
   const loadEpoch = useRef(0)
   const [viewMode, setViewMode] = useState<"list" | "tree">("list")
@@ -67,11 +76,18 @@ export function DiffIndex({
   const mainTab = useApp((s) => s.mainTab)
 
   function reload() {
+    if (lendo.current) {
+      pendente.current = true
+      return
+    }
+    lendo.current = true
     const epoch = ++loadEpoch.current
+    const pasta = cwd
     setLoading(true)
     setLoadError(null)
-    void loadGitStatus(cwd)
+    void loadGitStatus(pasta)
       .then((next) => {
+        ultimaLeitura.set(pasta, next)
         if (loadEpoch.current !== epoch) return
         setStatus(next)
       })
@@ -85,11 +101,20 @@ export function DiffIndex({
         )
       })
       .finally(() => {
+        lendo.current = false
         if (loadEpoch.current === epoch) setLoading(false)
+        if (pendente.current) {
+          pendente.current = false
+          reload()
+        }
       })
   }
 
   useEffect(() => {
+    // Pasta nova: mostra a última lista conhecida dela (ou nada) e relê.
+    setStatus(ultimaLeitura.get(cwd) ?? null)
+    pendente.current = false
+    lendo.current = false
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])

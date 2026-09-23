@@ -13,7 +13,7 @@
 
 import { briefExcerpt } from "@/lib/conversationBrief"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
-import { presentTool } from "@/lib/toolview"
+import { classificarAcao } from "@/lib/acaoDoFio"
 import type { CostSource } from "@/lib/agent"
 import type { ChatItem } from "@/store/chat"
 
@@ -59,7 +59,6 @@ export interface HistoricoDePedidos {
 }
 
 const TERMINAIS = new Set(["result", "error", "cancelled", "limit"])
-const CHAVES_DE_CAMINHO = ["file_path", "path", "filePath", "notebook_path"]
 
 function estadoDoTerminal(item: ChatItem): EstadoDoPedido {
   switch (item.kind) {
@@ -72,24 +71,6 @@ function estadoDoTerminal(item: ChatItem): EstadoDoPedido {
     default:
       return "erro"
   }
-}
-
-function caminhoDaMudanca(item: Extract<ChatItem, { kind: "tool" }>): string | null {
-  const view = presentTool(item.name || "x", item.input)
-  if (view.kind !== "edit" && view.kind !== "write") return null
-  const input = (item.input && typeof item.input === "object" ? item.input : {}) as Record<string, unknown>
-  for (const chave of CHAVES_DE_CAMINHO) {
-    const v = input[chave]
-    if (typeof v === "string" && v.trim()) return v.trim()
-  }
-  return view.detail
-}
-
-function commitsNoComando(item: Extract<ChatItem, { kind: "tool" }>): number {
-  if (item.result && !item.result.ok) return 0
-  const input = (item.input && typeof item.input === "object" ? item.input : {}) as Record<string, unknown>
-  const comando = typeof input.command === "string" ? input.command : ""
-  return comando.match(/\bgit\s+commit\b(?![^;&|\n]*--dry-run)/g)?.length ?? 0
 }
 
 function primeiraLinha(texto: string | undefined | null): string | null {
@@ -158,9 +139,9 @@ export function historicoDePedidos(
     const { pedido } = atual
     if (item.kind === "tool") {
       pedido.acoes += 1
-      const caminho = caminhoDaMudanca(item)
-      if (caminho) atual.arquivos.add(caminho)
-      pedido.commits += commitsNoComando(item)
+      const acao = classificarAcao(item)
+      if (acao.caminho) atual.arquivos.add(acao.caminho)
+      if (!item.result || item.result.ok) pedido.commits += acao.commitsNoComando
       if (item.managedProcess) pedido.processos += 1
     } else if (item.kind === "text") {
       pedido.resposta = primeiraLinha(item.text) ?? pedido.resposta
