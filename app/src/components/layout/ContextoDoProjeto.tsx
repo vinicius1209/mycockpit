@@ -33,6 +33,8 @@ import {
 } from "@/components/layout/contextoDoProjetoPecas"
 import { LearningSection } from "@/components/layout/LearningSection"
 import { PastaAntigaDoProjeto } from "@/components/layout/PastaAntigaDoProjeto"
+import { FerramentasDoTurno } from "@/components/layout/FerramentasDoTurno"
+import { useChat } from "@/store/chat"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import type { Project } from "@/lib/types"
@@ -176,6 +178,9 @@ export function ContextoDoProjeto({
       .map((f) => f.name) ?? []
 
   const leitor = readerAgent ? agentLabel(readerAgent) : null
+  // O manifesto do último envio da conversa ativa (ADR-239): o inventário que
+  // antes a faixa do composer mostrava em todo turno.
+  const manifestoDoTurno = useChat((s) => (s.activeId ? s.byId[s.activeId]?.runManifest : undefined))
   // O que ESTE motor lê do disco (dono explícito, lib/contextSources). Sem
   // conversa aberta não há motor: mostra o que existe, dito como disco.
   const lidas = new Set(
@@ -462,6 +467,10 @@ export function ContextoDoProjeto({
                   </p>
                 )}
               </div>
+            </Section>
+
+            <Section title="Ferramentas deste turno">
+              <FerramentasDoTurno manifest={manifestoDoTurno} motor={leitor ?? "motor"} />
             </Section>
             {/* Piso do rolamento: sem os divisores, a última seção terminava
                 encostada na borda do cartão. 16px é o mesmo respiro do mock. */}

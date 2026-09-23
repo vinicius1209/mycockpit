@@ -164,50 +164,6 @@ export function withObservedNativeToolCount(
   return changed ? { ...manifest, sources } : manifest
 }
 
-export interface RunManifestStats {
-  sourceCount: number
-  instructionCount: number
-  observedTools: number
-  advisorySources: number
-  unresolvedSources: number
-  resourceCount: number
-  blockedResources: number
-}
-
-export function runManifestStats(
-  manifest: EffectiveRunManifest,
-): RunManifestStats {
-  const sourceStats = manifest.sources.reduce<
-    Omit<
-      RunManifestStats,
-      "instructionCount" | "resourceCount" | "blockedResources"
-    >
-  >(
-    (stats, source) => ({
-      sourceCount: stats.sourceCount + 1,
-      observedTools: stats.observedTools + (source.observedCount ?? 0),
-      advisorySources:
-        stats.advisorySources + (source.enforceability === "advisory" ? 1 : 0),
-      unresolvedSources:
-        stats.unresolvedSources + (source.observedCount == null ? 1 : 0),
-    }),
-    {
-      sourceCount: 0,
-      observedTools: 0,
-      advisorySources: 0,
-      unresolvedSources: 0,
-    },
-  )
-  return {
-    ...sourceStats,
-    instructionCount: manifest.instructions?.length ?? 0,
-    resourceCount: manifest.resources.length,
-    blockedResources: manifest.resources.filter(
-      (resource) => resource.state === "blocked",
-    ).length,
-  }
-}
-
 /** Espelho de `Capabilities::tool_materializers` no Rust. Mantê-lo puro deixa
  * a UI explicar a força do controle sem comparar ids de provider. */
 export function toolMaterializers(

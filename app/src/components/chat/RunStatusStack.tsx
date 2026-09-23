@@ -1,12 +1,12 @@
 import { LivePlanCard } from "@/components/chat/LivePlanCard"
-import { RunCapabilityStrip } from "@/components/chat/RunCapabilityStrip"
+import { ExcecoesDoTurno } from "@/components/chat/ExcecoesDoTurno"
 import type { ConvState } from "@/store/chat"
 
 export function RunStatusStack({
   conversation,
   detailInSidebar,
 }: {
-  conversation: Pick<ConvState, "items" | "running" | "finalizing" | "runManifest">
+  conversation: Pick<ConvState, "items" | "running" | "finalizing" | "runManifest" | "agent">
   detailInSidebar: boolean
 }) {
   return (
@@ -17,7 +17,8 @@ export function RunStatusStack({
         finalizing={conversation.finalizing}
         detailInSidebar={detailInSidebar}
       />
-      <RunCapabilityStrip manifest={conversation.runManifest} />
+      {/* Só exceção (ADR-239): sem nada que peça atenção, não há faixa. */}
+      <ExcecoesDoTurno manifest={conversation.runManifest} agent={conversation.agent} />
     </>
   )
 }

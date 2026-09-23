@@ -8735,3 +8735,27 @@ considerou.
   no fio e devolve o prompt do gatilho real.
 - **Consequência:** depois do disparo, nenhuma tela diz "retoma às…"; o
   contador de tentativas continua valendo para o próximo fim de turno.
+
+### ADR-239 · "Capacidades deste run" vira exceção no composer e inventário na aba ✅
+- **Contexto (23/09/2026):** a faixa do ADR-126 provava o que o turno recebeu
+  de fato, e o motivo segue valendo (um Playwright global tinha aberto
+  navegador fora da Frota sem ninguém ver). Mas ela aparecia em todo turno
+  com "7 fontes · 283 tools confirmadas · 1 depende do provider", números que
+  não mudam decisão nenhuma (173 eram tools nativas do motor e 80 do
+  hostinger); o que importava ficava cortado no meio do texto, e aberta ela
+  despejava a lista crua. Mock aprovado: `docs/mocks/capacidades-do-turno.html`.
+- **Decisão:** revisa o item "UI" do ADR-126; o manifesto do Rust não muda.
+  1. **Composer:** só exceção, uma frase por exceção, com o gesto quando há
+     (`lib/excecoesDoTurno`): navegador ou computador fora da Frota (com o
+     nome), capacidade que não entrou (qual e por quê; "Ligar" quando é o
+     navegador desligado), turno só de leitura. Sem exceção, nada aparece.
+  2. **Aba "O que o agente vê":** grupo "Ferramentas deste turno", uma linha
+     por fonte com a contagem e quem controla em palavras ("a Frota
+     controla", "o motor decide como usar"); nomes só abrindo a fonte; o que
+     ficou fora, com o motivo. A superfície opaca do motor continua dita,
+     nunca uma lista vazia segura, e contagem desconhecida nunca vira zero.
+  3. Saem da tela "fontes", "tools confirmadas", "depende do provider",
+     "neste run →" e o aviso genérico "recursos do provider não observados"
+     acima do composer.
+- **Consequência:** o composer só fala quando há algo a fazer, e quem quer o
+  inventário acha no lugar que responde "o que o agente vê".
