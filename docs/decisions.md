@@ -8719,3 +8719,19 @@ considerou.
      no git" da doutrina também saiu: era afirmado sem conferir.
 - **Consequência:** abrir a aba responde "o que ele sabe agora", e trocar de
   motor mostra o que muda.
+
+### ADR-238 · Retomada que já disparou não promete retomar ✅
+- **Contexto (23/09/2026):** o turno bateu no limite, a retomada automática
+  foi agendada para 19:40 e disparou no horário. Com o turno retomado já
+  rodando, o composer seguia dizendo "Retoma às 19:40 · próxima tentativa 1
+  de 3", com "Retomar agora". O estado `autoResume` sobrevive ao disparo de
+  propósito (conta as tentativas até o turno retomado terminar), mas o banner,
+  o relógio na barra lateral e o "descansa até" da tela Frota liam "existe
+  estado" como "está agendada".
+- **Decisão:** `EstadoDaRetomada` (movido para `lib/autoResume.ts`) ganha
+  `disparou`, marcado no instante do disparo; as telas perguntam
+  `retomadaAgendada`. O disparo, que o chat e a Frota repetiam cada um no seu
+  timer, mora em `lib/autoResumeDisparo.ts`: confere a corrida, marca, avisa
+  no fio e devolve o prompt do gatilho real.
+- **Consequência:** depois do disparo, nenhuma tela diz "retoma às…"; o
+  contador de tentativas continua valendo para o próximo fim de turno.

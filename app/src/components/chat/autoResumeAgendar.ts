@@ -9,7 +9,8 @@
 // carrega o fio, e repetir o handoff inteiro aqui só queimava tokens.
 
 import { notifyTurnEnd } from "@/lib/notify"
-import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
+import { wantsAutoResume } from "@/lib/autoResume"
+import { dispararRetomada } from "@/lib/autoResumeDisparo"
 import { AUTO_RESUME, type OrigemDoEnvio } from "@/lib/sendOrigin"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -58,19 +59,9 @@ enviar: Enviar,
   }
   const tries = prevTries + 1
   const timer = setTimeout(() => {
-    const c = useChat.getState().byId[convId]
-    // corrida: usuário pode ter cancelado/enviado algo antes do disparo.
-    if (!c?.autoResume) return
-    if (c.running || c.finalizing) return
-    // o reenvio conta o gatilho REAL: afirmar "limite de uso" num resume
-    // heurístico manda o agente caçar um limite que nunca existiu.
-    const prompt = resumePrompt(verdict.reason)
-    useChat.getState().handleEvent(convId, {
-      type: "notice",
-      message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
-    })
+    const prompt = dispararRetomada(convId, tries, settings.autoResumeMaxTries, verdict.reason)
     // alvo explícito: o timer dispara minutos depois, o foco já pode ser outro.
-    void enviar(prompt, undefined, [], AUTO_RESUME, convId)
+    if (prompt) void enviar(prompt, undefined, [], AUTO_RESUME, convId)
   }, verdict.delayMs)
   useChat.getState().setAutoResume(convId, {
     tries,

@@ -30,6 +30,7 @@ import {
   type ConversationMeta,
 } from "@/lib/db/conversations"
 import { changedItemPositions } from "@/lib/db/conversationItems"
+import type { EstadoDaRetomada } from "@/lib/autoResume"
 import { createItemPersistence } from "@/store/chat/itemPersistence"
 import { createChatNavigation } from "@/store/chat/navigation"
 import { unseenBoundary } from "@/lib/unseen"
@@ -210,18 +211,9 @@ export interface ConvState extends ContextSnapshotState {
   limitHitThisTurn?: boolean
   /** Hint textual de quando o limite reseta (do último limit_reached do turno). */
   resetHint?: string | null
-  /** Auto-revive em andamento nesta conversa (efêmero, NÃO persiste). Enquanto
-   *  existe, um resume está agendado; o banner no ChatPanel lê `nextAt`/`tries`. */
-  autoResume?: {
-    tries: number
-    maxTries: number
-    /** epoch (ms) do próximo resume agendado (countdown do banner). */
-    nextAt: number
-    /** motivo curto (limite da CLI / texto do turno), pro aviso. */
-    reason: string
-    /** timer do setTimeout (p/ cancelar). */
-    timer: ReturnType<typeof setTimeout>
-  }
+  /** Auto-revive em andamento nesta conversa (efêmero, NÃO persiste). Ver
+   *  `EstadoDaRetomada`: existir NÃO quer dizer agendada (`retomadaAgendada`). */
+  autoResume?: EstadoDaRetomada
   /** Turno TERMINOU e você não viu (o fio não estava na sua frente). Vira o
    *  selo de concluído/falhou na linha da conversa no sidebar — o spinner some
    *  quando acaba e, sem isto, o fim do turno não deixava sinal NENHUM na

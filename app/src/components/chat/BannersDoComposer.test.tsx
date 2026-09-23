@@ -93,4 +93,44 @@ describe("pilha de avisos do composer", () => {
     expect(html).toContain("Retomada no Codex às")
     expect(html).not.toContain("Retoma às")
   })
+
+  // O caso de 23/09/2026: o timer disparou às 19:40, o turno retomado está
+  // rodando, e o banner seguia dizendo "Retoma às 19:40".
+  it("depois que a retomada dispara, nenhum aviso promete retomar", () => {
+    const conv = {
+      agent: "claude-code",
+      running: true,
+      items: [
+        { id: "user", kind: "user", text: "Continue" },
+        { id: "limit", kind: "limit", message: "Limite atingido" },
+        { id: "retomada", kind: "user", text: "Continue de onde parou." },
+      ],
+      autoResume: {
+        nextAt: Date.parse("2026-09-23T19:40:00-03:00"),
+        tries: 1,
+        maxTries: 3,
+        reason: "limit",
+        timer: 1,
+        disparou: true,
+      },
+    } as unknown as ConvState
+
+    const html = renderToStaticMarkup(
+      <BannersDoComposer
+        conv={conv}
+        activeId="conv-1"
+        temProjeto
+        busy
+        motorAusente={null}
+        onContinueNow={() => {}}
+        onReenviar={() => {}}
+        onLiberarPasta={() => {}}
+        onLigarNavegador={() => {}}
+        onRevisarMcp={() => {}}
+      />,
+    )
+
+    expect(html).not.toContain("Retoma às")
+    expect(html).not.toContain("Retomada no")
+  })
 })

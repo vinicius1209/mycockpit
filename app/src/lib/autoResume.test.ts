@@ -11,6 +11,7 @@ import {
   RESUME_REASON_LIMIT,
   RESUME_REASON_LIMIT_SEM_RESET,
   RESUME_REASON_TEXT,
+  retomadaAgendada,
 } from "./autoResume"
 
 let n = 0
@@ -284,5 +285,15 @@ describe("limite do Codex: horário real ou honestidade sobre não ter horário"
     expect(resumeBannerLabel(v.reason)).toContain("sem horário de reset")
     expect(resumePrompt(v.reason)).toContain("limite de uso")
     expect(resumePrompt(v.reason)).not.toContain("já deve ter resetado")
+  })
+})
+
+describe("retomadaAgendada", () => {
+  const estado = { tries: 1, maxTries: 3, nextAt: 0, reason: "limit", timer: 0 as unknown as ReturnType<typeof setTimeout> }
+  it("agendada só enquanto o timer não disparou", () => {
+    expect(retomadaAgendada({ autoResume: estado })).toBe(true)
+    expect(retomadaAgendada({ autoResume: { ...estado, disparou: true } })).toBe(false)
+    expect(retomadaAgendada({})).toBe(false)
+    expect(retomadaAgendada(undefined)).toBe(false)
   })
 })

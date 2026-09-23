@@ -1,3 +1,4 @@
+import { retomadaAgendada } from "@/lib/autoResume"
 import { useMemo, useRef, useState } from "react"
 import { Plus } from "lucide-react"
 import { toast } from "sonner"
@@ -60,8 +61,8 @@ function useFinishedUnseen(): Map<string, "ok" | "error"> {
 function useLimitConvIds(): Map<string, "pending" | "stuck"> {
   const key = useChat((s) =>
     Object.entries(s.byId)
-      .filter(([, c]) => c.autoResume || (c.limitHitThisTurn && !c.running))
-      .map(([id, c]) => `${id}:${c.autoResume ? "pending" : "stuck"}`)
+      .filter(([, c]) => retomadaAgendada(c) || (c.limitHitThisTurn && !c.running))
+      .map(([id, c]) => `${id}:${retomadaAgendada(c) ? "pending" : "stuck"}`)
       .sort()
       .join(","),
   )

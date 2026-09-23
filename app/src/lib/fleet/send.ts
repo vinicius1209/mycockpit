@@ -10,7 +10,8 @@ import { toast } from "sonner"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
-import { resumePrompt, wantsAutoResume } from "@/lib/autoResume"
+import { wantsAutoResume } from "@/lib/autoResume"
+import { dispararRetomada } from "@/lib/autoResumeDisparo"
 import { comporCascata, juntarAnexos } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
 import { listConversations } from "@/lib/db/conversations"
@@ -686,18 +687,10 @@ function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean
   }
   const tries = prevTries + 1
   const timer = setTimeout(() => {
-    const c = useChat.getState().byId[convId]
-    // corrida: usuário pode ter cancelado/enviado algo antes do disparo.
-    if (!c?.autoResume) return
-    if (c.running || c.finalizing) return
-    // Prompt mínimo: resume nativo leva a memória; se expirou, o fallback do
-    // motor usa recap + ponteiro. Não duplica dezenas de milhares de chars.
-    // mesma fonte única do ChatPanel: o texto do reenvio segue o gatilho real.
-    const prompt = resumePrompt(verdict.reason)
-    useChat.getState().handleEvent(convId, {
-      type: "notice",
-      message: `auto-resume: retomando (tentativa ${tries}/${settings.autoResumeMaxTries})`,
-    })
+    // Prompt mínimo: o resume nativo leva a memória; se expirou, o fallback
+    // do motor usa recap + ponteiro (lib/autoResumeDisparo).
+    const prompt = dispararRetomada(convId, tries, settings.autoResumeMaxTries, verdict.reason)
+    if (!prompt) return
     void sendFromDesk({
       ...args,
       text: prompt,

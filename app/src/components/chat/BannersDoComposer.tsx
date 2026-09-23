@@ -27,7 +27,7 @@ import {
 import { ContinuityBanner, type ContinuityMode } from "@/components/chat/ContinuityBanner"
 import { agentDef } from "@/lib/agents"
 import { estimativaDoHandoff, rotuloDaEstimativa } from "@/lib/handoff"
-import { resumeBannerLabel } from "@/lib/autoResume"
+import { resumeBannerLabel, retomadaAgendada } from "@/lib/autoResume"
 import { deriveComposerContinuity } from "@/lib/composerContinuity"
 import type { AvisoDeMotorAusente } from "@/lib/detect"
 import { fmtTime } from "@/lib/format"
@@ -123,7 +123,7 @@ export function BannersDoComposer({
 
   return (
     <>
-      {conv?.autoResume && continuityMode !== "continue-now" && (
+      {conv?.autoResume && retomadaAgendada(conv) && continuityMode !== "continue-now" && (
         <AutoResumeBanner
           nextAt={conv.autoResume.nextAt}
           tries={conv.autoResume.tries}
@@ -141,6 +141,7 @@ export function BannersDoComposer({
             useChat.getState().setAutoResume(activeId, {
               ...c.autoResume,
               nextAt: Date.now(),
+              disparou: true,
             })
             onReenviar(PROMPT_DE_RETOMADA)
           }}
@@ -176,7 +177,7 @@ export function BannersDoComposer({
           resetHint={quota.resetHint}
           alternatives={alternatives}
           scheduledResume={
-            continuityMode === "continue-now" && conv.autoResume
+            continuityMode === "continue-now" && conv.autoResume && retomadaAgendada(conv)
               ? {
                   detail: `Retomada no ${sourceLabel} às ${fmtTime(conv.autoResume.nextAt)} · ${resumeBannerLabel(conv.autoResume.reason)} · tentativa ${conv.autoResume.tries} de ${conv.autoResume.maxTries}`,
                   onCancel: () =>

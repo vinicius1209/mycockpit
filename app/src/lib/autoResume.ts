@@ -20,6 +20,30 @@
 
 import type { ChatItem } from "@/store/chat"
 
+/** A retomada automática de uma conversa (efêmera, não persiste). O estado
+ *  sobrevive ao disparo DE PROPÓSITO: é ele que conta as tentativas até o
+ *  turno retomado terminar. Por isso existir não quer dizer agendada: depois
+ *  do disparo, `disparou` fica true e nenhuma tela pode dizer "retoma às…".
+ *  Visto em 23/09/2026: o turno retomou às 19:40 e o banner seguia prometendo
+ *  "Retoma às 19:40" no meio dele. */
+export interface EstadoDaRetomada {
+  tries: number
+  maxTries: number
+  /** epoch (ms) do resume agendado (countdown do banner). */
+  nextAt: number
+  /** motivo curto (limite da CLI / texto do turno), pro aviso. */
+  reason: string
+  /** timer do setTimeout (p/ cancelar). */
+  timer: ReturnType<typeof setTimeout>
+  /** O timer já disparou: o que roda agora é o turno retomado. */
+  disparou?: boolean
+}
+
+/** Há uma retomada ESPERANDO o horário? É a pergunta de toda tela. */
+export function retomadaAgendada(c: { autoResume?: EstadoDaRetomada } | undefined): boolean {
+  return !!c?.autoResume && !c.autoResume.disparou
+}
+
 /** Backoff exponencial (ms) quando NÃO há reset_hint: 60s, 120s, 240s… cap 15min. */
 const BACKOFF_BASE_MS = 60_000
 export const BACKOFF_CAP_MS = 15 * 60_000

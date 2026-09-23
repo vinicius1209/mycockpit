@@ -11,6 +11,7 @@
 // engine/sim, scene/ ou ui/ do office. (Ex-office/bridge/derive.ts, movido no
 // R1 do office-removal-plan.)
 
+import { retomadaAgendada } from "@/lib/autoResume"
 import {
   OFFICE_AGENTS,
   roomAggregate,
@@ -514,11 +515,9 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
       }
       lastAgentByConv.set(convId, c.agent)
     }
-    if (c.autoResume) {
-      const agent = officeAgent(c.agent)
-      const desk = agent ? deskByKey.get(`${c.projectId}::${agent}`) : undefined
-      if (desk) desk.restUntil = c.autoResume.nextAt
-    }
+    // Só descansa ESPERANDO o horário: depois do disparo a mesa trabalha.
+    const mesa = retomadaAgendada(c) ? deskByKey.get(`${c.projectId}::${officeAgent(c.agent)}`) : undefined
+    if (mesa && c.autoResume) mesa.restUntil = c.autoResume.nextAt
   }
 
   // 4) Fim de turno linear ⇒ balão curto de entrega (só p/ convs que vimos
