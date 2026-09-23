@@ -32,6 +32,7 @@ import {
 } from "@/lib/git"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { CommitComposer } from "./DiffPanel/CommitComposer"
+import { useAlteracoesVivas } from "./DiffPanel/useAlteracoesVivas"
 import { GitSection, GitFileList } from "./DiffPanel/GitSection"
 import { PrComposer } from "./DiffPanel/shipBar"
 import { openUrl } from "@tauri-apps/plugin-opener"
@@ -92,6 +93,9 @@ export function DiffIndex({
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
+  // Relê sozinha quando a pasta pode ter mudado: fim de turno, ação que muda
+  // arquivo, volta à janela. A lista atual fica na tela enquanto lê.
+  useAlteracoesVivas(cwd, reload)
 
   const staged = status?.staged ?? []
   const unstaged = status?.unstaged ?? []
