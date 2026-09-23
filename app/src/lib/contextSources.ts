@@ -92,3 +92,24 @@ export function vendorReadingNote(
   }
   return `Nesta conversa o ${label} também lê: ${presentes.map(sourceLabel).join(", ")}.`
 }
+
+/** "Com outro motor muda": o que cada OUTRO motor leria do disco neste
+ *  projeto (ADR-237). Os motores vêm do caller (id + nome humano), como o
+ *  `label` acima, para este módulo não depender do catálogo. null = não há
+ *  outro motor para comparar. */
+export function comOutroMotor(
+  agent: string,
+  f: VendorFacts,
+  motores: { id: string; label: string }[],
+): string | null {
+  const frases = motores
+    .filter((m) => m.id !== agent)
+    .map((m) => {
+      const leria = readableBy(m.id, f)
+      if (leria.length === 0) return `o ${m.label} não tem arquivo próprio conhecido`
+      const presentes = leria.filter((s) => s.present)
+      if (presentes.length === 0) return `o ${m.label} leria ${leria.map((s) => s.label).join(", ")}, que não existe aqui`
+      return `o ${m.label} lê ${presentes.map(sourceLabel).join(", ")}`
+    })
+  return frases.length ? `${frases.join("; ")}. As regras do projeto chegam a todos.` : null
+}

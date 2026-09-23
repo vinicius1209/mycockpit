@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { ContextPanelTabs } from "./contextPanelChrome"
 
 describe("a navegação do painel direito", () => {
-  it("mantém a ordem Arquivos, Conversa, Alterações, Bastidores e Contexto", () => {
+  it("mantém a ordem Arquivos, Conversa, Alterações, Bastidores e O que o agente vê", () => {
     const html = renderToStaticMarkup(
       <ContextPanelTabs tab="conversa" changedCount={2} onSelect={() => {}} />,
     )
@@ -12,7 +12,8 @@ describe("a navegação do painel direito", () => {
     const conversation = html.indexOf("Conversa")
     const changes = html.indexOf("Alterações")
     const background = html.indexOf("Bastidores")
-    const context = html.indexOf("Contexto")
+    // a aba Contexto virou "O que o agente vê" (ADR-237); a ordem não muda
+    const context = html.indexOf("O que o agente vê")
 
     expect(files).toBeGreaterThan(-1)
     expect(files).toBeLessThan(conversation)

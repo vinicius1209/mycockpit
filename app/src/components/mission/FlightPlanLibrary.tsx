@@ -65,10 +65,14 @@ export function FlightPlanLibrary({
   plans,
   onOpen,
   onCreate,
+  historico,
 }: {
   plans: MissionPreset[]
   onOpen: (plan: MissionPreset) => void
   onCreate: (kind: FlightPlanKind) => void
+  /** As missões já voadas neste projeto (ADR-237: saíram do painel direito,
+   *  onde eram histórico no meio do que o agente vê agora). */
+  historico?: React.ReactNode
 }) {
   return (
     <main className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
@@ -116,6 +120,16 @@ export function FlightPlanLibrary({
               </Button>
             </div>
           </div>
+        )}
+
+        {historico && (
+          <section className="mt-10 max-w-xl">
+            <h3 className="text-[14px] font-medium text-foreground">Missões deste projeto</h3>
+            <p className="mt-1 mb-3 text-[12px] text-muted-foreground">
+              O que já voou: desfecho, custo e os arquivos de cada missão.
+            </p>
+            {historico}
+          </section>
         )}
       </div>
     </main>

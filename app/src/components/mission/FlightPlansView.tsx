@@ -15,6 +15,7 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { FlightPlanBuilder } from "@/components/mission/FlightPlanBuilder"
 import { FlightPlanLibrary } from "@/components/mission/FlightPlanLibrary"
+import { MissionsSection } from "@/components/layout/MissionsSection"
 import {
   cloneFlightPlan,
   createFlightPlan,
@@ -283,7 +284,14 @@ export function FlightPlansView() {
       </header>
 
       {libraryOpen || !selectedPlan ? (
-        <FlightPlanLibrary plans={plans} onOpen={openPlan} onCreate={addPlan} />
+        <FlightPlanLibrary
+          plans={plans}
+          onOpen={openPlan}
+          onCreate={addPlan}
+          historico={
+            project ? <MissionsSection projectId={project.id} projectPath={project.path} /> : undefined
+          }
+        />
       ) : (
         <FlightPlanBuilder
           key={selectedPlan.id}

@@ -1,8 +1,13 @@
 // UI de AUDITORIA do auto-aprendizado (docs/autonomy.md, princípio nº3: "nunca
 // promover memória sem revisão — aprendizado que você não audita degrada em
-// silêncio"). Mostra, por projeto: nº de entregas no recall (M1) e a lista de
-// lições destiladas (M2), cada uma com status (estágio 1) + ações. O CURADOR
-// (estágio 3) roda no botão "Revisar memória": deduplica e rebaixa ruído.
+// silêncio"). Mostra, por projeto, as lições destiladas (M2), cada uma com
+// status (estágio 1) + ações. O CURADOR (estágio 3) roda no botão "Revisar
+// memória": deduplica e rebaixa ruído.
+//
+// Na aba "O que o agente vê" (ADR-237) a contagem de entregas no recall (M1)
+// saiu: numa conversa ela não entra no prompt, só no plano de uma missão
+// parecida. As aprovadas entram em todo turno; as candidatas só depois de
+// aprovadas, e a tela diz isso.
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
 import {
@@ -16,7 +21,6 @@ import {
 import { cn } from "@/lib/utils"
 import {
   isTauri,
-  listDeliveries,
   listLessons,
   setLessonStatus,
   type LessonRecord,
@@ -40,7 +44,6 @@ const STATUS_LABEL: Record<LessonStatus, string> = {
 
 export function LearningSection({ projectId }: { projectId: string }) {
   const [lessons, setLessons] = useState<LessonRecord[]>([])
-  const [deliveries, setDeliveries] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const [curating, setCurating] = useState(false)
 
@@ -50,14 +53,11 @@ export function LearningSection({ projectId }: { projectId: string }) {
       setLoaded(true)
       return
     }
-    void Promise.all([listLessons(projectId), listDeliveries(projectId)]).then(
-      ([ls, ds]) => {
-        if (cancelled) return
-        setLessons(ls)
-        setDeliveries(ds.length)
-        setLoaded(true)
-      },
-    )
+    void listLessons(projectId).then((ls) => {
+      if (cancelled) return
+      setLessons(ls)
+      setLoaded(true)
+    })
     return () => {
       cancelled = true
     }
@@ -119,11 +119,11 @@ export function LearningSection({ projectId }: { projectId: string }) {
 
   if (!loaded) return null
   const visibleLessons = lessons.filter((lesson) => lesson.status !== "archived")
-  if (deliveries === 0 && visibleLessons.length === 0) {
+  if (visibleLessons.length === 0) {
     return (
       <p className="text-[12px] leading-snug text-muted-foreground/70">
-        Nada aprendido ainda. Quando uma missão termina com sucesso, a entrega
-        entra no recall; correções do reviewer viram lições reusáveis.
+        Nenhuma lição ainda. Quando o revisor de uma missão corrige algo, vira
+        uma lição para você aprovar; aprovada, ela entra em todo turno.
       </p>
     )
   }
@@ -133,17 +133,15 @@ export function LearningSection({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex flex-col gap-2.5">
-      <div className="flex items-center justify-between text-[12px]">
-        <span className="text-muted-foreground">Entregas no recall</span>
-        <span className="font-mono tabular-nums text-foreground/80">
-          {deliveries}
-        </span>
-      </div>
-
+      {active.length === 0 && (
+        <p className="text-[12px] leading-snug text-muted-foreground/70">
+          Nenhuma lição aprovada: nada daqui entra no turno por enquanto.
+        </p>
+      )}
       {active.length > 0 && (
         <div className="flex flex-col gap-1">
           <div className="text-[11px] text-muted-foreground/55">
-            Lições ativas ({active.length})
+            Aprovadas · entram todo turno ({active.length})
           </div>
           <ul className="flex flex-col gap-1">
             {active.map((l) => (
@@ -161,7 +159,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
       {dormant.length > 0 && (
         <div className="flex flex-col gap-1 opacity-70">
           <div className="text-[11px] text-muted-foreground/45">
-            Aguardando sua decisão ({dormant.length})
+            Esperando você · só entram depois de aprovadas ({dormant.length})
           </div>
           <ul className="flex flex-col gap-1">
             {dormant.map((l) => (

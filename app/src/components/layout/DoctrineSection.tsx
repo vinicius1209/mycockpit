@@ -36,10 +36,14 @@ export type DoctrineSeed = string
 export function DoctrineSection({
   projectPath,
   seeds,
+  quando = null,
 }: {
   projectPath: string
   /** CLAUDE.md / AGENTS.md presentes, p/ semear a 1ª versão. */
   seeds: DoctrineSeed[]
+  /** Quando ela chega ao motor da conversa (`quandoDaDoutrina`); null sem
+   *  conversa aberta. */
+  quando?: string | null
 }) {
   const [content, setContent] = useState("")
   const [exists, setExists] = useState(false)
@@ -129,8 +133,8 @@ export function DoctrineSection({
         {exists ? (
           <>
             <span className="font-mono">{caminho}</span> ·{" "}
-            {fmtBytes(new TextEncoder().encode(content).length)} · versionado no
-            git
+            {fmtBytes(new TextEncoder().encode(content).length)}
+            {quando && <> · {quando}</>}
           </>
         ) : (
           <>

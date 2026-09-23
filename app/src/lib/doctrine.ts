@@ -123,6 +123,16 @@ export function shouldInjectDoctrine(
   return !locked || !hasReply
 }
 
+/** Quando a doutrina chega ao motor, em pt-BR para a aba "O que o agente vê"
+ *  (ADR-237). Mesma régua de `shouldInjectDoctrine`, por capability: com canal
+ *  de sistema ou sem retomar sessão, todo turno; com sessão retomada, no
+ *  primeiro turno, e de novo quando o texto muda. */
+export function quandoDaDoutrina(agent: string): string {
+  const def = agentDef(agent)
+  if (def?.systemChannel || !def?.sessionResume) return "todo turno"
+  return "no 1º turno, e de novo se mudar"
+}
+
 /** Fingerprint do bloco de doutrina (H4): FNV-1a 32 em hex — barato, estável,
  *  serve só pra comparar "mudou desde a última injeção nesta conversa". */
 export function doctrineFingerprint(block: string): string {

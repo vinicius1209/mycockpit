@@ -4,7 +4,7 @@
 // juntas: são a receita de "seção" e de "ativo" do painel (ADR-043, Fase 2).
 import type { ReactNode } from "react"
 import type { LucideIcon } from "lucide-react"
-import { Activity, FileDiff, Folder, PanelRight, Route } from "lucide-react"
+import { Activity, Eye, FileDiff, Folder, Route } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { ContextPanelTab } from "@/store/app"
 
@@ -147,8 +147,8 @@ export function ContextPanelTabs({
       <TabBtn
         active={tab === "contexto"}
         onClick={() => onSelect("contexto")}
-        icon={PanelRight}
-        label="Contexto"
+        icon={Eye}
+        label="O que o agente vê"
       />
     </header>
   )

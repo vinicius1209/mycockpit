@@ -8665,13 +8665,13 @@ considerou.
   fechamento sem pendência fica mais rápido que os 750 ms de antes.
 
 ### ADR-236 · A doutrina cita o caminho real, e a pasta do projeto vai para `.frota/` por gesto ✅
-- **Contexto (23/09/2026):** a aba Contexto mostrava `.mycockpit/instructions.md`
+- **Contexto (23/09/2026):** a aba Contexto mostrava a doutrina na pasta antiga
   no repositório da própria Frota, que já está em `.frota/`. Não era a pasta:
   o Rust devolve `Doctrine.path` resolvido entre a pasta nova e a antiga
   (item 5 das surpresas do `frota-rename-plan.md`), mas o front ignorava o
-  campo e usava a constante `DOCTRINE_PATH = ".mycockpit/instructions.md"`,
+  campo e usava a constante `DOCTRINE_PATH`, cravada na pasta antiga,
   que ia para a tela E para o prompt de todo turno
-  (`<doutrina fonte=".mycockpit/instructions.md">`), mandando o agente a um
+  (`<doutrina fonte="…">` com o caminho antigo), mandando o agente a um
   arquivo inexistente. Além disso, 7 dos 11 projetos da pessoa ainda tinham
   só a pasta antiga.
 - **Decisão:**
@@ -8692,3 +8692,30 @@ considerou.
      os seis servidores respondem ao `initialize` pelo binário novo.
 - **Consequência:** o agente é mandado para onde a doutrina está, e cada
   projeto sai da janela de compatibilidade com um clique.
+
+### ADR-237 · A aba Contexto vira "O que o agente vê" ✅
+- **Contexto (23/09/2026):** a aba juntava cinco perguntas diferentes
+  (configuração, regra, auditoria de aprendizado, histórico de missões e
+  arquivos das CLIs, esses colapsados no fim) e nenhuma dizia para qual motor
+  nem quando. Mock aprovado: `docs/mocks/aba-o-que-o-agente-ve.html`.
+- **Decisão:** a aba responde uma pergunta, o que entra no próximo turno desta
+  conversa, com o motor dela nomeado no topo.
+  1. **A Frota entrega** (igual em qualquer motor): a doutrina, com o caminho
+     real e QUANDO ela chega (`quandoDaDoutrina`, por capability: canal de
+     sistema ou sem resume, todo turno; com resume, no 1º turno e de novo se
+     mudar); as lições (aprovadas entram todo turno, candidatas só depois de
+     aprovadas); os comandos do projeto.
+  2. **O <motor> lê sozinho**: só os arquivos que aquele motor lê
+     (`readableBy`, dono explícito em `contextSources`), mais uma linha "Com
+     outro motor muda" (`comOutroMotor`).
+  3. **Até onde ele alcança**: as pastas permitidas. Ficam na aba, porque são
+     o que o agente enxerga fora do projeto.
+  4. **Missões saem** para Planos de voo, como "Missões deste projeto": são
+     histórico.
+  5. Conferido no código antes de implementar, e corrigido em relação ao
+     mock: as entregas anteriores (recall) NÃO entram numa conversa, só no
+     plano de uma missão parecida (`buildLearningBlocks(…, false)` no envio).
+     Saíram da aba, e a seção de aprendizado não as conta mais. O "versionado
+     no git" da doutrina também saiu: era afirmado sem conferir.
+- **Consequência:** abrir a aba responde "o que ele sabe agora", e trocar de
+  motor mostra o que muda.

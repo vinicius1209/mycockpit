@@ -1,11 +1,13 @@
 // Testes da doutrina do projeto (.frota/instructions.md) — o núcleo puro:
 // o bloco injetado no prompt e a decisão de QUANDO injetar.
 
+import { AGENTS, agentDef } from "@/lib/agents"
 import { PASTA_LEGADA } from "@/lib/frotaDir"
 import { describe, expect, it, vi } from "vitest"
 import {
   blocoDaDoutrina,
   buildDoctrineBlock,
+  quandoDaDoutrina,
   decideDoctrine,
   DOCTRINE_MAX_CHARS,
   DOCTRINE_PATH,
@@ -16,6 +18,18 @@ import {
 } from "./doctrine"
 
 vi.mock("@/lib/db", () => ({ isTauri: () => false }))
+
+describe("quandoDaDoutrina", () => {
+  // Pela capability, nunca pelo nome: canal de sistema ou sessão sem resume
+  // recebem todo turno; com resume, a sessão carrega a partir do 1º.
+  it("diz quando a doutrina chega, conforme o motor da conversa", () => {
+    for (const agent of AGENTS.map((a) => a.id)) {
+      const def = agentDef(agent)!
+      const esperado = def.systemChannel || !def.sessionResume ? "todo turno" : "no 1º turno, e de novo se mudar"
+      expect(quandoDaDoutrina(agent)).toBe(esperado)
+    }
+  })
+})
 
 describe("blocoDaDoutrina", () => {
   // Forma do que `read_project_doctrine` devolve (frota_dir.rs): o caminho vem
