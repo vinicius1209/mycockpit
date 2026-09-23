@@ -8422,3 +8422,31 @@ considerou.
 - **Consequência:** custo por turno, custo por conversa e o ledger voltam a
   dizer o gasto real. O motor que reporta por execução não perde nada, e
   nenhum desconto é aplicado sem prova nos próprios tokens.
+
+### ADR-227 · A aba Conversa é o histórico de pedidos; o resumo automático é enfeite ✅
+- **Contexto (21 e 23/09/2026):** a aba girava em torno de um resumo feito pelo
+  modelo local, que recusa conversa de tamanho real (79 recusas num dia). O que
+  sobrava era o primeiro pedido fixo para sempre ("Pedido que abriu a
+  conversa"), um "Turno concluído" sem conteúdo e as etapas do último plano
+  soltas, sem o turno que as criou. O mock `docs/mocks/aba-conversa.html`
+  (rev. 2, revisado com o parecer da Íris) ficou sem implementação e foi
+  aprovado em 23/09.
+- **Decisão:**
+  1. O esqueleto é FATO do fio (`lib/conversationMap/historico.ts`, puro): um
+     item por pedido seu, do mais novo para o mais velho, com desfecho,
+     duração (relógio de parede do envio ao terminal), custo ou modelo quando o
+     motor não reporta custo, ações, arquivos, commits, imagens, processos e o
+     plano daquele pedido. Consulta a especialista não vira pedido. Sem
+     processo vivo, pedido sem terminal é "sem desfecho", nunca "rodando".
+  2. A cabeça da linha do tempo é o "agora": o mais novo nasce aberto com o
+     plano dentro; sucesso é só o ✓ e a palavra é da exceção; hora absoluta e
+     relativa em toda linha. O texto do pedido segue selecionável, com Copiar e
+     Ver no fio.
+  3. O resumo automático entra curto (rumo e em aberto) com carimbo quando
+     funciona; quando falha, diz o motivo no mesmo lugar, com "Tentar de novo"
+     e "Desligar nesta conversa" (`utilityInference.conversationMapsOff`; o
+     global segue em Configurações). "Ajustar leitura" e o diálogo de pinos
+     saem: anotação é a gaveta de Notas.
+- **Consequência:** a aba nunca mais fica "indisponível", e o plano antigo não
+  se passa pelo atual. O custo por pedido é o do recibo, o mesmo do fio: depois
+  do ADR-226 ele é o do turno.

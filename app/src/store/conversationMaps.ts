@@ -186,6 +186,9 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
     const settings = useApp.getState().settings
     const utility = settings.utilityInference
     if (!args.force && !utility.automaticConversationMaps) return
+    // Desligado nesta conversa pela pessoa: nem o gatilho de fim de turno nem
+    // o manual rodam até ela religar.
+    if (utility.conversationMapsOff?.includes(args.conversationId)) return
     const policy = utility.tasks.conversation_map
     if (!policy || policy.route === "off") return
     const entry = get().byConversation[args.conversationId] ?? initialEntry()

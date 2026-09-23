@@ -106,6 +106,9 @@ export interface UtilityTaskPolicySetting {
 export interface UtilityInferenceSettings {
   version: 1
   automaticConversationMaps: boolean
+  /** Conversas em que a pessoa desligou o resumo automático pela aba Conversa
+   *  ("Desligar nesta conversa"). O global continua em Configurações. */
+  conversationMapsOff?: string[]
   tasks: Partial<Record<UtilityTaskKind, UtilityTaskPolicySetting>>
 }
 

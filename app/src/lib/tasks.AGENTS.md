@@ -1,7 +1,8 @@
 # Planos e etapas: a leitura do fim do turno
 
 Escopo: `tasks.ts`, `TaskChecklist`, `LivePlanCard`, marcos de plano em
-`MessageList` e etapas em `ConversationMapPanel`. Regras gerais ficam no
+`MessageList` e o plano de cada pedido no histórico da aba Conversa
+(`HistoricoDePedidos`). Regras gerais ficam no
 `AGENTS.md` da raiz. Decisão: ADR-171.
 
 ## Contrato
@@ -15,8 +16,10 @@ Escopo: `tasks.ts`, `TaskChecklist`, `LivePlanCard`, marcos de plano em
   `activeForm`. Sem processo vivo, `taskStatusForDisplay` também deixa o replay
   sem terminal estático. O default de `live` é `false`.
 - O card junto ao composer exige plano corrente sem terminal e runtime em
-  execução/finalização. O marco histórico usa o mesmo plano derivado. A sidebar
-  usa `deriveTasks`; um novo turno nunca reanima etapas do anterior.
+  execução/finalização. O marco histórico usa o mesmo plano derivado. A aba
+  Conversa liga cada plano ao pedido que o criou (`turnId` de `taskPlansOf`,
+  ADR-227): o plano antigo mora no pedido dele e um novo turno nunca reanima
+  etapas do anterior.
 - `taskPlansOf` compartilha a leitura por identidade do array. Consumidores
   não podem mutar os planos ou as tarefas retornadas.
 
