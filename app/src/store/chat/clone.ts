@@ -25,6 +25,7 @@ import {
   setConversationParent as dbSetParent,
   type ConversationMeta,
 } from "@/lib/db/conversations"
+import { saveConversationItemChanges } from "@/lib/db/conversationItems"
 import { agentDef, normalizeModelValue } from "@/lib/agents"
 import { createWorktree } from "@/lib/git"
 import { isTauri } from "@/lib/db"
@@ -98,7 +99,6 @@ async function commitClonedConversation(
     owner,
     title,
     null,
-    items,
     [],
     agent,
     reqModel,
@@ -111,6 +111,10 @@ async function commitClonedConversation(
     // Clone não herda sessão de motor nenhum: nem a atual, nem as guardadas.
     null,
   )
+  // A cópia nasce já na fonte itemizada (ADR-230): é a única que guarda itens.
+  if (items.length) {
+    await saveConversationItemChanges(newId, items, items.map((_, position) => position), true)
+  }
   if (parentId != null) await dbSetParent(newId, parentId)
   if (srcColor != null) await dbSetColor(newId, srcColor)
   set((s) => {

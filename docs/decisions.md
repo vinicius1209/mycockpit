@@ -8502,3 +8502,64 @@ considerou.
      vezes os bytes por quadro no screencast).
 - **Consequência:** a página vista é a de um notebook comum, e quem acompanha
   o agente vê o trabalho sem procurar.
+
+### ADR-230 · O histórico mora só na fonte itemizada, e o levantamento de desempenho de 23/09/2026 ✅
+- **Contexto:** levantamento com o app rodando e o banco real.
+  1. Todo persist regravava a conversa inteira DUAS vezes: a fonte itemizada
+     (`replaceAll`) e o blob `conversations.items`, mantido "como
+     compatibilidade". Na maior conversa (1.358 itens) são ~12 ms só de
+     `JSON.stringify` e ~6,4 MB pela ponte, no começo e no fim de cada turno.
+     O carregamento já preferia a fonte itemizada; 7 de 22 conversas nunca
+     tinham entrado nela, e o banco tinha 42% de páginas livres.
+  2. O resumo da aba Conversa (modelo local da Apple) falhava ~74 de 98
+     chamadas por dia com `input_too_large`: o bloqueio era pela entrada
+     EXATA, e cada turno novo mudava a entrada e tentava de novo.
+  3. MCP global negado no turno (`mcp__playwright`, ADR-224) perdia as tools
+     mas o processo subia assim mesmo: `npm exec @playwright/mcp@latest` em
+     todo turno, ~230 MB.
+- **Decisão:** sem compatibilidade com o blob (decisão da pessoa: "a gente
+  não precisa se preocupar com compatibilidade").
+  1. `saveConversation` grava só a linha; os itens só na fonte itemizada, e o
+     persist grava as posições cuja identidade mudou desde o persist anterior
+     (`itemPersistence.persistir`; o primeiro da sessão grava tudo; falha faz o
+     próximo regravar tudo). A cópia de conversa itemiza na criação.
+  2. No boot, depois do backup e antes do plugin SQL, `manter_banco`: itemiza
+     quem só tinha blob, esvazia o blob de toda conversa com snapshot válido
+     (o mesmo `load_snapshot` do carregamento) e roda `VACUUM` quando mais de
+     um quarto das páginas está livre. Leitores de fora do front (busca e
+     leitura do `frota-context`, Companion) leem por `itens_da_conversa`, que
+     só cai no blob para quem não entrou na fonte (blob ilegível ou item sem
+     id ficam como estão). Ensaiado numa cópia do banco real: as 22 conversas
+     carregam idênticas, 7 itemizadas e 19 blobs esvaziados em 3 s (uma vez),
+     84 → 60 MB, `integrity_check` e o do FTS ok no SQLite 3.46 do app.
+  3. Resumo: bloco que a FONTE recusa por tamanho se divide ao meio e tenta de
+     novo (até 6 divisões por geração); se nem assim coube, a conversa fica
+     bloqueada para a geração automática até "Tentar de novo", outra política
+     ou pinos novos, e a aba diz o motivo.
+  4. Servidor negado no turno do Claude também vai em `--settings
+     {"deniedMcpServers": [...]}`, que impede o processo de nascer (medido no
+     claude 2.1.280).
+- **Consequência:** o persist de conversa grande deixa de ser proporcional ao
+  tamanho dela; o blob só existe como coluna vazia. Rollback é o backup
+  diário (3 cópias).
+
+### ADR-231 · O agente sabe das abas do navegador, e a vista segue a aba dele ✅
+- **Contexto (23/09/2026):** o `frota-browser` agia na primeira aba que o
+  Chromium lista. Testado no binário real: depois de um link `target=_blank`
+  a aba NOVA passa a ser a primeira, então o agente trocava de aba sem saber,
+  não conseguia voltar, e a vista da pessoa ficava na aba antiga.
+- **Decisão:**
+  1. A aba do agente fica fixa por run (`BrowserGateway.aba`) e só muda por
+     gesto dele ou quando ela some. Quatro tools novas: `browser_tabs`
+     (listar, observar), `browser_tab_select`, `browser_tab_new` (com a
+     política da barra) e `browser_tab_close` (nunca a última); as três de
+     gesto tomam a lease de piloto.
+  2. Aba que surge (na chamada seguinte, ou logo depois de clique, tecla,
+     digitação ou script) vem em `abas_novas` na resposta, com a dica de como
+     ir até ela. Avisa uma vez só.
+  3. `browser_agent_active` leva o `targetId` da aba do agente, e a vista do
+     navegador passa a mostrá-la, a menos que a pessoa esteja pilotando.
+  4. `/json/new` só aceita PUT e corta a URL no primeiro `&`: a aba nasce em
+     branco e navega por `Page.navigate`.
+- **Consequência:** o que a pessoa vê é a aba em que o agente trabalha, e o
+  agente escolhe a aba em vez de ser levado por ela.

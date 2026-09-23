@@ -383,6 +383,120 @@ fn load_snapshot(
     }))
 }
 
+/// Os itens da conversa para quem lê o banco por fora do front (busca do
+/// `frota-context`, leitura de item, Companion). A fonte é a itemizada: desde
+/// o ADR-230 o blob `conversations.items` deixou de ser gravado e é esvaziado
+/// depois de a conversa entrar na fonte nova. Ele só responde por conversa
+/// que ainda não entrou nela (sem linha de estado, ou banco sem as tabelas).
+pub fn itens_da_conversa(
+    connection: &Connection,
+    conversation_id: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    // Tabela ausente (banco anterior à fonte itemizada) = não há snapshot.
+    if let Ok(Some(snapshot)) = load_snapshot(connection, conversation_id) {
+        return snapshot
+            .items
+            .iter()
+            .map(|json| serde_json::from_str(json).map_err(|e| format!("histórico corrompido: {e}")))
+            .collect();
+    }
+    let blob: String = connection
+        .query_row(
+            "SELECT items FROM conversations WHERE id = ?1",
+            [conversation_id],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("conversa não encontrada no SQLite: {e}"))?;
+    serde_json::from_str(&blob).map_err(|e| format!("histórico corrompido: {e}"))
+}
+
+/// Consolidação do histórico no boot (ADR-230): a fonte itemizada passa a ser
+/// a ÚNICA. Roda antes do plugin SQL abrir o banco e depois do backup diário.
+///
+/// 1. Conversa que só existia no blob entra na fonte itemizada agora (antes
+///    entrava só quando a pessoa a abria, e 7 das 22 nunca tinham entrado).
+///    Blob ilegível, vazio ou com item sem `id` fica como está: o carregamento
+///    exige o `id` de cada linha, e gravar pela metade seria perder histórico.
+/// 2. O blob de toda conversa com snapshot VÁLIDO (o mesmo `load_snapshot`
+///    que o carregamento usa) é esvaziado. Ninguém mais o grava, e guardar a
+///    cópia velha seria ter duas verdades.
+///
+/// Banco sem as tabelas (instalação nova, antes do front criá-las) não faz
+/// nada. Devolve (itemizadas, esvaziadas).
+pub fn consolidar_historico(connection: &mut Connection) -> Result<(usize, usize), String> {
+    let tem_tabelas: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM sqlite_master WHERE type = 'table' \
+             AND name IN ('conversation_items', 'conversation_item_state')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| e.to_string())?;
+    if tem_tabelas < 2 {
+        return Ok((0, 0));
+    }
+    let legadas: Vec<(String, String)> = {
+        let mut consulta = connection
+            .prepare(
+                "SELECT id, items FROM conversations c WHERE items <> '[]' AND NOT EXISTS \
+                 (SELECT 1 FROM conversation_item_state s WHERE s.conversation_id = c.id)",
+            )
+            .map_err(|e| e.to_string())?;
+        let linhas = consulta
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+            .map_err(|e| e.to_string())?;
+        linhas.filter_map(Result::ok).collect()
+    };
+    let mut itemizadas = 0;
+    for (id, blob) in legadas {
+        let Ok(serde_json::Value::Array(itens)) = serde_json::from_str::<serde_json::Value>(&blob) else {
+            log::warn!("histórico da conversa {id} ilegível no blob; fica como está");
+            continue;
+        };
+        if itens.is_empty() {
+            continue;
+        }
+        let changes: Option<Vec<ConversationItemChange>> = itens
+            .iter()
+            .enumerate()
+            .map(|(position, item)| {
+                Some(ConversationItemChange {
+                    position: position as u32,
+                    item_id: item.get("id")?.as_str()?.to_string(),
+                    item_json: item.to_string(),
+                })
+            })
+            .collect();
+        let Some(changes) = changes else {
+            log::warn!("conversa {id} tem item sem id no blob; fica como está");
+            continue;
+        };
+        let total = changes.len() as u32;
+        save_changes(connection, &id, changes, total, true)?;
+        itemizadas += 1;
+    }
+    let com_blob: Vec<String> = {
+        let mut consulta = connection
+            .prepare("SELECT id FROM conversations WHERE items <> '[]'")
+            .map_err(|e| e.to_string())?;
+        let linhas = consulta
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        linhas.filter_map(Result::ok).collect()
+    };
+    let mut esvaziadas = 0;
+    for id in com_blob {
+        if !matches!(load_snapshot(connection, &id), Ok(Some(ref s)) if !s.items.is_empty()) {
+            continue;
+        }
+        connection
+            .execute("UPDATE conversations SET items = '[]' WHERE id = ?1", [&id])
+            .map_err(|e| e.to_string())?;
+        esvaziadas += 1;
+    }
+    Ok((itemizadas, esvaziadas))
+}
+
 #[tauri::command]
 pub async fn save_conversation_item_changes(
     app: tauri::AppHandle,
@@ -466,6 +580,76 @@ mod tests {
             item_id: id.into(),
             item_json: serde_json::json!({ "kind": "text", "id": id, "text": text }).to_string(),
         }
+    }
+
+    #[test]
+    fn leitores_de_fora_leem_a_fonte_itemizada_e_o_blob_so_sem_ela() {
+        let mut connection = database();
+        connection
+            .execute_batch(
+                "ALTER TABLE conversations ADD COLUMN items TEXT NOT NULL DEFAULT '[]'; \
+                 INSERT INTO conversations (id, items) VALUES ('antiga', '[{\"kind\":\"user\",\"id\":\"u1\",\"text\":\"so no blob\"}]');",
+            )
+            .unwrap();
+        // itemizada: o blob já foi esvaziado e não importa
+        save_changes(&mut connection, "c1", vec![change(0, "a", "um"), change(1, "b", "dois")], 2, true).unwrap();
+        let itens = itens_da_conversa(&connection, "c1").unwrap();
+        assert_eq!(itens.len(), 2);
+        assert_eq!(itens[1]["text"], "dois");
+        // ainda não itemizada: o blob responde
+        let antiga = itens_da_conversa(&connection, "antiga").unwrap();
+        assert_eq!(antiga[0]["text"], "so no blob");
+        assert!(itens_da_conversa(&connection, "nao-existe").is_err());
+    }
+
+    #[test]
+    fn consolidar_itemiza_quem_so_tinha_blob_e_esvazia_o_blob_de_quem_tem_snapshot() {
+        let mut connection = database();
+        connection
+            .execute_batch(
+                "ALTER TABLE conversations ADD COLUMN items TEXT NOT NULL DEFAULT '[]'; \
+                 INSERT INTO conversations (id, items) VALUES \
+                   ('so-blob', '[{\"kind\":\"user\",\"id\":\"u1\",\"text\":\"oi\",\"ts\":1790196697549},{\"kind\":\"result\",\"id\":\"r1\",\"ok\":true,\"costUsd\":0.4213}]'), \
+                   ('ilegivel', 'não-é-json'), \
+                   ('sem-id', '[{\"kind\":\"text\",\"text\":\"sem id\"}]'), \
+                   ('vazia', '[]');",
+            )
+            .unwrap();
+        // c1 já itemizada, com o blob velho ainda lá
+        save_changes(&mut connection, "c1", vec![change(0, "a", "um")], 1, true).unwrap();
+        connection
+            .execute("UPDATE conversations SET items = '[{\"id\":\"a\"}]' WHERE id = 'c1'", [])
+            .unwrap();
+
+        let (itemizadas, esvaziadas) = consolidar_historico(&mut connection).unwrap();
+        assert_eq!(itemizadas, 1);
+        assert_eq!(esvaziadas, 2); // c1 e so-blob
+
+        let itens = itens_da_conversa(&connection, "so-blob").unwrap();
+        assert_eq!(itens.len(), 2);
+        assert_eq!(itens[0]["ts"], 1790196697549u64);
+        assert_eq!(itens[1]["costUsd"], 0.4213);
+        let blob = |id: &str| -> String {
+            connection
+                .query_row("SELECT items FROM conversations WHERE id = ?1", [id], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(blob("so-blob"), "[]");
+        assert_eq!(blob("c1"), "[]");
+        // o que não dava para itemizar fica intacto, e segue legível pelo blob
+        assert_eq!(blob("ilegivel"), "não-é-json");
+        assert_eq!(itens_da_conversa(&connection, "sem-id").unwrap()[0]["text"], "sem id");
+        // de novo: nada a fazer
+        assert_eq!(consolidar_historico(&mut connection).unwrap(), (0, 0));
+    }
+
+    #[test]
+    fn consolidar_sem_as_tabelas_nao_faz_nada() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection
+            .execute_batch("CREATE TABLE conversations (id TEXT PRIMARY KEY, items TEXT NOT NULL);")
+            .unwrap();
+        assert_eq!(consolidar_historico(&mut connection).unwrap(), (0, 0));
     }
 
     #[test]

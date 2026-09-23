@@ -319,6 +319,46 @@ fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Manutenção do banco no boot (ADR-230): consolida o histórico na fonte
+/// itemizada e compacta quando o espaço livre passa de um quarto do arquivo
+/// (medido em 23/09/2026: 34 MB livres num banco de 84 MB).
+fn manter_banco(app: &tauri::AppHandle) -> Result<(), String> {
+    let caminho = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))?
+        .join(BANCO);
+    if !caminho.exists() {
+        return Ok(());
+    }
+    let mut conn = rusqlite::Connection::open(&caminho).map_err(|e| e.to_string())?;
+    conn.busy_timeout(std::time::Duration::from_secs(5)).map_err(|e| e.to_string())?;
+    let (itemizadas, esvaziadas) = conversation_items::consolidar_historico(&mut conn)?;
+    if itemizadas + esvaziadas > 0 {
+        log::info!("histórico consolidado: {itemizadas} conversas itemizadas, {esvaziadas} blobs esvaziados");
+    }
+    if let Some((livres, total)) = compactar_se_vale(&conn)? {
+        log::info!("banco compactado: {livres} de {total} páginas estavam livres");
+    }
+    Ok(())
+}
+
+/// `VACUUM` só quando vale: mais de um quarto das páginas livres. Devolve
+/// (livres, total) de antes quando compactou.
+fn compactar_se_vale(conn: &rusqlite::Connection) -> Result<Option<(i64, i64)>, String> {
+    let livres: i64 = conn
+        .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    let total: i64 = conn
+        .query_row("PRAGMA page_count", [], |r| r.get(0))
+        .map_err(|e| e.to_string())?;
+    if total == 0 || livres * 4 <= total {
+        return Ok(None);
+    }
+    conn.execute_batch("VACUUM").map_err(|e| e.to_string())?;
+    Ok(Some((livres, total)))
+}
+
 pub fn run() {
     // ANTES de tudo: hidrata o PATH (apps GUI do macOS herdam um PATH mínimo e
     // não acham claude/codex/agy). Precisa rodar antes de qualquer spawn de CLI.
@@ -934,6 +974,12 @@ pub fn run() {
             if let Err(e) = backup_database(app.handle()) {
                 log::warn!("backup do banco falhou (seguindo sem): {e}");
             }
+            // Depois do backup e antes do plugin SQL: o histórico passa a
+            // morar só na fonte itemizada, e o banco se compacta quando
+            // metade dele é espaço livre (ADR-230). Nunca bloqueia o boot.
+            if let Err(e) = manter_banco(app.handle()) {
+                log::warn!("manutenção do banco falhou (seguindo sem): {e}");
+            }
 
             // Catálogo de preços (models.dev): registra onde fica o cache em
             // disco p/ o pricing achar preços dinâmicos já na 1ª consulta.
@@ -1466,5 +1512,58 @@ mod testes_migracao_do_banco {
         let (novo, legado) = tmp("arvnova");
         assert!(migrar_arvores_entre(&novo, &legado).unwrap().is_empty());
         assert!(!novo.join("attachments").exists());
+    }
+}
+
+#[cfg(test)]
+mod manutencao_do_banco_tests {
+    use super::compactar_se_vale;
+
+    fn banco_com_folga(apagar: usize) -> (tempfile_like::Arquivo, rusqlite::Connection) {
+        let arquivo = tempfile_like::Arquivo::novo();
+        let conn = rusqlite::Connection::open(&arquivo.0).unwrap();
+        conn.execute_batch("CREATE TABLE t (v TEXT);").unwrap();
+        for _ in 0..400 {
+            conn.execute("INSERT INTO t VALUES (?1)", [&"x".repeat(2000)]).unwrap();
+        }
+        conn.execute("DELETE FROM t WHERE rowid <= ?1", [apagar as i64]).unwrap();
+        (arquivo, conn)
+    }
+
+    mod tempfile_like {
+        pub struct Arquivo(pub std::path::PathBuf);
+        impl Arquivo {
+            pub fn novo() -> Self {
+                let nanos = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos();
+                Arquivo(std::env::temp_dir().join(format!("frota-vacuum-{}-{nanos}.db", std::process::id())))
+            }
+        }
+        impl Drop for Arquivo {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+    }
+
+    #[test]
+    fn metade_livre_compacta_e_o_arquivo_encolhe() {
+        let (_arquivo, conn) = banco_com_folga(300);
+        let antes: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap();
+        let (livres, total) = compactar_se_vale(&conn).unwrap().expect("devia compactar");
+        assert_eq!(total, antes);
+        assert!(livres * 4 > total);
+        let depois: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).unwrap();
+        assert!(depois < antes / 2, "antes {antes}, depois {depois}");
+        let restantes: i64 = conn.query_row("SELECT count(*) FROM t", [], |r| r.get(0)).unwrap();
+        assert_eq!(restantes, 100);
+    }
+
+    #[test]
+    fn pouca_folga_nao_paga_o_vacuum() {
+        let (_arquivo, conn) = banco_com_folga(20);
+        assert_eq!(compactar_se_vale(&conn).unwrap(), None);
     }
 }

@@ -78,6 +78,39 @@ describe("dedupe de falha determinística do mapa", () => {
     })
   })
 
+  it("conversa que não coube na fonte não tenta de novo a cada turno novo", async () => {
+    h.generate.mockResolvedValue({
+      ok: false,
+      reason: "input_too_large",
+      source: { id: "apple-foundation-model", locality: "device" },
+      durationMs: 3,
+    })
+    const args = {
+      conversationId: "conv-1",
+      projectId: "project-1",
+      items,
+      running: false,
+      finalizing: false,
+    }
+    await useConversationMaps.getState().refreshNow(args)
+    // turno novo: a entrada muda, e antes isso bastava para tentar de novo
+    const maisUmTurno: ChatItem[] = [
+      ...items,
+      { kind: "user", id: "user-2", text: "E agora o rodapé", ts: 3 },
+      { kind: "result", id: "result-2", ok: true, ts: 4 },
+    ]
+    await useConversationMaps.getState().refreshNow({ ...args, items: maisUmTurno })
+
+    expect(h.generate).toHaveBeenCalledTimes(1)
+    expect(useConversationMaps.getState().byConversation["conv-1"]).toMatchObject({
+      semanticStatus: "unavailable",
+      lastIssue: "input_too_large",
+    })
+
+    await useConversationMaps.getState().refreshNow({ ...args, items: maisUmTurno, force: true })
+    expect(h.generate).toHaveBeenCalledTimes(2)
+  })
+
   it("permite repetir pelo gesto explícito de atualizar", async () => {
     h.generate.mockResolvedValue({
       ok: false,

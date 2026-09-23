@@ -315,12 +315,16 @@ export async function setConversationPreset(
   )
 }
 
+/** Grava a LINHA da conversa (título, sessão, motor, contexto). Os itens
+ *  moram só na fonte itemizada (`conversation_items`, ADR-230): o blob
+ *  `items` deixou de ser gravado. Antes cada persist regravava a conversa
+ *  inteira duas vezes (~6,4 MB na maior, 1.358 itens) só para manter uma
+ *  reserva que o carregamento nem lia. */
 export async function saveConversation(
   id: string,
   projectId: string,
   title: string | null,
   sessionId: string | null,
-  items: ChatItem[],
   suggestions: string[],
   agent: string,
   reqModel: string | null,
@@ -340,13 +344,12 @@ export async function saveConversation(
   // da lista do projeto); o ON CONFLICT não toca nela — a ordem manual (S1.2)
   // sobrevive aos saves de linha inteira, igual color/worktree/preset.
   await db.execute(
-    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, context_window, context_basis, session_mode, sessoes_anteriores, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, items = excluded.items, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, context_window = excluded.context_window, context_basis = excluded.context_basis, session_mode = excluded.session_mode, sessoes_anteriores = excluded.sessoes_anteriores, updated_at = excluded.updated_at",
+    "INSERT INTO conversations (id, project_id, title, session_id, items, suggestions, agent, req_model, effort, model, context_tokens, context_window, context_basis, session_mode, sessoes_anteriores, created_at, updated_at, sort_order) VALUES ($1, $2, $3, $4, '[]', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, (SELECT COALESCE(MAX(sort_order), -1) + 1 FROM conversations WHERE project_id = $2)) ON CONFLICT(id) DO UPDATE SET title = excluded.title, session_id = excluded.session_id, suggestions = excluded.suggestions, agent = excluded.agent, req_model = excluded.req_model, effort = excluded.effort, model = excluded.model, context_tokens = excluded.context_tokens, context_window = excluded.context_window, context_basis = excluded.context_basis, session_mode = excluded.session_mode, sessoes_anteriores = excluded.sessoes_anteriores, updated_at = excluded.updated_at",
     [
       id,
       projectId,
       title,
       sessionId,
-      JSON.stringify(items),
       JSON.stringify(suggestions),
       agent,
       reqModel,

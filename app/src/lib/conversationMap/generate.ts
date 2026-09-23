@@ -73,6 +73,11 @@ export function conversationMapPayloadStats(
   }
 }
 
+/** Quantas vezes uma geração divide bloco recusado por tamanho: cada divisão
+ *  é uma chamada a mais ao modelo, e sem teto uma conversa enorme viraria uma
+ *  rajada de chamadas. */
+const MAX_DIVISOES = 6
+
 function skeletonsFor(
   map: SemanticConversationMapV1 | null,
   allEvidence: readonly SemanticEvidenceItem[],
@@ -120,7 +125,14 @@ export async function generateConversationMap(input: {
   let durationMs = 0
   let source: UtilityResult<unknown>["source"] = null
   let cost: UtilityResult<unknown>["cost"]
-  for (const evidenceChunk of blocks) {
+  // Bloco que a FONTE recusou por tamanho se divide ao meio e tenta de novo.
+  // O teto de bytes é nosso, mas a janela de contexto é do modelo: o da Apple
+  // recusava ~3 de cada 4 blocos de 7 KB (23/09/2026: 74 de 98 chamadas por
+  // dia), e a geração inteira recomeçava do zero no turno seguinte.
+  const fila = [...blocks]
+  let divisoes = 0
+  while (fila.length) {
+    const evidenceChunk = fila.shift()!
     if (!input.isCurrent()) {
       return { ok: false, reason: "stale", source, durationMs }
     }
@@ -182,6 +194,16 @@ export async function generateConversationMap(input: {
     if (!input.isCurrent()) {
       return { ok: false, reason: "stale", source, durationMs }
     }
+    if (
+      result.fallbackReason === "input_too_large" &&
+      evidenceChunk.length > 1 &&
+      divisoes < MAX_DIVISOES
+    ) {
+      divisoes += 1
+      const meio = Math.ceil(evidenceChunk.length / 2)
+      fila.unshift(evidenceChunk.slice(0, meio), evidenceChunk.slice(meio))
+      continue
+    }
     if (result.status !== "ok" || result.value == null || !result.source) {
       return {
         ok: false,
@@ -216,6 +238,6 @@ export async function generateConversationMap(input: {
     source: source!,
     durationMs,
     cost,
-    blocks: blocks.length,
+    blocks: blocks.length + divisoes,
   }
 }

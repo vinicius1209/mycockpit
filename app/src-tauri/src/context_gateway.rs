@@ -500,9 +500,10 @@ fn search_pelo_indice(
     Ok(Some(ordenar_e_cortar(hits, limit)))
 }
 
-/// Varredura do blob legado. Continua sendo a verdade de referência: é contra
-/// ela que a fidelidade do índice é medida, e é para cá que a busca cai quando
-/// a conversa ainda não foi itemizada (10 das 22 no banco de referência).
+/// Varredura dos itens da conversa (fonte itemizada, ou o blob de quem ainda
+/// não entrou nela). É contra ela que a fidelidade do índice é medida, e é
+/// para cá que a busca cai quando o índice não responde pela conversa ou pela
+/// expressão.
 fn search_varrendo(
     conn: &Connection,
     conv: &str,
@@ -510,15 +511,7 @@ fn search_varrendo(
     terms: &[String],
     limit: usize,
 ) -> Result<Vec<Value>, String> {
-    let items: String = conn
-        .query_row(
-            "SELECT items FROM conversations WHERE id = ?1",
-            [conv],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("conversa não encontrada no SQLite: {e}"))?;
-    let items: Vec<Value> =
-        serde_json::from_str(&items).map_err(|e| format!("histórico corrompido: {e}"))?;
+    let items = crate::conversation_items::itens_da_conversa(conn, conv)?;
     let total = items.len().max(1) as f64;
     let hits: Vec<(f64, Value)> = items
         .iter()
@@ -594,15 +587,7 @@ fn read_conversation_item(
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(|e| format!("SQLite indisponível: {e}"))?;
-    let items: String = conn
-        .query_row(
-            "SELECT items FROM conversations WHERE id = ?1",
-            [conv],
-            |row| row.get(0),
-        )
-        .map_err(|e| format!("conversa não encontrada no SQLite: {e}"))?;
-    let items: Vec<Value> =
-        serde_json::from_str(&items).map_err(|e| format!("histórico corrompido: {e}"))?;
+    let items = crate::conversation_items::itens_da_conversa(&conn, conv)?;
     let item = items
         .get(index)
         .ok_or_else(|| "referência não existe nesta conversa".to_string())?;

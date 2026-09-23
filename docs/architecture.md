@@ -90,8 +90,8 @@ efeito.
 3. O frontend inicia o turno em `store/chat.ts`; `agent.rs` abre a CLI e envia
    `AgentEvent` normalizado por `Channel`.
 4. O reducer anexa eventos ao transcript e publica somente as posições
-   alteradas em `conversation_items`; o snapshot `conversations.items` continua
-   sendo compactado em repouso/terminal como fallback de rollback.
+   alteradas em `conversation_items`; o persist do turno grava só o que mudou
+   desde o anterior. `conversations.items` não é mais gravado (ADR-230).
 5. Só depois do envio aceito o rascunho é limpo. Trocar de conversa ou reiniciar
    o app não apaga texto nem anexos pendentes.
 
@@ -214,9 +214,10 @@ criadas pelo frontend usam funções `ensure*Tables`; o helper `addColumn` mora 
 Entidades centrais:
 
 - `projects`: caminho, política e ordenação;
-- `conversations`: transcript serializado, sessão, agente, modelo e contexto;
+- `conversations`: título, sessão, agente, modelo e contexto (a coluna `items`
+  ficou vazia: o boot a consolida na fonte itemizada, ADR-230);
 - `conversation_items`, `conversation_item_state`: journal posicional e revisão
-  atômica do transcript, com o snapshot integral acima como fallback;
+  atômica do transcript, a única fonte dos itens;
 - `conversation_drafts`: texto, anexos e atualização do rascunho por conversa;
 - `turn_costs`: ledger de custo por turno;
 - `conversation_maps`, `conversation_map_pins`: leitura derivada e correções

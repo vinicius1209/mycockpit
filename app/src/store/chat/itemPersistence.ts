@@ -1,4 +1,4 @@
-import { saveConversationItemChanges } from "@/lib/db/conversationItems"
+import { changedItemPositions, saveConversationItemChanges } from "@/lib/db/conversationItems"
 import type { ChatItem } from "@/store/chat"
 
 interface PersistableConversation {
@@ -18,6 +18,12 @@ export function createItemPersistence(get: () => ChatLookup) {
   const dirtyCounts = new Map<string, number>()
   const ready = new Set<string>()
   const tails = new Map<string, Promise<void>>()
+  /** O que o último `persistir` gravou de cada conversa. O próximo compara
+   *  identidade com ele e grava só as posições que mudaram. Só `persistir`
+   *  mexe aqui: a fila de streaming grava um SUBCONJUNTO (o que ela viu mudar
+   *  por evento), e usar o snapshot dela esconderia mudança feita por fora
+   *  dos eventos (reação, remoção, nota). */
+  const ultimoPersistido = new Map<string, readonly ChatItem[]>()
 
   const queue = (
     convId: string,
@@ -90,6 +96,31 @@ export function createItemPersistence(get: () => ChatLookup) {
       cancel(convId)
       await flushDirty(convId)
       await tails.get(convId)
+    },
+    /** O persist da conversa (ADR-230). O primeiro da sessão grava tudo; os
+     *  seguintes, só as posições cuja identidade mudou desde o anterior. Antes
+     *  todo persist regravava a conversa inteira (1.358 itens, ~3,2 MB pela
+     *  ponte na maior), no começo e no fim de cada turno. */
+    async persistir(convId: string, items: readonly ChatItem[]) {
+      const anterior = ultimoPersistido.get(convId)
+      if (!anterior || !ready.has(convId)) {
+        ultimoPersistido.delete(convId)
+        await this.replaceAll(convId, items)
+        if (ready.has(convId)) ultimoPersistido.set(convId, [...items])
+        return
+      }
+      const mudou = new Set<number>(dirtyPositions.get(convId) ?? [])
+      for (const position of changedItemPositions(anterior, items)) mudou.add(position)
+      cancel(convId)
+      dirtyPositions.delete(convId)
+      dirtyCounts.delete(convId)
+      if (mudou.size === 0 && anterior.length === items.length) return
+      const snapshot = [...items]
+      await queue(convId, snapshot, [...mudou])
+      // Falhou: a fila guardou as posições como sujas, e o próximo persist
+      // regrava tudo por segurança.
+      if (dirtyPositions.has(convId)) ultimoPersistido.delete(convId)
+      else ultimoPersistido.set(convId, snapshot)
     },
     async replaceAll(convId: string, items: readonly ChatItem[]) {
       cancel(convId)

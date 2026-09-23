@@ -190,7 +190,10 @@ observar não. A captura atravessa o socket como caminho (teto de 1 MB) e vira
 bloco `image` no processo do MCP. A barra humana tem política própria
 (`politica_da_barra`): `file://` do projeto entra, `javascript:` não.
 Toda ação (menos o status) emite `browser_agent_active`, e a tela abre a aba
-Navegador uma vez por turno (ADR-229; regra da tela em `lib/navegadorAoVivo.ts`). A página headless é 1280×800: o Chrome
+Navegador uma vez por turno (ADR-229; regra da tela em `lib/navegadorAoVivo.ts`).
+A aba do agente é fixa por run e muda só por gesto dele (`browser_tab_*`,
+ADR-231); nunca volte a agir em "a primeira da lista", que um `target=_blank`
+troca por baixo dele. A página headless é 1280×800: o Chrome
 desenha a faixa do navegador mesmo sem janela, então `--window-size` não
 basta, e `browser_janela::ajustar` mede a moldura e corrige por CDP.
 

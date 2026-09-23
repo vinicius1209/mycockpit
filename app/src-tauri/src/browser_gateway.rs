@@ -32,6 +32,13 @@ pub const KEY_TOOL: &str = "browser_key";
 pub const EVALUATE_TOOL: &str = "browser_evaluate";
 /// Coloca arquivos do projeto ou da pasta temporária num `<input type=file>`.
 pub const UPLOAD_TOOL: &str = "browser_upload";
+/// Abas (ADR-231). Antes o agente não sabia que elas existiam: agia na
+/// primeira que o Chromium listava, e link com `target=_blank` a trocava por
+/// baixo dele (a aba nova passa a ser a primeira da lista).
+pub const TABS_TOOL: &str = "browser_tabs";
+pub const TAB_SELECT_TOOL: &str = "browser_tab_select";
+pub const TAB_NEW_TOOL: &str = "browser_tab_new";
+pub const TAB_CLOSE_TOOL: &str = "browser_tab_close";
 
 /// Texto da página que vai ao modelo por chamada. Página inteira é contexto
 /// que ninguém pediu; quem quer mais, pede de novo com `offset`.
@@ -52,6 +59,10 @@ pub fn is_browser_tool(name: &str) -> bool {
             | KEY_TOOL
             | EVALUATE_TOOL
             | UPLOAD_TOOL
+            | TABS_TOOL
+            | TAB_SELECT_TOOL
+            | TAB_NEW_TOOL
+            | TAB_CLOSE_TOOL
     )
 }
 
@@ -61,9 +72,9 @@ pub fn is_effect_tool(name: &str) -> bool {
     matches!(name, EVALUATE_TOOL | UPLOAD_TOOL)
 }
 
-pub const TOOLS: [&str; 9] = [
+pub const TOOLS: [&str; 13] = [
     STATUS_TOOL, NAVIGATE_TOOL, SNAPSHOT_TOOL, CAPTURE_TOOL, CLICK_TOOL, TYPE_TOOL, KEY_TOOL,
-    EVALUATE_TOOL, UPLOAD_TOOL,
+    EVALUATE_TOOL, UPLOAD_TOOL, TABS_TOOL, TAB_SELECT_TOOL, TAB_NEW_TOOL, TAB_CLOSE_TOOL,
 ];
 
 /// O que o motor recebe para subir o MCP. Mesmo socket do `frota-work`: a
@@ -102,11 +113,70 @@ impl GatewayConfig {
     }
 }
 
-/// Estado do navegador por run: a lease de piloto e o relógio do pedido.
+/// Estado do navegador por run: a lease de piloto, o relógio do pedido e a
+/// aba em que o agente está (ADR-231).
 #[derive(Default)]
 pub struct BrowserGateway {
     lease: Mutex<Option<crate::experience_broker::BrowserPilotLease>>,
     ultimo_pedido_ms: Mutex<i64>,
+    /// A aba do agente neste run. Só muda por gesto dele (selecionar, abrir,
+    /// fechar) ou quando ela some.
+    aba: Mutex<Option<String>>,
+    /// Abas que o agente já viu: a diferença é o que ele precisa saber que
+    /// abriu.
+    conhecidas: Mutex<std::collections::HashSet<String>>,
+}
+
+impl BrowserGateway {
+    /// A aba do agente entre as abertas: a fixada, se ainda existe; senão a
+    /// primeira, que passa a ser a dele.
+    fn fixar(&self, abas: &[crate::browser_cdp::RawPage]) -> Option<crate::browser_cdp::RawPage> {
+        let mut aba = self.aba.lock().ok()?;
+        let escolhida = escolher_aba(abas, aba.as_deref())?;
+        *aba = Some(abas[escolhida].id.clone());
+        Some(abas[escolhida].clone())
+    }
+
+    fn trocar(&self, id: &str) {
+        if let Ok(mut aba) = self.aba.lock() {
+            *aba = Some(id.to_string());
+        }
+    }
+
+    fn aba_atual(&self) -> Option<String> {
+        self.aba.lock().ok().and_then(|a| a.clone())
+    }
+
+    /// Anota as abas vistas e devolve as que apareceram desde a última vez.
+    /// Na primeira vez nada é "novo": é o navegador como o agente o encontrou.
+    fn registrar(&self, abas: &[crate::browser_cdp::RawPage]) -> Vec<crate::browser_cdp::RawPage> {
+        let Ok(mut conhecidas) = self.conhecidas.lock() else {
+            return Vec::new();
+        };
+        let primeira_vez = conhecidas.is_empty();
+        let novas = abas
+            .iter()
+            .filter(|p| conhecidas.insert(p.id.clone()) && !primeira_vez)
+            .cloned()
+            .collect();
+        novas
+    }
+}
+
+/// Índice da aba do agente: a fixada, se ainda existe; senão a primeira. Puro.
+fn escolher_aba(abas: &[crate::browser_cdp::RawPage], fixada: Option<&str>) -> Option<usize> {
+    if abas.is_empty() {
+        return None;
+    }
+    Some(fixada.and_then(|id| abas.iter().position(|p| p.id == id)).unwrap_or(0))
+}
+
+fn aba_json(page: &crate::browser_cdp::RawPage, cwd: &str) -> Value {
+    json!({
+        "id": page.id,
+        "title": page.title.chars().take(240).collect::<String>(),
+        "url": crate::browser_cdp::sanitize_page_url_no_projeto(&page.url, Some(Path::new(cwd))),
+    })
 }
 
 fn now_ms() -> i64 {
@@ -119,6 +189,9 @@ fn now_ms() -> i64 {
 struct Alvo {
     project_id: String,
     page: crate::browser_cdp::RawPage,
+    abas: Vec<crate::browser_cdp::RawPage>,
+    /// Abas que surgiram desde a última ação do agente.
+    novas: Vec<crate::browser_cdp::RawPage>,
 }
 
 const RECUSA: &str = "A pessoa preferiu não ligar o navegador do projeto agora. Siga sem ele, ou diga o que queria verificar e peça que ela confira.";
@@ -196,8 +269,12 @@ async fn alvo(
             esperar_o_gesto(app, &project_id, cwd, agora).await?;
         }
     }
-    let page = crate::browser_cdp::pagina_ativa(app, cwd).await?;
-    Ok(Alvo { project_id, page })
+    let abas = crate::browser_cdp::abas_do_projeto(app, cwd).await?;
+    let page = gateway
+        .fixar(&abas)
+        .ok_or("o navegador está ligado mas não tem nenhuma aba aberta")?;
+    let novas = gateway.registrar(&abas);
+    Ok(Alvo { project_id, page, abas, novas })
 }
 
 /// Espera a pessoa ligar o navegador (ou recusar), com teto.
@@ -282,15 +359,8 @@ pub async fn handle(
         return Ok(status_json(&alvo, cwd));
     }
     let alvo = alvo(app, gateway, run_id, conv_id, cwd).await?;
-    // O agente está usando o navegador AGORA: a tela abre a vista ao vivo
-    // para a pessoa acompanhar (ADR-229). Uma vez por turno é regra da tela.
-    crate::work_gateway::emit_work(
-        app,
-        "browser_agent_active",
-        json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd }),
-    );
     let ws = websocket(&alvo.page)?;
-    match action {
+    let resultado: Result<Value, String> = match action {
         SNAPSHOT_TOOL => {
             let offset = args.get("offset").and_then(Value::as_u64).unwrap_or(0) as usize;
             let texto = crate::browser_cdp::avaliar(
@@ -400,8 +470,93 @@ pub async fn handle(
             crate::browser_script::enviar_arquivos(ws, seletor, arquivos).await?;
             Ok(json!({ "ok": true, "arquivos": quantos, "selector": seletor }))
         }
+        TABS_TOOL => Ok(json!({
+            "abas": alvo.abas.iter().map(|p| {
+                let mut aba = aba_json(p, cwd);
+                aba["ativa"] = json!(p.id == alvo.page.id);
+                aba
+            }).collect::<Vec<_>>(),
+        })),
+        TAB_SELECT_TOOL => {
+            let id = args.get("id").and_then(Value::as_str).unwrap_or("").trim();
+            let page = alvo
+                .abas
+                .iter()
+                .find(|p| p.id == id)
+                .ok_or("essa aba não existe mais; liste com browser_tabs")?;
+            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            gateway.trocar(&page.id);
+            crate::browser_cdp::ativar_aba(app, cwd, &page.id).await?;
+            Ok(json!({ "ok": true, "aba": aba_json(page, cwd) }))
+        }
+        TAB_NEW_TOOL => {
+            let url = args.get("url").and_then(Value::as_str).unwrap_or("").trim();
+            let destino = if url.is_empty() {
+                None
+            } else {
+                Some(crate::browser_cdp::politica_da_barra(url, Path::new(cwd))?)
+            };
+            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            let nova = crate::browser_cdp::nova_aba(app, cwd).await?;
+            gateway.registrar(std::slice::from_ref(&nova));
+            gateway.trocar(&nova.id);
+            if let (Some(destino), Some(ws)) = (&destino, nova.websocket_url.as_deref()) {
+                crate::browser_cdp::pilotar(ws, vec![json!({
+                    "id": 1, "method": "Page.navigate", "params": {"url": destino}
+                })])
+                .await?;
+            }
+            let url = destino.as_deref().unwrap_or("about:blank");
+            Ok(json!({ "ok": true, "aba": { "id": nova.id, "url": crate::browser_cdp::sanitize_page_url_no_projeto(url, Some(Path::new(cwd))) } }))
+        }
+        TAB_CLOSE_TOOL => {
+            let id = args
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|id| !id.is_empty())
+                .unwrap_or(&alvo.page.id)
+                .to_string();
+            if !alvo.abas.iter().any(|p| p.id == id) {
+                return Err("essa aba não existe mais; liste com browser_tabs".into());
+            }
+            if alvo.abas.len() <= 1 {
+                return Err("é a única aba aberta; navegue nela em vez de fechar".into());
+            }
+            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            crate::browser_cdp::fechar_aba(app, cwd, &id).await?;
+            let restantes: Vec<_> = alvo.abas.iter().filter(|p| p.id != id).cloned().collect();
+            let ativa = gateway.fixar(&restantes).map(|p| aba_json(&p, cwd));
+            Ok(json!({ "ok": true, "fechada": id, "ativa": ativa }))
+        }
         _ => Err("ação desconhecida".into()),
+    };
+    let mut valor = resultado?;
+    // Ação que pode abrir aba (clique, tecla, script): confere de novo na
+    // hora. A aba que abrir depois aparece na próxima chamada, pelo `alvo`.
+    let mut novas = alvo.novas;
+    if matches!(action, CLICK_TOOL | KEY_TOOL | EVALUATE_TOOL | TYPE_TOOL) {
+        if let Ok(abas) = crate::browser_cdp::abas_do_projeto(app, cwd).await {
+            novas.extend(gateway.registrar(&abas));
+        }
     }
+    if !novas.is_empty() {
+        if let Some(obj) = valor.as_object_mut() {
+            obj.insert("abas_novas".into(), json!(novas.iter().map(|p| aba_json(p, cwd)).collect::<Vec<_>>()));
+            obj.insert(
+                "dica".into(),
+                json!("Abriu aba nova. Você continua na aba de antes; para ir até ela, use browser_tab_select com o id."),
+            );
+        }
+    }
+    // O agente está usando o navegador AGORA: a tela abre a vista ao vivo e
+    // segue a aba dele (ADR-229, ADR-231). Uma vez por turno é regra da tela.
+    crate::work_gateway::emit_work(
+        app,
+        "browser_agent_active",
+        json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd, "targetId": gateway.aba_atual() }),
+    );
+    Ok(valor)
 }
 
 /// A captura atravessa o socket como CAMINHO, não como base64: o socket tem
@@ -600,6 +755,26 @@ fn tool_specs() -> Vec<Value> {
                 "required": ["paths"]
             }
         }),
+        json!({
+            "name": TABS_TOOL,
+            "description": "Lista as abas abertas no navegador da Frota (id, título, url) e diz em qual você está (ativa). As outras tools agem só na sua aba; link que abre aba nova não troca você de aba, e a resposta avisa em abas_novas.",
+            "inputSchema": { "type": "object", "properties": {} }
+        }),
+        json!({
+            "name": TAB_SELECT_TOOL,
+            "description": "Passa a trabalhar na aba de id informado (de browser_tabs ou de abas_novas). Toma o controle.",
+            "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } }, "required": ["id"] }
+        }),
+        json!({
+            "name": TAB_NEW_TOOL,
+            "description": "Abre uma aba nova, opcionalmente já numa URL http/https ou num HTML do projeto, e passa a trabalhar nela. Toma o controle.",
+            "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
+        }),
+        json!({
+            "name": TAB_CLOSE_TOOL,
+            "description": "Fecha uma aba (a sua, se não informar o id). Não fecha a última. Fechando a sua, você passa para a primeira que sobrou. Toma o controle.",
+            "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } } }
+        }),
     ]
 }
 
@@ -618,6 +793,37 @@ mod tests {
             assert!(is_browser_tool(nome));
         }
         assert!(!is_browser_tool("process_start"));
+    }
+
+    fn aba(id: &str) -> crate::browser_cdp::RawPage {
+        serde_json::from_value(json!({
+            "id": id, "title": format!("aba {id}"), "url": "http://127.0.0.1:3000/", "type": "page",
+            "webSocketDebuggerUrl": format!("ws://127.0.0.1:1/devtools/page/{id}")
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_aba_do_agente_fica_fixa_quando_um_link_abre_outra_na_frente() {
+        // Ordem real do /json/list depois de um target=_blank (Chrome for
+        // Testing 151): a aba nova vem PRIMEIRO.
+        let gateway = BrowserGateway::default();
+        assert_eq!(gateway.fixar(&[aba("A")]).unwrap().id, "A");
+        assert!(gateway.registrar(&[aba("A")]).is_empty(), "o navegador encontrado não é novidade");
+        let depois = [aba("B"), aba("A")];
+        assert_eq!(gateway.fixar(&depois).unwrap().id, "A", "antes o agente ia parar em B sem saber");
+        let novas = gateway.registrar(&depois);
+        assert_eq!(novas.iter().map(|p| p.id.as_str()).collect::<Vec<_>>(), ["B"]);
+        assert!(gateway.registrar(&depois).is_empty(), "avisa uma vez só");
+    }
+
+    #[test]
+    fn aba_fixada_que_sumiu_cede_a_primeira() {
+        let gateway = BrowserGateway::default();
+        gateway.trocar("X");
+        assert_eq!(gateway.fixar(&[aba("B"), aba("A")]).unwrap().id, "B");
+        assert_eq!(gateway.aba_atual().as_deref(), Some("B"));
+        assert_eq!(escolher_aba(&[], Some("B")), None);
     }
 
     #[test]

@@ -25,13 +25,13 @@ const PREVIEW_NOTICE_INTERVAL_MS: i64 = 100;
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RawPage {
-    id: String,
+    pub(crate) id: String,
     #[serde(default)]
     pub(crate) title: String,
     #[serde(default)]
     pub(crate) url: String,
     #[serde(rename = "type")]
-    kind: String,
+    pub(crate) kind: String,
     #[serde(rename = "webSocketDebuggerUrl")]
     pub(crate) websocket_url: Option<String>,
 }
@@ -688,6 +688,49 @@ pub(crate) async fn avaliar(websocket_url: &str, expression: &str) -> Result<Val
     })
     .await
     .map_err(|_| "a leitura da página excedeu o tempo limite".to_string())?
+}
+
+/// As abas do navegador do projeto (páginas com canal), na ordem do Chromium:
+/// a aberta por último vem primeiro.
+pub(crate) async fn abas_do_projeto(app: &tauri::AppHandle, project_path: &str) -> Result<Vec<RawPage>, String> {
+    let (_, session) = project_session(app, project_path).await?;
+    Ok(raw_pages(&session.endpoint)
+        .await?
+        .into_iter()
+        .filter(|page| page.kind == "page" && page.websocket_url.is_some())
+        .collect())
+}
+
+/// Endpoints HTTP do Chromium para abas. `/json/new` só aceita PUT e corta a
+/// URL no primeiro `&` (testado no Chrome for Testing 151): a aba nasce em
+/// branco e quem navega é o `Page.navigate`, com a política da barra.
+async fn pedido_de_aba(url: String, put: bool) -> Result<String, String> {
+    let cliente = reqwest::Client::new();
+    let pedido = if put { cliente.put(url) } else { cliente.get(url) };
+    let resposta = timeout(CDP_TIMEOUT, pedido.send())
+        .await
+        .map_err(|_| "o navegador não respondeu a tempo".to_string())?
+        .map_err(|error| format!("não consegui falar com o navegador: {error}"))?;
+    if !resposta.status().is_success() {
+        return Err(format!("o navegador recusou: {}", resposta.status()));
+    }
+    resposta.text().await.map_err(|error| error.to_string())
+}
+
+pub(crate) async fn nova_aba(app: &tauri::AppHandle, project_path: &str) -> Result<RawPage, String> {
+    let (_, session) = project_session(app, project_path).await?;
+    let corpo = pedido_de_aba(format!("{}/json/new?about:blank", session.endpoint), true).await?;
+    serde_json::from_str(&corpo).map_err(|error| format!("aba nova ilegível: {error}"))
+}
+
+pub(crate) async fn ativar_aba(app: &tauri::AppHandle, project_path: &str, id: &str) -> Result<(), String> {
+    let (_, session) = project_session(app, project_path).await?;
+    pedido_de_aba(format!("{}/json/activate/{id}", session.endpoint), false).await.map(|_| ())
+}
+
+pub(crate) async fn fechar_aba(app: &tauri::AppHandle, project_path: &str, id: &str) -> Result<(), String> {
+    let (_, session) = project_session(app, project_path).await?;
+    pedido_de_aba(format!("{}/json/close/{id}", session.endpoint), false).await.map(|_| ())
 }
 
 /// A página ativa do projeto (a primeira aba do tipo `page` com canal).

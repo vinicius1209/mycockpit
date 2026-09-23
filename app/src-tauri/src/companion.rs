@@ -1344,21 +1344,22 @@ fn read_conv(db: &Path, id: &str) -> Result<Option<Value>, String> {
     )
     .map_err(|e| e.to_string())?;
     let row = conn.query_row(
-        "SELECT id, title, items, agent FROM conversations WHERE id = ?1",
+        "SELECT id, title, agent FROM conversations WHERE id = ?1",
         [id],
         |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, Option<String>>(1)?,
                 r.get::<_, String>(2)?,
-                r.get::<_, String>(3)?,
             ))
         },
     );
     match row {
-        Ok((id, title, items, agent)) => {
-            // items é JSON serializado pelo front; corrompido → lista vazia.
-            let items: Value = serde_json::from_str(&items).unwrap_or_else(|_| json!([]));
+        Ok((id, title, agent)) => {
+            // Fonte itemizada (ADR-230); corrompido → lista vazia.
+            let items: Value = crate::conversation_items::itens_da_conversa(&conn, &id)
+                .map(Value::Array)
+                .unwrap_or_else(|_| json!([]));
             Ok(Some(
                 json!({"id": id, "title": title, "items": items, "agent": agent}),
             ))

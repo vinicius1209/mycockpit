@@ -122,6 +122,8 @@ export interface WorkEvent {
     projectId?: string
     projectPath?: string
     session?: BrowserSession | null
+    /** A aba em que o agente está (`browser_agent_active`, ADR-231). */
+    targetId?: string | null
     granted?: boolean
     tasks?: Array<{
       id: string

@@ -23,6 +23,7 @@ import {
   type BrowserPilotStatus,
   type BrowserPreviewFrame,
 } from "@/lib/browser"
+import { listenWorkEvents, type WorkEvent } from "@/lib/work"
 import {
   anexarPaginaAoRascunho,
   copiarImagemDaPagina,
@@ -96,6 +97,19 @@ function sairDaVista(projectPath: string): void {
       )
     }, ESPERA_PARA_PARAR_MS),
   )
+}
+
+/** A aba do agente que a vista deve passar a mostrar, ou `null`. Puro. */
+export function abaParaSeguir(
+  event: WorkEvent,
+  projectPath: string,
+  selecionada: string | null,
+  pessoaPilotando: boolean,
+): string | null {
+  if (event.kind !== "browser_agent_active" || event.data.projectPath !== projectPath) return null
+  const alvo = event.data.targetId
+  if (!alvo || alvo === selecionada || pessoaPilotando) return null
+  return alvo
 }
 
 function messageOf(cause: unknown): string {
@@ -212,6 +226,22 @@ export function useNavegadorDoProjeto(
         else unlisteners.push(unlisten)
       })
       .catch((cause) => console.warn("Preview sem eventos:", cause))
+    // A vista segue a aba em que o agente está (ADR-231): antes ela ficava na
+    // aba escolhida ao montar, e um link que abria aba nova deixava a pessoa
+    // olhando uma página enquanto o agente trabalhava em outra. Com a pessoa
+    // pilotando, a aba é dela e nada muda.
+    void listenWorkEvents((event) => {
+      const alvoDoAgente = abaParaSeguir(event, projectPath, selectedRef.current, !!pilotTokenRef.current)
+      if (!alvoDoAgente) return
+      void loadPages(projectPath, alvoDoAgente).then((page) => {
+        if (!disposed && page?.id === alvoDoAgente) void showPage(projectPath, page)
+      })
+    })
+      .then((unlisten) => {
+        if (disposed) unlisten()
+        else unlisteners.push(unlisten)
+      })
+      .catch((cause) => console.warn("Vista sem a aba do agente:", cause))
     const poll = window.setInterval(() => {
       if (document.hidden) return
       void refreshPilot(projectPath)

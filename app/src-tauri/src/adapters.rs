@@ -1944,6 +1944,20 @@ impl AgentAdapter for ClaudeAdapter {
         disallowed.extend(negados.iter().map(String::as_str));
         // disallowedTools (mesclado): o gate de escrita (por modo) + os interativos.
         cmd.arg("--disallowedTools").arg(disallowed.join(","));
+        // A regra acima tira as tools, mas o servidor SUBIA assim mesmo: visto
+        // em 23/09/2026, `npm exec @playwright/mcp@latest` nascendo em todo
+        // turno (~230 MB, e o `@latest` consultando o registro). O
+        // `deniedMcpServers` dos settings impede o processo de nascer (medido
+        // no claude 2.1.280: sem ele o playwright sobe, com ele não).
+        if !req.denied_mcp_servers.is_empty() {
+            let negados: Vec<serde_json::Value> = req
+                .denied_mcp_servers
+                .iter()
+                .map(|nome| serde_json::json!({ "serverName": nome }))
+                .collect();
+            cmd.arg("--settings")
+                .arg(serde_json::json!({ "deniedMcpServers": negados }).to_string());
+        }
 
         // Canal SYSTEM por-run (H1 do prompt-hygiene-plan): doutrina/persona
         // pedidas pelo app entram AQUI — re-enviadas a cada spawn (frescor de
@@ -2044,7 +2058,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto, mcp__{}__{} roda JavaScript na página (canvas, File, import do dev server) e mcp__{}__{} envia arquivo a um input. Ele aparece na aba ao lado da conversa. Se estiver desligado, a tool pede à pessoa e espera a resposta dela (até 90 s) antes de voltar; não abra outro navegador por conta própria.",
+                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto, mcp__{}__{} roda JavaScript na página (canvas, File, import do dev server) e mcp__{}__{} envia arquivo a um input. Com mais de uma aba, mcp__{}__{} lista e mcp__{}__{} troca. Ele aparece na aba ao lado da conversa. Se estiver desligado, a tool pede à pessoa e espera a resposta dela (até 90 s) antes de voltar; não abra outro navegador por conta própria.",
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::SNAPSHOT_TOOL,
@@ -2056,6 +2070,10 @@ impl AgentAdapter for ClaudeAdapter {
                     crate::browser_gateway::EVALUATE_TOOL,
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::UPLOAD_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::TABS_TOOL,
+                    crate::browser_gateway::MCP_SERVER_NAME,
+                    crate::browser_gateway::TAB_SELECT_TOOL,
                 ));
             }
             if let Some(gateway) = &req.desktop_gateway {
@@ -7156,6 +7174,23 @@ mod tests {
                 .any(|par| par[0] == "--disallowedTools" && par[1].split(',').any(|t| t == "mcp__playwright"));
             assert_eq!(negou, caps.run_mcp_deny, "{agent}");
         }
+    }
+
+    #[test]
+    fn claude_negado_nem_sobe_o_servidor() {
+        let mut r = req(Permission::Padrao, false);
+        r.denied_mcp_servers = vec!["playwright".into()];
+        let args = argv(&resolve("claude-code").unwrap().build_command(&r).unwrap());
+        let settings = args
+            .windows(2)
+            .find(|par| par[0] == "--settings")
+            .map(|par| par[1].clone())
+            .expect("settings com o servidor negado");
+        let v: serde_json::Value = serde_json::from_str(&settings).unwrap();
+        assert_eq!(v, serde_json::json!({ "deniedMcpServers": [{ "serverName": "playwright" }] }));
+        // sem negado, nenhum settings a mais
+        let limpo = argv(&resolve("claude-code").unwrap().build_command(&req(Permission::Padrao, false)).unwrap());
+        assert!(!limpo.iter().any(|a| a == "--settings"));
     }
 
     #[test]

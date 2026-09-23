@@ -7,7 +7,6 @@ import {
   settledConversationTurns,
   sha256Hex,
   type ConversationMapPinsV1,
-  type ConversationMapSemanticStatus,
   type StoredConversationMap,
 } from "@/lib/conversationMap"
 import {
@@ -22,30 +21,20 @@ import {
   createUtilityAttemptId,
 } from "@/lib/utility"
 import { UTILITY_PROFILES } from "@/lib/utility/profiles"
-import type { UtilityFailureCode, UtilityLocality } from "@/lib/utility/types"
 import { useApp } from "@/store/app"
 import type { ChatItem } from "@/store/chat"
 import { perfOperation } from "@/lib/fleet/perf"
+import {
+  emptyPins,
+  initialEntry,
+  sourceKind,
+  turnsAfterWatermark,
+  type ConversationMapEntry,
+} from "@/store/conversationMaps/entrada"
+export type { ConversationMapEntry } from "@/store/conversationMaps/entrada"
 
 const SETTLE_DELAY_MS = 700
 const REBASE_AFTER_TURNS = 20
-
-function emptyPins(): ConversationMapPinsV1 {
-  return { schemaVersion: 1, revision: 0, constraints: [] }
-}
-
-export interface ConversationMapEntry {
-  hydrated: boolean
-  stored: StoredConversationMap | null
-  pins: ConversationMapPinsV1
-  semanticStatus: ConversationMapSemanticStatus
-  staleSettledTurns: number
-  generatingAttemptId: string | null
-  needsRebase: boolean
-  lastIssue: UtilityFailureCode | "corrupt" | "conflict" | null
-  /** Entrada determinística já recusada nesta sessão. Nunca é persistida. */
-  blockedInputKey: string | null
-}
 
 interface RefreshArgs {
   conversationId: string
@@ -71,38 +60,6 @@ interface ConversationMapsState {
 const hydratePromises = new Map<string, Promise<void>>()
 const refreshTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const refreshEpochs = new Map<string, number>()
-
-function initialEntry(): ConversationMapEntry {
-  return {
-    hydrated: false,
-    stored: null,
-    pins: emptyPins(),
-    semanticStatus: "absent",
-    staleSettledTurns: 0,
-    generatingAttemptId: null,
-    needsRebase: false,
-    lastIssue: null,
-    blockedInputKey: null,
-  }
-}
-
-function turnsAfterWatermark(
-  items: readonly ChatItem[],
-  running: boolean,
-  finalizing: boolean,
-  watermark: string | null,
-): number {
-  const turns = settledConversationTurns(items, { running, finalizing })
-  if (!watermark) return turns.length
-  const index = turns.findIndex((turn) => turn.terminalItemId === watermark)
-  return index < 0 ? turns.length : Math.max(0, turns.length - index - 1)
-}
-
-function sourceKind(locality: UtilityLocality): StoredConversationMap["sourceKind"] {
-  if (locality === "device") return "device"
-  if (locality === "local-process") return "local_process"
-  return "remote"
-}
 
 export const useConversationMaps = create<ConversationMapsState>()((set, get) => ({
   byConversation: {},
@@ -192,6 +149,27 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
     const policy = utility.tasks.conversation_map
     if (!policy || policy.route === "off") return
     const entry = get().byConversation[args.conversationId] ?? initialEntry()
+    const sizeKey = [
+      JSON.stringify(policy),
+      CONVERSATION_MAP_PROMPT_VERSION,
+      entry.pins.revision,
+    ].join(":")
+    // Antes de montar a entrada: a conversa grande demais não paga nem a
+    // derivação a cada fim de turno.
+    if (!args.force && entry.blockedSizeKey === sizeKey) {
+      // O agendamento marcou "na fila"; a tela tem de dizer o motivo real.
+      set((state) => ({
+        byConversation: {
+          ...state.byConversation,
+          [args.conversationId]: {
+            ...entry,
+            semanticStatus: entry.stored ? "stale" : "unavailable",
+            lastIssue: "input_too_large",
+          },
+        },
+      }))
+      return
+    }
     const staleTurns = turnsAfterWatermark(
       args.items,
       false,
@@ -350,6 +328,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
             semanticStatus: live.stored ? "stale" : stale ? "queued" : "unavailable",
             lastIssue: generated.reason,
             blockedInputKey: deterministic ? blockedInputKey : live.blockedInputKey,
+            blockedSizeKey: generated.reason === "input_too_large" ? sizeKey : live.blockedSizeKey,
           },
         },
       }))
@@ -408,6 +387,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
           staleSettledTurns: 0,
           lastIssue: null,
           blockedInputKey: null,
+          blockedSizeKey: null,
         },
       },
     }))
@@ -452,6 +432,7 @@ export const useConversationMaps = create<ConversationMapsState>()((set, get) =>
             semanticStatus: entry.stored ? "stale" : "queued",
             lastIssue: null,
             blockedInputKey: null,
+            blockedSizeKey: null,
           },
         },
       }))

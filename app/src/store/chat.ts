@@ -1292,16 +1292,15 @@ export const useChat = create<ChatState>((set, get) => {
       // S1: UPSERT de linha inteira (stringify da conversa TODA na main thread)
       // — span de PAREDE (inclui o await do SQLite); no-op sem mc.office.perf.
       const endSpan = perfSpan("persist")
-      // Publica primeiro a revisão itemizada, na mesma fila serial das escritas
-      // de streaming. O snapshot integral abaixo segue como compatibilidade e
-      // rollback; no reload, a revisão incremental confirmada é preferida.
-      await itemPersistence.replaceAll(convId, c.items)
+      // Os itens vão só para a fonte itemizada, e só os que mudaram desde o
+      // último persist (ADR-230), na mesma fila serial das escritas de
+      // streaming. A linha abaixo não carrega mais a conversa inteira.
+      await itemPersistence.persistir(convId, c.items)
       await dbSave(
         convId,
         c.projectId,
         title,
         c.sessionId,
-        c.items,
         c.suggestions,
         c.agent,
         c.reqModel,
