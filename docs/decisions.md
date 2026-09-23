@@ -8563,3 +8563,37 @@ considerou.
      branco e navega por `Page.navigate`.
 - **Consequência:** o que a pessoa vê é a aba em que o agente trabalha, e o
   agente escolhe a aba em vez de ser levado por ela.
+
+### ADR-232 · Quadro do navegador no ritmo da tela, catraca de tamanho no Rust e testes que não mexem na máquina ✅
+- **Contexto (23/09/2026, continuação do levantamento do ADR-230):**
+  1. A proposta era trocar o quadro em base64 por canal binário. Medido, o
+     base64 não pesa: decodificar um quadro custa 0,02 ms, e a tela puxa no
+     máximo 10 por segundo. O custo estava no Chromium: a Frota confirmava
+     cada quadro na hora, e ele codificava ~50 JPEGs de 151 KB por segundo
+     (1280×800) para uma tela que mostrava 10.
+  2. A catraca de tamanho só cobria o TypeScript; no Rust, `adapters.rs` tem
+     7.733 linhas e 18 de 101 arquivos passam de 1.000.
+  3. O teste `emergency_release_roda_sem_panico` postava eventos reais de
+     mouse e teclado na sessão de quem rodava a suíte, e a liberação soltava
+     os botões em (0, 0), levando o ponteiro ao canto da tela. O teste
+     `cancelamento_interrompe_drenagem_de_neto_ativo` falhava às vezes: no
+     runtime de uma thread do `#[tokio::test]`, o `yes` inundando o pipe
+     atrasava o relógio do cancelamento para ~2,5 s. No runtime de várias
+     threads, o do app, o Stop volta em 65 ms: era o teste, não o produto.
+- **Decisão:**
+  1. O ack do screencast sai no ritmo do aviso à tela (100 ms), com um ack
+     pendente por vez. Medido no Chromium real com a mesma rolagem: 49,6 → 10,2
+     quadros por segundo e 3,30 → 1,78 s de CPU do Chromium em 5 s (−46%),
+     sem mudar o que a tela mostra. O canal binário fica fora: não paga o
+     trabalho.
+  2. A catraca de tamanho cobre `app/src-tauri/src` com teto de 1.000 linhas
+     por `.rs` (testes do arquivo incluídos). Os 18 arquivos acima entraram
+     congelados por um `--bootstrap` da criação desta cobertura (a parte do
+     TypeScript da baseline saiu idêntica). O corte deles segue
+     `docs/arquivos-grandes-plan.md`.
+  3. A liberação de emergência solta os botões onde o cursor está, e o teste
+     dela é `#[ignore]` (roda só pedido). Os testes de drenagem rodam no
+     runtime de várias threads, e o de cancelamento ganhou régua de 1 s.
+- **Consequência:** navegador ao vivo mais leve, arquivo Rust novo nasce
+  abaixo de 1.000 linhas, e a suíte não mexe mais no mouse nem falha por
+  fome de relógio.

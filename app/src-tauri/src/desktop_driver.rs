@@ -75,6 +75,8 @@ unsafe extern "C" {
     );
 
     fn CGEventSetFlags(event: *mut std::ffi::c_void, flags: u64);
+    fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn CGEventGetLocation(event: *const std::ffi::c_void) -> CGPoint;
     fn CGEventPost(tap: u32, event: *mut std::ffi::c_void);
     fn CFRelease(cf: *const std::ffi::c_void);
 }
@@ -534,7 +536,17 @@ pub fn press_key(key: &str, modifiers: &[String]) -> Result<(), String> {
 pub fn emergency_release_inputs() {
     #[cfg(target_os = "macos")]
     unsafe {
-        let pos = CGPoint { x: 0.0, y: 0.0 };
+        // Solta os botões ONDE o cursor está. Antes era em (0, 0): cada
+        // liberação de emergência levava o ponteiro para o canto da tela, e
+        // um teste que a chamava fazia isso no Mac de quem rodava a suíte.
+        let agora = CGEventCreate(std::ptr::null());
+        let pos = if agora.is_null() {
+            CGPoint { x: 0.0, y: 0.0 }
+        } else {
+            let p = CGEventGetLocation(agora);
+            CFRelease(agora);
+            p
+        };
         let left_up = CGEventCreateMouseEvent(
             std::ptr::null(),
             K_CG_EVENT_LEFT_MOUSE_UP,
@@ -579,7 +591,10 @@ mod tests {
         assert!(!info.platform.is_empty());
     }
 
+    /// Posta eventos REAIS de mouse e teclado na sessão de quem roda a suíte:
+    /// só roda pedido (`cargo test -- --ignored emergency_release`).
     #[test]
+    #[ignore = "posta eventos reais de mouse e teclado"]
     fn emergency_release_roda_sem_panico() {
         emergency_release_inputs();
     }

@@ -276,10 +276,29 @@ async fn run_screencast(
         .await
         .map_err(|error| format!("não consegui iniciar o preview: {error}"))?;
     let mut message_id = 2_u64;
+    // Ritmo do screencast (ADR-232): o Chromium só manda o próximo quadro
+    // depois do ack. Confirmar na hora fazia ele codificar ~60 JPEGs por
+    // segundo (151 KB cada em 1280×800, medido) para uma tela que puxa no
+    // máximo 10. O ack espera o intervalo do aviso, e o Chromium codifica só
+    // o que alguém vai ver.
+    let mut ultimo_ack: Option<tokio::time::Instant> = None;
+    let mut ack_pendente: Option<u64> = None;
+    let intervalo = std::time::Duration::from_millis(PREVIEW_NOTICE_INTERVAL_MS as u64);
     loop {
+        let ack_em = ultimo_ack.map(|t| t + intervalo).unwrap_or_else(tokio::time::Instant::now);
         tokio::select! {
             changed = stop.changed() => {
                 if changed.is_err() || *stop.borrow() { break; }
+            }
+            _ = tokio::time::sleep_until(ack_em), if ack_pendente.is_some() => {
+                let cdp_session = ack_pendente.take().expect("guardado acima");
+                socket.send(Message::Text(json!({
+                    "id": message_id,
+                    "method": "Page.screencastFrameAck",
+                    "params": {"sessionId": cdp_session}
+                }).to_string().into())).await.map_err(|error| format!("preview interrompido: {error}"))?;
+                message_id += 1;
+                ultimo_ack = Some(tokio::time::Instant::now());
             }
             incoming = socket.next() => {
                 let Some(message) = incoming else { return Err("o canal de preview foi encerrado".into()); };
@@ -313,13 +332,9 @@ async fn run_screencast(
                         "revision": revision,
                     }));
                 }
+                // O ack sai no ritmo, pelo braço de cima do select.
                 if let Some(cdp_session) = cdp_session {
-                    socket.send(Message::Text(json!({
-                        "id": message_id,
-                        "method": "Page.screencastFrameAck",
-                        "params": {"sessionId": cdp_session}
-                    }).to_string().into())).await.map_err(|error| format!("preview interrompido: {error}"))?;
-                    message_id += 1;
+                    ack_pendente = Some(cdp_session);
                 }
             }
         }

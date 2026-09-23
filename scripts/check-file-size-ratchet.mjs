@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * GUARDA: ratchet de tamanho de arquivo em `app/src`.
+ * GUARDA: ratchet de tamanho de arquivo em `app/src` e, desde o ADR-232, em
+ * `app/src-tauri/src` (caminhos prefixados com `src-tauri/` na baseline).
  *
  * ┌──────────────────────────────────────────────────────────────────────────┐
  * │ SE ESTA GUARDA DISPARAR: DIVIDA O ARQUIVO.                               │
@@ -42,6 +43,7 @@ import { lerFontes } from "./lints/walk.mjs";
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const RAIZ = path.join(REPO_ROOT, "app", "src");
+const RAIZ_RUST = path.join(REPO_ROOT, "app", "src-tauri", "src");
 const BASELINE_PATH = path.join(REPO_ROOT, "scripts", "lints", "file-size-baseline.json");
 const EXTENSOES = new Set([".ts", ".tsx"]);
 
@@ -49,7 +51,10 @@ const atualizar = process.argv.includes("--update");
 const bootstrap = process.argv.includes("--bootstrap");
 
 const baselineEmDisco = await lerBaseline();
-const fontes = await lerFontes(RAIZ, EXTENSOES);
+const fontes = [
+  ...(await lerFontes(RAIZ, EXTENSOES)),
+  ...(await lerFontes(RAIZ_RUST, new Set([".rs"]))).map((f) => ({ ...f, relPath: `src-tauri/${f.relPath}` })),
+];
 const arquivos = fontes.map(({ relPath, source }) => ({
   relPath,
   linhas: contarLinhas(source),

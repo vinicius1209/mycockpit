@@ -57,10 +57,12 @@ dessas chamadas dependia do texto digitado.
    nomeada, chamada por um gesto real (instalou uma CLI, ligou um MCP, clicou
    "reverificar"). Referência absorvida: `login_shell_path` /
    `refresh_login_shell_path` do Buzz.
-   **Ainda não existe** para o inventário nativo por CLI: o item 3 tirou o custo
-   dos runs que não usam aquela fonte, mas um run do PRÓPRIO motor daquela fonte
-   continua pagando o processo a cada envio. É a próxima dívida deste arquivo, e
-   quando for paga, o item 10 passa a valer para ela.
+   O inventário nativo do Codex segue esse padrão (`discover_codex` em
+   `mcp_control.rs`): cache por projeto com geração, uma sondagem em voo
+   compartilhada, invalidação pelo gesto de instalar ou reverificar, e o
+   manifesto recebe `McpInventoryCacheObservation` (hit/miss/bypass e quando
+   foi verificado), que é o item 10 valendo. Até 23/09/2026 este parágrafo
+   dizia que isso "ainda não existe"; o código já tinha pago a dívida.
 6. **Nunca segure o lock enquanto o processo sobe.** Leia o cache, solte o lock,
    sonde, re-trave para escrever. Dois chamadores sondando junto é aceitável
    (último escritor vence, o resultado é o mesmo); um chamador bloqueando o

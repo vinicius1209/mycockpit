@@ -7125,7 +7125,6 @@ mod tests {
 
     // ---- registry de capabilities (G1, capability-registry-plan) ----
 
-    #[test]
     /// Gêmeo de `agents.mcpEscopo.test.ts`: é por este eixo que a tela diz por
     /// onde o navegador da Frota chega a cada motor (ADR-224 §4).
     #[test]

@@ -68,6 +68,9 @@ describe("regra por tipo de arquivo", () => {
 
   it("tsx e ts têm tetos diferentes", () => {
     expect(regraPara(REGRAS_PADRAO, "components/chat/X.tsx").id).toBe("tsx");
+    // Rust entra pela raiz do backend, prefixada (ADR-232)
+    expect(regraPara(REGRAS_PADRAO, "src-tauri/adapters.rs").id).toBe("rs");
+    expect(regraPara(REGRAS_PADRAO, "src-tauri/adapters.rs").maxLines).toBe(1000);
     expect(regraPara(REGRAS_PADRAO, "lib/x.ts").id).toBe("ts");
   });
 

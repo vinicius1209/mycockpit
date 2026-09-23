@@ -67,6 +67,9 @@ export const REGRAS_PADRAO = [
   { id: "teste", maxLines: 900, casa: (p) => isTeste(p) },
   { id: "tsx", maxLines: 700, casa: (p) => p.endsWith(".tsx") },
   { id: "ts", maxLines: 500, casa: (p) => p.endsWith(".ts") },
+  // Rust (ADR-232): 1.000 linhas com os testes do próprio arquivo dentro,
+  // calibrado em 23/09/2026 (mediana ~500; 18 de 101 já acima, congelados).
+  { id: "rs", maxLines: 1000, casa: (p) => p.endsWith(".rs") },
 ];
 
 /**

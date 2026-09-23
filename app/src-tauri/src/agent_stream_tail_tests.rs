@@ -173,6 +173,11 @@ async fn neto_que_segura_o_pipe_nao_pendura_o_fim_do_turno() {
 
 /// Mesmo um descendente que escreve sem pausa não pode renovar a drenagem
 /// indefinidamente. Cancelar durante essa drenagem também continua funcionando.
+///
+/// Runtime de várias threads, como o do app: no de uma thread só (o padrão do
+/// `#[tokio::test]`) o `yes` inundando o pipe matava o relógio de fome, o
+/// cancelamento de 100 ms chegava com ~2,5 s e a régua de 5 s estourava na
+/// suíte completa (instável desde 21/09/2026). Medido: 65 ms do sinal ao fim.
 async fn verificar_neto_ativo(cancelar: bool) {
     let channel = Channel::new(|_| Ok(()));
     let mut cmd = Command::new("sh");
@@ -209,18 +214,26 @@ async fn verificar_neto_ativo(cancelar: bool) {
     registry.1.lock().unwrap().remove(&run_id);
     assert_eq!(outcome.cancelled, cancelar);
     assert!(inicio.elapsed() < std::time::Duration::from_secs(5));
+    if cancelar {
+        // o Stop não espera a drenagem: volta logo depois do sinal
+        assert!(
+            inicio.elapsed() < std::time::Duration::from_secs(1),
+            "cancelar esperou a drenagem: {:?}",
+            inicio.elapsed()
+        );
+    }
     if !cancelar {
         assert!(outcome.success);
         assert!(inicio.elapsed() >= DRENAGEM_TETO);
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn neto_que_escreve_sem_parar_respeita_teto_total() {
     verificar_neto_ativo(false).await;
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn cancelamento_interrompe_drenagem_de_neto_ativo() {
     verificar_neto_ativo(true).await;
 }
