@@ -15,7 +15,7 @@ import { comporCascata, juntarAnexos } from "@/lib/fleet/promptCascade"
 import { isTauri } from "@/lib/db"
 import { listConversations } from "@/lib/db/conversations"
 import { prepareHybridHandoff } from "@/lib/handoff"
-import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import {
   buildLearningBlocks,
   recordInjectedLessons,
@@ -358,7 +358,7 @@ async function sendFromDeskPrepared(
   // (1º turno + frescor H4 pra motor sem canal; todo spawn no canal system).
   const doctrine = decideDoctrine({
     agent,
-    block: buildDoctrineBlock((await readDoctrine(projectPath)).content),
+    block: blocoDaDoutrina(await readDoctrine(projectPath)),
     locked,
     hasReply,
     // S3.2 wheel-switch: sessão FRESCA no backend novo → a doutrina sempre

@@ -30,7 +30,7 @@ vi.mock("@/lib/db/conversations", () => ({
 
 vi.mock("@/lib/doctrine", () => ({
   readDoctrine: vi.fn(async () => ({ exists: false, content: "", bytes: 0 })),
-  buildDoctrineBlock: (content: string) =>
+  blocoDaDoutrina: ({ content }: { content: string }) =>
     content ? `## Regras do projeto\n\n${content}` : null,
 }))
 

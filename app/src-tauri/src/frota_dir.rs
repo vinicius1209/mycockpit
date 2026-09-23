@@ -278,8 +278,8 @@ pub struct Doctrine {
     /// perderia texto do usuário no round-trip). O corte p/ o prompt é no front.
     pub content: String,
     pub bytes: usize,
-    /// Caminho RELATIVO de onde a doutrina foi lida (`.frota/instructions.md`
-    /// ou, em projeto que ainda não migrou, `.frota/instructions.md`).
+    /// Caminho RELATIVO de onde a doutrina foi lida: `.frota/instructions.md`,
+    /// ou o da pasta antiga em projeto que ainda não migrou.
     ///
     /// Não é enfeite: este rótulo entra NO PROMPT (`<doutrina fonte=...>` em
     /// `doctrine.ts`). Uma constante no front cravaria o nome novo e mandaria o

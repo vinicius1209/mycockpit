@@ -22,7 +22,7 @@ import {
 import { buildHandoff } from "@/lib/handoff"
 import { loadGitDiff } from "@/lib/git"
 import { recordTurnCost, upsertMission } from "@/lib/db"
-import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, readDoctrine } from "@/lib/doctrine"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import {
   errorMark,
@@ -433,9 +433,7 @@ export const useMission = create<MissionState>((set, get) => {
       // injetada em TODAS as fases: cada fase é um run novo de CLI e a maioria
       // roda em codex/agy, que não leem CLAUDE.md. Lê da RAIZ do projeto, não do
       // worktree (o worktree só teria o arquivo depois do 1º commit dele).
-      const doctrineBlock = buildDoctrineBlock(
-        (await readDoctrine(projectPath)).content,
-      )
+      const doctrineBlock = blocoDaDoutrina(await readDoctrine(projectPath))
 
       // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
       // (o onboarding pode não ter semeado o .frota/.gitignore ali).

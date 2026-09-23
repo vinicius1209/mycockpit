@@ -8663,3 +8663,32 @@ considerou.
      movimento) e mostra a tarefa pelo título da conversa.
 - **Consequência:** a pessoa vê que nada fica rodando por baixo, e o
   fechamento sem pendência fica mais rápido que os 750 ms de antes.
+
+### ADR-236 · A doutrina cita o caminho real, e a pasta do projeto vai para `.frota/` por gesto ✅
+- **Contexto (23/09/2026):** a aba Contexto mostrava `.mycockpit/instructions.md`
+  no repositório da própria Frota, que já está em `.frota/`. Não era a pasta:
+  o Rust devolve `Doctrine.path` resolvido entre a pasta nova e a antiga
+  (item 5 das surpresas do `frota-rename-plan.md`), mas o front ignorava o
+  campo e usava a constante `DOCTRINE_PATH = ".mycockpit/instructions.md"`,
+  que ia para a tela E para o prompt de todo turno
+  (`<doutrina fonte=".mycockpit/instructions.md">`), mandando o agente a um
+  arquivo inexistente. Além disso, 7 dos 11 projetos da pessoa ainda tinham
+  só a pasta antiga.
+- **Decisão:**
+  1. `Doctrine.path` chega ao front; `blocoDaDoutrina` monta o bloco com ele,
+     e os oito lugares que injetam doutrina (turno, compactação, agenda,
+     revezamento, missão, frota, disputa) passam por ele. A tela mostra o
+     mesmo caminho. `DOCTRINE_PATH` vira só o fallback, na pasta nova.
+  2. `migrar_pasta_do_projeto` leva a pasta antiga para `.frota/`: sem a
+     nova, muda o nome da pasta inteira (`git mv` quando o git a acompanha);
+     com as duas, move o que não existe na nova e deixa o conflito na antiga,
+     sem sobrescrever nada; a antiga só some vazia. Na aba, o aviso "Este
+     projeto ainda usa a pasta antiga" com "Mover para .frota", desligado
+     enquanto houver agente rodando no projeto. É gesto, como o plano manda
+     para repositório que não é o da Frota.
+  3. Para caber na catraca do Rust (ADR-232), as oito funções que só
+     repassavam para os servidores MCP viraram um despachante,
+     `run_subcomando`, e o `main.rs` testa o subcomando uma vez. Conferido:
+     os seis servidores respondem ao `initialize` pelo binário novo.
+- **Consequência:** o agente é mandado para onde a doutrina está, e cada
+  projeto sai da janela de compatibilidade com um clique.

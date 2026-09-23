@@ -39,6 +39,7 @@ mod conversation_items;
 mod browser_autorizacao;
 mod browser_janela;
 mod manutencao_do_banco;
+mod migrar_pasta;
 mod browser_script;
 mod desktop;
 mod desktop_broker;
@@ -102,54 +103,29 @@ mod utility;
 mod work_gateway;
 mod work_mcp_setup;
 
-/// Ponto de entrada do subcomando `approval-server`: ESTE binário rodando como
-/// MCP server stdio quando o `claude -p` o spawna (aprovação granular inline).
-/// Chamado pelo `main.rs` ANTES do Tauri subir; nunca retorna ao app normal.
-pub fn run_approval_server() {
-    approval::run_mcp_server();
-}
-
-/// Ponto de entrada do MCP read-only de memória/contexto. Diferente do server
-/// de aprovação, este contrato é igual para qualquer provider que fale MCP.
-pub fn run_context_server() {
-    context_gateway::run_mcp_server();
-}
-
-/// Ponto de entrada do proxy MCP autenticado (A2): repassa JSON-RPC pro
-/// endpoint remoto através do socket do app, que é quem guarda o token. Este
-/// processo nunca recebe credencial.
-pub fn run_mcp_proxy_server() {
-    mcp_proxy::run_mcp_server();
-}
-
-/// Ponto de entrada do MCP de trabalho/processos, compartilhado por todo
-/// provider que fale MCP.
-pub fn run_work_server() {
-    work_gateway::run_mcp_server();
-}
-
-/// Ponto de entrada do `frota-browser` (ADR-224): o navegador da Frota para
-/// qualquer motor que fale MCP, pelo socket do run.
-pub fn run_browser_server() {
-    browser_gateway::run_mcp_server();
-}
-
-/// Ponto de entrada do `frota-desktop` (ADR-225): o controlador de desktop da
-/// Frota para qualquer motor que fale MCP, pelo socket do run.
-pub fn run_desktop_server() {
-    desktop_gateway::run_mcp_server();
-}
-
-/// Materializador MCP do Tool Catalog. O subprocesso só fala pelo socket do
-/// run; grants, recursos e workers continuam pertencendo ao app.
-pub fn run_tool_server() {
-    tool_gateway::run_mcp_server();
-}
-
-/// Launcher supervisionado de um MCP stdio contribuído. O descriptor efêmero
-/// é revalidado antes de qualquer byte do pacote ser executado.
-pub fn run_plugin_mcp_server() {
-    plugin_mcp::run_mcp_server();
+/// Os subcomandos: ESTE binário também roda como os servidores MCP stdio que
+/// os motores spawnam. Chamado pelo `main.rs` ANTES do Tauri subir; `true`
+/// quer dizer que era um subcomando e o processo não é o app.
+pub fn run_subcomando(nome: &str) -> bool {
+    match nome {
+        // aprovação granular inline quando o `claude -p` o spawna
+        "approval-server" => approval::run_mcp_server(),
+        // memória/contexto só leitura, o mesmo contrato para qualquer motor
+        "context-server" => context_gateway::run_mcp_server(),
+        // plano, etapas e processos gerenciados
+        "work-server" => work_gateway::run_mcp_server(),
+        // o navegador da Frota (ADR-224) e o controle do desktop (ADR-225)
+        "browser-server" => browser_gateway::run_mcp_server(),
+        "desktop-server" => desktop_gateway::run_mcp_server(),
+        // materializador do Tool Catalog: grants e workers ficam no app
+        "tool-server" => tool_gateway::run_mcp_server(),
+        // proxy autenticado (A2): o token fica no app, nunca neste processo
+        "mcp-proxy-server" => mcp_proxy::run_mcp_server(),
+        // MCP contribuído, com o descriptor revalidado antes de executar
+        "plugin-mcp-server" => plugin_mcp::run_mcp_server(),
+        _ => return false,
+    }
+    true
 }
 
 /// Nome do arquivo do banco.
@@ -1191,6 +1167,7 @@ pub fn run() {
             browser_capture::browser_capture_copy,
             browser_marcacao::browser_marcar,
             browser_orfaos::browser_orfaos,
+            migrar_pasta::migrar_pasta_do_projeto,
             browser_orfaos::browser_encerrar_orfao,
             soltura::caminhos_soltos,
             browser_panel::browser_panel_open,

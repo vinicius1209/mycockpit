@@ -20,36 +20,39 @@ import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import type { PermissionMode } from "@/lib/types"
 
+/** Lê o `config.toml` do projeto e publica no store. Também é o que a tela
+ *  chama depois de mover a pasta do projeto (ADR-236). */
+export function recarregarConfigDoProjeto(proj: { id: string; path: string; permissionMode?: PermissionMode | null }): Promise<void> {
+  return readProjectConfig(proj.path)
+    .then((raw) => {
+      const resolved: ProjectConfig = {
+        exists: raw.exists,
+        pasta: raw.pasta,
+        permission:
+          (raw.permission as PermissionMode) ??
+          proj.permissionMode ??
+          "padrao",
+        helper:
+          raw.helper === "off"
+            ? null
+            : (raw.helper ?? useApp.getState().settings.helperModel),
+        mode: raw.mode ?? "linear",
+        extraDirs: raw.extra_dirs ?? [],
+      }
+      useApp.getState().setProjectConfig(proj.id, resolved)
+      if (raw.exists && resolved.permission !== proj.permissionMode) {
+        useApp.getState().setProjectPermission(proj.id, resolved.permission)
+        void updateProjectPermission(proj.id, resolved.permission)
+      }
+    })
+    .catch((e) => console.warn("[mycockpit] falha ao ler config.toml:", e))
+}
+
 export function useProjectConfig(activeProjectId: string | null) {
   useEffect(() => {
     if (!activeProjectId || !isTauri()) return
     const proj = useApp.getState().projects.find((p) => p.id === activeProjectId)
     if (!proj) return
-    void readProjectConfig(proj.path)
-      .then((raw) => {
-        const resolved: ProjectConfig = {
-          exists: raw.exists,
-          pasta: raw.pasta,
-          permission:
-            (raw.permission as PermissionMode) ??
-            proj.permissionMode ??
-            "padrao",
-          helper:
-            raw.helper === "off"
-              ? null
-              : (raw.helper ?? useApp.getState().settings.helperModel),
-          mode: raw.mode ?? "linear",
-          extraDirs: raw.extra_dirs ?? [],
-        }
-        useApp.getState().setProjectConfig(proj.id, resolved)
-        if (raw.exists && resolved.permission !== proj.permissionMode) {
-          useApp.getState().setProjectPermission(proj.id, resolved.permission)
-          void updateProjectPermission(proj.id, resolved.permission)
-        }
-      })
-      // Sem config legível o app SEGUE com o padrão do projeto — ler config é
-      // conveniência, não autoridade. O warn fica porque silêncio aqui esconde
-      // TOML quebrado (ADR-017: nada de catch mudo).
-      .catch((e) => console.warn("[mycockpit] falha ao ler config.toml:", e))
+    void recarregarConfigDoProjeto(proj)
   }, [activeProjectId])
 }

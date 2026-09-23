@@ -1,8 +1,10 @@
 // Testes da doutrina do projeto (.frota/instructions.md) — o núcleo puro:
 // o bloco injetado no prompt e a decisão de QUANDO injetar.
 
+import { PASTA_LEGADA } from "@/lib/frotaDir"
 import { describe, expect, it, vi } from "vitest"
 import {
+  blocoDaDoutrina,
   buildDoctrineBlock,
   decideDoctrine,
   DOCTRINE_MAX_CHARS,
@@ -14,6 +16,23 @@ import {
 } from "./doctrine"
 
 vi.mock("@/lib/db", () => ({ isTauri: () => false }))
+
+describe("blocoDaDoutrina", () => {
+  // Forma do que `read_project_doctrine` devolve (frota_dir.rs): o caminho vem
+  // resolvido entre a pasta nova e a antiga.
+  it("o bloco cita o caminho REAL de onde a doutrina foi lida", () => {
+    const doRust = { exists: true, content: "- Mocks em docs/mocks/.", bytes: 23, path: ".frota/instructions.md" }
+    expect(blocoDaDoutrina(doRust)!.startsWith('<doutrina fonte=".frota/instructions.md">')).toBe(true)
+    // projeto que ainda não migrou: o agente é mandado para onde o arquivo está
+    const legado = { ...doRust, path: `${PASTA_LEGADA}/instructions.md` }
+    expect(blocoDaDoutrina(legado)!).toContain(`fonte="${PASTA_LEGADA}/instructions.md"`)
+  })
+
+  it("sem caminho (fora do Tauri), cai no padrão da pasta nova", () => {
+    expect(blocoDaDoutrina({ content: "regra" })!).toContain(`fonte="${DOCTRINE_PATH}"`)
+    expect(DOCTRINE_PATH).toBe(".frota/instructions.md")
+  })
+})
 
 describe("buildDoctrineBlock", () => {
   it("envolve o texto num bloco que aponta a fonte", () => {

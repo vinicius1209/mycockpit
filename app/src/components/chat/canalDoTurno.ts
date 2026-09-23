@@ -18,7 +18,7 @@
 // arquivo, ou com falha de disco, o turno segue sem o bloco.
 
 import { agentDef as engineDef } from "@/lib/agents"
-import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import { personaHandoffBlock } from "@/lib/presets"
 
 export interface AlvoDoCanal {
@@ -58,7 +58,7 @@ export async function resolverCanalDoTurno(
   const sysChannel = engineDef(alvo.agent)?.systemChannel ?? false
   const doctrine = decideDoctrine({
     agent: alvo.agent,
-    block: buildDoctrineBlock((await readDoctrine(alvo.projectPath)).content),
+    block: blocoDaDoutrina(await readDoctrine(alvo.projectPath)),
     locked: alvo.locked,
     hasReply: alvo.hasReply,
     freshSession: alvo.wheelSwitch,

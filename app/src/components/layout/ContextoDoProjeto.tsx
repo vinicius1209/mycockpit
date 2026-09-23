@@ -30,6 +30,7 @@ import {
 } from "@/components/layout/contextoDoProjetoPecas"
 import { LearningSection } from "@/components/layout/LearningSection"
 import { MissionsSection } from "@/components/layout/MissionsSection"
+import { PastaAntigaDoProjeto } from "@/components/layout/PastaAntigaDoProjeto"
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/app"
 import type { Project } from "@/lib/types"
@@ -260,6 +261,13 @@ export function ContextoDoProjeto({
                     salvo em <span className="font-mono">{cfg.pasta}/config.toml</span>
                   </p>
                 )}
+                {cfg && cfg.pasta !== ".frota" && (
+                  <PastaAntigaDoProjeto
+                    project={project}
+                    pasta={cfg.pasta}
+                    onMigrou={() => setReload((n) => n + 1)}
+                  />
+                )}
               </div>
             </Section>
   
@@ -268,7 +276,7 @@ export function ContextoDoProjeto({
                 agents (nós injetamos). Vem antes do aprendizado porque é a regra
                 escrita pelo humano — o resto abaixo é destilado por máquina. */}
             <Section title="Doutrina">
-              <DoctrineSection projectPath={project.path} seeds={doctrineSeeds} />
+              <DoctrineSection key={reload} projectPath={project.path} seeds={doctrineSeeds} />
             </Section>
   
   

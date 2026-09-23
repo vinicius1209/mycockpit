@@ -16,13 +16,20 @@ import { invoke } from "@tauri-apps/api/core"
 import { agentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
 
-/** Caminho relativo, usado na cópia da UI e no rótulo do bloco. */
-export const DOCTRINE_PATH = ".mycockpit/instructions.md"
+/** Onde a doutrina mora por padrão (projeto novo ou já migrado). O caminho
+ *  REAL de cada projeto vem do Rust em `Doctrine.path`; este é só o fallback
+ *  de quem não recebeu um (mock, fora do Tauri). */
+export const DOCTRINE_PATH = ".frota/instructions.md"
 
 export interface Doctrine {
   exists: boolean
   content: string
   bytes: number
+  /** Caminho relativo de onde foi lida (ou onde seria criada), resolvido pelo
+   *  Rust entre a pasta nova e a antiga. Até 23/09/2026 o front ignorava este
+   *  campo e mandava ao prompt de TODO turno `.mycockpit/instructions.md`,
+   *  um arquivo que não existe em projeto migrado. */
+  path?: string
 }
 
 const VAZIA: Doctrine = { exists: false, content: "", bytes: 0 }
@@ -63,15 +70,21 @@ export async function readDoctrineSeed(
  *  o arquivo: o agent tem acesso ao disco e puxa o resto se precisar. */
 export const DOCTRINE_MAX_CHARS = 12000
 
+/** O bloco da doutrina lida do disco, com o caminho REAL dela. É o que os
+ *  envios usam; `buildDoctrineBlock` é o núcleo puro. */
+export function blocoDaDoutrina(doutrina: Pick<Doctrine, "content" | "path">): string | null {
+  return buildDoctrineBlock(doutrina.content, doutrina.path || DOCTRINE_PATH)
+}
+
 /** Monta o bloco de doutrina prependido ao prompt. null = nada a injetar
  *  (arquivo ausente ou em branco) — puro e testável. */
-export function buildDoctrineBlock(content: string): string | null {
+export function buildDoctrineBlock(content: string, fonte: string = DOCTRINE_PATH): string | null {
   const texto = content.trim()
   if (!texto) return null
   const cortou = texto.length > DOCTRINE_MAX_CHARS
   const corpo = cortou ? texto.slice(0, DOCTRINE_MAX_CHARS) : texto
   const lines = [
-    `<doutrina fonte="${DOCTRINE_PATH}">`,
+    `<doutrina fonte="${fonte}">`,
     "Estas são as regras deste projeto, definidas pelo humano no Frota. Valem do primeiro ao último turno e têm precedência sobre hábitos gerais seus.",
     "",
     corpo,
@@ -79,7 +92,7 @@ export function buildDoctrineBlock(content: string): string | null {
   if (cortou) {
     lines.push(
       "",
-      `[cortado em ${DOCTRINE_MAX_CHARS} caracteres — leia ${DOCTRINE_PATH} se precisar do texto completo]`,
+      `[cortado em ${DOCTRINE_MAX_CHARS} caracteres — leia ${fonte} se precisar do texto completo]`,
     )
   }
   lines.push("</doutrina>")

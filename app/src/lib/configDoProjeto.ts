@@ -14,6 +14,19 @@ export interface ProjectConfigRaw {
   extra_dirs: string[]
 }
 
+export interface ResultadoDaMigracao {
+  /** `["*"]` quando a pasta inteira mudou de nome. */
+  movidos: string[]
+  /** Existem nas duas pastas e ficaram na antiga: nada é sobrescrito. */
+  conflitos: string[]
+  viaGit: boolean
+}
+
+/** Move a pasta antiga do projeto para `.frota/` (ADR-236). Gesto da pessoa. */
+export function migrarPastaDoProjeto(path: string): Promise<ResultadoDaMigracao> {
+  return invoke<ResultadoDaMigracao>("migrar_pasta_do_projeto", { path })
+}
+
 export async function readProjectConfig(path: string): Promise<ProjectConfigRaw> {
   return invoke<ProjectConfigRaw>("read_project_config", { path })
 }

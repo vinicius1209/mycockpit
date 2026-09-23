@@ -45,7 +45,7 @@ vi.mock("@/lib/agents", () => ({
   dispatchBlockReason: () => null,
 }))
 vi.mock("@/lib/doctrine", () => ({
-  buildDoctrineBlock: () => "doutrina",
+  blocoDaDoutrina: () => "doutrina",
   doctrineFingerprint: () => "fp-doutrina",
   readDoctrine: async () => ({ content: "regra" }),
 }))

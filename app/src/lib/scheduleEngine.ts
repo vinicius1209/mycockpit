@@ -18,7 +18,7 @@
 // é clampado fora pelo normalizeSchedulePermission, além do tipo.
 
 import { runAgent } from "@/lib/agent"
-import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, readDoctrine } from "@/lib/doctrine"
 import { dispatchBlockReason, normalizeModelValue } from "@/lib/agents"
 import {
   listSchedules,
@@ -205,9 +205,7 @@ export async function dispatchSchedule(
     // ninguém na frente pra corrigir o rumo — as regras do projeto importam
     // mais numa automação das 18:30, não menos. O fio guarda `s.prompt` (o que
     // você escreveu); o bloco vai só pro prompt do CLI.
-    const doctrine = buildDoctrineBlock(
-      (await readDoctrine(project.path)).content,
-    )
+    const doctrine = blocoDaDoutrina(await readDoctrine(project.path))
     let invokeFailed: string | null = null
     let accepted = false
     let preflightBlocked = false

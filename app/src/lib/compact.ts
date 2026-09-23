@@ -24,7 +24,7 @@
 import { toast } from "sonner"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
-import { buildDoctrineBlock, decideDoctrine, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, decideDoctrine, readDoctrine } from "@/lib/doctrine"
 import { contextMeter, type ContextMeter } from "@/lib/contextMeter"
 import { medirCompactacao } from "@/lib/engineContext"
 import { memoriaDaConversa } from "@/lib/memoriaDaConversa"
@@ -387,7 +387,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     // conversa "rodando" pra sempre (teatro proibido).
     const doctrine = decideDoctrine({
       agent,
-      block: buildDoctrineBlock((await readDoctrine(args.projectPath)).content),
+      block: blocoDaDoutrina(await readDoctrine(args.projectPath)),
       locked: true,
       hasReply,
       freshSession: true,

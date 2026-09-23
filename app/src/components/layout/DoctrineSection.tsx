@@ -43,6 +43,8 @@ export function DoctrineSection({
 }) {
   const [content, setContent] = useState("")
   const [exists, setExists] = useState(false)
+  // Onde a doutrina mora NESTE projeto (pasta nova ou antiga), dito pelo Rust.
+  const [caminho, setCaminho] = useState(DOCTRINE_PATH)
   const [open, setOpen] = useState(false)
   const [draft, setDraft] = useState("")
   const [saving, setSaving] = useState(false)
@@ -53,6 +55,7 @@ export function DoctrineSection({
       if (cancelled) return
       setContent(d.content)
       setExists(d.exists && d.content.trim().length > 0)
+      setCaminho(d.path || DOCTRINE_PATH)
     })
     return () => {
       cancelled = true
@@ -125,13 +128,13 @@ export function DoctrineSection({
       <p className="text-[11px] text-muted-foreground/55">
         {exists ? (
           <>
-            <span className="font-mono">{DOCTRINE_PATH}</span> ·{" "}
+            <span className="font-mono">{caminho}</span> ·{" "}
             {fmtBytes(new TextEncoder().encode(content).length)} · versionado no
             git
           </>
         ) : (
           <>
-            será salvo em <span className="font-mono">{DOCTRINE_PATH}</span>
+            será salvo em <span className="font-mono">{caminho}</span>
           </>
         )}
       </p>

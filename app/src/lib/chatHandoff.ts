@@ -1,7 +1,7 @@
 import { toast } from "sonner"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
-import { buildDoctrineBlock, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
 import { prepareHybridHandoff } from "@/lib/handoff"
 import { buildLearningBlocks, markLessonsUsed } from "@/lib/learning"
 import { notifyTurnEnd } from "@/lib/notify"
@@ -92,9 +92,7 @@ export async function continueConversationWith({
       conv.presetDigest,
       projectPath,
     )
-    const doctrineRaw = buildDoctrineBlock(
-      (await readDoctrine(projectPath)).content,
-    )
+    const doctrineRaw = blocoDaDoutrina(await readDoctrine(projectPath))
     let doctrine = doctrineRaw
     let systemPrompt: string | null = null
     if (agentDef(target)?.systemChannel) {

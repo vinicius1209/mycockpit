@@ -5,7 +5,7 @@
 import { create } from "zustand"
 import { runAgent, cancelAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
-import { buildDoctrineBlock, readDoctrine } from "@/lib/doctrine"
+import { blocoDaDoutrina, readDoctrine } from "@/lib/doctrine"
 import { reduceItems, useChat, type ChatItem } from "@/store/chat"
 import { useApp } from "@/store/app"
 import {
@@ -361,7 +361,7 @@ export const useFusion = create<FusionState>((set, get) => {
     // (não existe "1º turno" aqui). Best-effort: sem arquivo, segue igual.
     let doctrinePrefix = ""
     if (projectPath) {
-      const block = buildDoctrineBlock((await readDoctrine(projectPath)).content)
+      const block = blocoDaDoutrina(await readDoctrine(projectPath))
       if (block) doctrinePrefix = `${block}\n\n`
     }
     // G2.1 — `/comando` no campo da disputa expande POR CANDIDATO: cada lane
