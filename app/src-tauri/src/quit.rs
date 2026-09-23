@@ -5,6 +5,8 @@
 //! este módulo pode confirmar a intenção, fechar a admissão, drenar recursos e
 //! autorizar o encerramento do processo.
 
+mod encerramento;
+
 use serde::Serialize;
 use std::sync::{atomic::AtomicBool, atomic::Ordering, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -469,6 +471,14 @@ fn start_teardown(app: AppHandle, origin: QuitOrigin, inventory: QuitInventory) 
     tauri::async_runtime::spawn(async move {
         let started = Instant::now();
         let _ = app.emit("quit://draining", origin);
+        // A tela de encerramento (ADR-235): o que está aberto vai para a
+        // janela antes do primeiro sinal, e ela é trazida à frente (a saída
+        // pode vir da bandeja com a janela escondida).
+        let itens = encerramento::levantar(&app).await;
+        if !itens.is_empty() {
+            let _ = crate::tray::restore_main_window(&app);
+            let _ = app.emit("quit://encerrando", &itens);
+        }
         crate::hud::prepare_for_quit(&app);
 
         let runs = app.state::<crate::agent::RunRegistry>();
@@ -508,7 +518,30 @@ fn start_teardown(app: AppHandle, origin: QuitOrigin, inventory: QuitInventory) 
         app.state::<std::sync::Arc<crate::resource_broker::ResourceLeaseRegistry>>()
             .release_all();
 
-        tokio::time::sleep(Duration::from_millis(750)).await;
+        // Até tudo sair, no máximo 750 ms (antes: 750 ms sempre). Cada item
+        // que sai vira "encerrado" na tela; o que seguir de pé é forçado.
+        let limite = Instant::now() + Duration::from_millis(750);
+        let mut pendentes: Vec<&encerramento::ItemDoEncerramento> = itens.iter().collect();
+        loop {
+            let mut vivos = Vec::with_capacity(pendentes.len());
+            for item in &pendentes {
+                vivos.push((item.id.clone(), encerramento::vivo(&app, item).await));
+            }
+            let (sairam, seguem) = encerramento::separar(pendentes, |item| {
+                vivos.iter().any(|(id, vivo)| *vivo && *id == item.id)
+            });
+            for item in sairam {
+                let _ = app.emit(
+                    "quit://item",
+                    encerramento::MudancaDoItem { id: item.id.clone(), estado: "encerrado" },
+                );
+            }
+            pendentes = seguem;
+            if pendentes.is_empty() || Instant::now() >= limite {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
         runs.kill_all();
         runs.2.solta();
         processes.kill_all();
@@ -517,6 +550,18 @@ fn start_teardown(app: AppHandle, origin: QuitOrigin, inventory: QuitInventory) 
         if inventory.updates > 0 {
             tokio::time::sleep(Duration::from_millis(4_250)).await;
             updates.kill_all();
+        }
+        for item in pendentes {
+            let _ = app.emit(
+                "quit://item",
+                encerramento::MudancaDoItem { id: item.id.clone(), estado: "forcado" },
+            );
+        }
+        if !itens.is_empty() {
+            // Um instante para a lista final ser lida: é o recibo do que foi
+            // fechado, não uma animação.
+            let _ = app.emit("quit://pronto", ());
+            tokio::time::sleep(Duration::from_millis(450)).await;
         }
 
         write_receipt(&app, &inventory, started.elapsed());

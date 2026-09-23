@@ -8639,3 +8639,27 @@ considerou.
 - **Consequência:** a vista acompanha o movimento. O custo do lado da tela
   (três vezes mais quadros em base64 pela ponte) ainda não foi medido no app;
   se pesar, o canal binário que o ADR-232 descartou passa a pagar o trabalho.
+
+### ADR-235 · A saída confirmada mostra o que a Frota está encerrando ✅
+- **Contexto (23/09/2026):** a pessoa quis saber se fechar a Frota encerra
+  tudo o que ela abriu. Encerra (conferido: nenhum processo sobreviveu ao
+  fechamento anterior), mas em silêncio: sinal para todos, 750 ms fixos de
+  espera, força no que sobrasse, e a janela sumia sem dizer o quê. Pedido:
+  "depois que o usuário confirma, uma tela estilo loading que está
+  encerrando os processos, e mostre quais".
+- **Decisão:**
+  1. Depois da confirmação, o Rust levanta o que está aberto (tarefas do
+     agente, processos gerenciados, incluindo o navegador do projeto,
+     plugins, ditado, análise auxiliar, atualização, ação do Companion),
+     traz a janela à frente e emite `quit://encerrando` com a lista.
+  2. A espera fixa vira "até tudo sair, no máximo 750 ms", conferindo a cada
+     100 ms com o registro dono de cada item. Cada item que sai emite
+     `quit://item` como encerrado; o que ainda estava de pé no fim é forçado
+     e aparece como "encerrado à força". Nada é marcado por tempo.
+  3. Com a lista final na tela, `quit://pronto` e 450 ms para ser lida; sem
+     nada aberto, a saída segue sem tela nem espera.
+  4. A tela (`TelaDeEncerramento`) cobre a janela por cima de tudo, usa o
+     anel do "rodando" (`conv-spin`, que já para para quem pede menos
+     movimento) e mostra a tarefa pelo título da conversa.
+- **Consequência:** a pessoa vê que nada fica rodando por baixo, e o
+  fechamento sem pendência fica mais rápido que os 750 ms de antes.

@@ -141,14 +141,21 @@ impl ProcessRegistry {
     }
 
     pub(crate) fn active_count(&self) -> usize {
+        self.vivos().len()
+    }
+
+    /// Os processos ainda vivos (rodando ou parando), para a tela de
+    /// encerramento dizer quais são (ADR-235).
+    pub(crate) fn vivos(&self) -> Vec<ManagedProcessView> {
         self.processes
             .lock()
             .map(|map| {
                 map.values()
                     .filter(|record| matches!(record.view.status.as_str(), "running" | "stopping"))
-                    .count()
+                    .map(|record| record.view.clone())
+                    .collect()
             })
-            .unwrap_or(0)
+            .unwrap_or_default()
     }
 
     pub(crate) fn stop_all(&self, app: &tauri::AppHandle) {
@@ -194,18 +201,8 @@ impl ProcessRegistry {
     }
 
     pub fn kill_all(&self) {
-        let pids: Vec<u32> = self
-            .processes
-            .lock()
-            .map(|map| {
-                map.values()
-                    .filter(|record| matches!(record.view.status.as_str(), "running" | "stopping"))
-                    .map(|record| record.view.pid)
-                    .collect()
-            })
-            .unwrap_or_default();
-        for pid in pids {
-            signal_process_group(pid, "-KILL");
+        for view in self.vivos() {
+            signal_process_group(view.pid, "-KILL");
         }
     }
 

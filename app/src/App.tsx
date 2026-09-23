@@ -21,6 +21,7 @@ import { ConfirmHost } from "@/components/common/confirm"
 import { OnboardingGate } from "@/components/onboarding/OnboardingGate"
 import { startDictationHotkey } from "@/lib/dictationHotkey"
 import { AppShell } from "@/components/layout/AppShell"
+import { TelaDeEncerramento } from "@/components/layout/TelaDeEncerramento"
 import { aplicarKeepAwake } from "@/lib/keepAwake"
 import { useApp } from "@/store/app"
 import { pendingDeferred, useChat } from "@/store/chat"
@@ -625,6 +626,8 @@ export default function App() {
         {/* Onboarding: overlay full-screen no 1º run (onboarded=false), tour
             depois wizard. O boot de projetos segue por baixo; finish grava onboarded=true. */}
         {!onboarded && <OnboardingGate />}
+        {/* Por cima de tudo: depois da confirmação de saída não há mais o que clicar. */}
+        <TelaDeEncerramento />
       </TooltipProvider>
     </QueryClientProvider>
   )

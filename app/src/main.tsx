@@ -13,6 +13,7 @@ import { EscolhaDeArquivo } from "@/components/common/EscolhaDeArquivo"
 import { CopiaDeTabela } from "@/components/common/CopiaDeTabela"
 import { installRuntimeLogging } from "@/lib/runtimeLogging"
 import { iniciarEventosDeTrabalho } from "@/lib/eventosDeTrabalho"
+import { iniciarTelaDeEncerramento } from "@/lib/encerramento"
 import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 // Antes do primeiro render: erros do React/WebView precisam sobreviver à tela
@@ -22,6 +23,10 @@ installRuntimeLogging()
 // Plano, etapas e processos chegam por evento: a escuta é da janela, e não de
 // uma tela que pode desmontar (ADR-223).
 iniciarEventosDeTrabalho()
+
+// A saída confirmada mostra o que está sendo encerrado (ADR-235); a escuta é da
+// janela pelo mesmo motivo da de cima.
+iniciarTelaDeEncerramento()
 
 // Tema persistido (frota.app via zustand persist) aplicado ANTES do React p/ não
 // piscar dark no boot. Default = dark quando nada foi salvo. O popover da tray

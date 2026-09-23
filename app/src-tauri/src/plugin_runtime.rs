@@ -108,6 +108,27 @@ impl PluginRuntimeRegistry {
             .unwrap_or(0)
     }
 
+    /// Os plugins ainda de pé, pelo nome (tela de encerramento, ADR-235).
+    pub(crate) fn ativos(&self) -> Vec<String> {
+        self.entries
+            .lock()
+            .map(|entries| {
+                entries
+                    .iter()
+                    .filter(|(_, view)| {
+                        matches!(
+                            view.state,
+                            PluginRuntimeState::Starting
+                                | PluginRuntimeState::Running
+                                | PluginRuntimeState::Stopping
+                        )
+                    })
+                    .map(|(key, _)| key.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub(crate) fn stop_all(&self) {
         let keys = self
             .entries
