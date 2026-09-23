@@ -40,3 +40,39 @@ export function encaixarNoCartao(g: Geometria, largura: number, altura: number):
   const y = Math.min(Math.max(g.y, MARGEM), altura - MARGEM - h)
   return { x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) }
 }
+
+/** De onde a pessoa puxa a janela: as quatro bordas e os quatro cantos. */
+export type Borda = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw"
+
+const entre = (v: number, min: number, max: number) => Math.min(Math.max(v, min), Math.max(min, max))
+
+/** Redimensiona puxando `borda` por (dx, dy). A borda oposta fica parada: puxar
+ *  a esquerda não empurra a direita, e o mínimo trava a borda puxada em vez de
+ *  deslizar a janela. Antes só o canto de baixo à direita redimensionava, e
+ *  sem nada visível (pedido de 23/09/2026: "seria legal eu poder
+ *  redimensionar"). */
+export function redimensionar(
+  g0: Geometria,
+  borda: Borda,
+  dx: number,
+  dy: number,
+  largura: number,
+  altura: number,
+): Geometria {
+  const minW = Math.min(MINIMO.w, Math.max(0, largura - 2 * MARGEM))
+  const minH = Math.min(MINIMO.h, Math.max(0, altura - 2 * MARGEM))
+  const direita = g0.x + g0.w
+  const baixo = g0.y + g0.h
+  let { x, y, w, h } = g0
+  if (borda.includes("e")) w = entre(g0.w + dx, minW, largura - MARGEM - g0.x)
+  if (borda.includes("w")) {
+    x = entre(g0.x + dx, MARGEM, direita - minW)
+    w = direita - x
+  }
+  if (borda.includes("s")) h = entre(g0.h + dy, minH, altura - MARGEM - g0.y)
+  if (borda.includes("n")) {
+    y = entre(g0.y + dy, MARGEM, baixo - minH)
+    h = baixo - y
+  }
+  return encaixarNoCartao({ x, y, w, h }, largura, altura)
+}

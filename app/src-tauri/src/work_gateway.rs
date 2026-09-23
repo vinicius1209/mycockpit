@@ -1069,8 +1069,21 @@ pub(crate) async fn request_parent(action: &str, args: &Value) -> Option<Value> 
     request_socket(Path::new(&socket), action, args).await
 }
 
+/// Quanto uma ação pode levar do lado do app. O navegador pode esperar o
+/// gesto da pessoa (até 90 s, ADR-228) e rodar código na página (até 30 s); o
+/// computador digita texto longo (16 ms por caractere). O resto segue nos 6 s.
+fn teto_do_pedido(action: &str) -> std::time::Duration {
+    if crate::browser_gateway::is_browser_tool(action) {
+        std::time::Duration::from_secs(130)
+    } else if crate::desktop_gateway::is_desktop_tool(action) {
+        std::time::Duration::from_secs(60)
+    } else {
+        REQUEST_TIMEOUT
+    }
+}
+
 async fn request_socket(socket: &Path, action: &str, args: &Value) -> Option<Value> {
-    tokio::time::timeout(REQUEST_TIMEOUT, async {
+    tokio::time::timeout(teto_do_pedido(action), async {
         let mut stream = UnixStream::connect(socket).await.ok()?;
         let mut request = json!({ "action": action, "args": args }).to_string();
         request.push('\n');

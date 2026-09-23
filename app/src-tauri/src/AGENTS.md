@@ -180,11 +180,19 @@ servido por este binário (`browser-server`) pelo MESMO socket do run
 cadastro global (agy) só com o cadastro `frota-browser` confirmado
 (`work_mcp_setup::NAVEGADOR`). As tools existem sempre: navegador desligado é
 resposta de chamada (`browser_needed` no canal de trabalho, a pessoa liga),
-nunca ausência de ferramenta, e nunca sobe navegador sozinho. Input toma a
+nunca ausência de ferramenta. A tool ESPERA o gesto até 90 s (ADR-228): ligou,
+segue no mesmo turno; a pessoa fechou o aviso, responde na hora que ela
+preferiu não ligar. Só sobe sozinho com a autorização explícita do projeto
+(`browser_autorizacao.rs`), e a tela diz que foi o agente. O teto do socket
+é por ação (`teto_do_pedido`): 6 s não cabe uma espera de gesto. Input toma a
 lease de piloto do broker no primeiro gesto e segura até o fim do run;
 observar não. A captura atravessa o socket como caminho (teto de 1 MB) e vira
 bloco `image` no processo do MCP. A barra humana tem política própria
 (`politica_da_barra`): `file://` do projeto entra, `javascript:` não.
+Toda ação (menos o status) emite `browser_agent_active`, e a tela abre a aba
+Navegador uma vez por turno (ADR-229; regra da tela em `lib/navegadorAoVivo.ts`). A página headless é 1280×800: o Chrome
+desenha a faixa do navegador mesmo sem janela, então `--window-size` não
+basta, e `browser_janela::ajustar` mede a moldura e corrige por CDP.
 
 A cicatriz (sicredi, 22/09/2026): com o `frota-browser` no turno o agente ainda
 foi ao Playwright, porque precisava rodar código na página e a Frota não sabia.

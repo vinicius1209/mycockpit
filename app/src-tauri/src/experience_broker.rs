@@ -90,7 +90,7 @@ fn human_expired(owner: &PilotOwner, now: i64) -> bool {
 
 fn owner_label(owner: &PilotOwner) -> (&'static str, String, Option<i64>) {
     match owner {
-        PilotOwner::Agent { .. } => ("agent", "Agent em execução".into(), None),
+        PilotOwner::Agent { .. } => ("agent", "Agente em execução".into(), None),
         PilotOwner::Plugin { .. } => ("plugin", "Plugin em execução".into(), None),
         PilotOwner::Human { last_seen_ms, .. } => (
             "human",

@@ -10,12 +10,13 @@ const listenWorkEvents = vi.fn(async (onEvent: (event: unknown) => void) => {
 })
 
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
-const { toast, startProjectBrowser } = vi.hoisted(() => ({
+const { toast, startProjectBrowser, recusarPedidoDeNavegador } = vi.hoisted(() => ({
   toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() }),
   startProjectBrowser: vi.fn(async (_path: string) => ({})),
+  recusarPedidoDeNavegador: vi.fn(async (_path: string) => {}),
 }))
 vi.mock("sonner", () => ({ toast }))
-vi.mock("@/lib/browser", () => ({ startProjectBrowser }))
+vi.mock("@/lib/browser", () => ({ startProjectBrowser, recusarPedidoDeNavegador }))
 const { desktopGrantRun, desktopRevokeRun } = vi.hoisted(() => ({
   desktopGrantRun: vi.fn(async (_runId: string) => {}),
   desktopRevokeRun: vi.fn(async (_runId: string) => {}),
@@ -95,6 +96,51 @@ describe("iniciarEventosDeTrabalho", () => {
       data: { projectId: "p1", session: { projectId: "p1", projectPath: "/repo/frota" } as never },
     })
     expect(toast.dismiss).toHaveBeenCalledWith("browser-needed:/repo/frota")
+  })
+})
+
+// ADR-228: o agente ESPERA o gesto. Fechar o aviso é recusa; o aviso que sai
+// porque o navegador ligou, não. Visto no sicredi em 23/09/2026: o aviso dizia
+// "o agente tenta de novo sozinho", e a pessoa teve de escrever "tente
+// novamente".
+describe("o aviso de ligar o navegador", () => {
+  type Opcoes = { description: string; onDismiss: () => void; action: { onClick: () => void } }
+  const pedido = (path: string) =>
+    pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: path } })
+  const opcoes = () => toast.mock.calls.at(-1)![1] as Opcoes
+
+  it("diz que o agente está esperando, não que ele tenta sozinho", () => {
+    pedido("/repo/frota")
+    expect(opcoes().description).toContain("o agente está esperando")
+    expect(opcoes().description).not.toContain("tenta de novo sozinho")
+  })
+
+  it("fechar o aviso sem ligar vira recusa para o agente", () => {
+    recusarPedidoDeNavegador.mockClear()
+    pedido("/repo/a")
+    opcoes().onDismiss()
+    expect(recusarPedidoDeNavegador).toHaveBeenCalledWith("/repo/a")
+  })
+
+  it("o aviso que sai porque o navegador ligou não é recusa", () => {
+    recusarPedidoDeNavegador.mockClear()
+    pedido("/repo/b")
+    const { onDismiss } = opcoes()
+    pedidoDeNavegador({ kind: "browser_state", data: { session: { projectPath: "/repo/b" } as never } })
+    onDismiss()
+    expect(recusarPedidoDeNavegador).not.toHaveBeenCalled()
+    // Clicar em "Ligar navegador" também não.
+    pedido("/repo/c")
+    const c = opcoes()
+    c.action.onClick()
+    c.onDismiss()
+    expect(recusarPedidoDeNavegador).not.toHaveBeenCalled()
+  })
+
+  it("quando o agente liga por autorização, a tela diz que foi ele", () => {
+    toast.mockClear()
+    pedidoDeNavegador({ kind: "browser_autostarted", data: { runId: "r1", projectPath: "/repo/frota" } })
+    expect(toast.mock.calls[0][0]).toBe("O agente ligou o navegador do projeto Frota.")
   })
 })
 

@@ -211,13 +211,13 @@ pub fn descricao_da_marcacao(
 
 /// Sessão CDP curta sobre o WebSocket da página: uma chamada por vez, casando a
 /// resposta pelo id e ignorando eventos no meio.
-struct SessaoCdp {
+pub(crate) struct SessaoCdp {
     socket: tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     proximo_id: u64,
 }
 
 impl SessaoCdp {
-    async fn conectar(ws: &str) -> Result<Self, String> {
+    pub(crate) async fn conectar(ws: &str) -> Result<Self, String> {
         let (socket, _) = timeout(PRAZO_POR_CHAMADA, tokio_tungstenite::connect_async(ws))
             .await
             .map_err(|_| "a página não abriu o canal a tempo".to_string())?
@@ -225,7 +225,7 @@ impl SessaoCdp {
         Ok(Self { socket, proximo_id: 1 })
     }
 
-    async fn chamar(&mut self, metodo: &str, params: Value) -> Result<Value, String> {
+    pub(crate) async fn chamar(&mut self, metodo: &str, params: Value) -> Result<Value, String> {
         let id = self.proximo_id;
         self.proximo_id += 1;
         let pedido = json!({ "id": id, "method": metodo, "params": params });

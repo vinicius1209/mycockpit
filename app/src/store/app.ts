@@ -135,6 +135,8 @@ export interface AppState {
   navegadorAberto: boolean
   /** Abre o navegador do projeto ativo na aba principal. */
   openBrowserTab: () => void
+  /** Põe o navegador na tira sem trocar a aba à vista. */
+  showBrowserTab: () => void
   /** Fecha a aba do navegador (o Chromium do projeto segue como estava). */
   closeBrowserTab: () => void
   /** Volta pra conversa. A aba transitória deixa de existir. */
@@ -316,6 +318,7 @@ export const useApp = create<AppState>()(
         set({ branchSplitOpen: false, mainTab: { kind: "arquivo", path } }),
       openBrowserTab: () =>
         set({ branchSplitOpen: false, navegadorAberto: true, mainTab: { kind: "navegador" } }),
+      showBrowserTab: () => set({ navegadorAberto: true }),
       closeBrowserTab: () =>
         set((s) => ({
           navegadorAberto: false,

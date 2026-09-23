@@ -8450,3 +8450,55 @@ considerou.
 - **Consequência:** a aba nunca mais fica "indisponível", e o plano antigo não
   se passa pelo atual. O custo por pedido é o do recibo, o mesmo do fio: depois
   do ADR-226 ele é o do turno.
+
+### ADR-228 · O navegador do projeto espera o gesto da pessoa, e ela pode autorizar o agente a ligá-lo ✅
+- **Contexto (23/09/2026, sicredi):** com o navegador desligado, a tool do
+  `frota-browser` voltava com erro em ~160 ms (`alvo`, ADR-224 §1). O agente
+  escreveu "liga lá e me avisa"; a pessoa ligou e teve de escrever "tente
+  novamente". O aviso na tela prometia "o agente tenta de novo sozinho", e nada
+  fazia isso. Além disso, o socket do run cortava toda ação em 6 s, o que
+  também cortaria o `browser_evaluate` (até 30 s de script).
+- **Decisão:**
+  1. A tool ESPERA o gesto até 90 s: ligou, segue no mesmo turno; a pessoa
+     fechou o aviso, responde na hora "a pessoa preferiu não ligar"; esgotou,
+     responde isso. Recusa nos últimos 30 s vale como resposta (o agente que
+     insiste não reabre o aviso). O aviso diz a verdade: o agente está
+     esperando, e fechar é recusar. Mesmo molde do `approval.rs`.
+  2. Teto do socket por ação (`teto_do_pedido`): navegador 130 s, controle do
+     computador 60 s, o resto segue em 6 s.
+  3. "O agente pode ligar este navegador": autorização POR PROJETO, dada pela
+     pessoa em Configurações ▸ Recursos locais, revogável, gravada em
+     `browser_agent_start` (migração 60). Com ela, o agente liga o navegador
+     headless sem pedir, e a tela avisa que foi ele (`browser_autostarted`).
+     Sem ela, nada muda do item 1. A decisão continua humana: é o gesto dado
+     uma vez, não um navegador que se liga por conta própria.
+- **Consequência:** a pessoa não precisa mais voltar ao chat para destravar o
+  agente, e quem quer zero atrito num projeto escolhe isso explicitamente.
+
+### ADR-229 · O agente usando o navegador aparece ao vivo, numa janela que redimensiona, com página de 1280×800 ✅
+- **Contexto (23/09/2026, sicredi):** o fio mostrava `frota-browser ·
+  browser_click` e capturas, e o navegador da Frota continuava fechado: a
+  pessoa só via o trabalho se abrisse a aba por conta própria ("era isso que
+  eu queria, ver em tempo real"). A janela flutuante (navegador PRD R2) só
+  redimensionava por um canto sem nada visível. E a página tinha 756×413:
+  medido no Chromium vivo, o headless nasce numa tela de 800×600 e o Chrome
+  151 desenha a faixa do navegador mesmo sem janela, comendo 143 px; a tabela
+  da página cortava com rolagem lateral.
+- **Decisão:**
+  1. Cada ação do `frota-browser` (menos o status) emite
+     `browser_agent_active`, e a ABA Navegador abre ao lado da Conversa, UMA
+     vez por turno, só se a conversa daquele turno é a que está na tela. Ela
+     vem para a frente saindo da Conversa; com a pessoa digitando, ou com
+     arquivo ou diff à vista, entra na tira e espera o clique. Já vendo (aba
+     à vista ou a janela flutuante), nada muda. A janela flutuante é escolha
+     da pessoa, nunca aberta pela Frota. Abrir a vista é tela, não efeito: o
+     piloto segue as regras do ADR-131.
+  2. A janela flutuante redimensiona pelas quatro bordas e pelos quatro
+     cantos, com a borda oposta parada, e mostra a pega do canto no hover.
+  3. Viewport de 1280×800 no headless: `--window-size` acerta a largura, e
+     `browser_janela::ajustar` mede a moldura (janela menos página) e corrige
+     a altura por CDP ao ligar e na primeira vista. A janela visível é da
+     pessoa e não é tocada. Densidade segue 1× (quadro 2× custaria quatro
+     vezes os bytes por quadro no screencast).
+- **Consequência:** a página vista é a de um notebook comum, e quem acompanha
+  o agente vê o trabalho sem procurar.

@@ -36,6 +36,8 @@ mod companion_tailnet;
 mod context;
 mod context_gateway;
 mod conversation_items;
+mod browser_autorizacao;
+mod browser_janela;
 mod browser_script;
 mod desktop;
 mod desktop_broker;
@@ -893,6 +895,14 @@ pub fn run() {
             sql: crate::conversation_items::FTS_BACKFILL,
             kind: MigrationKind::Up,
         },
+        // ADR-228: a pessoa autoriza, por projeto, o agente a ligar o
+        // navegador do projeto. Sem linha, o agente pede e espera.
+        Migration {
+            version: 60,
+            description: "browser_agent_start",
+            sql: "CREATE TABLE IF NOT EXISTS browser_agent_start (project_id TEXT PRIMARY KEY, granted_at INTEGER NOT NULL)",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -1111,6 +1121,9 @@ pub fn run() {
             pricing::model_price,
             pricing::planejar_custo_do_turno,
             detect::instalacao_do_motor,
+            browser_autorizacao::browser_agente_pode_ligar,
+            browser_autorizacao::set_browser_agente_pode_ligar,
+            browser_gateway::browser_pedido_recusado,
             frota_dir::read_project_config,
             frota_dir::write_project_config,
             frota_dir::read_project_doctrine,

@@ -98,6 +98,12 @@ export interface WorkEvent {
     /** O agente pediu o navegador e ele está desligado (ADR-224): a Frota
      *  pergunta à pessoa; ligar continua gesto humano. */
     | "browser_needed"
+    /** O agente ligou o navegador do projeto porque a pessoa autorizou isso
+     *  neste projeto (ADR-228): a tela diz que foi ele. */
+    | "browser_autostarted"
+    /** O agente acabou de usar o navegador do projeto (qualquer ação menos o
+     *  status): a tela abre a vista ao vivo, uma vez por turno (ADR-229). */
+    | "browser_agent_active"
     /** O agente pediu o computador e a pessoa ainda não liberou (ADR-225):
      *  vale para ESTE run, até ele terminar. */
     | "desktop_needed"

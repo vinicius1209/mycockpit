@@ -46,6 +46,23 @@ export async function startProjectBrowser(
   return invoke<BrowserSession>("browser_start", { projectPath, windowVisible })
 }
 
+/** A pessoa fechou o aviso de ligar o navegador sem ligar (ADR-228): quem
+ *  espera o gesto para agora, com resposta honesta. */
+export async function recusarPedidoDeNavegador(projectPath: string): Promise<void> {
+  if (!isTauri()) return
+  await invoke("browser_pedido_recusado", { projectPath })
+}
+
+/** "O agente pode ligar o navegador deste projeto" (ADR-228). */
+export async function agentePodeLigarNavegador(projectPath: string): Promise<boolean> {
+  if (!isTauri()) return false
+  return invoke<boolean>("browser_agente_pode_ligar", { projectPath })
+}
+
+export async function setAgentePodeLigarNavegador(projectPath: string, permitido: boolean): Promise<boolean> {
+  return invoke<boolean>("set_browser_agente_pode_ligar", { projectPath, permitido })
+}
+
 export async function stopProjectBrowser(projectPath: string): Promise<void> {
   await invoke("browser_stop", { projectPath })
 }

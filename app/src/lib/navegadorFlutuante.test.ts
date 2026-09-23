@@ -4,6 +4,7 @@ import {
   geometriaInicial,
   MARGEM,
   MINIMO,
+  redimensionar,
   RESERVA_DO_COMPOSER,
   TOPO,
 } from "./navegadorFlutuante"
@@ -41,5 +42,42 @@ describe("janela flutuante do navegador dentro do cartão", () => {
   it("cartão menor que o mínimo: a janela cabe nele em vez de vazar", () => {
     const g = encaixarNoCartao({ x: 0, y: 0, w: 320, h: 220 }, 300, 200)
     expect(g).toEqual({ x: MARGEM, y: MARGEM, w: 300 - 2 * MARGEM, h: 200 - 2 * MARGEM })
+  })
+})
+
+describe("redimensionar pela borda ou pelo canto", () => {
+  const g0 = { x: 400, y: 100, w: 520, h: 340 }
+
+  it("puxar a borda esquerda cresce para a esquerda e a direita fica parada", () => {
+    const g = redimensionar(g0, "w", -100, 0, 1000, 800)
+    expect(g).toEqual({ x: 300, y: 100, w: 620, h: 340 })
+  })
+
+  it("puxar a borda de cima cresce para cima e a de baixo fica parada", () => {
+    const g = redimensionar(g0, "n", 0, -60, 1000, 800)
+    expect(g).toEqual({ x: 400, y: 40, w: 520, h: 400 })
+  })
+
+  it("o canto de baixo à direita mexe nas duas medidas", () => {
+    expect(redimensionar(g0, "se", 30, 40, 1000, 800)).toEqual({ x: 400, y: 100, w: 550, h: 380 })
+  })
+
+  it("borda de lado não mexe na altura, e vice-versa", () => {
+    expect(redimensionar(g0, "e", 50, 999, 1000, 800).h).toBe(340)
+    expect(redimensionar(g0, "s", 999, 50, 1000, 800).w).toBe(520)
+  })
+
+  it("encolher além do mínimo trava a borda puxada, sem deslizar a janela", () => {
+    const g = redimensionar(g0, "w", 900, 0, 1000, 800)
+    expect(g).toEqual({ x: 400 + 520 - MINIMO.w, y: 100, w: MINIMO.w, h: 340 })
+  })
+
+  it("crescer além do cartão para na margem", () => {
+    expect(redimensionar(g0, "nw", -2000, -2000, 1000, 800)).toEqual({
+      x: MARGEM, y: MARGEM, w: 400 + 520 - MARGEM, h: 100 + 340 - MARGEM,
+    })
+    const g = redimensionar(g0, "se", 2000, 2000, 1000, 800)
+    expect(g.x + g.w).toBe(1000 - MARGEM)
+    expect(g.y + g.h).toBe(800 - MARGEM)
   })
 })

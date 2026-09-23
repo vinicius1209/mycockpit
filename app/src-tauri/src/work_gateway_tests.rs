@@ -424,3 +424,15 @@ fn stop_by_conv_interrompe_apenas_processos_daquela_conversa() {
     assert_eq!(registry.view("p2").unwrap().status, "running");
 }
 
+
+/// ADR-228: o navegador pode esperar o gesto da pessoa (90 s) e rodar código
+/// na página (30 s); o computador digita texto longo. Com o teto único de 6 s,
+/// a espera era cortada e voltava como "Frota indisponível".
+#[test]
+fn cada_acao_tem_o_teto_que_o_seu_trabalho_pede() {
+    assert!(teto_do_pedido(crate::browser_gateway::NAVIGATE_TOOL) >= std::time::Duration::from_secs(120));
+    assert!(teto_do_pedido(crate::browser_gateway::EVALUATE_TOOL) >= std::time::Duration::from_secs(120));
+    assert!(teto_do_pedido(crate::desktop_gateway::TYPE_TOOL) >= std::time::Duration::from_secs(60));
+    assert_eq!(teto_do_pedido(PROCESS_START_TOOL), REQUEST_TIMEOUT);
+    assert_eq!(teto_do_pedido("work_ready"), REQUEST_TIMEOUT);
+}

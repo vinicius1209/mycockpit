@@ -207,7 +207,7 @@ pub(crate) async fn raw_pages(endpoint: &str) -> Result<Vec<RawPage>, String> {
         .map_err(|error| format!("inventário de páginas inválido: {error}"))
 }
 
-async fn project_session(
+pub(crate) async fn project_session(
     app: &tauri::AppHandle,
     project_path: &str,
 ) -> Result<(String, crate::browser::BrowserSession), String> {
@@ -341,6 +341,13 @@ pub async fn browser_preview_start(
     target_id: String,
 ) -> Result<BrowserPreviewStatus, String> {
     let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
+    // Navegador ligado antes do ADR-229 ainda tem a página de 756×413: a
+    // primeira vista acerta, sem segurar o quadro (no-op quando já está certa).
+    let ajuste = app.clone();
+    let caminho = project_path.clone();
+    tauri::async_runtime::spawn(async move {
+        crate::browser_janela::ajustar_no_projeto(&ajuste, &caminho).await;
+    });
     let registry = app.state::<Arc<BrowserPreviewRegistry>>().inner().clone();
     if let Some(current) = registry.get(&project_id) {
         if current.target_id == target_id && current.running.load(Ordering::Relaxed) {

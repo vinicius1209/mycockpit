@@ -121,9 +121,44 @@ struct Alvo {
     page: crate::browser_cdp::RawPage,
 }
 
+const RECUSA: &str = "A pessoa preferiu não ligar o navegador do projeto agora. Siga sem ele, ou diga o que queria verificar e peça que ela confira.";
+
+/// Quanto a tool espera o gesto da pessoa antes de desistir (ADR-228).
+const ESPERA_PELO_GESTO: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Projetos em que a pessoa fechou o aviso sem ligar, e quando. A espera de
+/// cada chamada só olha recusa feita DEPOIS que ela começou a esperar.
+fn recusas() -> &'static Mutex<std::collections::HashMap<String, i64>> {
+    static R: std::sync::OnceLock<Mutex<std::collections::HashMap<String, i64>>> = std::sync::OnceLock::new();
+    R.get_or_init(Default::default)
+}
+
+fn recusado_desde(project_path: &str, desde: i64) -> bool {
+    recusas()
+        .lock()
+        .ok()
+        .and_then(|r| r.get(project_path).copied())
+        .is_some_and(|quando| quando >= desde)
+}
+
+/// A pessoa fechou o aviso de "ligar o navegador" sem ligar: quem espera o
+/// gesto para agora, com uma resposta honesta, em vez de esgotar os 90 s.
+#[tauri::command]
+pub fn browser_pedido_recusado(project_path: String) {
+    if let Ok(mut r) = recusas().lock() {
+        r.insert(project_path, now_ms());
+    }
+}
+
 /// A página ativa do navegador do projeto, ou o motivo de não haver uma.
-/// Navegador desligado vira PEDIDO à pessoa (uma vez por intervalo) e erro
-/// que diz o que fazer. Nunca sobe navegador por conta própria.
+///
+/// Navegador desligado (ADR-228, corrige o ADR-224 §1): se a pessoa
+/// autorizou o agente a ligar o navegador deste projeto, ele liga e a tela é
+/// avisada. Senão, pede o gesto e ESPERA até 90 s: liga → segue no mesmo
+/// turno; a pessoa fecha o aviso → responde na hora que ela preferiu não
+/// ligar. Antes a tool voltava com erro em ~160 ms e o aviso prometia "o
+/// agente tenta de novo sozinho", o que nada fazia (sicredi, 23/09/2026: a
+/// pessoa ligou e teve de escrever "tente novamente").
 async fn alvo(
     app: &tauri::AppHandle,
     gateway: &BrowserGateway,
@@ -134,29 +169,57 @@ async fn alvo(
     let project_id = crate::browser::project_id_of(app, cwd)?;
     if crate::browser::live_endpoint(app, &project_id).await.is_none() {
         let agora = now_ms();
-        let pedir = gateway
-            .ultimo_pedido_ms
-            .lock()
-            .map(|mut t| {
-                if agora - *t >= PEDIDO_INTERVALO_MS {
-                    *t = agora;
-                    true
-                } else {
-                    false
-                }
-            })
-            .unwrap_or(false);
-        if pedir {
+        if crate::browser_autorizacao::pode_ligar(app, &project_id) {
+            crate::browser::browser_start(app.clone(), cwd.to_string(), Some(false)).await?;
+            crate::work_gateway::emit_work(
+                app,
+                "browser_autostarted",
+                json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd }),
+            );
+        } else {
+            // Recusa recente vale como resposta: o agente que insiste não
+            // reabre o aviso que a pessoa acabou de fechar.
+            if recusado_desde(cwd, agora - PEDIDO_INTERVALO_MS) {
+                return Err(RECUSA.into());
+            }
+            // Sem limite de frequência aqui: o aviso tem id por projeto, então
+            // o mesmo pedido nunca aparece duas vezes, e quem espera sempre
+            // tem um aviso na tela.
+            if let Ok(mut t) = gateway.ultimo_pedido_ms.lock() {
+                *t = agora;
+            }
             crate::work_gateway::emit_work(
                 app,
                 "browser_needed",
                 json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd }),
             );
+            esperar_o_gesto(app, &project_id, cwd, agora).await?;
         }
-        return Err("O navegador do projeto está desligado. Pedi à pessoa para ligá-lo na Frota; tente de novo depois que ela confirmar, e siga com outra parte do trabalho enquanto isso.".into());
     }
     let page = crate::browser_cdp::pagina_ativa(app, cwd).await?;
     Ok(Alvo { project_id, page })
+}
+
+/// Espera a pessoa ligar o navegador (ou recusar), com teto.
+async fn esperar_o_gesto(
+    app: &tauri::AppHandle,
+    project_id: &str,
+    cwd: &str,
+    desde: i64,
+) -> Result<(), String> {
+    let limite = tokio::time::Instant::now() + ESPERA_PELO_GESTO;
+    loop {
+        if crate::browser::live_endpoint(app, project_id).await.is_some() {
+            return Ok(());
+        }
+        if recusado_desde(cwd, desde) {
+            return Err(RECUSA.into());
+        }
+        if tokio::time::Instant::now() >= limite {
+            return Err("O navegador do projeto continua desligado: pedi à pessoa para ligá-lo e esperei 90 s sem resposta. Siga com outra parte do trabalho e diga o que falta verificar no navegador.".into());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
 }
 
 /// Input pede a lease de piloto. Tomada uma vez por run; se a pessoa está
@@ -219,6 +282,13 @@ pub async fn handle(
         return Ok(status_json(&alvo, cwd));
     }
     let alvo = alvo(app, gateway, run_id, conv_id, cwd).await?;
+    // O agente está usando o navegador AGORA: a tela abre a vista ao vivo
+    // para a pessoa acompanhar (ADR-229). Uma vez por turno é regra da tela.
+    crate::work_gateway::emit_work(
+        app,
+        "browser_agent_active",
+        json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd }),
+    );
     let ws = websocket(&alvo.page)?;
     match action {
         SNAPSHOT_TOOL => {
@@ -585,6 +655,19 @@ mod tests {
         assert!(!blocos[1]["text"].as_str().unwrap().contains("png_path"));
         assert!(!png.exists(), "o temporário é apagado depois de lido");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// ADR-228: fechar o aviso é recusa, mas só para quem começou a esperar
+    /// ANTES dela; um pedido novo depois da janela volta a perguntar.
+    #[test]
+    fn recusa_so_vale_para_quem_esperava_antes_dela() {
+        let projeto = format!("/tmp/projeto-recusa-{}", std::process::id());
+        let antes = now_ms() - 10;
+        assert!(!recusado_desde(&projeto, antes));
+        browser_pedido_recusado(projeto.clone());
+        assert!(recusado_desde(&projeto, antes), "quem esperava antes vê a recusa");
+        assert!(!recusado_desde(&projeto, now_ms() + 1_000), "pedido novo depois dela, não");
+        assert!(!recusado_desde("/tmp/outro-projeto", antes), "recusa é do projeto");
     }
 
     #[test]

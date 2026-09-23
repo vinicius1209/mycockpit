@@ -113,6 +113,7 @@ export function LocalResourcesSettings() {
             browser={browser}
             servers={servers}
             onConfigureDelivery={() => setSettingsOpen(true, "integrations")}
+            projectPath={project?.path ?? null}
           />
 
           <div className="mt-5">

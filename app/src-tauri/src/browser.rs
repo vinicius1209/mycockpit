@@ -363,6 +363,10 @@ pub(crate) fn browser_command(binary: &str, user_data_dir: &str, window_visible:
     ];
     if !window_visible {
         flags.push("--headless=new".into());
+        // Sem isto o headless nasce numa tela de 800×600 e a página ficava com
+        // 756×413 (ADR-229). A altura ainda perde a faixa do navegador; quem
+        // acerta a viewport exata é `browser_janela::ajustar`.
+        flags.push(crate::browser_janela::flag_de_janela());
     }
     flags.push("about:blank".into());
     let mut parts = vec![shell_quote(binary)];
@@ -506,6 +510,9 @@ async fn start_session(
         started_at: now_ms(),
     };
     app.state::<Arc<BrowserRegistry>>().put(session.clone());
+    if !window_visible {
+        crate::browser_janela::ajustar_no_projeto(app, &session.project_path).await;
+    }
     emit_state(app, &session.project_id, Some(&session));
     Ok(session)
 }
@@ -713,8 +720,11 @@ mod tests {
         assert!(cmd.contains("'--remote-debugging-address=127.0.0.1'"));
         assert!(cmd.contains("'--user-data-dir=/Users/me/Library/Application Support/Frota/browser-profiles/proj-1'"));
         assert!(cmd.contains("'--headless=new'"));
+        assert!(cmd.contains("'--window-size=1280,800'"));
         let visible = browser_command("/usr/bin/chromium", "/tmp/profile", true);
         assert!(!visible.contains("--headless"));
+        // janela visível é da pessoa: o tamanho é dela
+        assert!(!visible.contains("--window-size"));
     }
 
     #[test]

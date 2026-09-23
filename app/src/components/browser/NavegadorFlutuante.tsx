@@ -1,6 +1,6 @@
 // O navegador do projeto flutuando sobre a conversa (navegador PRD R2): o MESMO
 // stream da aba, numa janela dentro do cartão central, arrastável pela barra e
-// redimensionável pelo canto. Nunca sai do cartão (`encaixarNoCartao`) e nasce
+// redimensionável por qualquer borda ou canto (ADR-229). Nunca sai do cartão (`encaixarNoCartao`) e nasce
 // sem cobrir o composer. Aba e flutuante não mostram o stream juntas: o
 // AppShell só desenha esta janela fora da aba Navegador.
 
@@ -11,13 +11,28 @@ import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
 import {
   encaixarNoCartao,
   geometriaInicial,
+  redimensionar,
+  type Borda,
   type Geometria,
 } from "@/lib/navegadorFlutuante"
 import { useApp } from "@/store/app"
 import { useNavegadorFlutuante } from "@/store/navegadorFlutuante"
 import { NavegadorAoVivo } from "./NavegadorTab"
 
-type Gesto = { tipo: "mover" | "redimensionar"; x0: number; y0: number; g0: Geometria }
+type Gesto = { borda: Borda | null; x0: number; y0: number; g0: Geometria }
+
+/** As alças: 8 px de pega, metade para FORA da janela (a área de clique cresce
+ *  para fora, o conteúdo não se mexe) e os cantos por cima das bordas. */
+const ALCAS: Array<{ borda: Borda; className: string }> = [
+  { borda: "n", className: "-top-1 inset-x-3 h-2 cursor-ns-resize" },
+  { borda: "s", className: "-bottom-1 inset-x-3 h-2 cursor-ns-resize" },
+  { borda: "w", className: "-left-1 inset-y-3 w-2 cursor-ew-resize" },
+  { borda: "e", className: "-right-1 inset-y-3 w-2 cursor-ew-resize" },
+  { borda: "nw", className: "-top-1 -left-1 size-4 cursor-nwse-resize" },
+  { borda: "se", className: "-right-1 -bottom-1 size-4 cursor-nwse-resize" },
+  { borda: "ne", className: "-top-1 -right-1 size-4 cursor-nesw-resize" },
+  { borda: "sw", className: "-bottom-1 -left-1 size-4 cursor-nesw-resize" },
+]
 
 function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projectPath: string }) {
   const { status } = useProjectBrowser(projectPath)
@@ -44,13 +59,14 @@ function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projec
     : null
   const g = emGesto ?? base
 
-  const comecar = (tipo: Gesto["tipo"]) => (event: React.PointerEvent<HTMLElement>) => {
+  /** `null` move a janela; uma borda redimensiona por ela. */
+  const comecar = (borda: Borda | null) => (event: React.PointerEvent<HTMLElement>) => {
     if (!g || event.button !== 0) return
     // botões da barra seguem clicáveis: só a área livre arrasta
-    if (tipo === "mover" && (event.target as HTMLElement).closest("button")) return
+    if (!borda && (event.target as HTMLElement).closest("button")) return
     event.preventDefault()
     event.currentTarget.setPointerCapture(event.pointerId)
-    gestoRef.current = { tipo, x0: event.clientX, y0: event.clientY, g0: g }
+    gestoRef.current = { borda, x0: event.clientX, y0: event.clientY, g0: g }
     setEmGesto(g)
   }
   const mover = (event: React.PointerEvent<HTMLElement>) => {
@@ -58,11 +74,11 @@ function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projec
     if (!gesto || !cartao) return
     const dx = event.clientX - gesto.x0
     const dy = event.clientY - gesto.y0
-    const proxima =
-      gesto.tipo === "mover"
-        ? { ...gesto.g0, x: gesto.g0.x + dx, y: gesto.g0.y + dy }
-        : { ...gesto.g0, w: gesto.g0.w + dx, h: gesto.g0.h + dy }
-    setEmGesto(encaixarNoCartao(proxima, cartao.w, cartao.h))
+    setEmGesto(
+      gesto.borda
+        ? redimensionar(gesto.g0, gesto.borda, dx, dy, cartao.w, cartao.h)
+        : encaixarNoCartao({ ...gesto.g0, x: gesto.g0.x + dx, y: gesto.g0.y + dy }, cartao.w, cartao.h),
+    )
   }
   const terminar = () => {
     if (!gestoRef.current) return
@@ -76,63 +92,81 @@ function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projec
   return (
     <div ref={palcoRef} className="pointer-events-none absolute inset-0 z-20">
       {g && (
-        <section
-          aria-label="Navegador do projeto flutuando sobre a conversa"
+        // As alças moram FORA da seção: ela recorta o conteúdo (`overflow-clip`)
+        // e recortaria a metade de fora de cada pega.
+        <div
           style={{ left: g.x, top: g.y, width: g.w, height: g.h }}
-          className="pointer-events-auto absolute flex flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-pop)]"
+          className="group/flutuante pointer-events-auto absolute"
         >
-          <div
-            onPointerDown={comecar("mover")}
-            onPointerMove={mover}
-            onPointerUp={terminar}
-            onPointerCancel={terminar}
-            className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-border/40 py-1 pr-1 pl-3 select-none active:cursor-grabbing"
+          <section
+            aria-label="Navegador do projeto flutuando sobre a conversa"
+            className="flex h-full w-full flex-col overflow-clip rounded-xl border bg-background shadow-[var(--shadow-pop)]"
           >
-            <span className="text-[11px] font-medium text-muted-foreground">Navegador</span>
-            <Button
-              size="icone-chip"
-              variant="ghost"
-              className="ml-auto"
-              aria-label="Voltar para a aba"
-              title="Voltar para a aba"
-              onClick={() => {
-                recolher(projectId)
-                useApp.getState().openBrowserTab()
-              }}
+            <div
+              onPointerDown={comecar(null)}
+              onPointerMove={mover}
+              onPointerUp={terminar}
+              onPointerCancel={terminar}
+              className="flex shrink-0 cursor-grab touch-none items-center gap-1 border-b border-border/40 py-1 pr-1 pl-3 select-none active:cursor-grabbing"
             >
-              <AppWindow />
-            </Button>
-            <Button
-              size="icone-chip"
-              variant="ghost"
-              aria-label="Fechar navegador flutuante"
-              title="Fechar"
-              onClick={() => recolher(projectId)}
-            >
-              <X />
-            </Button>
-          </div>
-          <div className="min-h-0 flex-1">
-            {session ? (
-              <NavegadorAoVivo
-                alvo={{ projectId: session.projectId, projectPath: session.projectPath }}
-              />
-            ) : (
-              <p className="grid h-full place-items-center px-4 text-center text-[12px] text-muted-foreground">
-                {status ? "O navegador do projeto foi desligado." : "Consultando o navegador do projeto"}
-              </p>
-            )}
-          </div>
-          <div
-            role="separator"
-            aria-label="Redimensionar"
-            onPointerDown={comecar("redimensionar")}
-            onPointerMove={mover}
-            onPointerUp={terminar}
-            onPointerCancel={terminar}
-            className="absolute right-0 bottom-0 size-3.5 cursor-nwse-resize touch-none"
-          />
-        </section>
+              <span className="text-[11px] font-medium text-muted-foreground">Navegador</span>
+              <Button
+                size="icone-chip"
+                variant="ghost"
+                className="ml-auto"
+                aria-label="Voltar para a aba"
+                title="Voltar para a aba"
+                onClick={() => {
+                  recolher(projectId)
+                  useApp.getState().openBrowserTab()
+                }}
+              >
+                <AppWindow />
+              </Button>
+              <Button
+                size="icone-chip"
+                variant="ghost"
+                aria-label="Fechar navegador flutuante"
+                title="Fechar"
+                onClick={() => recolher(projectId)}
+              >
+                <X />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1">
+              {session ? (
+                <NavegadorAoVivo
+                  alvo={{ projectId: session.projectId, projectPath: session.projectPath }}
+                />
+              ) : (
+                <p className="grid h-full place-items-center px-4 text-center text-[12px] text-muted-foreground">
+                  {status ? "O navegador do projeto foi desligado." : "Consultando o navegador do projeto"}
+                </p>
+              )}
+            </div>
+          </section>
+          {/* A pega do canto à vista: antes o canto redimensionava sem nada que
+              dissesse isso, e a pessoa não descobria. */}
+          <svg
+            aria-hidden
+            viewBox="0 0 10 10"
+            className="pointer-events-none absolute right-1 bottom-1 size-2.5 text-muted-foreground/70 opacity-0 transition-opacity group-hover/flutuante:opacity-100"
+          >
+            <path d="M9 3 3 9M9 6.5 6.5 9" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+          {ALCAS.map(({ borda, className }) => (
+            <div
+              key={borda}
+              role="separator"
+              aria-label="Redimensionar"
+              onPointerDown={comecar(borda)}
+              onPointerMove={mover}
+              onPointerUp={terminar}
+              onPointerCancel={terminar}
+              className={`absolute touch-none ${className}`}
+            />
+          ))}
+        </div>
       )}
     </div>
   )

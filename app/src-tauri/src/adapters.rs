@@ -2044,7 +2044,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto, mcp__{}__{} roda JavaScript na página (canvas, File, import do dev server) e mcp__{}__{} envia arquivo a um input. Ele aparece na aba ao lado da conversa. Se estiver desligado, a tool pede à pessoa; não abra outro navegador por conta própria.",
+                    "Para ver ou testar uma página, use o navegador da Frota pelo MCP {}: mcp__{}__{} lê a página, mcp__{}__{} captura como evidência, mcp__{}__{} abre uma URL ou um HTML do projeto, mcp__{}__{} roda JavaScript na página (canvas, File, import do dev server) e mcp__{}__{} envia arquivo a um input. Ele aparece na aba ao lado da conversa. Se estiver desligado, a tool pede à pessoa e espera a resposta dela (até 90 s) antes de voltar; não abra outro navegador por conta própria.",
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::MCP_SERVER_NAME,
                     crate::browser_gateway::SNAPSHOT_TOOL,

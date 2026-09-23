@@ -25,6 +25,7 @@ import {
   type BrowserPilotStatus,
 } from "@/lib/browser"
 import { NavegadorPorMotor } from "@/components/settings/NavegadorPorMotor"
+import { AgentePodeLigarNavegador } from "@/components/settings/AgentePodeLigarNavegador"
 import { listenWorkEvents } from "@/lib/work"
 import type { McpServer } from "@/lib/mcp"
 import { cn } from "@/lib/utils"
@@ -116,10 +117,13 @@ export function ProjectBrowserCard({
   browser,
   servers,
   onConfigureDelivery,
+  projectPath,
 }: {
   browser: ProjectBrowser
   servers: McpServer[]
   onConfigureDelivery?: () => void
+  /** Para a autorização "o agente pode ligar" (ADR-228); sem ela, some. */
+  projectPath?: string | null
 }) {
   const { status, busy, toggle } = browser
   const [pilot, setPilot] = useState<BrowserPilotStatus | null>(null)
@@ -196,8 +200,10 @@ export function ProjectBrowserCard({
         <p className="text-[12px] leading-snug text-muted-foreground">
           A Frota mantém um Chromium isolado em segundo plano, com perfil deste
           projeto. Você observa e pilota pelo painel próprio. Desligado, o agente
-          pede para ligar; ele nunca liga sozinho nem abre outra janela.
+          pede para ligar e espera você, a menos que você o autorize abaixo. Ele
+          nunca abre outra janela.
         </p>
+        {projectPath && <AgentePodeLigarNavegador projectPath={projectPath} />}
         <NavegadorPorMotor />
         {status?.session && pilot && (
           <p className="mt-2 text-[11px] text-muted-foreground">
