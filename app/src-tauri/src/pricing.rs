@@ -252,6 +252,67 @@ pub fn model_price(model: String) -> Option<ModelPrice> {
     })
 }
 
+/// O custo DO TURNO a partir do que o CLI reportou (ADR-226).
+///
+/// Medido em 23/09/2026 no claude 2.1.280: ao retomar uma sessão, o
+/// `total_cost_usd` do `result` passou a ser o ACUMULADO da sessão, enquanto o
+/// `usage` continua sendo do turno (10 in, 46 out, 6.524 cache lido reportaram
+/// US$ 0,01436 = 0,01329 do turno anterior + 0,00107 deste). Até 21/09 o
+/// mesmo campo era por execução. Para não quebrar nenhum dos dois, quem decide
+/// é o preço dos tokens do próprio turno: entre o valor cru e a diferença para
+/// o total anterior da sessão, vale o que estiver mais perto do estimado. Sem
+/// total anterior, total que andou para trás (sessão nova) ou sem régua de
+/// preço, o valor cru segue: não se inventa desconto sem prova.
+pub fn custo_do_turno(reportado: f64, base: Option<f64>, estimado: Option<f64>) -> f64 {
+    let Some(base) = base else { return reportado };
+    if reportado + 1e-9 < base {
+        return reportado;
+    }
+    let delta = (reportado - base).max(0.0);
+    // Acumulado de verdade fica MUITO acima do que os tokens do turno custam
+    // (15x no caso medido); por execução fica perto (a estimativa erra para
+    // menos, porque cobra criação de cache como entrada). O piso de 2x impede
+    // que um CLI por execução perca custo por um erro de estimativa.
+    match estimado {
+        Some(e) if reportado > 2.0 * e && (delta - e).abs() < (reportado - e).abs() => delta,
+        _ => reportado,
+    }
+}
+
+/// Uma linha do histórico de custo para replanejar (ADR-226): o que foi
+/// gravado, o total cru da linha anterior da MESMA conversa e os tokens do
+/// turno (que dão a régua de preço).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinhaDeCusto {
+    pub model: Option<String>,
+    pub reportado: f64,
+    pub base: Option<f64>,
+    pub input: u64,
+    pub output: u64,
+    pub cache: u64,
+}
+
+/// O custo do turno de cada linha, pela MESMA regra do runner. A correção do
+/// histórico em Configurações usa isto em vez de reescrever a regra no front.
+#[tauri::command]
+pub fn planejar_custo_do_turno(linhas: Vec<LinhaDeCusto>) -> Vec<f64> {
+    linhas
+        .iter()
+        .map(|l| {
+            let estimado = l.model.as_deref().and_then(|m| {
+                let nu = NormalizedUsage {
+                    input: l.input + l.cache,
+                    cached_input: l.cache,
+                    output: l.output,
+                };
+                estimate(m, &nu).0
+            });
+            custo_do_turno(l.reportado, l.base, estimado)
+        })
+        .collect()
+}
+
 /// Estima o custo em USD a partir do usage + modelo. Unknown se o modelo não está
 /// na tabela (a UI mostra só tokens nesse caso).
 pub fn estimate(model: &str, u: &NormalizedUsage) -> (Option<f64>, CostSource) {
@@ -347,6 +408,48 @@ mod tests {
         let usd = usd.expect("turno do agy passa a ter custo");
         // (2.399.909-2.101.766)×0,75 + 2.101.766×0,075 + 11.098×3,75, por 1M
         assert!((usd - 0.422_857_2).abs() < 1e-6, "custo estimado: {usd}");
+    }
+
+    /// Números REAIS do claude 2.1.280 (23/09/2026): 1ª chamada criou a sessão
+    /// e reportou 0,013288; a 2ª, retomando, reportou 0,0143604 com um turno de
+    /// 10 in, 46 out, 6.524 cache lido e 90 criado (haiku).
+    #[test]
+    fn custo_acumulado_da_sessao_vira_custo_do_turno() {
+        let u = NormalizedUsage { input: 10 + 6_524 + 90, cached_input: 6_524, output: 46 };
+        let (estimado, _) = estimate("claude-haiku-4-5-20251001", &u);
+        let turno = custo_do_turno(0.0143604, Some(0.013288), estimado);
+        assert!((turno - 0.0010724).abs() < 1e-6, "custo do turno: {turno}");
+    }
+
+    #[test]
+    fn cli_que_reporta_por_execucao_nao_perde_nada() {
+        // Custo por execução (como até 21/09): o valor cru bate com os tokens
+        // e continua valendo mesmo sendo maior que o total anterior.
+        let u = NormalizedUsage { input: 40_000, cached_input: 30_000, output: 2_000 };
+        let (estimado, _) = estimate("claude-opus-5-5", &u);
+        let cru = estimado.unwrap();
+        assert_eq!(custo_do_turno(cru, Some(cru * 0.4), estimado), cru);
+        // Sessão nova (total andou para trás) e sem base: valor cru.
+        assert_eq!(custo_do_turno(0.5, Some(3.0), estimado), 0.5);
+        assert_eq!(custo_do_turno(0.5, None, estimado), 0.5);
+        // Sem régua de preço, não se inventa desconto.
+        assert_eq!(custo_do_turno(3.2, Some(3.0), None), 3.2);
+        // Estimativa que erra para menos (cache criado cobrado como entrada)
+        // num CLI por execução: o cru segue, mesmo com a diferença mais perto.
+        assert_eq!(custo_do_turno(1.00, Some(0.15), Some(0.80)), 1.00);
+    }
+
+    /// Linhas REAIS da `turn_costs` desta conversa (23/09/2026): o cru só
+    /// cresce e os tokens são do turno. A 2ª vira a diferença.
+    #[test]
+    fn historico_replanejado_pela_mesma_regra() {
+        let linhas = vec![
+            LinhaDeCusto { model: Some("claude-opus-5-5[1m]".into()), reportado: 0.7924408, base: None, input: 18, output: 9_979, cache: 498_052 },
+            LinhaDeCusto { model: Some("claude-opus-5-5[1m]".into()), reportado: 28.307669, base: Some(27.6985124), input: 8, output: 2_529, cache: 2_301_518 },
+        ];
+        let plano = planejar_custo_do_turno(linhas);
+        assert_eq!(plano[0], 0.7924408);
+        assert!((plano[1] - (28.307669 - 27.6985124)).abs() < 1e-9, "{}", plano[1]);
     }
 
     #[test]

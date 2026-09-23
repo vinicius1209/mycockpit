@@ -79,6 +79,9 @@ pub struct RunRequest {
     /// acumulado que o provider reporta e emite o gasto DO TURNO. None = thread
     /// nova, primeira vez, ou motor que já reporta por turno.
     pub usage_baseline: Option<crate::agent::CumulativeUsage>,
+    /// Custo acumulado que a sessão retomada já reportou (ADR-226). None =
+    /// sem resume ou sem registro: o custo reportado vale como está.
+    pub cost_baseline: Option<f64>,
 }
 
 /// Contrato de transporte do prompt na CLI. Não é capability de produto: a UI
@@ -1505,6 +1508,7 @@ impl AgentAdapter for OpenCodeAdapter {
             // Reporta por TURNO (medido em dois turnos da mesma sessão): nada
             // a acumular, nada de baseline.
             cumulative_usage: None,
+            reported_cost_total: None,
         }]
     }
 }
@@ -1795,6 +1799,12 @@ pub struct ClaudeAdapter {
     /// cartão da tool já conta a história. Guardadas aqui até um `task_updated`
     /// com `is_backgrounded: true` promovê-las (o binário emite esse patch).
     tarefas_em_primeiro_plano: std::collections::HashMap<String, TarefaEmPrimeiroPlano>,
+    /// ADR-226: sessão que este run tentou retomar, o custo acumulado que ela
+    /// já tinha reportado e o modelo que o `init` confirmou (régua de preço do
+    /// `custo_do_turno`).
+    resume: Option<String>,
+    custo_visto: Option<f64>,
+    modelo: Option<String>,
 }
 
 /// O nascimento de uma task em primeiro plano, para emitir se ela for para o
@@ -1835,6 +1845,9 @@ impl AgentAdapter for ClaudeAdapter {
     }
 
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
+        // ADR-226: o custo reportado ao retomar é o acumulado da sessão.
+        self.resume = req.resume.clone();
+        self.custo_visto = req.cost_baseline;
         let mut cmd = Command::new("claude");
         // anexos: injeta os paths no prompt (Read tool) + --add-dir (acesso fora do cwd)
         let mut prompt = req.prompt.clone();
@@ -2195,6 +2208,13 @@ impl AgentAdapter for ClaudeAdapter {
         match v.get("type").and_then(|x| x.as_str()).unwrap_or("") {
             "system" => match v.get("subtype").and_then(|x| x.as_str()) {
                 Some("init") => {
+                    let sessao = v.get("session_id").and_then(|x| x.as_str()).unwrap_or_default();
+                    // Retomada que abriu OUTRA sessão: o acumulado da antiga não
+                    // descreve esta (ADR-226, mesma régua do ADR-033).
+                    if self.resume.as_deref().is_some_and(|r| r != sessao) {
+                        self.custo_visto = None;
+                    }
+                    self.modelo = v.get("model").and_then(|x| x.as_str()).map(str::to_string);
                     let mut events = vec![AgentEvent::Session {
                         session_id: v
                             .get("session_id")
@@ -2715,7 +2735,23 @@ impl AgentAdapter for ClaudeAdapter {
                 }
                 let usage = v.get("usage");
                 // O Claude entrega o custo pronto (total_cost_usd) → Reported.
-                let cost_usd = v.get("total_cost_usd").and_then(|x| x.as_f64());
+                // Ao retomar, desde o 2.1.280 esse total é da SESSÃO: o custo do
+                // turno sai da diferença, decidida pelo preço dos tokens do
+                // próprio turno (ADR-226, `pricing::custo_do_turno`).
+                let reportado = v.get("total_cost_usd").and_then(|x| x.as_f64());
+                let estimado = self.modelo.as_deref().and_then(|m| {
+                    let cache_read = usage_u64(usage, "cache_read_input_tokens");
+                    let nu = crate::pricing::NormalizedUsage {
+                        input: usage_u64(usage, "input_tokens")
+                            + cache_read
+                            + usage_u64(usage, "cache_creation_input_tokens"),
+                        cached_input: cache_read,
+                        output: usage_u64(usage, "output_tokens"),
+                    };
+                    crate::pricing::estimate(m, &nu).0
+                });
+                let cost_usd = reportado
+                    .map(|r| crate::pricing::custo_do_turno(r, self.custo_visto, estimado));
                 let mut out = vec![AgentEvent::Result {
                     ok: !is_error,
                     // Em falha, a mensagem pertence ao incidente terminal abaixo.
@@ -2734,10 +2770,12 @@ impl AgentAdapter for ClaudeAdapter {
                     output_tokens: usage_u64(usage, "output_tokens"),
                     cache_read: usage_u64(usage, "cache_read_input_tokens"),
                     cache_creation: usage_u64(usage, "cache_creation_input_tokens"),
-                    // O `result` do Claude já é POR TURNO (usage do turno +
-                    // total_cost_usd daquele turno): não há acumulado a
-                    // devolver, e nada aqui muda por causa do ADR-033.
+                    // Os TOKENS do `result` do Claude são por turno: não há
+                    // acumulado de usage a devolver (ADR-033 não se aplica).
                     cumulative_usage: None,
+                    // O custo cru da sessão volta para o front guardar como base
+                    // do próximo turno (ADR-226).
+                    reported_cost_total: reportado,
                 }];
                 if let Some((message, hit)) = limit {
                     out.push(AgentEvent::LimitReached {
@@ -3005,6 +3043,7 @@ impl AgentAdapter for CodexAdapter {
                     // devolve o acumulado cru pro front persistir por thread e
                     // mandar de volta como baseline no próximo run.
                     cumulative_usage: Some(cum),
+                    reported_cost_total: None,
                 });
                 out
             }
@@ -3908,6 +3947,7 @@ impl AgyAdapter {
             cache_read: nu.cached_input,
             cache_creation: 0,
             cumulative_usage: Some(cum),
+            reported_cost_total: None,
         });
         out
     }
@@ -4288,6 +4328,7 @@ mod tests {
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first,
             usage_baseline: None,
+            cost_baseline: None,
         }
     }
 
@@ -4646,6 +4687,37 @@ mod tests {
             &evs[1],
             AgentEvent::Error { message } if message.contains("API indisponível")
         ));
+    }
+
+    /// ADR-226, payload REAL do claude 2.1.280 (23/09/2026): a 2ª chamada
+    /// retomando a sessão reportou o acumulado (0,0143604) com o usage só do
+    /// turno. O fio e o ledger recebem o custo do turno; o cru volta à parte.
+    #[test]
+    fn claude_retomado_grava_o_custo_do_turno_e_devolve_o_acumulado() {
+        const SESSAO: &str = "9e659501-d9ef-4df3-ac2a-0b0bd602bb9f";
+        let resultado: serde_json::Value = serde_json::from_str(r#"{"type": "result", "subtype": "success", "is_error": false, "session_id": "9e659501-d9ef-4df3-ac2a-0b0bd602bb9f", "total_cost_usd": 0.0143604, "usage": {"input_tokens": 10, "cache_creation_input_tokens": 90, "cache_read_input_tokens": 6524, "output_tokens": 46, "service_tier": "standard"}, "result": "dois"}"#).unwrap();
+        let custo = |resume: &str, base: Option<f64>| {
+            let mut a = ClaudeAdapter::default();
+            let mut r = req(Permission::Padrao, false);
+            r.resume = Some(resume.into());
+            r.cost_baseline = base;
+            a.build_command(&r).unwrap();
+            a.map_line(&serde_json::json!({
+                "type": "system", "subtype": "init", "session_id": SESSAO,
+                "model": "claude-haiku-4-5-20251001", "tools": []
+            }));
+            match a.map_line(&resultado).remove(0) {
+                AgentEvent::Result { cost_usd, reported_cost_total, .. } => (cost_usd.unwrap(), reported_cost_total),
+                _ => panic!("esperava Result"),
+            }
+        };
+        let (turno, cru) = custo(SESSAO, Some(0.013288));
+        assert!((turno - 0.0010724).abs() < 1e-6, "custo do turno: {turno}");
+        assert_eq!(cru, Some(0.0143604));
+        // Retomada que abriu OUTRA sessão: a base antiga não vale.
+        assert_eq!(custo("outra-sessao", Some(0.013288)).0, 0.0143604);
+        // Sem base (1º turno da sessão): o reportado é o do turno.
+        assert_eq!(custo(SESSAO, None).0, 0.0143604);
     }
 
     #[test]

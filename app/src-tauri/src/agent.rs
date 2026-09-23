@@ -337,6 +337,11 @@ pub enum AgentEvent {
         /// a UI/ledger mostra.
         #[serde(skip_serializing_if = "Option::is_none")]
         cumulative_usage: Option<CumulativeUsage>,
+        /// Custo ACUMULADO da sessão, como o CLI reportou (ADR-226), só para o
+        /// front guardar como base do próximo turno. NUNCA é o número que a
+        /// UI/ledger mostra: esse é `cost_usd`, já do turno.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reported_cost_total: Option<f64>,
     },
     /// Erro do processo/agent (H3): spawn, stderr ou exit code ≠ 0.
     Error {
@@ -419,6 +424,8 @@ pub async fn run_agent(
     // Result anterior). Option = invoke antigo/thread nova → None (o turno vale
     // inteiro). Motor que reporta usage por turno ignora.
     usage_baseline: Option<CumulativeUsage>,
+    // ADR-226: custo acumulado que a SESSÃO retomada já tinha reportado.
+    cost_baseline: Option<f64>,
     attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
@@ -877,6 +884,7 @@ pub async fn run_agent(
         mcp_plan,
         plan_first: plan_first.unwrap_or(false),
         usage_baseline,
+        cost_baseline,
     };
     // O dialeto do rollout é capability, não nome de motor. A retomada que
     // causou o incidente de 30/08 tinha 85.223.130 bytes; acima de 64 MiB o
@@ -1056,6 +1064,7 @@ pub async fn run_agent(
         // Thread nova: o acumulado da thread que sumiu não descreve mais nada
         // (ADR-033). Mantê-lo faria o 1º turno da thread nova sair de graça.
         req2.usage_baseline = None;
+        req2.cost_baseline = None;
         // Fallback de memória: o recap do front entra ANTES do prompt original,
         // p/ o run recomeçado não esquecer a conversa. Sem fallback, prompt intacto.
         req2.prompt = restart_prompt(req2.memory_fallback.as_deref(), &req2.prompt);

@@ -939,7 +939,7 @@ let usageBaselineReady: Promise<void> | null = null
  *  - `usage_baselines`: acumulado já contabilizado POR THREAD;
  *  - `turn_costs_usage_raw`: valores ORIGINAIS das linhas reconstruídas
  *    (nada é apagado — a reconstrução é auditável e reversível). */
-async function ensureUsageTables(db: Database): Promise<void> {
+export async function ensureUsageTables(db: Database): Promise<void> {
   if (!usageBaselineReady) {
     const run = (async () => {
       await db.execute(

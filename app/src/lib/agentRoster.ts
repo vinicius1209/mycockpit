@@ -16,6 +16,13 @@ export function cumulativeUsageAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.cumulativeUsage)
 }
 
+/** Motores que REPORTAM custo em USD no fim do turno. A correção do custo
+ *  acumulado da sessão (ADR-226) só olha para eles: quem não reporta, estima
+ *  pelo preço e nunca teve o problema. */
+export function reportedCostAgents(): AgentDef[] {
+  return AGENTS.filter((a) => a.reportsCost)
+}
+
 /** Motores com fonte de JANELA DE USO (medidor de rate limit). Quem monta a
  *  pill/popover/Configurações do medidor pergunta AQUI, nunca por nome — motor
  *  sem fonte nem aparece (1ª camada de esconder do Orca). */

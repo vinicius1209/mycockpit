@@ -545,7 +545,7 @@ pub fn map_notification(method: &str, params: &Value, st: &mut StreamState) -> V
                 // enquanto o `codex exec --json` só publica o acumulado da
                 // thread no `turn.completed`. Este caminho já é por turno →
                 // nada a acumular, nada a devolver como baseline.
-                cumulative_usage: None,
+                cumulative_usage: None, reported_cost_total: None,
             });
             out
         }
@@ -1453,6 +1453,7 @@ mod tests {
             mcp_plan: crate::mcp_control::McpRunPlan::default(),
             plan_first: false,
             usage_baseline: None,
+            cost_baseline: None,
         }
     }
 

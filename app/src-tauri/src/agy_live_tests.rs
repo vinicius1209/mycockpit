@@ -184,6 +184,7 @@ async fn runner_real_transmite_eventos_e_encerra_processos() {
         mcp_plan: Default::default(),
         plan_first: false,
         usage_baseline: None,
+        cost_baseline: None,
     };
     let mut adapter: Box<dyn AgentAdapter> = Box::new(AgyAdapter::default());
     let mut cmd = adapter.build_validated_command(&req).unwrap();
@@ -324,6 +325,7 @@ async fn runner_real_mostra_a_resposta_enquanto_o_agy_espera_o_dev_server() {
         mcp_plan: Default::default(),
         plan_first: false,
         usage_baseline: None,
+        cost_baseline: None,
     };
     let mut adapter: Box<dyn AgentAdapter> = Box::new(AgyAdapter::default());
     let mut cmd = adapter.build_validated_command(&req).unwrap();

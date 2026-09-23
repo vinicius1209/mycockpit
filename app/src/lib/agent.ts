@@ -6,6 +6,7 @@ import { agentDef } from "@/lib/agents"
 import { cumulativeUsageAgents } from "@/lib/agentRoster"
 import { loadUsageBaseline, saveUsageBaseline } from "@/lib/db"
 import { nextBaseline, type CumulativeUsage } from "@/lib/usage"
+import { carregarCustoDaSessao, salvarCustoDaSessao } from "@/lib/db/custoDaSessao"
 import type {
   EffectiveRunManifest,
   InstructionSourceClaim,
@@ -96,6 +97,9 @@ export type AgentEvent =
       cache_read: number
       cache_creation: number
       cumulative_usage?: CumulativeUsage | null
+      /** Custo ACUMULADO da sessão como o CLI reportou (ADR-226): só para
+       *  guardar como base do próximo turno. O custo do turno é `cost_usd`. */
+      reported_cost_total?: number | null
     }
   | { type: "error"; message: string }
   | { type: "notice"; message: string }
@@ -173,6 +177,11 @@ export async function runAgent(
           cumulativeUsageAgents().map((a) => a.id),
         )
       : null
+  // ADR-226: o custo que a sessão retomada já reportou, para o runner tirar
+  // o custo DESTE turno do acumulado. Motor que não reporta custo não tem o
+  // que descontar (capability, nunca nome de motor).
+  const costBaseline =
+    resume && agentDef(agent)?.reportsCost ? await carregarCustoDaSessao(resume) : null
   // Thread desta execução: o `resume` é a aposta; o `session` confirma (ou
   // desmente, quando o resume falhou e o CLI abriu outra).
   let threadId = resume
@@ -189,6 +198,9 @@ export async function runAgent(
     if (e.type === "session" && e.session_id) threadId = e.session_id
     if (e.type === "result" && e.cumulative_usage && threadId) {
       void saveUsageBaseline(threadId, convId, nextBaseline(e.cumulative_usage))
+    }
+    if (e.type === "result" && e.reported_cost_total != null && threadId) {
+      void salvarCustoDaSessao(threadId, convId, e.reported_cost_total)
     }
     onEvent(e)
   }, relatoVisivel((message) => onEvent({ type: "notice", message })))
@@ -210,6 +222,7 @@ export async function runAgent(
     instructionSources: options.instructionSources ?? [],
     mcpRecoveries: options.mcpRecoveries ?? [],
     usageBaseline: baseline,
+    costBaseline,
     onEvent: channel,
   })
 }

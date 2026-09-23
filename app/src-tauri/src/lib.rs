@@ -1109,6 +1109,8 @@ pub fn run() {
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
             pricing::model_price,
+            pricing::planejar_custo_do_turno,
+            detect::instalacao_do_motor,
             frota_dir::read_project_config,
             frota_dir::write_project_config,
             frota_dir::read_project_doctrine,

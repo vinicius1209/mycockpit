@@ -134,6 +134,20 @@ pub async fn detected_version(agent: &str) -> Option<String> {
     }
 }
 
+/// Quando o binário ATUAL do motor foi instalado (epoch ms), seguindo o link
+/// até o arquivo real. É o começo da janela da correção de custo do ADR-226:
+/// só o que este binário gravou pode ter o custo acumulado da sessão. Se o CLI
+/// for atualizado de novo, a janela encurta, e a correção deixa de corrigir
+/// (o lado seguro) em vez de corrigir errado. None = binário não achado.
+#[tauri::command]
+pub async fn instalacao_do_motor(agent: String) -> Option<i64> {
+    let caminho = crate::update::resolve_bin(agent_bin(&agent)?).await?;
+    let real = std::fs::canonicalize(&caminho).ok()?;
+    let quando = std::fs::metadata(real).ok()?.modified().ok()?;
+    let ms = quando.duration_since(std::time::UNIX_EPOCH).ok()?.as_millis();
+    i64::try_from(ms).ok()
+}
+
 /// Busca um JSON via `curl` subprocess (o app já orquestra CLIs; zero
 /// dependência de HTTP client). Best-effort: qualquer falha (sem curl,
 /// offline, timeout, JSON inesperado) devolve None em silêncio.

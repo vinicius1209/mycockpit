@@ -41,6 +41,7 @@ import { LocalResourcesSettings } from "@/components/settings/LocalResourcesSett
 import { SettingsRail } from "@/components/settings/SettingsRail"
 import { ExtensionsSettings } from "@/components/settings/ExtensionsSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
+import { CustoDaSessaoMaintenance } from "@/components/settings/CustoDaSessaoMaintenance"
 import { SessionCostLimit } from "@/components/settings/SessionCostLimit"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
 import { HooksSettings } from "@/components/settings/HooksSettings"
@@ -513,6 +514,7 @@ export function SettingsDialog() {
                   Histórico de custo
                 </BlockTitle>
                 <CostMaintenance />
+                <CustoDaSessaoMaintenance />
               </div>
             </div>
           )}

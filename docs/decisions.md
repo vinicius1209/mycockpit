@@ -8390,3 +8390,35 @@ considerou.
      `ResourceKind::DesktopControl` em `resource_broker.rs` tornam-se prontos
      apenas quando as permissões do sistema estiverem concedidas no SO.
 
+
+### ADR-226 · O custo gravado é o do turno, mesmo quando o CLI reporta o acumulado da sessão ✅
+- **Contexto (23/09/2026):** o claude 2.1.280 (instalado nesta máquina em 22/09
+  às 16:50) passou a devolver, ao retomar uma sessão, o `total_cost_usd`
+  ACUMULADO da sessão, enquanto o `usage` do mesmo `result` segue sendo do
+  turno. Medido no CLI: um turno de 10 in, 46 out e 6.524 de cache lido
+  reportou US$ 0,01436 = 0,01329 do turno anterior + 0,00107 dele. A Frota
+  gravava o número cru como custo do turno: o fio mostrava US$ 28,31 num
+  "pode commitar e push" de 2.529 tokens, e a `turn_costs` somava ~US$ 237
+  para uma conversa de US$ 34,72. Até 21/09 o campo era por execução (custo
+  crescente em ~50% dos pares de turnos, o que é acaso; 86% em 22/09 e 100%
+  em 23/09).
+- **Decisão:**
+  1. **Fonte:** o runner calcula o custo do turno (`pricing::custo_do_turno`).
+     A base é o total que a sessão já reportou, guardado pelo front em
+     `cost_baselines` e devolvido no `RunRequest.cost_baseline` (mesmo caminho
+     do ADR-033). A diferença só vale quando o cru passa de 2x o que os tokens
+     do turno custam e a diferença está mais perto disso: CLI por execução,
+     sessão nova e falta de régua de preço mantêm o valor cru. O evento
+     `Result` devolve o cru à parte (`reported_cost_total`), nunca como o
+     número mostrado.
+  2. **Histórico:** gesto explícito em Configurações ▸ Uso e custo, no molde da
+     manutenção do ADR-033. Mesma regra (comando `planejar_custo_do_turno`,
+     sem cópia no front), valor cru guardado em `turn_costs_usage_raw` antes
+     de reescrever, e os recibos do fio corrigidos pela store. A janela começa
+     na instalação do CLI atual de cada motor (`instalacao_do_motor`): antes
+     dela a régua erra para menos (a `turn_costs` junta cache lido e criado) e
+     corrigiria turno certo. Prévia nesta máquina: 45 turnos em 3 conversas,
+     US$ 945,68 gravados para US$ 111,77 gastos.
+- **Consequência:** custo por turno, custo por conversa e o ledger voltam a
+  dizer o gasto real. O motor que reporta por execução não perde nada, e
+  nenhum desconto é aplicado sem prova nos próprios tokens.

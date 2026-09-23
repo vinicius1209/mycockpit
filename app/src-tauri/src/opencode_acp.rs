@@ -363,7 +363,7 @@ pub async fn run(
                                 let _ = on_event.send(AgentEvent::Result {
                                     ok: true, text: None, cost_usd: None, cost_source: CostSource::Unknown,
                                     input_tokens: input, output_tokens: output, cache_read: cache,
-                                    cache_creation: 0, cumulative_usage: None,
+                                    cache_creation: 0, cumulative_usage: None, reported_cost_total: None,
                                 });
                                 break;
                             }
