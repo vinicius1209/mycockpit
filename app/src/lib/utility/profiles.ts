@@ -25,18 +25,6 @@ export const UTILITY_PROFILES: Record<UtilityTaskKind, UtilityTaskProfile> = {
     canPersist: true,
     canUseBillableSource: true,
   },
-  conversation_map: {
-    task: "conversation_map",
-    promptVersion: 6,
-    priority: "normal",
-    // Medido no M1 Pro, macOS 26.3: 28,9 s no cold start e 11,5 s aquecido.
-    // O trabalho é assíncrono e preserva o snapshot anterior durante a espera.
-    defaultDeadlineMs: 45_000,
-    maxInputBytes: 256 * 1024,
-    requiresStructuredOutput: true,
-    canPersist: true,
-    canUseBillableSource: true,
-  },
   composer_suggestions: {
     task: "composer_suggestions",
     promptVersion: 1,

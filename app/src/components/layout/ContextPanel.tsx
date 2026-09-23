@@ -107,7 +107,6 @@ export function ContextPanel() {
         ) : tab === "conversa" ? (
           <ActiveConversationMapPanel
             conversationId={activeConvId}
-            projectId={project.id}
             title={activeTitle}
           />
         ) : tab === "bastidores" ? (

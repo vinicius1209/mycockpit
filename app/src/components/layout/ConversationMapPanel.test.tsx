@@ -1,33 +1,20 @@
 // A aba Conversa como histórico de pedidos (mock aba-conversa.html rev. 2,
 // aprovado em 23/09/2026). Seguem valendo do desenho anterior: o texto do
 // pedido é selecionável e nunca mora dentro de um botão, e há Copiar e Ver no
-// fio. Saem, por decisão: o "Pedido que abriu a conversa" fixo e o "Ajustar
-// leitura".
+// fio. Saem, por decisão: o "Pedido que abriu a conversa" fixo, o "Ajustar
+// leitura" e, no ADR-233, o resumo automático inteiro.
 import { renderToStaticMarkup } from "react-dom/server"
-import { describe, expect, it, vi, beforeEach } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import type { ChatItem } from "@/store/chat"
 
-const mapa = vi.hoisted(() => ({ entry: undefined as unknown }))
-const ajustes = vi.hoisted(() => ({
-  utilityInference: { automaticConversationMaps: true, conversationMapsOff: [] as string[] },
-}))
-
-vi.mock("@/store/conversationMaps", () => ({
-  useConversationMaps: (selector: (s: unknown) => unknown) =>
-    selector({
-      byConversation: mapa.entry ? { "conv-1": mapa.entry } : {},
-      hydrate: vi.fn(),
-      refreshNow: vi.fn(),
-    }),
-}))
 vi.mock("@/store/interactions", () => ({
   useInteractions: (selector: (s: unknown) => unknown) => selector({ queue: [] }),
   currentOriginAnyKind: () => null,
 }))
 vi.mock("@/store/app", () => ({
   useApp: Object.assign(
-    (selector: (s: unknown) => unknown) => selector({ settings: ajustes }),
-    { getState: () => ({ revealTranscriptItem: vi.fn(), setSettings: vi.fn() }) },
+    (selector: (s: unknown) => unknown) => selector({}),
+    { getState: () => ({ revealTranscriptItem: vi.fn() }) },
   ),
 }))
 
@@ -47,7 +34,6 @@ function render(items: ChatItem[] = PEDIDOS) {
   return renderToStaticMarkup(
     <ConversationMapPanel
       conversationId="conv-1"
-      projectId="proj-1"
       title="t"
       items={items}
       running={false}
@@ -57,11 +43,6 @@ function render(items: ChatItem[] = PEDIDOS) {
 }
 
 describe("ConversationMapPanel", () => {
-  beforeEach(() => {
-    mapa.entry = undefined
-    ajustes.utilityInference.conversationMapsOff = []
-  })
-
   it("é o histórico de pedidos, do mais novo para o mais velho, com os fatos", () => {
     const html = render()
     expect(html.indexOf("resolva os problemas")).toBeLessThan(html.indexOf("compara as imagens"))
@@ -83,22 +64,9 @@ describe("ConversationMapPanel", () => {
     expect(html).toContain("Ver no fio")
   })
 
-  it("resumo que falhou diz o motivo onde promete, com tentar de novo e desligar", () => {
-    mapa.entry = { semanticStatus: "unavailable", lastIssue: "input_too_large", stored: null, pins: null, staleSettledTurns: 0 }
+  it("não há mais resumo automático em cima do histórico", () => {
     const html = render()
-    expect(html).toContain("Resumo automático indisponível nesta conversa.")
-    expect(html).toContain("maior do que o modelo local lê de uma vez")
-    expect(html).toContain("Tentar de novo")
-    expect(html).toContain("Desligar nesta conversa")
-    // O histórico continua lá, independente do resumo.
-    expect(html).toContain("resolva os problemas")
-  })
-
-  it("resumo desligado nesta conversa vira uma linha com o caminho de volta", () => {
-    ajustes.utilityInference.conversationMapsOff = ["conv-1"]
-    const html = render()
-    expect(html).toContain("Resumo desligado nesta conversa")
-    expect(html).toContain("Ligar")
+    expect(html).not.toContain("Resumo")
     expect(html).not.toContain("Tentar de novo")
   })
 

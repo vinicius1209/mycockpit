@@ -1,10 +1,9 @@
 import { invoke } from "@tauri-apps/api/core"
 import { isTauri } from "@/lib/db"
-import { recordUtilityUsage } from "@/lib/db/conversationMaps"
+import { recordUtilityUsage } from "@/lib/db/utilityUsage"
 import type {
   UtilityRequest,
   UtilityResult,
-  UtilitySourceDescriptor,
   UtilityTaskKind,
 } from "./types"
 import { UTILITY_PROFILES } from "./profiles"
@@ -23,7 +22,7 @@ function unavailable<T>(
 
 type UnknownRequest = UtilityRequest<unknown>
 type UnknownResult = UtilityResult<unknown>
-type Lane = "device" | "helper"
+type Lane = "helper"
 
 interface ScheduledJob {
   request: UnknownRequest
@@ -43,14 +42,15 @@ interface ScheduledJob {
 const jobs: ScheduledJob[] = []
 const jobsByKey = new Map<string, ScheduledJob>()
 const jobsByAttempt = new Map<string, ScheduledJob>()
-const running: Record<Lane, boolean> = { device: false, helper: false }
+const running: Record<Lane, boolean> = { helper: false }
 
 function priorityOf(task: UtilityTaskKind): number {
   return { high: 0, normal: 1, low: 2 }[UTILITY_PROFILES[task].priority]
 }
 
-function laneOf(task: UtilityTaskKind): Lane {
-  return task === "conversation_map" ? "device" : "helper"
+function laneOf(_task: UtilityTaskKind): Lane {
+  // Uma fonte só desde o ADR-233 (o modelo local saiu com o resumo).
+  return "helper"
 }
 
 function scopeOf(request: UnknownRequest): string {
@@ -175,21 +175,6 @@ export function createUtilityAttemptId(): string {
   return crypto.randomUUID()
 }
 
-export async function probeUtilitySources(
-  locale = "pt-BR",
-): Promise<UtilitySourceDescriptor[]> {
-  if (!isTauri()) return []
-  try {
-    const sources = await invoke<UtilitySourceDescriptor[]>("utility_probe", {
-      locale,
-    })
-    return Array.isArray(sources) ? sources : []
-  } catch (error) {
-    console.warn("[inferência utilitária] probe falhou", error)
-    return []
-  }
-}
-
 export function generateUtility<TInput, TOutput>(
   request: UtilityRequest<TInput>,
 ): Promise<UtilityResult<TOutput>> {
@@ -224,7 +209,7 @@ async function digestText(value: string): Promise<string> {
   ).join("")
 }
 
-type TextUtilityTask = Exclude<UtilityTaskKind, "conversation_map">
+type TextUtilityTask = UtilityTaskKind
 
 /**
  * Compatibilidade dos consumidores que já usavam o helper remoto antes do

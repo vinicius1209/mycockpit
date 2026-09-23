@@ -8597,3 +8597,45 @@ considerou.
 - **Consequência:** navegador ao vivo mais leve, arquivo Rust novo nasce
   abaixo de 1.000 linhas, e a suíte não mexe mais no mouse nem falha por
   fome de relógio.
+
+### ADR-233 · O resumo automático da aba Conversa sai inteiro, com o modelo local da Apple ✅
+- **Contexto (23/09/2026):** medido no banco real, o resumo fez 1.165 chamadas
+  em 20 dias ao modelo local (Apple Foundation Models), com 11% de acerto por
+  bloco, e **nenhum** resumo chegou a ser gravado (`conversation_maps` e
+  `conversation_map_pins` vazias). O ADR-227 já o tinha rebaixado a enfeite, e
+  o ADR-230 parou o desperdício. Oferecidas três saídas (desligar por padrão,
+  tirar de vez, deixar), a pessoa escolheu tirar de vez.
+- **Decisão:** sai tudo o que só existia para ele.
+  1. Front: o store `conversationMaps`, a geração, validação e composição do
+     mapa, o `ResumoDaConversa`, o diálogo de fontes, o gatilho no
+     `ChatPanel` e a seção "Leitura das conversas" de Configurações. A aba
+     Conversa fica só com o histórico de pedidos e os fatos (decisões
+     pendentes, trabalho em segundo plano). O uso das inferências segue
+     gravado, agora em `lib/db/utilityUsage.ts`.
+  2. Gateway de inferência: a tarefa `conversation_map`, a fonte da Apple,
+     o comando `utility_probe` e os códigos de falha só dela. Uma fonte só,
+     o helper do motor, com o consentimento por finalidade de sempre.
+  3. O binário `frota-intelligence` (Swift): fonte em `intelligence/`, a
+     compilação no `build.rs` e a entrada em `externalBin`. O app fica menor e
+     o build não depende mais do `swiftc` para ele.
+  4. Banco: migrações 61 e 62 apagam as duas tabelas, confirmadas vazias.
+     As migrações que as criaram ficam, porque migração é história.
+  5. As configurações antigas (`automaticConversationMaps`,
+     `conversationMapsOff`, `tasks.conversation_map`) ficam esquecidas no
+     estado salvo; nada as lê.
+- **Consequência:** a aba Conversa não promete mais o que não entrega. Se um
+  resumo voltar a fazer sentido, ele nasce de uma fonte que caiba a conversa,
+  como decisão nova.
+
+### ADR-234 · Navegador ao vivo a ~30 quadros por segundo ✅
+- **Contexto (23/09/2026):** o ADR-232 pôs o ack do screencast no ritmo do
+  aviso à tela, que era de 100 ms (10 quadros por segundo). A pessoa pediu
+  pelo menos 30: a 10 o agente rolando a página parece travado.
+- **Decisão:** o intervalo cai para 33 ms. Medido no Chromium real com a
+  mesma rolagem contínua: 10,4 → 24,4 quadros por segundo entregues, e a CPU
+  do Chromium vai de 1,93 para 2,25 s em 5 s (+17%). Parada, a página não
+  custa nada: o screencast só manda quadro quando ela muda. Continua valendo
+  o ack no ritmo, que evita os ~50 quadros por segundo de antes do ADR-232.
+- **Consequência:** a vista acompanha o movimento. O custo do lado da tela
+  (três vezes mais quadros em base64 pela ponte) ainda não foi medido no app;
+  se pesar, o canal binário que o ADR-232 descartou passa a pagar o trabalho.

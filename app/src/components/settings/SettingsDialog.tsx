@@ -53,7 +53,6 @@ import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
 import { DictationSettings } from "@/components/settings/DictationSettings"
 import { ProfileSettings } from "@/components/settings/ProfileSettings"
 import { ModelsSettings } from "@/components/settings/ModelsSettings"
-import { ConversationReadingSettings } from "@/components/settings/ConversationReadingSettings"
 import { EspecialistasContent } from "@/components/settings/Especialistas"
 import { restartOnboarding } from "@/components/onboarding/persistence"
 import {
@@ -492,7 +491,6 @@ export function SettingsDialog() {
 
           {section === "models" && <ModelsSettings />}
 
-          {section === "conversation-reading" && <ConversationReadingSettings />}
 
           {/* Sessões abertas fora do app: capacidade própria, com o preview do
               que será escrito no config de hooks (disclosure progressiva). */}

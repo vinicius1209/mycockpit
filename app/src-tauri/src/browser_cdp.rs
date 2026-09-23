@@ -20,7 +20,11 @@ use tokio_tungstenite::tungstenite::Message;
 
 const CDP_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_TEXT_CHARS: usize = 8_000;
-const PREVIEW_NOTICE_INTERVAL_MS: i64 = 100;
+/// Ritmo do navegador ao vivo: ~30 quadros por segundo (ADR-234). Era 100 ms
+/// (10 q/s). Medido no Chromium real com rolagem contínua: a 33 ms ele entrega
+/// ~24 q/s por 17% a mais de CPU que a 10 q/s; parado, não custa nada, porque
+/// o screencast só manda quadro quando a página muda.
+const PREVIEW_NOTICE_INTERVAL_MS: i64 = 33;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -276,11 +280,11 @@ async fn run_screencast(
         .await
         .map_err(|error| format!("não consegui iniciar o preview: {error}"))?;
     let mut message_id = 2_u64;
-    // Ritmo do screencast (ADR-232): o Chromium só manda o próximo quadro
-    // depois do ack. Confirmar na hora fazia ele codificar ~60 JPEGs por
-    // segundo (151 KB cada em 1280×800, medido) para uma tela que puxa no
-    // máximo 10. O ack espera o intervalo do aviso, e o Chromium codifica só
-    // o que alguém vai ver.
+    // Ritmo do screencast (ADR-232, ADR-234): o Chromium só manda o próximo
+    // quadro depois do ack. Confirmar na hora fazia ele codificar ~50 JPEGs
+    // por segundo (151 KB cada em 1280×800, medido) além do que a tela
+    // mostra. O ack espera o intervalo do aviso, e o Chromium codifica só o
+    // que alguém vai ver.
     let mut ultimo_ack: Option<tokio::time::Instant> = None;
     let mut ack_pendente: Option<u64> = None;
     let intervalo = std::time::Duration::from_millis(PREVIEW_NOTICE_INTERVAL_MS as u64);
@@ -820,8 +824,9 @@ mod tests {
     #[test]
     fn eventos_de_preview_sao_limitados_sem_perder_o_frame_mais_novo() {
         assert!(should_notify_preview(0, 1_000));
-        assert!(!should_notify_preview(1_000, 1_099));
-        assert!(should_notify_preview(1_000, 1_100));
+        // ~30 q/s (ADR-234): menos de 33 ms desde o último aviso espera
+        assert!(!should_notify_preview(1_000, 1_032));
+        assert!(should_notify_preview(1_000, 1_033));
     }
 
     #[test]

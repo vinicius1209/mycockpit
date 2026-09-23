@@ -1,27 +1,28 @@
 //! Gateway de inferências auxiliares. Esta fronteira não executa tools, não
 //! cria sessão de agente e nunca altera o estado de uma conversa.
+//!
+//! Uma fonte só: o helper (CLI do motor, com consentimento por finalidade).
+//! O modelo local da Apple (`frota-intelligence`) servia apenas o resumo da
+//! aba Conversa e saiu junto com ele (ADR-233): em 20 dias, 1.165 chamadas e
+//! nenhum resumo salvo.
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::State;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt};
-use tokio::process::{Child, Command};
+use tokio::io::{AsyncRead, AsyncReadExt};
+use tokio::process::Child;
 use tokio::sync::{oneshot, Semaphore};
 use tokio::time::Instant;
 
-const PROTOCOL_VERSION: u8 = 1;
 const MAX_INPUT_BYTES: usize = 256 * 1024;
 const MAX_OUTPUT_BYTES: usize = 64 * 1024;
-const APPLE_SOURCE_ID: &str = "apple-foundation-model";
 const LEGACY_HELPER_SOURCE_ID: &str = "legacy-helper-cli";
 
 pub struct UtilityState {
     cancellations: Mutex<HashMap<String, oneshot::Sender<()>>>,
-    apple_gate: Arc<Semaphore>,
     helper_gate: Arc<Semaphore>,
     accepting: AtomicBool,
 }
@@ -36,7 +37,6 @@ impl UtilityState {
     pub fn new() -> Self {
         Self {
             cancellations: Mutex::new(HashMap::new()),
-            apple_gate: Arc::new(Semaphore::new(1)),
             helper_gate: Arc::new(Semaphore::new(1)),
             accepting: AtomicBool::new(true),
         }
@@ -75,7 +75,6 @@ impl UtilityState {
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum UtilityTask {
-    ConversationMap,
     ComposerSuggestions,
     TurnReceipt,
     LessonDistillation,
@@ -98,6 +97,7 @@ pub enum RoutePolicy {
 pub struct UtilityRequest {
     attempt_id: String,
     task: UtilityTask,
+    #[allow(dead_code)]
     locale: String,
     payload: Value,
     input_digest: String,
@@ -110,33 +110,6 @@ pub struct UtilityRequest {
     working_directory: Option<String>,
     helper_model: Option<String>,
     remote_authorized: Option<bool>,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UtilityFailure {
-    code: String,
-    retryable: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    retry_after_ms: Option<u64>,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UtilitySourceDescriptor {
-    id: String,
-    availability: String,
-    supported_tasks: Vec<UtilityTask>,
-    locality: String,
-    billable: bool,
-    structured_output: bool,
-    sessionless: bool,
-    tools_disabled: bool,
-    reports_cost: bool,
-    supported_locales: Value,
-    max_input_tokens: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    failure: Option<UtilityFailure>,
 }
 
 #[derive(Debug, Serialize)]
@@ -174,46 +147,6 @@ pub struct UtilityResult {
     fallback_reason: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ProbeEnvelope {
-    protocol_version: u8,
-    status: String,
-    reason: Option<String>,
-    supports_locale: bool,
-    context_size: Option<u64>,
-}
-
-#[derive(Debug, Deserialize)]
-struct SidecarError {
-    code: String,
-    #[allow(dead_code)]
-    retryable: bool,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct GenerateEnvelope {
-    protocol_version: u8,
-    attempt_id: String,
-    task: UtilityTask,
-    status: String,
-    payload: Option<Value>,
-    error: Option<SidecarError>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct SidecarRequest<'a> {
-    protocol_version: u8,
-    attempt_id: &'a str,
-    task: UtilityTask,
-    locale: &'a str,
-    prompt_version: u64,
-    input_digest: &'a str,
-    payload: &'a Value,
-}
-
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -241,13 +174,6 @@ fn finish(
     }
 }
 
-fn apple_source() -> UtilitySource {
-    UtilitySource {
-        id: APPLE_SOURCE_ID.into(),
-        locality: "device".into(),
-    }
-}
-
 fn helper_source() -> UtilitySource {
     UtilitySource {
         id: LEGACY_HELPER_SOURCE_ID.into(),
@@ -255,156 +181,6 @@ fn helper_source() -> UtilitySource {
         // Privacidade e consentimento seguem a localidade efetiva dos dados.
         locality: "remote".into(),
     }
-}
-
-fn sidecar_path() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|error| error.to_string())?;
-    if let Some(dir) = exe.parent() {
-        let bundled = dir.join("frota-intelligence");
-        if bundled.exists() {
-            return Ok(bundled);
-        }
-    }
-    let target = option_env!("TAURI_ENV_TARGET_TRIPLE").unwrap_or(match std::env::consts::ARCH {
-        "x86_64" => "x86_64-apple-darwin",
-        _ => "aarch64-apple-darwin",
-    });
-    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("bin")
-        .join(format!("frota-intelligence-{target}"));
-    if dev.exists() {
-        return Ok(dev);
-    }
-    Err("framework_unavailable".into())
-}
-
-fn helper_descriptor() -> UtilitySourceDescriptor {
-    UtilitySourceDescriptor {
-        id: LEGACY_HELPER_SOURCE_ID.into(),
-        // A disponibilidade real depende de autenticação, cwd e modelo do
-        // request. O probe global não inventa que isso está pronto.
-        availability: "unknown".into(),
-        supported_tasks: vec![
-            UtilityTask::ComposerSuggestions,
-            UtilityTask::TurnReceipt,
-            UtilityTask::LessonDistillation,
-            UtilityTask::SkillDraft,
-            UtilityTask::ModelCurator,
-            UtilityTask::CommitMessage,
-        ],
-        locality: "remote".into(),
-        billable: true,
-        structured_output: false,
-        sessionless: true,
-        tools_disabled: true,
-        reports_cost: false,
-        supported_locales: Value::String("runtime".into()),
-        max_input_tokens: Value::String("runtime".into()),
-        failure: None,
-    }
-}
-
-fn unavailable_descriptor(code: &str, retryable: bool) -> UtilitySourceDescriptor {
-    UtilitySourceDescriptor {
-        id: APPLE_SOURCE_ID.into(),
-        availability: "unavailable".into(),
-        supported_tasks: vec![UtilityTask::ConversationMap],
-        locality: "device".into(),
-        billable: false,
-        structured_output: true,
-        sessionless: true,
-        tools_disabled: true,
-        reports_cost: false,
-        supported_locales: Value::Array(vec![]),
-        max_input_tokens: Value::String("runtime".into()),
-        failure: Some(UtilityFailure {
-            code: code.into(),
-            retryable,
-            retry_after_ms: None,
-        }),
-    }
-}
-
-async fn probe_apple(locale: &str) -> UtilitySourceDescriptor {
-    let Ok(bin) = sidecar_path() else {
-        return unavailable_descriptor("framework_unavailable", false);
-    };
-    let mut command = Command::new(bin);
-    command
-        .arg("--probe")
-        .arg("--locale")
-        .arg(locale)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    let Ok(child) = command.spawn() else {
-        return unavailable_descriptor("probe_failed", true);
-    };
-    let (_keep_cancel, receive_cancel) = oneshot::channel();
-    let output = match wait_bounded(
-        child,
-        receive_cancel,
-        Instant::now() + Duration::from_secs(4),
-    )
-    .await
-    {
-        UtilityRun::Output(output) => output,
-        UtilityRun::TimedOut => return unavailable_descriptor("deadline_exceeded", true),
-        UtilityRun::Cancelled | UtilityRun::Failed => {
-            return unavailable_descriptor("probe_failed", true)
-        }
-    };
-    if !output.status.success() || output.stdout_truncated {
-        return unavailable_descriptor("probe_failed", true);
-    }
-    let Ok(probe) = serde_json::from_slice::<ProbeEnvelope>(&output.stdout) else {
-        return unavailable_descriptor("protocol_error", false);
-    };
-    if probe.protocol_version != PROTOCOL_VERSION {
-        return unavailable_descriptor("protocol_error", false);
-    }
-    let available = probe.status == "available" && probe.supports_locale;
-    UtilitySourceDescriptor {
-        id: APPLE_SOURCE_ID.into(),
-        availability: if available {
-            "available"
-        } else {
-            "unavailable"
-        }
-        .into(),
-        supported_tasks: vec![UtilityTask::ConversationMap],
-        locality: "device".into(),
-        billable: false,
-        structured_output: true,
-        sessionless: true,
-        tools_disabled: true,
-        reports_cost: false,
-        supported_locales: if probe.supports_locale {
-            Value::Array(vec![Value::String(locale.into())])
-        } else {
-            Value::Array(vec![])
-        },
-        max_input_tokens: probe
-            .context_size
-            .map(Value::from)
-            .unwrap_or_else(|| Value::String("runtime".into())),
-        failure: if available {
-            None
-        } else {
-            Some(UtilityFailure {
-                code: probe.reason.unwrap_or_else(|| "probe_failed".into()),
-                retryable: false,
-                retry_after_ms: None,
-            })
-        },
-    }
-}
-
-#[tauri::command]
-pub async fn utility_probe(locale: String) -> Vec<UtilitySourceDescriptor> {
-    vec![probe_apple(&locale).await, helper_descriptor()]
 }
 
 struct BoundedOutput {
@@ -499,69 +275,6 @@ async fn wait_bounded(
     })
 }
 
-async fn run_apple(
-    request: &UtilityRequest,
-    state: &Arc<UtilityState>,
-    mut cancelled: oneshot::Receiver<()>,
-    deadline_at: Instant,
-) -> UtilityRun {
-    let permit = tokio::select! {
-        value = state.apple_gate.clone().acquire_owned() => match value {
-            Ok(permit) => permit,
-            Err(_) => return UtilityRun::Failed,
-        },
-        _ = &mut cancelled => return UtilityRun::Cancelled,
-        _ = tokio::time::sleep_until(deadline_at) => return UtilityRun::TimedOut,
-    };
-    let Ok(bin) = sidecar_path() else {
-        drop(permit);
-        return UtilityRun::Failed;
-    };
-    let prompt_version = request
-        .payload
-        .get("promptVersion")
-        .and_then(Value::as_u64)
-        .unwrap_or(1);
-    let frame = SidecarRequest {
-        protocol_version: PROTOCOL_VERSION,
-        attempt_id: &request.attempt_id,
-        task: request.task,
-        locale: &request.locale,
-        prompt_version,
-        input_digest: &request.input_digest,
-        payload: &request.payload,
-    };
-    let Ok(input) = serde_json::to_vec(&frame) else {
-        return UtilityRun::Failed;
-    };
-    if input.len() > MAX_INPUT_BYTES {
-        return UtilityRun::Failed;
-    }
-    let mut command = Command::new(bin);
-    command
-        .arg("--generate")
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    if state.ensure_accepting().is_err() {
-        return UtilityRun::Cancelled;
-    }
-    let Ok(mut child) = command.spawn() else {
-        return UtilityRun::Failed;
-    };
-    let Some(mut stdin) = child.stdin.take() else {
-        return UtilityRun::Failed;
-    };
-    if stdin.write_all(&input).await.is_err() {
-        return UtilityRun::Failed;
-    }
-    drop(stdin);
-    wait_bounded(child, cancelled, deadline_at).await
-}
-
 async fn run_helper(
     request: &UtilityRequest,
     state: &Arc<UtilityState>,
@@ -611,20 +324,10 @@ async fn run_helper(
     result
 }
 
-#[derive(Clone, Copy)]
-enum SelectedSource {
-    Apple,
-    LegacyHelper,
-}
-
-fn select_source(request: &UtilityRequest) -> Option<SelectedSource> {
-    if request.route_policy == RoutePolicy::Off {
-        return None;
-    }
-    if request.task == UtilityTask::ConversationMap {
-        return Some(SelectedSource::Apple);
-    }
-    let helper_allowed = request.route_policy == RoutePolicy::ApprovedHelper
+/// O helper só roda com a finalidade autorizada, um modelo escolhido e uma
+/// pasta de trabalho. Sem isso não há fonte, e o motivo diz o que falta.
+fn helper_permitido(request: &UtilityRequest) -> bool {
+    request.route_policy == RoutePolicy::ApprovedHelper
         && request.remote_authorized == Some(true)
         && request
             .helper_model
@@ -633,24 +336,14 @@ fn select_source(request: &UtilityRequest) -> Option<SelectedSource> {
         && request
             .working_directory
             .as_deref()
-            .is_some_and(|value| !value.trim().is_empty());
-    helper_allowed.then_some(SelectedSource::LegacyHelper)
+            .is_some_and(|value| !value.trim().is_empty())
 }
 
 fn no_source_reason(request: &UtilityRequest) -> &'static str {
-    if request.route_policy == RoutePolicy::ApprovedHelper
-        && request.task != UtilityTask::ConversationMap
-    {
+    if request.route_policy == RoutePolicy::ApprovedHelper {
         "auth_required"
     } else {
         "framework_unavailable"
-    }
-}
-
-fn source_for(selected: SelectedSource) -> UtilitySource {
-    match selected {
-        SelectedSource::Apple => apple_source(),
-        SelectedSource::LegacyHelper => helper_source(),
     }
 }
 
@@ -680,17 +373,11 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
     if payload.len() > MAX_INPUT_BYTES {
         return finish(started_at, "invalid", None, None, Some("input_too_large"));
     }
-    let Some(selected) = select_source(&request) else {
+    if request.route_policy == RoutePolicy::Off || !helper_permitido(&request) {
         let reason = no_source_reason(&request);
         return finish(started_at, "unavailable", None, None, Some(reason));
-    };
-    if matches!(selected, SelectedSource::LegacyHelper)
-        && request
-            .payload
-            .get("prompt")
-            .and_then(Value::as_str)
-            .is_none()
-    {
+    }
+    if request.payload.get("prompt").and_then(Value::as_str).is_none() {
         return finish(started_at, "invalid", None, None, Some("invalid_request"));
     }
     let (send_cancel, receive_cancel) = oneshot::channel();
@@ -708,12 +395,7 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
     }
     let deadline_at =
         Instant::now() + Duration::from_millis(request.deadline_ms.clamp(500, 45_000));
-    let run = match selected {
-        SelectedSource::Apple => run_apple(&request, &state, receive_cancel, deadline_at).await,
-        SelectedSource::LegacyHelper => {
-            run_helper(&request, &state, receive_cancel, deadline_at).await
-        }
-    };
+    let run = run_helper(&request, &state, receive_cancel, deadline_at).await;
     if let Ok(mut cancellations) = state.cancellations.lock() {
         cancellations.remove(&request.attempt_id);
     }
@@ -723,7 +405,7 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
             // helper passou semanas com 0 sucessos sem uma linha no log.
             log::warn!(
                 "fonte de inferência estourou o prazo: source={} task={:?} deadline_ms={}",
-                source_for(selected).id,
+                LEGACY_HELPER_SOURCE_ID,
                 request.task,
                 request.deadline_ms,
             );
@@ -731,7 +413,7 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
             started_at,
             "timed_out",
             None,
-            Some(source_for(selected)),
+            Some(helper_source()),
             Some("deadline_exceeded"),
             )
         }
@@ -739,7 +421,7 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
             started_at,
             "cancelled",
             None,
-            Some(source_for(selected)),
+            Some(helper_source()),
             Some("cancelled"),
         ),
         UtilityRun::Failed => finish(
@@ -747,10 +429,7 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
             "unavailable",
             None,
             None,
-            Some(match selected {
-                SelectedSource::Apple => "framework_unavailable",
-                SelectedSource::LegacyHelper => "spawn_failed",
-            }),
+            Some("spawn_failed"),
         ),
         UtilityRun::Output(output) => {
             if output.stdout_truncated {
@@ -758,18 +437,15 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
                     started_at,
                     "invalid",
                     None,
-                    Some(source_for(selected)),
+                    Some(helper_source()),
                     Some("invalid_response"),
                 );
             }
             if !output.status.success() {
-                let code = match selected {
-                    SelectedSource::Apple => "process_failed",
-                    SelectedSource::LegacyHelper => helper_failure_code(&output),
-                };
+                let code = helper_failure_code(&output);
                 log::warn!(
                     "fonte de inferência encerrou com erro: source={} code={} stderr_truncated={}",
-                    source_for(selected).id,
+                    LEGACY_HELPER_SOURCE_ID,
                     code,
                     output.stderr_truncated,
                 );
@@ -777,95 +453,32 @@ async fn generate_utility(request: UtilityRequest, state: Arc<UtilityState>) -> 
                     started_at,
                     "failed",
                     None,
-                    Some(source_for(selected)),
+                    Some(helper_source()),
                     Some(code),
                 );
             }
-            if matches!(selected, SelectedSource::LegacyHelper) {
-                let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                if text.is_empty() {
-                    return finish(
-                        started_at,
-                        "invalid",
-                        None,
-                        Some(helper_source()),
-                        Some("invalid_response"),
-                    );
-                }
-                let mut result = finish(
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if text.is_empty() {
+                return finish(
                     started_at,
-                    "ok",
-                    Some(Value::String(text)),
+                    "invalid",
+                    None,
                     Some(helper_source()),
-                    None,
-                );
-                result.cost = Some(UtilityCost {
-                    usd: None,
-                    source: "unknown".into(),
-                });
-                return result;
-            }
-            if output
-                .stdout
-                .split(|byte| *byte == b'\n')
-                .filter(|line| !line.iter().all(u8::is_ascii_whitespace))
-                .count()
-                != 1
-            {
-                return finish(
-                    started_at,
-                    "invalid",
-                    None,
-                    Some(apple_source()),
-                    Some("protocol_error"),
+                    Some("invalid_response"),
                 );
             }
-            let Ok(envelope) = serde_json::from_slice::<GenerateEnvelope>(&output.stdout) else {
-                return finish(
-                    started_at,
-                    "invalid",
-                    None,
-                    Some(apple_source()),
-                    Some("protocol_error"),
-                );
-            };
-            if envelope.protocol_version != PROTOCOL_VERSION
-                || envelope.attempt_id != request.attempt_id
-                || envelope.task != request.task
-            {
-                return finish(
-                    started_at,
-                    "invalid",
-                    None,
-                    Some(apple_source()),
-                    Some("protocol_error"),
-                );
-            }
-            if envelope.status == "ok" {
-                return finish(
-                    started_at,
-                    "ok",
-                    envelope.payload,
-                    Some(apple_source()),
-                    None,
-                );
-            }
-            let code = envelope
-                .error
-                .map(|error| error.code)
-                .unwrap_or_else(|| "process_failed".into());
-            log::warn!(
-                "fonte de inferência recusou a geração: source={} code={}",
-                APPLE_SOURCE_ID,
-                code,
-            );
-            finish(
+            let mut result = finish(
                 started_at,
-                "unavailable",
+                "ok",
+                Some(Value::String(text)),
+                Some(helper_source()),
                 None,
-                Some(apple_source()),
-                Some(&code),
-            )
+            );
+            result.cost = Some(UtilityCost {
+                usd: None,
+                source: "unknown".into(),
+            });
+            result
         }
     }
 }
@@ -892,6 +505,7 @@ pub fn utility_cancel(attempt_id: String, state: State<'_, Arc<UtilityState>>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
 
     fn request(task: UtilityTask, route_policy: RoutePolicy) -> UtilityRequest {
         UtilityRequest {
@@ -911,14 +525,6 @@ mod tests {
     }
 
     #[test]
-    fn serializa_descriptor_no_contrato_camel_case() {
-        let json = serde_json::to_value(unavailable_descriptor("unsupported_os", false)).unwrap();
-        assert_eq!(json["supportedTasks"][0], "conversation_map");
-        assert_eq!(json["toolsDisabled"], true);
-        assert_eq!(json["failure"]["code"], "unsupported_os");
-    }
-
-    #[test]
     fn rota_desligada_nao_tem_fonte_ficticia() {
         let result = finish(10, "unavailable", None, None, Some("framework_unavailable"));
         let json = serde_json::to_value(result).unwrap();
@@ -927,32 +533,22 @@ mod tests {
     }
 
     #[test]
-    fn mapa_local_nunca_herda_autorizacao_do_helper_legado() {
-        let mut req = request(UtilityTask::ConversationMap, RoutePolicy::ApprovedHelper);
-        req.remote_authorized = Some(true);
-        assert!(matches!(select_source(&req), Some(SelectedSource::Apple)));
-    }
-
-    #[test]
     fn helper_remoto_exige_autorizacao_da_finalidade() {
         let mut req = request(
             UtilityTask::ComposerSuggestions,
             RoutePolicy::ApprovedHelper,
         );
-        assert!(select_source(&req).is_none());
+        assert!(!helper_permitido(&req));
         assert_eq!(no_source_reason(&req), "auth_required");
         req.remote_authorized = Some(true);
-        assert!(matches!(
-            select_source(&req),
-            Some(SelectedSource::LegacyHelper)
-        ));
+        assert!(helper_permitido(&req));
     }
 
     #[test]
     fn rota_gratuita_nao_usa_helper_faturavel() {
         let mut req = request(UtilityTask::TurnReceipt, RoutePolicy::FreeOnly);
         req.remote_authorized = Some(true);
-        assert!(select_source(&req).is_none());
+        assert!(!helper_permitido(&req));
         assert_eq!(no_source_reason(&req), "framework_unavailable");
     }
 

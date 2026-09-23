@@ -19,7 +19,6 @@ import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
 import { Reticle } from "@/components/common/Wordmark"
 import { useActiveProject, useApp } from "@/store/app"
-import { useConversationMapRefresh } from "@/components/chat/useConversationMapRefresh"
 import {
   useChat,
   useActiveConv,
@@ -122,14 +121,6 @@ export function ChatPanel() {
   const running = conv.running
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
-  useConversationMapRefresh({
-    conversationId: activeId,
-    projectId: project?.id ?? null,
-    items,
-    running,
-    finalizing,
-  })
-
   const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom } = useChatScroll({
     activeId,
     items,

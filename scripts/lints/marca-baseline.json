@@ -34,7 +34,6 @@
   "app/e2e/diff-linha-arquivo.spec.ts": 2,
   "app/src-tauri/Cargo.toml": 1,
   "app/src-tauri/companion/index.html": 9,
-  "app/src-tauri/intelligence/Info.plist": 1,
   "app/src-tauri/src/AGENTS.md": 1,
   "app/src-tauri/src/adapters.rs": 13,
   "app/src-tauri/src/agent.rs": 2,

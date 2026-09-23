@@ -1,5 +1,4 @@
 export type UtilityTaskKind =
-  | "conversation_map"
   | "composer_suggestions"
   | "turn_receipt"
   | "lesson_distillation"
@@ -17,11 +16,6 @@ export type UtilityRoutePolicy =
 export type UtilityLocality = "device" | "local-process" | "remote"
 
 export type UtilityFailureCode =
-  | "unsupported_os"
-  | "device_not_eligible"
-  | "intelligence_disabled"
-  | "model_not_ready"
-  | "locale_unsupported"
   | "framework_unavailable"
   | "probe_failed"
   | "input_too_large"
@@ -78,20 +72,6 @@ export interface UtilityResult<T> {
   fallbackReason?: UtilityFailureCode
 }
 
-export interface UtilitySourceDescriptor {
-  id: string
-  availability: "available" | "unavailable" | "unknown"
-  supportedTasks: UtilityTaskKind[]
-  locality: UtilityLocality
-  billable: boolean
-  structuredOutput: boolean
-  sessionless: boolean
-  toolsDisabled: boolean
-  reportsCost: boolean
-  supportedLocales: string[] | "runtime"
-  maxInputTokens: number | "runtime"
-  failure?: UtilityFailure
-}
 
 export interface UtilityTaskPolicySetting {
   route: UtilityRoutePolicy
@@ -105,22 +85,10 @@ export interface UtilityTaskPolicySetting {
 
 export interface UtilityInferenceSettings {
   version: 1
-  automaticConversationMaps: boolean
-  /** Conversas em que a pessoa desligou o resumo automático pela aba Conversa
-   *  ("Desligar nesta conversa"). O global continua em Configurações. */
-  conversationMapsOff?: string[]
   tasks: Partial<Record<UtilityTaskKind, UtilityTaskPolicySetting>>
 }
 
 export const DEFAULT_UTILITY_INFERENCE: UtilityInferenceSettings = {
   version: 1,
-  automaticConversationMaps: true,
-  tasks: {
-    conversation_map: {
-      route: "free_only",
-      helperSourceId: null,
-      helperModel: null,
-      remoteConsent: null,
-    },
-  },
+  tasks: {},
 }

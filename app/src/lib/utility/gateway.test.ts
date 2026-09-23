@@ -7,7 +7,7 @@ const h = vi.hoisted(() => ({
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: h.invoke }))
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
-vi.mock("@/lib/db/conversationMaps", () => ({
+vi.mock("@/lib/db/utilityUsage", () => ({
   recordUtilityUsage: h.record,
 }))
 
@@ -23,7 +23,7 @@ describe("gateway de inferência utilitária", () => {
   it("não chama transporte quando a finalidade está desligada", async () => {
     const result = await generateUtility({
       attemptId: "a",
-      task: "conversation_map",
+      task: "turn_receipt",
       locale: "pt-BR",
       payload: {},
       inputDigest: "digest",
@@ -102,11 +102,11 @@ describe("gateway de inferência utilitária", () => {
       }),
     )
     const base = {
-      task: "conversation_map" as const,
+      task: "composer_suggestions" as const,
       locale: "pt-BR",
-      payload: { evidence: [] },
+      payload: { prompt: "Sugira ações" },
       inputDigest: "mesmo-digest",
-      routePolicy: "free_only" as const,
+      routePolicy: "approved_helper" as const,
       conversationId: "conversa-1",
       deadlineMs: 1_000,
     }
@@ -116,8 +116,8 @@ describe("gateway de inferência utilitária", () => {
     expect(h.invoke).toHaveBeenCalledTimes(1)
     release({
       status: "ok",
-      value: { currentFocus: null },
-      source: { id: "apple-foundation-model", locality: "device" },
+      value: "[\"Rodar os testes\"]",
+      source: { id: "legacy-helper-cli", locality: "remote" },
       timing: { startedAt: 1, durationMs: 12 },
     })
     await expect(Promise.all([first, second])).resolves.toHaveLength(2)
