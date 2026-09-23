@@ -35,8 +35,9 @@ const PROVIDER_TO_AGENT: Record<string, "claude-code" | "codex"> = {
 export const CURATED_AGENTS = ["claude-code", "codex"] as const
 
 /** Reduz um id anthropic do catálogo ("claude-sonnet-4-5-20250929") ao alias
- *  simples que o Claude Code aceita em `--model` ("sonnet"). null = não reduz
- *  (família desconhecida → o value proposto vira o id completo). */
+ *  simples que o Claude Code aceita em `--model` ("sonnet"). null = não reduz.
+ *  Hoje só serve para LER propostas antigas, gravadas pelo alias: o curador
+ *  propõe o pin exato (`anthropicPin`). */
 export function anthropicAlias(id: string): string | null {
   const lower = id.toLowerCase()
   if (!lower.startsWith("claude")) return null
@@ -44,9 +45,28 @@ export function anthropicAlias(id: string): string | null {
   return m ? m[0] : null
 }
 
+/** O pin do Claude para um id do catálogo: sem a data de snapshot
+ *  (`-20250929`), com `[1m]` quando o catálogo diz janela de 1M (a mesma
+ *  convenção dos pins curados, que o anel de contexto lê). PURO.
+ *
+ *  Antes o curador reduzia ao ALIAS da família (`claude-opus-5-5` → `opus`), e
+ *  como `opus` já estava no seletor, nenhuma versão nova de família conhecida
+ *  virava proposta: em 22/09/2026 o catálogo já trazia Opus 5.5 e Fable 5.1 e
+ *  o registro não tinha uma linha do Claude. */
+export function anthropicPin(m: Pick<CatalogModel, "id" | "context">): string {
+  const base = m.id.toLowerCase().replace(/-\d{8}$/, "")
+  return (m.context ?? 0) >= 1_000_000 ? `${base}[1m]` : base
+}
+
+/** Compara pins do Claude sem o marcador de janela: `x[1m]` e `x` são o mesmo
+ *  modelo (o sufixo é dialeto de flag). */
+function semJanela(value: string): string {
+  return value.toLowerCase().replace(/\[1m\]$/, "")
+}
+
 export interface CuratorCandidate {
   agent: "claude-code" | "codex"
-  /** O que iria em `--model` (alias anthropic reduzido ou id openai direto). */
+  /** O que iria em `--model` (pin exato anthropic ou id openai direto). */
   value: string
   model: CatalogModel
 }
@@ -69,12 +89,19 @@ export function filterCandidates(
     if (!m.release_date) continue // sem data → não dá pra afirmar que é novo
     const ts = Date.parse(m.release_date)
     if (Number.isNaN(ts) || now - ts > windowMs) continue
-    const value =
-      agent === "claude-code" ? (anthropicAlias(m.id) ?? m.id) : m.id
+    const claude = agent === "claude-code"
+    const value = claude ? anthropicPin(m) : m.id
     const key = `${agent}:${value}`
-    if (seen.has(key)) continue // dois releases da mesma família → 1 candidato
-    if (pickerValues[agent]?.has(value)) continue // já está no picker
-    if (proposedKeys.has(key)) continue // já proposto/ativo/dispensado
+    if (seen.has(key)) continue // snapshot datado e id limpo → 1 candidato
+    const picker = pickerValues[agent]
+    const noPicker = claude
+      ? [...(picker ?? [])].some((v) => semJanela(v) === semJanela(value))
+      : picker?.has(value)
+    if (noPicker) continue // já está no picker
+    const jaProposto = claude
+      ? [...proposedKeys].some((k) => k.startsWith(`${agent}:`) && semJanela(k.slice(agent.length + 1)) === semJanela(value))
+      : proposedKeys.has(key)
+    if (jaProposto) continue // já proposto/ativo/dispensado
     seen.add(key)
     out.push({ agent, value, model: m })
   }
@@ -132,7 +159,8 @@ export function parseCuratorProposals(
 }
 
 /** Entrada do catálogo correspondente a uma proposta (pro preço na UI). Para o
- *  claude-code o value pode ser um alias — compara também pelo id reduzido. */
+ *  claude-code o value é o pin (`claude-opus-5-5[1m]`) ou, em proposta antiga,
+ *  um alias — compara pelos dois. */
 export function catalogEntryFor(
   catalog: CatalogModel[],
   agent: string,
@@ -142,7 +170,10 @@ export function catalogEntryFor(
     return catalog.find(
       (m) =>
         m.provider === "anthropic" &&
-        (m.id === value || anthropicAlias(m.id) === value),
+        (m.id === value ||
+          anthropicPin(m) === value ||
+          semJanela(anthropicPin(m)) === semJanela(value) ||
+          anthropicAlias(m.id) === value),
     )
   return catalog.find((m) => m.provider === "openai" && m.id === value)
 }

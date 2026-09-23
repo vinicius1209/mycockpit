@@ -57,17 +57,31 @@ describe("filterCandidates", () => {
     expect(out[0]).toMatchObject({ agent: "codex", value: "gpt-5.7" })
   })
 
-  it("anthropic que reduz a alias JÁ no picker não é candidato", () => {
+  // 22/09/2026: a regra antiga ("reduz ao alias; alias no seletor = não é
+  // candidato") era o defeito. Opus 5.5 e Fable 5.1 estavam no catálogo e
+  // nunca viraram proposta, porque `opus` e `fable` já estavam no seletor.
+  it("versão nova de família que o seletor já conhece vira candidata pelo pin", () => {
     const out = filterCandidates(
-      [cm({ id: "claude-opus-4-7" })], // → "opus", já no picker
+      [cm({ id: "claude-opus-4-7" })],
       NOW,
       PICKERS,
       new Set(),
     )
-    expect(out).toHaveLength(0)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ agent: "claude-code", value: "claude-opus-4-7" })
   })
 
-  it("anthropic com alias novo (fora do picker) vira candidato pelo alias", () => {
+  it("entrada REAL do catálogo (Opus 5.5, 1M) vira o pin com [1m]; já no seletor, não", () => {
+    const opus55 = cm({ id: "claude-opus-5-5", name: "Claude Opus 5.5", input: 4, output: 20, cache_read: 0.2, context: 1_000_000, release_date: "2026-09-22" })
+    const agora = Date.parse("2026-09-23T12:00:00Z")
+    expect(filterCandidates([opus55], agora, PICKERS, new Set())[0]?.value).toBe("claude-opus-5-5[1m]")
+    const comPin = { ...PICKERS, "claude-code": new Set([...PICKERS["claude-code"], "claude-opus-5-5[1m]"]) }
+    expect(filterCandidates([opus55], agora, comPin, new Set())).toHaveLength(0)
+    // Proposto antes sem o sufixo também conta como já proposto.
+    expect(filterCandidates([opus55], agora, PICKERS, new Set(["claude-code:claude-opus-5-5"]))).toHaveLength(0)
+  })
+
+  it("família nova também entra pelo pin, não pelo alias", () => {
     const out = filterCandidates(
       [cm({ id: "claude-fable-5" })],
       NOW,
@@ -75,7 +89,7 @@ describe("filterCandidates", () => {
       new Set(),
     )
     expect(out).toHaveLength(1)
-    expect(out[0]).toMatchObject({ agent: "claude-code", value: "fable" })
+    expect(out[0]).toMatchObject({ agent: "claude-code", value: "claude-fable-5" })
   })
 
   it("anthropic sem alias reduzível usa o id completo", () => {
@@ -110,7 +124,7 @@ describe("filterCandidates", () => {
     expect(out).toHaveLength(0)
   })
 
-  it("dois releases da mesma família → um candidato só (dedupe por alias)", () => {
+  it("snapshot datado e id limpo do mesmo modelo → um candidato só", () => {
     const out = filterCandidates(
       [cm({ id: "claude-fable-5" }), cm({ id: "claude-fable-5-20260701" })],
       NOW,

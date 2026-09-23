@@ -175,12 +175,28 @@ fn price_for(model: &str) -> Option<Price> {
             cached: 0.05,
             output: 3.0,
         }
+    } else if m.contains("fable-5-1") {
+        // Fable 5.1: mesmo input/output do Fable 5, cache bem mais barato
+        // (models.dev, 22/09/2026). Só responde sem catálogo carregado.
+        Price {
+            input: 10.0,
+            cached: 0.25,
+            output: 50.0,
+        }
     } else if m.contains("fable") || m.contains("mythos") {
         // Claude Fable/Mythos 5 (cache 90% off, como o resto da família)
         Price {
             input: 10.0,
             cached: 1.0,
             output: 50.0,
+        }
+    } else if m.contains("opus-5-5") {
+        // Opus 5.5 (22/09/2026): mais barato que o Opus 5. Conferido contra o
+        // models.dev no mesmo dia; aqui só responde sem catálogo carregado.
+        Price {
+            input: 4.0,
+            cached: 0.2,
+            output: 20.0,
         }
     } else if m.contains("opus") {
         Price {
@@ -337,6 +353,7 @@ mod tests {
     fn claude_family_rows() {
         assert_eq!(out_rate("claude-fable-5"), 50.0);
         assert_eq!(out_rate("claude-opus-4-8"), 25.0);
+        assert_eq!(out_rate("claude-opus-5-5[1m]"), 20.0);
         assert_eq!(out_rate("claude-sonnet-4-6"), 15.0);
         assert_eq!(out_rate("claude-haiku-4-5"), 5.0);
     }

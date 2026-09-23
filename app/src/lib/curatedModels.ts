@@ -27,14 +27,24 @@ export interface AgentModelOption {
 // Fable 5 (sem beta header, preço padrão); o sufixo "[1m]" segue aceito e faz o
 // init reportar "…[1m]", que o contextWindowFor usa pro anel mostrar 1M — por
 // isso os pins abaixo carregam o sufixo.
+//
+// 22/09/2026: Opus 5.5 e Fable 5.1 lançados, e o `opus`/`fable`/padrão já
+// resolviam para eles no servidor enquanto este seletor ainda dizia "Opus 5, o
+// mais novo". Pins novos conferidos no claude 2.1.280 (`init.model` e `result`
+// ok com os dois ids). Por isso os aliases não citam mais versão: a versão
+// deles muda sozinha, e texto fixo aqui é o que envelhece. Preço e janela não
+// moram mais nas descrições dos pins novos como fonte: vêm do catálogo
+// (`catalog.rs`, models.dev), e o que está escrito é só leitura humana.
 export const CLAUDE_MODELS: AgentModelOption[] = [
   { value: "default", label: "Padrão", pill: "modelo", description: "Deixa o Claude Code escolher" },
-  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin exato · o Opus mais novo, 1M nativo ($5/$25)" },
+  { value: "claude-opus-5-5[1m]", label: "Opus 5.5", description: "Pin exato · o Opus mais novo, 1M nativo ($4/$20)" },
   { value: "claude-sonnet-5[1m]", label: "Sonnet 5", description: "Pin exato · 1M nativo, rápido e equilibrado" },
-  { value: "fable", label: "Fable", description: "Topo de linha (Fable 5, ~2x o preço do Opus)" },
+  { value: "claude-fable-5-1[1m]", label: "Fable 5.1", description: "Pin exato · topo de linha, 1M nativo ($10/$50)" },
+  { value: "claude-opus-5[1m]", label: "Opus 5", description: "Pin da versão anterior (1M nativo, $5/$25)" },
   { value: "claude-opus-4-8[1m]", label: "Opus 4.8", description: "Pin da geração anterior (1M nativo)" },
-  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão (hoje → Opus 5), pode divergir" },
-  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão, pode divergir" },
+  { value: "opus", label: "Opus (alias)", description: "O CLI decide a versão; muda sozinha a cada lançamento" },
+  { value: "fable", label: "Fable (alias)", description: "O CLI decide a versão do topo de linha; muda sozinha" },
+  { value: "sonnet", label: "Sonnet (alias)", description: "O CLI decide a versão; muda sozinha a cada lançamento" },
   { value: "haiku", label: "Haiku", description: "Mais rápido e barato (200k)" },
 ]
 /** Codex: como o OpenCode, 100% VIVO — além da sentinela, nenhum modelo mora no
