@@ -21,6 +21,21 @@ describe("fila do composer (ADR-240)", () => {
     expect(fraseDaFila("idle")).toBe("prontas para enviar")
   })
 
+  it("com UMA mensagem, a alça some sem sair do grid (o texto não cai na coluna de 16px)", () => {
+    const html = renderToStaticMarkup(
+      <QueuedChips
+        queued={[{ text: "ficou essa mensagem de “rovogar” e nao saiu, iso é normal?", attachments: [print] }]}
+        onRemove={() => {}}
+        onMover={() => {}}
+        turnState="running"
+      />,
+    )
+    const alca = html.match(/<button[^>]*aria-label="Arrastar para reordenar"[^>]*>/)?.[0] ?? ""
+    expect(alca).toContain("disabled")
+    expect(alca).toContain("disabled:invisible")
+    expect(alca).not.toContain("disabled:hidden")
+  })
+
   it("arrastar solta no item cujo meio o ponteiro passou", () => {
     const meios = [100, 140, 180]
     expect(indiceDeSoltura(90, meios)).toBe(0)

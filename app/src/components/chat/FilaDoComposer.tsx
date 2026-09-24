@@ -121,7 +121,11 @@ export function QueuedChips({
                 disabled={!onMover || queued.length < 2}
                 aria-label="Arrastar para reordenar"
                 title="Arrastar para reordenar"
-                className="flex h-[18px] cursor-grab touch-none items-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100 active:cursor-grabbing disabled:hidden"
+                // `invisible`, nunca `hidden`: a alça é a 1ª coluna do grid. Com
+                // um item só ela fica desabilitada, e `display:none` a tirava do
+                // fluxo; tudo andava uma coluna e o texto caía na de 16px, uma
+                // letra por linha (visto em 24/09/2026).
+                className="flex h-[18px] cursor-grab touch-none items-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/item:opacity-100 focus-visible:opacity-100 active:cursor-grabbing disabled:invisible"
               >
                 <GripVertical className="size-3.5" />
               </button>
