@@ -221,3 +221,21 @@ describe("describeToolGroup · contagem por TRABALHO (a entidade é a fonte úni
     expect(digest.label).toBe("Rodou 1 comando · leu 1 arquivo · buscou 1 vez")
   })
 })
+
+describe("o turno do agy depois do adaptador (ADR-253)", () => {
+  // O turno real de 24/09/2026 (3min25s), com as ferramentas já no contrato
+  // pelo `agy_ferramentas.rs`: antes o grupo inteiro dizia "Usou 32 ferramentas".
+  it("o grupo diz os verbos, não 'usou N ferramentas'", () => {
+    const tools: ToolActivityInput[] = [
+      { name: "Read", input: { file_path: "/p/supabase/functions/_shared/erp/providers/olist/olist-mapper.ts" }, result: { ok: true } },
+      { name: "Bash", input: { command: "grep -rn -i \"contribuinte\" docs/research/ 2>/dev/null" }, result: { ok: true } },
+      { name: "WebSearch", input: { query: "\"tiny\" erp api contato \"contribuinte\"" }, result: { ok: true } },
+      { name: "Bash", input: { command: "git grep -i \"olist\" || true" }, result: { ok: true } },
+      { name: "Read", input: { file_path: "/p/supabase/functions/_shared/erp/providers/olist/olist-provider.ts" }, result: { ok: true } },
+    ]
+    const { label } = describeToolGroup(tools)
+    expect(label).toContain("leu 2 arquivos")
+    expect(label).toContain("pesquisou")
+    expect(label).not.toMatch(/usou \d+ ferramentas/i)
+  })
+})

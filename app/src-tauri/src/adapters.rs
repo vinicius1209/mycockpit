@@ -3524,31 +3524,9 @@ pub fn agy_result_error(result: &serde_json::Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Parse da mensagem emitida pelo Antigravity / Agy ao despachar comando em background
-/// (payloads reais em bg-sleep e 22/09/2026:
-/// `Tool is running as a background task with task id: <task_id>\n...Task logs are available at: <log_path>`).
-fn parse_agy_background_task(text: &str) -> Option<(String, String)> {
-    let prefix = "Tool is running as a background task with task id: ";
-    let p_idx = text.find(prefix)?;
-    let after_prefix = &text[p_idx + prefix.len()..];
-    let end_id_idx = after_prefix.find('\n').unwrap_or(after_prefix.len());
-    let task_id = after_prefix[..end_id_idx].trim();
-    if task_id.is_empty() {
-        return None;
-    }
-    let log_marker = "Task logs are available at: ";
-    let log_idx = text.find(log_marker)?;
-    let after_log = &text[log_idx + log_marker.len()..];
-    let end_log_idx = after_log.find('\n').unwrap_or(after_log.len());
-    let mut log_path = after_log[..end_log_idx].trim();
-    if let Some(stripped) = log_path.strip_prefix("file://") {
-        log_path = stripped;
-    }
-    if log_path.is_empty() || !log_path.starts_with('/') {
-        return None;
-    }
-    Some((task_id.to_string(), log_path.to_string()))
-}
+#[path = "agy_ferramentas.rs"]
+mod agy_ferramentas;
+use agy_ferramentas::{no_contrato, parse_agy_background_task};
 
 /// Parse da mensagem de notificação de tarefa do Antigravity / Agy
 /// (payloads reais capturados em bg-sleep e 22/09/2026:
@@ -3763,15 +3741,10 @@ impl AgyAdapter {
                     .unwrap_or("tool")
                     .to_string();
                 if state == "ACTIVE" {
-                    out.push(AgentEvent::Tool {
-                        id,
-                        name,
-                        input: info
-                            .and_then(|i| i.get("parameters"))
-                            .cloned()
-                            .unwrap_or(serde_json::Value::Null),
-                        parent_tool_id: None,
-                    });
+                    // No vocabulário do contrato, não no do agy (ADR-253).
+                    let params = info.and_then(|i| i.get("parameters")).cloned().unwrap_or_default();
+                    let (name, input) = no_contrato(&name, params);
+                    out.push(AgentEvent::Tool { id, name, input, parent_tool_id: None });
                 } else {
                     let erro = info.and_then(|i| i.get("error")).filter(|e| !e.is_null());
                     let full = erro

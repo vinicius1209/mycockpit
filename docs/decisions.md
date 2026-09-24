@@ -9199,3 +9199,38 @@ considerou.
   `agent.rs` para `attachments.rs`, e disponibilidade e guarda de despacho
   saíram de `lib/agents.ts` para `lib/agentAvailability.ts` (baselines só
   desceram). O `@` digitado continua texto: é a pessoa escrevendo.
+
+### ADR-253 · As ferramentas do agy chegam ao fio no vocabulário do contrato ✅
+- **Contexto (24/09/2026):** "demorou 3min até ele mostrar alguma coisa além
+  de executar ferramentas". Medido: o agy 1.2.10 entrega cada passo ao vivo
+  (`stream-json`, ACTIVE → DONE) e a Frota carimba cada item na chegada; num
+  turno real de 3min25s chegaram 32 ferramentas, uma a cada 5 a 7 s, com
+  silêncio máximo de 13 s. O que falhava era a TRADUÇÃO: o adaptador repassava
+  nome e parâmetros do agy (`run_command {CommandLine}`, `view_file
+  {AbsolutePath}`, `call_mcp_tool {ServerName, ToolName, Arguments}`…), o fio só
+  entende o contrato (`Bash`, `Read`, `Edit`…), e tudo virava "Usar
+  run_command", com o grupo resumindo "Usou 32 ferramentas". Nas conversas do
+  agy na Frota: 649 comandos, 477 leituras, 136 edições e escritas e 183
+  chamadas de MCP desenhadas assim.
+- **Decisão:**
+  1. `agy_ferramentas.rs` (submódulo do adaptador) traduz no ACTIVE, como o
+     Codex já fazia: `run_command`→`Bash`, `view_file`→`Read`,
+     `replace_file_content`/`multi_replace_file_content`→`Edit`,
+     `write_to_file`→`Write`, `grep_search`→`Grep`, `find_by_name`→`Glob`,
+     `search_web`→`WebSearch`, `read_url_content`→`WebFetch`, `call_mcp_tool`→
+     `mcp__<servidor>__<tool>` com os argumentos lidos (JSON ou dicionário do
+     Python, como chegam de verdade; o que não se lê vai cru).
+  2. Só entra o que tem equivalente exato; o resto (`list_dir`, `manage_task`,
+     `schedule`…) segue com o nome do agy, e parâmetro faltando mantém o
+     original. Nenhuma comparação de motor na tela.
+  3. Edição do agy chega só com o caminho (o stream não traz o conteúdo): a
+     linha diz "Editou X" sem +/−, em vez de inventar números.
+  4. Para caber na catraca do `adapters.rs`, o parse da tarefa em background do
+     agy foi junto para o módulo novo.
+- **Fica para depois:** o raciocínio entre as ferramentas ("Pensando/Pensou",
+  mock `docs/mocks/raciocinio-ao-vivo.html`), que o stream não traz e o
+  arquivo da conversa do agy traz.
+- **Consequência:** o turno do agy passa a dizer, enquanto acontece, "Rodou 22
+  comandos · leu 6 arquivos · pesquisou 3 vezes", com o comando, o arquivo e a
+  busca em cada linha. Histórico gravado antes desta mudança segue com os nomes
+  antigos.

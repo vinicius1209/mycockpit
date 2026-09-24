@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>O agente trabalhando, ao vivo, e o que ele pensou</title>
+<style>
+  /* Tokens reais do tema escuro da Frota. Fontes só da escala: 11, 12, 13, 14
+     (20 no título do mock). O vivo no fio é movimento cinza, nunca tinta (§2.2). */
+  :root{
+    --background:#0a0b0d;--card:#141619;--secondary:#191c20;--popover:#191c20;
+    --foreground:#e7e8ea;--muted:#9aa0a7;--faint:#687078;
+    --border:rgba(255,255,255,.08);--divisor:rgba(255,255,255,.032);
+    --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
+    --trilho:rgba(255,255,255,.08);--pilula:rgba(255,255,255,.06);
+    --success:#5bd6a0;--error:#f2766b;
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:#050506;color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 80px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:40px 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-top:6px;max-width:1040px}
+  .sub b,.nota b{color:var(--foreground);font-weight:500}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:18px 0 10px}
+  .legenda b{color:var(--foreground);font-weight:500}
+  .nota{font-size:12px;line-height:1.6;color:var(--muted);max-width:760px;margin-top:12px}
+  .palco{display:grid;grid-template-columns:1fr 1fr;gap:24px;max-width:1240px}
+  svg.i{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+
+  /* ---- cartão da conversa ---- */
+  .fio{background:var(--background);border:1px solid var(--border);border-radius:12px;padding:20px 22px 22px;min-height:420px}
+  .voce{margin-left:auto;max-width:78%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:9px 13px;font-size:13px;line-height:1.55;margin-bottom:18px}
+  .autor{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;margin-bottom:8px}
+  .autor .marca{width:16px;height:16px;border-radius:4px;background:linear-gradient(135deg,#4f8df7,#a48af0)}
+  .autor .motor{font-weight:400;color:var(--faint)}
+  /* trilho E0: um slot de glifo, verbo + objeto */
+  .trilho{border-left:1px solid var(--trilho);margin-left:7px;padding-left:14px;display:flex;flex-direction:column;gap:2px}
+  .linha{display:flex;align-items:center;gap:8px;min-height:24px;font-size:13px;color:var(--muted);position:relative}
+  .linha .glifo{position:absolute;left:-22px;width:16px;height:16px;display:grid;place-items:center;background:var(--background);color:var(--faint)}
+  .linha b{color:var(--foreground);font-weight:500}
+  .pilula{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border-radius:5px;background:var(--pilula);font:12px var(--mono);color:var(--foreground)}
+  .pilula .t{font:600 11px var(--sans);color:#60a5fa}
+  .mais{color:var(--success);font:12px var(--mono)} .menos{color:var(--error);font:12px var(--mono)}
+  .tempo{font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+  .resposta{font-size:13px;line-height:1.65;margin-top:14px;color:rgba(231,232,234,.92)}
+  .silencio{height:52px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--faint);font-style:italic}
+  .silencio::before{content:"";width:14px;border-top:1px dashed rgba(255,255,255,.12)}
+
+  /* pensamento */
+  .pensou{cursor:pointer}
+  .pensou .resumo{color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:380px}
+  .pensou:hover .resumo{color:rgba(231,232,234,.85)}
+  .chev{color:var(--faint);transition:transform .15s}
+  .aberto .chev{transform:rotate(90deg)}
+  .corpo{margin:2px 0 8px 0;padding:8px 12px;border-left:1px solid var(--trilho);font-size:13px;line-height:1.6;color:var(--muted)}
+  .corpo p+p{margin-top:6px}
+  .idioma{font:11px var(--mono);color:var(--faint);margin-top:6px}
+
+  /* vivo: spinner cinza, nunca azul no fio */
+  .gira{width:12px;height:12px;border-radius:50%;border:1.5px solid rgba(154,160,167,.25);border-top-color:var(--muted);animation:g 0.9s linear infinite}
+  @keyframes g{to{transform:rotate(360deg)}}
+  .vivo{color:var(--foreground)}
+  .vivo .rotulo{background:linear-gradient(90deg,var(--muted) 0%,var(--foreground) 50%,var(--muted) 100%);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:brilho 2.2s linear infinite}
+  @keyframes brilho{from{background-position:100% 0}to{background-position:-100% 0}}
+
+  table{border-collapse:collapse;font-size:12px;margin-top:10px;max-width:1040px;width:100%}
+  th,td{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
+  th{color:var(--foreground);font-weight:500}
+  .ok{color:var(--success)} .ver{color:#e4a862}
+  .decisoes{margin-top:40px;max-width:1040px;font-size:13px;line-height:1.6;color:var(--muted)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin-bottom:6px}
+  .decisoes li{margin:5px 0 5px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+<h1>O agente trabalhando, ao vivo, e o que ele pensou</h1>
+<p class="sub">Medido em 24/09/2026 com o agy 1.2.10: a Frota já recebe cada ferramenta no momento em que roda. O que falta são duas coisas que o app do Antigravity mostra. <b>O silêncio</b>: entre uma ferramenta e outra o modelo pensa por 2 a 20 s, o canal não manda nada e o fio fica parado, parecendo travado. <b>O pensamento</b>: o agy grava um resumo do raciocínio em cada passo (campo <code>thinking</code> no arquivo da conversa, 176 resumos numa conversa sua rodada pela Frota em 19/09), mas não o manda pelo canal que a Frota lê.</p>
+
+<!-- ============================================================ -->
+<h2>1 · O mesmo turno, hoje e com a proposta</h2>
+<div class="palco">
+  <div>
+    <div class="legenda"><b>Hoje</b> · Antigravity, Gemini 3.6 Flash</div>
+    <div class="fio">
+      <div class="voce">Deixa a aba do diff persistente, igual à de arquivo.</div>
+      <div class="autor"><span class="marca"></span>Antigravity <span class="motor">· gemini-3.6-flash-high</span></div>
+      <div class="trilho">
+        <div class="silencio">6 s sem nada na tela</div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg></span>Leu <span class="pilula"><span class="t">TSX</span>MainTabs.tsx</span></div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg></span>Leu <span class="pilula"><span class="t">TS</span>abasNoPrincipal.ts</span></div>
+        <div class="silencio">14 s sem nada na tela</div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></span>Editou <span class="pilula"><span class="t">TSX</span>MainTabs.tsx</span> <span class="mais">+12</span> <span class="menos">−4</span></div>
+        <div class="silencio">9 s sem nada na tela</div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="legenda"><b>Proposta</b> · o mesmo turno, no mesmo instante</div>
+    <div class="fio">
+      <div class="voce">Deixa a aba do diff persistente, igual à de arquivo.</div>
+      <div class="autor"><span class="marca"></span>Antigravity <span class="motor">· gemini-3.6-flash-high</span></div>
+      <div class="trilho">
+        <div class="linha pensou"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V15h7v-1.1A6 6 0 0 0 12 3z"/></svg></span>Pensou <span class="tempo">6 s</span> <span class="resumo">Locating where the diff tab is rendered and how file tabs persist…</span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg></span>Leu <span class="pilula"><span class="t">TSX</span>MainTabs.tsx</span></div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg></span>Leu <span class="pilula"><span class="t">TS</span>abasNoPrincipal.ts</span></div>
+        <div class="linha pensou aberto"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V15h7v-1.1A6 6 0 0 0 12 3z"/></svg></span>Pensou <span class="tempo">14 s</span> <span class="resumo">The diff tab is transient because it is treated as an index…</span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div>
+        <div class="corpo">
+          <p>The diff tab is transient because it is treated as an index, while file tabs are keyed by path in the conversation store. Making each file diff its own key keeps both open side by side.</p>
+          <p>I will prefix the diff key so it cannot collide with a real path, then render only that file in the tab.</p>
+          <div class="idioma">o modelo pensa em inglês · resumo do próprio agy</div>
+        </div>
+        <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M4 20h4L20 8l-4-4L4 16z"/></svg></span>Editou <span class="pilula"><span class="t">TSX</span>MainTabs.tsx</span> <span class="mais">+12</span> <span class="menos">−4</span></div>
+        <div class="linha vivo"><span class="glifo"><span class="gira"></span></span><span class="rotulo">Pensando</span> <span class="tempo">9 s</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>"Pensando · 9 s" preenche o silêncio</b>: spinner cinza e um relógio que conta desde o último evento. Sai sozinho quando a próxima coisa chega. Vale para qualquer motor, porque o que ele diz é um fato ("o turno segue e nada chegou há 9 s"). <b>"Pensou · 14 s"</b> fica no lugar exato em que o raciocínio aconteceu, antes da ação que ele gerou, com a primeira frase na linha e o resto recolhido. Clicar abre o texto. O passado recolhe, como as outras linhas do fio.</p>
+
+<!-- ============================================================ -->
+<h2>2 · Os estados de uma linha de pensamento</h2>
+<div class="palco">
+  <div class="fio" style="min-height:0">
+    <div class="legenda" style="margin-top:0">Pensando, ao vivo</div>
+    <div class="trilho"><div class="linha vivo"><span class="glifo"><span class="gira"></span></span><span class="rotulo">Pensando</span> <span class="tempo">12 s</span></div></div>
+    <p class="nota">Aparece só depois de 2 s de silêncio: um intervalo curto entre duas ferramentas não pisca a linha.</p>
+    <div class="legenda">Pensou, recolhido (o padrão)</div>
+    <div class="trilho"><div class="linha pensou"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V15h7v-1.1A6 6 0 0 0 12 3z"/></svg></span>Pensou <span class="tempo">21 s</span> <span class="resumo">Checking where the live progress banner should sit…</span><svg class="i chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></div></div>
+  </div>
+  <div class="fio" style="min-height:0">
+    <div class="legenda" style="margin-top:0">Motor que não entrega o raciocínio</div>
+    <div class="trilho">
+      <div class="linha"><span class="glifo"><svg class="i" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V15h7v-1.1A6 6 0 0 0 12 3z"/></svg></span>Pensou <span class="tempo">8 s</span></div>
+    </div>
+    <p class="nota">Só o tempo, sem texto e sem seta: não prometemos o que o motor não deu. Se o agy mudar o arquivo da conversa numa atualização, a linha cai para este estado sozinha, sem quebrar o resto.</p>
+    <div class="legenda">Pensamento curto (menos de 2 s)</div>
+    <p class="nota" style="margin-top:0">Não vira linha: entre duas leituras seguidas o modelo decide em 1 s, e uma linha "Pensou 1 s" a cada ferramenta só polui.</p>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<h2>3 · Por motor</h2>
+<table>
+  <tr><th>motor</th><th>"Pensando · N s" ao vivo</th><th>texto do "Pensou"</th><th>de onde vem</th></tr>
+  <tr><td>Antigravity (agy)</td><td class="ok">sim</td><td class="ok">sim, quando o passo termina</td><td>campo <code>thinking</code> no arquivo da conversa do agy (o mesmo arquivo que a Frota já lê para recuperar a resposta quando o canal para, ADR-203)</td></tr>
+  <tr><td>Claude Code</td><td class="ok">sim</td><td class="ver">a medir</td><td>o stream do Claude traz blocos de raciocínio em alguns modelos; entra quando medido, com capability no registry</td></tr>
+  <tr><td>Codex</td><td class="ok">sim</td><td class="ver">a medir</td><td>o <code>exec --json</code> tem eventos de raciocínio; idem</td></tr>
+</table>
+<p class="nota">A decisão de mostrar o texto vem do registry de capabilities, nunca do nome do motor. Motor sem a capability mostra "Pensou · N s", sem texto.</p>
+
+<div class="decisoes">
+  <h3>O que muda</h3>
+  <ul>
+    <li><b>"Pensando · N s"</b> no fim do fio enquanto o turno roda e nada chega há mais de 2 s. Spinner cinza (o vivo no fio é movimento, §2.2), relógio honesto a partir do último evento, some quando o próximo evento chega.</li>
+    <li><b>"Pensou · N s"</b> como linha do trilho, antes da ação que o raciocínio gerou. Primeira frase na linha, texto inteiro ao clicar. Nasce recolhida.</li>
+    <li><b>O texto vem do próprio motor</b>, sem tradução nem reescrita: o agy pensa em inglês, e a linha diz isso. Aparece quando o passo termina, não letra a letra (é o que o agy grava).</li>
+    <li><b>Capability nova no registry</b> ("raciocínio legível"), com teste-gêmeo; agy primeiro, Claude e Codex quando medidos.</li>
+    <li><b>Fail-open</b>: se o arquivo do agy mudar de formato, as linhas ficam só com o tempo; nada quebra e nada é inventado.</li>
+  </ul>
+</div>
+</body>
+</html>
