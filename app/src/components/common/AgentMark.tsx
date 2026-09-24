@@ -20,14 +20,24 @@ import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
  * Distingue por SILHUETA, nunca por cor: pintar cada motor gastaria o
  * orçamento de tinta do §2 e traria de volta a colisão que o ADR-043 resolveu.
  */
-export function AgentMark({ agent, title }: { agent: string; title?: string }) {
+export function AgentMark({
+  agent,
+  title,
+  tamanho = 14,
+}: {
+  agent: string
+  title?: string
+  /** 12px na lista de conversas da barra lateral (ADR-245): a marca identifica
+   *  sem disputar com o título. O slot segue de 16px, e o alinhamento não muda. */
+  tamanho?: 12 | 14
+}) {
   return (
     <span
       className="relative grid size-4 shrink-0 place-items-center"
       title={title ?? agentLogoLabel(agent)}
       aria-label={title ?? agentLogoLabel(agent)}
     >
-      <AgentLogo agent={agent} className="size-3.5 text-muted-foreground" />
+      <AgentLogo agent={agent} className={tamanho === 12 ? "size-3 text-muted-foreground" : "size-3.5 text-muted-foreground"} />
     </span>
   )
 }

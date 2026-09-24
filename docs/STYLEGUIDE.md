@@ -913,6 +913,10 @@ Regras decidíveis:
   20px, abaixo do `chip`, de propósito: é o nome de um arquivo dentro de uma
   linha `compacto`, como uma palavra marcada, não um botão. Não "corrija" para
   24px, e não use a medida dela para nada que se aperta.
+- **Ladrilho não é degrau** (ADR-245). A navegação global da barra lateral é
+  um ícone em cima do nome, 44px, e mora só em `components/ui/ladrilho`. A
+  escada mede controle EM LINHA; quem precisar empilhar ícone e nome usa o
+  ladrilho, não inventa outro.
 
 **Por que quatro, e o que saiu (29/08/2026).** A varredura achou **43
 combinações distintas** de altura/padding/fonte em 75 arquivos, e a surpresa foi

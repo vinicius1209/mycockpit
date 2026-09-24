@@ -18,7 +18,7 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from "@/components/ui/context-menu"
-import { ConversationList } from "@/components/layout/ConversationList"
+import { abrirNovaConversa, ConversationList } from "@/components/layout/ConversationList"
 import {
   PanelEntry,
   FleetEntry,
@@ -92,19 +92,16 @@ function confirmDeleteProject(project: Project) {
 }
 
 
+/** A navegação global numa faixa de quatro ladrilhos (ADR-245): sem o rótulo
+ *  "Geral" e sem quatro linhas, o espaço volta para as conversas. */
 function GlobalEntries() {
   return (
-    <div className="px-2 pt-2">
-      <div className="px-1 pt-1 pb-1.5">
-        <span className="label-mono">Geral</span>
-      </div>
-      <div className="space-y-0.5">
-        {GLOBAL_NAVIGATION.map((entry) => {
-          const Entry = { painel: PanelEntry, fleet: FleetEntry, scheduled: ScheduledEntry, flightPlans: FlightPlansEntry }[entry.id]
-          return <Entry key={entry.id} />
-        })}
-      </div>
-    </div>
+    <nav aria-label="Vistas globais" className="grid grid-cols-4 gap-1 border-b border-border/40 px-2 pt-1 pb-2">
+      {GLOBAL_NAVIGATION.map((entry) => {
+        const Entry = { painel: PanelEntry, fleet: FleetEntry, scheduled: ScheduledEntry, flightPlans: FlightPlansEntry }[entry.id]
+        return <Entry key={entry.id} />
+      })}
+    </nav>
   )
 }
 
@@ -317,9 +314,11 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
       {/* F7 — rail global (coleções cross-projeto) acima de Projetos. */}
       <GlobalEntries />
       <>
-          <header className="flex h-11 shrink-0 items-center justify-between px-3">
+          <header className="flex h-10 shrink-0 items-center justify-between px-3">
             <div className="flex items-center gap-2">
-              <span className="label-mono">Projetos</span>
+              {/* Rótulo em sans com peso, não mono em caixa alta (ADR-245):
+                  rótulo técnico em todo lugar faz nada se destacar. */}
+              <span className="text-[11px] font-medium text-faint">Projetos</span>
               {/* S3.3 — contador é metadado, não conteúdo: um degrau abaixo. */}
               <span className="text-[11px] text-faint tabular-nums">
                 {projects.length}
@@ -378,6 +377,7 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                       }}
                       onToggle={() => toggleExpand(p.id)}
                       onDelete={() => confirmDeleteProject(p)}
+                      onNovaConversa={() => abrirNovaConversa(p.id)}
                     />
                     {expanded.has(p.id) && <ConversationList projectId={p.id} />}
                   </div>

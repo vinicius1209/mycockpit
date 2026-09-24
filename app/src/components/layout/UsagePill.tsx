@@ -62,7 +62,9 @@ function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {
       aria-hidden
       className={cn(
         "relative h-1.5 shrink-0 overflow-hidden rounded-full bg-secondary/80",
-        wide ? "w-16" : "w-8",
+        // Na faixa, 48px (ADR-245): a 32px a barra era um traço e o número
+        // carregava tudo sozinho.
+        wide ? "w-16" : "w-12",
       )}
     >
       <span
@@ -318,8 +320,9 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
               <UsageBar pct={sel.window.usedPercent} />
               <span
                 className={cn(
-                  "min-w-[34px] text-right font-mono tabular-nums",
-                  TONE_TEXT[tone],
+                  "min-w-[34px] text-right font-mono font-medium tabular-nums",
+                  // Saudável em texto pleno, não cinza: o número é a leitura.
+                  tone === "ok" ? "text-foreground" : TONE_TEXT[tone],
                 )}
               >
                 {fmtPct(sel.window.usedPercent)}

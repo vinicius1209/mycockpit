@@ -1,6 +1,5 @@
 import { retomadaAgendada } from "@/lib/autoResume"
 import { useMemo, useRef, useState } from "react"
-import { Plus } from "lucide-react"
 import { toast } from "sonner"
 import { confirm } from "@/lib/confirm"
 import { createWorktree, removeWorktree, worktreeRemovalNote } from "@/lib/git"
@@ -121,13 +120,24 @@ function useDraftPresence(): Map<string, boolean> {
 
 /** Lista de conversas (tarefas) de UM projeto (árvore independente: pode haver
  *  várias montadas ao mesmo tempo, cada uma lendo a lista do seu projectId). */
+/** Nova conversa no projeto: ativa o projeto, cria a conversa e ABRE o
+ *  Trabalho (criar e continuar olhando o Painel deixava o clique mudo). Era a
+ *  linha "Nova tarefa" no fim de cada projeto; desde a ADR-245 é o "+" que
+ *  aparece no hover da linha do projeto. */
+export function abrirNovaConversa(projectId: string): void {
+  const app = useApp.getState()
+  if (projectId !== app.activeProjectId) app.setActiveProject(projectId)
+  app.setScheduledOpen(false)
+  app.setViewMode("linear")
+  void useChat.getState().newConversation(projectId)
+}
+
 export function ConversationList({ projectId }: { projectId: string }) {
   // default FORA do selector (?? numa constante estável): selector devolve o
   // array do store (ref estável) ou undefined (estável) — nunca um `[]` novo.
   const conversations =
     useChat((s) => s.conversationsByProject[projectId]) ?? EMPTY_CONVERSATIONS
   const activeId = useChat((s) => s.activeId)
-  const newConversation = useChat((s) => s.newConversation)
   const switchConversation = useChat((s) => s.switchConversation)
   const removeConversation = useChat((s) => s.removeConversation)
   const renameConversation = useChat((s) => s.renameConversation)
@@ -307,25 +317,6 @@ export function ConversationList({ projectId }: { projectId: string }) {
           </div>
         )
       })}
-      <button
-        onClick={() => {
-          // Nova tarefa neste projeto → ativa o projeto, cria a conversa e ABRE
-          // o Trabalho (criar e continuar olhando o Painel deixava o clique mudo).
-          if (projectId !== useApp.getState().activeProjectId)
-            setActiveProject(projectId)
-          useApp.getState().setScheduledOpen(false)
-          useApp.getState().setViewMode("linear")
-          void newConversation(projectId)
-        }}
-        className="flex items-center gap-3 rounded-md p-2 text-left text-[12px] text-muted-foreground transition-colors hover:bg-sel-hover hover:text-foreground"
-      >
-        {/* Plus ocupa a mesma coluna de ícone (20px) do projeto → "nova tarefa"
-            alinha com as conversas, mantendo a leitura da coluna. */}
-        <span className="grid size-5 shrink-0 place-items-center">
-          <Plus className="size-3.5" />
-        </span>
-        Nova tarefa
-      </button>
     </div>
   )
 }

@@ -15,8 +15,8 @@ import {
   ArrowUp,
   ChevronRight,
   Copy,
-  Folder,
   Pencil,
+  Plus,
 } from "lucide-react"
 import {
   ContextMenu,
@@ -33,47 +33,43 @@ import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 
-/** Ícone do projeto: pasta TINGIDA da cor-rótulo (cinza se sem cor), com um
- *  pulso no canto quando o projeto tem um turno rodando. Marcador do container. */
-function ProjectFolder({
-  color,
-  status,
-  awaiting = false,
-}: {
-  color?: string | null
-  status: AgentStatus
-  /** Alguma conversa do projeto está esperando você: permissão OU pergunta
-   *  pendente (os dois param o turno). */
-  awaiting?: boolean
-}) {
-  // ADR-071: só o âmbar precisa — o ponto azul de "rodando" é estático.
-  const epoca = useEpocaDaJanela()
+/** A marca do projeto (ADR-245): a SUA cor-rótulo num quadradinho, cinza sem
+ *  cor. A pasta saiu (o nome já diz que é projeto), e o ponto de estado que
+ *  morava no canto dela foi para a direita, com palavra (`EstadoDoProjeto`):
+ *  identidade e estado deixaram de disputar o mesmo pixel, a mesma lição da
+ *  marca do motor (ADR-043). Ocupa a coluna de 20px de sempre, então o título
+ *  das conversas continua alinhado. */
+function MarcaDoProjeto({ color }: { color?: string | null }) {
   return (
-    <span className="relative grid size-5 shrink-0 place-items-center">
-      <Folder
-        className={cn("size-[18px]", !color && "text-muted-foreground/70")}
-        style={color ? { color } : undefined}
+    <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
+      <span
+        className={cn("size-2 rounded-[3px]", !color && "bg-muted-foreground/50")}
+        style={color ? { background: color } : undefined}
       />
-      {/* Espera VENCE rodando no mesmo canto: um projeto que roda sozinho não
-          precisa de você; um que parou pra te perguntar algo, sim. S3.2 —
-          pulso SÓ no "esperando você" (o único evento que interrompe o
-          humano); rodando é presença calma → dot estático. */}
-      {awaiting ? (
-        <span
-          key={epoca}
-          title="Este projeto parou esperando você"
-          className="animate-cockpit-pulse absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-warning ring-2 ring-rail"
-        />
-      ) : (
-        status === "running" && (
-          <span
-            title="Turno rodando neste projeto"
-            className="absolute -top-0.5 -right-0.5 size-2 rounded-full bg-st-running ring-2 ring-rail"
-          />
-        )
-      )}
     </span>
   )
+}
+
+/** O estado do projeto em PALAVRA, na coluna direita. Espera vence rodando: um
+ *  projeto que roda sozinho não precisa de você; um que parou para perguntar,
+ *  sim. Pulso SÓ no "pede você" (S3.2, ADR-071): rodando é presença calma. */
+function EstadoDoProjeto({ status, awaiting }: { status: AgentStatus; awaiting: boolean }) {
+  const epoca = useEpocaDaJanela()
+  if (awaiting)
+    return (
+      <span title="Este projeto parou esperando você" className="flex shrink-0 items-center gap-1.5 text-[11px] text-st-warning">
+        <span key={epoca} className="animate-cockpit-pulse size-1.5 rounded-full bg-st-warning" />
+        pede você
+      </span>
+    )
+  if (status === "running")
+    return (
+      <span title="Turno rodando neste projeto" className="flex shrink-0 items-center gap-1.5 text-[11px] text-st-running">
+        <span className="size-1.5 rounded-full bg-st-running" />
+        rodando
+      </span>
+    )
+  return null
 }
 
 // S1.2 — tipo do payload de drag de PROJETO (HTML5 dnd; não há lib de dnd no
@@ -92,6 +88,7 @@ export function ProjectRow({
   onSelect,
   onToggle,
   onDelete,
+  onNovaConversa,
 }: {
   project: Project
   active: boolean
@@ -110,6 +107,8 @@ export function ProjectRow({
   onSelect: () => void
   onToggle: () => void
   onDelete: () => void
+  /** O "+" do hover: nova conversa neste projeto (era a linha "Nova tarefa"). */
+  onNovaConversa: () => void
 }) {
   const renameProject = useApp((s) => s.renameProject)
   const setProjectColor = useApp((s) => s.setProjectColor)
@@ -144,8 +143,10 @@ export function ProjectRow({
           }}
           className={cn(
             "group relative flex w-full items-center rounded-md transition-colors",
-            // SELEÇÃO NÃO É COR (§2, ADR-043): preenchimento neutro + peso.
-            active ? "bg-sel" : "hover:bg-sel-hover",
+            // O projeto ativo é PESO, sem preenchimento (ADR-245): o fundo de
+            // seleção fica só para a conversa em que você está. Antes os dois
+            // tinham fundo e apareciam dois blocos iguais empilhados.
+            "hover:bg-sel-hover",
             // Destino do arrasto: traço na aresta onde cai, não preenchimento
             // da linha (ADR-216). O preenchimento dizia QUAL alvo e escondia
             // de que LADO, que é a metade que decide o resultado.
@@ -154,7 +155,7 @@ export function ProjectRow({
         >
           {editing ? (
             <div className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-2 pl-3">
-              <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
+              <MarcaDoProjeto color={project.color} />
               <input
                 autoFocus
                 value={val}
@@ -177,18 +178,22 @@ export function ProjectRow({
               // pl-3 (12px) + pasta (20px) + gap-2.5 (10px) = 42px, que é
               // exatamente onde o título da conversa começa (pl-[18px] + marca
               // 16px + gap-2). O recuo de 12px é o que abre o gutter do pip.
-              className="flex min-w-0 flex-1 items-center gap-2.5 py-2.5 pr-1 pl-3 text-left"
+              className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-3 text-left"
             >
               {/* Pasta TINGIDA da cor do projeto (Codex-like): é o marcador do
                   container. Path saiu da linha → vira tooltip (menos ruído). */}
-              <ProjectFolder color={project.color} status={status} awaiting={awaiting} />
+              <MarcaDoProjeto color={project.color} />
               <span
                 className={cn(
-                  "min-w-0 flex-1 truncate text-[13px] font-medium",
+                  "min-w-0 flex-1 truncate text-[13px]",
                   // Nome esmaecido + selo: o projeto continua clicável (você
                   // pode querer conferir as conversas dele), mas a linha para
                   // de afirmar que está tudo bem.
-                  problemaNaPasta ? "text-muted-foreground" : "text-foreground",
+                  problemaNaPasta
+                    ? "text-muted-foreground"
+                    : active
+                      ? "font-semibold text-foreground"
+                      : "font-medium text-foreground/80",
                 )}
                 title={problemaNaPasta ? `${problemaNaPasta}\n${project.path}` : project.path}
               >
@@ -202,6 +207,26 @@ export function ProjectRow({
                   pasta sumiu
                 </span>
               )}
+            </button>
+          )}
+          {/* Estado some no hover para dar lugar ao "+": as duas coisas moram
+              na mesma coluna e nunca aparecem juntas. */}
+          {!editing && (
+            <span className="mr-0.5 group-hover:hidden">
+              <EstadoDoProjeto status={status} awaiting={awaiting} />
+            </span>
+          )}
+          {!editing && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                onNovaConversa()
+              }}
+              title="Nova conversa neste projeto"
+              aria-label={`Nova conversa em ${project.name}`}
+              className="hidden shrink-0 rounded p-1.5 text-muted-foreground transition-colors group-hover:block hover:bg-sel hover:text-foreground focus-visible:block"
+            >
+              <Plus className="size-3.5" />
             </button>
           )}
           {/* S1.4 — arquivamento saiu da linha (mora SÓ no context menu): a

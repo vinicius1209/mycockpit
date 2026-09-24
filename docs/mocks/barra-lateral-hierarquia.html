@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Barra lateral · hierarquia (hoje × proposta)</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--muted:#9aa0a7;--faint:#687078;
+--border:rgba(255,255,255,.08);--sel:rgba(255,255,255,.065);--selh:rgba(255,255,255,.032);
+--running:#5bb8e8;--warn:#d99138;--brass:#e4a862;--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 22px;max-width:960px;line-height:1.5}
+.lado{display:flex;gap:32px;align-items:flex-start}
+.col h2{font-size:12px;font-weight:500;color:var(--muted);margin-bottom:8px}
+.sb{width:300px;height:900px;background:var(--rail);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;position:relative}
+.tb{height:48px;display:flex;align-items:center;gap:10px;padding:0 14px;flex:none}
+.tb i{width:12px;height:12px;border-radius:50%;display:block}
+.tb .ws{margin-left:14px;font-size:13px;font-weight:500}
+.corpo{flex:1;overflow:hidden;padding:0 8px}
+svg{flex:none}
+.notas{margin-top:22px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:1100px}
+.nota{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--rail)}
+.nota h3{font-size:13px;font-weight:500;margin-bottom:6px}.nota p{font-size:12px;line-height:1.55;color:var(--muted)}
+
+/* ---------- HOJE ---------- */
+.h-sec{font:11px var(--mono);letter-spacing:.08em;color:var(--muted);padding:12px 8px 8px;display:flex;align-items:center}
+.h-sec .n{margin-left:6px}
+.h-sec .plus{margin-left:auto;color:var(--muted)}
+.h-nav{height:34px;display:flex;align-items:center;gap:12px;padding:0 10px;font-size:13px;color:var(--fg);border-radius:8px}
+.h-nav .c{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+.h-proj{height:40px;display:flex;align-items:center;gap:10px;padding:0 10px;font-size:13px;font-weight:500;border-radius:8px;margin-top:4px}
+.h-proj.aberto{background:var(--sel)}
+.h-proj .chev{margin-left:auto;color:var(--muted)}
+.pasta{position:relative;display:grid;place-items:center}
+.pasta .dot{position:absolute;top:-2px;right:-3px;width:8px;height:8px;border-radius:50%;background:var(--running);box-shadow:0 0 0 2px var(--rail)}
+.h-conv{height:34px;display:flex;align-items:center;gap:10px;padding:0 10px 0 16px;font-size:12.5px;color:rgba(231,232,234,.85);border-radius:8px}
+.h-conv .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h-conv .w{font:11px var(--mono);color:var(--muted)}
+.h-conv.sel{background:var(--sel)}
+.h-conv .rasc{font-size:11px;color:var(--muted)}
+.h-nova{height:34px;display:flex;align-items:center;gap:12px;padding:0 10px 0 16px;font-size:12.5px;color:var(--muted)}
+.h-arq{font-size:11px;color:var(--muted);padding:12px 12px}
+.h-user{height:52px;display:flex;align-items:center;gap:10px;padding:0 20px;font-size:13px}
+.h-status{height:28px;display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid var(--border);font:11px var(--mono);color:var(--muted)}
+.bar{width:28px;height:4px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}.bar i{display:block;height:100%;width:54%;background:var(--muted)}
+.av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#6b5a4c,#2c2622);flex:none}
+.spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--running);border-top-color:transparent;flex:none}
+
+/* ---------- PROPOSTA ---------- */
+.p-nav{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px 4px 10px;border-bottom:1px solid var(--border);margin:0 -8px 4px;padding-left:12px;padding-right:12px}
+.p-nav a{position:relative;height:44px;border-radius:8px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;color:var(--muted);font-size:11px;text-decoration:none}
+.p-nav a:hover{background:var(--selh);color:var(--fg)}
+.p-nav .b{position:absolute;top:4px;right:14px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--sel);color:var(--fg);font-size:11px;display:grid;place-items:center;font-variant-numeric:tabular-nums}
+.p-sec{display:flex;align-items:center;font-size:11px;font-weight:500;color:var(--faint);padding:12px 10px 6px}
+.p-sec .plus{margin-left:auto;color:var(--muted);opacity:.0}
+.p-sec:hover .plus{opacity:1}
+.p-proj{height:34px;display:flex;align-items:center;gap:10px;padding:0 8px 0 10px;border-radius:8px;font-size:13px;color:rgba(231,232,234,.8)}
+.p-proj:hover{background:var(--selh)}
+.p-proj.aberto{color:var(--fg);font-weight:600}
+.pip{width:8px;height:8px;border-radius:2.5px;flex:none}
+.p-proj .estado{margin-left:auto;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--running);font-variant-numeric:tabular-nums}
+.p-proj .estado.pede{color:var(--warn)}
+.p-proj .acoes{display:none;margin-left:auto;gap:2px}
+.p-proj.hov{background:var(--selh)}
+.p-proj.hov .acoes{display:flex}
+.p-proj.hov .estado{display:none}
+.ib{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--muted)}
+.ib:hover{background:var(--sel);color:var(--fg)}
+.p-convs{margin:2px 0 6px 13px;padding-left:10px;border-left:1px solid rgba(255,255,255,.035)}
+.p-conv{height:32px;display:flex;align-items:center;gap:9px;padding:0 8px;border-radius:7px;font-size:13px;color:rgba(231,232,234,.82)}
+.p-conv:hover{background:var(--selh)}
+.p-conv.sel{background:var(--sel);color:var(--fg)}
+.p-conv .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.p-conv .slot{width:44px;text-align:right;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;flex:none}
+.p-conv .slot.run{color:var(--running)}
+.p-conv .rasc{font-size:11px;color:var(--muted);padding:1px 6px;border-radius:5px;background:var(--sel)}
+.eng{width:14px;height:14px;display:grid;place-items:center;flex:none}
+.p-arq{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--faint);padding:10px 10px}
+.p-foot{border-top:1px solid var(--border);padding:10px 14px;display:flex;align-items:center;gap:10px}
+.p-foot .quem{font-size:13px;font-weight:500}
+.p-foot .uso{margin-left:auto;text-align:right}
+.p-foot .uso b{display:block;font-size:12px;font-weight:500;font-variant-numeric:tabular-nums}
+.p-foot .uso span{font-size:11px;color:var(--faint)}
+.medidor{display:flex;align-items:center;gap:6px;justify-content:flex-end}
+.medidor .bar{width:44px}
+</style>
+</head>
+<body>
+<h1>Barra lateral: hierarquia</h1>
+<p class="sub">Seus projetos e conversas reais, dos prints de 24/09. "Hoje" reproduz a barra como está. "Proposta" mantém tudo o que existe (cor-rótulo do projeto, motor da conversa, rascunho, estado) e muda onde cada coisa mora. Os ícones de motor são aproximados.</p>
+
+<div class="lado">
+<!-- ================= HOJE ================= -->
+<div class="col"><h2>HOJE</h2>
+<div class="sb">
+  <div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="ws">frota ⌄</span></div>
+  <div class="corpo">
+    <div class="h-sec">GERAL</div>
+    <div class="h-nav">◔ Painel</div>
+    <div class="h-nav">🚀&#xFE0E; Frota<span class="c">1</span></div>
+    <div class="h-nav">◷ Agendamentos</div>
+    <div class="h-nav">☷ Planos de voo<span class="c">3</span></div>
+    <div class="h-sec">PROJETOS<span class="n">5</span><span class="plus">＋</span></div>
+    <div class="h-proj"><span class="pasta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3fcf8e" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>Landing Prime<span class="chev">⌄</span></div>
+    <div class="h-conv"><span style="color:#d97757">▣</span><span class="t">O time comercial da Prime utiliz…</span><span class="w">12m</span></div>
+    <div class="h-nova">＋ Nova tarefa</div>
+    <div class="h-proj aberto"><span class="pasta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0a7" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg><span class="dot"></span></span>frota<span class="chev">⌄</span></div>
+    <div class="h-conv"><span>ᐱ</span><span class="t">Maestri</span><span class="w">16/09</span></div>
+    <div class="h-conv"><span>ᐱ</span><span class="t">veja nas configurações que o Fr…</span><span class="w">1d</span></div>
+    <div class="h-conv"><span style="color:#d97757">▣</span><span class="t">faça uma revisada nos ultimos a…</span><span class="spin"></span></div>
+    <div class="h-conv sel"><span style="color:#d97757">▣</span><span class="t">https://x.com/wingl…</span><span class="rasc">Rascunho</span><span class="w">3m</span></div>
+    <div class="h-nova">＋ Nova tarefa</div>
+    <div class="h-proj"><span class="pasta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3fcf8e" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>sicredi<span class="chev">›</span></div>
+    <div class="h-proj"><span class="pasta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9aa0a7" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>projetos<span class="chev">›</span></div>
+    <div class="h-proj"><span class="pasta"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5b9cf0" stroke-width="2"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg></span>Maclan<span class="chev">›</span></div>
+    <div class="h-arq">› Arquivados (6)</div>
+  </div>
+  <div class="h-user"><span class="av"></span>Viní<span style="margin-left:auto;color:var(--muted)">⌃⌄</span></div>
+  <div class="h-status">◔ Claude <span class="bar"><i></i></span> 54%<span style="margin-left:8px">sessão ~US$ 32,27</span></div>
+</div></div>
+
+<!-- ================= PROPOSTA ================= -->
+<div class="col"><h2>PROPOSTA</h2>
+<div class="sb">
+  <div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="ws">frota ⌄</span></div>
+  <div class="corpo">
+    <div class="p-nav">
+      <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m12 14 4-4"/><path d="M3.34 19a10 10 0 1 1 17.32 0"/></svg>Painel</a>
+      <a><span class="b">1</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></svg>Frota</a>
+      <a><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Agenda</a>
+      <a><span class="b">3</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/></svg>Planos</a>
+    </div>
+
+    <div class="p-sec">Projetos<span class="plus">＋</span></div>
+
+    <div class="p-proj"><span class="pip" style="background:#3fcf8e"></span>Landing Prime<span class="estado" style="color:var(--faint)">1</span></div>
+
+    <div class="p-proj aberto hov"><span class="pip" style="background:#9aa0a7"></span>frota
+      <span class="estado"><span class="spin"></span>1 rodando</span>
+      <span class="acoes"><span class="ib" title="Nova conversa">＋</span><span class="ib" title="Mais">⋯</span></span></div>
+    <div class="p-convs">
+      <div class="p-conv"><span class="eng" style="color:#c0c4ca">ᐱ</span><span class="t">Maestri</span><span class="slot">16/09</span></div>
+      <div class="p-conv"><span class="eng" style="color:#c0c4ca">ᐱ</span><span class="t">veja nas configurações que o Frota…</span><span class="slot">1d</span></div>
+      <div class="p-conv"><span class="eng" style="color:#d97757">▣</span><span class="t">faça uma revisada nos últimos commits</span><span class="slot run"><span class="spin" style="display:inline-block;vertical-align:-1px"></span></span></div>
+      <div class="p-conv sel"><span class="eng" style="color:#d97757">▣</span><span class="t">x.com/winglee · frames do vídeo</span><span class="rasc">Rascunho</span><span class="slot">3m</span></div>
+    </div>
+
+    <div class="p-proj"><span class="pip" style="background:#3fcf8e"></span>sicredi</div>
+    <div class="p-proj"><span class="pip" style="background:#9aa0a7"></span>projetos</div>
+    <div class="p-proj"><span class="pip" style="background:#5b9cf0"></span>Maclan<span class="estado pede">● pede você</span></div>
+    <div class="p-arq">› Arquivados · 6</div>
+  </div>
+  <div class="p-foot"><span class="av"></span><span class="quem">Viní</span>
+    <div class="uso"><div class="medidor"><span class="bar"><i style="background:var(--muted)"></i></span><b>54%</b></div><span>janela do Claude · sessão ~US$ 32,27</span></div></div>
+</div></div>
+</div>
+
+<div class="notas">
+  <div class="nota"><h3>1 · Navegação vira uma faixa</h3><p>Painel, Frota, Agenda e Planos saem de 4 linhas + rótulo "GERAL" para uma faixa de ícones com nome e contador. Devolve ~150 px para as conversas. Sem caixa alta nem mono.</p></div>
+  <div class="nota"><h3>2 · Cor é identidade, estado é palavra</h3><p>Sua cor-rótulo vira um quadradinho antes do nome, e a pasta sai (o nome já diz que é projeto). O estado sai do canto da pasta e vai para a direita, com palavra: "1 rodando" em azul, "pede você" em âmbar. As duas cores deixam de se sobrepor.</p></div>
+  <div class="nota"><h3>3 · Menos linhas, seleção única</h3><p>"Nova tarefa" deixa de ser uma linha por projeto: vira o "+" que aparece no hover do projeto. O projeto aberto é só peso; o fundo fica para a conversa em que você está. Rodapé em uma linha: você e o uso, com rótulo ("janela do Claude").</p></div>
+</div>
+<p class="sub" style="margin-top:16px">Títulos: os da proposta ("faça uma revisada nos últimos commits", "x.com/winglee · frames do vídeo") são exemplo de nome melhor, não derivação automática. O resumo por modelo local saiu no ADR-233; o caminho honesto é renomear (já existe, duplo clique) ou o agente sugerir o título no primeiro turno, e isso é decisão sua.</p>
+</body>
+</html>

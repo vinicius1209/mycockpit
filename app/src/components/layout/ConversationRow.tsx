@@ -246,7 +246,7 @@ export function ConversationRow({
               {isChild ? (
                 <CornerDownRight className="size-3 shrink-0 text-muted-foreground/60" />
               ) : null}
-              <AgentMark agent={c.agent ?? defaultAgent} />
+              <AgentMark agent={c.agent ?? defaultAgent} tamanho={12} />
               <span className="min-w-0 flex-1 truncate">
                 {c.title ?? "Nova conversa"}
               </span>

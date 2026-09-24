@@ -8867,3 +8867,33 @@ considerou.
      repetir a chamada enquanto isso.
 - **Consequência:** liberar o computador funciona no primeiro pedido, e os
   dois pedidos de gesto (navegador e computador) se comportam igual.
+
+### ADR-245 · Barra lateral enxuta: navegação em ladrilhos, cor do projeto como marca, estado em palavra ✅
+- **Contexto (24/09/2026):** parecer de layout pedido pela pessoa, mock
+  `docs/mocks/barra-lateral-hierarquia.html` aprovado em partes. A barra
+  gastava quatro linhas mais o rótulo "GERAL" com a navegação global, uma linha
+  "Nova tarefa" em cada projeto aberto, e punha a cor-rótulo do projeto e o
+  ponto de estado no mesmo ícone de pasta. O projeto ativo e a conversa
+  selecionada tinham o mesmo fundo, e apareciam dois blocos iguais empilhados.
+- **Decisão:**
+  1. Painel, Frota, Agenda e Planos viram uma faixa de quatro **ladrilhos**
+     (ícone em cima, nome curto, contador no canto, nome inteiro no hover). A
+     primitiva é `components/ui/ladrilho.tsx`, única dona dessa geometria
+     (44px): não é um quinto degrau do §13, que mede controle em linha.
+  2. A cor-rótulo do projeto vira um quadradinho de 8px antes do nome; a pasta
+     sai. O estado vai para a direita, em palavra: "rodando" em azul (a barra é
+     chrome, §2.2) e "pede você" em âmbar com pulso, que vence rodando.
+  3. "Nova tarefa" deixa de ser uma linha: é o "+" que aparece no hover da linha
+     do projeto, no lugar do estado.
+  4. O projeto ativo é peso, sem fundo; o fundo de seleção é da conversa.
+  5. O rótulo "Projetos" sai do mono em caixa alta para sans com peso.
+  6. A marca do motor na lista de conversas desce para 12px, no mesmo slot.
+  7. O medidor de uso da faixa inferior fica mais largo (48px), com a barra
+     sólida no tom saudável e o número com peso. A régua de cor segue a única
+     (cinza, âmbar 60%, vermelho 80%).
+- **Fica como estava, por decisão da pessoa:** o rodapé com o avatar e a faixa
+  inferior fixa, e os logos dos motores (o do Claude segue com o coral da
+  marca; os outros são monocromáticos no original).
+- **Consequência:** a lista de conversas ganha o espaço de três linhas mais uma
+  por projeto aberto, e cor de identidade e cor de estado deixam de ocupar o
+  mesmo pixel.

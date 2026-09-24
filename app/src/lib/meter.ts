@@ -37,7 +37,9 @@ export const METER_TEXT: Record<MeterTone, string> = {
 
 /** Classe de PREENCHIMENTO (barra/arco) por tom. */
 export const METER_FILL: Record<MeterTone, string> = {
-  ok: "bg-muted-foreground/45",
+  // Sólido (ADR-245): a 45% a barra sumia no trilho e o medidor parecia
+  // desligado. Continua cinza, que é o que "saudável" é aqui.
+  ok: "bg-muted-foreground",
   warn: "bg-st-warning",
   danger: "bg-st-error",
 }

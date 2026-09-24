@@ -1,5 +1,5 @@
-// As 3 entradas GLOBAIS do topo da sidebar (Agendamentos, Planos de voo,
-// Frota) — extraído de Sidebar.tsx (arquivo no teto) pelo mesmo motivo de
+// As entradas GLOBAIS do topo da sidebar (Painel, Frota, Agendamentos, Planos
+// de voo), desde a ADR-245 como LADRILHOS numa faixa de quatro — extraído de Sidebar.tsx (arquivo no teto) pelo mesmo motivo de
 // store/chat/clone.ts e DiffPanel/comments.tsx: um recorte de responsabilidade
 // fechado ("view global cross-projeto, com badge próprio"), não um pedaço
 // partido só pra caber no limite. Cada uma abre sua view no lugar do conteúdo
@@ -9,16 +9,15 @@
 import { useEffect, useState } from "react"
 import { Clock, Gauge, Rocket, Route } from "lucide-react"
 import { fmtUntilShort, nextScheduled } from "@/lib/schedules"
-import { controle } from "@/components/ui/controle"
-import { cn } from "@/lib/utils"
+import { Ladrilho } from "@/components/ui/ladrilho"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useSchedules } from "@/store/schedules"
 
-/** F7 — seção GLOBAL "Agendado" no topo da sidebar (acima de PROJETOS,
- *  discreta): coleção cross-projeto das automações do F6. Clique abre a view
- *  no lugar do conteúdo principal (useApp.scheduledOpen — estado próprio, não
- *  mexe no switcher). Badge = próxima execução ("2h"), refrescada a cada 60s. */
+/** F7 — Agendamentos: coleção cross-projeto das automações do F6. Clique abre
+ *  a view no lugar do conteúdo principal (useApp.scheduledOpen, estado próprio,
+ *  não mexe no switcher). Contador = próxima execução ("2h"), refrescada a
+ *  cada 60s. */
 export function ScheduledEntry() {
   // selector devolve PRIMITIVO (number|null) — estável entre snapshots.
   const nextAt = useSchedules(
@@ -26,7 +25,7 @@ export function ScheduledEntry() {
   )
   const active = useApp((s) => s.scheduledOpen)
   const setScheduledOpen = useApp((s) => s.setScheduledOpen)
-  // re-render de minuto SÓ quando há badge (o rótulo relativo não pode mofar).
+  // re-render de minuto SÓ quando há contador (o rótulo relativo não pode mofar).
   const [, setTick] = useState(0)
   useEffect(() => {
     if (nextAt == null) return
@@ -34,50 +33,14 @@ export function ScheduledEntry() {
     return () => clearInterval(t)
   }, [nextAt])
   return (
-    <div>
-      <button
-        onClick={() => setScheduledOpen(true)}
-        aria-label="Abrir Agendamentos"
-        aria-current={active ? "page" : undefined}
-        className={cn(
-          controle("padrao"),
-        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
-          // Mesma receita única de "selecionado" das linhas da árvore (§2).
-          active ? "bg-sel" : "hover:bg-sel-hover",
-        )}
-      >
-        <span className="grid size-5 shrink-0 place-items-center">
-          {/* Ícone ativo NÃO é brass: brass é gesto, e "selecionado" perdeu o
-              canal cromático inteiro (ADR-043). */}
-          <Clock
-            className={cn(
-              "size-4",
-              active ? "text-foreground" : "text-muted-foreground/70",
-            )}
-          />
-        </span>
-        <span
-          className={cn(
-            "min-w-0 flex-1 truncate text-[13px]",
-            // S3.6 — ativo em foreground (brass 13px sobre a superfície de
-            // seleção reprova AA no claro)
-            active
-              ? "font-medium text-foreground"
-              : "text-muted-foreground group-hover:text-foreground",
-          )}
-        >
-          Agendamentos
-        </span>
-        {nextAt != null && (
-          // "Quando?" tem UM idioma nesta árvore, e ele é neutro: a Fase 1 pôs
-          // o tempo relativo da conversa em mono cinza no slot direito, e a
-          // próxima execução responde a mesma pergunta na mesma coluna.
-          <span className="shrink-0 font-mono text-[11px] tabular-nums text-faint">
-            {fmtUntilShort(nextAt - Date.now())}
-          </span>
-        )}
-      </button>
-    </div>
+    <Ladrilho
+      icone={<Clock />}
+      rotulo="Agenda"
+      titulo={nextAt != null ? `Abrir Agendamentos · próxima em ${fmtUntilShort(nextAt - Date.now())}` : "Abrir Agendamentos"}
+      ativo={active}
+      contador={nextAt != null ? fmtUntilShort(nextAt - Date.now()) : null}
+      onClick={() => setScheduledOpen(true)}
+    />
   )
 }
 
@@ -86,45 +49,20 @@ export function FlightPlansEntry() {
   const setFlightPlansOpen = useApp((s) => s.setFlightPlansOpen)
   const count = useApp((s) => s.settings.missionPresets.length)
   return (
-    <button
+    <Ladrilho
+      icone={<Route />}
+      rotulo="Planos"
+      titulo="Abrir Planos de voo"
+      ativo={active}
+      contador={count}
       onClick={() => setFlightPlansOpen(true)}
-      aria-label="Abrir Planos de voo"
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        controle("padrao"),
-        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
-        active ? "bg-sel" : "hover:bg-sel-hover",
-      )}
-    >
-      <span className="grid size-5 shrink-0 place-items-center">
-        <Route
-          className={cn(
-            "size-4",
-            active ? "text-foreground" : "text-muted-foreground/70",
-          )}
-        />
-      </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-[13px]",
-          active
-            ? "font-medium text-foreground"
-            : "text-muted-foreground group-hover:text-foreground",
-        )}
-      >
-        Planos de voo
-      </span>
-      <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">
-        {count}
-      </span>
-    </button>
+    />
   )
 }
 
 /** Rollup "Frota" (F-cross-sessão): tudo que está rodando agora, em qualquer
- *  projeto. Badge = contagem de conversas rodando (0 = sem badge, some
- *  sozinho). Contagem é primitivo direto — `running` não pisca a cada delta
- *  de streaming, então não precisa da chave-string estável dos outros hooks. */
+ *  projeto. Contador = conversas rodando (0 some sozinho). Contagem é
+ *  primitivo direto: `running` não pisca a cada delta de streaming. */
 export function FleetEntry() {
   const active = useApp((s) => s.fleetOpen)
   const setFleetOpen = useApp((s) => s.setFleetOpen)
@@ -132,48 +70,27 @@ export function FleetEntry() {
     (s) => Object.values(s.byId).filter((c) => c.running).length,
   )
   return (
-    <button
+    <Ladrilho
+      icone={<Rocket />}
+      rotulo="Frota"
+      titulo="Abrir Frota"
+      ativo={active}
+      contador={runningCount}
       onClick={() => setFleetOpen(true)}
-      aria-label="Abrir Frota"
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        controle("padrao"),
-        "group relative flex w-full items-center justify-start gap-2.5 text-left transition-colors",
-        active ? "bg-sel" : "hover:bg-sel-hover",
-      )}
-    >
-      <span className="grid size-5 shrink-0 place-items-center">
-        <Rocket
-          className={cn(
-            "size-4",
-            active ? "text-foreground" : "text-muted-foreground/70",
-          )}
-        />
-      </span>
-      <span
-        className={cn(
-          "min-w-0 flex-1 truncate text-[13px]",
-          active
-            ? "font-medium text-foreground"
-            : "text-muted-foreground group-hover:text-foreground",
-        )}
-      >
-        Frota
-      </span>
-      {runningCount > 0 && (
-        <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/65">
-          {runningCount}
-        </span>
-      )}
-    </button>
+    />
   )
 }
 
 /** Painel pertence à navegação global; Trabalho é o destino de projeto/conversa. */
 export function PanelEntry() {
   const active = useApp((s) => s.viewMode === "painel" && !s.scheduledOpen && !s.flightPlansOpen && !s.fleetOpen)
-  return <button aria-label="Abrir Painel" aria-current={active ? "page" : undefined} onClick={() => useApp.getState().setViewMode("painel")} className={cn(controle("padrao"), "group flex w-full justify-start gap-2.5 text-left", active ? "bg-sel font-medium text-foreground" : "text-muted-foreground hover:bg-sel-hover hover:text-foreground")}>
-    <span className="grid size-5 shrink-0 place-items-center"><Gauge className="size-4" /></span>
-    <span>Painel</span>
-  </button>
+  return (
+    <Ladrilho
+      icone={<Gauge />}
+      rotulo="Painel"
+      titulo="Abrir Painel"
+      ativo={active}
+      onClick={() => useApp.getState().setViewMode("painel")}
+    />
+  )
 }
