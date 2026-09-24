@@ -91,6 +91,7 @@ claro+escuro) e por linha nesta tabela — nunca hex cru em componente.
 | **Preto do instrumento** | `hud-shell` | Casco do HUD flutuante em notch, ilha, laterais e base; preto absoluto em qualquer tema, com a aresta externa encostada no frame físico | Popover, dialog, cartão ou tema escuro do app |
 | **Cores de diff/git** | `hljs-addition/deletion`, `git-open`, `git-merged` | SÓ dentro do domínio git: `+N −N`, linhas de diff abertas (evidência), estado de PR do GitHub | Qualquer semântica fora de git; sucesso/erro geral |
 | **Identidade de agent** (categórica) | `brass` (Claude), `st-running` (Codex), `id-violet` (Antigravity) | Cor de série em gráfico/legenda de custo por agente | Verde e vermelho (colidem com status); pintar estado com a cor da identidade |
+| **Tipo de arquivo** (artwork, ADR-241) | a paleta própria do Symbols, só dentro de `FileIcon` (`components/ui/file-icon`) | O ícone do arquivo no fio (pílula), na árvore do projeto e onde mais um arquivo aparecer: identidade do TIPO, o mesmo rosto em toda superfície | Estado, texto, fundo, borda; qualquer hex copiado de lá para fora da primitiva |
 | **Categoria de nota** (escolhida pelo humano — ADR-123 revisa ADR-117) | `note-sand`, `note-lime`, `note-teal`, `note-rose`, `note-slate` | O ponto da nota na lista e o seletor de categoria | Fundo da folha, texto, chrome ou estado. A nota usa a superfície e a tipografia neutras do app; cor identifica, não ocupa área |
 
 ### 2.2 Onde o VIVO é cor, e onde é movimento
@@ -518,6 +519,10 @@ proporcionalidade do Orca:
   prontas), e a medida é `offsetTop`, não o rect da viewport, senão ROLAR a
   lista faria o gesto seguinte animar linhas que ninguém moveu. Movimento
   reduzido troca a ordem na hora: some o trajeto, nunca o resultado.
+- **Grupo vivo respira por uma faixa de luz, não por um segundo spinner**
+  (ADR-241). O resumo contado de uma rajada em curso ganha `.fio-cintila`:
+  cinza sobre cinza, 3,4s por volta, presa à presença do elemento. É o
+  movimento do §2.2, e com movimento reduzido sobra o texto parado.
 - **Movimento no fio conta um evento que acabou de nascer** (ADR-179). Entrada
   só para o que `nasceuAgora` aprova (`lib/nascimento.ts`, carimbo de
   nascimento do item contra uma janela curta), decidido UMA vez na montagem por
@@ -904,6 +909,10 @@ Regras decidíveis:
   a escada parecer errada estando certa.
 - **Ícone puro não é controle.** 12 a 16px (`size-3`, `size-3.5`, `size-4`) é
   glifo dentro de um controle, e não tem degrau próprio.
+- **Objeto inline não é controle.** A pílula de arquivo do fio (ADR-241) tem
+  20px, abaixo do `chip`, de propósito: é o nome de um arquivo dentro de uma
+  linha `compacto`, como uma palavra marcada, não um botão. Não "corrija" para
+  24px, e não use a medida dela para nada que se aperta.
 
 **Por que quatro, e o que saiu (29/08/2026).** A varredura achou **43
 combinações distintas** de altura/padding/fonte em 75 arquivos, e a surpresa foi

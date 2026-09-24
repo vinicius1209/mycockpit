@@ -752,6 +752,83 @@
   animation: fio-brasa var(--dur-brasa) ease-out both;
 }
 
+/* O trilho da árvore de ações (ADR-241, estudo do Zeron). Cada linha desenha o
+   próprio pedaço: o tronco desce por toda a altura dela (inclusive ao lado do
+   detalhe aberto) e a última para no cotovelo, que curva com raio 6 até perto
+   do ícone. O traço é o divisor interno do §4 (`border-border/40`), nunca uma
+   opacidade nova. Geometria: a linha tem 28px (`compacto`), o ícone do pai
+   centra em 18px, então o tronco fica em 17px e a curva começa 6px acima do
+   centro da linha (14px). */
+.fio-trilho {
+  --fio-traco: color-mix(in oklab, var(--color-border) 40%, transparent);
+  display: flex;
+  flex-direction: column;
+  padding-left: 26px;
+}
+.fio-trilho > * {
+  position: relative;
+}
+.fio-trilho > *::before,
+.fio-trilho > *::after {
+  content: "";
+  position: absolute;
+  left: -9px;
+  pointer-events: none;
+  border-color: var(--fio-traco);
+  border-style: solid;
+  border-width: 0;
+}
+.fio-trilho > *::before {
+  top: 0;
+  bottom: 0;
+  border-left-width: 1px;
+}
+.fio-trilho > *:last-child::before {
+  bottom: auto;
+  height: 8px;
+}
+.fio-trilho > *::after {
+  top: 8px;
+  width: 13px;
+  height: 6px;
+  border-left-width: 1px;
+  border-bottom-width: 1px;
+  border-bottom-left-radius: 6px;
+}
+/* O detalhe aberto de uma linha (comando, saída, briefing) alinha com o TEXTO
+   dela, não com o ícone; o ramo filho segue no trilho. */
+.fio-ramo > :not([role="group"]) {
+  margin-left: 26px;
+}
+
+/* O resumo de um grupo VIVO: uma faixa de luz varre o texto (3,4 s, a cadência
+   medida no Zeron). É o movimento cinza do §2.2 no lugar de um segundo
+   spinner. Com movimento reduzido o bloco global encerra a animação e sobra o
+   texto parado em `muted-foreground`, legível. */
+.fio-cintila {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 38%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 62%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 300% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: fio-cintila 3.4s linear infinite;
+}
+@keyframes fio-cintila {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+
 /* scrollbar discreta */
 * {
   scrollbar-width: thin;

@@ -100,7 +100,7 @@ describe("presentTool", () => {
 })
 
 describe("summarizeToolGroup", () => {
-  it("resume leituras concluídas como verificações", () => {
+  it("resume o burst por verbos contados (ADR-241)", () => {
     const view = summarizeToolGroup([
       { name: "Read", input: { file_path: "/tmp/a.ts" }, result: { ok: true } },
       { name: "Bash", input: { command: "rg foo src" }, result: { ok: true } },
@@ -111,7 +111,7 @@ describe("summarizeToolGroup", () => {
       },
     ])
     expect(view).toMatchObject({
-      label: "3 verificações concluídas",
+      label: "Rodou 1 comando · leu 1 arquivo · buscou 1 vez",
       emphasis: "quiet",
       state: "ok",
     })
@@ -126,6 +126,7 @@ describe("summarizeToolGroup", () => {
       true,
     )
     expect(view).toMatchObject({ label: "Executar testes", state: "running" })
+    // o vivo nomeia a ação corrente pelo rótulo: é a mesma régua da culpada
   })
 
   it("falha vence qualquer resumo de categoria", () => {
@@ -146,7 +147,7 @@ describe("summarizeToolGroup", () => {
       { name: "Bash", input: { command: "pwd" } },
     ])
     expect(view).toMatchObject({
-      label: "2 verificações registradas",
+      label: "Rodou 2 comandos · sem desfecho registrado",
       state: "recorded",
     })
   })

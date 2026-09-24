@@ -74,7 +74,8 @@ describe("MessageList · grupo assentado com falha (a falha não se esconde)", (
   it("usa um glifo por linha e deixa o vermelho fora do texto técnico", () => {
     const html = render(items)
     expect(html).not.toContain("bg-st-error")
-    expect(html).toContain('class="truncate text-foreground">Gerar PDF')
+    // a linha falhada fica em texto pleno (a falha é o glifo, não a letra)
+    expect(html).toMatch(/gap-1\.5 text-foreground"><span class="truncate">Gerar PDF/)
     expect(html).not.toContain("border-l-2")
     expect(html).not.toContain("bg-accent/20")
   })
@@ -90,7 +91,7 @@ describe("MessageList · concluído recolhe pra UMA linha com tempo congelado", 
         activityAt: T0 + 3_000,
       }),
     ])
-    expect(html).toContain("2 verificações concluídas")
+    expect(html).toContain("Rodou 1 comando · leu 1 arquivo")
     expect(html).toContain('aria-expanded="false"')
     expect(html).toContain(">3s<")
     // recolhido: nenhuma linha filha no DOM até o clique
@@ -103,7 +104,7 @@ describe("MessageList · concluído recolhe pra UMA linha com tempo congelado", 
       bash("1", "ls"),
       bash("2", "pwd"),
     ])
-    expect(html).toContain("2 verificações concluídas")
+    expect(html).toContain("Rodou 2 comandos")
     expect(html).not.toContain(">0s<")
   })
 })

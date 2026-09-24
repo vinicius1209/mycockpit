@@ -2,7 +2,6 @@
   "components/chat/ComposerParts.tsx": 1,
   "components/chat/ComposerShell.tsx": 1,
   "components/chat/InteractionHost.tsx": 4,
-  "components/chat/MessageList.tsx": 1,
   "components/chat/PresenceBar.tsx": 1,
   "components/chat/TurnNote.tsx": 2,
   "components/common/CommandMenu.tsx": 2,

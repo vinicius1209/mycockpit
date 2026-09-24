@@ -19,13 +19,33 @@ export type ToolCategory =
   | "web"
   | "delegate"
   | "execute"
+  /** Coordenação com a pessoa e com o plano (tools da própria Frota). */
+  | "coordinate"
 
 export type ToolEmphasis = "quiet" | "normal" | "warning"
 
+/** Sobre O QUE a ação age (ADR-241). A linha do fio mostra VERBO + OBJETO:
+ *  arquivo vira pílula com o ícone do tipo, comando vira mono, o resto é texto.
+ *  `mais` conta os outros comandos do mesmo shell ("+2"). */
+export type ToolObject =
+  | { kind: "file"; path: string; range?: string | null; mais?: number }
+  | { kind: "command"; text: string; mais?: number }
+  /** `frase`: o texto já é uma frase com verbo próprio (a narração do agente),
+   *  então a linha não antepõe o verbo. */
+  | { kind: "text"; text: string; mais?: number; frase?: true }
+
 export interface ToolView {
   kind: ToolKind
-  /** Rótulo humano curto (o que aparece na linha). */
+  /** Rótulo humano curto numa string só: é o que recibos, companion e missão
+   *  citam. O FIO não o usa na linha; lá é `verb` + `object`. */
   label: string
+  /** Verbo no infinitivo, em pt-BR ("Ler", "Testar", "Perguntar a você"). */
+  verb: string
+  object: ToolObject | null
+  /** A frase que o próprio agente escreveu (`description` do Bash): vai para o
+   *  hover. Não é rótulo: vem na língua do modelo e pode dizer outra coisa que
+   *  o comando faz. */
+  narration: string | null
   /** Família semântica usada no resumo do burst. */
   category: ToolCategory
   /** Leitura fica quieta; mutação aparece; ação sensível nunca some. */
@@ -57,170 +77,15 @@ export function splitPath(p: string): { base: string; dir: string | null } {
   return { base, dir: segs.length > 2 ? `…/${tail}` : `/${tail}` }
 }
 
-/** Extrai o rótulo que o próprio agent narrou: `echo "=== label ===" && resto`. */
-function bashEchoLabel(cmd: string): string | null {
-  const m = cmd.match(
-    /^\s*echo\s+["']?\s*[=\-#*]*\s*([^"'|&;=]+?)\s*[=\-#*]*\s*["']?\s*(?:&&|;)/,
-  )
-  const label = m?.[1]?.trim()
-  return label && label.length > 1 ? label : null
-}
+import {
+  bashEchoLabel,
+  fraseDoShell,
+  presentShell,
+  unwrapShellCommand,
+} from "@/lib/toolShell"
+import { presentFrotaTool } from "@/lib/toolFrota"
 
-/** Remove só o launcher que o Codex inclui no campo `command`. Isso é
- * apresentação: `detail` continua guardando o comando EXATO para auditoria. */
-export function unwrapShellCommand(command: string): string {
-  const cmd = command.trim()
-  const m = cmd.match(
-    /^(?:\/bin\/)?(?:zsh|bash|sh)\s+-[a-z]*c\s+(["'])([\s\S]*)\1$/i,
-  )
-  if (!m) return cmd
-  const body = m[2]
-  return m[1] === '"'
-    ? body.replace(/\\"/g, '"').replace(/\\\\/g, "\\")
-    : body
-}
-
-type SemanticTool = Pick<ToolView, "label" | "category" | "emphasis">
-
-/** Classificador determinístico e barato: não tenta "entender" o shell, só
- * reconhece famílias que importam na UI. Fallback nunca vaza o comando. */
-function presentShell(command: string): SemanticTool {
-  const cmd = unwrapShellCommand(command)
-  const lower = cmd.toLowerCase()
-
-  // Ações sensíveis primeiro: não podem ser diluídas como "verificação" só
-  // porque o mesmo comando também contém um `git status` ou `find`.
-  if (/\bgit\s+push\b/.test(lower))
-    return {
-      label: "Enviar alterações ao repositório",
-      category: "change",
-      emphasis: "warning",
-    }
-  if (/(?:^|[;&|]\s*)rm\s+(?:-[^\s]+\s+)*\S+/.test(lower))
-    return {
-      label: "Remover arquivos",
-      category: "change",
-      emphasis: "warning",
-    }
-  if (/\bgit\s+(?:reset|clean)\b/.test(lower))
-    return {
-      label: "Reorganizar o estado do repositório",
-      category: "change",
-      emphasis: "warning",
-    }
-
-  if (
-    /\b(?:vitest|pytest)\b/.test(lower) ||
-    /\bcargo\s+test\b/.test(lower) ||
-    /\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?test\b/.test(lower)
-  )
-    return {
-      label: "Executar testes",
-      category: "validate",
-      emphasis: "normal",
-    }
-  if (/\b(?:typecheck|type-check)\b/.test(lower) || /\btsc(?:\s|$)/.test(lower))
-    return {
-      label: "Verificar tipos",
-      category: "validate",
-      emphasis: "normal",
-    }
-  if (/\b(?:oxlint|eslint|biome|ruff)\b/.test(lower) || /\brun\s+lint\b/.test(lower))
-    return {
-      label: "Validar o código",
-      category: "validate",
-      emphasis: "normal",
-    }
-  if (/\bcargo\s+check\b/.test(lower))
-    return {
-      label: "Verificar o projeto Rust",
-      category: "validate",
-      emphasis: "normal",
-    }
-  if (/\b(?:bun|npm|pnpm|yarn)\s+(?:run\s+)?build\b/.test(lower))
-    return {
-      label: "Gerar o build",
-      category: "validate",
-      emphasis: "normal",
-    }
-
-  if (/\bgit\s+commit\b/.test(lower))
-    return { label: "Criar commit", category: "change", emphasis: "normal" }
-  if (/\bgit\s+(?:switch|checkout|branch|merge|rebase)\b/.test(lower))
-    return {
-      label: "Atualizar a branch de trabalho",
-      category: "change",
-      emphasis: "normal",
-    }
-  if (/\b(?:npm|pnpm|yarn|bun)\s+(?:install|add)\b/.test(lower))
-    return {
-      label: "Instalar dependências",
-      category: "change",
-      emphasis: "normal",
-    }
-  if (/\bsqlite3\b/.test(lower) && /\b(?:insert|update|delete|drop|alter)\b/.test(lower))
-    return {
-      label: "Atualizar dados locais",
-      category: "change",
-      emphasis: "warning",
-    }
-
-  if (/\bsqlite3\b/.test(lower))
-    return {
-      label: "Consultar dados locais",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (/\bgit\s+status\b/.test(lower))
-    return {
-      label: "Verificar o estado do repositório",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (/\bgit\s+diff\b/.test(lower))
-    return {
-      label: "Inspecionar alterações",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (/\bgit\s+(?:log|show|blame)\b/.test(lower))
-    return {
-      label: "Consultar o histórico do Git",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (/(?:^|[\s;&|$(])(?:rg|grep)\b/.test(lower))
-    return {
-      label: "Buscar no projeto",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (
-    /(?:^|[\s;&|$(])(?:sed|nl|cat|head|tail|wc|find|ls|pwd)\b/.test(lower)
-  )
-    return {
-      label: "Inspecionar arquivos",
-      category: "inspect",
-      emphasis: "quiet",
-    }
-  if (/\b(?:curl|wget)\b/.test(lower))
-    return {
-      label: "Consultar um serviço externo",
-      category: "web",
-      emphasis: "normal",
-    }
-  if (/(?:^|[;&|]\s*)(?:cp|mv|mkdir|touch)\b/.test(lower))
-    return {
-      label: "Alterar arquivos",
-      category: "change",
-      emphasis: "normal",
-    }
-  return {
-    label: "Executar comando",
-    category: "execute",
-    emphasis: "normal",
-  }
-}
+export { unwrapShellCommand }
 
 function safeJson(v: unknown): string | null {
   try {
@@ -284,15 +149,22 @@ function presentToolBase(name: string, input: unknown): ToolView {
     string,
     unknown
   >
+  const arquivo = (p: string): ToolObject | null => (p ? { kind: "file", path: p } : null)
+  const texto = (t: string | null, n = 72): ToolObject | null =>
+    t ? { kind: "text", text: clip(t, n) } : null
   switch (name) {
     case "Bash": {
       const cmd = str(i, "command") ?? ""
       const semantic = presentShell(cmd)
       const narrated = str(i, "description") ?? bashEchoLabel(unwrapShellCommand(cmd))
+      const frase = fraseDoShell(cmd, narrated ? clip(narrated) : null)
       return {
         kind: "bash",
         ...semantic,
         label: narrated ? clip(narrated) : semantic.label,
+        verb: frase.verb,
+        object: frase.object,
+        narration: narrated ? clip(narrated, 200) : null,
         meta: null,
         detail: cmd || null,
       }
@@ -303,6 +175,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
       return {
         kind: "read",
         label: base ? `Ler ${base}` : "Ler arquivo",
+        verb: "Ler",
+        object: arquivo(p),
+        narration: null,
         category: "inspect",
         emphasis: "quiet",
         meta: dir,
@@ -316,6 +191,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
       return {
         kind: "edit",
         label: base ? `Editar ${base}` : "Editar arquivo",
+        verb: "Editar",
+        object: arquivo(p),
+        narration: null,
         category: "change",
         emphasis: "normal",
         meta: dir,
@@ -329,6 +207,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
       return {
         kind: "write",
         label: base ? `Criar ${base}` : "Criar arquivo",
+        verb: "Criar",
+        object: arquivo(p),
+        narration: null,
         category: "change",
         emphasis: "normal",
         meta: dir,
@@ -338,12 +219,16 @@ function presentToolBase(name: string, input: unknown): ToolView {
     case "Grep": {
       const pat = str(i, "pattern")
       const scope = str(i, "path")
+      const onde = scope ? splitPath(scope).base : null
       return {
         kind: "search",
         label: pat ? `Buscar “${clip(pat, 54)}”` : "Buscar no projeto",
+        verb: "Buscar",
+        object: texto(pat ? (onde ? `${pat} em ${onde}` : pat) : null),
+        narration: null,
         category: "inspect",
         emphasis: "quiet",
-        meta: scope ? splitPath(scope).base : null,
+        meta: onde,
         detail: safeJson(input),
       }
     }
@@ -352,6 +237,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
       return {
         kind: "search",
         label: pat ? `Listar “${clip(pat, 54)}”` : "Listar arquivos",
+        verb: "Listar",
+        object: pat ? { kind: "command", text: clip(pat, 72) } : null,
+        narration: null,
         category: "inspect",
         emphasis: "quiet",
         meta: null,
@@ -363,6 +251,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
       return {
         kind: "web",
         label: url ? `Consultar ${clip(url, 62)}` : "Consultar página",
+        verb: "Consultar",
+        object: texto(url || null, 62),
+        narration: null,
         category: "web",
         emphasis: "quiet",
         meta: null,
@@ -370,11 +261,13 @@ function presentToolBase(name: string, input: unknown): ToolView {
       }
     }
     case "WebSearch": {
+      const q = str(i, "query")
       return {
         kind: "web",
-        label: str(i, "query")
-          ? `Pesquisar “${clip(str(i, "query")!, 56)}”`
-          : "Pesquisar na web",
+        label: q ? `Pesquisar “${clip(q, 56)}”` : "Pesquisar na web",
+        verb: "Pesquisar",
+        object: texto(q, 56),
+        narration: null,
         category: "web",
         emphasis: "quiet",
         meta: null,
@@ -383,11 +276,13 @@ function presentToolBase(name: string, input: unknown): ToolView {
     }
     case "Task":
     case "Agent": {
+      const d = str(i, "description") ?? str(i, "prompt")
       return {
         kind: "agent",
-        label: clip(
-          str(i, "description") ?? str(i, "prompt") ?? "Delegar tarefa",
-        ),
+        label: clip(d ?? "Delegar tarefa"),
+        verb: "Delegar",
+        object: texto(d),
+        narration: null,
         category: "delegate",
         emphasis: "normal",
         meta: str(i, "subagent_type"),
@@ -407,6 +302,9 @@ function presentToolBase(name: string, input: unknown): ToolView {
         label: name
           ? `Trabalho em background: ${clip(name, 56)}`
           : "Trabalho em background",
+        verb: "Trabalho em background",
+        object: texto(name, 56),
+        narration: null,
         category: "delegate",
         emphasis: "normal",
         meta: null,
@@ -414,26 +312,49 @@ function presentToolBase(name: string, input: unknown): ToolView {
       }
     }
     case "ManagedProcess": {
+      const l = clip(str(i, "label") ?? str(i, "command") ?? "Processo gerenciado", 72)
       return {
         kind: "bash",
-        label: clip(
-          str(i, "label") ?? str(i, "command") ?? "Processo gerenciado",
-          72,
-        ),
+        label: l,
+        verb: "Processo",
+        object: texto(l),
+        narration: null,
         category: "execute",
         emphasis: "normal",
         meta: str(i, "cwd"),
         detail: str(i, "command"),
       }
     }
+    // O motor carregando o esquema de tools sob demanda: bastidor, não trabalho.
+    case "ToolSearch": {
+      const q = str(i, "query")
+      return {
+        kind: "search",
+        label: "Carregar ferramentas",
+        verb: "Carregar ferramentas",
+        object: texto(q?.replace(/^select:/, "") ?? null, 60),
+        narration: null,
+        category: "inspect",
+        emphasis: "quiet",
+        meta: null,
+        detail: safeJson(input),
+      }
+    }
     default: {
+      const detail = safeJson(input)
+      const daFrota = presentFrotaTool(name, i, detail)
+      if (daFrota) return daFrota
+      const nome = clip(name.replace(/^mcp__/, "").replaceAll("__", " · "), 60)
       return {
         kind: "generic",
         label: "Executar ferramenta",
+        verb: "Usar",
+        object: { kind: "text", text: nome },
+        narration: null,
         category: "execute",
         emphasis: "normal",
-        meta: clip(name.replace(/^mcp__/, "").replaceAll("__", " · "), 60),
-        detail: safeJson(input),
+        meta: nome,
+        detail,
       }
     }
   }

@@ -113,7 +113,7 @@ describe("Fio Vivo", () => {
     expect(html).toContain("Briefing do agente")
     expect(html).toContain("3 linhas")
     expect(html).not.toContain("Primeira linha")
-    expect(html).toContain("3 ações concluídas")
+    expect(html).toContain("Rodou 3 comandos")
     expect(html).toContain("1 agente")
     expect(html).toContain("4 shells")
     expect(html).toContain("Claude Code")

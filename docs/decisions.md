@@ -8794,3 +8794,54 @@ considerou.
      `ComposerParts.tsx` para `FilaDoComposer.tsx`.
 - **Consequência:** nenhum formato do projeto vira beco sem saída, o que foi
   anexado fica à vista até sair, e o rodapé não pula mais.
+
+### ADR-241 · A linha da ação diz verbo e objeto, e o grupo conta verbos ✅
+- **Contexto (23/09/2026):** estudo do Zeron (`docs/competitors-zeron.md`,
+  mock `docs/mocks/fio-de-trabalho-zeron.html`) cruzado com prints e com o
+  transcript de um turno real. O fio de ações tinha dois bugs de estado e um
+  problema de leitura. (1) As tools dos MCPs da própria Frota (`work_update`,
+  `work_plan`, `ask_user`: 85 chamadas numa sessão) caíam no balde
+  "Executar ferramenta", e o nome real ficava num `meta` que o grupo de uma
+  ação só não mostra. (2) `sed -i '' 's/…/' src/lib.rs` saía como `inspect`, e
+  uma edição real entrava na contagem de "verificações". (3) O mesmo grupo de
+  shells se chamava "ações", "verificações" ou "validações" conforme a
+  categoria; no vivo, o cabeçalho virava a ação corrente e a árvore ficava com
+  um órfão "em execução", sem dizer o quê.
+- **Decisão:**
+  1. **`ToolView` ganha `verb`, `object` e `narration`.** O objeto é arquivo
+     (vira pílula com o ícone do tipo e o nome; caminho no hover; faixa de
+     linhas ao lado quando o shell leu um trecho), texto ou padrão. A narração
+     do agente (`description`) vai para o hover quando a linha mostra outra
+     coisa melhor (pílula, busca) e é a frase inteira quando não há objeto
+     legível, sem verbo em pt-BR colado na frente. Sem narração, o nome da
+     família do comando: **o comando cru continua nunca sendo rótulo**. O
+     `label` fica como era para recibos, companion, missão e cabeçalhos, que
+     citam a ação numa string só (a narração nomeia melhor uma culpada).
+  2. **Tools da Frota têm nome** (`lib/toolFrota.ts`): casa pelo nome da tool,
+     que é contrato nosso, e não pelo prefixo do motor (`mcp__frota-work__…`
+     no Claude, puro no Codex). Categoria nova `coordinate`. MCP de terceiros
+     segue genérico, mas a linha diz qual tool rodou.
+  3. **Edição in-place é mudança** (`sed -i`, `perl -pi`, script que abre
+     arquivo para escrita), antes das famílias de leitura. O classificador de
+     shell saiu para `lib/toolShell.ts`.
+  4. **Resumo por verbos contados, um vocabulário só:** "Rodou 3 testes ·
+     editou 1 arquivo · leu 2 arquivos". Arquivos contam distintos; trabalho
+     delegado conta por entidade (ADR-037 segue valendo); histórico sem
+     desfecho ganha "sem desfecho registrado". No vivo, o cabeçalho de uma
+     rajada é esse resumo com uma faixa de luz cinza (`.fio-cintila`, o
+     movimento do §2.2) e a árvore mostra a própria ação corrente. Trabalho
+     delegado segue nomeado no cabeçalho, com o delta na árvore.
+  5. **Trilho com cotovelo** (`.fio-trilho`): cada linha desenha o tronco e uma
+     curva de raio 6 até o ícone, no filete de divisor interno do §4.
+  6. **Ícone de tipo de arquivo** (`components/ui/file-icon.tsx`, subconjunto
+     do Symbols, MIT): a mesma primitiva no fio e na árvore do projeto. A cor
+     dele é identidade do tipo, não papel de estado; nunca pinta texto, fundo
+     nem borda (linha nova no §2 do guia).
+  7. Para caber na catraca, `ToolLine` e `ToolGroup` saíram do
+     `MessageList.tsx` para arquivos próprios.
+- **Fora, de propósito:** as palavras rotativas do Zeron ("Puzzling…") e o
+  glifo colorido do indicador vivo (o §2.2 manda o vivo do fio ser cinza). O
+  veil do streaming e o cartão do plano ficam para outra frente.
+- **Consequência:** o fio diz o que o agente fez com as ferramentas da própria
+  Frota, uma edição não se esconde como leitura, e o arquivo tem o mesmo rosto
+  no fio e na árvore.

@@ -67,39 +67,106 @@ function countWorks(tools: readonly ToolActivityInput[]): number {
   return works
 }
 
+/** A ação numa frase só, para CABEÇALHO (trabalho único, culpada, parada). O
+ *  rótulo de sempre vale: a narração do agente nomeia melhor uma culpada do que
+ *  o comando ("Gerar PDF (iPhone SE)" contra "node probe.mjs"). A exceção é a
+ *  tool genérica, cujo rótulo era a constante "Executar ferramenta": ali a
+ *  frase é verbo + objeto, que é o único jeito de dizer O QUE rodou. */
+export function fraseDaAcao(v: ToolView): string {
+  if (v.kind !== "generic" || !v.object) return v.label
+  const o = v.object
+  const alvo =
+    o.kind === "file" ? `${o.path.split("/").pop()}${o.range ? ` ${o.range}` : ""}` : o.text
+  return `${v.verb} ${alvo}${o.mais ? ` +${o.mais}` : ""}`
+}
+
 /** Nome do trabalho quando o grupo inteiro é UM só: o primeiro nó que sabe
  * nomeá-lo. A tool de origem nem sempre sabe (o `Workflow` do provider cai no
- * balde genérico "Executar ferramenta"); quem carrega o nome humano nesse caso
- * é o nó sintético. Sem isso o marco recolhido esqueceria O QUE rodou, que é a
- * "amnésia do histórico" da auditoria. */
+ * balde genérico); quem carrega o nome humano nesse caso é o nó sintético. Sem
+ * isso o marco recolhido esqueceria O QUE rodou, que é a "amnésia do
+ * histórico" da auditoria. */
 function soleWorkLabel(views: readonly ToolView[]): string {
-  return (views.find((v) => v.kind !== "generic") ?? views[0]).label
+  return fraseDaAcao(views.find((v) => v.kind !== "generic" || v.category === "coordinate") ?? views[0])
+}
+
+/** Pretérito de cada verbo da linha: [verbo, singular, plural, conta por].
+ *  `arquivo` conta arquivos DISTINTOS (ler o mesmo arquivo em três trechos é
+ *  ler um arquivo); `vez` conta chamadas; `frase` não conta, só diz. A ordem é a
+ *  da frase: mudança primeiro, porque é o que a pessoa mais precisa saber. */
+const PRETERITO: ReadonlyArray<[string[], string, string, string, "arquivo" | "vez" | "frase"]> = [
+  [["Editar"], "editou", "arquivo", "arquivos", "arquivo"],
+  [["Criar"], "criou", "arquivo", "arquivos", "arquivo"],
+  [["Testar"], "rodou", "teste", "testes", "vez"],
+  [["Rodar"], "rodou", "comando", "comandos", "vez"],
+  [["Processo", "Iniciar processo"], "iniciou", "processo", "processos", "vez"],
+  [["Ler"], "leu", "arquivo", "arquivos", "arquivo"],
+  [["Buscar", "Listar"], "buscou", "vez", "vezes", "vez"],
+  [["Consultar"], "consultou", "página", "páginas", "vez"],
+  [["Pesquisar"], "pesquisou", "vez", "vezes", "vez"],
+  [["Delegar", "Trabalho em background"], "delegou", "tarefa", "tarefas", "vez"],
+  [["Consultar processo", "Parar processo"], "acompanhou", "processo", "processos", "vez"],
+  [["Publicar o plano", "Concluir etapa", "Começar etapa", "Reabrir etapa", "Atualizar etapa"], "atualizou o plano", "", "", "frase"],
+  [["Perguntar a você"], "perguntou a você", "", "", "frase"],
+  [["Pedir aprovação"], "pediu aprovação", "", "", "frase"],
+  [["Carregar ferramentas"], "carregou ferramentas", "", "", "frase"],
+  [["Ler o índice da memória", "Buscar na memória", "Ler a memória"], "consultou a memória", "", "", "frase"],
+  [["Ver o estado da tela", "Capturar a tela", "Clicar na tela", "Digitar na tela", "Apertar tecla", "Mover o ponteiro"], "usou a tela", "", "", "frase"],
+  [["Abrir no navegador", "Ler a página", "Capturar a página", "Rodar script na página", "Enviar arquivo à página", "Clicar na página", "Digitar na página", "Usar o navegador"], "usou o navegador", "", "", "frase"],
+  [["Usar"], "usou", "ferramenta", "ferramentas", "vez"],
+]
+
+/** O resumo de um conjunto por VERBOS CONTADOS (ADR-241): "Rodou 3 testes ·
+ *  editou 1 arquivo · leu 2 arquivos". Um vocabulário só: antes o mesmo grupo
+ *  de shells se chamava "ações", "verificações" ou "validações" conforme a
+ *  categoria, e nenhum dos três dizia o que aconteceu. Conta TRABALHOS, não
+ *  nós: um `tool_use` e o `DeferredWork` que ele pariu entram uma vez só. */
+export function resumoPorVerbos(
+  tools: readonly ToolActivityInput[],
+  views: readonly ToolView[],
+): string {
+  const vistos = new Set<string>()
+  const contas = PRETERITO.map(() => ({ n: 0, alvos: new Set<string>() }))
+  let outros = 0
+  tools.forEach((t, ix) => {
+    const k = workKey(t)
+    if (k != null) {
+      if (vistos.has(k)) return
+      vistos.add(k)
+    }
+    const v = views[ix]
+    const linha = PRETERITO.findIndex(([verbos]) => verbos.includes(v.verb))
+    if (linha < 0) {
+      outros++
+      return
+    }
+    const c = contas[linha]
+    c.n++
+    if (v.object?.kind === "file") c.alvos.add(v.object.path)
+  })
+  const partes: string[] = []
+  PRETERITO.forEach(([, passado, um, varios, modo], ix) => {
+    const c = contas[ix]
+    if (c.n === 0) return
+    if (modo === "frase") return partes.push(passado)
+    const n = modo === "arquivo" ? Math.max(1, c.alvos.size) : c.n
+    partes.push(`${passado} ${n} ${n === 1 ? um : varios}`)
+  })
+  if (outros) partes.push(`${outros} ${outros === 1 ? "outra ação" : "outras ações"}`)
+  const frase = partes.join(" · ")
+  return frase.charAt(0).toUpperCase() + frase.slice(1)
 }
 
 /** Rótulo de um conjunto ASSENTADO de ações (todas com desfecho conhecido ou
- * todas apenas registradas). Extraído do summarizeToolGroup pra que o digest
- * do cabeçalho (describeToolGroup) use a mesma gramática sem recalcular.
- * `works` é a contagem de TRABALHOS (não de nós): é ela que aparece na copy. */
+ * todas apenas registradas). Um trabalho só NUNCA vira contagem: o fio tem que
+ * dizer o que rodou. Histórico sem desfecho não finge que acabou. */
 function settledLabel(
+  tools: readonly ToolActivityInput[],
   views: readonly ToolView[],
   finished: boolean,
   works: number,
 ): string {
-  const n = works
-  // Um trabalho só NUNCA vira contagem: o fio tem que dizer o que rodou.
-  if (n === 1) return soleWorkLabel(views)
-  const categories = new Set(views.map((v) => v.category))
-  if ([...categories].every((c) => c === "inspect" || c === "web"))
-    return finished
-      ? `${n} verificações concluídas`
-      : `${n} verificações registradas`
-  if (categories.size === 1 && categories.has("validate"))
-    return finished ? `${n} validações concluídas` : `${n} validações registradas`
-  if (categories.size === 1 && categories.has("change"))
-    return finished ? `${n} alterações realizadas` : `${n} alterações registradas`
-  if (finished && categories.size === 1 && categories.has("delegate"))
-    return `${n} delegações concluídas`
-  return finished ? `${n} ações concluídas` : `${n} ações registradas`
+  const base = works === 1 ? soleWorkLabel(views) : resumoPorVerbos(tools, views)
+  return finished ? base : `${base} · sem desfecho registrado`
 }
 
 /** Grupo com ação que PAROU por um corte seu (ADR-180): a mesma gramática da
@@ -110,7 +177,7 @@ function stoppedLabel(
 ): string | null {
   const idx = tools.findIndex((t) => t.result?.interrupted)
   if (idx < 0) return null
-  const culprit = views[idx].label
+  const culprit = fraseDaAcao(views[idx])
   if (tools.length === 1) return `${culprit} parou`
   const stopped = tools.filter((t) => t.result?.interrupted).length
   return stopped === 1
@@ -143,7 +210,7 @@ export function summarizeToolGroup(
   if (active) {
     const current = tools.findLast((t) => !t.result) ?? tools.at(-1)!
     return {
-      label: presentTool(current.name, current.input).label,
+      label: fraseDaAcao(presentTool(current.name, current.input)),
       emphasis,
       state: "running",
     }
@@ -152,7 +219,7 @@ export function summarizeToolGroup(
   const cut = stoppedLabel(tools, views)
   if (cut) return { label: cut, emphasis, state: "stopped" }
   return {
-    label: settledLabel(views, allFinished, countWorks(tools)),
+    label: settledLabel(tools, views, allFinished, countWorks(tools)),
     emphasis,
     state: allFinished ? "ok" : "recorded",
   }
@@ -245,7 +312,7 @@ export function describeToolGroup(
   if (failedIdx.length > 0) {
     // A falha não se esconde nem vira frase genérica: nomeia a culpada quando
     // ela é uma só; com várias, a contagem manda e o detalhe fica nas linhas.
-    const culprit = views[failedIdx[0]].label
+    const culprit = fraseDaAcao(views[failedIdx[0]])
     const label =
       failedIdx.length === 1
         ? total === 1
@@ -262,10 +329,23 @@ export function describeToolGroup(
         break
       }
     }
+    // Trabalho DELEGADO é uma entidade com nome: o cabeçalho é o dono dele e
+    // a árvore mostra só o delta (ADR-037). Rajada de shell/leitura não é
+    // entidade: o cabeçalho conta o que já aconteceu e a linha viva é a própria
+    // ação. Nomear a corrente aqui deixava, na árvore, um órfão "em execução"
+    // sem dizer o quê (print de 23/09/2026).
+    const current = views[currentIdx]
+    if (current.kind === "agent")
+      return {
+        ...base,
+        label: current.label,
+        labelWorkId: workKey(tools[currentIdx]),
+        emphasis,
+        state: "running",
+      }
     return {
       ...base,
-      label: views[currentIdx].label,
-      labelWorkId: workKey(tools[currentIdx]),
+      label: resumoPorVerbos(tools, views),
       emphasis,
       state: "running",
     }
@@ -274,7 +354,7 @@ export function describeToolGroup(
   if (cut) return { ...base, label: cut, emphasis, state: "stopped" }
   return {
     ...base,
-    label: settledLabel(views, allFinished, works),
+    label: settledLabel(tools, views, allFinished, works),
     // Grupo de UM trabalho: o rótulo é o nome dele, então o cabeçalho é o dono.
     labelWorkId: works === 1 ? workKey(tools[0]) : null,
     emphasis,

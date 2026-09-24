@@ -116,22 +116,22 @@ describe("describeToolGroup · contagens e paridade com o resumo existente", () 
     expect(digest.shells).toBe(2)
   })
 
-  it("sem falha, mantém a gramática de sempre ('N verificações concluídas')", () => {
+  it("sem falha, conta por verbo (ADR-241): um vocabulário só, dizendo o que aconteceu", () => {
     const digest = describeToolGroup([
       bash("git status"),
       bash("rg foo src"),
       { name: "Read", input: { file_path: "/tmp/a.ts" }, result: { ok: true } },
     ])
-    expect(digest.label).toBe("3 verificações concluídas")
+    expect(digest.label).toBe("Rodou 1 comando · leu 1 arquivo · buscou 1 vez")
     expect(digest.state).toBe("ok")
   })
 
-  it("histórico sem tool_result segue 'registradas', nunca pendente", () => {
+  it("histórico sem tool_result diz que não tem desfecho, nunca pendente nem concluído", () => {
     const digest = describeToolGroup([
       bash("ls", { result: undefined }),
       bash("pwd", { result: undefined }),
     ])
-    expect(digest.label).toBe("2 verificações registradas")
+    expect(digest.label).toBe("Rodou 2 comandos · sem desfecho registrado")
     expect(digest.state).toBe("recorded")
   })
 
@@ -208,7 +208,7 @@ describe("describeToolGroup · contagem por TRABALHO (a entidade é a fonte úni
     ])
     expect(digest.works).toBe(2)
     expect(digest.total).toBe(4)
-    expect(digest.label).toBe("2 delegações concluídas")
+    expect(digest.label).toBe("Delegou 2 tarefas")
   })
 
   it("ações sem correlação seguem contando uma a uma (nada muda pro comum)", () => {
@@ -218,6 +218,6 @@ describe("describeToolGroup · contagem por TRABALHO (a entidade é a fonte úni
       bash("cat a.txt"),
     ])
     expect(digest.works).toBe(3)
-    expect(digest.label).toBe("3 verificações concluídas")
+    expect(digest.label).toBe("Rodou 1 comando · leu 1 arquivo · buscou 1 vez")
   })
 })

@@ -9,16 +9,11 @@ import {
 import {
   ChevronDown,
   ChevronRight,
-  File,
-  FileCode2,
-  FileImage,
-  FileText,
-  Folder,
-  FolderOpen,
   RefreshCw,
   Search,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { FileIcon } from "@/components/ui/file-icon"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { isTauri } from "@/lib/db"
@@ -27,7 +22,6 @@ import {
   visibleLazyProjectFileEntries,
   type LazyProjectFileEntry,
 } from "@/lib/fileTree"
-import { projectFilePreviewKind } from "@/lib/projectFilePreview"
 import {
   invalidateProjectFiles,
   loadProjectDirectory,
@@ -64,14 +58,6 @@ function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   if (typeof error === "string" && error.trim()) return error
   return "Não foi possível listar os arquivos."
-}
-
-function FileGlyph({ path }: { path: string }) {
-  const kind = projectFilePreviewKind(path)
-  if (kind === "image") return <FileImage className="size-3.5" aria-hidden="true" />
-  if (kind === "markdown") return <FileText className="size-3.5" aria-hidden="true" />
-  if (kind === "code") return <FileCode2 className="size-3.5" aria-hidden="true" />
-  return <File className="size-3.5" aria-hidden="true" />
 }
 
 export function ProjectFilesPanel({ root }: { root: string }) {
@@ -446,7 +432,6 @@ export function ProjectFilesPanel({ root }: { root: string }) {
               const isExpanded = !normalizedQuery && expanded.has(node.relPath)
               const isSelected = selectedPath === node.relPath
               const childState = directories[node.relPath]
-              const DirectoryIcon = isExpanded ? FolderOpen : Folder
               return (
                 <div key={node.relPath}>
                   <Button
@@ -498,13 +483,8 @@ export function ProjectFilesPanel({ root }: { root: string }) {
                         )
                       ) : null}
                     </span>
-                    <span className="shrink-0 text-muted-foreground/65">
-                      {isDirectory ? (
-                        <DirectoryIcon className="size-3.5" aria-hidden="true" />
-                      ) : (
-                        <FileGlyph path={node.relPath} />
-                      )}
-                    </span>
+                    {/* O mesmo rosto do arquivo no fio e aqui (ADR-241). */}
+                    <FileIcon path={node.relPath} folder={isDirectory} />
                     <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
                       {node.name}
                     </span>
