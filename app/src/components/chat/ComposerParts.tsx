@@ -1,12 +1,4 @@
-import {
-  FileText,
-  Image as ImageIcon,
-  Paperclip,
-  Pencil,
-  Sparkles,
-  X,
-  Zap,
-} from "lucide-react"
+import { Paperclip, Sparkles } from "lucide-react"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Button } from "@/components/ui/button"
 import { SendSplit } from "@/components/chat/ComposerDispatch"
@@ -16,12 +8,11 @@ import { MicButton } from "@/components/chat/MicButton"
 import { useApp } from "@/store/app"
 import { DESTINATIONS } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
-import { useChat, type QueuedMsg } from "@/store/chat"
+import { MiniaturaDeAnexo } from "@/components/chat/MiniaturaDeAnexo"
+import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { BlocosDoRascunho } from "@/components/chat/BlocosDoRascunho"
 import type { Destination } from "@/lib/types"
-import { cn } from "@/lib/utils"
-import { fmtBytes } from "@/lib/format"
 import { resolverHelper } from "@/lib/helperDoProjeto"
 
 const CHIPS = [
@@ -48,7 +39,7 @@ export function AttachmentChips({
   const blocos = useComposerDrafts((s) => (activeId ? s.byConv[activeId]?.blocos : undefined))
   if (attachments.length === 0 && !blocos?.length) return null
   return (
-    <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+    <div className="flex flex-wrap gap-2 px-3 pt-3">
       {activeId &&
         blocos?.length ? <BlocosDoRascunho convId={activeId} blocos={blocos} /> : null}
       {attachments.map((a) => {
@@ -58,140 +49,19 @@ export function AttachmentChips({
             : a.kind === "pdf"
               ? caps.pdf
               : false
-        const Icon = a.kind === "pdf" ? FileText : ImageIcon
+        // Miniatura, prévia no hover e tela cheia no clique (ADR-240): o que
+        // você anexou fica à vista até sair.
         return (
-          <span
+          <MiniaturaDeAnexo
             key={a.path}
-            title={ok ? a.name : `${a.name} não é suportado por ${destLabel}`}
-            className={cn(
-              "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px]",
-              ok
-                ? "bg-secondary/50 text-foreground/80"
-                : "border-st-error/50 bg-st-error/10 text-st-error",
-            )}
-          >
-            <Icon className="size-3 shrink-0" />
-            <span className="max-w-[140px] truncate">{a.name}</span>
-            <span className="font-mono text-[11px] tabular-nums opacity-70">{fmtBytes(a.bytes)}</span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onRemove(a.path)
-              }}
-              className="text-muted-foreground hover:text-foreground"
-              aria-label="Remover anexo"
-            >
-              <X className="size-3" />
-            </button>
-          </span>
+            anexo={a}
+            galeria={attachments}
+            suportado={ok}
+            motivo={ok ? undefined : `${a.name} não é suportado por ${destLabel}`}
+            onRemover={() => onRemove(a.path)}
+          />
         )
       })}
-    </div>
-  )
-}
-
-/** Fila de mensagens digitadas durante o turno (acima do textarea). Enviadas
- *  juntas, num único envio, quando o turno atual termina, com ações de envio
- *  forçado e edição. */
-export function QueuedChips({
-  queued,
-  onRemove,
-  onEdit,
-  onForceSend,
-  turnState,
-}: {
-  queued: QueuedMsg[]
-  onRemove: (index: number) => void
-  onEdit?: (index: number) => void
-  onForceSend?: (index: number) => void
-  turnState: "running" | "finalizing" | "idle"
-}) {
-  if (queued.length === 0) return null
-  const queueLabel =
-    turnState === "running"
-      ? "Na fila · enviam quando este turno terminar"
-      : turnState === "finalizing"
-        ? "Na fila · aguardando o fechamento do turno"
-        : "Prontas para enviar"
-  return (
-    <div className="mb-1 flex flex-col gap-1.5 rounded-xl border bg-st-queued/10 p-2">
-      <div className="flex items-center justify-between px-0.5">
-        <span className="flex items-center gap-1.5 text-[11px] font-medium tracking-wide text-st-queued uppercase">
-          <span className="rounded-full bg-st-queued/25 px-1.5 py-px font-mono text-[11px] font-bold text-st-queued">
-            {queued.length}
-          </span>
-          {queueLabel}
-        </span>
-      </div>
-      {queued.map((msg, i) => (
-        <span
-          key={i}
-          title={msg.text}
-          className="flex items-center gap-2 rounded-md border bg-card/85 px-2.5 py-1 text-[12px] text-foreground/90 shadow-xs"
-        >
-          <span className="font-mono text-[11px] font-medium text-st-queued/80">{i + 1}.</span>
-          <span className="min-w-0 flex-1 truncate">{msg.text}</span>
-          {/* anexos viajam com a mensagem enfileirada — mostra que foram junto */}
-          {msg.attachments.map((a) => {
-            const Icon = a.kind === "pdf" ? FileText : ImageIcon
-            return (
-              <span
-                key={a.path}
-                title={a.name}
-                className="flex shrink-0 items-center gap-1 rounded border bg-secondary/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
-              >
-                <Icon className="size-2.5 shrink-0" />
-                <span className="max-w-[90px] truncate">{a.name}</span>
-              </span>
-            )
-          })}
-          <span className="flex shrink-0 items-center gap-1">
-            {onForceSend && (
-              <Button
-                variant="ghost"
-                size="chip"
-                onClick={() => onForceSend(i)}
-                className="text-st-queued hover:bg-st-queued/20 hover:text-st-queued"
-                title={
-                  turnState === "running"
-                    ? "Priorizar, interromper o turno e enviar a fila"
-                    : "Priorizar e enviar a fila"
-                }
-                aria-label={
-                  turnState === "running"
-                    ? "Interromper e enviar a fila"
-                    : "Enviar a fila"
-                }
-              >
-                <Zap className="size-2.5 fill-current" />
-                <span>{turnState === "running" ? "Interromper e enviar" : "Enviar"}</span>
-              </Button>
-            )}
-            {onEdit && (
-              <Button
-                variant="ghost"
-                size="icone-chip"
-                onClick={() => onEdit(i)}
-                className="text-muted-foreground hover:bg-secondary hover:text-foreground"
-                title="Devolver ao composer para editar"
-                aria-label="Editar mensagem"
-              >
-                <Pencil className="size-2.5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icone-chip"
-              onClick={() => onRemove(i)}
-              className="text-muted-foreground hover:bg-destructive/20 hover:text-destructive"
-              title="Remover da fila"
-              aria-label="Remover da fila"
-            >
-              <X className="size-3" />
-            </Button>
-          </span>
-        </span>
-      ))}
     </div>
   )
 }
@@ -384,7 +254,9 @@ export function ComposerActions({
   const missionEnabled = useApp((s) => s.settings.missionEnabled)
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1.5">
+      {/* A esquerda cede por ENCOLHIMENTO, nunca por corte: o seletor de motor
+          abre o painel dele daqui de dentro, e overflow cortaria o painel. */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 [&>*]:shrink-0 [&>[data-cede]]:shrink">
         <Button
           variant="ghost"
           size="icone-padrao"

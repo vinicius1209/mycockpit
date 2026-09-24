@@ -111,7 +111,8 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       }),
     }
     const html = await montar({ running: true })
-    expect(html).toContain("Na fila · enviam quando este turno terminar")
+    // ADR-240: a frase diz que elas vão juntas, num envio só
+    expect(html).toContain("Na fila · vão juntas, num envio só, quando este turno terminar")
     expect(html.indexOf("primeiro isso")).toBeLessThan(
       html.indexOf("depois aquilo"),
     )
@@ -148,7 +149,9 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
     expect(await montar()).not.toContain("Na fila")
   })
 
-  it("cada item da fila exibe ações de envio forçado, edição e remoção", async () => {
+  // ADR-240: o envio forçado subiu para o cabeçalho, uma vez só (ele sempre
+  // mandou a fila inteira); edição e remoção seguem em cada item.
+  it("a fila oferece envio forçado, e cada item edição e remoção", async () => {
     chat.byId = {
       [CONV]: conversa({
         running: true,
@@ -166,7 +169,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       [CONV]: conversa({ queued: [fila("instrução que ficou pendente")] }),
     }
     const html = await montar()
-    expect(html).toContain("Prontas para enviar")
+    expect(html).toContain("Na fila · prontas para enviar")
     expect(desabilitado(html, "Enviar a fila")).toBe(false)
     expect(html).not.toContain("ao terminar")
   })

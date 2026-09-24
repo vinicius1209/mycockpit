@@ -61,39 +61,40 @@ export function SendSplit({
   missionDisabled?: boolean
 }) {
   // Parar é VERMELHO (STYLEGUIDE §2: parar/destruir tem tinta própria).
-  // Abaixo de 560px de rodapé (medido: rótulos inteiros pedem ~320px ao lado da
-  // identidade), Interromper e Enfileirar ficam só com o ícone; nome e atalho
-  // seguem no `title` e no `aria-label`.
+  // Com texto no campo, UM botão com duas intenções (ADR-240): "Enfileirar"
+  // (Tab) é o principal, porque não interrompe ninguém; o ⚡ colado a ele é
+  // "corrigir agora" (Enter). Eram dois botões de texto que repetiam o que o
+  // próprio campo diz, e a soma empurrava o rodapé para duas linhas.
+  // Abaixo de 440px de rodapé o "Enfileirar" vira ícone; o atalho Tab só
+  // aparece a partir de 560px. Nome e atalho seguem no title e no aria-label.
   if (running || finalizing) {
     return (
       <div className="flex items-center gap-1.5">
-        {running && canEnqueue && onForceSendDraft && (
-          <Button
-            variant="secondary"
-            size="compacto"
-            onClick={onForceSendDraft}
-            className="rounded-full"
-            title="Interromper o turno e enviar esta mensagem (Enter)"
-            aria-label="Interromper e enviar"
-          >
-            <Zap className="size-3 fill-current" />
-            <span className="hidden @min-[560px]/composer:inline">Interromper e enviar</span>
-            <span className="hidden font-mono text-[11px] text-muted-foreground @min-[560px]/composer:inline">↵</span>
-          </Button>
-        )}
         {canEnqueue && (
-          <Button
-            variant="ghost"
-            size="compacto"
-            onClick={onSubmit}
-            className="rounded-full bg-st-queued/15 text-st-queued hover:bg-st-queued/25 hover:text-st-queued"
-            title="Enfileirar para o próximo turno (Tab)"
-            aria-label="Enfileirar"
-          >
-            <ListEnd className="size-3.5 @min-[560px]/composer:hidden" />
-            <span className="hidden @min-[560px]/composer:inline">Enfileirar</span>
-            <span className="hidden font-mono text-[11px] opacity-75 @min-[560px]/composer:inline">Tab</span>
-          </Button>
+          <span className="inline-flex h-7 overflow-hidden rounded-full bg-st-queued/12 ring-1 ring-st-queued/30 ring-inset">
+            <button
+              type="button"
+              onClick={onSubmit}
+              className="inline-flex items-center gap-1.5 px-2.5 text-[12px] text-st-queued transition-colors hover:bg-st-queued/15"
+              title="Enfileirar para o próximo turno (Tab)"
+              aria-label="Enfileirar"
+            >
+              <ListEnd className="size-3.5 @min-[440px]/composer:hidden" />
+              <span className="hidden @min-[440px]/composer:inline">Enfileirar</span>
+              <span className="hidden font-mono text-[11px] opacity-70 @min-[560px]/composer:inline">⇥</span>
+            </button>
+            {running && onForceSendDraft && (
+              <button
+                type="button"
+                onClick={onForceSendDraft}
+                className="grid w-7 place-items-center border-l border-st-queued/25 text-st-queued transition-colors hover:bg-st-queued/15"
+                title="Corrigir agora: interrompe o turno e envia esta mensagem (Enter)"
+                aria-label="Interromper e enviar"
+              >
+                <Zap className="size-3 fill-current" />
+              </button>
+            )}
+          </span>
         )}
         {running && (
           <Button

@@ -18,7 +18,6 @@ import { avisoDeRevezamento } from "@/store/chat/revezamento"
 import { SlashPopover } from "@/components/chat/SlashPopover"
 import {
   AttachmentChips,
-  QueuedChips,
   ComposerActions,
   IdentityControls,
   SuggestionChips,
@@ -55,6 +54,7 @@ import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { forceSendDraft, forceSendQueued, pullQueued } from "@/components/chat/filaComposer"
+import { FilaDaConversa } from "@/components/chat/FilaDoComposer"
 
 // O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
 // mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
@@ -552,9 +552,9 @@ export function CommandConsole({
         </div>
       )}
       {activeId && (
-        <QueuedChips
+        <FilaDaConversa
+          convId={activeId}
           queued={conv.queued ?? []}
-          onRemove={(i) => useChat.getState().removeQueued(activeId, i)}
           onEdit={handleEditQueued}
           onForceSend={finalizing ? undefined : handleForceSendQueued}
           turnState={running ? "running" : finalizing ? "finalizing" : "idle"}

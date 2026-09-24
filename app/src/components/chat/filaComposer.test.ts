@@ -169,3 +169,13 @@ describe("envio forçado e o corte (ADR-180)", () => {
     expect(tomarCausaDoCorte(CONV)).toBeUndefined()
   })
 })
+
+describe("reordenar a fila", () => {
+  it("leva o item para a posição pedida e mantém o resto na ordem", async () => {
+    const { moverItem } = await import("./filaComposer")
+    expect(moverItem(["a", "b", "c"], 2, 0)).toEqual(["c", "a", "b"])
+    expect(moverItem(["a", "b", "c"], 0, 2)).toEqual(["b", "c", "a"])
+    expect(moverItem(["a", "b", "c"], 1, 1)).toEqual(["a", "b", "c"])
+    expect(moverItem(["a", "b"], 5, 0)).toEqual(["a", "b"])
+  })
+})

@@ -94,6 +94,113 @@ fn compactar_se_vale(conn: &rusqlite::Connection) -> Result<Option<(i64, i64)>, 
     Ok(Some((livres, total)))
 }
 
+// ---------------- O banco vindo do nome antigo (ADR-222) ----------------
+// Saiu do `lib.rs` para ele caber na catraca (ADR-240); os testes seguem lá,
+// em `testes_migracao_do_banco`.
+
+/// As árvores de blob que o banco endereça por caminho RELATIVO ao
+/// `app_data_dir` (`attachments/<conv>/<hash>.<ext>`, `evidence/<conv>/...`).
+/// Como o relativo é resolvido a partir do diretório NOVO, elas têm que vir
+/// junto com o banco: deixá-las para trás transforma anexo e evidência de
+/// conversa antiga em arquivo faltando, com o banco inteiro e correto.
+const ARVORES: [&str; 2] = ["attachments", "evidence"];
+
+/// Traz o banco do diretório/nome antigos para os novos, UMA vez.
+///
+/// Núcleo puro (recebe os dois diretórios) para o teste não precisar de
+/// `AppHandle`. Roda antes de o plugin SQL abrir, que é a mesma janela em que
+/// `backup_database` opera: db+wal+shm quiescentes.
+///
+/// **Copia e nunca move.** O diretório antigo fica inteiro para que voltar
+/// para a versão anterior do app ache o banco onde ele estava. Quem apaga o
+/// antigo é a pessoa, depois de conferir que o novo está bom.
+///
+/// Devolve `true` quando copiou o banco.
+pub(crate) fn migrar_banco_entre(novo_dir: &std::path::Path, legado_dir: &std::path::Path) -> Result<bool, String> {
+    if novo_dir.join(crate::BANCO).exists() {
+        return Ok(false); // já migrado (ou instalação nova que já nasceu no nome novo)
+    }
+    // Candidatos, em ordem: mesmo diretório com nome velho (rename só do
+    // arquivo) e diretório velho com nome velho (rename dos dois).
+    let origem = [novo_dir.join(crate::BANCO_LEGADO), legado_dir.join(crate::BANCO_LEGADO)]
+        .into_iter()
+        .find(|p| p.exists());
+    let Some(origem) = origem else {
+        return Ok(false); // instalação nova: nada a migrar
+    };
+    let base_origem = origem.with_extension("");
+    std::fs::create_dir_all(novo_dir).map_err(|e| e.to_string())?;
+    for ext in crate::PARTES {
+        let src = base_origem.with_extension(ext);
+        if !src.exists() {
+            continue; // sem WAL/SHM é estado normal (banco fechado limpo)
+        }
+        let dst = novo_dir.join(format!("frota.{ext}"));
+        std::fs::copy(&src, &dst).map_err(|e| format!("cópia de {ext} falhou: {e}"))?;
+    }
+    Ok(true)
+}
+
+/// Copia uma árvore inteira, criando o que falta. Idempotente por arquivo:
+/// destino que já existe é pulado, então rodar de novo não desfaz nada que o
+/// app já escreveu no lugar novo.
+fn copiar_arvore(de: &std::path::Path, para: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(para).map_err(|e| e.to_string())?;
+    for entrada in std::fs::read_dir(de).map_err(|e| e.to_string())? {
+        let entrada = entrada.map_err(|e| e.to_string())?;
+        let destino = para.join(entrada.file_name());
+        let tipo = entrada.file_type().map_err(|e| e.to_string())?;
+        if tipo.is_dir() {
+            copiar_arvore(&entrada.path(), &destino)?;
+        } else if tipo.is_file() && !destino.exists() {
+            std::fs::copy(entrada.path(), &destino).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+/// Traz `attachments/` e `evidence/` do diretório legado, cada uma com gate
+/// próprio: o banco pode já ter migrado numa versão anterior desta função, e
+/// nesse caso as árvores ainda estão para trás. Devolve as que copiou.
+pub(crate) fn migrar_arvores_entre(
+    novo_dir: &std::path::Path,
+    legado_dir: &std::path::Path,
+) -> Result<Vec<&'static str>, String> {
+    let mut trazidas = Vec::new();
+    for nome in ARVORES {
+        let destino = novo_dir.join(nome);
+        if destino.exists() {
+            continue; // já veio (ou o app já criou a dele no lugar novo)
+        }
+        let origem = legado_dir.join(nome);
+        if !origem.is_dir() {
+            continue; // instalação nova, ou nunca houve anexo/evidência
+        }
+        copiar_arvore(&origem, &destino).map_err(|e| format!("{nome}: {e}"))?;
+        trazidas.push(nome);
+    }
+    Ok(trazidas)
+}
+
+/// A versão que fala com o Tauri. O diretório legado é irmão do novo: o
+/// identificador do bundle é o último componente do caminho.
+pub(crate) fn migrar_banco(app: &tauri::AppHandle) -> Result<bool, String> {
+    let novo = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("sem app_data_dir: {e}"))?;
+    let Some(legado) = novo.parent().map(|pai| pai.join(crate::ID_LEGADO)) else {
+        return Ok(false);
+    };
+    let copiou = migrar_banco_entre(&novo, &legado)?;
+    // As árvores vêm mesmo quando o banco já estava migrado: são gates
+    // independentes, e errar isso deixa o banco certo apontando para o vazio.
+    for nome in migrar_arvores_entre(&novo, &legado)? {
+        log::info!("árvore {nome} migrada para o diretório novo");
+    }
+    Ok(copiou)
+}
+
 #[cfg(test)]
 mod tests {
     use super::compactar_se_vale;

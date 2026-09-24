@@ -143,3 +143,23 @@ export function forceSendDraft(
     toast.error("Não consegui interromper o turno. A mensagem continua na fila.")
   })
 }
+
+/** A lista com o item de `de` levado para `para` (ADR-240: reordenar a fila
+ *  arrastando). Índice fora do intervalo devolve a lista como está. Puro. */
+export function moverItem<T>(lista: readonly T[], de: number, para: number): T[] {
+  if (de === para || de < 0 || de >= lista.length || para < 0 || para >= lista.length) return [...lista]
+  const copia = [...lista]
+  const [item] = copia.splice(de, 1)
+  copia.splice(para, 0, item)
+  return copia
+}
+
+/** Reordena a fila da conversa. A ordem é a do envio: elas vão juntas, na
+ *  ordem em que estão. */
+export function moverNaFila(convId: string, de: number, para: number): void {
+  useChat.setState((s) => {
+    const c = s.byId[convId]
+    if (!c?.queued) return s
+    return { byId: { ...s.byId, [convId]: { ...c, queued: moverItem(c.queued, de, para) } } }
+  })
+}

@@ -8759,3 +8759,38 @@ considerou.
      acima do composer.
 - **Consequência:** o composer só fala quando há algo a fazer, e quem quer o
   inventário acha no lugar que responde "o que o agente vê".
+
+### ADR-240 · Vídeo e outros formatos na aba do arquivo, anexos visíveis, fila polida e rodapé numa linha ✅
+- **Contexto (23/09/2026):** quatro fricções do mesmo gesto, ver o que está em
+  jogo. Um mp4 de 30 MB dizia "Pré-visualização indisponível" (o visualizador
+  lia o arquivo inteiro pela ponte e só sabia texto e imagem). O anexo no
+  composer era só o nome ("anexo algo, esqueço, e não consigo mais ver").
+  A fila cortava a mensagem na primeira linha, mostrava anexos como nomes
+  iguais e punha em cada linha um "Interromper e enviar" que mandava a fila
+  inteira. E o rodapé quebrava em duas linhas com o turno rodando. Mock
+  aprovado: `docs/mocks/composer-anexos-fila-video.html`.
+- **Decisão:**
+  1. **Protocolo `frota-arquivo`** (`arquivo_ao_vivo.rs`): arquivos do projeto
+     servidos com leitura em partes (Range, pedaços de 2 MB), no MESMO cerco
+     do visualizador (`scoped_file_path`), só leitura, fora da thread da
+     interface. Vídeo (mp4, m4v, mov, webm) toca num player próprio (velocidade,
+     repetir, som, tela cheia, atalhos e "Copiar este quadro", que leva o
+     frame ao rascunho); áudio, PDF e SVG abrem na aba. Formato sem leitor
+     mostra o que é, o tamanho, "Abrir no app padrão" e "Mostrar na pasta".
+  2. **Anexos:** miniatura, prévia ao passar o mouse (primitiva nova
+     `ui/hover-card`, com a superfície do popover) e tela cheia no clique,
+     no visualizador que o fio já usa.
+  3. **Fila:** mensagem em até duas linhas (clicar abre o resto), anexos como
+     miniaturas, editar e tirar no hover, reordenar arrastando pela alça
+     (ponteiro, não o arrastar do HTML), e "Enviar agora" uma vez só no
+     cabeçalho.
+  4. **Rodapé:** uma linha sempre. A esquerda cede por encolhimento (o nome do
+     motor trunca; abaixo de 520 px o modo vira só o escudo), nunca por corte,
+     porque o seletor de motor abre o painel lá de dentro. Com texto no campo
+     e turno rodando, um botão de duas intenções: "Enfileirar" (Tab) principal
+     e ⚡ "corrigir agora" (Enter) colado.
+  5. Para caber nas catracas: a migração do banco do nome antigo saiu do
+     `lib.rs` para `manutencao_do_banco.rs`, e a fila saiu de
+     `ComposerParts.tsx` para `FilaDoComposer.tsx`.
+- **Consequência:** nenhum formato do projeto vira beco sem saída, o que foi
+  anexado fica à vista até sair, e o rodapé não pula mais.

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react"
-import { Copy, FileWarning, LoaderCircle } from "lucide-react"
+import { Copy, FileWarning, FolderOpen, LoaderCircle, SquareArrowOutUpRight } from "lucide-react"
+import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
 import { Markdown } from "@/components/common/Markdown"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
@@ -10,8 +11,11 @@ import {
   assertSafeRasterImage,
   imageMimeType,
   projectFilePreviewKind,
+  tamanhoPeloProtocolo,
+  urlDoArquivo,
   type RasterDimensions,
 } from "@/lib/projectFilePreview"
+import { PlayerDeVideo, fmtTempo, type InfoDoVideo } from "@/components/layout/PlayerDeVideo"
 import { readProjectFileBytes, readTextFile } from "@/lib/sources"
 import { detectLanguage, highlightCode } from "@/lib/syntaxHighlight"
 
@@ -20,6 +24,8 @@ type PreviewState =
   | { status: "unsupported" }
   | { status: "error"; message: string }
   | { status: "text"; content: string }
+  /** Vídeo, áudio, PDF e SVG: servidos pelo protocolo, em partes (ADR-240). */
+  | { status: "midia"; url: string }
   | {
       status: "image"
       url: string
@@ -85,13 +91,23 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
   const [state, setState] = useState<PreviewState>(() =>
     kind === "unsupported" ? { status: "unsupported" } : { status: "loading" },
   )
+  const [infoDoVideo, setInfoDoVideo] = useState<InfoDoVideo | null>(null)
+  const [tamanho, setTamanho] = useState<number | null>(null)
+  const midia = kind === "video" || kind === "audio" || kind === "pdf" || kind === "svg"
 
   useEffect(() => {
     let cancelled = false
     let objectUrl: string | null = null
     if (kind === "unsupported") {
       setState({ status: "unsupported" })
-      return
+      if (isTauri()) {
+        void tamanhoPeloProtocolo(urlDoArquivo(root, absolutePath(root, path))).then((t) => {
+          if (!cancelled) setTamanho(t)
+        })
+      }
+      return () => {
+        cancelled = true
+      }
     }
     if (!isTauri()) {
       setState({ status: "error", message: "A leitura de arquivos está disponível no aplicativo." })
@@ -99,6 +115,18 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
     }
     setState({ status: "loading" })
     const fullPath = absolutePath(root, path)
+    setInfoDoVideo(null)
+    setTamanho(null)
+    if (midia) {
+      const url = urlDoArquivo(root, fullPath)
+      void tamanhoPeloProtocolo(url).then((t) => {
+        if (!cancelled) setTamanho(t)
+      })
+      setState({ status: "midia", url })
+      return () => {
+        cancelled = true
+      }
+    }
 
     async function load() {
       try {
@@ -127,7 +155,7 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
       cancelled = true
       if (objectUrl) URL.revokeObjectURL(objectUrl)
     }
-  }, [kind, path, root])
+  }, [kind, midia, path, root])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -138,6 +166,17 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
         {state.status === "image" && (
           <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/55">
             {state.dimensions.width} × {state.dimensions.height} · {formatBytes(state.bytes)}
+          </span>
+        )}
+        {state.status === "midia" && (infoDoVideo || tamanho != null) && (
+          <span className="shrink-0 font-mono text-[11px] tabular-nums text-muted-foreground/55">
+            {[
+              infoDoVideo ? `${infoDoVideo.largura} × ${infoDoVideo.altura}` : null,
+              infoDoVideo ? fmtTempo(infoDoVideo.duracao) : null,
+              tamanho != null ? formatBytes(tamanho) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         )}
         <Button
@@ -170,15 +209,21 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
           </div>
         </div>
       ) : state.status === "unsupported" ? (
-        <div className="grid min-h-0 flex-1 place-items-center px-8">
-          <div className="max-w-md text-center">
-            <FileWarning className="mx-auto mb-3 size-5 text-muted-foreground/60" />
-            <p className="text-[13px] text-foreground">Pré-visualização indisponível</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">
-              Este formato continua disponível para abrir no editor do sistema.
-            </p>
+        <SemPrevia caminho={path} completo={absolutePath(root, path)} tamanho={tamanho} />
+      ) : state.status === "midia" ? (
+        kind === "video" ? (
+          <PlayerDeVideo url={state.url} caminho={path} onInfo={setInfoDoVideo} />
+        ) : kind === "audio" ? (
+          <div className="grid min-h-0 flex-1 place-items-center px-8">
+            <audio src={state.url} controls preload="metadata" className="w-full max-w-xl" />
           </div>
-        </div>
+        ) : kind === "pdf" ? (
+          <iframe src={state.url} title={path} className="min-h-0 w-full flex-1 bg-background" />
+        ) : (
+          <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-background/50 p-6">
+            <img src={state.url} alt={path.split("/").pop() || path} draggable={false} className="max-h-full max-w-full object-contain" />
+          </div>
+        )
       ) : state.status === "image" ? (
         <div className="grid min-h-0 flex-1 place-items-center overflow-auto bg-background/50 p-6">
           <img
@@ -197,6 +242,43 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
       ) : (
         <CodePreview path={path} content={state.content} />
       )}
+    </div>
+  )
+}
+
+/** Formato sem leitor na tela (zip, docx…): em vez de beco sem saída, o que é,
+ *  o tamanho, e os dois caminhos para seguir (ADR-240). */
+function SemPrevia({ caminho, completo, tamanho }: { caminho: string; completo: string; tamanho: number | null }) {
+  const nome = caminho.split("/").pop() || caminho
+  const ext = nome.includes(".") ? nome.split(".").pop()!.toUpperCase().slice(0, 4) : "?"
+  const falhou = (erro: unknown) => toast.error(errorMessage(erro))
+  return (
+    <div className="grid min-h-0 flex-1 place-items-center px-8">
+      <div className="w-full max-w-sm rounded-xl border bg-card p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-13 w-11 shrink-0 place-items-center rounded-md bg-secondary font-mono text-[11px] font-semibold text-muted-foreground">
+            {ext}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[13px] text-foreground">{nome}</p>
+            <p className="font-mono text-[11px] text-muted-foreground tabular-nums">
+              Sem prévia na Frota{tamanho != null ? ` · ${formatBytes(tamanho)}` : ""}
+            </p>
+          </div>
+        </div>
+        {isTauri() && (
+          <div className="mt-3 flex gap-2">
+            <Button size="compacto" onClick={() => void openPath(completo).catch(falhou)}>
+              <SquareArrowOutUpRight />
+              Abrir no app padrão
+            </Button>
+            <Button size="compacto" variant="secondary" onClick={() => void revealItemInDir(completo).catch(falhou)}>
+              <FolderOpen />
+              Mostrar na pasta
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

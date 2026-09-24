@@ -92,7 +92,9 @@ export function ComposerShell({
           encolhe com Bastidores e painéis abertos) e os rótulos do despacho
           viram ícone antes de estourar o cartão. `flex-wrap` é a rede: se ainda
           assim não couber, o despacho desce de linha, nunca vaza (build #386). */}
-      <div className={cn("@container/composer flex flex-wrap items-center gap-2", footerClassName)}>{footer}</div>
+      {/* Uma linha SEMPRE (ADR-240): com turno rodando a direita crescia e o
+          grupo pulava para uma segunda linha. Quem cede é a esquerda. */}
+      <div className={cn("@container/composer flex min-w-0 flex-nowrap items-center gap-2", footerClassName)}>{footer}</div>
     </div>
   )
 }

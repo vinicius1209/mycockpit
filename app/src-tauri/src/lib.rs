@@ -39,6 +39,7 @@ mod conversation_items;
 mod browser_autorizacao;
 mod browser_janela;
 mod manutencao_do_banco;
+mod arquivo_ao_vivo;
 mod migrar_pasta;
 mod browser_script;
 mod desktop;
@@ -142,109 +143,6 @@ pub const ID_LEGADO: &str = "dev.vinicius.mycockpit";
 /// As três partes de um banco SQLite em WAL. Copiar só o `.db` deixaria para
 /// trás transações que ainda vivem no log.
 pub(crate) const PARTES: [&str; 3] = ["db", "db-wal", "db-shm"];
-
-/// As árvores de blob que o banco endereça por caminho RELATIVO ao
-/// `app_data_dir` (`attachments/<conv>/<hash>.<ext>`, `evidence/<conv>/...`).
-/// Como o relativo é resolvido a partir do diretório NOVO, elas têm que vir
-/// junto com o banco: deixá-las para trás transforma anexo e evidência de
-/// conversa antiga em arquivo faltando, com o banco inteiro e correto.
-const ARVORES: [&str; 2] = ["attachments", "evidence"];
-
-/// Traz o banco do diretório/nome antigos para os novos, UMA vez.
-///
-/// Núcleo puro (recebe os dois diretórios) para o teste não precisar de
-/// `AppHandle`. Roda antes de o plugin SQL abrir, que é a mesma janela em que
-/// `backup_database` opera: db+wal+shm quiescentes.
-///
-/// **Copia e nunca move.** O diretório antigo fica inteiro para que voltar
-/// para a versão anterior do app ache o banco onde ele estava. Quem apaga o
-/// antigo é a pessoa, depois de conferir que o novo está bom.
-///
-/// Devolve `true` quando copiou o banco.
-fn migrar_banco_entre(novo_dir: &std::path::Path, legado_dir: &std::path::Path) -> Result<bool, String> {
-    if novo_dir.join(BANCO).exists() {
-        return Ok(false); // já migrado (ou instalação nova que já nasceu no nome novo)
-    }
-    // Candidatos, em ordem: mesmo diretório com nome velho (rename só do
-    // arquivo) e diretório velho com nome velho (rename dos dois).
-    let origem = [novo_dir.join(BANCO_LEGADO), legado_dir.join(BANCO_LEGADO)]
-        .into_iter()
-        .find(|p| p.exists());
-    let Some(origem) = origem else {
-        return Ok(false); // instalação nova: nada a migrar
-    };
-    let base_origem = origem.with_extension("");
-    std::fs::create_dir_all(novo_dir).map_err(|e| e.to_string())?;
-    for ext in PARTES {
-        let src = base_origem.with_extension(ext);
-        if !src.exists() {
-            continue; // sem WAL/SHM é estado normal (banco fechado limpo)
-        }
-        let dst = novo_dir.join(format!("frota.{ext}"));
-        std::fs::copy(&src, &dst).map_err(|e| format!("cópia de {ext} falhou: {e}"))?;
-    }
-    Ok(true)
-}
-
-/// Copia uma árvore inteira, criando o que falta. Idempotente por arquivo:
-/// destino que já existe é pulado, então rodar de novo não desfaz nada que o
-/// app já escreveu no lugar novo.
-fn copiar_arvore(de: &std::path::Path, para: &std::path::Path) -> Result<(), String> {
-    std::fs::create_dir_all(para).map_err(|e| e.to_string())?;
-    for entrada in std::fs::read_dir(de).map_err(|e| e.to_string())? {
-        let entrada = entrada.map_err(|e| e.to_string())?;
-        let destino = para.join(entrada.file_name());
-        let tipo = entrada.file_type().map_err(|e| e.to_string())?;
-        if tipo.is_dir() {
-            copiar_arvore(&entrada.path(), &destino)?;
-        } else if tipo.is_file() && !destino.exists() {
-            std::fs::copy(entrada.path(), &destino).map_err(|e| e.to_string())?;
-        }
-    }
-    Ok(())
-}
-
-/// Traz `attachments/` e `evidence/` do diretório legado, cada uma com gate
-/// próprio: o banco pode já ter migrado numa versão anterior desta função, e
-/// nesse caso as árvores ainda estão para trás. Devolve as que copiou.
-fn migrar_arvores_entre(
-    novo_dir: &std::path::Path,
-    legado_dir: &std::path::Path,
-) -> Result<Vec<&'static str>, String> {
-    let mut trazidas = Vec::new();
-    for nome in ARVORES {
-        let destino = novo_dir.join(nome);
-        if destino.exists() {
-            continue; // já veio (ou o app já criou a dele no lugar novo)
-        }
-        let origem = legado_dir.join(nome);
-        if !origem.is_dir() {
-            continue; // instalação nova, ou nunca houve anexo/evidência
-        }
-        copiar_arvore(&origem, &destino).map_err(|e| format!("{nome}: {e}"))?;
-        trazidas.push(nome);
-    }
-    Ok(trazidas)
-}
-
-/// A versão que fala com o Tauri. O diretório legado é irmão do novo: o
-/// identificador do bundle é o último componente do caminho.
-fn migrar_banco(app: &tauri::AppHandle) -> Result<bool, String> {
-    let novo = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("sem app_data_dir: {e}"))?;
-    let Some(legado) = novo.parent().map(|pai| pai.join(ID_LEGADO)) else {
-        return Ok(false);
-    };
-    let copiou = migrar_banco_entre(&novo, &legado)?;
-    // As árvores vêm mesmo quando o banco já estava migrado: são gates
-    // independentes, e errar isso deixa o banco certo apontando para o vazio.
-    for nome in migrar_arvores_entre(&novo, &legado)? {
-        log::info!("árvore {nome} migrada para o diretório novo");
-    }
-    Ok(copiou)
-}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -848,6 +746,8 @@ pub fn run() {
     ];
 
     tauri::Builder::default()
+        // Arquivos do projeto à tela com leitura em partes: vídeo, áudio, PDF (ADR-240).
+        .register_asynchronous_uri_scheme_protocol(arquivo_ao_vivo::ESQUEMA, arquivo_ao_vivo::responder)
         // Logs precisam existir também na release: sem isso, uma falha do
         // WebView deixava só a janela preta e o Frota.log parado na build de
         // debug anterior. O teto + rotação limitam o disco a ~4 MB.
@@ -864,7 +764,7 @@ pub fn run() {
             // logo abaixo e o plugin SQL adiante precisam achá-lo já no lugar
             // novo. Falha aqui NÃO bloqueia o boot, mas grita no log: seguir
             // com banco vazio em silêncio seria perder o histórico sem aviso.
-            match migrar_banco(app.handle()) {
+            match manutencao_do_banco::migrar_banco(app.handle()) {
                 Ok(true) => log::info!("banco migrado para o nome novo ({BANCO})"),
                 Ok(false) => {}
                 Err(e) => log::error!("migração do banco falhou: {e}"),
@@ -1231,7 +1131,8 @@ pub fn run() {
 
 #[cfg(test)]
 mod testes_migracao_do_banco {
-    use super::{migrar_banco_entre, BANCO, BANCO_LEGADO, PARTES};
+    use super::{BANCO, BANCO_LEGADO, PARTES};
+    use crate::manutencao_do_banco::migrar_banco_entre;
     use std::path::PathBuf;
 
     fn tmp(tag: &str) -> (PathBuf, PathBuf) {
@@ -1334,7 +1235,7 @@ mod testes_migracao_do_banco {
         assert_eq!(std::fs::read_to_string(novo.join(BANCO)).unwrap(), "pagina");
     }
 
-    use super::migrar_arvores_entre;
+    use crate::manutencao_do_banco::migrar_arvores_entre;
 
     /// Anexo e evidência de uma conversa, no layout real
     /// (`<arvore>/<convId>/<arquivo>`).

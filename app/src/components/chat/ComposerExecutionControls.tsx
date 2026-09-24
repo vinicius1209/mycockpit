@@ -60,7 +60,7 @@ export function IdentityDoor({
     // `data-foco-proprio`: o cartão do composer foca o editor em qualquer clique
     // dentro dele, e este painel mora dentro do cartão. Sem a marca, o campo de
     // busca do seletor nunca segurava o cursor (ver `ComposerShell`).
-    <div ref={wrapRef} data-foco-proprio className="relative">
+    <div ref={wrapRef} data-foco-proprio data-cede className="relative min-w-0">
       <Button
         variant="ghost"
         size="padrao"
@@ -72,11 +72,11 @@ export function IdentityDoor({
             : "Agent, modelo e esforço"
         }
         className={cn(
-          "h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+          "h-8 max-w-full min-w-0 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
           staged && "text-foreground",
         )}
       >
-        <span className="max-w-[220px] truncate">{label}</span>
+        <span className="max-w-[220px] min-w-0 truncate">{label}</span>
         {staged ? (
           <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground" />
         ) : locked ? (

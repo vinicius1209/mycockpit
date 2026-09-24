@@ -1,4 +1,12 @@
-export type ProjectFilePreviewKind = "markdown" | "code" | "image" | "unsupported"
+export type ProjectFilePreviewKind =
+  | "markdown"
+  | "code"
+  | "image"
+  | "video"
+  | "audio"
+  | "pdf"
+  | "svg"
+  | "unsupported"
 
 export interface RasterDimensions {
   width: number
@@ -24,16 +32,11 @@ const BINARY_EXTENSIONS = new Set([
   "docx",
   "gz",
   "jar",
-  "mov",
-  "mp3",
-  "mp4",
   "o",
-  "pdf",
   "ppt",
   "pptx",
   "tar",
   "ttf",
-  "wav",
   "woff",
   "woff2",
   "xls",
@@ -54,10 +57,20 @@ export function imageMimeType(path: string): string | null {
   return IMAGE_MIME[extension(path)] ?? null
 }
 
+/** Mídia servida pelo protocolo `frota-arquivo` com leitura em partes
+ *  (ADR-240): o player pede pedaços, nada vem inteiro pela ponte. */
+const VIDEO = new Set(["mp4", "m4v", "mov", "webm"])
+const AUDIO = new Set(["mp3", "wav", "m4a", "ogg", "oga"])
+
 export function projectFilePreviewKind(path: string): ProjectFilePreviewKind {
   const ext = extension(path)
   if (ext === "md" || ext === "mdx") return "markdown"
   if (IMAGE_MIME[ext]) return "image"
+  if (VIDEO.has(ext)) return "video"
+  if (AUDIO.has(ext)) return "audio"
+  if (ext === "pdf") return "pdf"
+  // SVG como imagem pelo protocolo: `<img>` não roda o script de dentro.
+  if (ext === "svg") return "svg"
   if (BINARY_EXTENSIONS.has(ext)) return "unsupported"
   return "code"
 }
@@ -211,4 +224,23 @@ export function assertSafeRasterImage(
     throw new Error("A imagem é grande demais para uma pré-visualização segura.")
   }
   return dimensions
+}
+
+/** O endereço de um arquivo do projeto no protocolo `frota-arquivo` (ADR-240).
+ *  O Rust resolve e cerca o caminho igual ao visualizador. Puro. */
+export function urlDoArquivo(root: string, path: string): string {
+  const q = new URLSearchParams({ raiz: root, caminho: path })
+  return `frota-arquivo://localhost/?${q.toString()}`
+}
+
+/** Tamanho do arquivo pelo protocolo, sem baixá-lo: um Range de 1 byte e o
+ *  total do Content-Range. `null` quando não dá para saber. */
+export async function tamanhoPeloProtocolo(url: string): Promise<number | null> {
+  try {
+    const r = await fetch(url, { headers: { Range: "bytes=0-0" } })
+    const total = r.headers.get("content-range")?.split("/")[1]
+    return total ? Number(total) : null
+  } catch {
+    return null
+  }
 }

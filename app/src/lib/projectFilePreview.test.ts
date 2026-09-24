@@ -3,6 +3,7 @@ import {
   assertSafeRasterImage,
   imageMimeType,
   projectFilePreviewKind,
+  urlDoArquivo,
   rasterDimensions,
 } from "./projectFilePreview"
 
@@ -19,7 +20,22 @@ describe("projectFilePreviewKind", () => {
     expect(projectFilePreviewKind("README.md")).toBe("markdown")
     expect(projectFilePreviewKind("docs/foto.JPEG")).toBe("image")
     expect(projectFilePreviewKind("src/app.tsx")).toBe("code")
-    expect(projectFilePreviewKind("docs/manual.pdf")).toBe("unsupported")
+    // ADR-240: PDF, vídeo e áudio têm prévia pelo protocolo com leitura em
+    // partes; binário sem leitor segue sem prévia (e ganha o cartão com ações).
+    expect(projectFilePreviewKind("docs/manual.pdf")).toBe("pdf")
+    expect(projectFilePreviewKind("docs/visual-reference/winglee-agent-ui/video.mp4")).toBe("video")
+    expect(projectFilePreviewKind("gravacao.MOV")).toBe("video")
+    expect(projectFilePreviewKind("assets/aviso.mp3")).toBe("audio")
+    expect(projectFilePreviewKind("build/artefatos.zip")).toBe("unsupported")
+    expect(projectFilePreviewKind("relatorio.docx")).toBe("unsupported")
+  })
+
+  it("monta o endereço do protocolo com raiz e caminho codificados", () => {
+    const url = urlDoArquivo("/Users/me/projetos/frota", "docs/pasta com espaço/video.mp4")
+    expect(url.startsWith("frota-arquivo://localhost/?")).toBe(true)
+    const q = new URL(url).searchParams
+    expect(q.get("raiz")).toBe("/Users/me/projetos/frota")
+    expect(q.get("caminho")).toBe("docs/pasta com espaço/video.mp4")
   })
 
   it("resolve o MIME de fotos suportadas", () => {

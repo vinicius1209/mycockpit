@@ -255,7 +255,7 @@ fn expandir_til(path: &str, home: Option<&Path>) -> std::path::PathBuf {
     }
 }
 
-fn scoped_file_path(
+pub(crate) fn scoped_file_path(
     root: &str,
     path: &str,
     attachments: Option<&Path>,

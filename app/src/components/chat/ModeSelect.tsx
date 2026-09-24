@@ -90,7 +90,7 @@ export function ModeSelect({
           variant="ghost"
           size="padrao"
           className="h-8 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          title="Modo de execução do agente"
+          title={`Modo de execução: ${atual?.label ?? "padrão"}`}
           aria-label="Modo de execução do agente"
         >
           {/* O aviso de "Liberado" vive no ÍCONE, não no botão inteiro
@@ -104,7 +104,9 @@ export function ModeSelect({
           <Icon
             className={cn("size-3.5 shrink-0", perigoso && "text-st-warning")}
           />
-          <span>{atual?.label ?? "Modo"}</span>
+          {/* Abaixo de 520px de rodapé, só o escudo: o glifo já diz o modo
+              (ADR-167) e o nome segue no title e no menu (ADR-240). */}
+          <span className="hidden @min-[520px]/composer:inline">{atual?.label ?? "Modo"}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-72 p-1.5">
