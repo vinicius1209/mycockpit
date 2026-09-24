@@ -16,11 +16,18 @@ import { MiniaturaDeAnexo } from "@/components/chat/MiniaturaDeAnexo"
 import type { QueuedMsg } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
-/** A frase do cabeçalho, conforme o turno. Puro. */
-export function fraseDaFila(turnState: "running" | "finalizing" | "idle"): string {
-  if (turnState === "running") return "vão juntas, num envio só, quando este turno terminar"
+/** A frase do cabeçalho, conforme o turno e quantas são. "Vão juntas, num
+ *  envio só" só faz sentido no plural (mock `docs/mocks/fila-sem-repeticao.html`).
+ *  Puro. */
+export function fraseDaFila(turnState: "running" | "finalizing" | "idle", quantas = 2): string {
+  const uma = quantas === 1
+  if (turnState === "running") return uma ? "vai quando este turno terminar" : "vão juntas, num envio só, quando este turno terminar"
   if (turnState === "finalizing") return "aguardando o fechamento do turno"
-  return "prontas para enviar"
+  return uma ? "pronta para enviar" : "prontas para enviar"
+}
+
+function maiuscula(frase: string): string {
+  return frase.charAt(0).toUpperCase() + frase.slice(1)
 }
 
 /** Onde soltar: o índice do item cujo meio o ponteiro passou. Puro. */
@@ -53,6 +60,7 @@ export function QueuedChips({
   const [arrastando, setArrastando] = useState<{ de: number; para: number } | null>(null)
   const itens = useRef<(HTMLLIElement | null)[]>([])
   if (queued.length === 0) return null
+  const numerada = queued.length > 1
 
   const comecar = (de: number) => (e: React.PointerEvent<HTMLButtonElement>) => {
     if (!onMover || queued.length < 2) return
@@ -77,11 +85,22 @@ export function QueuedChips({
   return (
     <div className={embutida ? undefined : "mb-2 overflow-hidden rounded-xl border bg-card"}>
       <div className="flex items-center gap-2 border-b border-border/40 py-1.5 pr-1.5 pl-3">
-        <span className="rounded-md bg-st-queued/15 px-1.5 font-mono text-[11px] font-semibold text-st-queued tabular-nums">
-          {queued.length}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-foreground/85">
-          Na fila · {fraseDaFila(turnState)}
+        {/* Na gaveta a aba já diz "N na fila": aqui fica só o que ela não diz,
+            quando a mensagem vai (o contador aparece uma vez por superfície). */}
+        {!embutida && (
+          <span className="rounded-md bg-st-queued/15 px-1.5 font-mono text-[11px] font-semibold text-st-queued tabular-nums">
+            {queued.length}
+          </span>
+        )}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[12px]",
+            embutida ? "text-muted-foreground" : "text-foreground/85",
+          )}
+        >
+          {embutida
+            ? maiuscula(fraseDaFila(turnState, queued.length))
+            : `Na fila · ${fraseDaFila(turnState, queued.length)}`}
         </span>
         {onForceSend && (
           <Button
@@ -108,7 +127,10 @@ export function QueuedChips({
                 itens.current[i] = el
               }}
               className={cn(
-                "group/item grid grid-cols-[14px_16px_minmax(0,1fr)_auto] items-start gap-x-2 py-2 pr-1.5 pl-1.5 transition-colors hover:bg-accent/30",
+                "group/item grid items-start gap-x-2 py-2 pr-1.5 pl-1.5 transition-colors hover:bg-accent/30",
+                // O número é a ORDEM em que vão juntas: com uma só, não há
+                // ordem, e ele sai (o contador já está na aba).
+                numerada ? "grid-cols-[14px_16px_minmax(0,1fr)_auto]" : "grid-cols-[14px_minmax(0,1fr)_auto]",
                 i > 0 && "border-t border-border/40",
                 movendo && "opacity-50",
                 alvo && "bg-st-queued/10",
@@ -131,9 +153,11 @@ export function QueuedChips({
               >
                 <GripVertical className="size-3.5" />
               </button>
-              <span className="text-right font-mono text-[11px] leading-[18px] text-muted-foreground/70 tabular-nums">
-                {i + 1}
-              </span>
+              {numerada && (
+                <span className="text-right font-mono text-[11px] leading-[18px] text-muted-foreground/70 tabular-nums">
+                  {i + 1}
+                </span>
+              )}
               <button
                 type="button"
                 onClick={() => setAberta(aberta === i ? null : i)}
@@ -163,7 +187,7 @@ export function QueuedChips({
                 </Button>
               </span>
               {msg.attachments.length > 0 && (
-                <span className="col-start-3 mt-1.5 flex flex-wrap gap-1.5">
+                <span className={cn("mt-1.5 flex flex-wrap gap-1.5", numerada ? "col-start-3" : "col-start-2")}>
                   {msg.attachments.map((a) => (
                     // Documento mostra nome e tamanho: miniatura de PDF sem nome
                     // não diz o que vai junto (ADR-247).

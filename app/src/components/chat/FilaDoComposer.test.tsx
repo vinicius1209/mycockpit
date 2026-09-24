@@ -21,6 +21,42 @@ describe("fila do composer (ADR-240)", () => {
     expect(fraseDaFila("idle")).toBe("prontas para enviar")
   })
 
+  it("com uma só, a frase fica no singular: não há 'juntas' com uma", () => {
+    expect(fraseDaFila("running", 1)).toBe("vai quando este turno terminar")
+    expect(fraseDaFila("idle", 1)).toBe("pronta para enviar")
+    expect(fraseDaFila("finalizing", 1)).toBe("aguardando o fechamento do turno")
+  })
+
+  it("na gaveta, o contador fica só na aba: o cabeçalho não repete 'N na fila' (mock fila-sem-repeticao)", () => {
+    const html = renderToStaticMarkup(
+      <QueuedChips embutida queued={[{ text: "na verdade eu tenho acesso a api_key da openAi, serve?", attachments: [] }]} onRemove={() => {}} turnState="running" />,
+    )
+    expect(html).toContain("Vai quando este turno terminar")
+    expect(html).not.toContain("Na fila")
+    expect(html).not.toContain("bg-st-queued/15")
+  })
+
+  it("com uma mensagem não há ordem, então sem número; com duas, o número volta", () => {
+    const uma = renderToStaticMarkup(
+      <QueuedChips embutida queued={[{ text: "só esta", attachments: [print] }]} onRemove={() => {}} turnState="running" />,
+    )
+    expect(uma).toContain("grid-cols-[14px_minmax(0,1fr)_auto]")
+    expect(uma).toContain("col-start-2")
+    expect(uma).not.toMatch(/tabular-nums">1<\/span>/)
+    const duas = renderToStaticMarkup(
+      <QueuedChips
+        embutida
+        queued={[{ text: "primeira", attachments: [] }, { text: "segunda", attachments: [] }]}
+        onRemove={() => {}}
+        turnState="running"
+      />,
+    )
+    expect(duas).toContain("grid-cols-[14px_16px_minmax(0,1fr)_auto]")
+    expect(duas).toMatch(/tabular-nums">1<\/span>/)
+    expect(duas).toMatch(/tabular-nums">2<\/span>/)
+    expect(duas).toContain("Vão juntas, num envio só, quando este turno terminar")
+  })
+
   it("com UMA mensagem, a alça some sem sair do grid (o texto não cai na coluna de 16px)", () => {
     const html = renderToStaticMarkup(
       <QueuedChips

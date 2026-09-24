@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Fila sem repetição · hoje × proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--fg:#e7e8ea;--card:#141619;--muted:#9aa0a7;--faint:#687078;--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);--sel:rgba(255,255,255,.065);--queued:#d99138;--warn:#d99138;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 22px;max-width:980px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:30px 0 10px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.lado{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start}
+.quadro{width:620px}.quadro>.tit{font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:500}.quadro.esc>.tit{color:var(--queued)}
+.fundo{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px 0 16px}
+.quadro.esc .fundo{outline:1px solid rgba(217,145,56,.45)}
+/* a base do composer real (BaseDoComposer): tira + gaveta */
+.base{margin:0 10px;border:1px solid var(--border);border-bottom:0;border-radius:12px 12px 0 0;background:rgba(20,22,25,.6);overflow:hidden}
+.tira{display:flex}
+.seg{height:28px;display:flex;align-items:center;gap:8px;padding:0 10px;font-size:12px;white-space:nowrap}
+.seg.aberto{background:var(--sel);color:var(--fg)}
+.bola{display:grid;place-items:center;height:16px;min-width:16px;padding:0 4px;border-radius:999px;background:rgba(217,145,56,.15);color:var(--queued);font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}
+.gaveta{border-top:1px solid var(--div)}
+.cab{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 12px;border-bottom:1px solid var(--div)}
+.cab .badge{border-radius:6px;background:rgba(217,145,56,.15);padding:0 6px;font:600 11px var(--mono);color:var(--queued)}
+.cab .frase{flex:1;font-size:12px;color:rgba(231,232,234,.85);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cab .frase.leve{color:var(--muted)}
+.env{height:24px;display:flex;align-items:center;gap:5px;padding:0 8px;border-radius:6px;font-size:12px;color:var(--queued)}
+.item{display:grid;grid-template-columns:14px 16px minmax(0,1fr);gap:0 8px;padding:8px 6px;font-size:13px;line-height:18px}
+.item.sem-num{grid-template-columns:14px minmax(0,1fr)}
+.item + .item{border-top:1px solid var(--div)}
+.item .n{text-align:right;font:11px var(--mono);color:rgba(154,160,167,.7)}
+.composer{margin:0 10px;background:var(--card);border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:12px 14px 10px;font-size:13px;color:var(--faint)}
+.composer .barra{display:flex;gap:14px;margin-top:14px;font-size:12px;color:var(--muted)}
+.marca{outline:1.5px dashed rgba(242,118,107,.8);outline-offset:2px;border-radius:4px}
+.nota{font-size:12px;color:var(--muted);line-height:1.55;margin:10px 4px 0}.nota b{color:var(--fg);font-weight:500}
+</style>
+</head>
+<body>
+<h1>Fila sem repetição</h1>
+<p class="sub">O seu print: com a gaveta aberta, "1 na fila" aparece na aba, de novo no cabeçalho de dentro ("1 Na fila · …") e o "1" ainda aparece antes da única mensagem. As marcas vermelhas mostram o que se repete. A mensagem é a sua, do print.</p>
+
+<h2>1 · Uma mensagem na fila</h2>
+<div class="lado">
+  <div class="quadro">
+    <div class="tit">Hoje · o mesmo fato três vezes</div>
+    <div class="fundo">
+      <div class="base">
+        <div class="tira"><div class="seg aberto"><span class="bola marca">1</span><span class="marca">na fila</span></div></div>
+        <div class="gaveta">
+          <div class="cab"><span class="badge marca">1</span><span class="frase"><span class="marca">Na fila</span> · vão juntas, num envio só, quando este turno terminar</span><span class="env">⚡ Enviar agora</span></div>
+          <div class="item"><span></span><span class="n marca">1</span><span>na verdade eu tenho acesso a api_key da openAi, serve?</span></div>
+        </div>
+      </div>
+      <div class="composer">Enter corrige agora · Tab envia no próximo turno…<div class="barra"><span>Claude Code · Opus 5 · high</span><span style="color:var(--warn)">Liberado</span></div></div>
+    </div>
+  </div>
+
+  <div class="quadro esc">
+    <div class="tit">Proposta · a aba diz quantas, a gaveta diz o que acontece</div>
+    <div class="fundo">
+      <div class="base">
+        <div class="tira"><div class="seg aberto"><span class="bola">1</span>na fila</div></div>
+        <div class="gaveta">
+          <div class="cab"><span class="frase leve">Vai quando este turno terminar</span><span class="env">⚡ Enviar agora</span></div>
+          <div class="item sem-num"><span></span><span>na verdade eu tenho acesso a api_key da openAi, serve?</span></div>
+        </div>
+      </div>
+      <div class="composer">Enter corrige agora · Tab envia no próximo turno…<div class="barra"><span>Claude Code · Opus 5 · high</span><span style="color:var(--warn)">Liberado</span></div></div>
+    </div>
+    <p class="nota">O contador fica <b>só na aba</b>. Dentro da gaveta sobra o que a aba não diz: quando a mensagem vai e o "Enviar agora". Com uma só, o número na frente dela sai.</p>
+  </div>
+</div>
+
+<h2>2 · Duas ou mais <small>a ordem passa a importar, então o número volta</small></h2>
+<div class="lado">
+  <div class="quadro esc">
+    <div class="fundo">
+      <div class="base">
+        <div class="tira"><div class="seg aberto"><span class="bola">2</span>na fila</div></div>
+        <div class="gaveta">
+          <div class="cab"><span class="frase leve">Vão juntas, num envio só, quando este turno terminar</span><span class="env">⚡ Enviar agora</span></div>
+          <div class="item"><span></span><span class="n">1</span><span>na verdade eu tenho acesso a api_key da openAi, serve?</span></div>
+          <div class="item"><span></span><span class="n">2</span><span>e se precisar, uso a do projeto de teste</span></div>
+        </div>
+      </div>
+    </div>
+    <p class="nota">Com duas ou mais, o número é a ordem em que elas vão juntas, e a alça de arrastar reordena. "Vão juntas, num envio só" só faz sentido no plural; com uma, a frase é "Vai quando este turno terminar".</p>
+  </div>
+  <div class="quadro">
+    <div class="fundo" style="padding:16px">
+      <p class="nota" style="margin:0"><b>O que não muda:</b> a fila fora da gaveta (o cartão avulso, quando existir) mantém o cabeçalho com o contador, porque lá não há aba para dizer quantas. A regra é "o contador aparece uma vez por superfície".</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>

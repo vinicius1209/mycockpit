@@ -112,7 +112,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
     }
     const html = await montar({ running: true })
     // ADR-240: a frase diz que elas vão juntas, num envio só
-    expect(html).toContain("Na fila · vão juntas, num envio só, quando este turno terminar")
+    expect(html).toContain("Vão juntas, num envio só, quando este turno terminar")
     expect(html.indexOf("primeiro isso")).toBeLessThan(
       html.indexOf("depois aquilo"),
     )
@@ -146,7 +146,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
   })
 
   it("sem fila, a faixa não ocupa espaço nenhum", async () => {
-    expect(await montar()).not.toContain("Na fila")
+    expect(await montar()).not.toContain("na fila")
   })
 
   // ADR-240: o envio forçado subiu para o cabeçalho, uma vez só (ele sempre
@@ -169,7 +169,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       [CONV]: conversa({ queued: [fila("instrução que ficou pendente")] }),
     }
     const html = await montar()
-    expect(html).toContain("Na fila · prontas para enviar")
+    expect(html).toContain("Pronta para enviar")
     expect(desabilitado(html, "Enviar a fila")).toBe(false)
     expect(html).not.toContain("ao terminar")
   })
@@ -182,7 +182,7 @@ describe("a fila é visível, com o que foi digitado e o que foi anexado", () =>
       }),
     }
     const html = await montar({ finalizing: true })
-    expect(html).toContain("Na fila · aguardando o fechamento do turno")
+    expect(html).toContain("Aguardando o fechamento do turno")
     expect(desabilitado(html, "Enviar a fila")).toBeNull()
   })
 })
