@@ -110,7 +110,11 @@ export interface WorkEvent {
     /** Liberação do computador mudou para um run: `granted` true ao liberar,
      *  false ao revogar ou quando o run termina. */
     | "desktop_state"
+    /** O agente deu título à conversa no primeiro turno (ADR-246). */
+    | "conversation_title"
   data: {
+    /** `conversation_title`: o nome como o agente mandou; quem limpa é o front. */
+    title?: string
     process?: ManagedProcess
     processId?: string
     stream?: "stdout" | "stderr"

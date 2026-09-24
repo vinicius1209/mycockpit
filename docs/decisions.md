@@ -8897,3 +8897,26 @@ considerou.
 - **Consequência:** a lista de conversas ganha o espaço de três linhas mais uma
   por projeto aberto, e cor de identidade e cor de estado deixam de ocupar o
   mesmo pixel.
+
+### ADR-246 · O agente dá o título da conversa no primeiro turno ✅
+- **Contexto (24/09/2026):** a barra lateral mostrava a primeira frase crua como
+  título ("faça uma revisada nos ultimos a…", "https://x.com/wingl…"). O título
+  bom depende do helper (`store/chat/titulo.ts`), e com ele desligado nenhuma
+  conversa desta máquina tinha sido nomeada: zero chamadas de
+  `conversation_title` em `utility_usage_daily`. A pessoa escolheu que o
+  próprio agente sugira, porque ele já leu o pedido.
+- **Decisão:**
+  1. O `frota-work` ganha a tool `conversation_title`, que só emite o evento
+     `conversation_title` para a conversa dona. Não é efeito na máquina: vale
+     também no modo restrito.
+  2. A instrução vai só no primeiro turno, na seção genérica de telemetria do
+     `agent.rs` (vale para todo motor com o gateway de trabalho).
+  3. O front aplica com a régua do helper: `parseTitulo` limpa e recusa o que
+     não é nome, e `podeNomear` garante que o nome dado pela pessoa nunca é
+     tocado. Chegando antes, o título do agente dispensa o helper no fim do
+     turno.
+  4. As tools e a instrução saem do `work_gateway.rs` (no teto da catraca)
+     para `work_gateway/ferramentas.rs`.
+- **Consequência:** a conversa nova ganha nome de assunto sem helper e sem
+  custo extra, e motor sem o gateway de trabalho segue com o helper ou com a
+  primeira frase.

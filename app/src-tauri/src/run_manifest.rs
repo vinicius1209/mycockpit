@@ -247,6 +247,7 @@ pub fn build(
                 crate::work_gateway::PROCESS_STOP_TOOL,
                 crate::work_gateway::WORK_PLAN_TOOL,
                 crate::work_gateway::WORK_UPDATE_TOOL,
+                crate::work_gateway::CONVERSATION_TITLE_TOOL,
             ],
         ));
     }
@@ -386,12 +387,13 @@ mod tests {
             .iter()
             .find(|source| source.id == crate::work_gateway::MCP_SERVER_NAME)
             .unwrap();
-        assert_eq!(work.observed_count, Some(2));
+        assert_eq!(work.observed_count, Some(3));
         assert_eq!(
             work.tool_names,
             [
                 crate::work_gateway::WORK_PLAN_TOOL,
-                crate::work_gateway::WORK_UPDATE_TOOL
+                crate::work_gateway::WORK_UPDATE_TOOL,
+                crate::work_gateway::CONVERSATION_TITLE_TOOL
             ]
         );
         assert_eq!(work.label, "Planos e etapas");
@@ -440,7 +442,7 @@ mod tests {
             .find(|item| item.id == crate::work_gateway::MCP_SERVER_NAME)
             .unwrap();
         assert_eq!(work.enforceability, PolicyEnforceability::Hard);
-        assert_eq!(work.observed_count, Some(5));
+        assert_eq!(work.observed_count, Some(6));
 
         let playwright = manifest
             .sources

@@ -1254,13 +1254,7 @@ fn compose_mcp_preamble(
     if has_work_gateway
         && (first_turn || (global_work && last_fingerprint != fingerprint.as_deref()))
     {
-        sections.push(format!(
-            "TELEMETRIA DE TRABALHO: em tarefas com várias etapas, use o MCP `{}` para publicar e atualizar o plano. Para processos longos (dev servers, watchers, containers), use `{}` quando disponível neste modo de permissão. Publique o plano por `{}` e mantenha cada etapa atualizada ao iniciar/concluir por `{}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota.",
-            crate::work_gateway::MCP_SERVER_NAME,
-            crate::work_gateway::PROCESS_START_TOOL,
-            crate::work_gateway::WORK_PLAN_TOOL,
-            crate::work_gateway::WORK_UPDATE_TOOL,
-        ));
+        sections.push(crate::work_gateway::ferramentas::instrucao(first_turn));
     }
     if global_work && !has_work_gateway && last_fingerprint == Some("work-channel:on") {
         sections.push("O acompanhamento por frota-work está indisponível neste turno. Não envie atualizações ao canal anunciado anteriormente.".into());

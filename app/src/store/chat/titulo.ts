@@ -29,6 +29,7 @@ import {
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
+import type { WorkEvent } from "@/lib/work"
 
 /** Até que turno ainda vale tentar. O caso de projeto é o turno 1; 2 e 3 só
  *  existem para a conversa cujo primeiro turno pegou o helper fora do ar. Passou
@@ -108,4 +109,28 @@ export async function nomearConversa(convId: string): Promise<void> {
   if (!depois || !podeNomear(metaDepois?.title, depois.items)) return
 
   await agora.renameConversation(convId, nome)
+}
+
+/**
+ * O título que o PRÓPRIO agente deu no primeiro turno (ADR-246), pela tool
+ * `conversation_title` do `frota-work`. Sem helper configurado a conversa ficava
+ * com a primeira frase crua para sempre; o agente já leu o pedido e sabe dizer
+ * o assunto. Mesma régua do helper: `parseTitulo` limpa e recusa o que não é
+ * nome, e `podeNomear` garante que o nome que a pessoa deu nunca é tocado.
+ * Chegando antes, ele também dispensa o helper no fim do turno (o título deixa
+ * de ser o derivado, e `podeNomear` fecha a porta).
+ */
+export async function tituloDoAgente(event: WorkEvent): Promise<void> {
+  if (event.kind !== "conversation_title") return
+  const convId = event.data.convId
+  const nome = parseTitulo(event.data.title ?? "")
+  if (!convId || !nome) return
+  const chat = useChat.getState()
+  const c = chat.byId[convId]
+  if (!c) return
+  const meta = (chat.conversationsByProject[c.projectId] ?? chat.conversations).find(
+    (cv) => cv.id === convId,
+  )
+  if (!podeNomear(meta?.title, c.items)) return
+  await chat.renameConversation(convId, nome)
 }

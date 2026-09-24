@@ -18,6 +18,7 @@ import { listenWorkEvents, type WorkEvent } from "@/lib/work"
 import { vistaDoAgenteNoNavegador } from "@/lib/navegadorAoVivo"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { tituloDoAgente } from "@/store/chat/titulo"
 
 let iniciada = false
 
@@ -155,6 +156,7 @@ export function iniciarEventosDeTrabalho(): void {
     pedidoDeNavegador(event)
     vistaDoAgenteNoNavegador(event)
     pedidoDeDesktop(event)
+    void tituloDoAgente(event).catch((err) => console.error("[título] o do agente não entrou:", err))
   }).catch((erro) => {
     // Sem escuta o plano e os processos ficam mudos: tem que aparecer no log,
     // e a próxima chamada pode tentar de novo.

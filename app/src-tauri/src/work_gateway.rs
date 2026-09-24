@@ -22,6 +22,9 @@ pub const PROCESS_POLL_TOOL: &str = "process_poll";
 pub const PROCESS_STOP_TOOL: &str = "process_stop";
 pub const WORK_PLAN_TOOL: &str = "work_plan";
 pub const WORK_UPDATE_TOOL: &str = "work_update";
+pub mod ferramentas;
+pub use ferramentas::CONVERSATION_TITLE_TOOL;
+use ferramentas::tool_specs;
 pub const SOCK_ENV: &str = "FROTA_WORK_SOCK";
 
 const TAIL_LINES: usize = 240;
@@ -774,6 +777,10 @@ async fn handle_request<R: tauri::Runtime>(
             );
             Ok(json!({ "accepted": true }))
         }
+        CONVERSATION_TITLE_TOOL => ferramentas::titulo(&args).map(|title| {
+            emit_work(&app, "conversation_title", json!({ "runId": run_id, "convId": conv_id, "title": title }));
+            json!({ "accepted": true })
+        }),
         _ => Err("ação desconhecida".into()),
     };
     let response = match answer {
@@ -987,78 +994,6 @@ fn available_tools(readiness: Option<&Value>) -> Vec<Value> {
         .into_iter()
         .filter(|tool| processes_allowed || !is_process_tool(tool["name"].as_str().unwrap_or("")))
         .collect()
-}
-
-fn tool_specs() -> Vec<Value> {
-    vec![
-        json!({
-            "name": PROCESS_START_TOOL,
-            "description": "Inicia um processo externo de longa duração sob controle da Frota. Use para dev servers, watchers, containers e comandos que precisam continuar enquanto o turno segue.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "command": { "type": "string" },
-                    "label": { "type": "string" }
-                },
-                "required": ["command"]
-            }
-        }),
-        json!({
-            "name": PROCESS_POLL_TOOL,
-            "description": "Consulta estado, PID e tail de um processo gerenciado.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "process_id": { "type": "string" } },
-                "required": ["process_id"]
-            }
-        }),
-        json!({
-            "name": PROCESS_STOP_TOOL,
-            "description": "Interrompe um processo gerenciado e o seu grupo de filhos.",
-            "inputSchema": {
-                "type": "object",
-                "properties": { "process_id": { "type": "string" } },
-                "required": ["process_id"]
-            }
-        }),
-        json!({
-            "name": WORK_PLAN_TOOL,
-            "description": "Publica o plano/to-do vivo do turno para a Frota.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "tasks": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "id": { "type": "string" },
-                                "title": { "type": "string" },
-                                "description": { "type": "string" },
-                                "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] }
-                            },
-                            "required": ["id", "title"]
-                        }
-                    }
-                },
-                "required": ["tasks"]
-            }
-        }),
-        json!({
-            "name": WORK_UPDATE_TOOL,
-            "description": "Atualiza uma tarefa publicada no plano vivo.",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "id": { "type": "string" },
-                    "title": { "type": "string" },
-                    "description": { "type": "string" },
-                    "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] }
-                },
-                "required": ["id", "status"]
-            }
-        }),
-    ]
 }
 
 pub(crate) async fn request_parent(action: &str, args: &Value) -> Option<Value> {

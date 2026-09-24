@@ -27,13 +27,14 @@ fn processos_respeitam_modo_e_planejamento_enquanto_etapas_continuam_disponiveis
         .into_iter()
         .map(|tool| tool["name"].as_str().unwrap().to_owned())
         .collect();
-    assert_eq!(names, [WORK_PLAN_TOOL, WORK_UPDATE_TOOL]);
+    // o título (ADR-246) não é efeito na máquina: vale até no modo restrito
+    assert_eq!(names, [WORK_PLAN_TOOL, WORK_UPDATE_TOOL, CONVERSATION_TITLE_TOOL]);
     assert_eq!(
         available_tools(Some(
             &json!({"ok":true,"result":{"ready":true,"processesAllowed":true}})
         ))
         .len(),
-        5
+        6
     );
 }
 
@@ -53,7 +54,7 @@ async fn listener_restrito_aceita_plano_mas_recusa_efeito_mesmo_em_chamada_diret
     let readiness = request_socket(listener.path(), "work_ready", &json!({}))
         .await
         .unwrap();
-    assert_eq!(available_tools(Some(&readiness)).len(), 2);
+    assert_eq!(available_tools(Some(&readiness)).len(), 3);
     for action in [PROCESS_START_TOOL, PROCESS_POLL_TOOL, PROCESS_STOP_TOOL] {
         let reply = request_socket(
             listener.path(),
@@ -75,6 +76,42 @@ async fn listener_restrito_aceita_plano_mas_recusa_efeito_mesmo_em_chamada_diret
             .unwrap()["ok"],
         true
     );
+}
+
+// ADR-246: o agente nomeia a conversa no primeiro turno. Vale no modo
+// restrito (não é efeito na máquina) e chega à tela com a conversa dona.
+#[tokio::test]
+async fn titulo_do_agente_chega_a_tela_com_a_conversa_dona() {
+    let app = mock_app();
+    let events = Arc::new(Mutex::new(Vec::<Value>::new()));
+    let sink = events.clone();
+    app.listen("work://event", move |event| {
+        sink.lock()
+            .unwrap()
+            .push(serde_json::from_str(event.payload()).unwrap());
+    });
+    let listener = WorkListener::spawn(
+        app.handle().clone(),
+        run_id(),
+        "conversa-t".into(),
+        std::env::temp_dir().to_string_lossy().into_owned(),
+        Arc::new(ProcessRegistry::default()),
+        false,
+    )
+    .unwrap();
+    let ok = request_socket(listener.path(), CONVERSATION_TITLE_TOOL, &json!({"title":"Barra lateral enxuta"}))
+        .await
+        .unwrap();
+    assert_eq!(ok["ok"], true);
+    let vazio = request_socket(listener.path(), CONVERSATION_TITLE_TOOL, &json!({"title":"  "}))
+        .await
+        .unwrap();
+    assert_eq!(vazio["ok"], false);
+    let emitted = events.lock().unwrap();
+    assert_eq!(emitted.len(), 1, "título recusado não vira evento");
+    assert_eq!(emitted[0]["kind"], "conversation_title");
+    assert_eq!(emitted[0]["data"]["convId"], "conversa-t");
+    assert_eq!(emitted[0]["data"]["title"], "Barra lateral enxuta");
 }
 
 #[tokio::test]
