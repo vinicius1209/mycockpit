@@ -19,9 +19,12 @@ import { useComposerDrafts } from "@/store/composerDrafts"
 export function DiffTab({
   focusPath,
   focusSeq,
+  soArquivo,
 }: {
   focusPath?: string
   focusSeq?: number
+  /** A aba das alterações de UM arquivo (ADR-248): só ele. */
+  soArquivo?: string
 }) {
   const project = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId) ?? null)
   const activeConvId = useChat((s) => s.activeId)
@@ -46,9 +49,11 @@ export function DiffTab({
       cwd={worktree ?? project.path}
       focusPath={focusPath}
       focusSeq={focusSeq}
-      // Mandar os comentários pro composer FECHA a aba: o texto foi parar na
-      // conversa, e deixar você olhando o diff enquanto o rascunho espera do
-      // outro lado é esconder o resultado do próprio gesto.
+      soArquivo={soArquivo}
+      // Mandar os comentários pro composer VOLTA para a Conversa: o texto foi
+      // parar lá, e deixar você olhando o diff enquanto o rascunho espera do
+      // outro lado é esconder o resultado do próprio gesto. A aba do arquivo
+      // fica na tira (ADR-248).
       onSendToComposer={(text) => {
         if (!activeConvId) return
         useComposerDrafts.getState().appendText(activeConvId, text)

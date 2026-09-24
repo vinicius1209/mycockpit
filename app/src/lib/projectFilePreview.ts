@@ -236,11 +236,23 @@ export function urlDoArquivo(root: string, path: string): string {
 /** Tamanho do arquivo pelo protocolo, sem baixá-lo: um Range de 1 byte e o
  *  total do Content-Range. `null` quando não dá para saber. */
 export async function tamanhoPeloProtocolo(url: string): Promise<number | null> {
+  return (await sondaDoProtocolo(url)).tamanho
+}
+
+/** O tamanho, e se o arquivo saiu do disco (o protocolo responde 404 só
+ *  para isso, ADR-243). Falha de rede não é "sumiu": fica `false`. */
+export async function sondaDoProtocolo(url: string): Promise<{ tamanho: number | null; sumiu: boolean }> {
   try {
     const r = await fetch(url, { headers: { Range: "bytes=0-0" } })
     const total = r.headers.get("content-range")?.split("/")[1]
-    return total ? Number(total) : null
+    return { tamanho: total ? Number(total) : null, sumiu: r.status === 404 }
   } catch {
-    return null
+    return { tamanho: null, sumiu: false }
   }
+}
+
+/** O erro de leitura diz que o arquivo não existe (ENOENT, como o Rust o
+ *  escreve no macOS e no Linux)? Puro. */
+export function arquivoSumiu(erro: string): boolean {
+  return /\(os error 2\)|no such file or directory/i.test(erro)
 }

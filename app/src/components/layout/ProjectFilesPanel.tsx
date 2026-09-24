@@ -31,6 +31,8 @@ import {
 import { cn } from "@/lib/utils"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { useApp } from "@/store/app"
+import { abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
+import { useChat } from "@/store/chat"
 
 type RequestState = "idle" | "loading" | "ready" | "error"
 
@@ -76,6 +78,13 @@ export function ProjectFilesPanel({ root }: { root: string }) {
   const rowRefs = useRef(new Map<string, HTMLButtonElement>())
   const mainTab = useApp((state) => state.mainTab)
   const openFileTab = useApp((state) => state.openFileTab)
+  // Os abertos em aba ganham um ponto; o à vista, o destaque (ADR-243). O que
+  // está ao lado da conversa conta como à vista enquanto a conversa está.
+  const convId = useChat((state) => state.activeId)
+  const abas = useAbasDeArquivo((state) => abasDo(state, convId))
+  const ladoCabe = useAbasDeArquivo((state) => state.ladoCabe)
+  const revelar = useAbasDeArquivo((state) => state.revelar)
+  const aRevelar = useRef<string | null>(null)
 
   const loadDirectory = useCallback(
     async (relPath: string, cursor: string | null = null, expected = localGeneration.current) => {
@@ -141,6 +150,19 @@ export function ProjectFilesPanel({ root }: { root: string }) {
       searchGeneration.current += 1
     }
   }, [loadDirectory])
+
+  // "Mostrar na árvore" (menu da aba): abre as pastas até o arquivo e o foca
+  // quando a linha existir. O pedido é consumido, senão voltaria a cada visita.
+  useEffect(() => {
+    if (!revelar) return
+    useAbasDeArquivo.setState({ revelar: null })
+    const partes = revelar.caminho.split("/")
+    const pastas = partes.slice(0, -1).map((_, i) => partes.slice(0, i + 1).join("/"))
+    setQuery("")
+    setExpanded((current) => new Set([...current, ...pastas]))
+    for (const pasta of pastas) void loadDirectory(pasta)
+    aRevelar.current = revelar.caminho
+  }, [revelar, loadDirectory])
 
   const normalizedQuery = query.trim()
   useEffect(() => {
@@ -213,6 +235,15 @@ export function ProjectFilesPanel({ root }: { root: string }) {
     setFocusedPath(path)
     requestAnimationFrame(() => rowRefs.current.get(path)?.focus())
   }
+
+  // Só quando as linhas mudam: é quando a pasta aberta pelo pedido chega.
+  useEffect(() => {
+    const alvo = aRevelar.current
+    if (!alvo || !rows.some((row) => row.node.relPath === alvo)) return
+    aRevelar.current = null
+    setFocusedPath(alvo)
+    requestAnimationFrame(() => rowRefs.current.get(alvo)?.focus())
+  }, [rows])
 
   function closeDirectory(path: string) {
     setExpanded((current) => {
@@ -325,7 +356,8 @@ export function ProjectFilesPanel({ root }: { root: string }) {
   }
 
   const rootState = directories[""] ?? EMPTY_DIRECTORY
-  const selectedPath = mainTab.kind === "arquivo" ? mainTab.path : null
+  const selectedPath =
+    mainTab.kind === "arquivo" ? mainTab.path : mainTab.kind === "conversa" && ladoCabe ? abas.aoLado : null
   const busy = normalizedQuery
     ? search.status === "loading"
     : rootState.status === "loading"
@@ -488,6 +520,13 @@ export function ProjectFilesPanel({ root }: { root: string }) {
                     <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
                       {node.name}
                     </span>
+                    {!isDirectory && abas.abertas.includes(node.relPath) && (
+                      <span
+                        aria-label="Aberto numa aba"
+                        title="Aberto numa aba"
+                        className={cn("size-1.5 shrink-0 rounded-full", isSelected ? "bg-foreground" : "bg-muted-foreground/70")}
+                      />
+                    )}
                   </Button>
                   {isExpanded && childState?.status === "error" && (
                     <div className="flex items-center gap-2 py-1 pr-2 text-[11px] text-destructive" style={{ paddingLeft: 28 + depth * 12 }}>

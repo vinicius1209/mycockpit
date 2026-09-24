@@ -10,12 +10,11 @@
 // ela seria dois idiomas pro mesmo gesto.
 
 import { StickyNotesToggle } from "@/components/notes/StickyNotesTrigger"
-import { useMemo } from "react"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import {
   Columns2,
   Command,
   Copy,
-  File,
   FileDiff,
   GitFork,
   Globe,
@@ -40,6 +39,9 @@ import {
   getConversationFamily,
 } from "@/components/layout/conversationTree"
 import { controle } from "@/components/ui/controle"
+import { AbasDeArquivo, TodasAsAbas } from "@/components/layout/AbasDeArquivo"
+import { chaveDaVista, instalarAtalhosDasAbas } from "@/components/layout/abasNoPrincipal"
+import { CARTAO_PARA_O_LADO, abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -129,26 +131,49 @@ export function MainTabs({
   const commandShortcut = commandMenuShortcut(currentPlatform())
   // O navegador fica na tira enquanto estiver aberto, mesmo com a conversa à
   // vista: ele tem trabalho em andamento (página carregada, login, análise), e
-  // voltar pra conversa é trocar de vista, não fechar. Diff e arquivo seguem
-  // transitórios, porque são leitura.
+  // voltar pra conversa é trocar de vista, não fechar. Os arquivos também
+  // ficam (ADR-243, em `AbasDeArquivo`); só Alterações segue transitória. E a
+  // tira inteira é da conversa ativa (ADR-244).
   const navegadorAberto = useApp((s) => s.navegadorAberto)
-  const transient =
-    tab.kind === "diff"
-      ? { kind: tab.kind, label: "Alterações", title: "Alterações", Icon: FileDiff }
-      : tab.kind === "arquivo"
-        ? {
-            kind: tab.kind,
-            label: tab.path.split("/").pop() || tab.path,
-            title: tab.path,
-            Icon: File,
-          }
-        : null
+  const vista = chaveDaVista(tab)
+  const quantasAbertas = useAbasDeArquivo((s) => abasDo(s, activeId).abertas.length)
+  const tira = useRef<HTMLDivElement | null>(null)
+  const lista = useRef<HTMLDivElement | null>(null)
+  const [transborda, setTransborda] = useState(false)
+
+  useEffect(instalarAtalhosDasAbas, [])
+  // A tira tem a largura do cartão: é ela quem diz se cabe um arquivo ao lado
+  // da conversa. O host da conversa não serve, porque some com o arquivo à vista.
+  useLayoutEffect(() => {
+    const el = tira.current
+    if (!el || typeof ResizeObserver === "undefined") return
+    const medir = () => {
+      useAbasDeArquivo.getState().setLadoCabe(el.clientWidth >= CARTAO_PARA_O_LADO)
+      const l = lista.current
+      setTransborda(Boolean(l && l.scrollWidth > l.clientWidth + 1))
+    }
+    medir()
+    const observador = new ResizeObserver(medir)
+    observador.observe(el)
+    if (lista.current) observador.observe(lista.current)
+    return () => observador.disconnect()
+  }, [quantasAbertas, navegadorAberto, tab.kind])
 
   return (
     <div
+      ref={tira}
       className="flex shrink-0 items-center gap-1 border-b border-border/40 px-2 py-1"
     >
-      <div role="tablist" aria-label="Abas do painel" className="flex min-w-0 items-center gap-1 overflow-x-auto">
+      <div
+        ref={lista}
+        role="tablist"
+        aria-label="Abas do painel"
+        className={cn(
+          "relative flex min-w-0 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          // Quando nem todas cabem, a borda direita esmaece: há mais ali.
+          transborda && "[mask-image:linear-gradient(to_right,black_calc(100%-32px),transparent)]",
+        )}
+      >
         {hasBranches && family ? (
           family.branches.map((branch, idx) => {
             const isBranchActive = branch.id === activeId && tab.kind === "conversa"
@@ -164,9 +189,11 @@ export function MainTabs({
                 <button
                   role="tab"
                   aria-selected={isBranchActive}
+                  // Troca primeiro e mostra a Conversa depois: a troca põe na
+                  // tela o que o ramo guardou (ADR-244), e o clique foi na
+                  // Conversa dele.
                   onClick={() => {
-                    if (tab.kind !== "conversa") onSelect("conversa")
-                    void switchConversation(branch.id)
+                    void switchConversation(branch.id).then(() => onSelect("conversa"))
                   }}
                   className={cn(
                     "flex h-full items-center gap-1.5 rounded-md px-2 text-[11px] font-medium transition-colors",
@@ -214,17 +241,21 @@ export function MainTabs({
             onClose={() => onClose("navegador")}
           />
         )}
-        {transient && (
+        <AbasDeArquivo vista={vista} />
+        {/* O diff de UM arquivo é aba da tira (`AbasDeArquivo`); só o diff
+            inteiro segue como a aba passageira "Alterações". */}
+        {tab.kind === "diff" && !tab.focusPath && (
           <AbaComFechar
             ativa
-            label={transient.label}
-            title={transient.title}
-            Icon={transient.Icon}
-            onSelect={() => onSelect(transient.kind)}
-            onClose={() => onClose(transient.kind)}
+            label="Alterações"
+            title="Alterações"
+            Icon={FileDiff}
+            onSelect={() => onSelect("diff")}
+            onClose={() => onClose("diff")}
           />
         )}
       </div>
+      {transborda && <TodasAsAbas vista={vista} />}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button

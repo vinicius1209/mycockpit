@@ -151,6 +151,10 @@ export function PlayerDeVideo({
             const v = e.currentTarget
             setDuracao(v.duration)
             onInfo?.({ largura: v.videoWidth, altura: v.videoHeight, duracao: v.duration })
+            // Com `preload="metadata"` o WebKit sabe o tamanho mas não pinta
+            // quadro nenhum: o vídeo ficava preto até o play (24/09/2026). Um
+            // passo mínimo obriga a decodificar o primeiro quadro.
+            if (v.currentTime === 0) v.currentTime = 0.001
           }}
           onError={() => setErro("O formato ou o codec não é compatível com o player do sistema.")}
           className="max-h-full max-w-full rounded-sm"

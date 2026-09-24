@@ -29,3 +29,15 @@ describe("a vista do navegador segue a aba do agente (ADR-231)", () => {
     expect(abaParaSeguir(usou("B", "/Users/me/projetos/sicredi"), "/Users/me/projetos/landing-prime", "A", false)).toBeNull()
   })
 })
+
+describe("a vista de uma conversa não segue o agente de outra (ADR-244)", () => {
+  it("evento do agente de outra conversa é ignorado; o da própria, seguido", () => {
+    const projeto = "/Users/me/projetos/landing-prime"
+    expect(abaParaSeguir(usou("B"), projeto, "A", false, "c-2")).toBeNull()
+    expect(abaParaSeguir(usou("B"), projeto, "A", false, "c-1")).toBe("B")
+  })
+
+  it("a janela avulsa do projeto (sem conversa) segue qualquer uma", () => {
+    expect(abaParaSeguir(usou("B"), "/Users/me/projetos/landing-prime", "A", false, null)).toBe("B")
+  })
+})

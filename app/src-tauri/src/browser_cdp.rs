@@ -243,17 +243,35 @@ pub(crate) async fn target_for(
     Ok((project_id, page))
 }
 
+/// As páginas do navegador do projeto. Com `conversa`, só as dela (ADR-244):
+/// é o que a aba Navegador da conversa mostra. Listar é só leitura; `abrir`
+/// é o gesto da pessoa que dá à conversa uma página (adota uma sem dono ou
+/// abre outra). Sem `conversa`, todas (a janela avulsa do projeto).
 #[tauri::command]
 pub async fn browser_pages(
     app: tauri::AppHandle,
     project_path: String,
+    conversa: Option<String>,
+    abrir: Option<bool>,
 ) -> Result<Vec<BrowserPage>, String> {
+    let raiz = Path::new(&project_path);
+    if let Some(conv) = conversa.filter(|c| !c.is_empty()) {
+        let paginas = if abrir.unwrap_or(false) {
+            crate::browser_donos::paginas_da_conversa(&app, &project_path, &conv).await?
+        } else {
+            crate::browser_donos::listar_da_conversa(&app, &project_path, &conv).await?
+        };
+        return Ok(paginas
+            .into_iter()
+            .map(|page| public_page(page, raiz))
+            .collect());
+    }
     let (_, session) = project_session(&app, &project_path).await?;
     Ok(raw_pages(&session.endpoint)
         .await?
         .into_iter()
         .filter(|page| page.kind == "page")
-        .map(|page| public_page(page, Path::new(&project_path)))
+        .map(|page| public_page(page, raiz))
         .collect())
 }
 
@@ -358,8 +376,14 @@ pub async fn browser_preview_start(
     app: tauri::AppHandle,
     project_path: String,
     target_id: String,
+    conversa: Option<String>,
 ) -> Result<BrowserPreviewStatus, String> {
     let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
+    // A página que a pessoa olha numa conversa é onde o próximo turno do
+    // agente dela começa (ADR-244).
+    if let Some(conv) = conversa.as_deref() {
+        crate::browser_donos::com(|d| d.usar(conv, &target_id));
+    }
     // Navegador ligado antes do ADR-229 ainda tem a página de 756×413: a
     // primeira vista acerta, sem segurar o quadro (no-op quando já está certa).
     let ajuste = app.clone();

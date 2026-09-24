@@ -10,6 +10,7 @@ import { ContextPanel } from "@/components/layout/ContextPanel"
 import { MainTabs } from "@/components/layout/MainTabs"
 import { DiffTab } from "@/components/layout/DiffTab"
 import { FileTab } from "@/components/layout/FileTab"
+import { LadoDaConversa } from "@/components/layout/LadoDaConversa"
 import { NavegadorTab } from "@/components/browser/NavegadorTab"
 import { NavegadorFlutuante } from "@/components/browser/NavegadorFlutuante"
 import { CitarTrecho } from "@/components/chat/CitarTrecho"
@@ -203,9 +204,12 @@ export function AppShell() {
                     por CSS, nunca por desmontagem. Trocar de aba e voltar tem
                     que devolver o fio no mesmo scroll e o composer com o mesmo
                     rascunho — remontar perderia os dois, além de travar. */}
+                {/* O arquivo ao lado (ADR-243) mora no mesmo host, à direita, e
+                    a conversa só estreita: o fio nunca desmonta. */}
                 <div
                   className={cn(
                     HOST_SUPERFICIE,
+                    "flex-row",
                     (coberto ||
                       viewMode !== "linear" ||
                       mainTab.kind !== "conversa" ||
@@ -213,7 +217,10 @@ export function AppShell() {
                       "hidden",
                   )}
                 >
-                  <Fronteira area="a conversa"><ChatPanel /></Fronteira>
+                  <div className={cn(HOST_SUPERFICIE, "min-w-0")}>
+                    <Fronteira area="a conversa"><ChatPanel /></Fronteira>
+                  </div>
+                  <LadoDaConversa />
                 </div>
                 {viewMode === "linear" &&
                   !coberto &&
@@ -225,7 +232,7 @@ export function AppShell() {
                   )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "diff" && (
                   <div className={HOST_SUPERFICIE}>
-                    <Fronteira area="a aba de alterações" resetKey={mainTab.focusPath}><DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} /></Fronteira>
+                    <Fronteira area="a aba de alterações" resetKey={mainTab.focusPath}><DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} soArquivo={mainTab.focusPath} /></Fronteira>
                   </div>
                 )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "navegador" && (

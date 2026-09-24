@@ -66,6 +66,14 @@ pub fn intervalo(range: Option<&str>, tamanho: u64) -> Option<(u64, u64)> {
     Some((inicio, fim.min(inicio + PEDACO - 1)))
 }
 
+/// Relativo, sem subir e sem `~`: só pode apontar para dentro da raiz. Puro.
+fn dentro_da_raiz(caminho: &str) -> bool {
+    let p = Path::new(caminho);
+    !caminho.starts_with('~')
+        && p.is_relative()
+        && p.components().all(|c| matches!(c, std::path::Component::Normal(_) | std::path::Component::CurDir))
+}
+
 fn erro(status: StatusCode, texto: &str) -> Response<Vec<u8>> {
     Response::builder()
         .status(status)
@@ -90,8 +98,15 @@ fn servir(anexos: Option<&Path>, uri: &str, range: Option<&str>) -> Response<Vec
     let (Some(raiz), Some(caminho)) = (raiz, caminho) else {
         return erro(StatusCode::BAD_REQUEST, "faltou a raiz ou o caminho");
     };
-    let Ok(canon) = crate::sources::scoped_file_path(&raiz, &caminho, anexos) else {
-        return erro(StatusCode::FORBIDDEN, "fora do projeto");
+    let canon = match crate::sources::scoped_file_path(&raiz, &caminho, anexos) {
+        Ok(canon) => canon,
+        // 404 só para "não existe" DENTRO do projeto: a aba do arquivo diz que
+        // ele saiu do disco em vez de um erro genérico (ADR-243). Caminho que
+        // sobe (`..`), absoluto ou com `~` segue no 403 do cerco, exista ou não.
+        Err(e) if e.contains("(os error 2)") && dentro_da_raiz(&caminho) => {
+            return erro(StatusCode::NOT_FOUND, "não existe mais")
+        }
+        Err(_) => return erro(StatusCode::FORBIDDEN, "fora do projeto"),
     };
     if !canon.is_file() {
         return erro(StatusCode::NOT_FOUND, "não é um arquivo");
@@ -203,6 +218,15 @@ mod tests {
         let inteiro = servir(None, &uri(&raiz, "docs/clip.mp4"), None);
         assert_eq!(inteiro.status(), StatusCode::OK);
         assert_eq!(inteiro.body(), b"0123456789");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn arquivo_que_saiu_do_disco_responde_404() {
+        let (dir, raiz) = projeto(b"x");
+        std::fs::remove_file(dir.join("docs/clip.mp4")).unwrap();
+        let r = servir(None, &uri(&raiz, "docs/clip.mp4"), None);
+        assert_eq!(r.status(), StatusCode::NOT_FOUND);
         let _ = std::fs::remove_dir_all(dir);
     }
 

@@ -12,6 +12,12 @@
 > ações destrutivas usam a confirmação compartilhada e caminhos são validados
 > no Rust antes do efeito. Ver ADR-160.
 
+> **Correção (24/09/2026, ADR-243):** a aba de arquivo deixou de ser
+> transitória. Cada arquivo aberto tem aba própria, o conjunto é do projeto e
+> persiste (`store/abasDeArquivo.ts`), e um deles pode ficar ao lado da
+> conversa no mesmo host dela. Só Alterações segue transitória. A regra de a
+> conversa nunca desmontar continua valendo.
+
 ## O diagnóstico é dimensional, não estético
 
 O painel direito abre em `defaultSize="30%"` e tem teto de `maxSize="42%"`

@@ -17,6 +17,7 @@ import {
   MousePointer2,
   Paperclip,
   RefreshCw,
+  Plus,
   RotateCw,
   ShieldCheck,
   ShieldOff,
@@ -164,6 +165,12 @@ export function NavegadorVista({
               </p>
             )}
             <DropdownMenuSeparator className="bg-border/40" />
+            {nav.abrirPagina && nav.pages.length === 0 && (
+              <DropdownMenuItem onSelect={nav.abrirPagina} className="text-[12px]">
+                <Plus />
+                Abrir uma página aqui
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={nav.refreshPages} className="text-[12px]">
               <RefreshCw />
               Atualizar páginas
@@ -308,11 +315,21 @@ export function NavegadorVista({
                   ? "Conectando ao navegador"
                   : selected
                     ? "Aguardando o primeiro quadro"
-                    : "Nenhuma página aberta"}
+                    : nav.abrirPagina
+                      ? "Esta conversa ainda não tem página"
+                      : "Nenhuma página aberta"}
               </p>
               <p className="mt-1 text-[12px] text-muted-foreground">
-                A imagem é do navegador deste projeto, sem abrir outra janela.
+                {!nav.loading && !selected && nav.abrirPagina
+                  ? "Cada conversa usa as próprias páginas do navegador do projeto."
+                  : "A imagem é do navegador deste projeto, sem abrir outra janela."}
               </p>
+              {!nav.loading && !selected && nav.abrirPagina && (
+                <Button size="compacto" variant="secondary" className="mt-3" onClick={nav.abrirPagina}>
+                  <Plus />
+                  Abrir uma página aqui
+                </Button>
+              )}
             </div>
           </div>
         )}

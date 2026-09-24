@@ -269,10 +269,18 @@ async fn alvo(
             esperar_o_gesto(app, &project_id, cwd, agora).await?;
         }
     }
-    let abas = crate::browser_cdp::abas_do_projeto(app, cwd).await?;
+    // Só as páginas desta conversa (ADR-244), e o run começa na última em que
+    // ela trabalhou, não na primeira do navegador.
+    let abas = crate::browser_donos::paginas_da_conversa(app, cwd, conv_id).await?;
+    if gateway.aba_atual().is_none() {
+        if let Some(ultima) = crate::browser_donos::com(|d| d.ultima(conv_id)) {
+            gateway.trocar(&ultima);
+        }
+    }
     let page = gateway
         .fixar(&abas)
         .ok_or("o navegador está ligado mas não tem nenhuma aba aberta")?;
+    crate::browser_donos::com(|d| d.usar(conv_id, &page.id));
     let novas = gateway.registrar(&abas);
     Ok(Alvo { project_id, page, abas, novas })
 }
@@ -486,6 +494,7 @@ pub async fn handle(
                 .ok_or("essa aba não existe mais; liste com browser_tabs")?;
             assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
             gateway.trocar(&page.id);
+            crate::browser_donos::com(|d| d.usar(conv_id, &page.id));
             crate::browser_cdp::ativar_aba(app, cwd, &page.id).await?;
             Ok(json!({ "ok": true, "aba": aba_json(page, cwd) }))
         }
@@ -498,6 +507,10 @@ pub async fn handle(
             };
             assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
             let nova = crate::browser_cdp::nova_aba(app, cwd).await?;
+            crate::browser_donos::com(|d| {
+                d.tomar(&nova.id, conv_id);
+                d.usar(conv_id, &nova.id);
+            });
             gateway.registrar(std::slice::from_ref(&nova));
             gateway.trocar(&nova.id);
             if let (Some(destino), Some(ws)) = (&destino, nova.websocket_url.as_deref()) {
@@ -526,7 +539,10 @@ pub async fn handle(
             assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
             crate::browser_cdp::fechar_aba(app, cwd, &id).await?;
             let restantes: Vec<_> = alvo.abas.iter().filter(|p| p.id != id).cloned().collect();
-            let ativa = gateway.fixar(&restantes).map(|p| aba_json(&p, cwd));
+            let ativa = gateway.fixar(&restantes).map(|p| {
+                crate::browser_donos::com(|d| d.usar(conv_id, &p.id));
+                aba_json(&p, cwd)
+            });
             Ok(json!({ "ok": true, "fechada": id, "ativa": ativa }))
         }
         _ => Err("ação desconhecida".into()),
@@ -535,9 +551,16 @@ pub async fn handle(
     // Ação que pode abrir aba (clique, tecla, script): confere de novo na
     // hora. A aba que abrir depois aparece na próxima chamada, pelo `alvo`.
     let mut novas = alvo.novas;
+    // Página sem dono que surgiu agora nasceu desta ação: é desta conversa.
     if matches!(action, CLICK_TOOL | KEY_TOOL | EVALUATE_TOOL | TYPE_TOOL) {
-        if let Ok(abas) = crate::browser_cdp::abas_do_projeto(app, cwd).await {
-            novas.extend(gateway.registrar(&abas));
+        if let Ok(todas) = crate::browser_cdp::abas_do_projeto(app, cwd).await {
+            let minhas = crate::browser_donos::com(|d| {
+                for p in d.sem_dono(&todas) {
+                    d.tomar(&p.id, conv_id);
+                }
+                d.da_conversa(conv_id, &todas)
+            });
+            novas.extend(gateway.registrar(&minhas));
         }
     }
     if !novas.is_empty() {

@@ -8868,6 +8868,102 @@ considerou.
 - **Consequência:** liberar o computador funciona no primeiro pedido, e os
   dois pedidos de gesto (navegador e computador) se comportam igual.
 
+### ADR-243 · As abas de arquivo ficam abertas, por projeto, e uma pode ir para o lado da conversa ✅
+- **Contexto (24/09/2026):** "quando eu saio do foco ou eu volto para a
+  conversa, ele fecha". A aba do arquivo era UMA e passageira
+  (docs/abas-no-principal-plan.md: "diff e arquivo seguem transitórios"):
+  voltar para a Conversa a descartava, e alternar entre dois arquivos era
+  reabri-los pela árvore. Mock aprovado em
+  `docs/mocks/abas-de-arquivo-persistentes.html`.
+- **Decisão:**
+  1. Arquivo deixa de ser transitório. Cada arquivo aberto ganha uma aba, depois
+     da Conversa e de um filete, e fica até a pessoa fechar (×, clique do meio,
+     menu da aba, ⌘W). Alterações continua transitória: é índice, não leitura.
+  2. O CONJUNTO persiste (`store/abasDeArquivo.ts`): ordem, arquivo ao lado,
+     largura do lado, e o arquivo que estava à vista. A VISTA continua sendo o
+     `mainTab`. (Nasceu por projeto; no mesmo dia a ADR-244 passou tudo para a
+     conversa.)
+  3. "Abrir ao lado da conversa": um arquivo só, à direita, no MESMO host da
+     conversa, com divisor arrastável; o fio só estreita, nunca desmonta. Abaixo
+     de 900 px de cartão o lado vira aba comum (a tira mede o cartão).
+  4. Menu da aba: abrir ao lado, mostrar na árvore, copiar caminho, fechar, as
+     outras, as da direita, todas, e reabrir a última fechada (⌘⇧T). Atalhos:
+     ⌘1 Conversa, ⌘2…⌘9 posições, ⌃Tab/⌃⇧Tab, arrastar reordena. Muitas abas:
+     a tira rola, esmaece na borda e ganha o "N ⌄" com todas.
+  5. **⌘W fecha a aba, não a janela** (decisão da pessoa). No macOS o menu
+     padrão pegava o atalho antes da página, então `menu_da_janela.rs` troca
+     "Close Window" por "Fechar aba" (⌘W, avisa a tela por
+     `frota://fechar-aba`) e "Fechar janela" (⌘⇧W). Na Conversa o ⌘W não faz
+     nada. Fora da janela principal (popover, painel do navegador) ele segue
+     fechando aquela janela. No Linux não há menu: o Ctrl+W chega como tecla.
+  6. Arquivo que saiu do disco não some em silêncio: a aba fica riscada e o
+     conteúdo diz onde ele estava, com "Fechar a aba". O protocolo
+     `frota-arquivo` responde 404 só para caminho relativo dentro da raiz; o
+     que sobe, é absoluto ou usa `~` segue no 403 do cerco.
+  7. Na árvore, um ponto marca os abertos e o destaque marca o que está à vista
+     (o do lado conta enquanto a Conversa está).
+  8. Para caber na catraca, as três etapas do banco no boot saíram do `setup`
+     de lib.rs para `manutencao_do_banco::preparar_no_boot`.
+- **De brinde:** o vídeo pinta o primeiro quadro antes do play (com
+  `preload="metadata"` o WebKit ficava no preto).
+- **Consequência:** ler e alternar entre arquivos deixa de custar reabrir, e
+  ler um arquivo enquanto se conversa sobre ele não esconde nenhum dos dois.
+
+### ADR-244 · A tira é da conversa, e cada conversa tem as próprias páginas do navegador ✅
+- **Contexto (24/09/2026):** "se eu estou na aba do navegador e eu troco de
+  conversa, a aba do navegador continua a mesma. Eu penso que isso tem que ser
+  por conversa". A investigação achou três furos: (1) a vista da tira era
+  global, e trocar de conversa não mexia nela; (2) trocar de projeto voltava
+  para a Conversa, mas a bandeira "navegador aberto" era global e a aba seguia
+  na tira mostrando o navegador do outro projeto; (3) as abas de arquivo da
+  ADR-243 eram do projeto, mas o conteúdo vem da worktree da conversa ativa, e
+  a mesma aba passava a mostrar outro arquivo ao trocar de conversa. E, no
+  Rust, cada turno do agente pegava a primeira página aberta do navegador:
+  agentes de conversas diferentes clicavam na mesma página. "Pensa que confuso
+  ter apenas 1 aba de navegador compartilhada entre conversas."
+- **Decisão (da pessoa: "tudo por conversa", e uma página por conversa):**
+  1. Cada conversa guarda a própria tira (`store/abasDeArquivo.ts`, chave
+     `frota.abasDaConversa`): arquivos abertos, o do lado, a aba Navegador
+     (fechada, aberta ou à vista) e o arquivo à vista. Trocar de conversa, ou de
+     projeto, põe na tela o que a de destino guardou; conversa nova começa só
+     com a Conversa. Alterações segue passageira.
+  2. A ligação mora em `components/layout/abasNoPrincipal.ts`, não no
+     `store/app.ts` (que não pode importar o chat): toda mudança de vista é
+     anotada na conversa da tela, e a troca de `activeId` restaura. A mudança
+     que vem junto com a troca de projeto não é anotada, senão apagaria o que a
+     conversa de saída tinha à vista. É a mesma troca que restaura no boot.
+  3. O Chromium segue um por projeto (perfil e login são do projeto), mas cada
+     página tem dono (`browser_donos.rs`, em memória, porque o id da página
+     morre com o Chromium). O agente de uma conversa só lista e só age nas
+     páginas dela; o run começa na última em que ela trabalhou. Conversa sem
+     página adota uma sem dono (a página com que o Chromium nasce) ou abre uma
+     nova, nunca a de outra. Página que surge depois de uma ação do agente é da
+     conversa dele.
+  4. A aba Navegador e a janela flutuante mostram só as páginas da conversa na
+     tela e só seguem o agente dela. A página que a pessoa escolhe numa conversa
+     vira o ponto de partida do próximo turno do agente dela. A janela avulsa do
+     projeto continua vendo todas.
+  5. Olhar não abre página: a lista da tela é só leitura. Página nasce quando
+     o agente precisa de uma ou pelo gesto "Abrir uma página aqui" (estado
+     vazio da aba Navegador). A abertura é uma por vez, para duas chamadas
+     simultâneas não abrirem duas.
+- **Ciclo de vida (revisão pedida pela pessoa no mesmo dia):**
+  - o `persist` do zustand grava no disco a cada `set`, mesmo sem mudança:
+    nenhuma ação do store das abas chama `set` sem ter mudado algo (o
+    `setLadoCabe` roda a cada redimensionar), e o arrasto do divisor guarda
+    a largura uma vez, ao soltar;
+  - as duas ligações com a conversa não formam laço (uma escreve só no store
+    das abas, que ninguém escuta ali; a outra não reescreve vista igual) e
+    saem cedo, porque rodam a cada mudança dos stores, inclusive a cada
+    pedaço de texto do fio; no dev, o HMR desliga as antigas;
+  - a vista do navegador zera quadro, seleção e polling ao trocar de conversa,
+    e para o screencast quando a conversa não tem página;
+  - efeitos com dependências explícitas; ref não se escreve durante o render.
+- **Fica de fora:** um MCP de terceiros ligado direto ao CDP (Playwright com
+  `--cdp-endpoint`) escolhe páginas por conta própria.
+- **Consequência:** trocar de conversa troca a tira inteira, e dois agentes no
+  mesmo projeto não disputam a mesma página.
+
 ### ADR-245 · Barra lateral enxuta: navegação em ladrilhos, cor do projeto como marca, estado em palavra ✅
 - **Contexto (24/09/2026):** parecer de layout pedido pela pessoa, mock
   `docs/mocks/barra-lateral-hierarquia.html` aprovado em partes. A barra
@@ -8947,6 +9043,32 @@ considerou.
      os testes do plano migram para a base.
 - **Consequência:** durante o turno, o que fica acima do composer é uma linha,
   mais os cartões que pedem gesto.
+
+### ADR-248 · As alterações de um arquivo também ficam na tira, uma aba por arquivo ✅
+- **Contexto (24/09/2026, build t434):** "abri um arquivo pelo menu lateral
+  de alterações do git, ele foi aberto corretamente, mas ao voltar pra
+  conversa ele novamente fechou. E como posso abrir um arquivo e depois abrir
+  outro sem fechar o primeiro?". As ADR-243/244 deixaram persistente só o
+  arquivo aberto para LER (árvore, menção no fio). O clique no painel
+  Alterações abria a aba "Alterações", que ficou passageira por ser "índice":
+  voltar para a Conversa a descartava, e o segundo clique trocava o primeiro.
+  Para quem usa, os dois gestos são "abrir um arquivo".
+- **Decisão:**
+  1. As alterações de um arquivo abertas pelo painel do git viram aba própria
+     na tira, persistente como a de leitura, por conversa (mesmo store, mesma
+     regra de troca de conversa, fechar, reabrir, atalhos). Chave com prefixo
+     NUL (`chaveDoDiff`), que não existe em caminho: o mesmo arquivo pode ter
+     as duas abas, a de ler e a das alterações, e o ícone diferencia (tipo do
+     arquivo × diff).
+  2. A aba mostra só aquele arquivo, aberto (`DiffPanel` com `soArquivo`). Se
+     ele não tem mais alteração (commit, revert), a aba diz isso em vez de
+     mostrar o diff dos outros.
+  3. Só o diff INTEIRO (sem arquivo) segue como a aba passageira "Alterações".
+  4. O teste "focusPath não muda a lista de abas" continua valendo para o
+     modelo puro sem contexto: o que põe o diff do arquivo na tira é o conjunto
+     aberto da conversa.
+- **Consequência:** abrir, alternar e voltar entre arquivos funciona igual
+  venha o arquivo da árvore, do fio ou do painel do git.
 
 ### ADR-249 · Peso nos projetos, etiqueta em sans e três detalhes de leitura ✅
 - **Número:** nasceu 248 e colidiu com a ADR-248 das abas de arquivo, escrita

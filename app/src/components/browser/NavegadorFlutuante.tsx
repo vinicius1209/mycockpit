@@ -16,6 +16,7 @@ import {
   type Geometria,
 } from "@/lib/navegadorFlutuante"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { useNavegadorFlutuante } from "@/store/navegadorFlutuante"
 import { NavegadorAoVivo } from "./NavegadorTab"
 
@@ -88,6 +89,8 @@ function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projec
   }
 
   const session = status?.session ?? null
+  // A janela flutua sobre a conversa na tela, e mostra as páginas dela (ADR-244).
+  const conversa = useChat((s) => s.activeId)
 
   return (
     <div ref={palcoRef} className="pointer-events-none absolute inset-0 z-20">
@@ -136,7 +139,7 @@ function JanelaFlutuante({ projectId, projectPath }: { projectId: string; projec
             <div className="min-h-0 flex-1">
               {session ? (
                 <NavegadorAoVivo
-                  alvo={{ projectId: session.projectId, projectPath: session.projectPath }}
+                  alvo={{ projectId: session.projectId, projectPath: session.projectPath, conversa }}
                 />
               ) : (
                 <p className="grid h-full place-items-center px-4 text-center text-[12px] text-muted-foreground">

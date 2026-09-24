@@ -19,6 +19,7 @@ mod browser_conexao;
 mod browser_marcacao;
 mod browser_orfaos;
 mod browser_cdp;
+mod browser_donos;
 mod browser_gateway;
 mod browser_panel;
 mod catalog;
@@ -39,6 +40,7 @@ mod conversation_items;
 mod browser_autorizacao;
 mod browser_janela;
 mod manutencao_do_banco;
+mod menu_da_janela;
 mod arquivo_ao_vivo;
 mod migrar_pasta;
 mod browser_script;
@@ -759,29 +761,12 @@ pub fn run() {
                 .build(),
         )
         .plugin(tauri_plugin_decorum::init())
+        .on_menu_event(menu_da_janela::ao_escolher)
         .setup(|app| {
-            // O banco vem do diretório/nome antigos ANTES de tudo: o backup
-            // logo abaixo e o plugin SQL adiante precisam achá-lo já no lugar
-            // novo. Falha aqui NÃO bloqueia o boot, mas grita no log: seguir
-            // com banco vazio em silêncio seria perder o histórico sem aviso.
-            match manutencao_do_banco::migrar_banco(app.handle()) {
-                Ok(true) => log::info!("banco migrado para o nome novo ({BANCO})"),
-                Ok(false) => {}
-                Err(e) => log::error!("migração do banco falhou: {e}"),
-            }
-
-            // Backup rotativo do banco ANTES de qualquer escrita da sessão (o
-            // plugin SQL só abre depois, então db+wal+shm estão quiescentes).
-            // Rede de segurança contra corrupção/perda: nunca bloqueia o boot.
-            if let Err(e) = manutencao_do_banco::backup_database(app.handle()) {
-                log::warn!("backup do banco falhou (seguindo sem): {e}");
-            }
-            // Depois do backup e antes do plugin SQL: o histórico passa a
-            // morar só na fonte itemizada, e o banco se compacta quando
-            // metade dele é espaço livre (ADR-230). Nunca bloqueia o boot.
-            if let Err(e) = manutencao_do_banco::manter_banco(app.handle()) {
-                log::warn!("manutenção do banco falhou (seguindo sem): {e}");
-            }
+            // O banco antes do plugin SQL abrir; nunca bloqueia o boot.
+            manutencao_do_banco::preparar_no_boot(app.handle());
+            // ⌘W fecha a aba de arquivo, não a janela (ADR-243).
+            menu_da_janela::instalar(app.handle());
 
             // Catálogo de preços (models.dev): registra onde fica o cache em
             // disco p/ o pricing achar preços dinâmicos já na 1ª consulta.

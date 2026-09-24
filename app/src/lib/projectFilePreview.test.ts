@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  arquivoSumiu,
   assertSafeRasterImage,
   imageMimeType,
   projectFilePreviewKind,
@@ -67,5 +68,14 @@ describe("rasterDimensions", () => {
     expect(() => assertSafeRasterImage(huge, "image/png")).toThrow(
       "grande demais",
     )
+  })
+})
+
+describe("arquivoSumiu (ADR-243)", () => {
+  it("reconhece o ENOENT como o Rust o escreve, e só ele", () => {
+    expect(arquivoSumiu("No such file or directory (os error 2)")).toBe(true)
+    expect(arquivoSumiu("Permission denied (os error 13)")).toBe(false)
+    expect(arquivoSumiu("caminho fora do projeto")).toBe(false)
+    expect(arquivoSumiu("(os error 21)")).toBe(false)
   })
 })

@@ -32,9 +32,12 @@ export function DiffPanel({
   cwd,
   focusPath,
   focusSeq,
+  soArquivo,
   onSendToComposer,
 }: {
   cwd: string
+  /** Mostra só este arquivo, aberto: é a aba das alterações dele (ADR-248). */
+  soArquivo?: string
   /** Arquivo que a coluna pediu pra abrir. Chega expandido e com scroll até ele
    *  — sem isso, clicar num arquivo lá e cair no topo de uma lista de 11
    *   deixaria o clique sem resposta. */
@@ -93,7 +96,8 @@ export function DiffPanel({
     cont.scrollTop += alvo.getBoundingClientRect().top - cont.getBoundingClientRect().top
   }, [focusPath, focusSeq, diff])
 
-  const files = diff?.files ?? []
+  const todos = diff?.files ?? []
+  const files = soArquivo ? todos.filter((f) => f.path === soArquivo) : todos
   const totalAdd = files.reduce((s, f) => s + f.additions, 0)
   const totalDel = files.reduce((s, f) => s + f.deletions, 0)
   // Comentários que perderam a linha (o agente mexeu no arquivo e o reload
@@ -156,7 +160,9 @@ export function DiffPanel({
           {bar}
           {files.length === 0 ? (
             <div className="px-6 py-16 text-center text-[13px] text-muted-foreground">
-              Nenhuma alteração não-commitada. Working tree limpa.
+              {soArquivo
+                ? `${soArquivo} não tem alterações agora: foi commitado, revertido ou saiu do disco.`
+                : "Nenhuma alteração não-commitada. Working tree limpa."}
             </div>
           ) : (
             <div className="flex flex-col pb-2">
@@ -167,7 +173,7 @@ export function DiffPanel({
                   cwd={cwd}
                   galeria={galeria}
                   versao={versao}
-                  open={open.has(f.path)}
+                  open={f.path === soArquivo || open.has(f.path)}
                   onToggle={() =>
                     setOpen((s) => {
                       const n = new Set(s)

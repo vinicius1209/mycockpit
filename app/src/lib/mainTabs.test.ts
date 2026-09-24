@@ -7,6 +7,7 @@
 
 import { describe, expect, it } from "vitest"
 import { latestCompletedTurnId, mainTabEntries, type MainTab } from "./mainTabs"
+import { chaveDoDiff } from "./abasDeArquivo"
 
 const conversa: MainTab = { kind: "conversa" }
 const diff: MainTab = { kind: "diff" }
@@ -92,5 +93,35 @@ describe("latestCompletedTurnId", () => {
   it("sem turno concluído, não oferece fork", () => {
     expect(latestCompletedTurnId([{ id: "u1", kind: "user" }])).toBeNull()
     expect(latestCompletedTurnId([])).toBeNull()
+  })
+})
+
+describe("mainTabEntries com arquivos abertos (ADR-243)", () => {
+  it("os arquivos abertos ficam na tira com a Conversa à vista, antes de Alterações", () => {
+    const abertos = ["docs/architecture.md", "docs/agent-runner.md"]
+    expect(
+      mainTabEntries({ kind: "conversa" }, { arquivosAbertos: abertos }).map((e) => e.label),
+    ).toEqual(["Conversa", "architecture.md", "agent-runner.md"])
+    expect(
+      mainTabEntries({ kind: "diff" }, { arquivosAbertos: abertos }).map((e) => e.kind),
+    ).toEqual(["conversa", "arquivo", "arquivo", "diff"])
+  })
+
+  it("o arquivo à vista não duplica quando já está entre os abertos", () => {
+    const entradas = mainTabEntries(
+      { kind: "arquivo", path: "docs/architecture.md" },
+      { arquivosAbertos: ["docs/architecture.md"] },
+    )
+    expect(entradas.map((e) => e.kind)).toEqual(["conversa", "arquivo"])
+  })
+})
+
+describe("mainTabEntries com as alterações de um arquivo (ADR-248)", () => {
+  it("o diff de um arquivo aberto na conversa é aba dele, não 'Alterações'", () => {
+    const tab: MainTab = { kind: "diff", focusPath: "src/x.ts" }
+    expect(mainTabEntries(tab, { arquivosAbertos: [chaveDoDiff("src/x.ts")] })).toEqual([
+      { kind: "conversa", label: "Conversa", closable: false },
+      { kind: "diff", label: "x.ts", closable: true },
+    ])
   })
 })

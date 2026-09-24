@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Abas de arquivo que ficam abertas · e lado a lado com a conversa</title>
+<style>
+  /* Tokens do tema escuro, os mesmos dos mocks aprovados. Fontes só da escala
+     fechada: 11, 12, 13, 14 (20 no título do mock). Nomes de arquivo REAIS do
+     repositório da Frota; imagens: frames de docs/visual-reference. */
+  :root{
+    --background:#0a0b0d;--rail:#0c0d10;--card:#141619;--secondary:#191c20;--popover:#181a1e;
+    --foreground:#e7e8ea;--muted-foreground:#9aa0a7;--faint:#687078;
+    --border:rgba(255,255,255,.08);--divisor:rgba(255,255,255,.032);
+    --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
+    --brass:#e4a862;--queued:#e0a05c;--error:#f2766b;--running:#6ea8fe;
+    --md:#6ea8fe;--img:#c38bd9;--vid:#9aa0a7;
+    --shadow-pop:0 10px 30px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 80px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:40px 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1100px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:18px 0 8px}
+  .legenda b{color:var(--foreground);font-weight:500}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:10px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  svg.i{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .palco{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+
+  /* ---- janela ---- */
+  .app{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:8px;background:var(--rail);width:1180px;height:560px}
+  .app.estreito{width:760px;grid-template-columns:minmax(0,1fr)}
+  .centro,.direita{background:var(--card);border-radius:12px;box-shadow:0 0 0 1px var(--border);overflow:hidden;display:flex;flex-direction:column;min-width:0}
+  /* tira */
+  .tira{display:flex;align-items:center;gap:4px;height:40px;padding:0 8px;border-bottom:1px solid var(--divisor)}
+  .abas{display:flex;align-items:center;gap:2px;min-width:0;flex:1;overflow:hidden;position:relative}
+  .abas.com-fade::after{content:"";position:absolute;right:0;top:0;bottom:0;width:32px;background:linear-gradient(90deg,transparent,var(--card))}
+  .aba{display:flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 8px;border-radius:7px;font-size:11px;font-weight:500;color:rgba(154,160,167,.6);white-space:nowrap;flex:none;max-width:170px}
+  .aba:hover{background:var(--sel-hover);color:var(--muted-foreground)}
+  .aba.ativa{background:var(--sel);color:var(--foreground)}
+  .aba .nome{overflow:hidden;text-overflow:ellipsis}
+  .aba .pasta{color:var(--faint);font-weight:400}
+  .aba .x{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;opacity:0;color:var(--muted-foreground)}
+  .aba:hover .x,.aba.ativa .x{opacity:1}
+  .aba .x:hover{background:rgba(255,255,255,.08);color:var(--foreground)}
+  .aba.sumiu .nome{text-decoration:line-through;color:var(--faint)}
+  .aba .lado{color:var(--running)}
+  .sep{width:1px;height:16px;background:var(--border);margin:0 4px;flex:none}
+  .mais{height:26px;padding:0 6px;border-radius:7px;display:flex;align-items:center;gap:4px;font:11px var(--mono);color:var(--muted-foreground);flex:none}
+  .mais:hover{background:var(--sel-hover)}
+  .plus{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--faint);flex:none}
+  .notas{display:flex;align-items:center;gap:6px;height:26px;padding:0 8px;font-size:12px;color:var(--muted-foreground);flex:none}
+  .notas .n{font:11px var(--mono);background:var(--secondary);border-radius:5px;padding:0 5px}
+  .ic-md{color:var(--md)} .ic-img{color:var(--img)} .ic-vid{color:var(--vid)}
+  /* cabeçalho do arquivo */
+  .cab{display:flex;align-items:center;gap:10px;height:36px;padding:0 12px 0 16px;border-bottom:1px solid var(--divisor)}
+  .cab .cam{flex:1;font:11px var(--mono);color:rgba(231,232,234,.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cab .meta{font:11px var(--mono);color:var(--faint)}
+  .icone{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+  /* conteúdo markdown */
+  .md{padding:18px 26px;overflow:hidden;flex:1}
+  .md h3{font-size:20px;font-weight:600;margin-bottom:10px}
+  .md p{font-size:13px;line-height:1.65;color:rgba(231,232,234,.85);margin-bottom:10px;max-width:640px}
+  .md code{font:12px var(--mono);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
+  .md table{border-collapse:collapse;font-size:12px;margin-top:6px}
+  .md td,.md th{border-bottom:1px solid var(--divisor);padding:6px 12px 6px 0;text-align:left;color:var(--muted-foreground)}
+  .md th{color:var(--foreground);font-weight:500}
+  /* conversa */
+  .fio{padding:16px 22px;flex:1;overflow:hidden}
+  .msg{margin-bottom:14px}
+  .msg .autor{font-size:12px;font-weight:600;margin-bottom:3px}
+  .msg p{font-size:13px;line-height:1.6;color:rgba(231,232,234,.85)}
+  .composer{margin:0 14px 14px;background:var(--background);border-radius:12px;box-shadow:0 0 0 1px var(--border);padding:10px 14px;color:var(--muted-foreground);font-size:13px}
+  /* árvore */
+  .busca{margin:10px;height:32px;border-radius:8px;background:var(--secondary);display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--muted-foreground);font-size:13px}
+  .arvore{padding:0 6px;font:12px var(--mono);overflow:hidden;flex:1}
+  .no{display:flex;align-items:center;gap:7px;height:26px;padding:0 8px;border-radius:6px;color:rgba(231,232,234,.85);white-space:nowrap}
+  .no:hover{background:var(--sel-hover)}
+  .no.ativo{background:var(--sel);color:var(--foreground)}
+  .no .ponto{width:5px;height:5px;border-radius:50%;background:var(--muted-foreground);margin-left:auto;opacity:.8}
+  .no.ativo .ponto{background:var(--foreground)}
+  .no .ident{display:inline-block}
+  /* lado a lado */
+  .split{display:grid;grid-template-columns:minmax(0,1fr) 6px minmax(0,1fr);flex:1;min-height:0}
+  .divisor-v{background:transparent;position:relative;cursor:col-resize}
+  .divisor-v::after{content:"";position:absolute;left:2px;top:0;bottom:0;width:1px;background:var(--border)}
+  .painel-lado{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .painel-lado .cab{height:34px}
+  .imgpad{flex:1;display:grid;place-items:center;background:#050607;padding:14px}
+  .imgpad img{max-width:100%;max-height:100%;border-radius:4px}
+  /* menu */
+  .menu{width:250px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px}
+  .menu .it{display:flex;align-items:center;gap:10px;height:30px;padding:0 8px;border-radius:6px;color:rgba(231,232,234,.9)}
+  .menu .it:hover,.menu .it.foco{background:var(--sel)}
+  .menu .it .atalho{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+  .menu .sepm{height:1px;background:var(--divisor);margin:4px 2px}
+  .menu .grupo{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 4px}
+  /* estados */
+  .estado{width:560px;background:var(--card);border-radius:12px;box-shadow:0 0 0 1px var(--border);overflow:hidden}
+  .vazio{display:grid;place-items:center;height:170px;text-align:center;padding:20px}
+  .vazio p{font-size:12px;color:var(--muted-foreground);max-width:360px;line-height:1.5}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);margin-top:10px}
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1100px;margin-top:12px}
+  .tabela td,.tabela th{text-align:left;padding:8px 12px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted-foreground)}
+  .tabela th{color:var(--foreground);font-weight:500;width:260px}
+  .decisoes{margin-top:40px;max-width:1100px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin-bottom:6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+<h1>Abas de arquivo que ficam abertas</h1>
+<p class="sub">Hoje a aba do arquivo é passageira: existe uma só, e voltar para a Conversa a descarta. A proposta segue o que toda IDE ensinou: o que você abre fica aberto até você fechar, você alterna livre entre arquivos e a conversa, e o conjunto sobrevive a trocar de conversa e a reabrir o app. A Conversa continua âncora e nunca desmonta (a regra da ADR que criou as abas). E, para ler um arquivo sem perder o fio de vista, "Abrir ao lado da conversa".</p>
+
+<!-- ================================================================ -->
+<h2>1 · A tira com os arquivos abertos</h2>
+<div class="legenda"><b>Proposta</b> · lendo architecture.md, com quatro arquivos abertos no projeto</div>
+<div class="app">
+  <div class="centro">
+    <div class="tira">
+      <div class="abas com-fade">
+        <span class="aba"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg><span class="nome">Conversa</span></span>
+        <span class="sep"></span>
+        <span class="aba"><svg class="i ic-vid" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 9l5 3-5 3z"/></svg><span class="nome">video.mp4</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+        <span class="aba ativa"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg><span class="nome">architecture.md</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+        <span class="aba"><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 17l-5-5-9 8"/></svg><span class="nome">frame_020.png</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+        <span class="aba"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg><span class="nome">agent-runner.md</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+        <span class="aba"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg><span class="nome">AGENTS.md <span class="pasta">· chat</span></span></span>
+      </div>
+      <span class="mais" title="Todas as abas abertas">5 <svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 9l6 6 6-6"/></svg></span>
+      <span class="plus"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span class="notas"><svg class="i" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>Notas <span class="n">1</span></span>
+    </div>
+    <div class="cab"><span class="cam">docs/architecture.md</span><span class="meta">19 KB</span><span class="icone"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6a2 2 0 00-2 2v8a2 2 0 002 2h2"/></svg></span><span class="icone" title="Abrir ao lado da conversa"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg></span></div>
+    <div class="md">
+      <h3>Arquitetura da Frota</h3>
+      <p>Mapa vivo de superfícies, donos de estado e fronteiras Rust/TS. A conversa é a superfície-base: <code>useChat</code> guarda o estado operacional e o transcript; texto e anexos ainda não enviados pertencem a <code>useComposerDrafts</code>.</p>
+      <table><tr><th>superfície</th><th>dono do estado</th><th>regra</th></tr><tr><td>histórico de pedidos</td><td>derivado do fio</td><td>só fato do fio</td></tr><tr><td>alterações do projeto</td><td>Git via lib/git.ts</td><td>consulta sob demanda</td></tr><tr><td>abas de arquivo</td><td>store do projeto</td><td>abertas até você fechar</td></tr></table>
+    </div>
+  </div>
+  <div class="direita">
+    <div class="busca"><svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Buscar arquivo</div>
+    <div class="arvore">
+      <div class="no"><span style="width:14px"></span><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>frame_019.png</div>
+      <div class="no"><span style="width:14px"></span><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>frame_020.png<span class="ponto" title="Aberto numa aba"></span></div>
+      <div class="no"><span style="width:14px"></span><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>frame_021.png</div>
+      <div class="no"><span style="width:14px"></span><svg class="i ic-vid" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>video.mp4<span class="ponto"></span></div>
+      <div class="no"><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>office-boss-room-concept-v2.png</div>
+      <div class="no"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>abas-no-principal-plan.md</div>
+      <div class="no"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>agent-office.md</div>
+      <div class="no"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>agent-runner.md<span class="ponto"></span></div>
+      <div class="no ativo"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>architecture.md<span class="ponto"></span></div>
+      <div class="no"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>decisions.md</div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>A Conversa é a primeira, sempre</b>, separada dos arquivos por um filete (com forks, "Original · Fork 1" ficam no mesmo lugar). <b>Cada arquivo aberto ganha uma aba</b> com o ícone do tipo, igual ao da árvore; o × aparece no hover e na ativa. <b>Nome repetido</b> ganha a pasta ("AGENTS.md · chat"). <b>Na árvore</b>, um ponto marca o que está aberto e o destaque marca o que está à vista. <b>Muitas abas:</b> a tira rola, com um esmaecido na borda, e o "5 ⌄" lista todas. <b>Notas fica fixo na ponta</b>, fora da rolagem: as abas nunca o empurram.</p>
+
+<!-- ================================================================ -->
+<h2>2 · Lado a lado com a conversa</h2>
+<div class="legenda"><b>Proposta</b> · frame_020.png aberto ao lado; o fio continua vivo à esquerda</div>
+<div class="app">
+  <div class="centro">
+    <div class="tira">
+      <div class="abas">
+        <span class="aba ativa"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16v11H8l-4 4z"/></svg><span class="nome">Conversa</span></span>
+        <span class="sep"></span>
+        <span class="aba"><svg class="i ic-vid" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/></svg><span class="nome">video.mp4</span></span>
+        <span class="aba ativa" style="background:rgba(110,168,254,.10)"><svg class="i lado" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg><span class="nome">frame_020.png</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span>
+        <span class="aba"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg><span class="nome">architecture.md</span></span>
+      </div>
+      <span class="plus"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>
+      <span class="notas">Notas <span class="n">1</span></span>
+    </div>
+    <div class="split">
+      <div class="painel-lado">
+        <div class="fio">
+          <div class="msg"><div class="autor">Você</div><p>compara o quadro 20 com a nossa tela da fila: o espaçamento entre os itens está igual?</p></div>
+          <div class="msg"><div class="autor">Claude Code</div><p>No quadro 20 cada item da fila tem 8 px entre linhas e a miniatura encosta no texto. Na nossa, a miniatura vem numa linha própria…</p></div>
+        </div>
+        <div class="composer">Peça algo… ou / para comandos</div>
+      </div>
+      <div class="divisor-v" title="Arrastar para redimensionar"></div>
+      <div class="painel-lado">
+        <div class="cab"><span class="cam">docs/visual-reference/…/frame_020.png</span><span class="icone" title="Trazer para a tira"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg></span><span class="icone" title="Fechar o lado"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></span></div>
+        <div class="imgpad"><img src="../visual-reference/winglee-agent-ui/frame_020.png" alt=""></div>
+      </div>
+    </div>
+  </div>
+  <div class="direita">
+    <div class="busca">Buscar arquivo</div>
+    <div class="arvore">
+      <div class="no"><span style="width:14px"></span>frame_019.png</div>
+      <div class="no ativo"><span style="width:14px"></span>frame_020.png<span class="ponto"></span></div>
+      <div class="no"><span style="width:14px"></span>frame_021.png</div>
+      <div class="no"><span style="width:14px"></span>video.mp4<span class="ponto"></span></div>
+      <div class="no">architecture.md<span class="ponto"></span></div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>Por que lado a lado:</b> o caso mais comum é ler um arquivo <i>enquanto</i> conversa sobre ele; alternar abas esconde um dos dois. <b>Um lado só</b>, à direita da conversa, com divisor arrastável; a aba desse arquivo leva o ícone de "lado" e tinta azul. <b>O fio não desmonta</b>: ele só fica mais estreito (o composer segue a regra de uma linha da ADR-240). Abaixo de 900 px de cartão o lado vira aba comum, porque não há largura honesta para dois.</p>
+
+<!-- ================================================================ -->
+<h2>3 · O menu da aba e o teclado</h2>
+<div class="palco">
+  <div>
+    <div class="legenda"><b>Proposta</b> · clique com o botão direito numa aba</div>
+    <div class="menu">
+      <div class="it foco"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/></svg>Abrir ao lado da conversa</div>
+      <div class="it"><svg class="i" viewBox="0 0 24 24"><path d="M3 7h6l2 2h10v10H3z"/></svg>Mostrar na árvore</div>
+      <div class="it"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 00-2-2H6"/></svg>Copiar caminho</div>
+      <div class="sepm"></div>
+      <div class="it">Fechar<span class="atalho">⌘W</span></div>
+      <div class="it">Fechar as outras</div>
+      <div class="it">Fechar as da direita</div>
+      <div class="it">Fechar todas</div>
+      <div class="sepm"></div>
+      <div class="it">Reabrir a última fechada<span class="atalho">⌘⇧T</span></div>
+    </div>
+  </div>
+  <div style="max-width:520px">
+    <div class="legenda"><b>Proposta</b> · atalhos</div>
+    <table class="tabela">
+      <tr><th><span class="kbd">⌘1</span></th><td>Conversa</td></tr>
+      <tr><th><span class="kbd">⌘2</span> … <span class="kbd">⌘9</span></th><td>a aba de arquivo naquela posição</td></tr>
+      <tr><th><span class="kbd">⌃⇥</span> / <span class="kbd">⌃⇧⇥</span></th><td>próxima e anterior, na ordem da tira</td></tr>
+      <tr><th><span class="kbd">⌘W</span></th><td>fecha a aba de arquivo à vista (na Conversa não faz nada: ela não fecha)</td></tr>
+      <tr><th><span class="kbd">⌘⇧T</span></th><td>reabre a última aba fechada</td></tr>
+      <tr><th>clique do meio</th><td>fecha a aba</td></tr>
+      <tr><th>arrastar</th><td>reordena as abas de arquivo</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ================================================================ -->
+<h2>4 · O que acontece quando…</h2>
+<table class="tabela">
+  <tr><th>volto para a Conversa</th><td>As abas ficam. É trocar de vista, não fechar (hoje a aba do arquivo sumia).</td></tr>
+  <tr><th>troco de conversa no mesmo projeto</th><td>As abas ficam: arquivos são do <b>projeto</b>, não da conversa.</td></tr>
+  <tr><th>troco de projeto</th><td>A tira mostra as abas daquele projeto; cada projeto lembra as suas.</td></tr>
+  <tr><th>fecho e reabro o app</th><td>Volta como estava: as abas, a ordem, qual estava à vista e o lado a lado.</td></tr>
+  <tr><th>o arquivo sai do disco</th><td>A aba fica riscada e o conteúdo diz "Este arquivo não está mais em docs/…", com Fechar. Nada some em silêncio.</td></tr>
+  <tr><th>o agente muda um arquivo aberto</th><td>A aba relê sozinha ao voltar para ela (mesmos sinais da aba Alterações, ADR anterior).</td></tr>
+  <tr><th>abro o mesmo arquivo de novo</th><td>Vai para a aba que já existe, sem duplicar.</td></tr>
+</table>
+
+<div class="palco" style="margin-top:14px">
+  <div>
+    <div class="legenda"><b>Proposta</b> · arquivo que saiu do disco</div>
+    <div class="estado">
+      <div class="tira"><div class="abas"><span class="aba"><span class="nome">Conversa</span></span><span class="sep"></span><span class="aba ativa sumiu"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg><span class="nome">rascunho-v2.md</span><span class="x"><svg class="i" viewBox="0 0 24 24" style="width:11px;height:11px"><path d="M6 6l12 12M18 6L6 18"/></svg></span></span></div></div>
+      <div class="vazio"><div><p>Este arquivo não está mais em <span class="mono">docs/rascunho-v2.md</span>. Pode ter sido movido, renomeado ou apagado.</p><span class="btn">Fechar a aba</span></div></div>
+    </div>
+  </div>
+  <div>
+    <div class="legenda"><b>Proposta</b> · "5 ⌄": todas as abas</div>
+    <div class="menu" style="width:300px">
+      <div class="grupo">Abertas neste projeto</div>
+      <div class="it"><svg class="i ic-vid" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/></svg>video.mp4<span class="atalho">⌘2</span></div>
+      <div class="it foco"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>architecture.md<span class="atalho">⌘3</span></div>
+      <div class="it"><svg class="i ic-img" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/></svg>frame_020.png<span class="atalho">⌘4</span></div>
+      <div class="it"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>agent-runner.md<span class="atalho">⌘5</span></div>
+      <div class="it"><svg class="i ic-md" viewBox="0 0 24 24"><path d="M6 3h9l4 4v14H6z"/></svg>AGENTS.md <span class="faint" style="color:var(--faint)">· chat</span><span class="atalho">⌘6</span></div>
+      <div class="sepm"></div>
+      <div class="it">Fechar todas</div>
+    </div>
+  </div>
+</div>
+
+<div class="decisoes">
+  <h3>O que muda</h3>
+  <ul>
+    <li><b>Arquivo deixa de ser passageiro:</b> abre uma aba que fica até você fechar. A regra "diff e arquivo seguem transitórios" (abas-no-principal-plan) muda para os arquivos, por ADR; Alterações continua como é.</li>
+    <li><b>As abas são do projeto</b> e persistem (ordem, aba à vista, lado a lado) entre conversas e ao reabrir o app.</li>
+    <li><b>Lado a lado:</b> um arquivo ao lado da conversa, divisor arrastável, sem desmontar o fio.</li>
+    <li><b>Na árvore:</b> ponto no que está aberto, destaque no que está à vista.</li>
+    <li><b>Menu da aba, atalhos, reabrir a última fechada</b> e estado honesto para arquivo que saiu do disco.</li>
+    <li><b>De brinde:</b> o vídeo passa a mostrar o primeiro quadro antes de tocar (hoje fica preto até dar play).</li>
+  </ul>
+</div>
+</body>
+</html>

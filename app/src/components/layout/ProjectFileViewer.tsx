@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Copy, FileWarning, FolderOpen, LoaderCircle, SquareArrowOutUpRight } from "lucide-react"
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener"
 import { toast } from "sonner"
@@ -8,10 +8,11 @@ import { Button } from "@/components/ui/button"
 import { copyText } from "@/lib/clipboard"
 import { isTauri } from "@/lib/db"
 import {
+  arquivoSumiu,
   assertSafeRasterImage,
   imageMimeType,
   projectFilePreviewKind,
-  tamanhoPeloProtocolo,
+  sondaDoProtocolo,
   urlDoArquivo,
   type RasterDimensions,
 } from "@/lib/projectFilePreview"
@@ -23,6 +24,8 @@ type PreviewState =
   | { status: "loading" }
   | { status: "unsupported" }
   | { status: "error"; message: string }
+  /** O arquivo não está mais no disco (ADR-243): a aba fica, e diz isso. */
+  | { status: "sumiu" }
   | { status: "text"; content: string }
   /** Vídeo, áudio, PDF e SVG: servidos pelo protocolo, em partes (ADR-240). */
   | { status: "midia"; url: string }
@@ -83,7 +86,21 @@ function CodePreview({ path, content }: { path: string; content: string }) {
   )
 }
 
-export function ProjectFileViewer({ root, path }: { root: string; path: string }) {
+export function ProjectFileViewer({
+  root,
+  path,
+  acoes,
+  onSumiu,
+  aoFecharSumido,
+}: {
+  root: string
+  path: string
+  /** Botões da aba no fim do cabeçalho (lado a lado, trazer para a tira). */
+  acoes?: ReactNode
+  /** Avisa, a cada leitura, se o arquivo saiu do disco. */
+  onSumiu?: (sumiu: boolean) => void
+  aoFecharSumido?: () => void
+}) {
   const kind = projectFilePreviewKind(path)
   // O editor abre por caminho relativo ao projeto; fora dele não há o que
   // prometer, então o botão não existe (degradação honesta).
@@ -94,6 +111,15 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
   const [infoDoVideo, setInfoDoVideo] = useState<InfoDoVideo | null>(null)
   const [tamanho, setTamanho] = useState<number | null>(null)
   const midia = kind === "video" || kind === "audio" || kind === "pdf" || kind === "svg"
+  // O aviso vai por ref para o efeito depender só do status: o `onSumiu` chega
+  // como função nova a cada render, e nas dependências relançaria o aviso.
+  const avisar = useRef(onSumiu)
+  useEffect(() => {
+    avisar.current = onSumiu
+  })
+  useEffect(() => {
+    if (state.status !== "loading") avisar.current?.(state.status === "sumiu")
+  }, [state.status])
 
   useEffect(() => {
     let cancelled = false
@@ -101,8 +127,10 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
     if (kind === "unsupported") {
       setState({ status: "unsupported" })
       if (isTauri()) {
-        void tamanhoPeloProtocolo(urlDoArquivo(root, absolutePath(root, path))).then((t) => {
-          if (!cancelled) setTamanho(t)
+        void sondaDoProtocolo(urlDoArquivo(root, absolutePath(root, path))).then((r) => {
+          if (cancelled) return
+          setTamanho(r.tamanho)
+          if (r.sumiu) setState({ status: "sumiu" })
         })
       }
       return () => {
@@ -119,8 +147,10 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
     setTamanho(null)
     if (midia) {
       const url = urlDoArquivo(root, fullPath)
-      void tamanhoPeloProtocolo(url).then((t) => {
-        if (!cancelled) setTamanho(t)
+      void sondaDoProtocolo(url).then((r) => {
+        if (cancelled) return
+        setTamanho(r.tamanho)
+        if (r.sumiu) setState({ status: "sumiu" })
       })
       setState({ status: "midia", url })
       return () => {
@@ -146,7 +176,9 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
         const content = await readTextFile(root, fullPath)
         if (!cancelled) setState({ status: "text", content })
       } catch (error) {
-        if (!cancelled) setState({ status: "error", message: errorMessage(error) })
+        if (cancelled) return
+        const message = errorMessage(error)
+        setState(arquivoSumiu(message) ? { status: "sumiu" } : { status: "error", message })
       }
     }
 
@@ -194,6 +226,7 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
           <Copy className="size-3.5" />
         </Button>
         {!externo && <OpenInEditor projectPath={root} rel={path} alvo="o arquivo" />}
+        {acoes}
       </div>
 
       {state.status === "loading" ? (
@@ -206,6 +239,21 @@ export function ProjectFileViewer({ root, path }: { root: string; path: string }
             <FileWarning className="mx-auto mb-3 size-5 text-muted-foreground/60" />
             <p className="text-[13px] text-foreground">Não foi possível visualizar o arquivo</p>
             <p className="mt-1 text-[12px] leading-relaxed text-muted-foreground">{state.message}</p>
+          </div>
+        </div>
+      ) : state.status === "sumiu" ? (
+        <div className="grid min-h-0 flex-1 place-items-center px-8">
+          <div className="max-w-md text-center">
+            <FileWarning className="mx-auto mb-3 size-5 text-muted-foreground/60" />
+            <p className="text-[13px] leading-relaxed text-muted-foreground">
+              Este arquivo não está mais em <span className="font-mono text-[12px] text-foreground/80">{path}</span>. Pode ter
+              sido movido, renomeado ou apagado.
+            </p>
+            {aoFecharSumido && (
+              <Button size="compacto" variant="secondary" className="mt-3" onClick={aoFecharSumido}>
+                Fechar a aba
+              </Button>
+            )}
           </div>
         </div>
       ) : state.status === "unsupported" ? (

@@ -253,3 +253,29 @@ mod tests {
         assert_eq!(compactar_se_vale(&conn).unwrap(), None);
     }
 }
+
+/// O banco antes do plugin SQL abrir: migra do nome antigo, faz o backup
+/// rotativo e mantém. Saiu do `setup` de lib.rs para ele caber na catraca.
+pub(crate) fn preparar_no_boot(app: &tauri::AppHandle) {
+    // O banco vem do diretório/nome antigos ANTES de tudo: o backup logo
+    // abaixo e o plugin SQL adiante precisam achá-lo já no lugar novo. Falha
+    // aqui NÃO bloqueia o boot, mas grita no log: seguir com banco vazio em
+    // silêncio seria perder o histórico sem aviso.
+    match migrar_banco(app) {
+        Ok(true) => log::info!("banco migrado para o nome novo ({})", crate::BANCO),
+        Ok(false) => {}
+        Err(e) => log::error!("migração do banco falhou: {e}"),
+    }
+    // Backup rotativo ANTES de qualquer escrita da sessão (o plugin SQL só
+    // abre depois, então db+wal+shm estão quiescentes). Rede de segurança
+    // contra corrupção/perda: nunca bloqueia o boot.
+    if let Err(e) = backup_database(app) {
+        log::warn!("backup do banco falhou (seguindo sem): {e}");
+    }
+    // Depois do backup e antes do plugin SQL: o histórico passa a morar só na
+    // fonte itemizada, e o banco se compacta quando metade dele é espaço
+    // livre (ADR-230). Nunca bloqueia o boot.
+    if let Err(e) = manter_banco(app) {
+        log::warn!("manutenção do banco falhou (seguindo sem): {e}");
+    }
+}

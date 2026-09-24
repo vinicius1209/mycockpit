@@ -120,8 +120,14 @@ export type BrowserInputAction =
   | { kind: "history"; direction: "back" | "forward" }
   | { kind: "navigate"; url: string }
 
-export function listBrowserPages(projectPath: string): Promise<BrowserPage[]> {
-  return invoke<BrowserPage[]>("browser_pages", { projectPath })
+/** Com `conversa`, só as páginas dela (ADR-244); sem, todas as do projeto.
+ *  Listar é só leitura. `abrir` é o gesto que dá à conversa uma página. */
+export function listBrowserPages(
+  projectPath: string,
+  conversa?: string | null,
+  abrir = false,
+): Promise<BrowserPage[]> {
+  return invoke<BrowserPage[]>("browser_pages", { projectPath, conversa: conversa ?? null, abrir })
 }
 
 export function browserPilotStatus(
@@ -159,10 +165,12 @@ export function releaseBrowserPilot(
 export function startBrowserPreview(
   projectPath: string,
   targetId: string,
+  conversa?: string | null,
 ): Promise<BrowserPreviewStatus> {
   return invoke<BrowserPreviewStatus>("browser_preview_start", {
     projectPath,
     targetId,
+    conversa: conversa ?? null,
   })
 }
 

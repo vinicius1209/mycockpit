@@ -34,6 +34,9 @@ import {
 export interface AlvoDoNavegador {
   projectId: string
   projectPath: string
+  /** A conversa cuja vista é esta: só as páginas dela (ADR-244). Sem, todas
+   *  as do projeto (a janela avulsa). */
+  conversa?: string | null
 }
 
 interface FrameNotice {
@@ -53,6 +56,9 @@ export interface NavegadorDoProjeto {
   loading: boolean
   error: string | null
   refreshPages: () => void
+  /** Dá à conversa uma página (adota uma sem dono ou abre outra). Só existe
+   *  numa vista de conversa, e só por gesto: olhar não abre página (ADR-244). */
+  abrirPagina: (() => void) | null
   selectPage: (page: BrowserPage) => void
   acquire: () => void
   release: () => void
@@ -105,8 +111,11 @@ export function abaParaSeguir(
   projectPath: string,
   selecionada: string | null,
   pessoaPilotando: boolean,
+  conversa: string | null = null,
 ): string | null {
   if (event.kind !== "browser_agent_active" || event.data.projectPath !== projectPath) return null
+  // A vista de uma conversa não segue o agente de outra (ADR-244).
+  if (conversa && event.data.convId && event.data.convId !== conversa) return null
   const alvo = event.data.targetId
   if (!alvo || alvo === selecionada || pessoaPilotando) return null
   return alvo
@@ -121,6 +130,7 @@ export function useNavegadorDoProjeto(
 ): NavegadorDoProjeto {
   const projectPath = alvo?.projectPath ?? null
   const projectId = alvo?.projectId ?? null
+  const conversa = alvo?.conversa ?? null
   const [pages, setPages] = useState<BrowserPage[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [frame, setFrame] = useState<BrowserPreviewFrame | null>(null)
@@ -144,9 +154,9 @@ export function useNavegadorDoProjeto(
   }, [])
 
   const loadPages = useCallback(
-    async (path: string, preferred?: string | null) => {
+    async (path: string, preferred?: string | null, abrir = false) => {
       try {
-        const found = await listBrowserPages(path)
+        const found = await listBrowserPages(path, conversa, abrir)
         setPages(found)
         const next =
           found.find((page) => page.id === (preferred ?? selectedRef.current)) ??
@@ -162,7 +172,7 @@ export function useNavegadorDoProjeto(
         return null
       }
     },
-    [],
+    [conversa],
   )
 
   const pullFrame = useCallback(async (path: string) => {
@@ -195,14 +205,14 @@ export function useNavegadorDoProjeto(
       setFrame(null)
       revisionRef.current = 0
       try {
-        await startBrowserPreview(path, page.id)
+        await startBrowserPreview(path, page.id, conversa)
         await pullFrame(path)
         setError(null)
       } catch (cause) {
         setError(messageOf(cause))
       }
     },
-    [pullFrame],
+    [pullFrame, conversa],
   )
 
   useEffect(() => {
@@ -210,16 +220,29 @@ export function useNavegadorDoProjeto(
     let disposed = false
     const unlisteners: UnlistenFn[] = []
     entrarNaVista(projectPath)
+    // Outra conversa (ADR-244): nada da vista anterior fica. Sem isto, quadro,
+    // seleção e polling seguiam na página da conversa de antes.
+    setPages([])
+    setSelectedId(null)
+    selectedRef.current = null
+    setFrame(null)
+    revisionRef.current = 0
     setLoading(true)
     void (async () => {
       const page = await loadPages(projectPath)
       await refreshPilot(projectPath)
-      if (page && !disposed) await showPage(projectPath, page)
+      if (disposed) return
+      if (page) await showPage(projectPath, page)
+      // Conversa sem página: o screencast da página de outra não segue aberto.
+      else
+        void stopBrowserPreview(projectPath).catch((cause) =>
+          console.warn("Falha ao encerrar preview:", cause),
+        )
     })().finally(() => {
       if (!disposed) setLoading(false)
     })
     void listen<FrameNotice>("browser-preview://frame", (event) => {
-      if (event.payload.projectId === projectId) void pullFrame(projectPath)
+      if (event.payload.projectId === projectId && selectedRef.current) void pullFrame(projectPath)
     })
       .then((unlisten) => {
         if (disposed) unlisten()
@@ -231,7 +254,7 @@ export function useNavegadorDoProjeto(
     // olhando uma página enquanto o agente trabalhava em outra. Com a pessoa
     // pilotando, a aba é dela e nada muda.
     void listenWorkEvents((event) => {
-      const alvoDoAgente = abaParaSeguir(event, projectPath, selectedRef.current, !!pilotTokenRef.current)
+      const alvoDoAgente = abaParaSeguir(event, projectPath, selectedRef.current, !!pilotTokenRef.current, conversa)
       if (!alvoDoAgente) return
       void loadPages(projectPath, alvoDoAgente).then((page) => {
         if (!disposed && page?.id === alvoDoAgente) void showPage(projectPath, page)
@@ -245,7 +268,7 @@ export function useNavegadorDoProjeto(
     const poll = window.setInterval(() => {
       if (document.hidden) return
       void refreshPilot(projectPath)
-      void pullFrame(projectPath)
+      if (selectedRef.current) void pullFrame(projectPath)
     }, 2_500)
     return () => {
       disposed = true
@@ -260,7 +283,7 @@ export function useNavegadorDoProjeto(
         )
       }
     }
-  }, [projectPath, projectId, loadPages, pullFrame, refreshPilot, showPage])
+  }, [projectPath, projectId, conversa, loadPages, pullFrame, refreshPilot, showPage])
 
   // O token humano tem TTL no backend. Enquanto esta vista é o piloto, um
   // heartbeat curto mantém a posse; sumir/crashar libera sozinho em 15 s.
@@ -294,6 +317,14 @@ export function useNavegadorDoProjeto(
     refreshPages: () => {
       if (projectPath) void loadPages(projectPath, selectedId)
     },
+    abrirPagina:
+      projectPath && conversa
+        ? () => {
+            void loadPages(projectPath, null, true).then((page) => {
+              if (page) void showPage(projectPath, page)
+            })
+          }
+        : null,
     selectPage: (page) => {
       if (projectPath) void showPage(projectPath, page)
     },

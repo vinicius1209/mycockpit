@@ -16,6 +16,8 @@
 // retrabalho no meio. Aqui a leitura de arquivo entra como a terceira variante
 // depois de o diff provar a fronteira entre índice e leitor.
 
+import { chaveDoDiff, lerChave } from "@/lib/abasDeArquivo"
+
 /** Ícone fica com o componente; aqui é só identidade e rótulo. */
 export type MainTab =
   | { kind: "conversa" }
@@ -44,25 +46,30 @@ export interface MainTabEntry {
  */
 export function mainTabEntries(
   tab: MainTab,
-  contexto: { navegadorAberto?: boolean } = {},
+  contexto: { navegadorAberto?: boolean; arquivosAbertos?: readonly string[] } = {},
 ): MainTabEntry[] {
   const base: MainTabEntry[] = [
     { kind: "conversa", label: "Conversa", closable: false },
   ]
   // O navegador FICA na tira enquanto estiver aberto: ele tem trabalho em
   // andamento (página, login, análise), e voltar pra conversa é trocar de
-  // vista, não fechar. Diff e arquivo seguem transitórios: são leitura.
+  // vista, não fechar.
   if (contexto.navegadorAberto || tab.kind === "navegador") {
     base.push({ kind: "navegador", label: "Navegador", closable: true })
   }
-  if (tab.kind === "diff") {
+  // Os arquivos também ficam (ADR-243), e as alterações de um arquivo abertas
+  // pelo painel do git (ADR-248): o conjunto aberto da conversa
+  // (`store/abasDeArquivo.ts`, chaves de `lerChave`), mais o que estiver à
+  // vista. Um diff à vista que não está no conjunto segue como a aba
+  // passageira "Alterações".
+  const abertas = [...(contexto.arquivosAbertos ?? [])]
+  if (tab.kind === "arquivo" && !abertas.includes(tab.path)) abertas.push(tab.path)
+  for (const chave of abertas) {
+    const { tipo, caminho } = lerChave(chave)
+    base.push({ kind: tipo, label: caminho.split("/").pop() || caminho, closable: true })
+  }
+  if (tab.kind === "diff" && !(tab.focusPath && abertas.includes(chaveDoDiff(tab.focusPath)))) {
     base.push({ kind: "diff", label: "Alterações", closable: true })
-  } else if (tab.kind === "arquivo") {
-    base.push({
-      kind: "arquivo",
-      label: tab.path.split("/").pop() || tab.path,
-      closable: true,
-    })
   }
   return base
 }

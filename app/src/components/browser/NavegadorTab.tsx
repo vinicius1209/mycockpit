@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { useNavegadorFlutuante } from "@/store/navegadorFlutuante"
 import { NavegadorVista } from "./NavegadorVista"
 import { useNavegadorDoProjeto, type AlvoDoNavegador } from "./useNavegadorDoProjeto"
@@ -33,9 +34,11 @@ export function NavegadorTab() {
   // objeto novo; o alvo só muda quando muda a sessão de verdade.
   const sessionId = status?.session?.projectId ?? null
   const sessionPath = status?.session?.projectPath ?? null
+  // Cada conversa vê as próprias páginas do navegador do projeto (ADR-244).
+  const conversa = useChat((s) => s.activeId)
   const alvo = useMemo<AlvoDoNavegador | null>(
-    () => (sessionId && sessionPath ? { projectId: sessionId, projectPath: sessionPath } : null),
-    [sessionId, sessionPath],
+    () => (sessionId && sessionPath ? { projectId: sessionId, projectPath: sessionPath, conversa } : null),
+    [sessionId, sessionPath, conversa],
   )
 
   if (alvo) {

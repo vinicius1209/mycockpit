@@ -54,14 +54,14 @@ export interface AppState {
    *  ("fusion", "office", "sdd") migram para "linear" no persist (v3/v4/v5):
    *  nunca abrimos num modo que não existe. */
   viewMode: ViewMode
-  /** Aba aberta DENTRO da superfície Trabalho (docs/abas-no-principal-plan.md).
+  /** A VISTA dentro da superfície Trabalho (docs/abas-no-principal-plan.md).
    *  União discriminada, igual à do Paseo, porque ela aguenta ganhar variante
-   *  (terminal, PR) sem retrabalho. Hoje conversa, diff e arquivo usam o mesmo
-   *  contrato transitório.
+   *  (terminal, PR) sem retrabalho.
    *
-   *  NÃO persiste, de propósito: reabrir o app num leitor que você não lembra
-   *  de ter aberto é pior que reabrir na conversa. Aba é gesto da
-   *  sessão, não preferência. */
+   *  Não persiste aqui, e é só o que está na tela AGORA. A tira de cada
+   *  conversa (arquivos abertos, Navegador, o que estava à vista) mora em
+   *  `store/abasDeArquivo.ts`, e trocar de conversa troca esta vista pela
+   *  guardada nela (`components/layout/abasNoPrincipal.ts`, ADR-244). */
   mainTab: MainTab
   /** Pedido efêmero para revelar uma fonte do mapa no fio. O nonce permite
    *  repetir o gesto para o mesmo item sem depender de limpar estado. */
@@ -131,7 +131,8 @@ export interface AppState {
   openDiffTab: (focusPath?: string) => void
   /** Abre um arquivo real na aba principal, fora da coluna estreita. */
   openFileTab: (path: string) => void
-  /** O navegador do projeto está aberto na tira, mesmo sem estar à vista. */
+  /** A aba Navegador está na tira da conversa ATIVA, mesmo sem estar à
+   *  vista. Cada conversa guarda a sua (ADR-244, `store/abasDeArquivo.ts`). */
   navegadorAberto: boolean
   /** Abre o navegador do projeto ativo na aba principal. */
   openBrowserTab: () => void
