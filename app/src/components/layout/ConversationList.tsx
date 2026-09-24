@@ -242,13 +242,14 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   return (
-    // Sem border-l nem indentação de container: a hierarquia é só alinhamento.
-    // Cada filho recebe ~40px de recuo → texto sob o texto do projeto. Na linha
-    // de conversa, parte desse recuo é a marca do agent (esquerda), então o
-    // padding cai para 18px e a soma continua batendo.
+    // As conversas PENDEM do projeto (ADR-249): um fio fino sai do centro do
+    // quadradinho de cor (pl-3 + metade da coluna de 20px = 22px) e as linhas
+    // recuam além dele. Antes a hierarquia era só alinhamento, e projeto e
+    // conversa começavam na mesma coluna: o olho não achava onde um grupo
+    // começava (print de 24/09/2026).
     <div
       ref={listaRef}
-      className="animate-reveal-down mt-0.5 mb-1 flex flex-col gap-px"
+      className="animate-reveal-down relative mt-0.5 mb-1 ml-[21px] flex flex-col gap-px pl-2 before:absolute before:top-0 before:bottom-3 before:left-0 before:border-l before:border-border/40"
     >
       {tree.map((node, rootIdx) => {
         const hasChildren = node.children.length > 0

@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Barra lateral v2 · peso dos projetos</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--rail:#0c0d10;--fg:#e7e8ea;--muted:#9aa0a7;--faint:#687078;--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);
+--sel:rgba(255,255,255,.065);--selh:rgba(255,255,255,.032);--running:#5bb8e8;--warn:#d99138;--error:#f2766b;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 22px;max-width:960px;line-height:1.5}
+.lado{display:flex;gap:32px;align-items:flex-start}
+.col h2{font-size:12px;font-weight:500;color:var(--muted);margin-bottom:8px}
+.sb{width:300px;height:760px;background:var(--rail);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;overflow:hidden}
+.tb{height:48px;display:flex;align-items:center;gap:8px;padding:0 14px;flex:none}
+.tb i{width:12px;height:12px;border-radius:50%;display:block}.tb .ws{margin-left:16px;font-size:13px;font-weight:500}
+.nav{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:2px 8px 8px;border-bottom:1px solid var(--div)}
+.nav a{position:relative;height:44px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:11px;color:var(--muted);border-radius:7px}
+.nav .b{position:absolute;top:3px;right:12px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:var(--sel);color:var(--fg);font-size:11px;display:grid;place-items:center}
+.cab{display:flex;align-items:center;padding:12px 16px 6px;font-size:11px;font-weight:500;color:var(--faint)}
+.cab .n{margin-left:6px}.cab .plus{margin-left:auto;font-size:15px;color:var(--muted)}
+.lista{padding:0 8px;flex:1;overflow:hidden}
+.pip{width:8px;height:8px;border-radius:2.5px;flex:none}
+.eng{width:16px;display:grid;place-items:center;flex:none;font-size:12px}
+.spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--running);border-top-color:transparent;flex:none}
+.est{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;color:var(--running);flex:none}
+.est i{width:6px;height:6px;border-radius:50%;background:var(--running)}
+.slot{margin-left:auto;font:11px var(--mono);color:var(--faint);flex:none}
+.chev{color:var(--faint);font-size:12px;flex:none;margin-left:8px}
+.t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rodape{margin-top:auto}
+.eu{height:48px;display:flex;align-items:center;gap:10px;padding:0 20px;font-size:13px}
+.av{width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#6b5a4c,#2c2622)}
+.fx{height:28px;display:flex;align-items:center;gap:8px;padding:0 14px;border-top:1px solid var(--border);font:11px var(--mono);color:var(--muted)}
+.bar{width:48px;height:5px;border-radius:3px;background:rgba(255,255,255,.1);overflow:hidden}.bar i{display:block;height:100%;width:87%;background:var(--error)}
+.notas{margin-top:22px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:1000px}
+.nota{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:var(--rail)}
+.nota h3{font-size:13px;font-weight:500;margin-bottom:6px}.nota p{font-size:12px;line-height:1.55;color:var(--muted)}
+
+/* BUILD ATUAL (o print de 24/09) */
+.a-p{height:36px;display:flex;align-items:center;gap:10px;padding:0 8px 0 18px;font-size:13px;font-weight:500;color:rgba(231,232,234,.8);border-radius:7px}
+.a-p.at{font-weight:600;color:var(--fg)}
+.a-c{height:36px;display:flex;align-items:center;gap:8px;padding:0 8px 0 18px;font-size:12px;color:var(--muted);border-radius:7px}
+.a-c.sel{background:var(--sel);color:var(--fg);font-weight:500}
+
+/* PROPOSTA v2 */
+.grupo{margin-top:10px}
+.grupo:first-child{margin-top:0}
+.p-p{height:32px;display:flex;align-items:center;gap:10px;padding:0 8px 0 12px;font-size:13px;font-weight:600;color:var(--fg);border-radius:7px}
+.p-p .pip{width:9px;height:9px}
+.p-p.fechado{font-weight:500;color:rgba(231,232,234,.78)}
+/* conversas penduradas no fio que sai do quadradinho do projeto */
+.galhos{position:relative;margin:2px 0 4px 16px;padding-left:12px}
+.galhos::before{content:"";position:absolute;left:0;top:0;bottom:10px;border-left:1px solid rgba(255,255,255,.08)}
+.p-c{position:relative;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px 0 8px;font-size:12px;color:var(--muted);border-radius:7px}
+.p-c:hover{background:var(--selh);color:var(--fg)}
+.p-c.sel{background:var(--sel);color:var(--fg);font-weight:500}
+.p-c .eng{width:14px}
+.recolhidos .p-p{height:30px}
+.recolhidos{margin-top:10px}
+.arq{display:flex;gap:6px;font-size:12px;color:var(--faint);padding:10px 12px}
+</style>
+</head>
+<body>
+<h1>Barra lateral v2: peso dos projetos</h1>
+<p class="sub">Esquerda: o build de 24/09 como está (seu print). Projeto e conversa têm a mesma altura de linha, começam na mesma coluna e quase o mesmo peso, e nada separa um projeto do outro. Direita: o projeto vira CABEÇALHO do grupo (peso, respiro antes), as conversas ficam penduradas num fio que sai do quadradinho de cor, e os projetos recolhidos ficam no lugar deles (a ordem é sua), mais juntos.</p>
+
+<div class="lado">
+<div class="col"><h2>BUILD ATUAL</h2>
+<div class="sb">
+  <div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="ws">frota ⌄</span></div>
+  <div class="nav"><a>◔<span>Painel</span></a><a><span class="b">1</span>🚀&#xFE0E;<span>Frota</span></a><a>◷<span>Agenda</span></a><a><span class="b">3</span>☷<span>Planos</span></a></div>
+  <div class="cab">Projetos<span class="n">5</span><span class="plus">+</span></div>
+  <div class="lista">
+    <div class="a-p"><span class="pip" style="background:#3fcf8e"></span>Landing Prime<span class="chev" style="margin-left:auto">⌄</span></div>
+    <div class="a-c"><span class="eng" style="color:#d97757">▣</span><span class="t">O time comercial da Prime utiliz…</span><span class="slot">1h</span></div>
+    <div class="a-p at"><span class="pip" style="background:#6b7178"></span>frota<span class="est"><i></i>rodando</span><span class="chev">⌄</span></div>
+    <div class="a-c"><span class="eng">ᐱ</span><span class="t">Maestri</span><span class="slot">16/09</span></div>
+    <div class="a-c"><span class="eng">ᐱ</span><span class="t">veja nas configurações que…</span><span class="slot">1d</span></div>
+    <div class="a-c sel"><span class="eng" style="color:#d97757">▣</span><span class="t">faça uma revisada nos ulti…</span><span class="spin"></span></div>
+    <div class="a-c"><span class="eng" style="color:#d97757">▣</span><span class="t">https://x.com/winglee/stat…</span><span class="slot">5m</span></div>
+    <div class="a-p"><span class="pip" style="background:#3fcf8e"></span>sicredi<span class="chev" style="margin-left:auto">›</span></div>
+    <div class="a-p"><span class="pip" style="background:#6b7178"></span>projetos<span class="chev" style="margin-left:auto">›</span></div>
+    <div class="a-p"><span class="pip" style="background:#5b9cf0"></span>Maclan<span class="chev" style="margin-left:auto">›</span></div>
+    <div class="arq">› Arquivados (6)</div>
+  </div>
+  <div class="rodape"><div class="eu"><span class="av"></span>Viní<span style="margin-left:auto;color:var(--muted)">⌃⌄</span></div>
+  <div class="fx">◔ Claude <span class="bar"><i></i></span><b style="color:var(--error);font-weight:500">87%</b><span style="margin-left:6px">sessão US$ 577,71</span></div></div>
+</div></div>
+
+<div class="col"><h2>PROPOSTA v2</h2>
+<div class="sb">
+  <div class="tb"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span class="ws">frota ⌄</span></div>
+  <div class="nav"><a>◔<span>Painel</span></a><a><span class="b">1</span>🚀&#xFE0E;<span>Frota</span></a><a>◷<span>Agenda</span></a><a><span class="b">3</span>☷<span>Planos</span></a></div>
+  <div class="cab">Projetos<span class="n">5</span><span class="plus">+</span></div>
+  <div class="lista">
+    <div class="grupo">
+      <div class="p-p"><span class="pip" style="background:#3fcf8e"></span>Landing Prime<span class="chev" style="margin-left:auto">⌄</span></div>
+      <div class="galhos">
+        <div class="p-c"><span class="eng" style="color:#d97757">▣</span><span class="t">O time comercial da Prime utiliza…</span><span class="slot">1h</span></div>
+      </div>
+    </div>
+    <div class="grupo">
+      <div class="p-p"><span class="pip" style="background:#6b7178"></span>frota<span class="est"><i></i>rodando</span><span class="chev">⌄</span></div>
+      <div class="galhos">
+        <div class="p-c"><span class="eng">ᐱ</span><span class="t">Maestri</span><span class="slot">16/09</span></div>
+        <div class="p-c"><span class="eng">ᐱ</span><span class="t">veja nas configurações que o Frota…</span><span class="slot">1d</span></div>
+        <div class="p-c sel"><span class="eng" style="color:#d97757">▣</span><span class="t">faça uma revisada nos últimos…</span><span class="spin"></span></div>
+        <div class="p-c"><span class="eng" style="color:#d97757">▣</span><span class="t">https://x.com/winglee/status…</span><span class="slot">5m</span></div>
+      </div>
+    </div>
+    <div class="recolhidos">
+      <div class="p-p fechado"><span class="pip" style="background:#3fcf8e"></span>sicredi<span class="chev" style="margin-left:auto">›</span></div>
+      <div class="p-p fechado"><span class="pip" style="background:#6b7178"></span>projetos<span class="chev" style="margin-left:auto">›</span></div>
+      <div class="p-p fechado"><span class="pip" style="background:#5b9cf0"></span>Maclan<span class="chev" style="margin-left:auto">›</span></div>
+    </div>
+    <div class="arq">› Arquivados · 6</div>
+  </div>
+  <div class="rodape"><div class="eu"><span class="av"></span>Viní<span style="margin-left:auto;color:var(--muted)">⌃⌄</span></div>
+  <div class="fx">◔ Claude <span class="bar"><i></i></span><b style="color:var(--error);font-weight:500">87%</b><span style="margin-left:6px">sessão US$ 577,71</span></div></div>
+</div></div>
+</div>
+
+<div class="notas">
+  <div class="nota"><h3>1 · Projeto é cabeçalho</h3><p>Nome em 13px semibold, quadradinho um pouco maior, e 10px de respiro antes de cada projeto aberto. O grupo começa onde o peso começa.</p></div>
+  <div class="nota"><h3>2 · Conversa é galho</h3><p>As conversas recuam 16px e pendem de um fio fino que sai do quadradinho do projeto (o filete de divisor do §4). Linha de 30px, 12px, cinza até o hover; a selecionada ganha fundo e peso.</p></div>
+  <div class="nota"><h3>3 · Recolhidos mais juntos, no lugar</h3><p>Projeto fechado tem linha de 30px e peso médio, sem respiro extra: não parece seção vazia. A ordem continua a sua (arrastar reordena); o respiro vai só antes de projeto aberto.</p></div>
+</div>
+</body>
+</html>

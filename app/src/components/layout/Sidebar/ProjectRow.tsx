@@ -43,7 +43,7 @@ function MarcaDoProjeto({ color }: { color?: string | null }) {
   return (
     <span className="grid size-5 shrink-0 place-items-center" aria-hidden>
       <span
-        className={cn("size-2 rounded-[3px]", !color && "bg-muted-foreground/50")}
+        className={cn("size-[9px] rounded-[3px]", !color && "bg-muted-foreground/50")}
         style={color ? { background: color } : undefined}
       />
     </span>
@@ -178,7 +178,7 @@ export function ProjectRow({
               // pl-3 (12px) + pasta (20px) + gap-2.5 (10px) = 42px, que é
               // exatamente onde o título da conversa começa (pl-[18px] + marca
               // 16px + gap-2). O recuo de 12px é o que abre o gutter do pip.
-              className="flex min-w-0 flex-1 items-center gap-2.5 py-2 pr-1 pl-3 text-left"
+              className="flex min-w-0 flex-1 items-center gap-2.5 py-1.5 pr-1 pl-3 text-left"
             >
               {/* Pasta TINGIDA da cor do projeto (Codex-like): é o marcador do
                   container. Path saiu da linha → vira tooltip (menos ruído). */}
@@ -191,7 +191,7 @@ export function ProjectRow({
                   // de afirmar que está tudo bem.
                   problemaNaPasta
                     ? "text-muted-foreground"
-                    : active
+                    : active || expanded
                       ? "font-semibold text-foreground"
                       : "font-medium text-foreground/80",
                 )}

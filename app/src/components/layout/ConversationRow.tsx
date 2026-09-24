@@ -234,8 +234,9 @@ export function ConversationRow({
               onClick={() => openConv(c.id)}
               title={isDimmed ? "ativa no Linear" : undefined}
               className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 py-2 pr-2 text-left text-[12px]",
-                isChild ? "pl-5" : "pl-[18px]",
+                // 30px de linha e recuo curto: quem recua é o fio (ADR-249).
+                "flex min-w-0 flex-1 items-center gap-2 py-1.5 pr-2 text-left text-[12px]",
+                isChild ? "pl-5" : "pl-2",
                 isFull
                   ? "font-medium text-foreground"
                   : isDimmed

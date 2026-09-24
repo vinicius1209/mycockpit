@@ -45,6 +45,11 @@ describe("linha do projeto", () => {
     expect(html).not.toMatch(/class="(?:[^"]*\s)?bg-sel(?:\s|")/)
   })
 
+  it("projeto aberto tem peso de cabeçalho, mesmo sem conversa selecionada nele (ADR-249)", () => {
+    expect(linha({ expanded: true })).toContain("font-semibold text-foreground")
+    expect(linha({ expanded: false })).toContain("font-medium text-foreground/80")
+  })
+
   it("nova conversa é o '+' da própria linha, não uma linha 'Nova tarefa'", () => {
     const html = linha()
     expect(html).toContain('aria-label="Nova conversa em Landing Prime"')

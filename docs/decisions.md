@@ -8947,3 +8947,30 @@ considerou.
      os testes do plano migram para a base.
 - **Consequência:** durante o turno, o que fica acima do composer é uma linha,
   mais os cartões que pedem gesto.
+
+### ADR-249 · Peso nos projetos, etiqueta em sans e três detalhes de leitura ✅
+- **Número:** nasceu 248 e colidiu com a ADR-248 das abas de arquivo, escrita
+  ao mesmo tempo por outra frente; esta, ainda sem commit e menos citada, virou
+  249.
+- **Contexto (24/09/2026):** testando o build da ADR-245, a pessoa achou a
+  hierarquia de projetos e conversas "levemente confusa": mesma altura de
+  linha, mesma coluna, quase o mesmo peso, nada separando um projeto do outro.
+  No mesmo parecer, escolheu a variante B da etiqueta de instrumento e aprovou
+  três detalhes. Mocks: `docs/mocks/barra-lateral-v2.html` e
+  `docs/mocks/rotulos-e-detalhes.html`.
+- **Decisão:**
+  1. **Barra:** projeto aberto é cabeçalho (semibold, quadradinho de 9px) com
+     10px de respiro antes e depois; conversas pendem de um fio fino que sai do
+     quadradinho (filete de divisor do §4), em linhas de 30px; recolhidos
+     ficam mais juntos, na ordem que a pessoa deu.
+  2. **Etiqueta de instrumento:** `.label-mono` vira `.etiqueta`, em sans, peso
+     500, caixa alta curta e `faint`. Mono fica para número e código (§3).
+  3. **Tema:** o menu do usuário ganha um seletor segmentado
+     (`DropdownMenuSegmentos`, nova porta em `components/ui/dropdown-menu`).
+  4. **Régua de turnos:** trilho sempre visível e legenda das três marcas
+     (seu pedido, resposta, na tela) no hover.
+  5. **Aviso de memória:** uma linha de resumo e o detalhe no hover. Número e
+     unidade ligados por espaço inquebrável ("2,3 GB" nunca se parte). O gesto
+     segue no Parar do composer.
+- **Consequência:** o grupo de cada projeto se lê de relance, os títulos param
+  de competir com números e código, e os três detalhes passam a se explicar.

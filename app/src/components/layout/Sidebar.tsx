@@ -355,7 +355,16 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
                 </div>
               ) : (
                 projects.map((p, idx) => (
-                  <div key={p.id} className="flex flex-col">
+                  // Respiro antes e depois de projeto ABERTO (ADR-249): o grupo
+                  // começa onde o peso começa. Recolhidos seguem juntos, na
+                  // ordem que você deu.
+                  <div
+                    key={p.id}
+                    className={cn(
+                      "flex flex-col",
+                      idx > 0 && (expanded.has(p.id) || expanded.has(projects[idx - 1].id)) && "mt-2.5",
+                    )}
+                  >
                     <ProjectRow
                       project={p}
                       active={workVisible && p.id === activeId}
