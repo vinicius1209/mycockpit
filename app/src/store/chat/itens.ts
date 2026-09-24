@@ -22,6 +22,10 @@ type ChatItemBody =
        *  persona/doutrina do turno-1 (ver `executorItems`). Ausente = fala com
        *  quem pilota, o caso normal. */
       advisorTo?: { id: string; name: string }
+      /** O texto é do APP: a retomada automática depois de um limite (ADR-250).
+       *  Vai ao motor como pedido, mas não foi você que escreveu, e a régua e
+       *  o histórico dizem isso em vez de pôr na sua boca. */
+      retomada?: true
     }
   | { kind: "text"; id: string; text: string }
   | {

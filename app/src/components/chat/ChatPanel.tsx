@@ -805,7 +805,7 @@ export function ChatPanel() {
         )}
         {/* Régua de turnos: ela mesma se ancora no gutter, FORA do fluxo. */}
         {vista.fio && hasConversation && (
-          <TurnScrubber items={items} scrollRef={scrollRef} />
+          <TurnScrubber items={items} vivo={running || finalizing} scrollRef={scrollRef} />
         )}
         {vista.fio ? (
           // key no activeId → fade só ao TROCAR de conversa, não a cada token.

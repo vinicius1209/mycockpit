@@ -8974,3 +8974,43 @@ considerou.
      segue no Parar do composer.
 - **Consequência:** o grupo de cada projeto se lê de relance, os títulos param
   de competir com números e código, e os três detalhes passam a se explicar.
+
+### ADR-250 · A régua de turnos conta pedidos, e a retomada automática não fala por você ✅
+- **Contexto (24/09/2026):** testando o build da ADR-249, a pessoa perguntou o
+  que eram "seu pedido", "resposta" e "na tela" na legenda da régua, e depois:
+  "no trilho eu não consigo ver as respostas… acho útil, mas incompleto". Na
+  conversa real, 13 pedidos viravam 34 traços: a régua desenhava um traço por
+  grupo de autor, então todo aviso do sistema (memória, compactação, retomada)
+  virava turno e partia a resposta em dois, e o balão do traço do agente
+  mostrava a primeira frase dele, que é narração ("Antes de commitar,
+  confiro…"), nunca a resposta. A retomada automática ("O turno anterior parou
+  num limite…") aparecia como pedido seu. Mock:
+  `docs/mocks/regua-de-turnos.html` (variante B aprovada).
+- **Decisão:**
+  1. **Um traço por pedido.** A unidade é o item `user` até o próximo
+     (`components/chat/marcosDaRegua.ts`). Os fatos saem de
+     `historicoDePedidos`, a mesma derivação da aba Conversa: as duas
+     superfícies não podem discordar sobre um pedido. Avisos do sistema
+     deixam de ser traço e ficam no pedido em que aconteceram.
+  2. **Marcas no traço:** âmbar = o pedido na tela; pulso cinza = rodando
+     (§2); emenda = interrompido (ADR-180); ponto âmbar = parou no limite ou
+     terminou em erro. Aviso de texto livre (memória, compactação) não ganha
+     ponto: o `notice` não carrega tom, e adivinhar pelo texto seria teatro.
+     Ele aparece no índice.
+  3. **Índice ao parar no trilho** (`IndiceDaConversa`, `HoverCard`, 280 ms):
+     cada pedido em duas linhas (o que você pediu, o que o agente respondeu),
+     duração, e o clique leva ao pedido. O rodapé abre a aba Conversa, da qual
+     o índice é a versão de bolso. A legenda sai.
+  4. **Linha de lista empilhada** (`components/ui/linha-de-lista`): como o
+     `Ladrilho`, não é degrau do §13, e a geometria ganha dono único. A linha
+     ativa usa `SELECTED_FILL`, sem barra de acento.
+  5. **Retomada marcada na origem:** o item `user` ganha `retomada: true`
+     quando o envio nasce do disparo da retomada automática
+     (`autoResume.disparou`, lido no aceite do turno). O histórico anterior à
+     marca é reconhecido por igualdade exata com `resumePrompt`, texto que só
+     o app escreve. Régua, índice e aba Conversa dizem "Retomada automática".
+- **Consequência:** a régua passa a responder "o que eu pedi e o que voltou"
+  sem precisar passar traço por traço. A faixa condensada agora é
+  representada pelo primeiro pedido dela (antes, pelo turno do usuário no meio
+  dos turnos do agente). A bolha da retomada no próprio fio ainda é igual à
+  sua; marcar ali fica para depois, se incomodar.

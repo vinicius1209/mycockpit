@@ -157,6 +157,23 @@ const Rotulo = ({ children }: { children: string }) => (
 /** O pedido mais novo, em cartão: é o "agora" quando roda, e o último pedido
  *  quando nada roda. Estado, tempo, fatos, a última resposta (com rótulo e
  *  filete, para não se confundir com o pedido) e o plano aberto, uma vez só. */
+/** O pedido que o app mandou sozinho (ADR-250) não se passa por seu. */
+function TextoDoPedido({ pedido, className }: { pedido: PedidoDoFio; className: string }) {
+  return (
+    <p
+      data-selectable
+      className={cn(
+        "select-text text-[13px] break-words",
+        pedido.retomada ? "text-muted-foreground" : "text-foreground",
+        className,
+      )}
+    >
+      {pedido.retomada && <span className="text-faint">Retomada automática · </span>}
+      {pedido.texto}
+    </p>
+  )
+}
+
 function CabecaDoHistorico({ pedido, now, onReveal }: { pedido: PedidoDoFio; now: number; onReveal: (id: string) => void }) {
   const plano = pedido.plano
   return (
@@ -172,9 +189,7 @@ function CabecaDoHistorico({ pedido, now, onReveal }: { pedido: PedidoDoFio; now
         </span>
         <AcoesDoPedido pedido={pedido} onReveal={onReveal} className="-my-1" />
       </div>
-      <p data-selectable className="mt-2 line-clamp-4 select-text text-[13px] leading-relaxed break-words text-foreground">
-        {pedido.texto}
-      </p>
+      <TextoDoPedido pedido={pedido} className="mt-2 line-clamp-4 leading-relaxed" />
       <div className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground tabular-nums">
         <Fatos pedido={pedido} semDuracao />
       </div>
@@ -202,9 +217,7 @@ function LinhaDoPedido({ pedido, now, onReveal }: { pedido: PedidoDoFio; now: nu
         {pedido.ts != null && <div className="text-[11px] text-faint">{fmtAgo(now - pedido.ts)}</div>}
       </div>
       <div className="min-w-0">
-        <p data-selectable className="line-clamp-2 select-text text-[13px] leading-snug break-words text-foreground">
-          {pedido.texto}
-        </p>
+        <TextoDoPedido pedido={pedido} className="line-clamp-2 leading-snug" />
         <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground tabular-nums">
           <Estado estado={pedido.estado} />
           <Fatos pedido={pedido} />

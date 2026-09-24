@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import type { ChatItem } from "@/store/chat"
 import { buildNodes } from "./messageNodes"
 import { corteNasceu, groupByAuthor, grupoDeCorte } from "./messageGroups"
-import { deriveTurnTicks } from "./TurnScrubber"
+import { historicoDePedidos } from "@/lib/conversationMap/historico"
+import { marcosDaRegua, respostaDoMarco } from "./marcosDaRegua"
 
 // A sequência REAL do corte de 09/09/2026 (conversa "[feat] cliente coleta"):
 // o pedido, a prosa do turno, o cancelled e a sua mensagem 71ms depois.
@@ -66,15 +67,18 @@ describe("corteNasceu: a brasa só no instante do corte", () => {
 })
 
 describe("régua: o corte vira emenda", () => {
-  const ticks = deriveTurnTicks(grupos)
+  // Desde a ADR-250 o traço é o PEDIDO: o corte é o desfecho do pedido que
+  // ele interrompeu, e a emenda sai do estado dele.
+  const pedidos = historicoDePedidos(fio, { running: false, finalizing: false }).pedidos
+  const marcos = marcosDaRegua(grupos, fio, pedidos)
 
   it("o marcador do corte é emenda e diz quem cortou", () => {
-    const tick = ticks.find((t) => t.corte)
-    expect(tick).toBeDefined()
-    expect(tick?.summary).toBe("você interrompeu para corrigir")
+    const marco = marcos.find((m) => m.pedido.estado === "interrompido")
+    expect(marco?.key).toBe("u1")
+    expect(respostaDoMarco(marco!)).toBe("você interrompeu para corrigir")
   })
 
   it("só o marcador do corte é emenda", () => {
-    expect(ticks.filter((t) => t.corte)).toHaveLength(1)
+    expect(marcos.filter((m) => m.pedido.estado === "interrompido")).toHaveLength(1)
   })
 })

@@ -1,8 +1,8 @@
 // TurnScrubber — Régua / Minimapa de turnos na margem esquerda da conversa.
 //
-// Mapeia cada grupo/turno de interação em um marcador visual compacto (tracinho).
-// Permite navegação rápida (Click to Jump), destaca o turno ativo no viewport
-// e exibe resumo no hover.
+// Um traço por PEDIDO seu (ADR-250; a unidade e os fatos moram em
+// `marcosDaRegua.ts`). O clique leva ao pedido, o traço da tela fica em âmbar,
+// e parar o mouse no trilho abre o índice da conversa (`IndiceDaConversa`).
 //
 // Degradação honesta (§5 do STYLEGUIDE):
 //  - Conversa com menos de 2 turnos não renderiza a régua (ruído zero em fios curtos).
@@ -30,25 +30,23 @@
 import {
   memo,
   useCallback,
+  useDeferredValue,
   useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react"
-import { Bot, MessageSquareQuote, Terminal, User } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import {
-  groupByAuthor,
-  grupoDeCorte,
-  type GroupAuthor,
-  type MessageGroup,
-} from "./messageGroups"
-import { rotuloDoCorte } from "@/lib/corte"
-import { type Node } from "./messageNodes"
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
+import { registrarEscolhaDeAba } from "@/components/layout/useContextPanelTab"
+import { groupByAuthor } from "./messageGroups"
+import { IndiceDaConversa } from "./IndiceDaConversa"
+import { marcoPedeAtencao, marcosDaRegua, respostaDoMarco, type MarcoDaRegua } from "./marcosDaRegua"
 import { hiddenNodeCount, useStableNodes } from "./useStableNodes"
+import { historicoDePedidos } from "@/lib/conversationMap/historico"
 import { CONVERSATION_COLUMN_WIDTH } from "@/lib/conversationScale"
+import { useApp } from "@/store/app"
 import type { ChatItem } from "@/store/chat"
 
 /**
@@ -100,19 +98,13 @@ export function cabeRegua(larguraDoContainer: number): boolean {
  */
 export const CLASSE_VISIBILIDADE_REGUA = "hidden @min-[848px]:flex"
 
-export interface TurnTick {
+/** O mínimo que a régua precisa de um marcador para condensar. */
+export interface Condensavel {
   key: string
-  groupId: string
-  author: GroupAuthor
-  summary: string
-  label: string
-  icon: "user" | "bot" | "advisor" | "tool" | "system"
-  /** >1 quando o marcador representa uma FAIXA condensada de turnos. */
+  /** >1 quando o marcador representa uma FAIXA condensada. */
   span?: number
-  /** Keys dos turnos engolidos pela faixa (só quando `span` > 1). */
+  /** Keys dos marcadores engolidos pela faixa (só quando `span` > 1). */
   covers?: string[]
-  /** O marcador é um corte (ADR-180): vira emenda de película na régua. */
-  corte?: boolean
 }
 
 /** Passo vertical (px) de cada marcador: conforto no fio curto… */
@@ -122,9 +114,9 @@ export const PASSO_MIN = 7
 /** `py-2` em cima e embaixo do trilho. */
 const RESPIRO = 16
 
-export interface ScrubberPlan {
+export interface ScrubberPlan<T extends Condensavel> {
   passo: number
-  ticks: TurnTick[]
+  ticks: T[]
 }
 
 /**
@@ -132,21 +124,20 @@ export interface ScrubberPlan {
  * de tamanho igual — a POSIÇÃO do marcador continua proporcional à posição no
  * fio, que é a única coisa que faz um minimapa ser mapa.
  *
- * Dentro da faixa, quem representa é o turno DO USUÁRIO (é o que a pessoa
- * procura quando volta no fio: "onde foi que eu pedi isso?"); sem nenhum, o
- * primeiro da faixa. O `span` vira legenda no hover: marcador que engole 4
- * turnos e finge ser 1 mentiria sobre onde o clique leva.
+ * Quem representa a faixa é o PRIMEIRO pedido dela: o clique leva ao começo
+ * da faixa. O `span` vira legenda: marcador que engole 4 pedidos e finge ser 1
+ * mentiria sobre onde o clique leva. (Antes da ADR-250 a faixa escolhia o
+ * turno do usuário no meio de turnos do agente; agora todo marcador é pedido.)
  */
-function condensar(ticks: TurnTick[], capacidade: number): TurnTick[] {
+function condensar<T extends Condensavel>(ticks: T[], capacidade: number): T[] {
   const tamanho = Math.ceil(ticks.length / capacidade)
-  const faixas: TurnTick[] = []
+  const faixas: T[] = []
   for (let i = 0; i < ticks.length; i += tamanho) {
     const faixa = ticks.slice(i, i + tamanho)
-    const rep = faixa.find((t) => t.author.kind === "you") ?? faixa[0]
     faixas.push(
       faixa.length === 1
-        ? rep
-        : { ...rep, span: faixa.length, covers: faixa.map((t) => t.key) },
+        ? faixa[0]
+        : { ...faixa[0], span: faixa.length, covers: faixa.map((t) => t.key) },
     )
   }
   return faixas
@@ -156,7 +147,7 @@ function condensar(ticks: TurnTick[], capacidade: number): TurnTick[] {
  * Decide passo e marcadores para uma altura REAL de container (px).
  * Nunca devolve um plano mais alto que o espaço: a régua não rola.
  */
-export function planejarRegua(ticks: TurnTick[], altura: number): ScrubberPlan {
+export function planejarRegua<T extends Condensavel>(ticks: T[], altura: number): ScrubberPlan<T> {
   const util = Math.floor(altura) - RESPIRO
   if (ticks.length === 0 || util < PASSO_MIN) return { passo: PASSO_MAX, ticks: [] }
 
@@ -168,80 +159,29 @@ export function planejarRegua(ticks: TurnTick[], altura: number): ScrubberPlan {
   return { passo: PASSO_MIN, ticks: condensar(ticks, capacidade) }
 }
 
-/** Extrai resumo textual curto de um nó de render. */
-function summaryOfNode(node: Node): string {
-  switch (node.type) {
-    case "prose":
-      return node.text.trim().slice(0, 70)
-    case "tools": {
-      const count = node.tools.length
-      return count === 1 ? `1 ferramenta (${node.tools[0].name})` : `${count} ferramentas executadas`
-    }
-    case "plan":
-      return "Plano de execução"
-    case "incident":
-      return node.message.slice(0, 70)
-    case "item": {
-      const it = node.item
-      if (it.kind === "user") return it.text.trim().slice(0, 70)
-      if (it.kind === "advice") return it.text.trim().slice(0, 70)
-      if (it.kind === "planGate") return it.text.trim().slice(0, 70)
-      if (it.kind === "notice") return it.message.slice(0, 70)
-      if (it.kind === "limit") return it.message.slice(0, 70)
-      if (it.kind === "cancelled") return rotuloDoCorte(it.cause)
-      return ""
-    }
-  }
+/** O que o leitor de tela ouve no traço: o índice é só para quem vê. */
+export function rotuloDoTraco(marco: MarcoDaRegua): string {
+  const faixa = marco.span ? ` (e mais ${marco.span - 1} pedidos)` : ""
+  const quem = marco.pedido.retomada ? "Retomada automática" : marco.pedido.texto
+  return `Pedido ${marco.ordem}: ${quem}${faixa}. ${respostaDoMarco(marco)}`
 }
 
-/** Deriva os marcadores a partir dos grupos de mensagens. */
-export function deriveTurnTicks(groups: MessageGroup[]): TurnTick[] {
-  return groups.map((g, idx) => {
-    let summary = ""
-    for (const node of g.nodes) {
-      summary = summaryOfNode(node)
-      if (summary) break
-    }
-
-    let label = `Turno ${idx + 1}`
-    let icon: TurnTick["icon"] = "bot"
-
-    switch (g.author.kind) {
-      case "you":
-        label = "Você"
-        icon = "user"
-        break
-      case "executor":
-        label = "Agent"
-        icon = g.nodes.some((n) => n.type === "tools") ? "tool" : "bot"
-        break
-      case "especialista":
-        label = g.author.personaName
-        icon = "advisor"
-        break
-      case "system":
-        label = "Sistema"
-        icon = "system"
-        break
-    }
-
-    return {
-      key: g.key,
-      groupId: `msg-group-${g.key}`,
-      author: g.author,
-      summary: summary || label,
-      label,
-      icon,
-      ...(grupoDeCorte(g) ? { corte: true } : {}),
-    }
-  })
+/** O rodapé do índice: a aba Conversa, pelo gesto humano de escolha de aba. */
+function abrirHistoricoCompleto() {
+  const app = useApp.getState()
+  if (!app.contextOpen) app.toggleContext()
+  registrarEscolhaDeAba()
+  app.setContextPanelTab("conversa")
 }
 
 export const TurnScrubber = memo(function TurnScrubber({
   items,
+  vivo,
   scrollRef,
 }: {
   items: ChatItem[]
+  /** Há turno rodando ou finalizando: é o que faz o último pedido "rodando". */
+  vivo: boolean
   scrollRef: React.RefObject<HTMLDivElement | null>
 }) {
   // MESMA dobra memoizada do transcript (`useStableNodes` aplica `placeNotes` e
@@ -254,8 +194,23 @@ export const TurnScrubber = memo(function TurnScrubber({
     return escondidos > 0 ? nodes.slice(escondidos) : nodes
   }, [nodes])
   const groups = useMemo(() => groupByAuthor(visible), [visible])
-  const todos = useMemo(() => deriveTurnTicks(groups), [groups])
-  const [activeKey, setActiveKey] = useState<string | null>(null)
+  // Os fatos do pedido são a derivação da aba Conversa, que percorre o fio
+  // inteiro (~8 ms na maior conversa real). Deferida: o token pinta primeiro,
+  // a régua acompanha logo depois. Grupo que ainda não tem dono no mapa
+  // deferido cai no último marco, que é mesmo o dono dele.
+  const itemsDaRegua = useDeferredValue(items)
+  const pedidos = useMemo(
+    () => historicoDePedidos(itemsDaRegua, { running: vivo, finalizing: false }).pedidos,
+    [itemsDaRegua, vivo],
+  )
+  const marcos = useMemo(() => marcosDaRegua(groups, itemsDaRegua, pedidos), [groups, itemsDaRegua, pedidos])
+  const marcoDoGrupo = useMemo(
+    () => new Map(marcos.flatMap((m) => m.grupos.map((g) => [g, m.key] as const))),
+    [marcos],
+  )
+  const [grupoNaTela, setGrupoNaTela] = useState<string | null>(null)
+  const [sobre, setSobre] = useState<string | null>(null)
+  const [aberto, setAberto] = useState(false)
 
   // Altura REAL do container de rolagem (o composer e a barra de abas são
   // irmãos, então `clientHeight` já é o espaço que a régua tem). Medida em
@@ -273,45 +228,35 @@ export const TurnScrubber = memo(function TurnScrubber({
     return () => ro.disconnect()
   }, [scrollRef])
 
-  const { passo, ticks } = useMemo(() => planejarRegua(todos, altura), [todos, altura])
+  const { passo, ticks } = useMemo(() => planejarRegua(marcos, altura), [marcos, altura])
 
-  // O observer olha TODOS os turnos, não só os marcadores pintados: com a régua
-  // condensada, observar apenas os representantes deixaria o ativo congelado
-  // enquanto a pessoa rola dentro de uma faixa.
-  // Ele só precisa ser refeito quando o CONJUNTO de turnos muda — não a cada
+  // O observer olha TODOS os grupos da tela, não só os primeiros de cada
+  // pedido: o pedido na tela é o dono do primeiro grupo visível, e um pedido
+  // longo passa várias telas sem que o grupo dele de abertura apareça.
+  // Ele só precisa ser refeito quando o CONJUNTO de grupos muda — não a cada
   // token. A assinatura das keys é a dep; a lista entra por ref, senão
   // `disconnect()`/`observe()` de N elementos rodava por `text_delta`.
-  const tickSig = todos.map((t) => t.key).join("|")
-  const ticksRef = useRef(todos)
-  ticksRef.current = todos
+  const grupoSig = groups.map((g) => g.key).join("|")
+  const gruposRef = useRef(groups)
+  gruposRef.current = groups
 
-  // Atualiza o marcador ativo conforme o scroll do container usando IntersectionObserver
   useEffect(() => {
     const container = scrollRef.current
-    const atuais = ticksRef.current
+    const atuais = gruposRef.current
     if (!container || atuais.length === 0) return
 
-    const visibleMap = new Map<string, number>()
-
+    const visiveis = new Set<string>()
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           const key = entry.target.getAttribute("data-turn-key")
           if (!key) continue
-          if (entry.isIntersecting) {
-            visibleMap.set(key, entry.intersectionRatio)
-          } else {
-            visibleMap.delete(key)
-          }
+          if (entry.isIntersecting) visiveis.add(key)
+          else visiveis.delete(key)
         }
-
-        // Escolhe o primeiro grupo visível a partir do topo do viewport
-        for (const tick of ticksRef.current) {
-          if (visibleMap.has(tick.key)) {
-            setActiveKey(tick.key)
-            break
-          }
-        }
+        // O primeiro grupo visível a partir do topo do viewport.
+        const primeiro = gruposRef.current.find((g) => visiveis.has(g.key))
+        if (primeiro) setGrupoNaTela(primeiro.key)
       },
       {
         root: container,
@@ -320,13 +265,13 @@ export const TurnScrubber = memo(function TurnScrubber({
       },
     )
 
-    for (const tick of atuais) {
-      const el = document.getElementById(tick.groupId)
+    for (const grupo of atuais) {
+      const el = document.getElementById(`msg-group-${grupo.key}`)
       if (el) observer.observe(el)
     }
 
     return () => observer.disconnect()
-  }, [tickSig, scrollRef])
+  }, [grupoSig, scrollRef])
 
   const jumpTo = useCallback((groupId: string) => {
     const el = document.getElementById(groupId)
@@ -334,7 +279,9 @@ export const TurnScrubber = memo(function TurnScrubber({
     el.scrollIntoView({ behavior: "smooth", block: "start" })
   }, [])
 
-  // Fio com menos de 2 turnos: não polui a lateral (§5, degradação honesta)
+  const naTela = (grupoNaTela && marcoDoGrupo.get(grupoNaTela)) || marcos.at(-1)?.key || null
+
+  // Fio com menos de 2 pedidos: não polui a lateral (§5, degradação honesta)
   if (ticks.length < 2) return null
 
   return (
@@ -357,37 +304,34 @@ export const TurnScrubber = memo(function TurnScrubber({
           CLASSE_VISIBILIDADE_REGUA,
         )}
       >
-        <nav
-          aria-label="Navegação rápida de turnos"
-          // Trilho SEMPRE visível (ADR-249): em repouso a régua era só traços
-          // soltos no gutter, e nada dizia que aquilo se clica. A aresta é a
-          // da superfície (`border`, §4); o hover só acende o fundo.
-          className="pointer-events-auto flex flex-col items-center rounded-full border bg-card/70 px-1 py-2 transition-colors hover:bg-card/95 hover:shadow-[var(--shadow-sm)]"
-        >
-          {ticks.map((tick, idx) => {
-            const isActive =
-              activeKey === tick.key ||
-              (activeKey !== null && tick.covers?.includes(activeKey)) ||
-              (activeKey === null && idx === ticks.length - 1)
-            const isUser = tick.author.kind === "you"
-            const faixa = tick.span ? ` (faixa de ${tick.span} turnos)` : ""
-
-            return (
-              // Atraso PRÓPRIO: o provider global abre em 0ms, e com o passo
-              // apertado o ponteiro cruza uma dúzia de marcadores até chegar no
-              // que interessa — sem espera, isso vira uma metralhadora de balão
-              // por cima do fio.
-              <Tooltip key={tick.key} delayDuration={280}>
-                <TooltipTrigger asChild>
+        {/* O índice abre ao PARAR no trilho, com o mesmo atraso que o balão de
+            cada traço tinha: o ponteiro que só atravessa a régua não abre nada. */}
+        <HoverCard open={aberto} onOpenChange={setAberto} openDelay={280} closeDelay={120}>
+          <HoverCardTrigger asChild>
+            <nav
+              aria-label="Pedidos desta conversa"
+              onMouseLeave={() => setSobre(null)}
+              // Trilho SEMPRE visível (ADR-249): em repouso a régua era só traços
+              // soltos no gutter, e nada dizia que aquilo se clica. A aresta é a
+              // da superfície (`border`, §4); o hover só acende o fundo.
+              className="pointer-events-auto flex flex-col items-center rounded-full border bg-card/70 px-1 py-2 transition-colors hover:bg-card/95 hover:shadow-[var(--shadow-sm)]"
+            >
+              {ticks.map((tick) => {
+                const isActive = naTela === tick.key || (naTela !== null && !!tick.covers?.includes(naTela))
+                const estado = tick.pedido.estado
+                return (
                   <button
+                    key={tick.key}
                     type="button"
                     onClick={() => jumpTo(tick.groupId)}
-                    aria-label={`${tick.label}: ${tick.summary}${faixa}`}
+                    onMouseEnter={() => setSobre(tick.key)}
+                    aria-label={rotuloDoTraco(tick)}
+                    aria-current={isActive ? "location" : undefined}
                     style={{ height: passo }}
-                    className="group relative flex items-center justify-center transition-all focus-visible:outline-none"
+                    className="group relative flex w-4.5 items-center justify-center focus-visible:outline-none"
                   >
-                    {tick.corte ? (
-                      // Emenda de película: o turno foi cortado aqui (ADR-180).
+                    {estado === "interrompido" ? (
+                      // Emenda de película: o pedido foi cortado (ADR-180).
                       <span className="flex w-3.5 justify-between" aria-hidden="true">
                         {[0, 1].map((metade) => (
                           <span
@@ -400,58 +344,44 @@ export const TurnScrubber = memo(function TurnScrubber({
                         ))}
                       </span>
                     ) : (
-                    <span
-                      className={cn(
-                        "block h-1 rounded-full transition-all duration-200",
-                        isActive
-                          ? "w-4.5 bg-brass"
-                          : isUser
-                            ? "w-2.5 bg-brass/50 hover:w-3.5 hover:bg-brass"
-                            : "w-2.5 bg-muted-foreground/35 hover:w-3.5 hover:bg-muted-foreground/80",
-                      )}
-                    />
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "block h-1 rounded-full transition-all duration-200",
+                          isActive
+                            ? "w-4.5 bg-brass"
+                            : estado === "rodando"
+                              ? // O vivo é movimento cinza (§2), não cor.
+                                "w-2.5 animate-pulse bg-muted-foreground/70"
+                              : "w-2.5 bg-muted-foreground/35 group-hover:w-3.5 group-hover:bg-muted-foreground/80",
+                        )}
+                      />
+                    )}
+                    {marcoPedeAtencao(tick) && !isActive && (
+                      <span aria-hidden="true" className="absolute top-1/2 right-0 size-1 -translate-y-1/2 rounded-full bg-st-warning" />
                     )}
                   </button>
-                </TooltipTrigger>
-                {/* Superfície de cartão SEM hairline: a seta do primitive herda
-                    o fundo do balão (`bg-inherit`), então ela some no contorno em
-                    vez de virar losango escuro grudado no texto. Borda aqui
-                    reapareceria como aba saindo do cartão, e o §4 já dispensa o
-                    fio: E2 se separa por cor + raio + `--shadow-pop`. */}
-                <TooltipContent
-                  side="right"
-                  sideOffset={8}
-                  className="max-w-[280px] bg-card px-2.5 py-1.5 text-foreground shadow-[var(--shadow-pop)]"
-                >
-                  <span className="flex items-center gap-1.5 text-[11px] leading-tight">
-                    <span className="flex shrink-0 items-center gap-1 font-medium text-brass">
-                      {tick.icon === "user" && <User className="size-3" />}
-                      {tick.icon === "bot" && <Bot className="size-3" />}
-                      {tick.icon === "advisor" && <MessageSquareQuote className="size-3" />}
-                      {tick.icon === "tool" && <Terminal className="size-3" />}
-                      {tick.label}
-                    </span>
-                    {/* Marcador que engole vários turnos DIZ isso: o clique leva
-                        ao começo da faixa, e prometer "um turno" seria mentira. */}
-                    {tick.span && (
-                      <span className="shrink-0 text-muted-foreground">
-                        · {tick.span} turnos
-                      </span>
-                    )}
-                    <span className="truncate text-muted-foreground">{tick.summary}</span>
-                  </span>
-                  {/* A legenda das três marcas (ADR-249): as cores não se
-                      explicavam sozinhas. */}
-                  <span aria-hidden className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
-                    <span className="h-1 w-2.5 rounded-full bg-brass/50" />seu pedido
-                    <span className="h-1 w-2.5 rounded-full bg-muted-foreground/45" />resposta
-                    <span className="h-1 w-4 rounded-full bg-brass" />na tela
-                  </span>
-                </TooltipContent>
-              </Tooltip>
-            )
-          })}
-        </nav>
+                )
+              })}
+            </nav>
+          </HoverCardTrigger>
+          <HoverCardContent side="right" align="center" sideOffset={10} className="p-0">
+            <IndiceDaConversa
+              marcos={marcos}
+              total={pedidos.length}
+              ativo={naTela}
+              sobre={sobre}
+              onIr={(marco) => {
+                setAberto(false)
+                jumpTo(marco.groupId)
+              }}
+              onHistorico={() => {
+                setAberto(false)
+                abrirHistoricoCompleto()
+              }}
+            />
+          </HoverCardContent>
+        </HoverCard>
       </div>
     </div>
   )

@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Régua de turnos · hoje × proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--pop:#191c20;--muted:#9aa0a7;--faint:#687078;--accent:#1e2126;
+--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);--sel:rgba(255,255,255,.065);--brass:#e4a862;--warn:#d99138;--running:#5bb8e8;--err:#f2766b;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;--pop-shadow:0 12px 40px -8px rgba(0,0,0,.55)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 22px;max-width:980px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:34px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin-bottom:14px;max-width:980px;line-height:1.55}
+.q b{color:var(--fg);font-weight:500}.q code,.sub code{font:12px var(--mono);color:var(--fg)}
+.etq{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.diag{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;max-width:1100px}
+.diag .c{background:var(--rail);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:13px;line-height:1.55;color:var(--muted)}
+.diag .c b{display:block;color:var(--fg);font-weight:500;margin-bottom:4px}
+.diag .c .ex{margin-top:8px;font-size:12px;border-top:1px solid var(--div);padding-top:8px}
+.diag .c .ex i{font-style:normal;color:var(--fg)}
+
+/* ---------- a moldura do chat ---------- */
+.lado{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.quadro{width:560px}
+.quadro > .tit{font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:500}
+.quadro.esc > .tit{color:var(--brass)}
+.fio{position:relative;height:470px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.quadro.esc .fio{outline:1px solid rgba(228,168,98,.45)}
+.transcript{position:absolute;left:64px;right:22px;top:0;bottom:0;padding:22px 0;font-size:13px;line-height:1.6;color:var(--muted);overflow:hidden}
+.transcript .u{margin:0 0 14px auto;max-width:78%;background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 12px;color:var(--fg)}
+.transcript .a{margin-bottom:14px}
+.transcript .a .who{font-size:12px;color:var(--fg);font-weight:500;margin-bottom:2px}
+.transcript .t{height:8px;border-radius:4px;background:rgba(255,255,255,.05);margin:7px 0}
+.transcript .aviso{font-size:12px;color:var(--faint);display:flex;gap:6px;align-items:center;margin:4px 0 14px}
+
+/* trilho: casca real (rounded-full border bg-card/70 px-1 py-2) */
+.trilho{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;align-items:center;padding:8px 4px;border-radius:999px;background:rgba(20,22,25,.7);border:1px solid var(--border);z-index:3}
+.trilho button{all:unset;display:flex;align-items:center;justify-content:center;width:22px;cursor:pointer;position:relative}
+.trilho i{display:block;height:4px;border-radius:2px;width:10px;background:rgba(154,160,167,.35);transition:width .2s,background .2s}
+.trilho i.eu{background:rgba(228,168,98,.5)}
+.trilho i.at{width:18px;background:var(--brass)}
+.trilho button:hover i{width:14px;background:rgba(154,160,167,.8)}
+.trilho button:hover i.at{width:18px;background:var(--brass)}
+/* proposta: marcas de estado no próprio traço */
+.trilho i.rodando{background:linear-gradient(90deg,rgba(154,160,167,.25),rgba(154,160,167,.8),rgba(154,160,167,.25));background-size:200% 100%;animation:cintila 1.6s linear infinite}
+@keyframes cintila{to{background-position:-200% 0}}
+.trilho .emenda{display:flex;width:14px;justify-content:space-between}
+.trilho .emenda span{width:6px;height:4px;border-radius:2px;background:rgba(154,160,167,.45)}
+.trilho .ponto{position:absolute;right:-1px;top:50%;width:4px;height:4px;margin-top:-2px;border-radius:50%;background:var(--warn)}
+
+/* balão do hover (E2: cartão sem filete + --shadow-pop) */
+.balao{position:absolute;background:var(--card);border-radius:8px;box-shadow:var(--pop-shadow);z-index:5;font-size:12px}
+.balao.hoje{left:44px;padding:6px 10px;width:300px}
+.balao.hoje .l1{display:flex;gap:6px;font-size:11px;align-items:center;white-space:nowrap;overflow:hidden}
+.balao.hoje .l1 b{color:var(--brass);font-weight:500}.balao.hoje .l1 span{color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+.balao.hoje .leg{display:flex;gap:8px;align-items:center;font-size:11px;color:var(--muted);margin-top:6px}
+.balao.hoje .leg i{display:inline-block;height:4px;width:10px;border-radius:2px}
+
+.balao.par{left:46px;width:340px;padding:10px 12px}
+.par .cab{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint);margin-bottom:6px}
+.par .cab .n{font-variant-numeric:tabular-nums}
+.par .cab .agora{margin-left:auto;color:var(--brass);font-weight:500}
+.par .ped{font-size:13px;color:var(--fg);line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.par .resp{margin-top:6px;padding-left:9px;border-left:1px solid rgba(255,255,255,.1);font-size:12px;color:var(--muted);line-height:1.5;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.par .resp.sem{font-style:normal;color:var(--faint)}
+.par .fatos{display:flex;gap:10px;align-items:center;margin-top:8px;font-size:11px;color:var(--faint);white-space:nowrap}
+.par .fatos b{color:var(--fg);font-weight:500;font-variant-numeric:tabular-nums}
+.par .fatos .av{color:var(--warn)}
+.par .fatos .av2{color:var(--muted)}
+
+/* índice (proposta B) */
+.indice{position:absolute;left:44px;top:14px;bottom:14px;width:410px;background:var(--pop);border-radius:10px;box-shadow:var(--pop-shadow);z-index:5;display:flex;flex-direction:column;overflow:hidden}
+.indice .topo{display:flex;align-items:baseline;gap:8px;padding:10px 12px 8px;border-bottom:1px solid var(--div)}
+.indice .topo .etq{color:var(--faint)}
+.indice .topo span.r{margin-left:auto;font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums}
+.indice ol{list-style:none;overflow-y:auto;flex:1;padding:4px}
+.indice li{display:grid;grid-template-columns:18px minmax(0,1fr) auto;column-gap:8px;padding:5px 8px;border-radius:6px;cursor:pointer;position:relative}
+.indice li:hover{background:rgba(255,255,255,.032)}
+.indice li.at{background:var(--sel)}
+.indice .n{font:11px var(--mono);color:var(--faint);padding-top:2px;font-variant-numeric:tabular-nums}
+.indice .ped{font-size:13px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.indice .ped.auto{color:var(--muted)}
+.indice .resp{grid-column:2/4;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.indice .resp.estado{color:var(--warn)}
+.indice .resp.vivo{color:var(--muted)}
+.indice .dir{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums;padding-top:2px}
+.indice .dir .av{width:5px;height:5px;border-radius:50%;background:var(--warn)}
+.indice .pe{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--div);padding:7px 12px;font-size:12px;color:var(--muted)}
+.indice .pe a{color:var(--fg);text-decoration:none}
+.indice .pe kbd{font:11px var(--mono);color:var(--faint)}
+
+.nota{font-size:12px;color:var(--muted);line-height:1.55;margin-top:10px}
+.nota b{color:var(--fg);font-weight:500}
+.tabela{border-collapse:collapse;font-size:13px;max-width:1100px;margin-top:6px}
+.tabela td,.tabela th{border-top:1px solid var(--div);padding:8px 14px 8px 0;text-align:left;vertical-align:top;line-height:1.5}
+.tabela th{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.tabela td:first-child{color:var(--fg);white-space:nowrap}
+.tabela td{color:var(--muted)}
+</style>
+</head>
+<body>
+<h1>Régua de turnos</h1>
+<p class="sub">Os dados são desta conversa, tirados do banco (itens 361 a 693: 13 pedidos, do "aba Conversa confusa" até o que você mandou agora). Nada foi inventado. Os textos aparecem cortados como a tela cortaria.</p>
+
+<h2>O que está errado hoje <small>três coisas, uma embaixo da outra</small></h2>
+<div class="diag">
+  <div class="c"><b>1 · A resposta não aparece</b>O cartão do traço do agente mostra a <i>primeira</i> frase do turno. Essa frase é quase sempre narração ("vou olhar…"), e a resposta final, que é o que você procura, fica de fora.
+    <div class="ex">Pedido "pode fazer os commits…": a régua mostra <i>"Antes de commitar, confiro o estado da árvore."</i> A resposta real era <i>"Fiz os commits separados por assunto e segui com o próximo item…"</i></div></div>
+  <div class="c"><b>2 · Aviso do sistema vira um turno inteiro</b>Memória, compactação, limite e retomada automática ganham um traço igual ao de uma resposta. Um aviso no meio do turno também parte a resposta em dois traços.
+    <div class="ex">O pedido "1. isso a gente deixa pra depois…" virou <i>3 traços</i> (você, agente, aviso de retomada), e a retomada ganhou um quarto como se fosse sua. Nos 13 pedidos, a régua desenha <i>34 traços</i>.</div></div>
+  <div class="c"><b>3 · Parado, o traço não diz nada</b>Todos têm o mesmo tamanho e a mesma cor. Para achar algo você precisa passar o mouse em cada um. A régua não mostra se o turno terminou, parou num limite ou ainda está rodando.
+    <div class="ex">E a retomada automática ("O turno anterior parou num limite…") aparece como <i>seu pedido</i>, embora você não tenha escrito isso.</div></div>
+</div>
+
+<h2>Hoje × proposta <small>passe o mouse no trilho</small></h2>
+<p class="q">Muda a <b>unidade</b>: hoje cada traço é um bloco de autor (você, agente, sistema); na proposta, cada traço é um <b>pedido seu com a resposta dele</b>. Com isso, "seu pedido × resposta" some da legenda, porque os dois viram um traço só. Avisos do sistema deixam de ser traço e viram um ponto no pedido em que aconteceram.</p>
+
+<div class="lado">
+  <!-- HOJE -->
+  <div class="quadro">
+    <div class="tit">Hoje · 34 traços, balão com a primeira frase</div>
+    <div class="fio">
+      <div class="trilho" id="trilho-hoje"></div>
+      <div class="balao hoje" style="top:208px">
+        <div class="l1"><b>Agent</b><span>Antes de commitar, confiro o estado da árvore. Outras frentes est…</span></div>
+        <div class="leg"><i style="background:rgba(228,168,98,.5)"></i>seu pedido <i style="background:rgba(154,160,167,.45)"></i>resposta <i style="background:var(--brass);width:16px"></i>na tela</div>
+      </div>
+      <div class="transcript">
+        <div class="u">pode fazer os commits separados por assunto, e pode seguir</div>
+        <div class="a"><div class="who">Claude Code</div>Antes de commitar, confiro o estado da árvore. Outras frentes estão trabalhando nela ao mesmo tempo…<div class="t" style="width:92%"></div><div class="t" style="width:70%"></div></div>
+        <div class="aviso">⚠ A árvore de processos deste run atingiu 2,2 GB</div>
+        <div class="a"><div class="t" style="width:88%"></div><div class="t" style="width:60%"></div><div class="t" style="width:80%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- A -->
+  <div class="quadro">
+    <div class="tit">A · Um traço por pedido, com a resposta no balão</div>
+    <div class="fio">
+      <div class="trilho" id="trilho-a"></div>
+      <div class="balao par" id="balao-a" style="top:150px"></div>
+      <div class="transcript">
+        <div class="u">pode fazer os commits separados por assunto, e pode seguir</div>
+        <div class="a"><div class="who">Claude Code</div>Antes de commitar, confiro o estado da árvore. Outras frentes estão trabalhando nela ao mesmo tempo…<div class="t" style="width:92%"></div><div class="t" style="width:70%"></div></div>
+        <div class="aviso">⚠ A árvore de processos deste run atingiu 2,2 GB</div>
+        <div class="a"><div class="t" style="width:88%"></div><div class="t" style="width:60%"></div><div class="t" style="width:80%"></div></div>
+      </div>
+    </div>
+    <p class="nota">Passe o mouse em cada traço. O balão mostra <b>seu pedido</b>, a <b>resposta final</b> (a primeira linha do resultado, e não a narração) e os fatos que a aba Conversa já mostra. Marcas no próprio traço: cintilando = rodando; partido = cortado; ponto âmbar = aviso que pede atenção (memória, limite).</p>
+  </div>
+</div>
+
+<div class="lado" style="margin-top:22px">
+  <!-- B -->
+  <div class="quadro esc" style="width:560px">
+    <div class="tit">B · A + índice ao parar no trilho (recomendo)</div>
+    <div class="fio" style="height:640px">
+      <div class="trilho" id="trilho-b"></div>
+      <div class="indice" id="indice"></div>
+      <div class="transcript" style="opacity:.35">
+        <div class="u">pode fazer os commits separados por assunto, e pode seguir</div>
+        <div class="a"><div class="who">Claude Code</div>Antes de commitar, confiro o estado da árvore…<div class="t" style="width:92%"></div><div class="t" style="width:70%"></div></div>
+      </div>
+    </div>
+  </div>
+  <div style="flex:1;min-width:320px;max-width:520px">
+    <p class="q" style="margin-top:26px">O A resolve "o que tem aqui", mas ainda exige passar traço por traço. O B abre, <b>ao parar o mouse no trilho</b> (mesmo atraso de 280 ms de hoje), a lista inteira: uma linha para o pedido e uma para a resposta. Dá para ler a conversa inteira de relance e pular para qualquer pedido.</p>
+    <p class="q"><b>Não é uma superfície nova.</b> A aba Conversa (painel direito) já faz esse gesto com a mesma derivação, <code>historicoDePedidos</code>, que já traz <code>resposta</code>, estado, duração, ações e imagens. O índice é a versão de bolso dela, sem plano, custo nem hora, e o rodapé leva para ela. Se os dois derivassem cada um do seu jeito, um estaria errado (regra 1 do guia).</p>
+    <p class="q"><b>O que continua igual:</b> o trilho só aparece quando o gutter existe, cabe sempre na altura (condensa faixas quando não cabe) e cobre a mesma janela que o chat pinta.</p>
+  </div>
+</div>
+
+<h2>Decisões que o mock tomou <small>confira antes de eu implementar</small></h2>
+<table class="tabela">
+  <tr><th>assunto</th><th>proposta</th></tr>
+  <tr><td>Unidade do traço</td><td>O pedido (item <code>user</code>) até o próximo pedido. O que o agente e o sistema fizeram nesse meio entra no traço desse pedido.</td></tr>
+  <tr><td>Resposta mostrada</td><td>A primeira linha do <code>result</code>. Se não houver: "parou no limite de uso", "interrompido", "rodando" ou "sem resposta registrada". Nunca a narração do começo.</td></tr>
+  <tr><td>Avisos do sistema</td><td>Deixam de ser traço. Um ponto âmbar no traço marca só o que pede atenção (memória, limite, erro). Compactação e retomada aparecem no balão e no índice, sem ponto.</td></tr>
+  <tr><td>Retomada automática</td><td>O texto "O turno anterior parou num limite…" é gerado pelo app, e hoje o item não guarda isso. Proposta: marcar o item na origem (<code>auto: "retomada"</code>) e mostrar "retomada automática" em cinza, em vez de fingir que foi você. Sem essa marca, ele continua aparecendo como pedido seu.</td></tr>
+  <tr><td>Especialista</td><td>Um parecer de especialista entra no pedido em que nasceu, como fato ("parecer de Fulano"), e não como traço.</td></tr>
+  <tr><td>Legenda</td><td>Sai. Sobra uma cor (âmbar = onde você está) e as marcas de estado, que o índice explica com palavras.</td></tr>
+</table>
+
+<script>
+// Dados REAIS desta conversa (conversation_items 361..693). Duração = do pedido ao último item.
+const P = [
+  {ped:"cara, tu nao acha que nessa aba de “Conversa” no sidebar direito um pouco confusa ainda? os numeros muito proximos…", resp:"Implementei a aba Conversa como no mock aprovado. Guardas, tsc -b e os 4762 testes passam, e ela entra no próximo build.", dur:"4min 48s", acoes:19, img:1},
+  {ped:"Cara, mudando um pouco de assunto aqui: tu acha que nosso layout, nossa estrutura ali de projeto, de conversas…", resp:"A base é boa. O desenho segue uma tese clara (\"cockpit de decisão\", cinza como padrão, cor só para estado)…", dur:"50s", acoes:4, img:4},
+  {ped:"sim, pode sim", resp:"O mock está em docs/mocks/barra-lateral-hierarquia.html, já aberto no seu navegador, e você aprovou em partes.", dur:"3min 21s", acoes:16},
+  {ped:"eu gostei que ficou mais “enxuto” a listagem de projeto, ocupando menos espaços. Gostei tambem da parte de cima…", resp:"Implementei a barra lateral com as partes que você aprovou. Guardas, tsc -b e os 4811 testes passam…", dur:"7min 41s", acoes:36},
+  {ped:"pode fazer os commits separados por assunto, e pode seguir", resp:"Fiz os commits separados por assunto e segui com o próximo item aprovado: o título das conversas, que também já está commitado.", dur:"15min 51s", acoes:55, aviso:"memória 2,2 GB", hoje:["eu","ag","sis","ag"], narr:"Antes de commitar, confiro o estado da árvore. Outras frentes estão…"},
+  {ped:"pode ir seguindo na sua ordem que voce achar", resp:"Você pediu ajustes na base do composer. O mock está em docs/mocks/base-do-composer.html, já aberto no navegador…", dur:"2min 1s", acoes:5},
+  {ped:"aqui ficou sugado, a linha do plano", resp:"Corrigi o \"1 de 8\" que quebrava em duas linhas: o contador e a barrinha do plano não quebram mais…", dur:"49s", acoes:3, img:1},
+  {ped:"confesso que nao gosto desse pontilhado para as etapas horizontalmente, pode ocupar muito espaço e quebrar…", resp:"Tirei a barrinha de etapas: a tira agora mostra a etapa corrente com \"1/8\" no fim, como no app hoje.", dur:"1min 9s", acoes:7, img:1},
+  {ped:"na fila hoje, eu posso ter enviado anexos… como imagems, documentos, como isso será visivel pra mim?", resp:"Segui pela ordem. Desde a última mensagem saíram mais dois commits locais, cada um verificado…", dur:"12min 41s", acoes:31, aviso:"memória 2,3 GB", hoje:["eu","ag","sis","ag"]},
+  {ped:"1. isso a gente deixa pra depois ainda, vamos vendo. 2. quero ver no mock 3. ok, mock…", resp:null, estado:"parou no limite de uso", dur:"26 ações antes do limite", acoes:26, img:1, aviso:"limite de uso", hoje:["eu","ag","sis"]},
+  {ped:"O turno anterior parou num limite de uso/espera. O limite já deve ter resetado…", auto:true, resp:"Terminei as três frentes que você aprovou nos mocks. São mais três commits locais…", dur:"5min 10s", acoes:12, aviso:"memória 2,8 GB", hoje:["eu","ag","sis","ag"]},
+  {ped:"o que significa esses traços aqui “seu pedido”, “resposta”, “na tela” ?", resp:"É a legenda do trilho à esquerda do chat. O trilho é um minimapa da conversa: cada traço é um turno…", dur:"1min 25s", acoes:1, img:1, info:"conversa compactada", hoje:["eu","sis","ag"]},
+  {ped:"Pois é, a gente tem que pensar que, no trilho ali do lado esquerdo, eu não consigo ver as respostas…", resp:null, vivo:true, dur:"rodando", acoes:8},
+];
+const AT = 4; // o pedido que está na tela: "pode fazer os commits…"
+
+// ---- hoje: um traço por bloco de autor
+const th = document.getElementById("trilho-hoje");
+let hojeN = 0;
+P.forEach((p, i) => (p.hoje || ["eu","ag"]).forEach((k, j) => {
+  const b = document.createElement("button");
+  b.style.height = "13px";
+  const t = document.createElement("i");
+  if (k === "eu") t.className = "eu";
+  if (i === AT && j === 1) t.className = "at";
+  b.appendChild(t); th.appendChild(b); hojeN++;
+}));
+
+// ---- proposta: um traço por pedido
+function tracos(el, onHover) {
+  P.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.style.height = "18px";
+    if (p.estado) {
+      b.innerHTML = '<span class="emenda"><span></span><span></span></span>';
+    } else {
+      const t = document.createElement("i");
+      if (i === AT) t.className = "at"; else if (p.vivo) t.className = "rodando";
+      b.appendChild(t);
+    }
+    if (p.aviso) { const d = document.createElement("span"); d.className = "ponto"; b.appendChild(d); }
+    b.addEventListener("mouseenter", () => onHover && onHover(i, b));
+    el.appendChild(b);
+  });
+}
+const esc = (s) => s.replace(/</g, "&lt;");
+function fatos(p) {
+  const f = [];
+  if (!p.vivo && !p.estado) f.push(`<b>${p.dur}</b>`);
+  if (p.vivo) f.push(`<span>rodando</span>`);
+  f.push(`${p.acoes} ${p.acoes === 1 ? "ação" : "ações"}`);
+  if (p.img) f.push(`${p.img} ${p.img === 1 ? "imagem" : "imagens"}`);
+  if (p.aviso) f.push(`<span class="av">⚠ ${p.aviso}</span>`);
+  if (p.info) f.push(`<span class="av2">${p.info}</span>`);
+  return f.join(" · ");
+}
+const balao = document.getElementById("balao-a");
+function mostra(i, b) {
+  const p = P[i];
+  balao.innerHTML = `
+    <div class="cab"><span class="n">Pedido ${i + 1} de ${P.length}</span>${p.auto ? " · retomada automática" : ""}${i === AT ? '<span class="agora">na tela</span>' : ""}</div>
+    <div class="ped" ${p.auto ? 'style="color:var(--muted)"' : ""}>${esc(p.ped)}</div>
+    <div class="resp ${p.resp ? "" : "sem"}">${p.resp ? esc(p.resp) : p.vivo ? "O agente ainda está trabalhando." : "Sem resposta: " + p.estado + "."}</div>
+    <div class="fatos">${fatos(p)}</div>`;
+  if (b) balao.style.top = Math.max(10, Math.min(470 - balao.offsetHeight - 10, b.offsetTop + b.parentElement.offsetTop - 30)) + "px";
+}
+tracos(document.getElementById("trilho-a"), mostra);
+mostra(AT);
+
+// ---- B: índice
+tracos(document.getElementById("trilho-b"));
+const ind = document.getElementById("indice");
+ind.innerHTML = `
+  <div class="topo"><span class="etq">Nesta conversa</span><span class="r">${P.length} pedidos</span></div>
+  <ol>${P.map((p, i) => `
+    <li class="${i === AT ? "at" : ""}">
+      <span class="n">${i + 1}</span>
+      <span class="ped ${p.auto ? "auto" : ""}">${p.auto ? "↻ retomada automática" : esc(p.ped)}</span>
+      <span class="dir">${p.aviso ? '<span class="av" title="' + p.aviso + '"></span>' : ""}${p.vivo ? "rodando" : p.estado ? "" : p.dur}</span>
+      <span class="resp ${p.estado ? "estado" : p.vivo ? "vivo" : ""}">${p.resp ? esc(p.resp) : p.vivo ? "trabalhando…" : p.estado}</span>
+    </li>`).join("")}</ol>
+  <div class="pe"><a href="#">Histórico completo na aba Conversa →</a><kbd>clique leva ao pedido</kbd></div>`;
+</script>
+</body>
+</html>

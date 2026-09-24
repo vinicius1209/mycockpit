@@ -108,6 +108,10 @@ export function acceptChatTurn({
   onAccepted?: () => void
 }) {
   const chat = useChat.getState()
+  // O disparo da retomada automática marca `disparou` e envia na sequência
+  // (`lib/autoResumeDisparo`); envio seu cancela a retomada antes de chegar
+  // aqui. Então `disparou` agora = este pedido é texto do app (ADR-250).
+  const retomada = !!chat.byId[convId]?.autoResume?.disparou
   if (wheelSwitch) {
     chat.beginTransplant(convId, runId, agent, {
       model,
@@ -118,6 +122,7 @@ export function acceptChatTurn({
   } else {
     chat.start(convId, text, runId, agent, model, effort, attachments)
   }
+  if (retomada) marcarRetomada(convId)
   if (modelChangeNotice) {
     chat.handleEvent(convId, { type: "notice", message: modelChangeNotice })
   }
@@ -141,4 +146,19 @@ export function acceptChatTurn({
       .catch(() => toast.error("Não consegui registrar a persona deste turno."))
   }
   onAccepted?.()
+}
+
+/** Marca o pedido que acabou de nascer como retomada do app. Fora do store
+ *  porque é um dado a mais no item, não uma transição: o persist do fim do
+ *  turno grava o item já marcado. */
+function marcarRetomada(convId: string) {
+  useChat.setState((s) => {
+    const conv = s.byId[convId]
+    const i = conv ? conv.items.findLastIndex((it) => it.kind === "user") : -1
+    const item = conv?.items[i]
+    if (!conv || !item || item.kind !== "user") return {}
+    const items = conv.items.slice()
+    items[i] = { ...item, retomada: true }
+    return { byId: { ...s.byId, [convId]: { ...conv, items } } }
+  })
 }

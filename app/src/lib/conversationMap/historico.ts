@@ -11,6 +11,12 @@
 //
 // Puro e com `now` injetável: o componente só decide a tipografia.
 
+import {
+  RESUME_REASON_LIMIT,
+  RESUME_REASON_LIMIT_SEM_RESET,
+  RESUME_REASON_TEXT,
+  resumePrompt,
+} from "@/lib/autoResume"
 import { briefExcerpt } from "@/lib/conversationBrief"
 import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { classificarAcao } from "@/lib/acaoDoFio"
@@ -29,6 +35,8 @@ export interface PedidoDoFio {
   /** id do item `user` que abriu o pedido (é o alvo do "ver no fio"). */
   id: string
   texto: string
+  /** O texto é do app (retomada automática), não seu (ADR-250). */
+  retomada: boolean
   ts: number | null
   estado: EstadoDoPedido
   duracaoMs: number | null
@@ -78,6 +86,18 @@ function primeiraLinha(texto: string | undefined | null): string | null {
   return linha ? briefExcerpt(linha) : null
 }
 
+/** Os textos que a retomada automática manda, na fonte única deles. */
+const TEXTOS_DE_RETOMADA = new Set(
+  [RESUME_REASON_LIMIT, RESUME_REASON_LIMIT_SEM_RESET, RESUME_REASON_TEXT].map(resumePrompt),
+)
+
+/** A marca `retomada` nasce com a ADR-250. O histórico de antes dela só tem o
+ *  texto, e ele é constante do app (`resumePrompt`), nunca digitado: igualdade
+ *  EXATA com ele é fato, não palpite. */
+export function ehRetomada(item: { text: string; retomada?: true }): boolean {
+  return !!item.retomada || TEXTOS_DE_RETOMADA.has(item.text.trim())
+}
+
 export function historicoDePedidos(
   items: readonly ChatItem[],
   runtime: { running: boolean; finalizing: boolean },
@@ -112,6 +132,7 @@ export function historicoDePedidos(
         pedido: {
           id: item.id,
           texto: item.text.trim(),
+          retomada: ehRetomada(item),
           ts: item.ts ?? null,
           estado: "sem-desfecho",
           duracaoMs: null,

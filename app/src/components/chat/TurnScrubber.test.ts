@@ -3,101 +3,22 @@ import {
   BARRA_DE_ROLAGEM,
   cabeRegua,
   CLASSE_VISIBILIDADE_REGUA,
-  deriveTurnTicks,
   GUTTER_REGUA,
   LARGURA_MINIMA_REGUA,
   planejarRegua,
   PASSO_MAX,
   PASSO_MIN,
-  type TurnTick,
+  type Condensavel,
 } from "./TurnScrubber"
-import { groupByAuthor } from "./messageGroups"
-import { buildNodes } from "./messageNodes"
 import { CONVERSATION_COLUMN_WIDTH } from "@/lib/conversationScale"
-import type { ChatItem } from "@/store/chat"
 
-describe("deriveTurnTicks", () => {
-  it("deriva marcadores para turnos do usuário e do agente", () => {
-    const items: ChatItem[] = [
-      { kind: "user", id: "u1", text: "Como fazer cache na Frota?" },
-      { kind: "text", id: "a1", text: "A Frota possui o módulo cacheDoTurno.ts." },
-    ]
-
-    const nodes = buildNodes(items)
-    const groups = groupByAuthor(nodes)
-    const ticks = deriveTurnTicks(groups)
-
-    expect(ticks.length).toBe(2)
-    expect(ticks[0].label).toBe("Você")
-    expect(ticks[0].icon).toBe("user")
-    expect(ticks[0].summary).toContain("Como fazer cache")
-    expect(ticks[0].groupId).toBe(`msg-group-${groups[0].key}`)
-
-    expect(ticks[1].label).toBe("Agent")
-    expect(ticks[1].icon).toBe("bot")
-    expect(ticks[1].summary).toContain("cacheDoTurno.ts")
-  })
-
-  it("identifica ferramentas e atribui ícone de tool", () => {
-    const items: ChatItem[] = [
-      { kind: "user", id: "u1", text: "Leia o arquivo" },
-      {
-        kind: "tool",
-        id: "t1",
-        name: "read_file",
-        input: { path: "src/lib/agents.ts" },
-        result: { ok: true, text: "conteudo", lines: 10 },
-      },
-    ]
-
-    const nodes = buildNodes(items)
-    const groups = groupByAuthor(nodes)
-    const ticks = deriveTurnTicks(groups)
-
-    expect(ticks.length).toBe(2)
-    expect(ticks[1].icon).toBe("tool")
-    expect(ticks[1].summary).toContain("1 ferramenta (read_file)")
-  })
-
-  it("identifica parecer de especialista com nome da persona", () => {
-    const items: ChatItem[] = [
-      {
-        kind: "advice",
-        id: "adv1",
-        personaId: "aline",
-        personaName: "Aline",
-        personaVersion: 1,
-        digest: "d1",
-        question: "Dúvida de arquitetura",
-        text: "Recomendo isolar a camada de persistência.",
-      },
-    ]
-
-    const nodes = buildNodes(items)
-    const groups = groupByAuthor(nodes)
-    const ticks = deriveTurnTicks(groups)
-
-    expect(ticks.length).toBe(1)
-    expect(ticks[0].label).toBe("Aline")
-    expect(ticks[0].icon).toBe("advisor")
-    expect(ticks[0].summary).toContain("Recomendo isolar")
-  })
-})
-
-/** Marcadores sintéticos: `usuarios` são os índices que viraram turno do humano. */
-function ticksFalsos(total: number, usuarios: number[] = []): TurnTick[] {
-  return Array.from({ length: total }, (_, i) => ({
-    key: `t${i}`,
-    groupId: `msg-group-t${i}`,
-    author: usuarios.includes(i) ? { kind: "you" as const } : { kind: "executor" as const },
-    summary: `turno ${i}`,
-    label: usuarios.includes(i) ? "Você" : "Agent",
-    icon: usuarios.includes(i) ? ("user" as const) : ("bot" as const),
-  }))
+/** Marcadores sintéticos: só o que a régua precisa para dimensionar. */
+function ticksFalsos(total: number): Condensavel[] {
+  return Array.from({ length: total }, (_, i) => ({ key: `t${i}` }))
 }
 
 /** Altura que o plano ocupa de fato, com o respiro do `py-2`. */
-function alturaOcupada(plano: { passo: number; ticks: TurnTick[] }): number {
+function alturaOcupada(plano: { passo: number; ticks: Condensavel[] }): number {
   return plano.passo * plano.ticks.length + 16
 }
 
@@ -142,15 +63,15 @@ describe("planejarRegua", () => {
     expect(cobertos[299]).toBe("t299")
   })
 
-  it("a faixa é representada pelo turno do usuário, e diz quantos engoliu", () => {
-    // 100 turnos em 100px: capacidade 12, faixas de 9.
-    const plano = planejarRegua(ticksFalsos(100, [5, 40]), 100)
-    const comUsuario = plano.ticks.filter((t) => t.author.kind === "you")
-    expect(comUsuario).toHaveLength(2)
-    expect(comUsuario[0].key).toBe("t5")
-    expect(comUsuario[1].key).toBe("t40")
-    expect(comUsuario[0].span).toBeGreaterThan(1)
-    expect(comUsuario[0].covers).toContain("t5")
+  it("a faixa é representada pelo primeiro pedido dela, e diz quantos engoliu", () => {
+    // 100 pedidos em 100px: capacidade 12, faixas de 9. Desde a ADR-250 todo
+    // marcador é pedido, então quem representa é o começo da faixa: é pra lá
+    // que o clique leva.
+    const plano = planejarRegua(ticksFalsos(100), 100)
+    expect(plano.ticks[0].key).toBe("t0")
+    expect(plano.ticks[0].span).toBe(9)
+    expect(plano.ticks[0].covers).toEqual(Array.from({ length: 9 }, (_, i) => `t${i}`))
+    expect(plano.ticks[1].key).toBe("t9")
   })
 })
 
