@@ -6,8 +6,8 @@ import {
   useRef,
   useState,
 } from "react"
-import { AlertCircle } from "lucide-react"
 import { MarcoDeCorte } from "@/components/chat/MarcoDeCorte"
+import { AvisoDoFio } from "@/components/chat/AvisoDoFio"
 import { NoDoFio } from "@/components/chat/NoDoFio"
 import { DivisorNovasMensagens } from "@/components/chat/DivisorNovasMensagens"
 import { tsDaCauda } from "@/lib/nascimento"
@@ -160,14 +160,7 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "cancelled") return <MarcoDeCorte item={it} />
 
-  if (it.kind === "notice") {
-    return (
-      <div className="flex items-center gap-2 px-1 text-[12px] text-muted-foreground/80">
-        <AlertCircle className="size-3 shrink-0" />
-        <span>{it.message}</span>
-      </div>
-    )
-  }
+  if (it.kind === "notice") return <AvisoDoFio message={it.message} />
 
   if (it.kind === "advice") {
     return <AdviceCard item={it} />

@@ -3,7 +3,9 @@ import {
   ChevronsUpDown,
   Info,
   Keyboard,
+  Moon,
   Settings,
+  Sun,
   SunMoon,
   User,
 } from "lucide-react"
@@ -15,8 +17,8 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
+  DropdownMenuSegmento,
+  DropdownMenuSegmentos,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuTrigger,
@@ -78,24 +80,18 @@ export function AccountMenu() {
             Atalhos de teclado
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuLabel className="flex items-center gap-2">
-            <SunMoon className="size-3.5" />
-            Tema
-          </DropdownMenuLabel>
-          <DropdownMenuRadioGroup
+          <DropdownMenuSegmentos
+            aria-label="Tema"
             value={preference}
-            className="flex"
             onValueChange={(value) => {
               if (value === "dark" || value === "light" || value === "system")
                 setTheme(value)
             }}
           >
-            <DropdownMenuRadioItem value="light">Claro</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="dark">Escuro</DropdownMenuRadioItem>
-            <DropdownMenuRadioItem value="system">
-              Sistema
-            </DropdownMenuRadioItem>
-          </DropdownMenuRadioGroup>
+            <DropdownMenuSegmento value="light"><Sun />Claro</DropdownMenuSegmento>
+            <DropdownMenuSegmento value="dark"><Moon />Escuro</DropdownMenuSegmento>
+            <DropdownMenuSegmento value="system"><SunMoon />Sistema</DropdownMenuSegmento>
+          </DropdownMenuSegmentos>
           <DropdownMenuSeparator />
           <DropdownMenuItem onSelect={() => setSettingsOpen(true, "about")}>
             <Info />

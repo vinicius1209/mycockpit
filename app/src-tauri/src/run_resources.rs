@@ -303,18 +303,37 @@ impl ProcessMemoryWatch {
     }
 }
 
+/// Memória em pt-BR, com espaço INQUEBRÁVEL entre número e unidade: "2,3 GB"
+/// nunca se parte em duas linhas (pedido de 24/09/2026, ADR-249).
+fn memoria_legivel(mb: u64) -> String {
+    if mb >= 1024 {
+        format!("{}\u{a0}GB", format!("{:.1}", mb as f64 / 1024.0).replace('.', ","))
+    } else {
+        format!("{mb}\u{a0}MB")
+    }
+}
+
+/// O aviso de memória do fio (ADR-249): a PRIMEIRA linha é o resumo que o fio
+/// mostra; o resto é o detalhe, que vai para o hover. Antes era um parágrafo de
+/// três linhas no meio da conversa. O gesto continua sendo o Parar do composer:
+/// interromper o turno mora na superfície do turno, não no aviso.
 pub(crate) fn format_memory_warning_message(rss_mb: u64, root_rss_mb: Option<u64>) -> String {
     let root = root_rss_mb.unwrap_or(0);
     let desc = rss_mb.saturating_sub(root);
-    if desc > root && desc >= 512 {
+    let resumo = format!(
+        "Este turno está usando {} de memória · se não for intencional, o Parar do composer interrompe.",
+        memoria_legivel(rss_mb)
+    );
+    let detalhe = if desc > root && desc >= 512 {
         format!(
-            "A árvore de processos deste run atingiu {rss_mb} MB (incluindo {desc} MB em comandos e compiladores filhos; o processo principal consome {root} MB) e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
+            "{} em comandos e compiladores filhos; {} no processo principal. Sem teto artificial.",
+            memoria_legivel(desc),
+            memoria_legivel(root)
         )
     } else {
-        format!(
-            "Este run chegou a {rss_mb} MB de memória e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional."
-        )
-    }
+        "Sem teto artificial.".to_string()
+    };
+    format!("{resumo}\n{detalhe}")
 }
 
 async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
@@ -509,14 +528,25 @@ mod tests {
     }
 
     #[test]
+    fn numero_e_unidade_nunca_se_separam() {
+        assert_eq!(memoria_legivel(2354), "2,3\u{a0}GB");
+        assert_eq!(memoria_legivel(286), "286\u{a0}MB");
+    }
+
+    #[test]
     fn aviso_de_memoria_diferencia_harness_de_filhos_pesados() {
         let msg = format_memory_warning_message(2048, Some(150));
-        assert!(msg.contains("A árvore de processos deste run atingiu 2048 MB"));
-        assert!(msg.contains("incluindo 1898 MB em comandos e compiladores filhos"));
-        assert!(msg.contains("o processo principal consome 150 MB"));
+        let (resumo, detalhe) = msg.split_once('\n').expect("resumo e detalhe");
+        assert_eq!(
+            resumo,
+            "Este turno está usando 2,0\u{a0}GB de memória · se não for intencional, o Parar do composer interrompe."
+        );
+        assert!(detalhe.contains("1,9\u{a0}GB em comandos e compiladores filhos"));
+        assert!(detalhe.contains("150\u{a0}MB no processo principal"));
 
         let msg_pura = format_memory_warning_message(2048, Some(1900));
-        assert!(msg_pura.contains("Este run chegou a 2048 MB de memória"));
+        assert!(msg_pura.starts_with("Este turno está usando 2,0\u{a0}GB de memória"));
+        assert!(msg_pura.ends_with("Sem teto artificial."));
     }
 
     #[test]

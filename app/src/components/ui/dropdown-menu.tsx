@@ -143,6 +143,39 @@ function DropdownMenuRadioItem({
   )
 }
 
+/** Escolha de UMA opção dentro de um menu, como seletor segmentado (ADR-249):
+ *  o tema no menu do usuário parecia texto ("Claro • Escuro Sistema"), não
+ *  controle. É o mesmo grupo de rádio do Radix, então teclado e leitor de tela
+ *  seguem iguais; muda só a roupa. */
+function DropdownMenuSegmentos({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioGroup>) {
+  return (
+    <DropdownMenuPrimitive.RadioGroup
+      data-slot="dropdown-menu-segmentos"
+      className={cn("mx-1 my-1 grid auto-cols-fr grid-flow-col gap-0.5 rounded-md border bg-background p-0.5", className)}
+      {...props}
+    />
+  )
+}
+
+function DropdownMenuSegmento({
+  className,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.RadioItem>) {
+  return (
+    <DropdownMenuPrimitive.RadioItem
+      data-slot="dropdown-menu-segmento"
+      className={cn(
+        "flex h-6 cursor-default items-center justify-center gap-1.5 rounded-sm text-[12px] text-muted-foreground outline-hidden select-none focus:bg-accent/60 focus:text-foreground data-[state=checked]:bg-accent data-[state=checked]:font-medium data-[state=checked]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
+        className,
+      )}
+      {...props}
+    />
+  )
+}
+
 function DropdownMenuLabel({
   className,
   inset,
@@ -249,6 +282,8 @@ export {
   DropdownMenuCheckboxItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSegmentos,
+  DropdownMenuSegmento,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
   DropdownMenuSub,

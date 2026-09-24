@@ -359,10 +359,10 @@ export const TurnScrubber = memo(function TurnScrubber({
       >
         <nav
           aria-label="Navegação rápida de turnos"
-          // Sem hairline: superfície que se separa por COR + RAIO não conta como
-          // cartão-em-cartão (§4). E ela só acende no hover — em repouso a régua
-          // é só o traço, que é o que ela precisa ser no gutter.
-          className="pointer-events-auto flex flex-col items-center rounded-full px-1.5 py-2 transition-colors hover:bg-card/95 hover:shadow-[var(--shadow-sm)]"
+          // Trilho SEMPRE visível (ADR-249): em repouso a régua era só traços
+          // soltos no gutter, e nada dizia que aquilo se clica. A aresta é a
+          // da superfície (`border`, §4); o hover só acende o fundo.
+          className="pointer-events-auto flex flex-col items-center rounded-full border bg-card/70 px-1 py-2 transition-colors hover:bg-card/95 hover:shadow-[var(--shadow-sm)]"
         >
           {ticks.map((tick, idx) => {
             const isActive =
@@ -439,6 +439,13 @@ export const TurnScrubber = memo(function TurnScrubber({
                       </span>
                     )}
                     <span className="truncate text-muted-foreground">{tick.summary}</span>
+                  </span>
+                  {/* A legenda das três marcas (ADR-249): as cores não se
+                      explicavam sozinhas. */}
+                  <span aria-hidden className="mt-1.5 flex items-center gap-2 text-[11px] text-muted-foreground">
+                    <span className="h-1 w-2.5 rounded-full bg-brass/50" />seu pedido
+                    <span className="h-1 w-2.5 rounded-full bg-muted-foreground/45" />resposta
+                    <span className="h-1 w-4 rounded-full bg-brass" />na tela
                   </span>
                 </TooltipContent>
               </Tooltip>
