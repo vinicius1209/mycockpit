@@ -50,6 +50,8 @@ interface AbasDeArquivoState {
   setLarguraDoLado: (fracao: number) => void
   setLadoCabe: (cabe: boolean) => void
   pedirRevelar: (caminho: string) => void
+  /** A conversa foi apagada: a tira, a pilha do ⌘⇧T e os riscados dela saem. */
+  esquecer: (convId: string) => void
 }
 
 export const chaveDoSumido = (convId: string, caminho: string) => `${convId}\0${caminho}`
@@ -128,6 +130,17 @@ export const useAbasDeArquivo = create<AbasDeArquivoState>()(
         },
         pedirRevelar: (caminho) =>
           set((s) => ({ revelar: { caminho, selo: (s.revelar?.selo ?? 0) + 1 } })),
+        esquecer: (convId) => {
+          const s = get()
+          const prefixo = `${convId}\0`
+          const sumidos = Object.keys(s.sumidos).filter((k) => k.startsWith(prefixo))
+          if (!(convId in s.porConversa) && !(convId in s.fechadas) && sumidos.length === 0) return
+          const { [convId]: _a, ...porConversa } = s.porConversa
+          const { [convId]: _f, ...fechadas } = s.fechadas
+          const restantes = { ...s.sumidos }
+          for (const k of sumidos) delete restantes[k]
+          set({ porConversa, fechadas, sumidos: restantes })
+        },
         setLadoCabe: (ladoCabe) => {
           if (ladoCabe !== get().ladoCabe) set({ ladoCabe })
         },

@@ -48,6 +48,29 @@ export function pertoDoFim(m: Medida): boolean {
 }
 
 /**
+ * O fio está escondido (outra aba da tira à vista, host em `display: none`)?
+ * Sem layout, a medida não diz nada sobre leitura: o scroll zera e a altura
+ * vira 0. Puro.
+ */
+export function escondido(m: Pick<Medida, "clientHeight">): boolean {
+  return m.clientHeight === 0
+}
+
+/**
+ * Onde o fio fica ao reaparecer. Quem seguia volta ao fim; quem tinha subido
+ * pra ler volta onde estava. Pedido de 24/09/2026: fechar o arquivo com ⌘W
+ * devolvia a conversa no COMEÇO, porque o WebKit descarta a rolagem de quem
+ * fica em `display: none`. Puro.
+ */
+export function rolagemAoReaparecer(
+  seguindo: boolean,
+  guardada: number | null,
+  scrollHeight: number,
+): number | null {
+  return seguindo ? scrollHeight : guardada
+}
+
+/**
  * A tecla significa "quero ler" (e não "quero acompanhar")?
  *
  * Seta pra baixo e End entram: quem navega pra baixo com o teclado também está
@@ -91,6 +114,10 @@ export function useChatScroll({
   // "Me leva junto." Nasce ligado (abrir conversa é aterrissar no fim), morre
   // no primeiro gesto de leitura e renasce quando você volta pro fim.
   const seguindoRef = useRef(true)
+  // Onde o fio estava da última vez que foi visto, e se está visível agora:
+  // é o que devolve a leitura quando outra aba da tira sai da frente.
+  const posicaoRef = useRef<number | null>(null)
+  const visivelRef = useRef(true)
   // O disclosure das ferramentas consulta a mesma intenção no scroller. Sem
   // isso ele voltaria a inferi-la por posição durante um reflow.
   const setFollowing = useCallback((value: boolean) => {
@@ -102,6 +129,9 @@ export function useChatScroll({
   const onScroll = useCallback(() => {
     const el = scrollRef.current
     if (!el) return
+    // Escondido, o scroll que chega é o WebKit zerando a rolagem, não leitura.
+    if (escondido(el)) return
+    posicaoRef.current = el.scrollTop
     // SÓ mede; e a única coisa que a posição LIGA é o seguir (chegar no fim é
     // pedir pra ser levado junto). Desligar por posição é o que confundia
     // reflow com gesto e parava o fio no meio do turno.
@@ -220,11 +250,20 @@ export function useChatScroll({
     const el = scrollRef.current
     if (!el || !contentEl) return
     const ro = new ResizeObserver(() => {
-      if (!seguindoRef.current) return
       const atual = scrollRef.current
       // O callback pode ter sido enfileirado antes da troca de conversa.
-      if (atual && useChat.getState().activeId === activeId)
+      if (!atual || useChat.getState().activeId !== activeId) return
+      const visivel = !escondido(atual)
+      const reapareceu = visivel && !visivelRef.current
+      visivelRef.current = visivel
+      if (!visivel) return
+      if (seguindoRef.current) {
         atual.scrollTo({ top: atual.scrollHeight, behavior: "auto" })
+        return
+      }
+      if (!reapareceu) return
+      const alvo = rolagemAoReaparecer(false, posicaoRef.current, atual.scrollHeight)
+      if (alvo !== null) atual.scrollTop = alvo
     })
     // Observa o wrapper EXATO do transcript. `firstElementChild` não serve:
     // a régua de turnos e a timeline podem vir antes dele, e na troca o wrapper
@@ -240,6 +279,7 @@ export function useChatScroll({
     const el = scrollRef.current
     if (!el) return
     atBottomRef.current = true
+    posicaoRef.current = null
     setFollowing(true)
     setAtBottom(true)
     el.scrollTop = el.scrollHeight

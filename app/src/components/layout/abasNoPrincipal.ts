@@ -213,6 +213,12 @@ export function ligarAbasAConversa(): () => void {
 const desligar = ligarAbasAConversa()
 import.meta.hot?.dispose(desligar)
 
+/** Há um diálogo na frente (Configurações, ⌘K, confirmação)? Com ele aberto,
+ *  as teclas são dele: ⌘2 ou ⌘W não podem mexer na tira que ficou atrás. */
+export function haDialogoAberto(doc: Pick<Document, "querySelector"> = document): boolean {
+  return doc.querySelector('[data-slot="dialog-content"]') !== null
+}
+
 function executar(acao: AcaoDoAtalho): void {
   if (acao.tipo === "posicao") irParaPosicao(acao.n)
   else if (acao.tipo === "alternar") alternar(acao.passo)
@@ -225,7 +231,7 @@ function executar(acao: AcaoDoAtalho): void {
 export function instalarAtalhosDasAbas(): () => void {
   const aoTeclar = (e: KeyboardEvent) => {
     const acao = acaoDoAtalho(e, currentPlatform())
-    if (!acao) return
+    if (!acao || haDialogoAberto()) return
     e.preventDefault()
     executar(acao)
   }
@@ -233,7 +239,9 @@ export function instalarAtalhosDasAbas(): () => void {
   let desligarMenu: (() => void) | null = null
   let desligado = false
   if (isTauri()) {
-    void listen("frota://fechar-aba", fecharAVista).then((un) => {
+    void listen("frota://fechar-aba", () => {
+      if (!haDialogoAberto()) fecharAVista()
+    }).then((un) => {
       if (desligado) un()
       else desligarMenu = un
     })

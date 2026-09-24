@@ -14,6 +14,8 @@ import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { copyText } from "@/lib/clipboard"
 import { cn } from "@/lib/utils"
 import { DiffLineRow, useDiffComments, type DiffCommentApi } from "./DiffPanel/comments"
+import { chaveDosComentarios } from "@/store/comentariosDoDiff"
+import { useChat } from "@/store/chat"
 import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 import { detectLanguage } from "@/lib/syntaxHighlight"
 import { DiffCommentsFooter } from "./DiffPanel/sendBar"
@@ -58,7 +60,11 @@ export function DiffPanel({
   )
   const focoRef = useRef<HTMLDivElement | null>(null)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
-  const commentApi = useDiffComments()
+  // Os comentários são da conversa nesta pasta, e sobrevivem a trocar de aba
+  // (ADR-251). Mudar de `cwd` é mudar de chave: comentário ancorado no diff de
+  // outro repositório não aparece aqui nem vai para o agente.
+  const convId = useChat((s) => s.activeId)
+  const commentApi = useDiffComments(chaveDosComentarios(convId, cwd))
   const commentCount = Object.keys(commentApi.comments).length
 
   function reload() {
@@ -70,12 +76,11 @@ export function DiffPanel({
       setLoading(false)
     })
   }
+  // Trocar de `cwd` não limpa mais nada à mão: os comentários de outro
+  // repositório moram em outra chave (acima). Limpar aqui apagava a revisão a
+  // cada vez que a aba montava, que é justamente trocar de aba.
   useEffect(() => {
     reload()
-    // Trocar de `cwd` (outra conversa/worktree) INVALIDA os comentários: eles
-    // são ancorados por caminho+linha do diff ANTERIOR, e mandar pro agente
-    // "arquivo.ts:42" de OUTRO repositório é pior que perder o rascunho.
-    commentApi.clear()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cwd])
 
@@ -102,7 +107,9 @@ export function DiffPanel({
   const totalDel = files.reduce((s, f) => s + f.deletions, 0)
   // Comentários que perderam a linha (o agente mexeu no arquivo e o reload
   // trouxe outro conteúdo): não somem, vão pra tira de órfãos do rodapé.
-  const stale = staleComments(Object.values(commentApi.comments), files)
+  // Contra o diff INTEIRO: na aba de um arquivo, o comentário de outro não é
+  // órfão, só não é daqui.
+  const stale = staleComments(Object.values(commentApi.comments), todos)
   const galeria = galeriaDoDiff(files, cwd)
 
   // Barra STICKY (branch + stat + refresh): fica no topo enquanto a lista rola.

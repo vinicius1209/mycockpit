@@ -9136,3 +9136,29 @@ considerou.
   representada pelo primeiro pedido dela (antes, pelo turno do usuário no meio
   dos turnos do agente). A bolha da retomada no próprio fio ainda é igual à
   sua; marcar ali fica para depois, se incomodar.
+
+### ADR-251 · A conversa volta onde estava, e a revisão solta no diff sobrevive à troca de aba ✅
+- **Contexto (24/09/2026, validando a ADR-243 na build):** "⌘W funcionou, o
+  problema é que a conversa foi aberta novamente no topo, no começo. Achei
+  isso confuso." O host da conversa fica em `display: none` enquanto outra aba
+  da tira está à vista (a regra de nunca desmontar o fio), e o WebKit descarta
+  a rolagem de quem fica assim. Quem estava no fim não notava (o observador de
+  tamanho leva ao fim); quem tinha subido pra ler voltava ao começo. Na mesma
+  conversa, dois pendentes aceitos: os comentários soltos no diff eram estado
+  do painel e sumiam ao trocar de aba (com uma aba de diff por arquivo,
+  ADR-248, trocar virou o gesto comum), e as abas de uma conversa apagada
+  ficavam no disco.
+- **Decisão:**
+  1. `useChatScroll` guarda a posição enquanto o fio está visível e a devolve
+     quando ele reaparece: quem seguia volta ao fim, quem lia volta onde
+     estava. Scroll que chega com o fio escondido (altura 0) não conta.
+  2. Os comentários do diff moram em `store/comentariosDoDiff.ts`, chave
+     conversa + pasta de trabalho, em memória (rascunho da sessão). O painel
+     não os limpa mais ao montar; trocar de pasta é trocar de chave. Órfão se
+     calcula contra o diff inteiro, não só o arquivo da aba.
+  3. Apagar a conversa leva junto a tira dela (abas, pilha do ⌘⇧T, riscados)
+     e a revisão solta (`store/chat/remove.ts`).
+  4. Com um diálogo na frente, os atalhos da tira e o ⌘W do menu não mexem na
+     tira que ficou atrás.
+- **Consequência:** voltar para a Conversa devolve a leitura onde ela estava,
+  e trocar de aba não custa nada do que se escreveu.

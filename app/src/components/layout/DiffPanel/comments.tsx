@@ -5,8 +5,10 @@
 // é um recorte de responsabilidade fechado, não um pedaço partido pra caber.
 //
 // Gate humano, mesmo espírito do "Pedir correção": os comentários se acumulam
-// localmente e só viram texto no composer quando o usuário clica "Enviar ao
-// agente" — nunca enviados sozinhos (composeDiffComments monta, não envia).
+// e só viram texto no composer quando o usuário clica "Enviar ao agente",
+// nunca enviados sozinhos (composeDiffComments monta, não envia). Moram em
+// `store/comentariosDoDiff.ts` (ADR-251), não no painel: trocar de aba não os
+// apaga.
 
 import { useState } from "react"
 import { Check, Copy, MessageSquarePlus, X } from "lucide-react"
@@ -15,10 +17,10 @@ import { copyText } from "@/lib/clipboard"
 import {
   diffLineKey,
   sideOfLine,
-  type DiffComment,
   type DiffSide,
 } from "@/lib/deliveryDiff"
 import { highlightDiffLine } from "@/lib/syntaxHighlight"
+import { comentariosDa, useComentariosDoDiff } from "@/store/comentariosDoDiff"
 import { cn } from "@/lib/utils"
 
 /** Âncora da linha: chave de identidade + o lado/número que ela representa.
@@ -33,9 +35,11 @@ export function anchorOf(
 }
 
 /** Estado dos comentários soltos no diff: um slot por linha (não uma lista —
- *  comentar de novo na mesma linha EDITA o existente, não empilha). */
-export function useDiffComments() {
-  const [comments, setComments] = useState<Record<string, DiffComment>>({})
+ *  comentar de novo na mesma linha EDITA o existente, não empilha). Os salvos
+ *  moram no store, sob `chave` (`chaveDosComentarios`); a linha em edição e o
+ *  texto ainda não salvo são da tela. */
+export function useDiffComments(chave: string) {
+  const comments = useComentariosDoDiff((s) => comentariosDa(s, chave))
   const [activeKey, setActiveKey] = useState<string | null>(null)
   const [draftNote, setDraftNote] = useState("")
 
@@ -51,22 +55,15 @@ export function useDiffComments() {
     const note = draftNote.trim()
     const { key, side, lineNo } = anchorOf(path, ln)
     if (note) {
-      setComments((cs) => ({
-        ...cs,
-        [key]: { id: key, path, side, lineNo, codeText: ln.text, note },
-      }))
+      useComentariosDoDiff.getState().guardar(chave, { id: key, path, side, lineNo, codeText: ln.text, note })
     }
     cancel()
   }
   function remove(key: string) {
-    setComments((cs) => {
-      const next = { ...cs }
-      delete next[key]
-      return next
-    })
+    useComentariosDoDiff.getState().tirar(chave, key)
   }
   function clear() {
-    setComments({})
+    useComentariosDoDiff.getState().limpar(chave)
   }
 
   return { comments, activeKey, draftNote, setDraftNote, open, cancel, submit, remove, clear }

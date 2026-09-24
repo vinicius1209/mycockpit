@@ -27,6 +27,8 @@ import { useApp } from "@/store/app"
 import { useWorktrees } from "@/store/worktrees"
 import { useStickyNotes } from "@/store/stickyNotes"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { useAbasDeArquivo } from "@/store/abasDeArquivo"
+import { useComentariosDoDiff } from "@/store/comentariosDoDiff"
 
 type Get = () => ChatState
 type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
@@ -143,6 +145,10 @@ export async function removeConversationImpl(
   // conversa some.
   useStickyNotes.getState().clearConversationNotes(id)
   useComposerDrafts.getState().forget(id)
+  // As abas da conversa (arquivos, lado, Navegador) e a revisão solta no diff
+  // (ADR-251): no disco e na memória, sem dono, pra sempre.
+  useAbasDeArquivo.getState().esquecer(id)
+  useComentariosDoDiff.getState().esquecerConversa(id)
   const wasActive = before.activeId === id
   // projeto DONO da conversa removida (pode não ser o ativo)
   const owner = projectOfConv(before.conversationsByProject, id) ?? before.projectId

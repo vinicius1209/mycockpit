@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest"
-import { PERTO_DO_FIM_PX, ehGestoDeLeitura, ehGestoDeSubida, pertoDoFim } from "./useChatScroll"
+import {
+  PERTO_DO_FIM_PX,
+  ehGestoDeLeitura,
+  ehGestoDeSubida,
+  escondido,
+  pertoDoFim,
+  rolagemAoReaparecer,
+} from "./useChatScroll"
 
 const source = Object.values(
   import.meta.glob("./useChatScroll.ts", {
@@ -122,5 +129,28 @@ describe("envio do humano volta ao presente", () => {
     expect(source).toContain("setFollowing(true)")
     expect(source).toContain("dataset.threadFollowing")
     expect(panelSource).toContain('if (origem.autor === "humano") followLatest()')
+  })
+})
+
+describe("voltar para a Conversa devolve a leitura (24/09/2026)", () => {
+  it("quem subiu pra ler volta onde estava, não no começo", () => {
+    expect(rolagemAoReaparecer(false, 4200, 9000)).toBe(4200)
+  })
+
+  it("quem seguia o fim volta ao fim", () => {
+    expect(rolagemAoReaparecer(true, 4200, 9000)).toBe(9000)
+  })
+
+  it("sem posição guardada (conversa recém-trocada) não inventa uma", () => {
+    expect(rolagemAoReaparecer(false, null, 9000)).toBeNull()
+  })
+
+  it("fio escondido não conta como medida de leitura", () => {
+    expect(escondido({ clientHeight: 0 })).toBe(true)
+    expect(escondido({ clientHeight: 640 })).toBe(false)
+  })
+
+  it("o scroll que chega com o fio escondido não mexe na posição guardada", () => {
+    expect(source).toMatch(/if \(escondido\(el\)\) return\s+posicaoRef\.current = el\.scrollTop/)
   })
 })

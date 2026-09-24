@@ -4,6 +4,7 @@ import {
   alternar,
   fecharArquivos,
   fecharAVista,
+  haDialogoAberto,
   irParaPosicao,
   mostrar,
   reabrirUltima,
@@ -265,5 +266,29 @@ describe("as alterações de um arquivo ficam na tira (ADR-248)", () => {
   it("o diff inteiro (sem arquivo) segue passageiro", () => {
     useApp.getState().openDiffTab(undefined)
     expect(abas().abertas).toEqual([])
+  })
+})
+
+describe("com um diálogo na frente, as teclas são dele", () => {
+  it("reconhece o diálogo aberto pelo conteúdo que a primitiva desenha", () => {
+    expect(haDialogoAberto({ querySelector: () => ({}) as Element })).toBe(true)
+    expect(haDialogoAberto({ querySelector: () => null })).toBe(false)
+  })
+})
+
+describe("conversa apagada leva a tira junto", () => {
+  it("abas, pilha do ⌘⇧T e riscados dela saem; os da outra ficam", () => {
+    useApp.getState().openFileTab(ARQ)
+    fecharAVista()
+    useApp.getState().openFileTab(VIDEO)
+    useAbasDeArquivo.getState().marcarSumido("c1", VIDEO, true)
+    irParaConversa("c2")
+    useApp.getState().openFileTab(FRAME)
+    useAbasDeArquivo.getState().esquecer("c1")
+    const s = useAbasDeArquivo.getState()
+    expect(s.porConversa.c1).toBeUndefined()
+    expect(s.fechadas.c1).toBeUndefined()
+    expect(Object.keys(s.sumidos)).toEqual([])
+    expect(abas("c2").abertas).toEqual([FRAME])
   })
 })
