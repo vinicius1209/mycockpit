@@ -22,6 +22,10 @@ pub struct ProjectDirEntry {
     rel_path: String,
     kind: String,
     is_symlink: bool,
+    /// O `.gitignore` (ou `.ignore`) exclui esta entrada. A árvore mostra,
+    /// apagada, como o VS Code; a busca continua pulando (ADR-254).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    ignored: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -173,6 +177,7 @@ fn entry_from_path(root: &Path, path: &Path) -> Option<ProjectDirEntry> {
         rel_path,
         kind: kind.into(),
         is_symlink,
+        ignored: false,
     })
 }
 
@@ -183,6 +188,32 @@ fn compare_entries(left: &ProjectDirEntry, right: &ProjectDirEntry) -> std::cmp:
         .cmp(&left_dir)
         .then_with(|| left.name.to_lowercase().cmp(&right.name.to_lowercase()))
         .then_with(|| left.name.cmp(&right.name))
+}
+
+/// Um nível de `directory`. Com `regras`, respeita `.gitignore`, `.ignore` e
+/// o exclude do git; sem, traz tudo (menos o que `structurally_excluded` tira
+/// depois).
+fn nivel(directory: &Path, regras: bool) -> Vec<Result<ignore::DirEntry, ignore::Error>> {
+    let mut builder = WalkBuilder::new(directory);
+    builder
+        .max_depth(Some(1))
+        .follow_links(false)
+        .hidden(false)
+        .parents(regras)
+        .ignore(regras)
+        .git_ignore(regras)
+        .git_global(regras)
+        .git_exclude(regras)
+        .require_git(false);
+    builder.build().skip(1).collect()
+}
+
+/// Os caminhos que sobrevivem às regras de ignore neste nível.
+fn nivel_visivel(directory: &Path) -> Vec<PathBuf> {
+    nivel(directory, true)
+        .into_iter()
+        .filter_map(|r| r.ok().map(|e| e.path().to_path_buf()))
+        .collect()
 }
 
 fn list_dir_children_blocking(
@@ -197,23 +228,21 @@ fn list_dir_children_blocking(
     let offset = cursor_offset(cursor)?;
     let limit = normalized_limit(limit, DEFAULT_DIR_LIMIT);
     let mut incomplete = false;
-    let mut builder = WalkBuilder::new(&directory);
-    builder
-        .max_depth(Some(1))
-        .follow_links(false)
-        .hidden(false)
-        .parents(true)
-        .ignore(true)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
-        .require_git(false);
+    // Duas leituras do MESMO nível: a com as regras de ignore diz o que o
+    // projeto considera seu; a sem regras traz o resto (`.env`, `node_modules`),
+    // que entra marcado como ignorado (ADR-254). Um nível só, então custa o
+    // dobro de um `read_dir`, não uma varredura. A pasta ignorada aparece, mas
+    // só é lida quando alguém a abre.
+    let visiveis = nivel_visivel(&directory);
     let mut entries = Vec::new();
-    for result in builder.build().skip(1) {
+    for result in nivel(&directory, false) {
         match result {
             Ok(found) if structurally_excluded(found.path()) => {}
             Ok(found) => match entry_from_path(&root, found.path()) {
-                Some(entry) => entries.push(entry),
+                Some(mut entry) => {
+                    entry.ignored = !visiveis.iter().any(|p| p == found.path());
+                    entries.push(entry)
+                }
                 None => incomplete = true,
             },
             Err(_) => incomplete = true,
@@ -352,6 +381,7 @@ async fn search_git(
             rel_path: path,
             kind: "file".into(),
             is_symlink: false,
+            ignored: false,
         });
         entry.kind = "file".into();
         entries.push(entry);
@@ -554,6 +584,40 @@ mod tests {
         assert_eq!(second.entries[0].rel_path, "z.txt");
         assert!(second.next_cursor.is_none());
         std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn o_que_o_gitignore_ignora_aparece_marcado_e_o_resto_nao() {
+        // O caso de 24/09/2026: `.env` e `node_modules` no `.gitignore` sumiam
+        // da árvore, e a pessoa achou que o `.env` estava sendo filtrado.
+        let root = fixture("ignorados");
+        std::fs::create_dir_all(root.join("node_modules/pacote")).unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(root.join(".env"), "OPENAI_API_KEY=x").unwrap();
+        std::fs::write(root.join(".env.example"), "OPENAI_API_KEY=").unwrap();
+        std::fs::write(root.join(".gitignore"), ".env\nnode_modules/\n").unwrap();
+        std::fs::write(root.join("package.json"), "{}").unwrap();
+        let page = list_dir_children_blocking(root.to_str().unwrap(), "", None, None).unwrap();
+        let marcado = |nome: &str| {
+            page.entries
+                .iter()
+                .find(|e| e.name == nome)
+                .unwrap_or_else(|| panic!("{nome} sumiu da árvore"))
+                .ignored
+        };
+        assert!(marcado(".env"));
+        assert!(marcado("node_modules"));
+        assert!(!marcado(".env.example"));
+        assert!(!marcado("src"));
+        assert!(!marcado("package.json"));
+        // Exclusão NOSSA continua fora, e a ignorada não conta como leitura parcial.
+        assert!(!page.entries.iter().any(|e| e.name == ".git"));
+        assert!(!page.truncated);
+        // A busca segue pulando o ignorado: `node_modules` afogaria o resultado.
+        let (achados, _, _) = search_non_git_blocking(&root.canonicalize().unwrap(), "env", 0, 100).unwrap();
+        assert!(achados.iter().any(|e| e.name == ".env.example"));
+        assert!(!achados.iter().any(|e| e.name == ".env"));
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

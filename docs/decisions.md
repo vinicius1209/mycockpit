@@ -9234,3 +9234,33 @@ considerou.
   comandos · leu 6 arquivos · pesquisou 3 vezes", com o comando, o arquivo e a
   busca em cada linha. Histórico gravado antes desta mudança segue com os nomes
   antigos.
+
+### ADR-254 · A árvore mostra o que o git ignora, apagado, e a busca agrupa por projeto ✅
+- **Contexto (24/09/2026):** "da pra fazer a árvore exibir `.env`? parece que
+  está sendo filtrado". Não era filtro por nome: a árvore seguia o
+  `.gitignore` de cada projeto, e a mesma regra escondia `node_modules` e
+  `dist`. Na mesma conversa: com a pasta `projetos` aberta (40 projetos), a
+  busca mostrava só o NOME, numa lista corrida: dez `tsconfig.json` iguais sem
+  dizer de onde, e doze `vite.config.ts.timestamp-…` gerados em fila. Mock
+  aprovado: `docs/mocks/arvore-env-e-busca-agrupada.html` (A e A).
+- **Decisão:**
+  1. **A árvore lista tudo, e marca o ignorado** (`ignored` em
+     `ProjectDirEntry`): cada nível é lido com e sem as regras de ignore, e o
+     que só aparece sem elas vem apagado, com "ignorado pelo git" no hover,
+     como no VS Code. Pasta pesada ignorada (`node_modules`) aparece, mas só é
+     lida quando alguém a abre. `.git` e `.DS_Store` seguem fora (exclusão
+     nossa).
+  2. **A busca continua pulando o ignorado**: `node_modules` afogaria o
+     resultado. O `.env` se acha pela árvore.
+  3. **Os valores do `.env` aparecem na prévia**, sem máscara: decisão da
+     pessoa.
+  4. **Busca agrupada pela pasta de primeiro nível** (`lib/buscaAgrupada.ts`):
+     cabeçalho com a contagem, até cinco por grupo e "mais N", o grupo recolhe
+     inteiro; gerados com o mesmo começo (sequência longa de dígitos/hex) viram
+     "N parecidos"; cada arquivo diz de onde é dentro do grupo e o trecho que
+     casou vem em peso (não em cor: §2). Com um grupo só não há o que agrupar:
+     fica a lista, com o caminho. O teclado percorre as linhas de arquivo
+     visíveis, na ordem da tela.
+- **Consequência:** o `.env` volta a ser achável sem mudar o que a busca
+  varre, e a busca numa pasta com dezenas de projetos se lê por projeto. A
+  paginação continua no Rust; "Carregar mais" entra dentro dos grupos.

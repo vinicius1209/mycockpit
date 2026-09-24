@@ -29,6 +29,15 @@ import {
   searchProjectFileIndex,
 } from "@/lib/projectFilesService"
 import { cn } from "@/lib/utils"
+import {
+  alternar,
+  ESTADO_INICIAL,
+  linhasDaBusca,
+  trechosDoNome,
+  type EstadoDaBusca,
+  type LinhaDaBusca,
+} from "@/lib/buscaAgrupada"
+import { chaveDaLinha, LinhaDeGrupoDaBusca, nomeDoCaminhoRaiz } from "@/components/layout/LinhaDeGrupoDaBusca"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { useApp } from "@/store/app"
 import { abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
@@ -215,13 +224,33 @@ export function ProjectFilesPanel({ root }: { root: string }) {
     )
     return visibleLazyProjectFileEntries(byDirectory, expanded)
   }, [directories, expanded])
+  // A busca agrupada (ADR-254): as linhas da tela vêm de `linhasDaBusca`, e as
+  // de arquivo, na mesma ordem, são as que o teclado percorre.
+  const [estadoBusca, setEstadoBusca] = useState<EstadoDaBusca>(ESTADO_INICIAL)
+  useEffect(() => setEstadoBusca(ESTADO_INICIAL), [normalizedQuery, root])
+  const linhasBusca = useMemo(
+    () => (normalizedQuery ? linhasDaBusca(search.entries, estadoBusca, nomeDoCaminhoRaiz(root)) : []),
+    [normalizedQuery, search.entries, estadoBusca, root],
+  )
+  const agrupada = linhasBusca.some((l) => l.tipo === "grupo")
   const rows = useMemo(
     () =>
       normalizedQuery
-        ? search.entries.map((node) => ({ node, depth: 0, parentPath: null }))
+        ? linhasBusca.flatMap((l) =>
+            l.tipo === "arquivo" ? [{ node: l.entrada, depth: agrupada ? 1 : 0, parentPath: null }] : [],
+          )
         : treeRows,
-    [normalizedQuery, search.entries, treeRows],
+    [normalizedQuery, linhasBusca, agrupada, treeRows],
   )
+  const indiceNaBusca = useMemo(() => new Map(rows.map((r, i) => [r.node.relPath, i])), [rows])
+  const alternarNaBusca = (linha: Exclude<LinhaDaBusca<LazyProjectFileEntry>, { tipo: "arquivo" }>) =>
+    setEstadoBusca((e) =>
+      linha.tipo === "grupo"
+        ? { ...e, recolhidos: alternar(e.recolhidos, linha.chave) }
+        : linha.tipo === "mais"
+          ? { ...e, inteiros: alternar(e.inteiros, linha.grupo) }
+          : { ...e, parecidosAbertos: alternar(e.parecidosAbertos, linha.chave) },
+    )
 
   useEffect(() => {
     if (rows.length === 0) {
@@ -362,6 +391,121 @@ export function ProjectFilesPanel({ root }: { root: string }) {
     ? search.status === "loading"
     : rootState.status === "loading"
 
+  function linhaDaArvore(row: (typeof rows)[number], index: number, onde?: string) {
+    const { node, depth } = row
+    const isDirectory = node.kind === "directory"
+    const isExpanded = !normalizedQuery && expanded.has(node.relPath)
+    const isSelected = selectedPath === node.relPath
+    const childState = directories[node.relPath]
+    return (
+      <div key={node.relPath}>
+        <Button
+          ref={(element) => {
+            if (element) rowRefs.current.set(node.relPath, element)
+            else rowRefs.current.delete(node.relPath)
+          }}
+          type="button"
+          role="treeitem"
+          size="compacto"
+          variant="ghost"
+          tabIndex={focusedPath === node.relPath ? 0 : -1}
+          aria-level={depth + 1}
+          aria-expanded={isDirectory && !node.isSymlink ? isExpanded : undefined}
+          aria-selected={isSelected}
+          title={`${node.relPath}${node.isSymlink ? " (link)" : ""}${node.ignored ? " · ignorado pelo git" : ""}`}
+          onFocus={() => setFocusedPath(node.relPath)}
+          onClick={() => activate(node)}
+          // R8: arrastar a linha até o composer vira `@caminho`. Por
+          // ponteiro (ADR-214). Equivalente sem arrastar: o `@` do
+          // próprio composer.
+          onPointerDown={(event) =>
+            iniciarArrasto(
+              event,
+              {
+                tipo: "arquivo",
+                id: `arquivo:${node.relPath}`,
+                caminho: node.relPath,
+                pasta: isDirectory,
+              },
+              node.relPath,
+            )
+          }
+          onKeyDown={(event) => handleKeyDown(event, index)}
+          style={{ paddingLeft: 8 + depth * 12 }}
+          className={cn(
+            "flex w-full justify-start gap-1 rounded-md pr-2 text-left font-normal",
+            isSelected ? "bg-sel text-foreground" : "text-foreground/80 hover:bg-sel-hover",
+            // Ignorado pelo git (ADR-254): aparece, apagado, como no VS Code.
+            node.ignored && !isSelected && "opacity-50",
+          )}
+        >
+          <span className="grid size-3.5 shrink-0 place-items-center text-muted-foreground/55">
+            {isDirectory && !node.isSymlink ? (
+              childState?.status === "loading" ? (
+                <span className="preparo-spin" aria-hidden="true" />
+              ) : isExpanded ? (
+                <ChevronDown className="size-3" />
+              ) : (
+                <ChevronRight className="size-3" />
+              )
+            ) : null}
+          </span>
+          {/* O mesmo rosto do arquivo no fio e aqui (ADR-241). */}
+          <FileIcon path={node.relPath} folder={isDirectory} />
+          <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
+            {normalizedQuery
+              ? trechosDoNome(node.name, normalizedQuery).map((t, i) =>
+                  t.casou ? (
+                    <span key={i} className="font-semibold text-foreground">
+                      {t.texto}
+                    </span>
+                  ) : (
+                    t.texto
+                  ),
+                )
+              : node.name}
+          </span>
+          {/* Na busca, de onde o arquivo é (ADR-254): o nome sozinho não diz. */}
+          {onde && <span className="max-w-[45%] min-w-0 truncate text-[11px] text-muted-foreground/60">{onde}</span>}
+          {!isDirectory && abas.abertas.includes(node.relPath) && (
+            <span
+              aria-label="Aberto numa aba"
+              title="Aberto numa aba"
+              className={cn("size-1.5 shrink-0 rounded-full", isSelected ? "bg-foreground" : "bg-muted-foreground/70")}
+            />
+          )}
+        </Button>
+        {isExpanded && childState?.status === "error" && (
+          <div className="flex items-center gap-2 py-1 pr-2 text-[11px] text-destructive" style={{ paddingLeft: 28 + depth * 12 }}>
+            <span className="min-w-0 flex-1 truncate">{childState.error}</span>
+            <Button variant="ghost" size="chip" onClick={() => void loadDirectory(node.relPath)}>
+              Tentar novamente
+            </Button>
+          </div>
+        )}
+        {isExpanded && childState?.nextCursor && (
+          <Button
+            variant="ghost"
+            size="compacto"
+            className="w-full justify-start text-muted-foreground"
+            style={{ paddingLeft: 28 + depth * 12 }}
+            onClick={() => void loadDirectory(node.relPath, childState.nextCursor)}
+          >
+            Carregar mais nesta pasta
+          </Button>
+        )}
+        {isExpanded && childState?.truncated && !childState.nextCursor && (
+          <p
+            className="py-1 pr-2 text-[11px] text-muted-foreground"
+            style={{ paddingLeft: 28 + depth * 12 }}
+          >
+            Leitura parcial nesta pasta
+          </p>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-1 px-3 pt-2 pb-2">
@@ -400,7 +544,7 @@ export function ProjectFilesPanel({ root }: { root: string }) {
       <div className="flex min-h-6 shrink-0 items-center gap-2 px-4 font-mono text-[11px] tabular-nums text-muted-foreground/60">
         <span>
           {normalizedQuery
-            ? `${search.entries.length} resultados`
+            ? `${search.entries.length} resultados${agrupada ? ` em ${linhasBusca.filter((l) => l.tipo === "grupo").length} pastas` : ""}`
             : `${rootState.entries.length} itens`}
         </span>
         <span className="ml-auto flex items-center gap-2">
@@ -458,106 +602,15 @@ export function ProjectFilesPanel({ root }: { root: string }) {
       ) : (
         <ScrollArea className="min-h-0 flex-1">
           <div role="tree" aria-label="Arquivos do projeto" aria-busy={busy} className="px-2 pb-4">
-            {rows.map((row, index) => {
-              const { node, depth } = row
-              const isDirectory = node.kind === "directory"
-              const isExpanded = !normalizedQuery && expanded.has(node.relPath)
-              const isSelected = selectedPath === node.relPath
-              const childState = directories[node.relPath]
-              return (
-                <div key={node.relPath}>
-                  <Button
-                    ref={(element) => {
-                      if (element) rowRefs.current.set(node.relPath, element)
-                      else rowRefs.current.delete(node.relPath)
-                    }}
-                    type="button"
-                    role="treeitem"
-                    size="compacto"
-                    variant="ghost"
-                    tabIndex={focusedPath === node.relPath ? 0 : -1}
-                    aria-level={depth + 1}
-                    aria-expanded={isDirectory && !node.isSymlink ? isExpanded : undefined}
-                    aria-selected={isSelected}
-                    title={node.isSymlink ? `${node.relPath} (link)` : node.relPath}
-                    onFocus={() => setFocusedPath(node.relPath)}
-                    onClick={() => activate(node)}
-                    // R8: arrastar a linha até o composer vira `@caminho`. Por
-                    // ponteiro (ADR-214). Equivalente sem arrastar: o `@` do
-                    // próprio composer.
-                    onPointerDown={(event) =>
-                      iniciarArrasto(
-                        event,
-                        {
-                          tipo: "arquivo",
-                          id: `arquivo:${node.relPath}`,
-                          caminho: node.relPath,
-                          pasta: isDirectory,
-                        },
-                        node.relPath,
-                      )
-                    }
-                    onKeyDown={(event) => handleKeyDown(event, index)}
-                    style={{ paddingLeft: 8 + depth * 12 }}
-                    className={cn(
-                      "flex w-full justify-start gap-1 rounded-md pr-2 text-left font-normal",
-                      isSelected ? "bg-sel text-foreground" : "text-foreground/80 hover:bg-sel-hover",
-                    )}
-                  >
-                    <span className="grid size-3.5 shrink-0 place-items-center text-muted-foreground/55">
-                      {isDirectory && !node.isSymlink ? (
-                        childState?.status === "loading" ? (
-                          <span className="preparo-spin" aria-hidden="true" />
-                        ) : isExpanded ? (
-                          <ChevronDown className="size-3" />
-                        ) : (
-                          <ChevronRight className="size-3" />
-                        )
-                      ) : null}
-                    </span>
-                    {/* O mesmo rosto do arquivo no fio e aqui (ADR-241). */}
-                    <FileIcon path={node.relPath} folder={isDirectory} />
-                    <span className="min-w-0 flex-1 truncate text-left font-mono text-[12px]">
-                      {node.name}
-                    </span>
-                    {!isDirectory && abas.abertas.includes(node.relPath) && (
-                      <span
-                        aria-label="Aberto numa aba"
-                        title="Aberto numa aba"
-                        className={cn("size-1.5 shrink-0 rounded-full", isSelected ? "bg-foreground" : "bg-muted-foreground/70")}
-                      />
-                    )}
-                  </Button>
-                  {isExpanded && childState?.status === "error" && (
-                    <div className="flex items-center gap-2 py-1 pr-2 text-[11px] text-destructive" style={{ paddingLeft: 28 + depth * 12 }}>
-                      <span className="min-w-0 flex-1 truncate">{childState.error}</span>
-                      <Button variant="ghost" size="chip" onClick={() => void loadDirectory(node.relPath)}>
-                        Tentar novamente
-                      </Button>
-                    </div>
-                  )}
-                  {isExpanded && childState?.nextCursor && (
-                    <Button
-                      variant="ghost"
-                      size="compacto"
-                      className="w-full justify-start text-muted-foreground"
-                      style={{ paddingLeft: 28 + depth * 12 }}
-                      onClick={() => void loadDirectory(node.relPath, childState.nextCursor)}
-                    >
-                      Carregar mais nesta pasta
-                    </Button>
-                  )}
-                  {isExpanded && childState?.truncated && !childState.nextCursor && (
-                    <p
-                      className="py-1 pr-2 text-[11px] text-muted-foreground"
-                      style={{ paddingLeft: 28 + depth * 12 }}
-                    >
-                      Leitura parcial nesta pasta
-                    </p>
-                  )}
-                </div>
-              )
-            })}
+            {normalizedQuery
+              ? linhasBusca.map((linha) => {
+                  if (linha.tipo === "arquivo") {
+                    const i = indiceNaBusca.get(linha.entrada.relPath) ?? 0
+                    return linhaDaArvore(rows[i], i, linha.onde || undefined)
+                  }
+                  return <LinhaDeGrupoDaBusca key={chaveDaLinha(linha)} linha={linha} onAlternar={alternarNaBusca} />
+                })
+              : rows.map((row, index) => linhaDaArvore(row, index))}
             {normalizedQuery && search.nextCursor && (
               <Button
                 variant="ghost"

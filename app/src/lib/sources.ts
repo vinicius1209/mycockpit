@@ -104,6 +104,8 @@ export interface ProjectDirEntry {
   relPath: string
   kind: "directory" | "file"
   isSymlink: boolean
+  /** O `.gitignore` exclui: a árvore mostra apagado, a busca pula (ADR-254). */
+  ignored?: boolean
 }
 
 export interface ProjectDirPage {
