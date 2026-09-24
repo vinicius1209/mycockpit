@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import type { ChatItem } from "@/store/chat"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
-import { LivePlanCard } from "@/components/chat/LivePlanCard"
+import { BaseDoComposer } from "@/components/chat/BaseDoComposer"
 import { deriveTaskPlans, deriveTasks, taskPlansOf } from "./tasks"
 import captured from "./__fixtures__/plano-encerrado-4-de-7.json"
 
@@ -54,7 +54,10 @@ describe("plano encerrado com quatro de sete etapas concluídas", () => {
 
   it("o card vivo desaparece no terminal mesmo durante a finalização", () => {
     expect(renderToStaticMarkup(
-      <LivePlanCard items={items} running={false} finalizing detailInSidebar={false} />,
+      <BaseDoComposer
+        conv={{ items, running: false, finalizing: true, runManifest: undefined, agent: "claude-code", queued: [] }}
+        convId="c1"
+      />,
     )).toBe("")
   })
 })

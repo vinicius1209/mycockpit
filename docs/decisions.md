@@ -8920,3 +8920,30 @@ considerou.
 - **Consequência:** a conversa nova ganha nome de assunto sem helper e sem
   custo extra, e motor sem o gateway de trabalho segue com o helper ou com a
   primeira frase.
+
+### ADR-247 · Plano, fila e avisos numa tira presa ao composer ✅
+- **Contexto (24/09/2026):** acima do composer empilhavam-se o cartão do
+  plano, a lista de exceções do turno e a fila, cada um com borda e estilo
+  próprios, e a pilha ocupava a tela durante o turno inteiro. Mock
+  `docs/mocks/base-do-composer.html`, aprovado depois de três ajustes da pessoa:
+  sem barrinha de etapas ("1/8" como antes, no fim) e com os anexos da fila à
+  vista mesmo com a tira fechada.
+- **Decisão:**
+  1. O que é INFORMAÇÃO do turno (plano, fila, exceções) vira uma tira de uma
+     linha presa ao topo do composer (`BaseDoComposer`), com uma gaveta que
+     abre por clique, uma por vez. Cada segmento só existe quando tem conteúdo;
+     sem nenhum, a tira some.
+  2. O que pede DECISÃO continua cartão acima: aprovação, pergunta e os avisos
+     que bloqueiam o envio (`BannersDoComposer`).
+  3. Plano: a etapa corrente e "1/N" no fim, com as regras do antigo
+     `LivePlanCard` (turno vivo, "Próxima:", painel Plano como dono do
+     detalhe). Nasce recolhido: o resumo já está na tira.
+  4. Fila: contagem e miniaturas dos anexos (até 3, "+N") na tira, com
+     "2 imagens e 1 documento vão junto" no hover. Com mensagem na fila a
+     gaveta dela nasce aberta, porque o texto e o anexo que a pessoa mandou
+     ficam à vista (contrato da ADR-240); recolher é gesto dela. Documento na
+     fila mostra nome e tamanho.
+  5. Saem `LivePlanCard`, `RunStatusStack` e o componente `ExcecoesDoTurno`;
+     os testes do plano migram para a base.
+- **Consequência:** durante o turno, o que fica acima do composer é uma linha,
+  mais os cartões que pedem gesto.

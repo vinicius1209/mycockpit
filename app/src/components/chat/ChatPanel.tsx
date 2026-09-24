@@ -7,7 +7,6 @@ import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
 import { toast } from "sonner"
 import { withNotasDoTurno } from "@/lib/fleet/promptCascade"
-import { RunStatusStack } from "@/components/chat/RunStatusStack"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
 import { useEspecialistas } from "@/store/especialistas"
@@ -108,9 +107,6 @@ export function ChatPanel() {
   // aparece depois da leitura terminar (§5 camada 3). A regra mora em
   // `avisoDeMotorAusente`, não aqui.
   const motorAusente = conv ? avisoDeMotorAusente(conv.agent, detectados) : null
-  const planDetailedInSidebar = useApp(
-    (s) => s.contextOpen && s.contextPanelTab === "conversa",
-  )
   const transcriptReveal = useApp((s) => s.transcriptReveal)
   // Lições injetadas no ÚLTIMO turno desta conversa (p/ o 👍 reforçar — bump).
   // Ref keyed por convId; efêmero, não persiste (é só o alvo do reforço leve).
@@ -931,10 +927,6 @@ export function ChatPanel() {
             <ArrowDown className="size-3.5" /> Rolar pro fim
           </button>
         )}
-        <RunStatusStack
-          conversation={conv}
-          detailInSidebar={planDetailedInSidebar}
-        />
         {/* px-8 casa a borda do composer com o texto do transcript (que usa
             max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
         <div className="mx-auto max-w-[760px] px-8">

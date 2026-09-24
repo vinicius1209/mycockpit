@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Base do composer · hoje × proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--fg:#e7e8ea;--card:#141619;--muted:#9aa0a7;--faint:#687078;--accent:#1e2126;
+--border:rgba(255,255,255,.08);--bs:rgba(255,255,255,.13);--div:rgba(255,255,255,.032);--sel:rgba(255,255,255,.065);
+--running:#5bb8e8;--warn:#d99138;--error:#f2766b;--brass:#e4a862;--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 20px;max-width:980px;line-height:1.5}
+.estados{display:flex;gap:6px;margin-bottom:14px}
+.estados button{font:13px var(--sans);color:var(--muted);background:var(--card);border:1px solid var(--border);border-radius:7px;height:28px;padding:0 12px;cursor:pointer}
+.estados button[aria-pressed=true]{background:var(--sel);color:var(--fg)}
+.lado{display:flex;gap:28px;align-items:flex-end}
+.col h2{font-size:12px;font-weight:500;color:var(--muted);margin-bottom:8px}
+.palco{width:620px;height:640px;background:var(--bg);border:1px solid var(--border);border-radius:12px;display:flex;flex-direction:column;justify-content:flex-end;padding:0 22px 22px;overflow:hidden}
+.fio{flex:1;padding-top:20px;font-size:13px;color:var(--muted);line-height:1.6}
+.fio p{color:var(--fg);margin:6px 0}
+.mono{font-family:var(--mono)}
+svg{flex:none}
+.notas{margin-top:22px;display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:1270px}
+.nota{border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:#0c0d10}
+.nota h3{font-size:13px;font-weight:500;margin-bottom:6px}.nota p{font-size:12px;line-height:1.55;color:var(--muted)}
+
+/* composer (igual nos dois) */
+.comp{border:1px solid var(--bs);border-radius:12px;background:var(--card)}
+.comp .ph{padding:12px 14px 0;font-size:14px;color:var(--faint);height:36px}
+.comp .ln{display:flex;align-items:center;gap:14px;padding:10px 12px 10px 14px;font-size:13px;color:var(--muted)}
+.comp .lib{color:var(--warn)}
+.comp .stop{margin-left:auto;width:32px;height:32px;border-radius:50%;background:#8f3b35;display:grid;place-items:center}
+.comp .stop i{width:10px;height:10px;background:#f3f3f3;border-radius:2px;display:block}
+
+/* HOJE */
+.h-plano{border:1px solid var(--border);border-radius:10px;background:var(--card);margin-bottom:8px;font-size:13px}
+.h-plano .cab{height:32px;display:flex;align-items:center;gap:10px;padding:0 12px}
+.h-plano .cab .n{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+.h-plano .l{height:26px;display:flex;align-items:center;gap:10px;padding:0 12px;color:var(--muted);font-size:13px}
+.h-exc{display:flex;align-items:center;gap:10px;min-height:40px;padding:8px 12px;border:1px solid rgba(217,145,56,.35);background:rgba(217,145,56,.06);border-radius:10px;margin-bottom:8px;font-size:12px}
+.h-exc b{font-weight:500}.h-exc span{color:var(--muted)}
+.h-exc .bt{margin-left:auto;height:24px;padding:0 10px;border-radius:6px;background:var(--accent);display:grid;place-items:center;font-size:11px}
+.h-fila{border:1px solid var(--border);border-radius:12px;background:var(--card);margin-bottom:8px}
+.h-fila .cab{display:flex;align-items:center;gap:8px;height:34px;padding:0 8px 0 12px;border-bottom:1px solid var(--div);font-size:12px}
+.h-fila .q{background:rgba(217,145,56,.15);color:var(--warn);font:600 11px var(--mono);padding:0 6px;border-radius:5px}
+.h-fila .env{margin-left:auto;color:var(--warn);font-size:11px}
+.h-fila .it{display:flex;gap:10px;padding:8px 12px;font-size:13px}
+.h-fila .it+.it{border-top:1px solid var(--div)}
+.h-fila .it .n{font:11px var(--mono);color:var(--faint)}
+.h-cap{display:flex;align-items:center;gap:8px;height:28px;padding:0 10px;margin-bottom:8px;border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--muted)}
+
+/* PROPOSTA: a base presa ao composer */
+.base{border:1px solid var(--bs);border-bottom:0;border-radius:12px 12px 0 0;background:#101215;margin:0 10px}
+.base .tira{height:32px;display:flex;align-items:stretch;font-size:12px}
+.base .tira button{display:flex;align-items:center;gap:7px;padding:0 12px;color:var(--muted);background:none;border:0;font:12px var(--sans);cursor:pointer;white-space:nowrap;flex:none}
+/* só o título da etapa cede; contador, fila e aviso nunca quebram */
+.base .tira button > *{flex:none}
+.base .tira button+button{border-left:1px solid var(--div)}
+.base .tira button:hover{color:var(--fg);background:rgba(255,255,255,.02)}
+.base .tira button[aria-expanded=true]{color:var(--fg);background:var(--sel)}
+.base .tira .plano{flex:1 1 auto;min-width:0}
+.base .tira .plano .t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;text-align:left}
+.base .tira .n{font-family:var(--mono);font-size:11px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.base .tira .cnt{min-width:18px;height:16px;padding:0 5px;border-radius:8px;background:rgba(217,145,56,.15);color:var(--warn);font-size:11px;font-weight:600;display:grid;place-items:center}
+.base .tira .av{color:var(--warn)}
+.segs{display:flex;gap:2px}.segs i{width:8px;height:3px;border-radius:2px;background:rgba(255,255,255,.12)}.segs i.ok{background:var(--muted)}.segs i.now{background:var(--running)}
+.spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--running);border-top-color:transparent;flex:none;animation:g 1s linear infinite}
+@keyframes g{to{transform:rotate(360deg)}}
+.gaveta{border-top:1px solid var(--div);padding:6px 0 8px;max-height:230px;overflow:auto}
+.gaveta .l{display:flex;gap:10px;align-items:flex-start;padding:4px 14px;font-size:13px;color:var(--faint);line-height:1.45}
+.gaveta .l.ok{color:var(--muted)} .gaveta .l.now{color:var(--fg)}
+.o{width:9px;height:9px;border-radius:50%;border:1px solid var(--faint);flex:none;margin-top:5px}
+.gaveta .it{display:flex;gap:10px;padding:6px 14px;font-size:13px}
+.gaveta .it .n{font-size:11px;color:var(--faint);font-variant-numeric:tabular-nums;padding-top:2px}
+.gaveta .it .ac{margin-left:auto;display:flex;gap:4px;color:var(--faint);font-size:12px}
+.gaveta .acao{display:flex;justify-content:flex-end;gap:8px;padding:6px 12px 2px}
+.gaveta .acao span{height:24px;padding:0 10px;border-radius:6px;display:grid;place-items:center;font-size:11px;background:var(--accent)}
+.gaveta .acao .forte{color:var(--warn);background:rgba(217,145,56,.12)}
+.gaveta .ex{display:flex;gap:10px;align-items:center;padding:6px 14px;font-size:12px}
+.gaveta .ex .d{color:var(--muted)} .gaveta .ex .bt{margin-left:auto;height:24px;padding:0 10px;border-radius:6px;background:var(--accent);display:grid;place-items:center;font-size:11px}
+.comp.colado{border-radius:12px}
+.decisao{border:1px solid rgba(228,168,98,.45);border-radius:12px;background:var(--card);padding:12px 14px;margin-bottom:10px;font-size:13px}
+.decisao .q{font-weight:500;margin-bottom:8px}
+.decisao .ops{display:flex;gap:6px}.decisao .ops span{height:28px;padding:0 12px;border-radius:7px;background:var(--accent);display:grid;place-items:center;font-size:12px}
+.decisao .ops .p{background:var(--brass);color:#1a1306}
+
+/* anexos na fila: visíveis com a tira fechada e na gaveta */
+.mini{display:flex;align-items:center;gap:3px;margin-left:2px}
+.mini img,.mini .doc{width:18px;height:18px;border-radius:4px;object-fit:cover;border:1px solid var(--border);flex:none}
+.mini .doc{display:grid;place-items:center;background:var(--accent);font-size:9px;color:#f2766b;font-weight:600}
+.mini .mais{font-size:11px;color:var(--muted);margin-left:2px}
+.gaveta .it{flex-wrap:wrap}
+.gaveta .it .corpo{flex:1;min-width:0}
+.anexos{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.anexos img{width:64px;height:44px;border-radius:6px;object-fit:cover;border:1px solid var(--border);cursor:zoom-in}
+.anexos .docc{height:44px;display:flex;align-items:center;gap:8px;padding:0 10px 0 6px;border-radius:6px;border:1px solid var(--border);background:var(--accent);font-size:12px;cursor:pointer}
+.anexos .docc .ic{width:28px;height:32px;border-radius:4px;background:rgba(242,118,107,.14);color:#f2766b;display:grid;place-items:center;font-size:9px;font-weight:700}
+.anexos .docc small{display:block;font-size:11px;color:var(--faint)}
+</style>
+</head>
+<body>
+<h1>Base do composer</h1>
+<p class="sub">O conteúdo é o dos seus prints de 24/09 (o turno das abas de arquivo: plano de 8 etapas, 2 mensagens na fila, 1 exceção de MCP). "Hoje" empilha cartões com borda própria acima do composer. "Proposta": o que é INFORMAÇÃO do turno vira uma tira de uma linha presa ao topo do composer, com uma gaveta que abre por clique; o que pede DECISÃO continua cartão visível. Use os botões para ver os estados.</p>
+<div class="estados" role="group">
+  <button data-e="fechada" aria-pressed="true">Tudo fechado</button>
+  <button data-e="plano" aria-pressed="false">Plano aberto</button>
+  <button data-e="fila" aria-pressed="false">Fila aberta</button>
+  <button data-e="aviso" aria-pressed="false">Aviso aberto</button>
+  <button data-e="decisao" aria-pressed="false">Com pergunta pendente</button>
+</div>
+
+<div class="lado">
+  <div class="col"><h2>HOJE</h2>
+    <div class="palco">
+      <div class="fio"><p>Tipos passando. Agora a árvore: ponto nos arquivos abertos e o "Mostrar na árvore".</p><span>✓ Rodou 1 comando · leu 1 arquivo</span><p>Rust ok. Agora os testes do lado TS.</p><span class="mono">está trabalhando… ••• 5 ações · 17min 35s</span></div>
+      <div id="h-decisao"></div>
+      <div class="h-plano"><div class="cab"><span class="spin"></span>Próxima: Ligar openFileTab/troca de projeto/boot ao store das abas<span class="n">1/8</span><span style="color:var(--muted)">⌄</span></div></div>
+      <div class="h-exc">⚠ <b>figma não entrou neste turno.</b><span>Não respondeu ao teste de disponibilidade.</span><span class="bt">Configurar</span></div>
+      <div class="h-fila"><div class="cab"><span class="q">2</span>Na fila · vão juntas, num envio só, quando este turno terminar<span class="env">⚡ Enviar agora</span></div>
+        <div class="it"><span class="n">1</span>ficou essa mensagem de "rovogar" e nao saiu, iso é normal?</div>
+        <div class="it"><span class="n">2</span>aqui outro problema na fila, veja</div></div>
+      <div class="comp"><div class="ph">Enter corrige agora · Tab envia no próximo turno…</div>
+        <div class="ln"><span>📎</span><span>Claude Code · high ⌄</span><span class="lib">⛨ Liberado</span><span>🎙</span><span class="stop"><i></i></span></div></div>
+    </div>
+  </div>
+
+  <div class="col"><h2>PROPOSTA</h2>
+    <div class="palco">
+      <div class="fio"><p>Tipos passando. Agora a árvore: ponto nos arquivos abertos e o "Mostrar na árvore".</p><span>✓ Rodou 1 comando · leu 1 arquivo</span><p>Rust ok. Agora os testes do lado TS.</p><span class="mono">está trabalhando… ••• 5 ações · 17min 35s</span></div>
+      <div id="p-decisao"></div>
+      <div class="base">
+        <div class="tira">
+          <button class="plano" data-g="plano" aria-expanded="false"><span class="spin"></span><span class="t">Ligar openFileTab/troca de projeto/boot ao store das abas</span><span class="n">1/8</span></button>
+          <button data-g="fila" aria-expanded="false" title="2 mensagens na fila · 3 imagens e 1 PDF vão junto"><span class="cnt">2</span>na fila<span class="mini"><img src="file:///Users/viniciusmachado/Library/Application%20Support/dev.vinicius.frota/attachments/14ff6eb1-069e-42fd-92b3-f0ab01c2947a/c8ed950eab5154d6.png"><img src="file:///Users/viniciusmachado/Library/Application%20Support/dev.vinicius.frota/attachments/14ff6eb1-069e-42fd-92b3-f0ab01c2947a/02c07c2d69b130f2.png"><span class="doc">PDF</span><span class="mais">+1</span></span></button>
+          <button data-g="aviso" aria-expanded="false"><span class="av">⚠</span>1 aviso</button>
+        </div>
+        <div class="gaveta" id="gaveta" hidden></div>
+      </div>
+      <div class="comp colado"><div class="ph">Enter corrige agora · Tab envia no próximo turno…</div>
+        <div class="ln"><span>📎</span><span>Claude Code · high ⌄</span><span class="lib">⛨ Liberado</span><span>🎙</span><span class="stop"><i></i></span></div></div>
+    </div>
+  </div>
+</div>
+
+<div class="notas">
+  <div class="nota"><h3>1 · Informação numa tira, decisão em cartão</h3><p>Plano, fila e exceções do turno viram uma tira de 32px presa ao topo do composer: a etapa corrente com "1/8" no fim (como hoje), "2 na fila", "1 aviso". Aprovação, pergunta e aviso que bloqueia o envio (pasta barrada, motor ausente) continuam cartões acima, porque pedem gesto seu.</p></div>
+  <div class="nota"><h3>2 · Uma gaveta por vez, anexos sempre à vista</h3><p>Com a tira fechada, "2 na fila" já mostra as miniaturas do que vai junto (até 3, e "+N"); o hover diz "3 imagens e 1 PDF". Aberta, cada mensagem traz as imagens em miniatura (clique abre em tela cheia) e os documentos como cartão com tipo, nome e tamanho. Clicar num segmento abre a gaveta DELE entre a tira e o composer; clicar de novo fecha. A fila mantém o que ganhou na ADR-240 (duas linhas, miniaturas, editar, reordenar, Enviar agora). Com a fila aberta, "Enviar agora" fica na gaveta, perto das mensagens.</p></div>
+  <div class="nota"><h3>3 · Some o que não existe</h3><p>Sem plano, sem fila e sem aviso, a tira não aparece e o composer fica sozinho. Cada segmento só existe quando tem conteúdo. A cor segue o guia: vivo em azul no giro do plano, fila e aviso em âmbar (pedem você).</p></div>
+</div>
+
+<script>
+const G = {
+  plano: `<div class="l ok"><span style="color:var(--muted)">✓</span>Modelo puro das abas de arquivo + store persistido por projeto</div>
+    <div class="l now"><span class="spin" style="margin-top:4px"></span>Ligar openFileTab/troca de projeto/boot ao store das abas</div>
+    <div class="l"><span class="o"></span>Tira: abas de arquivo, rótulos com pasta, overflow, menu da aba, arrastar</div>
+    <div class="l"><span class="o"></span>Lado a lado com a conversa (divisor arrastável, cai para aba abaixo de 900px)</div>
+    <div class="l"><span class="o"></span>Árvore: ponto nos abertos + arquivo que sumiu</div>
+    <div class="l"><span class="o"></span>Atalhos ⌘1-9, ⌃Tab, ⌘⇧T + ⌘W pelo menu nativo</div>
+    <div class="l"><span class="o"></span>Primeiro quadro do vídeo</div>
+    <div class="l"><span class="o"></span>ADR + testes + tsc -b + check + cargo test</div>`,
+  fila: `<div class="it"><span class="n">1</span><div class="corpo">ficou essa mensagem de "rovogar" e nao saiu, iso é normal?
+      <div class="anexos"><img src="file:///Users/viniciusmachado/Library/Application%20Support/dev.vinicius.frota/attachments/14ff6eb1-069e-42fd-92b3-f0ab01c2947a/c8ed950eab5154d6.png" title="image.png · 184 KB"></div></div><span class="ac">✎ ✕</span></div>
+    <div class="it"><span class="n">2</span><div class="corpo">aqui outro problema na fila, veja
+      <div class="anexos"><img src="file:///Users/viniciusmachado/Library/Application%20Support/dev.vinicius.frota/attachments/14ff6eb1-069e-42fd-92b3-f0ab01c2947a/02c07c2d69b130f2.png" title="image.png · 212 KB"><img src="file:///Users/viniciusmachado/Library/Application%20Support/dev.vinicius.frota/attachments/14ff6eb1-069e-42fd-92b3-f0ab01c2947a/716516b60c6ad9ab.png" title="image.png · 97 KB"><span class="docc"><span class="ic">PDF</span><span>contrato.pdf<small>PDF · 88 KB</small></span></span></div></div><span class="ac">✎ ✕</span></div>
+    <div class="acao"><span style="color:var(--muted)">Vão juntas, com os 4 anexos, quando o turno terminar</span><span class="forte">⚡ Enviar agora</span></div>`,
+  aviso: `<div class="ex"><span style="color:var(--warn)">⚠</span><span><b style="font-weight:500">figma não entrou neste turno.</b> <span class="d">Não respondeu ao teste de disponibilidade.</span></span><span class="bt">Configurar</span></div>`,
+}
+const gav = document.getElementById("gaveta")
+function abre(g) {
+  document.querySelectorAll(".tira button").forEach((b) => b.setAttribute("aria-expanded", b.dataset.g === g))
+  gav.hidden = !g
+  gav.innerHTML = g ? G[g] : ""
+}
+document.querySelectorAll(".tira button").forEach((b) => b.onclick = () => abre(b.getAttribute("aria-expanded") === "true" ? null : b.dataset.g))
+const DEC = `<div class="decisao"><div class="q">O mock da aba "O que o agente vê" está no rumo?</div><div class="ops"><span class="p">Aprovado, pode implementar</span><span>Quero ajustes</span></div></div>`
+document.querySelectorAll(".estados button").forEach((b) => b.onclick = () => {
+  document.querySelectorAll(".estados button").forEach((x) => x.setAttribute("aria-pressed", x === b))
+  const e = b.dataset.e
+  abre(e === "plano" || e === "fila" || e === "aviso" ? e : null)
+  document.getElementById("p-decisao").innerHTML = e === "decisao" ? DEC : ""
+  document.getElementById("h-decisao").innerHTML = e === "decisao" ? DEC : ""
+})
+</script>
+</body>
+</html>

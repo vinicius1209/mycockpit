@@ -7,7 +7,7 @@
     "rs": 1000
   },
   "arquivos": {
-    "components/chat/ChatPanel.tsx": 1007,
+    "components/chat/ChatPanel.tsx": 999,
     "lib/companion.ts": 564,
     "lib/db.ts": 2023,
     "lib/fleet/derive.test.ts": 1042,

@@ -54,7 +54,7 @@ import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { forceSendDraft, forceSendQueued, pullQueued } from "@/components/chat/filaComposer"
-import { FilaDaConversa } from "@/components/chat/FilaDoComposer"
+import { BaseDoComposer } from "@/components/chat/BaseDoComposer"
 
 // O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
 // mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
@@ -551,15 +551,13 @@ export function CommandConsole({
           </p>
         </div>
       )}
-      {activeId && (
-        <FilaDaConversa
-          convId={activeId}
-          queued={conv.queued ?? []}
-          onEdit={handleEditQueued}
-          onForceSend={finalizing ? undefined : handleForceSendQueued}
-          turnState={running ? "running" : finalizing ? "finalizing" : "idle"}
-        />
-      )}
+      {/* Plano, fila e avisos do turno numa tira presa ao composer (ADR-247). */}
+      <BaseDoComposer
+        conv={conv}
+        convId={activeId}
+        onEdit={handleEditQueued}
+        onForceSend={finalizing ? undefined : handleForceSendQueued}
+      />
       <ComposerShell
         focusRing
         input={lexicalInput}

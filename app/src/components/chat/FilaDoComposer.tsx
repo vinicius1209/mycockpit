@@ -13,8 +13,7 @@ import { useRef, useState } from "react"
 import { GripVertical, Pencil, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MiniaturaDeAnexo } from "@/components/chat/MiniaturaDeAnexo"
-import { moverNaFila } from "@/components/chat/filaComposer"
-import { useChat, type QueuedMsg } from "@/store/chat"
+import type { QueuedMsg } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
 /** A frase do cabeçalho, conforme o turno. Puro. */
@@ -38,6 +37,7 @@ export function QueuedChips({
   onForceSend,
   onMover,
   turnState,
+  embutida = false,
 }: {
   queued: QueuedMsg[]
   onRemove: (index: number) => void
@@ -46,6 +46,8 @@ export function QueuedChips({
   onForceSend?: (index: number) => void
   onMover?: (de: number, para: number) => void
   turnState: "running" | "finalizing" | "idle"
+  /** Dentro da gaveta da base do composer (ADR-247): sem moldura própria. */
+  embutida?: boolean
 }) {
   const [aberta, setAberta] = useState<number | null>(null)
   const [arrastando, setArrastando] = useState<{ de: number; para: number } | null>(null)
@@ -73,7 +75,7 @@ export function QueuedChips({
   }
 
   return (
-    <div className="mb-2 overflow-hidden rounded-xl border bg-card">
+    <div className={embutida ? undefined : "mb-2 overflow-hidden rounded-xl border bg-card"}>
       <div className="flex items-center gap-2 border-b border-border/40 py-1.5 pr-1.5 pl-3">
         <span className="rounded-md bg-st-queued/15 px-1.5 font-mono text-[11px] font-semibold text-st-queued tabular-nums">
           {queued.length}
@@ -163,7 +165,9 @@ export function QueuedChips({
               {msg.attachments.length > 0 && (
                 <span className="col-start-3 mt-1.5 flex flex-wrap gap-1.5">
                   {msg.attachments.map((a) => (
-                    <MiniaturaDeAnexo key={a.path} anexo={a} galeria={msg.attachments} compacta />
+                    // Documento mostra nome e tamanho: miniatura de PDF sem nome
+                    // não diz o que vai junto (ADR-247).
+                    <MiniaturaDeAnexo key={a.path} anexo={a} galeria={msg.attachments} compacta={a.kind === "image"} />
                   ))}
                 </span>
               )}
@@ -172,20 +176,5 @@ export function QueuedChips({
         })}
       </ol>
     </div>
-  )
-}
-
-/** A fila de UMA conversa: tirar e reordenar falam com o store daqui, e o
- *  console só diz qual conversa e o que fazer ao editar e ao forçar o envio. */
-export function FilaDaConversa({
-  convId,
-  ...props
-}: Omit<React.ComponentProps<typeof QueuedChips>, "onRemove" | "onMover"> & { convId: string }) {
-  return (
-    <QueuedChips
-      {...props}
-      onRemove={(i) => useChat.getState().removeQueued(convId, i)}
-      onMover={(de, para) => moverNaFila(convId, de, para)}
-    />
   )
 }

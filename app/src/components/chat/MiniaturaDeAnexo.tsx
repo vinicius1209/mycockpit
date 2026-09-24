@@ -8,6 +8,7 @@
 
 import { useEffect, useState } from "react"
 import { FileText, X } from "lucide-react"
+import { FileIcon } from "@/components/ui/file-icon"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { attachmentUrl, type Attachment } from "@/lib/attachments"
 import { fmtBytes } from "@/lib/format"
@@ -137,6 +138,25 @@ export function MiniaturaDeAnexo({
         >
           <X className="size-3" />
         </button>
+      )}
+    </span>
+  )
+}
+
+/** O anexo em 18px, na tira da base do composer (ADR-247): basta para saber
+ *  O QUE vai junto com a fila sem abrir nada. Imagem é a própria imagem;
+ *  documento é o ícone do tipo, o mesmo do fio e da árvore. Decorativo: quem
+ *  diz "2 imagens e 1 documento" é o título do segmento. */
+export function MiniaturaDaTira({ anexo }: { anexo: Attachment }) {
+  const url = useUrlDoAnexo(anexo)
+  return (
+    <span aria-hidden className="grid size-[18px] shrink-0 place-items-center overflow-hidden rounded-sm border bg-background">
+      {anexo.kind === "image" && url ? (
+        <img src={url} alt="" draggable={false} className="size-full object-cover" />
+      ) : anexo.kind === "image" ? (
+        <span className="size-full animate-pulse bg-secondary" />
+      ) : (
+        <FileIcon path={anexo.name} size={12} />
       )}
     </span>
   )

@@ -1,6 +1,6 @@
 # Planos e etapas: a leitura do fim do turno
 
-Escopo: `tasks.ts`, `TaskChecklist`, `LivePlanCard`, marcos de plano em
+Escopo: `tasks.ts`, `TaskChecklist`, a tira do plano na `BaseDoComposer` (era o `LivePlanCard`, ADR-247), marcos de plano em
 `MessageList` e o plano de cada pedido no histórico da aba Conversa
 (`HistoricoDePedidos`). Regras gerais ficam no
 `AGENTS.md` da raiz. Decisão: ADR-171.
@@ -15,7 +15,7 @@ Escopo: `tasks.ts`, `TaskChecklist`, `LivePlanCard`, marcos de plano em
 - `TaskChecklist` exige `live` para animar `in_progress` ou mostrar o
   `activeForm`. Sem processo vivo, `taskStatusForDisplay` também deixa o replay
   sem terminal estático. O default de `live` é `false`.
-- O card junto ao composer exige plano corrente sem terminal e runtime em
+- A tira do plano junto ao composer exige plano corrente sem terminal e runtime em
   execução/finalização. O marco histórico usa o mesmo plano derivado. A aba
   Conversa liga cada plano ao pedido que o criou (`turnId` de `taskPlansOf`,
   ADR-227): o plano antigo mora no pedido dele e um novo turno nunca reanima
