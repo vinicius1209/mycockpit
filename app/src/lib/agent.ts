@@ -1,3 +1,4 @@
+import { pastasDoTurno as pastasCitadas } from "@/lib/arquivoCitado"
 import type { CausaDoCorte } from "@/lib/corte"
 import type { DeferredKind } from "@/lib/work"
 import { invoke, Channel } from "@tauri-apps/api/core"
@@ -182,6 +183,10 @@ export async function runAgent(
   // que descontar (capability, nunca nome de motor).
   const costBaseline =
     resume && agentDef(agent)?.reportsCost ? await carregarCustoDaSessao(resume) : null
+  // ADR-252: a pasta de cada arquivo solto de fora do projeto vale só neste
+  // envio. Sai da moldura do próprio prompt (o acesso é exatamente o que ele
+  // manda ler) e só vai para motor que recebe pasta extra (capability).
+  const pastasDoTurno = agentDef(agent)?.pastasExtras ? pastasCitadas(prompt, cwd) : []
   // Thread desta execução: o `resume` é a aposta; o `session` confirma (ou
   // desmente, quando o resume falhou e o CLI abriu outra).
   let threadId = resume
@@ -223,6 +228,7 @@ export async function runAgent(
     mcpRecoveries: options.mcpRecoveries ?? [],
     usageBaseline: baseline,
     costBaseline,
+    pastasDoTurno,
     onEvent: channel,
   })
 }

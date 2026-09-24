@@ -10,7 +10,6 @@
 // e são RE-EXPORTADAS daqui (quem já importava de "@/lib/agents" não mudou).
 
 import type { Destination } from "@/lib/types"
-import type { AgentProbe } from "@/lib/detect"
 import {
   AGY_MODELS,
   CLAUDE_EFFORTS,
@@ -67,6 +66,8 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
     // modo print (empírico 04/08/2026, agent-runner §7.1).
     nativeCompact: true,
+    // `--add-dir` por pasta (adapters.rs).
+    pastasExtras: true,
     // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
     // real capturado 12/08/2026).
     usageWindow: "statusline",
@@ -136,6 +137,8 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: `/compact` é só do TUI; `codex exec` não expõe (help
     // verificado 04/08/2026) → /compactar renova a sessão com recap.
     nativeCompact: false,
+    // `--add-dir` como opção do `exec`, vale no resume.
+    pastasExtras: true,
     // codex 0.146: account/rateLimits/read no app-server read-only (provado
     // na mão 12/08/2026).
     usageWindow: "rpc",
@@ -197,6 +200,8 @@ export const AGENTS: AgentDef[] = [
     reportsCost: false,
     cumulativeUsage: true,
     nativeCompact: false,
+    // `--add-dir` por pasta.
+    pastasExtras: true,
     // agy 1.1.13: `-p "/usage"` devolve `command.data` (grupos × buckets, com
     // fração, janela e reset) e não gasta turno nenhum. Medido 16/08/2026.
     usageWindow: "print",
@@ -243,6 +248,8 @@ export const AGENTS: AgentDef[] = [
     reportsCost: true,
     cumulativeUsage: false,
     nativeCompact: false,
+    // nenhum canal de pasta extra no `run` nem no ACP.
+    pastasExtras: false,
     usageWindow: null,
     usagePoll: null,
     hooksStatus: false,
@@ -281,6 +288,8 @@ export const AGENTS: AgentDef[] = [
     reportsCost: false,
     cumulativeUsage: false,
     nativeCompact: false,
+    // sem motor, sem pasta.
+    pastasExtras: false,
     usageWindow: null,
     usagePoll: null,
     hooksStatus: false,
@@ -301,61 +310,9 @@ export function agentDef(id: string): AgentDef | undefined {
 // Os seletores por capability ("quais motores têm X") moram em
 // `lib/agentRoster.ts` — mesma regra, arquivo separado por causa da catraca.
 
-/** "ready"=usável · "installed-not-authenticated"=instalado e DESLOGADO
- *  (probe.auth "missing" — NÃO usável até logar) · "installed-auth-unknown"=
- *  instalado, auth incerta (usável com aviso; cobre "unknown" e "na" — o agy
- *  não tem comando de auth e nunca reporta "missing", então "deslogado" não é
- *  prometido pra ele) · "missing"=não instalado · "not-integrated"=o app não
- *  integra. */
-export type Availability =
-  | "ready"
-  | "installed-not-authenticated"
-  | "installed-auth-unknown"
-  | "missing"
-  | "not-integrated"
-
-/** Compõe o registry ESTÁTICO (o app integra este agent?) com a detecção em
- *  RUNTIME (existe nesta máquina?). SEM snapshot → "installed-auth-unknown":
- *  sem evidência a mesa não acende "pronto" (era "ready" e mentia quando o
- *  detect_agents falhava no boot), mas segue USÁVEL — degradação honesta, não
- *  bloqueio de quem nunca rodou a detecção. O registry `AGENTS` segue sendo a
- *  fonte de verdade de identidade/capacidade. */
-export function availability(
-  id: string,
-  detected: Record<string, AgentProbe>,
-): Availability {
-  const def = agentDef(id)
-  if (!def || !def.available) return "not-integrated"
-  const probe = detected[id]
-  if (!probe) return "installed-auth-unknown"
-  if (!probe.installed) return "missing"
-  if (probe.auth === "ok") return "ready"
-  if (probe.auth === "missing") return "installed-not-authenticated"
-  return "installed-auth-unknown"
-}
-
-/** Guarda de DESPACHO (follow-up F-A do Sprint 0): motivo pt-BR pra NÃO mandar
- *  um turno pro agent, ou null se o despacho pode seguir. Mandar turno pra CLI
- *  ausente/deslogada só rende erro cru no fim do run — melhor abortar ANTES do
- *  start com o motivo. "ready" e "installed-auth-unknown" passam (auth incerta
- *  é usável com aviso — degradação honesta, inclui o agy e o caso sem probe). */
-export function dispatchBlockReason(
-  id: string,
-  detected: Record<string, AgentProbe>,
-): string | null {
-  const label = agentDef(id)?.label ?? id
-  switch (availability(id, detected)) {
-    case "missing":
-      return `${label} não está instalado nesta máquina. Instale a CLI para enviar.`
-    case "not-integrated":
-      return `${label} ainda não é integrado ao app.`
-    case "installed-not-authenticated":
-      return `${label} está sem login. Entre pelo terminal da CLI e tente de novo.`
-    case "ready":
-    case "installed-auth-unknown":
-      return null
-  }
-}
+// Disponibilidade e guarda de despacho moram em `lib/agentAvailability.ts`
+// (catraca de tamanho); reexportadas aqui para nenhum chamador mudar.
+export { availability, dispatchBlockReason, type Availability } from "./agentAvailability"
 
 /** Destinos do console de comando (deriva direto do registry). */
 export const DESTINATIONS: Destination[] = AGENTS.map((a) => ({

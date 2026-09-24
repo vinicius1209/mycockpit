@@ -33,6 +33,15 @@ export function parseBlocos(raw: string): BlocoDoRascunho[] {
           typeof b.trecho === "string"
         )
       }
+      // Arquivo solto (ADR-252): só o caminho mora no rascunho.
+      if (b.tipo === "arquivo") {
+        return (
+          typeof b.id === "string" &&
+          typeof b.caminho === "string" &&
+          typeof b.pasta === "boolean" &&
+          typeof b.bytes === "number"
+        )
+      }
       // Colagem grande (capricho R7): o conteúdo inteiro mora no rascunho.
       return b.tipo === "colagem" && typeof b.id === "string" && typeof b.texto === "string"
     })

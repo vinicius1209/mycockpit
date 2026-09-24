@@ -30,6 +30,7 @@
 // formato de `lib/citacao.ts`: é o único ponto por onde passam envio, envio
 // forçado e fila. Sem texto escrito, a citação sozinha não vira mensagem.
 
+import { textoComArquivos, type BlocoArquivo } from "@/lib/arquivoCitado"
 import { textoComCitacoes, type BlocoDoRascunho } from "@/lib/citacao"
 import { textoComColagens, type BlocoColagem } from "@/lib/colagem"
 import { textoComMarcacoes, type BlocoMarcacao } from "@/lib/marcacao"
@@ -43,7 +44,9 @@ export function textoDoEnvio(
   // Colagens grandes (capricho R7) vão no fim, depois do que foi escrito.
   const colagens = (blocos ?? []).filter((b): b is BlocoColagem => b.tipo === "colagem")
   const marcacoes = (blocos ?? []).filter((b): b is BlocoMarcacao => b.tipo === "marcacao")
-  // Marcação de região (navegador R4) fecha a fila: a descrição é o material
-  // mais específico do pedido, e a imagem dela já vai como anexo.
-  return textoComMarcacoes(textoComColagens(texto, colagens), marcacoes)
+  const arquivos = (blocos ?? []).filter((b): b is BlocoArquivo => b.tipo === "arquivo")
+  // Marcação de região (navegador R4) vem depois das colagens: a descrição é o
+  // material mais específico do pedido, e a imagem dela já vai como anexo. Os
+  // arquivos soltos (ADR-252) fecham a fila, e a moldura do prompt os lê primeiro.
+  return textoComArquivos(textoComMarcacoes(textoComColagens(texto, colagens), marcacoes), arquivos)
 }

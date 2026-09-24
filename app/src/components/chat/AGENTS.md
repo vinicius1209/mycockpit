@@ -216,6 +216,13 @@ nesses gestos que apagava o que a pessoa estava digitando (K1).
   `parseBlocos`, chip em `BlocosDoRascunho.tsx`, formato + moldura em `lib/`.
 - Arquivo do sistema chega pelo evento do Tauri (`SolturaNoComposer`), nunca
   pelo `drop` do HTML5; o alvo é o `[data-composer-card]` do `ComposerShell`.
+- Arquivo solto que não é anexo (imagem e PDF seguem anexo) vira CARTÃO, bloco
+  `arquivo` do rascunho (ADR-252), venha do Finder ou da árvore. Nunca volte a
+  despejar `@caminho` no texto. No envio ele é o ÚLTIMO envelope
+  (`textoDoEnvio`), então é o primeiro a sair na bolha e na moldura do prompt
+  (`emoldurarArquivos` em `withNotasDoTurno`). A pasta do arquivo de fora do
+  projeto vale só naquele envio: `runAgent` a lê da moldura e manda
+  `pastasDoTurno`, só para motor com `pastasExtras`.
 
 ## Mantenha este arquivo verdadeiro
 

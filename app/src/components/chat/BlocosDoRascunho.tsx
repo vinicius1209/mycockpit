@@ -1,6 +1,6 @@
 // Os blocos do rascunho que moram FORA do editor: citação (capricho R4),
-// colagem grande (R7) e região marcada no navegador (navegador R4). Chips na
-// faixa acima do input, junto dos anexos.
+// colagem grande (R7), região marcada no navegador (navegador R4) e arquivo
+// solto (ADR-252). Chips na faixa acima do input, junto dos anexos.
 
 import { ClipboardPaste, CornerDownRight, Crosshair, MessageSquareQuote, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,11 @@ import { horaDaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/ci
 import { rotuloDaColagem, type BlocoColagem } from "@/lib/colagem"
 import { rotuloDaMarcacao, type BlocoMarcacao } from "@/lib/marcacao"
 import { rotuloDoParecer, type BlocoParecer } from "@/lib/parecerTrazido"
+import { toast } from "sonner"
+import { CartaoDeArquivo } from "@/components/chat/CartaoDeArquivo"
+import { useContextoDoCartao } from "@/components/chat/useContextoDoCartao"
+import { gravarPastaLiberada } from "@/lib/dirGate"
+import { useApp } from "@/store/app"
 import { useComposerDrafts } from "@/store/composerDrafts"
 
 function Remover({ rotulo, onRemove }: { rotulo: string; onRemove: () => void }) {
@@ -159,12 +164,32 @@ function ParecerChip({
   )
 }
 
+/** "Liberar sempre" do cartão de arquivo: grava no config do projeto ativo. */
+async function liberarSempre(dir: string) {
+  const app = useApp.getState()
+  const project = app.projects.find((p) => p.id === app.activeProjectId)
+  if (!project) return
+  const feito = await gravarPastaLiberada(project, dir)
+  if (feito === "liberada") toast.success("Pasta liberada para este projeto.")
+}
+
 export function BlocosDoRascunho({ convId, blocos }: { convId: string; blocos: BlocoDoRascunho[] }) {
   const drafts = useComposerDrafts.getState
+  const contexto = useContextoDoCartao(convId)
   return (
     <>
       {blocos.map((b, i) =>
-        b.tipo === "citacao" ? (
+        b.tipo === "arquivo" ? (
+          <CartaoDeArquivo
+            key={b.id}
+            caminho={b.caminho}
+            pasta={b.pasta}
+            bytes={b.bytes}
+            contexto={contexto}
+            onRemover={() => drafts().removeBloco(convId, i)}
+            onLiberarSempre={(dir) => void liberarSempre(dir)}
+          />
+        ) : b.tipo === "citacao" ? (
           <CitacaoChip key={`${b.itemId}:${i}`} bloco={b} onRemove={() => drafts().removeBloco(convId, i)} />
         ) : b.tipo === "parecer" ? (
           <ParecerChip

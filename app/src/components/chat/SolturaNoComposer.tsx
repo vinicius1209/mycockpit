@@ -18,9 +18,9 @@ import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { toast } from "sonner"
 import { attachPath, type Attachment } from "@/lib/attachments"
+import { blocosComArquivos } from "@/lib/arquivoCitado"
 import { isTauri } from "@/lib/db"
 import { dentroDoRetangulo, planoDaSoltura, rotuloDaSoltura, type CaminhoSolto } from "@/lib/soltura"
-import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 
@@ -35,16 +35,11 @@ function cartaoDoComposer(): HTMLElement | null {
 
 async function soltar(paths: string[]): Promise<void> {
   const convId = useChat.getState().activeId
-  const app = useApp.getState()
-  const projectPath = app.projects.find((p) => p.id === app.activeProjectId)?.path ?? null
   if (!convId || paths.length === 0) return
   const drafts = useComposerDrafts.getState()
   const atual = drafts.byConv[convId]
   const itens = await invoke<CaminhoSolto[]>("caminhos_soltos", { paths })
-  const plano = planoDaSoltura(itens, {
-    projectPath,
-    anexosAtuais: atual?.attachments.length ?? 0,
-  })
+  const plano = planoDaSoltura(itens, { anexosAtuais: atual?.attachments.length ?? 0 })
   const novos: Attachment[] = []
   for (const path of plano.anexos) {
     try {
@@ -60,10 +55,10 @@ async function soltar(paths: string[]): Promise<void> {
       .getState()
       .setAttachments(convId, [...(agora?.attachments ?? []), ...novos.filter((a) => !vistos.has(a.path))])
   }
-  if (plano.mencoes.length > 0) {
-    const texto = useComposerDrafts.getState().byConv[convId]?.text ?? ""
-    const refs = plano.mencoes.join(" ")
-    useComposerDrafts.getState().setText(convId, texto.trim() ? `${texto.trimEnd()} ${refs}` : refs)
+  if (plano.arquivos.length > 0) {
+    // O resto vira cartão (ADR-252), não texto no meio do pedido.
+    const blocos = useComposerDrafts.getState().byConv[convId]?.blocos ?? []
+    useComposerDrafts.getState().setBlocos(convId, blocosComArquivos(blocos, plano.arquivos))
   }
   for (const aviso of plano.recusados) toast.error(aviso)
 }

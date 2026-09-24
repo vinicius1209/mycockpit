@@ -1,15 +1,17 @@
 // Soltar no composer: regras puras.
 //
 // De FORA (capricho PRD R6): imagem e PDF viram anexo (a mesma allowlist do
-// Rust); o resto vira menção `@caminho`, relativo quando mora no projeto. Pasta
-// vira menção de pasta.
+// Rust); o resto vira CARTÃO de arquivo (ADR-252), bloco do rascunho com o
+// caminho absoluto. Pasta vira cartão de pasta. Antes o resto virava menção
+// `@caminho` em texto cru: o mesmo gesto dava dois resultados.
 //
 // De DENTRO (R8): o que já está na janela não precisa passar pelo disco.
-// Arquivo da árvore vira menção; texto selecionado vira bloco do rascunho
-// (colagem grande) ou texto direto, pela MESMA régua do colar (R7), senão o
-// mesmo conteúdo teria dois destinos dependendo do gesto.
+// Arquivo da árvore vira o mesmo cartão; texto selecionado vira bloco do
+// rascunho (colagem grande) ou texto direto, pela MESMA régua do colar (R7),
+// senão o mesmo conteúdo teria dois destinos dependendo do gesto.
 
 import { MAX_ATTACH_BYTES, MAX_ATTACH_COUNT, MAX_ATTACH_MB } from "@/lib/attachments"
+import type { BlocoArquivo } from "@/lib/arquivoCitado"
 import { ehColagemGrande } from "@/lib/colagem"
 import type { CargaArrastada } from "@/lib/arrastoInterno"
 
@@ -22,8 +24,8 @@ export interface CaminhoSolto {
 export interface PlanoDaSoltura {
   /** Caminhos absolutos que vão para `attachPath`, na ordem soltada. */
   anexos: string[]
-  /** Texto das menções, na ordem soltada. */
-  mencoes: string[]
+  /** Cartões de arquivo, na ordem soltada, sem repetir caminho. */
+  arquivos: BlocoArquivo[]
   /** Frases prontas para avisar o que ficou de fora. */
   recusados: string[]
 }
@@ -41,19 +43,17 @@ function extensao(path: string): string {
   return ponto > 0 ? nome.slice(ponto + 1).toLowerCase() : ""
 }
 
-/** `@src/app.ts` dentro do projeto, `@/caminho/absoluto` fora dele. Caminho
- *  com espaço vai entre aspas, senão a menção termina no primeiro espaço. */
-export function mencaoDoCaminho(path: string, projectPath: string | null): string {
-  const raiz = projectPath?.replace(/\/+$/, "")
-  const relativo = raiz && path.startsWith(`${raiz}/`) ? path.slice(raiz.length + 1) : path
-  return /\s/.test(relativo) ? `@"${relativo}"` : `@${relativo}`
+/** O cartão de um caminho absoluto. O id sai do caminho: soltar o mesmo
+ *  arquivo duas vezes dá o mesmo cartão, e o teste não depende de sorteio. */
+export function cartaoDoCaminho(caminho: string, pasta: boolean, bytes: number): BlocoArquivo {
+  return { tipo: "arquivo", id: `arquivo:${caminho}`, caminho, pasta, bytes }
 }
 
 export function planoDaSoltura(
   itens: readonly CaminhoSolto[],
-  contexto: { projectPath: string | null; anexosAtuais: number },
+  contexto: { anexosAtuais: number },
 ): PlanoDaSoltura {
-  const plano: PlanoDaSoltura = { anexos: [], mencoes: [], recusados: [] }
+  const plano: PlanoDaSoltura = { anexos: [], arquivos: [], recusados: [] }
   let anexos = contexto.anexosAtuais
   for (const item of itens) {
     if (!item.pasta && ANEXAVEIS.has(extensao(item.path))) {
@@ -67,8 +67,9 @@ export function planoDaSoltura(
       }
       continue
     }
-    const mencao = mencaoDoCaminho(item.path, contexto.projectPath)
-    if (!plano.mencoes.includes(mencao)) plano.mencoes.push(mencao)
+    if (!plano.arquivos.some((a) => a.caminho === item.path)) {
+      plano.arquivos.push(cartaoDoCaminho(item.path, item.pasta, item.bytes))
+    }
   }
   return plano
 }
@@ -104,7 +105,7 @@ export function anexosComOutro<T extends { path: string }>(
 
 export type PlanoDoArrasto =
   | { acao: "anexo"; anexo: { path: string; name: string } }
-  | { acao: "mencao"; texto: string }
+  | { acao: "arquivo"; bloco: BlocoArquivo }
   | { acao: "colagem"; texto: string }
   | { acao: "texto"; texto: string }
   | { acao: "nada" }
@@ -112,10 +113,13 @@ export type PlanoDoArrasto =
 /** O que soltar no composer faz com cada carga arrastada de dentro do app.
  *  Carga de reordenação (projeto, conversa) não tem o que fazer aqui: o
  *  composer recusa em silêncio, que é o comportamento honesto para um gesto
- *  que a pessoa começou em outro contexto. */
-export function planoDoArrasto(carga: CargaArrastada): PlanoDoArrasto {
+ *  que a pessoa começou em outro contexto. O arquivo da árvore chega com o
+ *  caminho relativo à raiz: `projectPath` o faz absoluto. */
+export function planoDoArrasto(carga: CargaArrastada, projectPath: string | null = null): PlanoDoArrasto {
   if (carga.tipo === "arquivo") {
-    return { acao: "mencao", texto: mencaoDoCaminho(carga.caminho, null) }
+    const raiz = projectPath?.replace(/\/+$/, "")
+    const caminho = raiz && !carga.caminho.startsWith("/") ? `${raiz}/${carga.caminho}` : carga.caminho
+    return { acao: "arquivo", bloco: cartaoDoCaminho(caminho, carga.pasta, 0) }
   }
   if (carga.tipo === "imagem") {
     return { acao: "anexo", anexo: { path: carga.anexo.path, name: carga.anexo.name } }
@@ -133,7 +137,7 @@ export function rotuloDoArrasto(carga: CargaArrastada): string | null {
   const plano = planoDoArrasto(carga)
   if (plano.acao === "nada") return null
   if (plano.acao === "anexo") return `Solte para anexar ${plano.anexo.name}`
-  if (plano.acao === "mencao") return `Solte para mencionar ${plano.texto.replace(/^@"?|"$/g, "")}`
+  if (plano.acao === "arquivo") return `Solte para anexar ${nomeDe(plano.bloco.caminho)}`
   return plano.acao === "colagem"
     ? "Solte para anexar o trecho como bloco"
     : "Solte para citar o trecho"

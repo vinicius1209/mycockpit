@@ -39,23 +39,16 @@ export type ResultadoDaLiberacao =
   /** Persistiu e reenviou o último pedido num turno novo. */
   | "reenviada"
 
-/** Libera a pasta detectada e, SÓ com a conversa parada, reenvia o último
- *  pedido do usuário. `reenviar` recebe o texto e é chamado no máximo uma vez;
- *  quem passa é o dono do envio (o `ChatPanel`), com origem de SISTEMA. */
-export async function allowBlockedDir(args: {
-  convId: string | null
-  project: Project
-  dir: string
-  reenviar: (texto: string) => void
-}): Promise<ResultadoDaLiberacao> {
-  const { convId, project, dir } = args
+/** A primeira metade da liberação, sozinha: grava a pasta no `extra_dirs` do
+ *  projeto. É também o "Liberar sempre" do cartão de arquivo solto (ADR-252),
+ *  que não reenvia nada: o pedido ainda nem saiu. */
+export async function gravarPastaLiberada(
+  project: Project,
+  dir: string,
+): Promise<"ja-liberada" | "falha-ao-salvar" | "liberada"> {
   const app = useApp.getState()
   const cur = app.projectConfigs[project.id]
-  if (cur?.extraDirs?.includes(dir)) {
-    // já liberado (corrida) → só limpa o aviso.
-    if (convId) useChat.getState().clearBlockedDir(convId)
-    return "ja-liberada"
-  }
+  if (cur?.extraDirs?.includes(dir)) return "ja-liberada"
   const next = [...(cur?.extraDirs ?? []), dir]
   try {
     await writeProjectConfig(project.path, { extraDirs: next })
@@ -72,6 +65,26 @@ export async function allowBlockedDir(args: {
     mode: cur?.mode ?? "linear",
     extraDirs: next,
   })
+  return "liberada"
+}
+
+/** Libera a pasta detectada e, SÓ com a conversa parada, reenvia o último
+ *  pedido do usuário. `reenviar` recebe o texto e é chamado no máximo uma vez;
+ *  quem passa é o dono do envio (o `ChatPanel`), com origem de SISTEMA. */
+export async function allowBlockedDir(args: {
+  convId: string | null
+  project: Project
+  dir: string
+  reenviar: (texto: string) => void
+}): Promise<ResultadoDaLiberacao> {
+  const { convId, project, dir } = args
+  const gravada = await gravarPastaLiberada(project, dir)
+  if (gravada === "ja-liberada") {
+    // já liberado (corrida) → só limpa o aviso.
+    if (convId) useChat.getState().clearBlockedDir(convId)
+    return "ja-liberada"
+  }
+  if (gravada === "falha-ao-salvar") return "falha-ao-salvar"
   if (convId) useChat.getState().clearBlockedDir(convId)
   // Estado FRESCO (o write acima é `await`: um turno pode ter começado, ou o
   // que estava rodando ainda não acabou). Com turno vivo a pasta fica valendo e

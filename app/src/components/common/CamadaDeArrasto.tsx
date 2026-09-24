@@ -23,6 +23,7 @@ import {
   type AlvoDoArrasto,
   type CargaArrastada,
 } from "@/lib/arrastoInterno"
+import { blocosComArquivos } from "@/lib/arquivoCitado"
 import { anexosComOutro, planoDoArrasto, rotuloDoArrasto } from "@/lib/soltura"
 import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 import { useApp } from "@/store/app"
@@ -119,8 +120,15 @@ function soltarNoComposer(carga: CargaArrastada): void {
     toast.error("Abra uma conversa para soltar aqui.")
     return
   }
-  const plano = planoDoArrasto(carga)
+  const app = useApp.getState()
+  const projectPath = app.projects.find((p) => p.id === app.activeProjectId)?.path ?? null
+  const plano = planoDoArrasto(carga, projectPath)
   const drafts = useComposerDrafts.getState()
+  if (plano.acao === "arquivo") {
+    // O arquivo da árvore vira o mesmo cartão do arquivo solto do Finder (ADR-252).
+    drafts.setBlocos(convId, blocosComArquivos(drafts.byConv[convId]?.blocos ?? [], [plano.bloco]))
+    return
+  }
   if (plano.acao === "colagem") {
     drafts.addColagem(convId, plano.texto)
     return
@@ -138,7 +146,7 @@ function soltarNoComposer(carga: CargaArrastada): void {
     drafts.setAttachments(convId, anexos)
     return
   }
-  if (plano.acao === "mencao" || plano.acao === "texto") drafts.appendText(convId, plano.texto)
+  if (plano.acao === "texto") drafts.appendText(convId, plano.texto)
 }
 
 function soltarNaLinha(carga: CargaArrastada, alvoId: string): void {

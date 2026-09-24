@@ -13,6 +13,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
+#[path = "attachments_pastas_do_turno.rs"]
+pub mod pastas_do_turno;
+
 /// Tipo do anexo, derivado do MIME sniffado. `render_attachments` do adapter casa
 /// com isso; `Other` nunca deve chegar nos adapters (allowlist barra antes).
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -411,6 +414,31 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
         Err(_) => return (Vec::new(), atts.len()),
     };
     resolve_live_em(&base, &root, atts)
+}
+
+/// Os anexos que chegam ao adapter neste run: rel→abs, descarta os sumidos e
+/// os que o motor não lê, avisando no fio de cada um (saiu de `agent.rs` pela
+/// catraca de tamanho; a regra é a mesma).
+pub fn do_run(
+    app: &AppHandle,
+    atts: Vec<Attachment>,
+    agent: &str,
+    suporta: impl Fn(&AttachmentKind) -> bool,
+    avisar: impl Fn(String),
+) -> Vec<Attachment> {
+    let (live, missing) = resolve_live(app, atts);
+    let (used, unsupported): (Vec<_>, Vec<_>) =
+        live.into_iter().partition(|a| suporta(&a.kind));
+    if missing > 0 {
+        avisar(format!("{missing} anexo(s) expiraram e não foram enviados."));
+    }
+    for a in &unsupported {
+        avisar(format!(
+            "\"{}\" não é suportado pelo {agent} e foi ignorado.",
+            a.name
+        ));
+    }
+    used
 }
 
 /// Núcleo puro do `resolve_live`: `base` é o app_data, `root` a raiz de anexos.

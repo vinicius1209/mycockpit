@@ -426,6 +426,9 @@ pub async fn run_agent(
     usage_baseline: Option<CumulativeUsage>,
     // ADR-226: custo acumulado que a SESSÃO retomada já tinha reportado.
     cost_baseline: Option<f64>,
+    // ADR-252: pastas dos arquivos soltos de fora do projeto, só para este run.
+    // Option = invoke antigo → None (nenhuma pasta a mais).
+    pastas_do_turno: Option<Vec<String>>,
     attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
@@ -460,23 +463,15 @@ pub async fn run_agent(
     // agora que a máquina para de poder dormir.
     registry.2.reavalia(registry.ativos());
     // anexos: rel→abs + descarta sumidos; particiona por capacidade do agent.
-    let (live, missing) = attachments::resolve_live(&app, attachments);
-    let (used, unsupported): (Vec<_>, Vec<_>) = live
-        .into_iter()
-        .partition(|a| adapter.supports_attachment(&a.kind));
-    if missing > 0 {
-        let _ = on_event.send(AgentEvent::Notice {
-            message: format!("{missing} anexo(s) expiraram e não foram enviados."),
-        });
-    }
-    for a in &unsupported {
-        let _ = on_event.send(AgentEvent::Notice {
-            message: format!(
-                "\"{}\" não é suportado pelo {agent} e foi ignorado.",
-                a.name
-            ),
-        });
-    }
+    let used = attachments::do_run(
+        &app,
+        attachments,
+        &agent,
+        |k| adapter.supports_attachment(k),
+        |message| {
+            let _ = on_event.send(AgentEvent::Notice { message });
+        },
+    );
     // A UI permite turno só com anexo: texto vazio é legítimo quando ao menos
     // um arquivo vivo e suportado chega ao adapter. Sem nenhum conteúdo útil,
     // aborta antes do spawn; stdin é null e omitir o prompt mudaria o modo da CLI.
@@ -535,8 +530,12 @@ pub async fn run_agent(
         permission = adapters::Permission::Leitura;
     }
     // pastas extras liberadas: lidas do .frota/config.toml do projeto que
-    // contém o cwd (cobre worktrees) → viram --add-dir. ANTES de mover cwd.
-    let extra_dirs = crate::frota_dir::resolve_extra_dirs(&cwd);
+    // contém o cwd (cobre worktrees), mais as só deste envio (ADR-252) → viram
+    // --add-dir. ANTES de mover cwd.
+    let extra_dirs = attachments::pastas_do_turno::juntar(
+        crate::frota_dir::resolve_extra_dirs(&cwd),
+        pastas_do_turno.unwrap_or_default(),
+    );
     // Interação PENDENTE inline (capability `inline_interaction`, hoje só o
     // Claude): sobe um socket por-run + registra o listener que vira cada
     // pedido num evento `interaction://request`. Cobre 2 kinds: `approval` (só

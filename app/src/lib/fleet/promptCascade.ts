@@ -15,6 +15,7 @@
 // mencionar duas vezes é decisão). Intenções iguais, gatilhos diferentes.
 
 import { withNotes } from "@/lib/notes"
+import { emoldurarArquivos } from "@/lib/arquivoCitado"
 import { emoldurarCitacoes } from "@/lib/citacao"
 import { emoldurarColagens } from "@/lib/colagem"
 import { emoldurarMarcacoes } from "@/lib/marcacao"
@@ -55,8 +56,10 @@ export function withNotasDoTurno(
   texto: string,
   attachments: readonly Attachment[] = [],
 ): { prompt: string; attachments: Attachment[] } {
-  // Citações (capricho R4) e colagens grandes (R7) viram moldura de dado antes das notas.
-  const bloco = withNotasDoBloco(withNotes(convId, items, emoldurarMarcacoes(emoldurarColagens(emoldurarCitacoes(texto)))), { projectId, convId })
+  // Citações (capricho R4), colagens grandes (R7), marcações e arquivos soltos
+  // (ADR-252) viram moldura de dado antes das notas.
+  const material = emoldurarArquivos(texto, (corpo) => emoldurarMarcacoes(emoldurarColagens(emoldurarCitacoes(corpo))))
+  const bloco = withNotasDoBloco(withNotes(convId, items, material), { projectId, convId })
   return { prompt: bloco.prompt, attachments: juntarAnexos(attachments, bloco.anexos) }
 }
 

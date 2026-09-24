@@ -11,6 +11,9 @@ import { usePresets } from "@/store/presets"
 import { useEspecialistas } from "@/store/especialistas"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { CartaoDeArquivo } from "@/components/chat/CartaoDeArquivo"
+import { useContextoDoCartao } from "@/components/chat/useContextoDoCartao"
+import { blocoDoArquivoNoTexto, separarArquivos } from "@/lib/arquivoCitado"
 import { blocoDaCitacaoNoTexto, itemDaCitacao, separarCitacoes } from "@/lib/citacao"
 import { rotuloDaColagem, separarColagens } from "@/lib/colagem"
 import {
@@ -70,13 +73,22 @@ export function UserMessageBubble({
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
   // Citação enviada (capricho R4) vira linha ↳ acima do texto, nunca o formato cru.
-  const { citacoes, corpo, colagens, marcacoes } = useMemo(() => {
-    const semCitacoes = separarCitacoes(text)
+  const contexto = useContextoDoCartao(useChat((s) => s.activeId))
+  const { citacoes, corpo, colagens, marcacoes, arquivos } = useMemo(() => {
+    // Arquivos soltos (ADR-252) fecham a fila de envelopes: saem primeiro.
+    const semArquivos = separarArquivos(text)
+    const semCitacoes = separarCitacoes(semArquivos.corpo)
     // Colagem grande (capricho R7) e região marcada (navegador R4) moram no fim
     // do texto; viram bloco recolhido, nunca o formato cru.
     const semMarcacoes = separarMarcacoes(semCitacoes.corpo)
     const { corpo, colagens } = separarColagens(semMarcacoes.corpo)
-    return { citacoes: semCitacoes.citacoes, corpo, colagens, marcacoes: semMarcacoes.marcacoes }
+    return {
+      citacoes: semCitacoes.citacoes,
+      corpo,
+      colagens,
+      marcacoes: semMarcacoes.marcacoes,
+      arquivos: semArquivos.arquivos,
+    }
   }, [text])
 
   function handleEdit() {
@@ -85,11 +97,12 @@ export function UserMessageBubble({
 
     const drafts = useComposerDrafts.getState()
     drafts.setText(convId, corpo)
-    if (citacoes.length > 0 || colagens.length > 0 || marcacoes.length > 0) {
+    if (citacoes.length > 0 || colagens.length > 0 || marcacoes.length > 0 || arquivos.length > 0) {
       drafts.setBlocos(convId, [
         ...citacoes.map((c) => blocoDaCitacaoNoTexto(c)),
         ...colagens.map((texto) => ({ tipo: "colagem" as const, id: crypto.randomUUID(), texto })),
         ...marcacoes.map((descricao) => blocoDaMarcacaoNoTexto(descricao)),
+        ...arquivos.map((a) => blocoDoArquivoNoTexto(a)),
       ])
     }
     const inputEl = document.querySelector<HTMLElement>('[data-composer="console"]')
@@ -153,6 +166,14 @@ export function UserMessageBubble({
           <span className="min-w-0 truncate italic">«{c.trecho.replace(/\s+/g, " ")}»</span>
         </button>
       ))}
+      {arquivos.length > 0 && (
+        // O cartão do arquivo, nunca o caminho cru (ADR-252), como a citação.
+        <div className="mb-1 flex max-w-full flex-wrap gap-1.5">
+          {arquivos.map((a) => (
+            <CartaoDeArquivo key={a.caminho} caminho={a.caminho} pasta={a.pasta} bytes={0} contexto={contexto} />
+          ))}
+        </div>
+      )}
       <div
         data-selectable
         className="max-w-full rounded-2xl rounded-tl-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"

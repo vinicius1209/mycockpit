@@ -16,3 +16,10 @@ describe("colagem lida do banco", () => {
     expect(parseBlocos(JSON.stringify([boa, { tipo: "colagem", id: "c2" }]))).toEqual([boa])
   })
 })
+
+describe("cartão de arquivo lido do banco (ADR-252)", () => {
+  it("cartão bem formado volta e sobrevive a trocar de conversa; sem caminho é descartado", () => {
+    const boa = { tipo: "arquivo", id: "arquivo:/tmp/a.ts", caminho: "/tmp/a.ts", pasta: false, bytes: 305 }
+    expect(parseBlocos(JSON.stringify([boa, { tipo: "arquivo", id: "x", pasta: false, bytes: 1 }]))).toEqual([boa])
+  })
+})

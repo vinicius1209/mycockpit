@@ -11,6 +11,7 @@
 //   (linha em branco)
 //   o que a pessoa escreveu
 
+import type { BlocoArquivo } from "@/lib/arquivoCitado"
 import type { BlocoColagem } from "@/lib/colagem"
 import type { BlocoMarcacao } from "@/lib/marcacao"
 import type { BlocoParecer } from "@/lib/parecerTrazido"
@@ -25,7 +26,7 @@ export interface BlocoCitacao {
   trecho: string
 }
 
-export type BlocoDoRascunho = BlocoCitacao | BlocoColagem | BlocoMarcacao | BlocoParecer
+export type BlocoDoRascunho = BlocoCitacao | BlocoColagem | BlocoMarcacao | BlocoParecer | BlocoArquivo
 
 /** Teto do trecho: citação é apontar, não recolar a resposta inteira. */
 export const TETO_DO_TRECHO = 600

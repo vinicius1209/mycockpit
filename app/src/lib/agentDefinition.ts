@@ -117,6 +117,11 @@ export interface AgentDef {
    *  recap (transplante para si, lib/compact). Teste-gêmeo:
    *  agents.compact.test.ts ↔ `matriz_native_compact_por_agent` no Rust. */
   nativeCompact: boolean
+  /** O motor recebe pasta extra por envio (espelho de `pastas_extras`,
+   *  ADR-252): o arquivo solto de fora do projeto é lido SÓ naquele envio.
+   *  false = vai só o caminho, e o cartão diz isso. Teste-gêmeo:
+   *  agents.pastasExtras.test.ts ↔ `matriz_pastas_extras_por_agent` no Rust. */
+  pastasExtras: boolean
   /** Fonte da JANELA DE USO do plano (% usado + reset — espelho de
    *  `usage_window`, adapters.rs): "statusline" = PUSH (o script instalado
    *  posta pro receptor local a cada turno), "rpc" = POLL (probe read-only do

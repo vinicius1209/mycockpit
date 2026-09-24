@@ -9162,3 +9162,40 @@ considerou.
      tira que ficou atrás.
 - **Consequência:** voltar para a Conversa devolve a leitura onde ela estava,
   e trocar de aba não custa nada do que se escreveu.
+
+### ADR-252 · Arquivo solto vira cartão, e o de fora do projeto é lido só naquele envio ✅
+- **Contexto (24/09/2026):** a pessoa soltou no composer o `eslint.config.js` de
+  outro projeto (`agencia_vm/vm-prospector`). A imagem que ela tinha colado virou
+  cartão com miniatura; o arquivo virou `@/Users/…/eslint.config.js` cru no meio
+  do pedido. O mesmo gesto dava dois resultados, e o arquivo de fora do projeto
+  ainda podia esbarrar no bloqueio de pasta depois do envio, com "liberar e
+  reenviar". Nas palavras dela: "espero ver cartão, independente do arquivo
+  (obviamente cuidar com arquivos maliciosos)… só queria evitar muita fricção".
+  Mock aprovado em três revisões: `docs/mocks/arquivo-solto-no-composer.html`.
+- **Decisão:**
+  1. **Todo arquivo solto que não é anexo vira cartão** (bloco `arquivo` do
+     rascunho, `lib/arquivoCitado.ts`), venha do Finder ou da árvore. Imagem e
+     PDF seguem anexo. O cartão é irmão da `MiniaturaDeAnexo`: mesma geometria,
+     mesmo `HoverCard` para cima; o detalhe tem as ações num rodapé de botões
+     `chip` ("Liberar sempre", "Mostrar na pasta").
+  2. **Nada é copiado nem executado.** No texto enviado o arquivo é o último
+     envelope (`⟦arquivo · 1 linha⟧`); a bolha mostra o cartão, nunca o caminho
+     cru, e "Editar" o devolve. No prompt vira a lista `<arquivos-citados>`,
+     emoldurada como dado (`withNotasDoTurno`).
+  3. **A pasta do arquivo de fora do projeto vale só naquele envio**, sem
+     clique: soltar é o gesto, e o cartão avisa antes (borda âmbar, "fora do
+     projeto"). `runAgent` lê as pastas da própria moldura (o acesso é exatamente
+     o que o prompt manda ler; material colado não conta) e as manda como
+     `pastasDoTurno`; o Rust valida (absoluta, existente, pasta, nunca a raiz) e
+     soma ao `extra_dirs` do run (`attachments::pastas_do_turno`). Mesmo prazo da
+     pasta de anexo (ADR-192). "Liberar sempre" grava no `.frota/config.toml`,
+     pela mesma escrita do botão de pasta bloqueada (`gravarPastaLiberada`).
+  4. **Capability nova `pastas_extras` / `pastasExtras`**, com teste-gêmeo:
+     Claude Code, Codex e Antigravity recebem `--add-dir`; o OpenCode não tem
+     canal, e o cartão diz "só o caminho" em vez de prometer uma leitura.
+- **Consequência:** arrastar deixa de despejar caminho no texto, e ler um
+  arquivo de outro projeto não pede mais reenvio. Para caber, os testes do
+  stream do OpenCode saíram de `adapters.rs`, a preparação dos anexos saiu de
+  `agent.rs` para `attachments.rs`, e disponibilidade e guarda de despacho
+  saíram de `lib/agents.ts` para `lib/agentAvailability.ts` (baselines só
+  desceram). O `@` digitado continua texto: é a pessoa escrevendo.
