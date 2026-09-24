@@ -60,6 +60,14 @@ export async function desktopRevokeRun(runId: string): Promise<void> {
   return invoke<void>("desktop_revoke_run", { runId })
 }
 
+/** A pessoa fechou o aviso de liberar o computador sem liberar (ADR-242): a
+ *  tool que espera o gesto para agora, com resposta honesta. No Rust é o mesmo
+ *  gesto do Revogar: "não, neste turno". */
+export async function desktopRecusarPedido(runId: string): Promise<void> {
+  if (!isTauri()) return
+  return invoke<void>("desktop_revoke_run", { runId })
+}
+
 /** Recurso operado por uma tool. O browser do projeto é diferente de um
  * navegador que uma integração externa pode abrir por conta própria. */
 export type ResourceKind =

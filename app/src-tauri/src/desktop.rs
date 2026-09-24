@@ -116,12 +116,15 @@ pub fn desktop_grant_run(app: tauri::AppHandle, run_id: String) -> Result<(), St
 }
 
 /// Revogar vale na hora: a posse sai do run, botões e modificadores são
-/// soltos, e a ação longa em curso para no próximo passo.
+/// soltos, e a ação longa em curso para no próximo passo. É também o "não" a um
+/// pedido ainda sem resposta (fechar o aviso, ADR-242): quem espera o gesto
+/// para agora, e um novo pedido nos próximos 30 s não reabre o aviso.
 #[tauri::command]
 pub fn desktop_revoke_run(app: tauri::AppHandle, run_id: String) -> Result<(), String> {
     use tauri::Manager;
     let broker = app.state::<std::sync::Arc<crate::desktop_broker::DesktopBroker>>();
     broker.revoke_run(&run_id);
+    broker.recusar_pedido(&run_id);
     crate::work_gateway::emit_work(
         &app,
         "desktop_state",

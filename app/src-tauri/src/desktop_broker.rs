@@ -47,6 +47,16 @@ impl Drop for DesktopPilotLease {
     }
 }
 
+/// Como terminou a espera pelo gesto da pessoa.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EsperaDoGrant {
+    Liberado,
+    Recusado,
+    /// O turno acabou enquanto esperava.
+    Encerrado,
+    Esgotou,
+}
+
 struct Pilot {
     run_id: String,
     since_ms: i64,
@@ -56,6 +66,9 @@ struct Pilot {
 pub struct DesktopBroker {
     /// Run que pediu e ainda está vivo → se a pessoa liberou.
     runs: Mutex<HashMap<String, bool>>,
+    /// Run cujo pedido a pessoa fechou sem liberar, e quando. Quem espera o
+    /// gesto só olha recusa feita DEPOIS que começou a esperar.
+    recusas: Mutex<HashMap<String, i64>>,
     active_pilot: Mutex<Option<Pilot>>,
     next_generation: AtomicU64,
     /// A liberação física (teclas e botões). Injetável para teste não
@@ -80,6 +93,7 @@ impl DesktopBroker {
     pub fn with_release(release_inputs: fn()) -> Self {
         Self {
             runs: Mutex::new(HashMap::new()),
+            recusas: Mutex::new(HashMap::new()),
             active_pilot: Mutex::new(None),
             next_generation: AtomicU64::new(1),
             release_inputs,
@@ -129,9 +143,63 @@ impl DesktopBroker {
         had
     }
 
+    /// A pessoa fechou o aviso sem liberar. Só vale para run que pediu e
+    /// ainda vive, como o grant.
+    pub fn recusar_pedido(&self, run_id: &str) {
+        let vivo = self.pedido_vivo(run_id);
+        if let (true, Ok(mut r)) = (vivo, self.recusas.lock()) {
+            r.insert(run_id.to_string(), now_ms());
+        }
+    }
+
+    pub fn recusado_desde(&self, run_id: &str, desde_ms: i64) -> bool {
+        self.recusas
+            .lock()
+            .ok()
+            .and_then(|r| r.get(run_id).copied())
+            .is_some_and(|quando| quando >= desde_ms)
+    }
+
+    /// O run pediu e ainda não terminou.
+    pub fn pedido_vivo(&self, run_id: &str) -> bool {
+        self.runs.lock().map(|runs| runs.contains_key(run_id)).unwrap_or(false)
+    }
+
+    /// Espera o gesto da pessoa sobre o pedido do run, com teto (ADR-242).
+    /// Antes a tool recusava na hora e o aceite chegava depois da chamada já
+    /// ter falhado: a pessoa liberava e o agente nunca via a tela. Nenhuma
+    /// trava atravessa o `await`: cada volta consulta e solta.
+    pub async fn esperar_grant(
+        &self,
+        run_id: &str,
+        desde_ms: i64,
+        limite: std::time::Duration,
+        passo: std::time::Duration,
+    ) -> EsperaDoGrant {
+        let fim = tokio::time::Instant::now() + limite;
+        loop {
+            if self.has_grant(run_id) {
+                return EsperaDoGrant::Liberado;
+            }
+            if self.recusado_desde(run_id, desde_ms) {
+                return EsperaDoGrant::Recusado;
+            }
+            if !self.pedido_vivo(run_id) {
+                return EsperaDoGrant::Encerrado;
+            }
+            if tokio::time::Instant::now() >= fim {
+                return EsperaDoGrant::Esgotou;
+            }
+            tokio::time::sleep(passo).await;
+        }
+    }
+
     /// Fim do run: esquece o pedido e o grant, e devolve a posse se era dele.
     /// Devolve se havia grant.
     pub fn end_run(&self, run_id: &str) -> bool {
+        if let Ok(mut r) = self.recusas.lock() {
+            r.remove(run_id);
+        }
         let had = self
             .runs
             .lock()
@@ -311,5 +379,72 @@ mod tests {
         assert!(broker.grant_run("run-1").is_err(), "turno encerrado não recebe grant");
         drop(lease);
         assert_eq!(SOLTOU_C.load(Ordering::SeqCst), 1);
+    }
+
+    fn soltar_d() {}
+
+    #[tokio::test]
+    async fn espera_o_aceite_que_chega_depois_do_pedido() {
+        let broker = Arc::new(DesktopBroker::with_release(soltar_d));
+        broker.registrar_pedido("run-1");
+        let b = broker.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            b.grant_run("run-1").unwrap();
+        });
+        let fim = broker
+            .esperar_grant("run-1", now_ms(), std::time::Duration::from_secs(2), std::time::Duration::from_millis(5))
+            .await;
+        assert_eq!(fim, EsperaDoGrant::Liberado, "o aceite depois do pedido vale para a MESMA chamada");
+    }
+
+    #[tokio::test]
+    async fn fechar_o_aviso_responde_na_hora_e_recusa_velha_nao_conta() {
+        let broker = Arc::new(DesktopBroker::with_release(soltar_d));
+        broker.registrar_pedido("run-1");
+        broker.recusar_pedido("run-1");
+        let depois = now_ms() + 1;
+        let b = broker.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            b.recusar_pedido("run-1");
+        });
+        // a recusa de ANTES da espera não encerra; a de depois, sim
+        let fim = broker
+            .esperar_grant("run-1", depois, std::time::Duration::from_secs(2), std::time::Duration::from_millis(5))
+            .await;
+        assert_eq!(fim, EsperaDoGrant::Recusado);
+    }
+
+    #[tokio::test]
+    async fn turno_que_acaba_durante_a_espera_nao_fica_pendurado() {
+        let broker = Arc::new(DesktopBroker::with_release(soltar_d));
+        broker.registrar_pedido("run-1");
+        let b = broker.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(40)).await;
+            b.end_run("run-1");
+        });
+        let fim = broker
+            .esperar_grant("run-1", now_ms(), std::time::Duration::from_secs(2), std::time::Duration::from_millis(5))
+            .await;
+        assert_eq!(fim, EsperaDoGrant::Encerrado);
+    }
+
+    #[tokio::test]
+    async fn sem_resposta_esgota_no_teto() {
+        let broker = Arc::new(DesktopBroker::with_release(soltar_d));
+        broker.registrar_pedido("run-1");
+        let fim = broker
+            .esperar_grant("run-1", now_ms(), std::time::Duration::from_millis(30), std::time::Duration::from_millis(5))
+            .await;
+        assert_eq!(fim, EsperaDoGrant::Esgotou);
+    }
+
+    #[test]
+    fn recusa_so_vale_para_run_que_pediu() {
+        let broker = DesktopBroker::with_release(soltar_d);
+        broker.recusar_pedido("fantasma");
+        assert!(!broker.recusado_desde("fantasma", 0));
     }
 }

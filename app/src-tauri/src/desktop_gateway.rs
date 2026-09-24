@@ -105,16 +105,26 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
-const SEM_GRANT: &str = "O controle do computador não foi liberado pela pessoa para este turno. A Frota mostrou o pedido na tela; aguarde o aceite e tente de novo, ou siga sem o computador.";
+const RECUSA: &str = "A pessoa preferiu não liberar o computador agora. Siga sem ele, ou diga o que queria ver ou fazer na tela e peça que ela confira.";
+const SEM_RESPOSTA: &str = "Pedi à pessoa para liberar o computador e esperei 90 s sem resposta. Siga com outra parte do trabalho e diga o que falta ver ou fazer na tela.";
+const TURNO_ENCERRADO: &str = "O turno terminou enquanto o pedido de controle do computador esperava a pessoa.";
 
-/// Exige o grant da pessoa. Sem ele, registra o pedido no broker, avisa a tela
-/// (no máximo a cada 30 s) e recusa.
-fn assegurar_grant(
+/// Quanto a tool espera o gesto da pessoa antes de desistir: o mesmo teto do
+/// navegador (ADR-228), para os dois pedidos se comportarem igual.
+const ESPERA_PELO_GESTO: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Exige o grant da pessoa. Sem ele, registra o pedido, avisa a tela e ESPERA
+/// (ADR-242): liberou → segue na mesma chamada; fechou o aviso → responde na
+/// hora; o turno acabou ou ninguém respondeu em 90 s → diz isso. Antes a tool
+/// recusava na hora, e o aceite da pessoa chegava depois da chamada já ter
+/// falhado (24/09/2026: "eu liberei, aceitei", e o agente não viu a tela).
+async fn assegurar_grant(
     app: &tauri::AppHandle,
     gateway: &DesktopGateway,
     run_id: &str,
     conv_id: &str,
 ) -> Result<Arc<crate::desktop_broker::DesktopBroker>, String> {
+    use crate::desktop_broker::EsperaDoGrant;
     use tauri::Manager;
     let broker = app
         .try_state::<Arc<crate::desktop_broker::DesktopBroker>>()
@@ -131,36 +141,43 @@ fn assegurar_grant(
     }
     broker.registrar_pedido(run_id);
     let agora = now_ms();
-    let pedir = gateway
-        .ultimo_pedido_ms
-        .lock()
-        .map(|mut t| {
-            let vence = agora - *t >= PEDIDO_INTERVALO_MS;
-            if vence {
-                *t = agora;
-            }
-            vence
-        })
-        .unwrap_or(false);
-    if pedir {
-        crate::work_gateway::emit_work(
-            app,
-            "desktop_needed",
-            json!({ "runId": run_id, "convId": conv_id }),
-        );
+    // Recusa recente vale como resposta: o agente que insiste não reabre o
+    // aviso que a pessoa acabou de fechar.
+    if broker.recusado_desde(run_id, agora - PEDIDO_INTERVALO_MS) {
+        return Err(RECUSA.into());
     }
-    Err(SEM_GRANT.into())
+    // Sem limite de frequência: o aviso tem id por run, então o mesmo pedido
+    // nunca aparece duas vezes, e quem espera sempre tem um aviso na tela.
+    if let Ok(mut t) = gateway.ultimo_pedido_ms.lock() {
+        *t = agora;
+    }
+    crate::work_gateway::emit_work(
+        app,
+        "desktop_needed",
+        json!({ "runId": run_id, "convId": conv_id }),
+    );
+    match broker
+        .esperar_grant(run_id, agora, ESPERA_PELO_GESTO, std::time::Duration::from_millis(250))
+        .await
+    {
+        EsperaDoGrant::Liberado => Ok(broker),
+        EsperaDoGrant::Recusado => Err(RECUSA.into()),
+        EsperaDoGrant::Encerrado => Err(TURNO_ENCERRADO.into()),
+        EsperaDoGrant::Esgotou => Err(SEM_RESPOSTA.into()),
+    }
 }
+
+
 
 /// Grant e posse exclusiva. Devolve o broker e a geração da posse, para a
 /// ação longa conferir a cada passo se continua dona.
-fn assegurar_lease(
+async fn assegurar_lease(
     app: &tauri::AppHandle,
     gateway: &DesktopGateway,
     run_id: &str,
     conv_id: &str,
 ) -> Result<(Arc<crate::desktop_broker::DesktopBroker>, u64), String> {
-    let broker = assegurar_grant(app, gateway, run_id, conv_id)?;
+    let broker = assegurar_grant(app, gateway, run_id, conv_id).await?;
     let mut lease = gateway
         .lease
         .lock()
@@ -259,7 +276,7 @@ pub async fn handle(
         CAPTURE_TOOL => {
             // A tela inteira mostra outros apps, senhas e notificações: ver
             // também é gesto da pessoa, não só pilotar.
-            assegurar_grant(app, gateway, run_id, conv_id)?;
+            assegurar_grant(app, gateway, run_id, conv_id).await?;
             let dest = temp_capture_path(conv_id)?;
             let path = bloqueante(move || crate::desktop_driver::capture_screen(&dest)).await?;
             let info = crate::desktop_driver::display_info();
@@ -275,7 +292,7 @@ pub async fn handle(
             let y = args.get("y").and_then(Value::as_f64).ok_or("parâmetro 'y' ausente")?;
             let button = args.get("button").and_then(Value::as_str).unwrap_or("left").to_string();
             let double = args.get("double").and_then(Value::as_bool).unwrap_or(false);
-            assegurar_lease(app, gateway, run_id, conv_id)?;
+            assegurar_lease(app, gateway, run_id, conv_id).await?;
             let botao = button.clone();
             bloqueante(move || crate::desktop_driver::mouse_click(x, y, &botao, double)).await?;
             Ok(json!({ "clicked": true, "x": x, "y": y, "button": button }))
@@ -283,7 +300,7 @@ pub async fn handle(
         MOVE_TOOL => {
             let x = args.get("x").and_then(Value::as_f64).ok_or("parâmetro 'x' ausente")?;
             let y = args.get("y").and_then(Value::as_f64).ok_or("parâmetro 'y' ausente")?;
-            assegurar_lease(app, gateway, run_id, conv_id)?;
+            assegurar_lease(app, gateway, run_id, conv_id).await?;
             bloqueante(move || crate::desktop_driver::mouse_move(x, y)).await?;
             Ok(json!({ "moved": true, "x": x, "y": y }))
         }
@@ -293,7 +310,7 @@ pub async fn handle(
                 .and_then(Value::as_str)
                 .ok_or("parâmetro 'text' ausente")?
                 .to_string();
-            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id)?;
+            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id).await?;
             let length = text.chars().count();
             bloqueante(move || {
                 crate::desktop_driver::type_text(&text, &|| broker.is_current(generation))
@@ -317,7 +334,7 @@ pub async fn handle(
                         .collect()
                 })
                 .unwrap_or_default();
-            assegurar_lease(app, gateway, run_id, conv_id)?;
+            assegurar_lease(app, gateway, run_id, conv_id).await?;
             let (tecla, mods) = (key.clone(), modifiers.clone());
             bloqueante(move || crate::desktop_driver::press_key(&tecla, &mods)).await?;
             Ok(json!({ "pressed": key, "modifiers": modifiers }))
@@ -327,7 +344,7 @@ pub async fn handle(
             let from_y = args.get("from_y").and_then(Value::as_f64).ok_or("parâmetro 'from_y' ausente")?;
             let to_x = args.get("to_x").and_then(Value::as_f64).ok_or("parâmetro 'to_x' ausente")?;
             let to_y = args.get("to_y").and_then(Value::as_f64).ok_or("parâmetro 'to_y' ausente")?;
-            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id)?;
+            let (broker, generation) = assegurar_lease(app, gateway, run_id, conv_id).await?;
             bloqueante(move || {
                 crate::desktop_driver::mouse_drag(from_x, from_y, to_x, to_y, &|| {
                     broker.is_current(generation)

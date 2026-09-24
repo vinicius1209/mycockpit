@@ -17,11 +17,12 @@ const { toast, startProjectBrowser, recusarPedidoDeNavegador } = vi.hoisted(() =
 }))
 vi.mock("sonner", () => ({ toast }))
 vi.mock("@/lib/browser", () => ({ startProjectBrowser, recusarPedidoDeNavegador }))
-const { desktopGrantRun, desktopRevokeRun } = vi.hoisted(() => ({
+const { desktopGrantRun, desktopRevokeRun, desktopRecusarPedido } = vi.hoisted(() => ({
   desktopGrantRun: vi.fn(async (_runId: string) => {}),
   desktopRevokeRun: vi.fn(async (_runId: string) => {}),
+  desktopRecusarPedido: vi.fn(async (_runId: string) => {}),
 }))
-vi.mock("@/lib/resources", () => ({ desktopGrantRun, desktopRevokeRun }))
+vi.mock("@/lib/resources", () => ({ desktopGrantRun, desktopRevokeRun, desktopRecusarPedido }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => ({ projects: [{ id: "p1", name: "Frota", path: "/repo/frota" }] }) } }))
 vi.mock("@/lib/work", () => ({ listenWorkEvents: (cb: (event: unknown) => void) => listenWorkEvents(cb) }))
 vi.mock("@/store/chat", () => ({ useChat: { getState: () => ({ handleWorkEvent }) } }))
@@ -184,6 +185,30 @@ describe("pedidoDeDesktop", () => {
     expect(toast).not.toHaveBeenCalled()
     expect(toast.dismiss).toHaveBeenCalledWith(`desktop-needed:${RUN}`)
     expect(toast.dismiss).toHaveBeenCalledWith(`desktop-granted:${RUN}`)
+  })
+
+  // ADR-242, 24/09/2026: "eu liberei, aceitei", e o agente já tinha ouvido
+  // "não liberado". Agora a tool espera o gesto; fechar o aviso é a resposta.
+  it("diz que o agente está esperando, e fechar sem liberar vira recusa", () => {
+    desktopRecusarPedido.mockClear()
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-z", convId: "c1" } })
+    const opcoes = toast.mock.calls[0][1] as Opcoes & { description: string; onDismiss: () => void }
+    expect(opcoes.description).toContain("Ele está esperando")
+    opcoes.onDismiss()
+    expect(desktopRecusarPedido).toHaveBeenCalledWith("run-z")
+  })
+
+  it("o aviso que sai por liberação ou fim do turno não é recusa", () => {
+    desktopRecusarPedido.mockClear()
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-a", convId: "c1" } })
+    const a = toast.mock.calls.at(-1)![1] as Opcoes & { onDismiss: () => void }
+    a.action.onClick()
+    a.onDismiss()
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-b", convId: "c1" } })
+    const b = toast.mock.calls.at(-1)![1] as Opcoes & { onDismiss: () => void }
+    pedidoDeDesktop({ kind: "desktop_state", data: { runId: "run-b", granted: false } })
+    b.onDismiss()
+    expect(desktopRecusarPedido).not.toHaveBeenCalled()
   })
 
   it("evento sem run, ou de outro tipo, não mexe na tela", () => {

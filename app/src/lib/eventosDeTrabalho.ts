@@ -12,7 +12,7 @@
 
 import { toast } from "sonner"
 import { recusarPedidoDeNavegador, startProjectBrowser } from "@/lib/browser"
-import { desktopGrantRun, desktopRevokeRun } from "@/lib/resources"
+import { desktopGrantRun, desktopRecusarPedido, desktopRevokeRun } from "@/lib/resources"
 import { isTauri } from "@/lib/db"
 import { listenWorkEvents, type WorkEvent } from "@/lib/work"
 import { vistaDoAgenteNoNavegador } from "@/lib/navegadorAoVivo"
@@ -80,6 +80,12 @@ export function pedidoDeNavegador(event: WorkEvent): void {
   })
 }
 
+/** Pedidos de desktop que saíram da tela por liberação ou fim do turno, e não
+ *  porque a pessoa fechou: o `onDismiss` não conta esses como recusa. */
+const desktopAtendidos = new Set<string>()
+/** Runs com pedido de desktop NA TELA agora. */
+const desktopAbertos = new Set<string>()
+
 function erroEmAviso(err: unknown): void {
   toast.error(err instanceof Error ? err.message : String(err))
 }
@@ -94,19 +100,36 @@ export function pedidoDeDesktop(event: WorkEvent): void {
   const pedido = `desktop-needed:${runId}`
   const liberado = `desktop-granted:${runId}`
   if (event.kind === "desktop_needed") {
+    desktopAbertos.add(runId)
     toast("O agente quer ver a tela e controlar o computador.", {
       id: pedido,
-      description: "Liberar vale só para este turno: ele poderá capturar a tela, mover o mouse e digitar. Você pode revogar a qualquer momento.",
+      description: "Ele está esperando e segue sozinho quando você liberar. Liberar vale só para este turno: ele poderá capturar a tela, mover o mouse e digitar, e você pode revogar a qualquer momento. Fechar este aviso diz a ele que você preferiu não liberar.",
       duration: Infinity,
       closeButton: true,
+      // Fechar é resposta (ADR-242): o agente espera o gesto, e sem isso
+      // esperaria os 90 s inteiros por um "não" que já foi dado.
+      onDismiss: () => {
+        desktopAbertos.delete(runId)
+        if (desktopAtendidos.delete(runId)) return
+        void desktopRecusarPedido(runId).catch((err) =>
+          console.error("[desktop] recusa não chegou ao agente", err),
+        )
+      },
       action: {
         label: "Liberar neste turno",
-        onClick: () => void desktopGrantRun(runId).catch(erroEmAviso),
+        onClick: () => {
+          desktopAtendidos.add(runId)
+          void desktopGrantRun(runId).catch(erroEmAviso)
+        },
       },
     })
     return
   }
   if (event.kind !== "desktop_state") return
+  // O aviso que sai porque o estado mudou (liberado, revogado, turno acabou)
+  // não é recusa. Só marca o que está na tela: marca solta engoliria uma
+  // recusa futura do mesmo turno.
+  if (desktopAbertos.has(runId)) desktopAtendidos.add(runId)
   toast.dismiss(pedido)
   if (!event.data.granted) {
     toast.dismiss(liberado)

@@ -8845,3 +8845,25 @@ considerou.
 - **Consequência:** o fio diz o que o agente fez com as ferramentas da própria
   Frota, uma edição não se esconde como leitura, e o arquivo tem o mesmo rosto
   no fio e na árvore.
+
+### ADR-242 · O pedido do computador espera o gesto da pessoa, como o do navegador ✅
+- **Contexto (24/09/2026):** o agente chamou `desktop_capture`, a Frota mostrou
+  o pedido e a tool recusou na mesma hora. A pessoa liberou e aceitou segundos
+  depois, e o agente já tinha ouvido "não liberado": "eu liberei, aceitei", e
+  ninguém viu a tela. O navegador já tinha resolvido o mesmo problema (ADR-228:
+  a tool espera até 90 s); o desktop tinha ficado com a forma antiga.
+- **Decisão:**
+  1. Sem grant, `assegurar_grant` registra o pedido, avisa a tela e ESPERA:
+     liberou → segue na mesma chamada; fechou o aviso → responde na hora que a
+     pessoa preferiu não liberar; o turno acabou → diz isso; 90 s sem resposta
+     → diz isso e manda seguir com outra parte. Recusa dos últimos 30 s vale
+     como resposta, sem reabrir o aviso.
+  2. A espera mora no broker (`esperar_grant`), testável sem app, e nenhuma
+     trava atravessa o `await`. O teto do pedido no socket sobe para 150 s.
+  3. Fechar o aviso sem liberar é o mesmo gesto do Revogar (`desktop_revoke_run`
+     também registra a recusa), sem comando novo. O aviso que
+     sai porque o estado mudou (liberado, revogado, turno acabou) não conta.
+  4. O texto que o agente recebe diz que a tool espera, e que ele não deve
+     repetir a chamada enquanto isso.
+- **Consequência:** liberar o computador funciona no primeiro pedido, e os
+  dois pedidos de gesto (navegador e computador) se comportam igual.

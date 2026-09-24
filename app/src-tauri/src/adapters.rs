@@ -2082,7 +2082,7 @@ impl AgentAdapter for ClaudeAdapter {
                     gateway.claude_server_json(),
                 );
                 system_nudges.push(format!(
-                    "Para operar ou inspecionar o desktop, use o MCP {}: mcp__{}__{} informa a tela e status, mcp__{}__{} captura como evidência visual, mcp__{}__{} clica e mcp__{}__{} digita. Capturar a tela e pilotar exigem que a pessoa libere o computador neste turno; sem isso a Frota mostra o pedido e a tool recusa.",
+                    "Para operar ou inspecionar o desktop, use o MCP {}: mcp__{}__{} informa a tela e status, mcp__{}__{} captura como evidência visual, mcp__{}__{} clica e mcp__{}__{} digita. Capturar a tela e pilotar exigem que a pessoa libere o computador neste turno: sem isso a Frota mostra o pedido e a tool espera a resposta dela (até 90 s) antes de voltar; não repita a chamada enquanto espera.",
                     crate::desktop_gateway::MCP_SERVER_NAME,
                     crate::desktop_gateway::MCP_SERVER_NAME,
                     crate::desktop_gateway::STATUS_TOOL,
