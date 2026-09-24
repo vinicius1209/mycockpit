@@ -35,10 +35,13 @@ export function SettingsRail({
             onClick={() => onSelect(sections[0].id)}
             className={cn(
               controle("compacto"),
-              "w-full justify-between text-left font-mono font-medium tracking-[0.08em] uppercase transition-colors",
+              // Grupo é CONTROLE (abre o grupo), então vai em caixa normal e
+              // sans: caixa-alta com tracking é roupa de rótulo (§3). Em mono
+              // e caixa alta os sete grupos pareciam títulos, não navegação.
+              "w-full justify-between text-left transition-colors",
               selectedGroup === group.id
-                ? "text-foreground"
-                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                ? "font-semibold text-foreground"
+                : "font-medium text-muted-foreground hover:bg-accent/40 hover:text-foreground",
             )}
           >
             {group.label}

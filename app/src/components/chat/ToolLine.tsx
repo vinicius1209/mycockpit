@@ -382,10 +382,12 @@ export const ToolLine = memo(function ToolLine({
                       type="button"
                       onClick={() => setDetailOpen((value) => !value)}
                       aria-expanded={detailOpen}
-                      className={cn(controle("chip"), "flex min-w-0 flex-1 gap-2 text-left tracking-wide text-muted-foreground/70 uppercase transition-colors hover:text-foreground")}
+                      // Botão, não título: caixa normal (§3). "COMANDO" em caixa alta
+                      // se vestia de rótulo e escondia que abre o comando.
+                      className={cn(controle("chip"), "flex min-w-0 flex-1 gap-2 text-left font-medium text-muted-foreground/80 transition-colors hover:text-foreground")}
                     >
                       <span>{detailTitle}</span>
-                      <span className="font-mono text-[11px] normal-case">
+                      <span className="font-mono text-[11px]">
                         · {briefingLines} linha{briefingLines === 1 ? "" : "s"}
                       </span>
                       <ChevronRight
