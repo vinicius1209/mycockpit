@@ -87,7 +87,7 @@ export function FlightPlanRouteInspector({
     return (
       <div className="p-3">
         <div className="mb-3">
-          <h2 className="label-mono text-foreground">Conexões</h2>
+          <h2 className="etiqueta text-foreground">Conexões</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             Selecione uma linha no mapa ou na lista para configurar o resultado.
           </p>

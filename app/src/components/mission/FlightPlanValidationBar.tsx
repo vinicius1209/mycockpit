@@ -24,7 +24,7 @@ export function FlightPlanValidationBar({
         <div className="border-b border-border/40 px-4 py-3">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-6">
             <div>
-              <h2 className="label-mono text-foreground">Validação do plano</h2>
+              <h2 className="etiqueta text-foreground">Validação do plano</h2>
               {valid ? (
                 <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
                   Entrada, alcance, condições, saídas e limites de ciclo estão consistentes com o motor de Missões.

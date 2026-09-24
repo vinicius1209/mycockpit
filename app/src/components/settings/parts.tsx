@@ -76,7 +76,7 @@ export function BlockTitle({
 }) {
   return (
     <div className="mb-1.5">
-      <h3 className="label-mono">{children}</h3>
+      <h3 className="etiqueta">{children}</h3>
       {hint && (
         <p className="mt-1 text-[12px] leading-snug text-muted-foreground">
           {hint}

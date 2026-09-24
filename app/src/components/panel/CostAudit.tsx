@@ -140,7 +140,7 @@ export function CostAudit({
 
           {view.byAgent.length > 0 && (
             <>
-              <div className="label-mono mt-5 mb-1">Por agente</div>
+              <div className="etiqueta mt-5 mb-1">Por agente</div>
               {view.byAgent.map((a) => (
                 <div
                   key={a.agent}
@@ -183,7 +183,7 @@ export function CostAudit({
 
           {view.byProject.length > 0 && (
             <>
-              <div className="label-mono mt-5 mb-2">Por projeto</div>
+              <div className="etiqueta mt-5 mb-2">Por projeto</div>
               {view.byProject.map((p) => (
                 <div key={p.projectId} className="flex items-center gap-3 py-1.5">
                   <span className="w-28 shrink-0 truncate text-[12px]">

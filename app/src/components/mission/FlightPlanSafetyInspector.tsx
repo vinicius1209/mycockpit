@@ -82,7 +82,7 @@ export function FlightPlanSafetyInspector({
     <div className="divide-y divide-border/40">
       <section className="space-y-3 p-3">
         <div>
-          <h2 className="label-mono text-foreground">Permissão do projeto</h2>
+          <h2 className="etiqueta text-foreground">Permissão do projeto</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             É o teto de segurança de todas as fases. Alterar aqui também altera o projeto ativo.
           </p>
@@ -116,7 +116,7 @@ export function FlightPlanSafetyInspector({
 
       <section className="space-y-3 p-3">
         <div>
-          <h2 className="label-mono text-foreground">Autonomia da fase</h2>
+          <h2 className="etiqueta text-foreground">Autonomia da fase</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             Autonomia remove pausas rotineiras, mas nunca concede mais acesso que o projeto.
           </p>
@@ -159,7 +159,7 @@ export function FlightPlanSafetyInspector({
 
       <section className="space-y-3 p-3">
         <div>
-          <h2 className="label-mono text-foreground">Decisão humana</h2>
+          <h2 className="etiqueta text-foreground">Decisão humana</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             O gate controla quando a missão para e devolve a decisão para você.
           </p>

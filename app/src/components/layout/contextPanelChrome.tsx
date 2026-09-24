@@ -23,7 +23,7 @@ export function Section({
   return (
     <section className="px-5 pt-6 pb-0 first:pt-1">
       <div className="mb-2">
-        <span className="label-mono">{title}</span>
+        <span className="etiqueta">{title}</span>
       </div>
       {children}
     </section>
@@ -38,7 +38,7 @@ export function Section({
  *  horizontal de abas não tem gutter.
  *
  *  SEM CAIXA-ALTA (build 206). A aba usava `uppercase` + `tracking`, que é
- *  **o mesmo tratamento dos títulos de seção** deste mesmo painel (`.label-mono`
+ *  **o mesmo tratamento dos títulos de seção** deste mesmo painel (`.etiqueta`
  *  em AJUSTES, DOUTRINA, APRENDIZADO…). Duas naturezas opostas com a mesma
  *  roupa: aba é CONTROLE (clica), título de seção é RÓTULO (lê) — a hierarquia
  *  do painel achatava, e não dava pra distinguir navegação de conteúdo. O

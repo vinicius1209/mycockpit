@@ -214,7 +214,7 @@ function ScheduleRow({
         {/* leitura de instrumento: PRÓXIMA execução (o número operacional) */}
         {s.enabled && s.nextRun != null && (
           <div className="shrink-0 text-right">
-            <div className="label-mono">Próxima</div>
+            <div className="etiqueta">Próxima</div>
             <div className="font-mono text-[13px] tabular-nums text-foreground">
               {fmtUntilShort(s.nextRun - now)}
             </div>
@@ -567,7 +567,7 @@ export function ScheduledView() {
             empty state — um CTA só na tela). A limitação honesta virou o ⓘ. */}
         <header className="flex items-center gap-2">
           <Clock className="size-3.5 text-muted-foreground" /> {/* §2: nunca brass */}
-          <h1 className="label-mono">Agendamentos</h1>
+          <h1 className="etiqueta">Agendamentos</h1>
           {schedules.length > 0 && (
             <span className="text-[12px] text-muted-foreground/70 tabular-nums">
               {schedules.length}

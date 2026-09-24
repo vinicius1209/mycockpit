@@ -22,7 +22,7 @@ export function RepeatWarningCard({
 }) {
   return (
     <div className="mt-2.5 rounded-[9px] border border-st-warning/45 bg-st-warning/[0.07] px-3 py-2.5">
-      <div className="label-mono text-st-warning">{warning.headline}</div>
+      <div className="etiqueta text-st-warning">{warning.headline}</div>
       <p className="mt-1 text-[13px] leading-snug">
         {warning.observed}
       </p>

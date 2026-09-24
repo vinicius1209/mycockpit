@@ -242,7 +242,7 @@ export function LinearRouteEditor({
     <section className={cn("min-w-0", className)} aria-label="Rota da missão">
       <div className="mb-3 flex min-h-8 items-center gap-3">
         <div className="min-w-0 flex-1">
-          <h2 className="label-mono">Rota da missão</h2>
+          <h2 className="etiqueta">Rota da missão</h2>
           <p className="mt-1 text-[11px] text-muted-foreground">
             {readOnly
               ? `${phases.length} ${phases.length === 1 ? "fase" : "fases"} · a ordem está nas conexões`

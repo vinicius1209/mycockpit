@@ -56,7 +56,7 @@ export function FlightPlanPalette({
       <div className="border-b px-3 py-3">
         <div className="flex items-center gap-2">
           <Network className="size-3.5 text-brass" />
-          <span className="label-mono text-foreground">Construir</span>
+          <span className="etiqueta text-foreground">Construir</span>
         </div>
         <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
           Adicione fases e conecte as portas para definir a execução.
@@ -65,7 +65,7 @@ export function FlightPlanPalette({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
         <section>
-          <h2 className="label-mono">Fases</h2>
+          <h2 className="etiqueta">Fases</h2>
           <div className="mt-2 space-y-2">
             {PHASES.map((item) => {
               const Icon = item.icon
@@ -99,7 +99,7 @@ export function FlightPlanPalette({
         </section>
 
         <section className="mt-5 border-t border-border/40 pt-4">
-          <h2 className="label-mono">Conexões</h2>
+          <h2 className="etiqueta">Conexões</h2>
           <div className="mt-2 space-y-2 text-[11px] leading-relaxed text-muted-foreground">
             <p className="flex items-start gap-2">
               <GitBranch className="mt-0.5 size-3.5 shrink-0" />

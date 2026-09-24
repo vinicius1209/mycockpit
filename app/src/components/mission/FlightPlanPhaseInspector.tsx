@@ -158,7 +158,7 @@ export function FlightPlanPhaseInspector({
 
       <section className="space-y-3 p-3">
         <div>
-          <h2 className="label-mono text-foreground">Guardrails da fase</h2>
+          <h2 className="etiqueta text-foreground">Guardrails da fase</h2>
           <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
             Estes critérios viajam no prompt e ficam visíveis no handoff.
           </p>

@@ -44,7 +44,7 @@ export interface PainelDaFaixaProps {
   onOpenChange: (v: boolean) => void
   /** O item da faixa que abre o painel (vai como `asChild` do trigger). */
   children: ReactNode
-  /** Título em etiqueta de instrumento (§3: `.label-mono`, caixa-alta). */
+  /** Título em etiqueta de instrumento (§3: `.etiqueta`, caixa-alta). */
   titulo: string
   /** Ícone do título, em brass — a única cor do cabeçalho. */
   icone: ReactNode

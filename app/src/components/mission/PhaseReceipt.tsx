@@ -145,7 +145,7 @@ export function PhaseReceiptBlock({
           )}
           {doc && doc.open_questions.length > 0 && (
             <div className="mt-2.5 text-[12px] text-muted-foreground">
-              <div className="label-mono mb-1">deixou pendente</div>
+              <div className="etiqueta mb-1">deixou pendente</div>
               {doc.open_questions.map((q, i) => (
                 <div key={i} className="leading-snug">
                   {q}
@@ -155,7 +155,7 @@ export function PhaseReceiptBlock({
           )}
           {doc && doc.files_touched.length > 0 && (
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              <span className="label-mono">arquivos</span>
+              <span className="etiqueta">arquivos</span>
               {doc.files_touched.slice(0, 8).map((f) => (
                 <code
                   key={f}
@@ -175,7 +175,7 @@ export function PhaseReceiptBlock({
               trabalho. O defeito é o silêncio. */}
           {naoDeclarados.length > 0 && (
             <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              <span className="label-mono text-st-warning">mudou sem constar</span>
+              <span className="etiqueta text-st-warning">mudou sem constar</span>
               {naoDeclarados.slice(0, 8).map((f) => (
                 <code
                   key={f}
@@ -208,7 +208,7 @@ function FragmentDecision({
 }) {
   return (
     <>
-      <dt className="label-mono pt-[3px]">Decidiu</dt>
+      <dt className="etiqueta pt-[3px]">Decidiu</dt>
       <dd className="m-0 leading-snug text-muted-foreground">
         <b className="font-medium text-foreground">{choice}</b>
         {rejected ? `, no lugar de ${rejected}` : ""}

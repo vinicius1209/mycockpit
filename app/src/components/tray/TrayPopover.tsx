@@ -85,7 +85,7 @@ function ActivityCard({
           onClick={open}
         >
           <span className="mb-2 flex items-center gap-2">
-            <span className="label-mono flex items-center gap-1.5 text-st-running">
+            <span className="etiqueta flex items-center gap-1.5 text-st-running">
               <span className="size-1.5 rounded-full bg-st-running" />
               Em voo
             </span>
@@ -229,7 +229,7 @@ export function TrayPopover() {
         </div>
         <div className="relative flex items-start justify-between gap-3">
           <div>
-            <p className="label-mono mb-2">Frota</p>
+            <p className="etiqueta mb-2">Frota</p>
             <div className="flex items-center gap-2">
               {snapshot.running > 0 ? (
                 <span className="size-2 rounded-full bg-st-running" />
@@ -327,7 +327,7 @@ export function TrayPopover() {
           aria-label="Sessões no terminal"
           className="border-t border-border px-3 py-2"
         >
-          <p className="label-mono mb-1.5 text-muted-foreground/70">
+          <p className="etiqueta mb-1.5 text-muted-foreground/70">
             No terminal (observando)
           </p>
           <ul className="space-y-1">

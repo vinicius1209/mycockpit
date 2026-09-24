@@ -153,7 +153,7 @@ export function CandidateLane({
           <DialogHeader className="border-b px-5 py-3 text-left">
             <DialogTitle className="flex items-center gap-2 pr-7 text-[14px]">
               {statusIcon}
-              <span className="label-mono text-foreground/90">{c.label}</span>
+              <span className="etiqueta text-foreground/90">{c.label}</span>
               {suggestedBadge}
               {c.costUsd != null && (
                 <span className="ml-auto font-mono text-[11px] font-normal text-muted-foreground">

@@ -80,7 +80,7 @@ export function RecoveryCard({
       )}
       <div className="grid grid-cols-2 gap-2 px-4 pt-3">
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="label-mono">Agent</span>
+          <span className="etiqueta">Agent</span>
           <select
             value={agent}
             onChange={(e) => setAgent(e.target.value)}
@@ -95,7 +95,7 @@ export function RecoveryCard({
           </select>
         </label>
         <label className="flex min-w-0 flex-col gap-1">
-          <span className="label-mono">Modelo</span>
+          <span className="etiqueta">Modelo</span>
           <select
             value={model}
             onChange={(e) => setModel(e.target.value)}
@@ -116,7 +116,7 @@ export function RecoveryCard({
         </label>
         {efforts.length > 0 && (
           <label className="flex min-w-0 flex-col gap-1">
-            <span className="label-mono">Raciocínio</span>
+            <span className="etiqueta">Raciocínio</span>
             <select
               value={effort}
               onChange={(e) => setEffort(e.target.value)}

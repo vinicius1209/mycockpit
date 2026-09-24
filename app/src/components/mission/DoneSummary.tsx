@@ -88,14 +88,14 @@ export function DoneSummary({ mission }: { mission: MissionRun }) {
       )}
       {verdict ? (
         <div className="px-4 py-3">
-          <div className="label-mono mb-1.5">Resumo do revisor</div>
+          <div className="etiqueta mb-1.5">Resumo do revisor</div>
           <div className="max-h-72 overflow-y-auto text-[13px] leading-relaxed">
             <Markdown text={verdict} />
           </div>
         </div>
       ) : mission.doneSummary?.intent ? (
         <div className="px-4 py-3">
-          <div className="label-mono mb-1.5">O que foi feito</div>
+          <div className="etiqueta mb-1.5">O que foi feito</div>
           <p className="text-[13px] leading-relaxed">
             {mission.doneSummary.intent}
           </p>
@@ -109,7 +109,7 @@ export function DoneSummary({ mission }: { mission: MissionRun }) {
       {mission.doneSummary?.filesTouched &&
         mission.doneSummary.filesTouched.length > 0 && (
           <div className="border-t px-4 py-3">
-            <div className="label-mono mb-1.5">Arquivos</div>
+            <div className="etiqueta mb-1.5">Arquivos</div>
             <div className="flex flex-wrap gap-1.5">
               {mission.doneSummary.filesTouched.slice(0, 8).map((f) => (
                 <code
@@ -130,7 +130,7 @@ export function DoneSummary({ mission }: { mission: MissionRun }) {
       {mission.doneSummary?.openQuestions &&
         mission.doneSummary.openQuestions.length > 0 && (
           <div className="border-t px-4 py-3">
-            <div className="label-mono mb-1.5">
+            <div className="etiqueta mb-1.5">
               Pendências pra próxima etapa
             </div>
             {mission.doneSummary.openQuestions.slice(0, 5).map((q, i) => (

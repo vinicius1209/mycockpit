@@ -304,7 +304,7 @@ etiqueta técnica, número). O display serif do design-system nunca embarcou
 
 | px | Papel | Exemplos |
 |---|---|---|
-| **11** | Etiqueta e metadado: `.label-mono`, sussurro mono, contadores, timestamps | duração, `+N −N`, badges |
+| **11** | Etiqueta e metadado: `.etiqueta`, sussurro mono, contadores, timestamps | duração, `+N −N`, badges |
 | **12** | Secundário denso: linhas de sidebar, tabelas densas, tooltips | lista de conversas |
 | **13** | Corpo de UI: linhas de painel, botões, forms, títulos de card | padrão quando em dúvida |
 | **14** | Prosa de leitura: mensagens do chat, markdown, descrições longas | `Markdown.tsx` |
@@ -326,10 +326,12 @@ Regras decidíveis:
   `components/ui/` (primitives shadcn); componente do app usa px da escala.
 - **`tabular-nums` em todo número que muda em vida** (cronômetro, custo,
   contadores, percentuais) — e número métrico é `font-mono`.
-- Etiqueta de instrumento é a classe `.label-mono` (`index.css:253`), não
-  mono+uppercase+tracking à mão.
+- Etiqueta de instrumento é a classe `.etiqueta`, não caixa-alta+tracking à
+  mão: **sans, peso 500, caixa alta curta, `faint`** (ADR-249). Era mono até
+  24/09/2026; com mono em rótulo, número, caminho e código ao mesmo tempo nada
+  se destacava, então o mono ficou só para número e código.
 - **Caixa-alta com tracking é roupa de RÓTULO, nunca de CONTROLE.** Título de
-  seção (`AJUSTES`, `DOUTRINA`, `MISSÕES`) se LÊ e usa `.label-mono`; aba,
+  seção (`AJUSTES`, `DOUTRINA`, `MISSÕES`) se LÊ e usa `.etiqueta`; aba,
   botão e chip se CLICAM e vão em caixa normal. Vestir os dois igual achata a
   hierarquia da tela (não se distingue navegação de conteúdo), e o custo é
   medido, não estético: a tira de abas do painel direito mede **353,6px** em

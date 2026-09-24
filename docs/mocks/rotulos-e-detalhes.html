@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Rótulos e detalhes · hoje × proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--pop:#191c20;--muted:#9aa0a7;--faint:#687078;--accent:#1e2126;
+--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);--sel:rgba(255,255,255,.065);--brass:#e4a862;--warn:#d99138;--running:#5bb8e8;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 26px;max-width:980px;line-height:1.5}
+h2{font-size:14px;font-weight:600;margin:30px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin-bottom:14px;max-width:900px;line-height:1.5}
+.lado{display:flex;gap:20px;align-items:flex-start;flex-wrap:wrap}
+.cx{background:var(--rail);border:1px solid var(--border);border-radius:12px;padding:16px 18px;width:330px}
+.cx > .tit{font-size:11px;color:var(--faint);margin-bottom:12px;font-weight:500}
+.cx.esc{outline:1px solid rgba(228,168,98,.5)}
+/* variantes de rótulo */
+.rA{font:11px var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.rB{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint)}
+.rC{font:600 12px var(--sans);color:var(--fg)}
+.sec{margin-bottom:16px}.sec .d{font-size:12px;color:var(--muted);margin:4px 0 8px}
+.linha{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:6px 0;border-top:1px solid var(--div)}
+.linha small{display:block;font-size:12px;color:var(--muted)}
+.inp{height:28px;width:110px;border:1px solid rgba(255,255,255,.12);border-radius:7px;background:var(--bg);font-size:12px;display:flex;align-items:center;padding:0 8px}
+.metr{display:flex;gap:18px;margin-top:6px}.metr b{display:block;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+/* menu do usuário */
+.menu{background:var(--pop);border:1px solid var(--border);border-radius:10px;width:280px;padding:6px;font-size:13px}
+.menu .it{height:30px;display:flex;align-items:center;gap:10px;padding:0 8px;border-radius:6px}
+.menu .sep{height:1px;background:var(--div);margin:6px 0}
+.menu .k{margin-left:auto;font:11px var(--mono);color:var(--muted)}
+.tema-hoje{display:flex;gap:18px;padding:4px 30px 6px;font-size:13px;color:var(--muted)}
+.tema-hoje .on{color:var(--fg)}.tema-hoje .on::before{content:"• "}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:2px;margin:4px 8px 6px;padding:2px;background:var(--bg);border:1px solid var(--border);border-radius:8px}
+.seg span{height:26px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:6px;font-size:12px;color:var(--muted)}
+.seg .on{background:var(--accent);color:var(--fg);font-weight:500}
+/* régua de turnos */
+.fio{position:relative;height:300px;width:330px;background:var(--bg);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+.regua{position:absolute;left:14px;top:30px;display:flex;flex-direction:column;gap:7px}
+.regua i{display:block;height:4px;border-radius:2px;width:10px;background:rgba(154,160,167,.35)}
+.regua i.eu{background:rgba(228,168,98,.5)}.regua i.at{width:18px;background:var(--brass)}
+.texto{position:absolute;left:52px;right:16px;top:28px;font-size:12px;color:var(--muted);line-height:1.8}
+.dica{position:absolute;left:40px;top:92px;background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:12px;width:230px;box-shadow:0 12px 40px -8px rgba(0,0,0,.55)}
+.dica .l{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:11px;margin-top:6px}
+.dica .l i{width:10px;height:4px;border-radius:2px;display:inline-block}
+.regua2{position:absolute;left:10px;top:24px;padding:6px 4px;border-radius:10px;background:var(--card);border:1px solid var(--border);display:flex;flex-direction:column;gap:7px;align-items:center}
+.regua2 i{display:block;height:4px;border-radius:2px;width:10px;background:rgba(154,160,167,.35)}
+.regua2 i.eu{background:rgba(228,168,98,.5)}.regua2 i.at{width:16px;background:var(--brass)}
+/* aviso de memória */
+.aviso-hoje{display:flex;gap:8px;font-size:12px;line-height:1.5;color:var(--muted);width:620px}
+.aviso-novo{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);width:620px;height:28px}
+.aviso-novo b{font-weight:500;color:var(--fg);font-variant-numeric:tabular-nums}
+.aviso-novo .bt{margin-left:6px;height:22px;padding:0 8px;border-radius:6px;background:var(--accent);display:grid;place-items:center;font-size:11px;color:var(--fg)}
+.aviso-novo .mais{color:var(--faint);text-decoration:underline dotted;text-underline-offset:3px}
+</style>
+</head>
+<body>
+<h1>Rótulos e detalhes</h1>
+<p class="sub">Dois assuntos. (1) A etiqueta de instrumento (`.label-mono`, mono em caixa alta) é regra do §3 do guia: trocar é mudar identidade, e vira ADR. Três variantes lado a lado, com o mesmo conteúdo das suas Configurações e do Painel. (2) Três detalhes pequenos, cada um com o hoje e a proposta.</p>
+
+<h2>1 · A etiqueta de instrumento <small>escolha uma</small></h2>
+<p class="q">Onde aparece: títulos de seção nas Configurações ("IDENTIDADE VISUAL"), no Painel, nas Missões e nos Bastidores (51 usos em 27 arquivos). Controles já saíram da caixa alta no commit anterior; aqui é só título que se LÊ.</p>
+<div class="lado">
+  <div class="cx"><div class="tit">A · HOJE: mono, caixa alta, tracking</div>
+    <div class="sec"><div class="rA">Identidade visual</div><div class="d">Escolha como você aparece no rodapé e nas mensagens do chat.</div>
+      <div class="linha"><span>Nome de exibição<small>Aparece no rodapé da barra lateral</small></span><span class="inp">Viní</span></div></div>
+    <div class="sec"><div class="rA">Custo · 7 dias</div><div class="metr"><span><b>US$ 555,84</b><span class="rA" style="letter-spacing:.04em">gasto</span></span><span><b>34</b><span class="rA" style="letter-spacing:.04em">pedidos</span></span></div></div>
+  </div>
+  <div class="cx esc"><div class="tit">B · SANS, CAIXA ALTA, PESO (recomendo)</div>
+    <div class="sec"><div class="rB">Identidade visual</div><div class="d">Escolha como você aparece no rodapé e nas mensagens do chat.</div>
+      <div class="linha"><span>Nome de exibição<small>Aparece no rodapé da barra lateral</small></span><span class="inp">Viní</span></div></div>
+    <div class="sec"><div class="rB">Custo · 7 dias</div><div class="metr"><span><b>US$ 555,84</b><span class="rB">gasto</span></span><span><b>34</b><span class="rB">pedidos</span></span></div></div>
+  </div>
+  <div class="cx"><div class="tit">C · SANS, CAIXA NORMAL, 12 SEMIBOLD</div>
+    <div class="sec"><div class="rC">Identidade visual</div><div class="d">Escolha como você aparece no rodapé e nas mensagens do chat.</div>
+      <div class="linha"><span>Nome de exibição<small>Aparece no rodapé da barra lateral</small></span><span class="inp">Viní</span></div></div>
+    <div class="sec"><div class="rC">Custo · 7 dias</div><div class="metr"><span><b>US$ 555,84</b><span class="d" style="margin:0">gasto</span></span><span><b>34</b><span class="d" style="margin:0">pedidos</span></span></div></div>
+  </div>
+</div>
+<p class="q" style="margin-top:12px">Por que B: mantém o "instrumento" (caixa alta curta, rótulo que não compete com o conteúdo) e perde o que cansa, o mono, que hoje aparece em rótulo, número, caminho e código ao mesmo tempo. Mono volta a ser só de número e código. C é o mais calmo, mas o título passa a disputar com o conteúdo da seção.</p>
+
+<h2>2 · O tema no menu do usuário</h2>
+<div class="lado">
+  <div><div class="q" style="margin-bottom:6px">Hoje: parece texto, não controle</div>
+    <div class="menu"><div class="it" style="font-weight:500">Viní</div><div class="sep"></div>
+      <div class="it">◯ Perfil</div><div class="it">⚙ Configurações<span class="k">⌘ ,</span></div><div class="it">⌨ Atalhos de teclado</div><div class="sep"></div>
+      <div class="it">◐ Tema</div><div class="tema-hoje"><span>Claro</span><span class="on">Escuro</span><span>Sistema</span></div><div class="sep"></div><div class="it">ⓘ Sobre a Frota</div></div></div>
+  <div><div class="q" style="margin-bottom:6px">Proposta: seletor segmentado, na mesma linha do rótulo</div>
+    <div class="menu"><div class="it" style="font-weight:500">Viní</div><div class="sep"></div>
+      <div class="it">◯ Perfil</div><div class="it">⚙ Configurações<span class="k">⌘ ,</span></div><div class="it">⌨ Atalhos de teclado</div><div class="sep"></div>
+      <div class="seg"><span>☀ Claro</span><span class="on">☾ Escuro</span><span>◐ Sistema</span></div><div class="sep"></div><div class="it">ⓘ Sobre a Frota</div></div></div>
+</div>
+
+<h2>3 · A régua de turnos à esquerda do chat</h2>
+<p class="q">Hoje: risquinhos âmbar (seus pedidos), cinza (respostas do agente) e um âmbar mais largo (o trecho na tela). Clique pula para o turno, e o hover mostra o resumo, mas nada diz o que as cores são.</p>
+<div class="lado">
+  <div class="fio"><div class="regua"><i class="eu"></i><i></i><i></i><i class="eu"></i><i></i><i class="eu at"></i><i></i><i></i><i class="eu"></i><i></i><i></i><i></i></div>
+    <div class="texto">…o fio da conversa…<br>…<br>…</div></div>
+  <div class="fio"><div class="regua2"><i class="eu"></i><i></i><i></i><i class="eu"></i><i></i><i class="eu at"></i><i></i><i></i><i class="eu"></i><i></i><i></i><i></i></div>
+    <div class="dica"><b style="font-weight:500">10:03 · Você</b><div style="color:var(--muted);margin-top:2px">faça uma revisada nos últimos commits…</div>
+      <div class="l"><i style="background:rgba(228,168,98,.6)"></i>seu pedido <i style="background:rgba(154,160,167,.5);margin-left:8px"></i>resposta <i style="background:var(--brass);width:16px;margin-left:8px"></i>na tela</div></div>
+    <div class="texto" style="left:48px">…o fio da conversa…<br>…<br>…</div></div>
+</div>
+<p class="q" style="margin-top:10px">Proposta: a régua ganha um trilho visível (fundo de cartão, borda), deixando claro que é um controle, e a dica do hover traz a legenda das três marcas embaixo do resumo. Nada muda de lugar.</p>
+
+<h2>4 · O aviso de memória no chat</h2>
+<p class="q">Hoje (texto real do `run_resources.rs`), numa conversa com vários turnos longos:</p>
+<div class="aviso-hoje">ⓘ<span>A árvore de processos deste run atingiu 2354 MB (incluindo 2068 MB em comandos e compiladores filhos; o processo principal consome 286 MB) e continua rodando sem teto artificial. Use Parar se esse consumo não for intencional.</span></div>
+<p class="q" style="margin-top:16px">Proposta: uma linha, o número que importa em destaque e o detalhe no hover. O gesto continua sendo o Parar do composer: interromper o turno mora na superfície do turno, não no aviso.</p>
+<div class="aviso-novo">ⓘ Este turno está usando <b>2,3 GB</b> de memória <span class="mais" title="2068 MB em comandos e compiladores filhos · 286 MB no processo principal · sem teto artificial">(detalhe)</span><span style="color:var(--faint)">· se não for intencional, o Parar do composer interrompe</span></div>
+</body>
+</html>

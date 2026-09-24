@@ -347,7 +347,7 @@ export function MissionControl() {
                 <span className="font-mono text-[30px] leading-none font-semibold tracking-[-0.02em] tabular-nums">
                   {fmtCost(view.total)}
                 </span>
-                <span className="label-mono pb-1">em {win} dias</span>
+                <span className="etiqueta pb-1">em {win} dias</span>
               </div>
               <p className="mt-2 text-[13px] text-muted-foreground">{subline}</p>
               {/* o hero é o que o app SABE cobrar; o resto, ADR-047: */}
@@ -551,7 +551,7 @@ export function MissionControl() {
           aria-label="Frota (detalhe)"
           className="rounded-lg border border-border/60 bg-card/30 px-4 py-3"
         >
-          <h2 className="label-mono mb-2">Frota</h2>
+          <h2 className="etiqueta mb-2">Frota</h2>
           <ul className="flex flex-col gap-1">
             {CLI_TOOLS.map((t) => {
               const p = detected[t.id]
@@ -618,7 +618,7 @@ export function MissionControl() {
               (não somos donos delas), nada persistido (some no restart). */}
           {externalSessions.length > 0 && (
             <div className="mt-3" aria-label="Sessões no terminal">
-              <h3 className="label-mono mb-1">No terminal (observando)</h3>
+              <h3 className="etiqueta mb-1">No terminal (observando)</h3>
               <ul className="flex flex-col gap-0.5">
                 {externalSessions.map((s) => {
                   const tone = statusTone(s.status)
@@ -665,7 +665,7 @@ export function MissionControl() {
           {/* F6 — Próximas agendadas (2): clicar abre a view Agendado. */}
           {upcoming.length > 0 && (
             <div className="mt-3">
-              <h3 className="label-mono mb-1">Próximas agendadas</h3>
+              <h3 className="etiqueta mb-1">Próximas agendadas</h3>
               <ul className="flex flex-col gap-0.5">
                 {upcoming.map((s) => (
                   <li key={s.id}>

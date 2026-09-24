@@ -115,7 +115,7 @@ export const TaskChecklist = memo(function TaskChecklist({
       {!dense && (
         <div className="mb-1.5 flex items-center gap-2">
           <ListChecks className="size-3.5 text-brass" />
-          <span className="label-mono text-foreground/80">Plano</span>
+          <span className="etiqueta text-foreground/80">Plano</span>
           <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
             {done}/{tasks.length}
           </span>

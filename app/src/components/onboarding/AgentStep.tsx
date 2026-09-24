@@ -146,7 +146,7 @@ export function AgentStep() {
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="label-mono text-muted-foreground">
+        <span className="etiqueta text-muted-foreground">
           {detecting
             ? "procurando CLIs no seu PATH"
             : nothingFound

@@ -121,7 +121,7 @@ export function IndiceView({
           return (
             <Fragment key={b.itemId}>
               {abreTerminados && (
-                <li role="presentation" className={cn("label-mono px-2.5 pb-1.5", i === 0 ? "pt-2" : "pt-4")}>
+                <li role="presentation" className={cn("etiqueta px-2.5 pb-1.5", i === 0 ? "pt-2" : "pt-4")}>
                   Terminou há pouco
                 </li>
               )}

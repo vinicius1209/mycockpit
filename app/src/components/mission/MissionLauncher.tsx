@@ -304,7 +304,7 @@ export function MissionLauncher({
           {/* ── A TAREFA é a estrela: textarea grande, anexos e ditado ── */}
           <div>
             <div className="mb-1.5 flex items-center">
-              <span className="label-mono">Tarefa</span>
+              <span className="etiqueta">Tarefa</span>
             </div>
             <div className="rounded-lg border bg-secondary/20 transition-colors focus-within:border-brass/50">
               <AttachmentChips
@@ -361,7 +361,7 @@ export function MissionLauncher({
           {/* ── Plano: preset como ponto de partida, fases editáveis inline ── */}
           <div>
             <div className="mb-1.5 flex items-center gap-2">
-              <span className="label-mono">Plano de voo</span>
+              <span className="etiqueta">Plano de voo</span>
               {preset ? (
                 <RichSelect
                   value={customized ? CUSTOM_PRESET : preset.id}

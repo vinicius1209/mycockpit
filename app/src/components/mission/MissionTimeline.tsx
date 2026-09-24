@@ -553,7 +553,7 @@ export function MissionTimeline({ convId }: { convId: string }) {
           )}
         </div>
         <div className="w-[220px] shrink-0">
-          <div className="label-mono">
+          <div className="etiqueta">
             {pct != null ? "Combustível · teto" : "Custo"}
           </div>
           <div className="mt-1 flex items-baseline justify-between">

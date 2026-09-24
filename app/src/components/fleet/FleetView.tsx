@@ -107,7 +107,7 @@ export function FleetView() {
       <div className="mx-auto flex w-full max-w-[820px] flex-col gap-4 px-8 pt-8 pb-14">
         <header className="flex items-center gap-2">
           <Rocket className="size-3.5 text-muted-foreground" />
-          <h1 className="label-mono">Frota</h1>
+          <h1 className="etiqueta">Frota</h1>
           {rows.length > 0 && (
             <span className="text-[12px] text-muted-foreground/70 tabular-nums">
               {rows.length}

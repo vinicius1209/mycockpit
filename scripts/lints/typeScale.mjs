@@ -10,7 +10,7 @@
  *   2. rem/em arbitrário (`text-[0.9rem]`) — re-fragmenta igual, e ainda por
  *      cima esconde o valor atrás de uma conversão.
  * rem é aceito só quando cai EXATAMENTE numa parada da escala (16px de raiz):
- * é assim que `.label-mono` (0.6875rem = 11px) vive em `index.css`.
+ * é assim que `.etiqueta` (0.6875rem = 11px) vive em `index.css`.
  *
  * Terceira família, que o §3 também fecha: classe de tamanho do Tailwind
  * (`text-xs`, `text-sm`, …) só existe dentro de `components/ui/` (primitives
@@ -133,7 +133,7 @@ export function acharViolacoesDeEscala(source, relPath) {
     push(match.index, match[0], px, match[2] === "px" ? "px-fora-da-escala" : "unidade-arbitraria");
   }
 
-  // Em CSS, rem é a forma canônica (`.label-mono` é 0.6875rem = 11px), então
+  // Em CSS, rem é a forma canônica (`.etiqueta` é 0.6875rem = 11px), então
   // aqui o que manda é o px equivalente cair numa parada.
   for (const match of source.matchAll(FONT_SIZE_RE)) {
     const px = paraPx(match[1], match[2]);

@@ -398,7 +398,7 @@ export function MissionRunGraph({
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="label-mono shrink-0 text-foreground">
+            <span className="etiqueta shrink-0 text-foreground">
               {mission.status === "running" ? "Rota em voo" : "Rota executada"}
             </span>
             <span className="truncate text-[12px] text-muted-foreground">

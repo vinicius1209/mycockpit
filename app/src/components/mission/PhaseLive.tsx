@@ -123,7 +123,7 @@ function QuietEngine({ phase, now }: { phase: MissionPhaseRun; now: number }) {
       </div>
       {v.lastLine && (
         <div className="mt-2 border-t border-border pt-2">
-          <div className="label-mono mb-1">última linha que ele escreveu</div>
+          <div className="etiqueta mb-1">última linha que ele escreveu</div>
           <div className="truncate font-mono text-[12px] text-muted-foreground">
             {v.lastLine}
           </div>
