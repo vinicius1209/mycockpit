@@ -2,7 +2,9 @@ import { ChevronsUpDown, PanelLeft, PanelRight, Search } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Kbd } from "@/components/ui/kbd"
 import { Separator } from "@/components/ui/separator"
+import { cn } from "@/lib/utils"
 import { InboxBell } from "@/components/layout/InboxBell"
+import { ALTURA_DA_FAIXA, RECUO_DOS_BOTOES } from "@/components/layout/faixaDaJanela"
 import { useApp, useActiveProject } from "@/store/app"
 import {
   commandMenuShortcut,
@@ -19,9 +21,9 @@ export function TitleBar() {
     // Acima do overlay de drag do decorum; só controles recebem ponteiro.
     <header
       data-tauri-drag-region
-      className="relative z-[110] flex h-14 shrink-0 items-center bg-rail"
+      className={cn("relative z-[110] flex shrink-0 items-center bg-rail", ALTURA_DA_FAIXA)}
     >
-      <div className="pointer-events-none flex min-w-0 items-center gap-1.5 pl-20">
+      <div className={cn("pointer-events-none flex min-w-0 items-center gap-1.5", RECUO_DOS_BOTOES)}>
         <Button
           variant="ghost"
           size="icone-padrao"

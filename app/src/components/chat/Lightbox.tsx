@@ -10,6 +10,7 @@ import { useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight, ExternalLink, X } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
+import { ALTURA_DA_FAIXA, RECUO_DOS_BOTOES } from "@/components/layout/faixaDaJanela"
 import { attachmentUrl, type Attachment } from "@/lib/attachments"
 import { evidenceUrl, openConvImage } from "@/lib/evidence"
 import { imagemCitadaUrl } from "@/lib/imagemCitada"
@@ -85,9 +86,13 @@ export function LightboxOverlay() {
       className="fixed inset-0 z-[140] flex flex-col bg-black/85 backdrop-blur-sm"
       onClick={close}
     >
-      {/* barra superior: nome + contador + ações (clique aqui não fecha) */}
+      {/* barra superior: nome + contador + ações (clique aqui não fecha).
+          Ocupa a faixa da janela, com o mesmo recuo da barra do app: a camada
+          cobre a tela inteira, e sem o recuo o nome ficava embaixo dos botões
+          de fechar/minimizar/expandir. Arrastável, como a barra do app. */}
       <div
-        className="flex items-center gap-2 px-4 py-3"
+        data-tauri-drag-region
+        className={cn("flex shrink-0 items-center gap-2 pr-4", ALTURA_DA_FAIXA, RECUO_DOS_BOTOES)}
         onClick={(e) => e.stopPropagation()}
       >
         <span className="truncate font-mono text-[12px] text-white/75">
