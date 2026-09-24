@@ -41,11 +41,15 @@ describe("cartão do arquivo solto (ADR-252)", () => {
     )
     expect(h).toContain("fora do projeto")
     expect(h).not.toContain("só o caminho")
+    // Rotina, não alerta: sem borda nem nome em âmbar.
+    expect(h).not.toContain("ring-st-warning")
+    expect(h).not.toContain("text-st-warning")
   })
 
   it("motor sem pasta extra não lê nem a pasta liberada no config", () => {
     const ctx = contexto({ pastasExtras: false, pastasLiberadas: ["/Users/viniciusmachado/projetos/agencia_vm"] })
     expect(html(ESLINT, ctx)).toContain("só o caminho")
+    expect(html(ESLINT, ctx)).toContain("ring-st-warning")
   })
 })
 

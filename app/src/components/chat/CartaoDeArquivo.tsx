@@ -85,10 +85,13 @@ export function CartaoDeArquivo({
   // `extra_dirs` chega a ele pelo mesmo canal que ele não tem.
   const soOCaminho = fora && !contexto.pastasExtras
   const jaLiberada = fora && !soOCaminho && pastaJaLiberada(dir, contexto.pastasLiberadas)
+  // O âmbar é para o que pede atenção: pasta lida só neste envio, ou motor que
+  // não lê fora do projeto. Pasta que o projeto já libera é rotina: neutro.
+  const alerta = fora && !jaLiberada
 
   const meta = fora ? (
     <>
-      {onde && <span className="text-st-warning">{onde}</span>}
+      {onde && <span className={cn(alerta && "text-st-warning")}>{onde}</span>}
       {onde && " · "}
       {soOCaminho ? "só o caminho" : "fora do projeto"}
     </>
@@ -115,7 +118,7 @@ export function CartaoDeArquivo({
             aria-label={`${nome}${fora ? ", fora do projeto" : ""}`}
             className={cn(
               "flex max-w-[260px] cursor-default items-center gap-2 rounded-lg bg-secondary/60 py-1 pr-2 pl-1 text-left transition-colors hover:bg-secondary",
-              fora && "ring-1 ring-st-warning/30 ring-inset",
+              alerta && "ring-1 ring-st-warning/30 ring-inset",
             )}
           >
             <span className="grid size-10 shrink-0 place-items-center rounded-md bg-background">
