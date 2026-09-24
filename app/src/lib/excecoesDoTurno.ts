@@ -46,6 +46,9 @@ function acaoDaOmissao(code: McpPlanIssueCode): AcaoDaExcecao | null {
 
 const nomes = (lista: string[]) => lista.join(", ")
 
+/** Id da fonte do navegador da Frota no manifesto (`browser_gateway::MCP_SERVER_NAME`). */
+const NAVEGADOR_DA_FROTA = "frota-browser"
+
 /** As exceções do turno, na ordem do mock. Lista vazia = nada a mostrar.
  *  `motor` é o nome humano do motor da conversa. Puro. */
 export function excecoesDoTurno(m: EffectiveRunManifest | undefined, motor: string): ExcecaoDoTurno[] {
@@ -69,7 +72,14 @@ export function excecoesDoTurno(m: EffectiveRunManifest | undefined, motor: stri
       acao: { tipo: "configuracoes", rotulo: "Configurar", secao: "resources" },
     })
   }
+  // Com o navegador da Frota no turno, um MCP vinculado ao navegador que ficou
+  // fora por ele estar DESLIGADO não pede nada da pessoa: o agente usa o
+  // navegador da Frota, que pede para ligar quando precisa e espera o gesto
+  // (ADR-228). A faixa repetia isso em todo turno, com o navegador desligado de
+  // propósito (24/09/2026). O inventário continua na aba "O que o agente vê".
+  const temNavegadorDaFrota = m.sources.some((s) => s.id === NAVEGADOR_DA_FROTA)
   for (const o of m.omissions ?? []) {
+    if (o.code === "browser-offline" && temNavegadorDaFrota) continue
     excecoes.push({
       id: `fora:${o.sourceId}:${o.code}`,
       tom: "atencao",

@@ -56,6 +56,28 @@ describe("exceções do turno", () => {
     expect(e.acao).toEqual({ tipo: "ligar-navegador", rotulo: "Ligar" })
   })
 
+  it("com o navegador da Frota no turno, o MCP vinculado desligado não vira faixa (24/09/2026)", () => {
+    const comNavegador: EffectiveRunManifest = {
+      ...manifest,
+      sources: [
+        ...manifest.sources,
+        // a forma de `run_manifest::gateway` para o navegador da Frota
+        {
+          id: "frota-browser", label: "Navegador da Frota", kind: "frota-gateway",
+          transport: "mcp", scope: "run", enforceability: "hard", inventory: "declared",
+          filtersPerRun: true, toolNames: ["browser_status", "browser_navigate"], observedCount: 2,
+        },
+      ],
+      omissions: [
+        { sourceId: "playwright", sourceLabel: "playwright", code: "browser-offline", detail: "o navegador deste projeto está desligado" },
+        // outro motivo de ausência continua sendo exceção
+        { sourceId: "figma", sourceLabel: "figma", code: "health-unavailable", detail: null },
+      ],
+    }
+    const excecoes = excecoesDoTurno(comNavegador, "Claude Code")
+    expect(excecoes.map((e) => e.texto)).toEqual(["figma não entrou neste turno."])
+  })
+
   it("expõe o modo somente leitura aceito para este turno", () => {
     expect(excecoesDoTurno({ ...manifest, permissionOverride: "leitura" }, "Codex")[0].texto).toBe("Só lê neste turno.")
   })
