@@ -9,9 +9,14 @@
 //    `TurnTelemetry`): onze "concluído" enterravam o único "interrompido";
 //  - hora absoluta E relativa em toda linha, porque é um log lido do fim;
 //  - o texto do pedido é selecionável e nunca fica dentro de um botão.
+//
+// Contraste (mock `docs/mocks/aba-conversa-contraste.html`, 24/09/2026): o
+// mais novo vira cartão sob "Agora" (ou "Último pedido"), o resto fica sob
+// "Antes"; pedido em 13px pleno, duração e custo com peso, fatos em sans, e o
+// plano do cartão aparece uma vez só.
 
 import { useState } from "react"
-import { AlertCircle, Check, Copy, LocateFixed } from "lucide-react"
+import { AlertCircle, Check, Copy, ListChecks, LocateFixed } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { copyText } from "@/lib/clipboard"
@@ -35,21 +40,44 @@ function plural(n: number, um: string, varios: string): string | null {
   return `${n} ${n === 1 ? um : varios}`
 }
 
-/** A linha de fatos, na ordem do mock. Puro, para teste. */
-export function fatosDoPedido(p: PedidoDoFio): string[] {
-  return [
+/** Os fatos em duas vozes (mock `aba-conversa-contraste.html`): duração e
+ *  custo com peso, porque são o que decide; contagens em cinza. Numa linha só
+ *  em mono, com o mesmo peso, tudo virava um número só. Puro, para teste. */
+export function fatosEmDuasVozes(p: PedidoDoFio, { semDuracao = false } = {}): { fortes: string[]; leves: string[] } {
+  const [duracao, custo, ...resto] = [
     p.duracaoMs != null && p.duracaoMs >= 1000 ? fmtDuration(p.duracaoMs) : null,
-    // Motor sem custo: o modelo ocupa o lugar, como no fio.
     p.custoUsd != null ? fmtCost(p.custoUsd, p.custoFonte ?? undefined) : p.modelo,
     plural(p.acoes, "ação", "ações"),
     plural(p.arquivos, "arquivo", "arquivos"),
     plural(p.commits, "commit", "commits"),
     plural(p.imagens, "imagem", "imagens"),
     plural(p.processos, "processo", "processos"),
-  ].filter((f): f is string => !!f)
+  ]
+  return {
+    fortes: [semDuracao ? null : duracao, custo].filter((f): f is string => !!f),
+    leves: resto.filter((f): f is string => !!f),
+  }
 }
 
-function Estado({ estado }: { estado: EstadoDoPedido }) {
+function Fatos({ pedido, semDuracao = false }: { pedido: PedidoDoFio; semDuracao?: boolean }) {
+  const { fortes, leves } = fatosEmDuasVozes(pedido, { semDuracao })
+  const todos = [
+    ...fortes.map((f) => ({ f, forte: true })),
+    ...leves.map((f) => ({ f, forte: false })),
+  ]
+  return (
+    <>
+      {todos.map(({ f, forte }, i) => (
+        <span key={f} className="inline-flex items-center gap-1.5">
+          {i > 0 && <span className="text-faint" aria-hidden>·</span>}
+          <span className={forte ? "font-medium text-foreground/80" : undefined}>{f}</span>
+        </span>
+      ))}
+    </>
+  )
+}
+
+function Estado({ estado, destaque = false }: { estado: EstadoDoPedido; destaque?: boolean }) {
   if (estado === "concluido") {
     return (
       <span className="inline-flex items-center text-muted-foreground/70">
@@ -59,10 +87,11 @@ function Estado({ estado }: { estado: EstadoDoPedido }) {
     )
   }
   if (estado === "rodando") {
+    // A aba é chrome: aqui o vivo é COR (§2.2), e a do rodapé é a mesma.
     return (
-      <span className="inline-flex items-center gap-1 text-foreground/80">
+      <span className={cn("inline-flex items-center gap-1.5 text-st-running", destaque && "font-medium")}>
         <span className="size-1.5 animate-pulse rounded-full bg-st-running" aria-hidden />
-        {PALAVRA.rodando}
+        {destaque ? "Rodando" : PALAVRA.rodando}
       </span>
     )
   }
@@ -80,23 +109,20 @@ function Estado({ estado }: { estado: EstadoDoPedido }) {
   )
 }
 
-function PlanoDoPedido({ pedido, aberto }: { pedido: PedidoDoFio; aberto: boolean }) {
-  const [ver, setVer] = useState(aberto)
+function PlanoDoPedido({ pedido }: { pedido: PedidoDoFio }) {
+  const [ver, setVer] = useState(false)
   const plano = pedido.plano
   if (!plano || plano.tasks.length === 0) return null
   const feitas = plano.tasks.filter((t) => t.status === "completed").length
   return (
-    <div className="mt-2">
-      <button
-        type="button"
-        onClick={() => setVer((v) => !v)}
-        className="text-[11px] text-muted-foreground hover:text-foreground"
-      >
-        Plano {feitas}/{plano.tasks.length}
+    <div className="mt-1.5">
+      <Button type="button" variant="ghost" size="chip" onClick={() => setVer((v) => !v)} className="bg-sel text-muted-foreground">
+        <ListChecks />
+        Plano {feitas} de {plano.tasks.length}
         {!ver && " · ver etapas"}
-      </button>
+      </Button>
       {ver && (
-        <div className="mt-1">
+        <div className="mt-1.5">
           <TaskChecklist tasks={plano.tasks} live={pedido.estado === "rodando"} />
         </div>
       )}
@@ -104,17 +130,7 @@ function PlanoDoPedido({ pedido, aberto }: { pedido: PedidoDoFio; aberto: boolea
   )
 }
 
-function LinhaDoPedido({
-  pedido,
-  cabeca,
-  now,
-  onReveal,
-}: {
-  pedido: PedidoDoFio
-  cabeca: boolean
-  now: number
-  onReveal: (itemId: string) => void
-}) {
+function AcoesDoPedido({ pedido, onReveal, className }: { pedido: PedidoDoFio; onReveal: (id: string) => void; className?: string }) {
   const [copiado, setCopiado] = useState(false)
   async function copiar() {
     if (await copyText(pedido.texto)) {
@@ -123,59 +139,79 @@ function LinhaDoPedido({
     }
   }
   return (
-    // Três trilhos: hora, conteúdo e as ações. As ações moram numa coluna
-    // própria à direita e só acendem no hover/foco: antes eram uma linha
-    // invisível que ainda ocupava altura e abria um vão entre os pedidos.
-    <li className="group/pedido grid grid-cols-[3.25rem_minmax(0,1fr)_1.5rem] gap-x-2 py-2">
-      <div className="pt-px text-[11px] leading-snug text-muted-foreground tabular-nums">
+    <div className={cn("flex opacity-0 transition-opacity group-hover/pedido:opacity-100 focus-within:opacity-100", className)}>
+      <Button type="button" variant="ghost" size="icone-chip" onClick={() => void copiar()} title={copiado ? "Copiado" : "Copiar o pedido"} aria-label="Copiar o pedido">
+        {copiado ? <Check /> : <Copy />}
+      </Button>
+      <Button type="button" variant="ghost" size="icone-chip" onClick={() => onReveal(pedido.id)} title="Ver no fio" aria-label="Ver no fio">
+        <LocateFixed />
+      </Button>
+    </div>
+  )
+}
+
+const Rotulo = ({ children }: { children: string }) => (
+  <div className="px-5 pt-3.5 pb-1.5 text-[11px] font-medium tracking-wide text-faint uppercase">{children}</div>
+)
+
+/** O pedido mais novo, em cartão: é o "agora" quando roda, e o último pedido
+ *  quando nada roda. Estado, tempo, fatos, a última resposta (com rótulo e
+ *  filete, para não se confundir com o pedido) e o plano aberto, uma vez só. */
+function CabecaDoHistorico({ pedido, now, onReveal }: { pedido: PedidoDoFio; now: number; onReveal: (id: string) => void }) {
+  const plano = pedido.plano
+  return (
+    <div className="group/pedido mx-3 rounded-lg border bg-card p-3">
+      <div className="flex items-center gap-2 text-[12px]">
+        <Estado estado={pedido.estado} destaque />
+        {pedido.duracaoMs != null && pedido.duracaoMs >= 1000 && (
+          <span className="text-foreground tabular-nums">{fmtDuration(pedido.duracaoMs)}</span>
+        )}
+        <span className="ml-auto text-faint tabular-nums">
+          {fmtTime(pedido.ts)}
+          {pedido.ts != null && ` · ${fmtAgo(now - pedido.ts)}`}
+        </span>
+        <AcoesDoPedido pedido={pedido} onReveal={onReveal} className="-my-1" />
+      </div>
+      <p data-selectable className="mt-2 line-clamp-4 select-text text-[13px] leading-relaxed break-words text-foreground">
+        {pedido.texto}
+      </p>
+      <div className="mt-2 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground tabular-nums">
+        <Fatos pedido={pedido} semDuracao />
+      </div>
+      {pedido.resposta && (
+        <div className="mt-2.5 border-l border-border/40 pl-2.5">
+          <div className="text-[11px] text-faint">Última resposta</div>
+          <p className="line-clamp-3 text-[12px] leading-relaxed text-muted-foreground">{pedido.resposta}</p>
+        </div>
+      )}
+      {plano && plano.tasks.length > 0 && (
+        <div className="mt-3">
+          <TaskChecklist tasks={plano.tasks} live={pedido.estado === "rodando"} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function LinhaDoPedido({ pedido, now, onReveal }: { pedido: PedidoDoFio; now: number; onReveal: (itemId: string) => void }) {
+  return (
+    // Três trilhos: hora, conteúdo e as ações, que só acendem no hover/foco.
+    <li className="group/pedido grid grid-cols-[2.75rem_minmax(0,1fr)_1.5rem] gap-x-2.5 px-5 py-2.5">
+      <div className="pt-px text-[12px] leading-snug text-foreground/70 tabular-nums">
         <div>{fmtTime(pedido.ts)}</div>
-        {pedido.ts != null && <div className="text-muted-foreground/70">{fmtAgo(now - pedido.ts)}</div>}
+        {pedido.ts != null && <div className="text-[11px] text-faint">{fmtAgo(now - pedido.ts)}</div>}
       </div>
       <div className="min-w-0">
-        <p
-          data-selectable
-          className={cn(
-            "select-text text-[12px] leading-relaxed break-words text-foreground/85",
-            cabeca ? "line-clamp-4" : "line-clamp-2",
-          )}
-        >
+        <p data-selectable className="line-clamp-2 select-text text-[13px] leading-snug break-words text-foreground">
           {pedido.texto}
         </p>
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[11px] text-muted-foreground tabular-nums">
+        <div className="mt-1 flex flex-wrap items-center gap-x-1.5 text-[12px] text-muted-foreground tabular-nums">
           <Estado estado={pedido.estado} />
-          {fatosDoPedido(pedido).map((fato) => (
-            <span key={fato}>{fato}</span>
-          ))}
+          <Fatos pedido={pedido} />
         </div>
-        {cabeca && pedido.resposta && (
-          <p className="mt-1.5 line-clamp-2 text-[12px] leading-relaxed text-muted-foreground">
-            {pedido.resposta}
-          </p>
-        )}
-        <PlanoDoPedido pedido={pedido} aberto={cabeca} />
+        <PlanoDoPedido pedido={pedido} />
       </div>
-      <div className="flex flex-col items-center opacity-0 transition-opacity group-hover/pedido:opacity-100 focus-within:opacity-100">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icone-chip"
-          onClick={() => void copiar()}
-          title={copiado ? "Copiado" : "Copiar o pedido"}
-          aria-label="Copiar o pedido"
-        >
-          {copiado ? <Check /> : <Copy />}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icone-chip"
-          onClick={() => onReveal(pedido.id)}
-          title="Ver no fio"
-          aria-label="Ver no fio"
-        >
-          <LocateFixed />
-        </Button>
-      </div>
+      <AcoesDoPedido pedido={pedido} onReveal={onReveal} className="flex-col items-center" />
     </li>
   )
 }
@@ -190,17 +226,22 @@ export function HistoricoDePedidos({
   onReveal: (itemId: string) => void
 }) {
   const [todos, setTodos] = useState(false)
-  const visiveis = todos ? pedidos : pedidos.slice(0, VISIVEIS)
-  const escondidos = pedidos.length - visiveis.length
+  const [cabeca, ...resto] = pedidos
+  const visiveis = todos ? resto : resto.slice(0, VISIVEIS - 1)
+  const escondidos = resto.length - visiveis.length
+  if (!cabeca) return null
   return (
-    <div className="px-5">
+    <div>
+      <Rotulo>{cabeca.estado === "rodando" ? "Agora" : "Último pedido"}</Rotulo>
+      <CabecaDoHistorico pedido={cabeca} now={now} onReveal={onReveal} />
+      {visiveis.length > 0 && <Rotulo>Antes</Rotulo>}
       <ol className="divide-y divide-border/40">
-        {visiveis.map((pedido, i) => (
-          <LinhaDoPedido key={pedido.id} pedido={pedido} cabeca={i === 0} now={now} onReveal={onReveal} />
+        {visiveis.map((pedido) => (
+          <LinhaDoPedido key={pedido.id} pedido={pedido} now={now} onReveal={onReveal} />
         ))}
       </ol>
       {escondidos > 0 && (
-        <Button type="button" variant="ghost" size="chip" className="mt-1" onClick={() => setTodos(true)}>
+        <Button type="button" variant="ghost" size="chip" className="mx-3 mt-1" onClick={() => setTodos(true)}>
           … mais {escondidos} {escondidos === 1 ? "pedido" : "pedidos"} · mostrar todos
         </Button>
       )}

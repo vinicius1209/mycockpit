@@ -85,4 +85,37 @@ describe("ConversationMapPanel", () => {
     expect(depois.pedidos[1]).toBe(h.pedidos[1])
     expect(comRelogio(historicoDePedidos(PEDIDOS, { running: false, finalizing: false }), 1)).toBeTruthy()
   })
+
+  // Contraste (mock aba-conversa-contraste.html, 24/09/2026): antes era tudo
+  // 11-12px, cinza e mono, e o plano aparecia duas vezes.
+  it("o cabeçalho é de métricas: número com peso, rótulo em cinza, frase inteira no aria-label", () => {
+    const html = render()
+    expect(html).toContain('aria-label="2 pedidos · 1min 22s"')
+    expect(html).toMatch(/font-medium tabular-nums text-foreground">1min 22s<\/div><div class="text-\[11px\] text-muted-foreground">de trabalho/)
+  })
+
+  it("o mais novo vira o cartão do 'Último pedido' e o resto fica sob 'Antes'", () => {
+    const html = render()
+    expect(html.indexOf("Último pedido")).toBeLessThan(html.indexOf("resolva os problemas"))
+    expect(html.indexOf("Antes")).toBeLessThan(html.indexOf("compara as imagens"))
+    expect(html.indexOf("resolva os problemas")).toBeLessThan(html.indexOf("Antes"))
+    // custo com peso; os fatos saíram do mono
+    expect(html).toContain('<span class="font-medium text-foreground/80">US$ 0,840</span>')
+    expect(html).not.toContain("font-mono")
+  })
+
+  it("com o pedido rodando, o cartão é o 'Agora', na cor do vivo (a aba é chrome)", () => {
+    const html = renderToStaticMarkup(
+      <ConversationMapPanel
+        conversationId="conv-1"
+        title="t"
+        items={[...PEDIDOS, { kind: "user", id: "u3", text: "abre as abas", ts: 95_000 }]}
+        running
+        finalizing={false}
+      />,
+    )
+    expect(html).toContain(">Agora<")
+    expect(html).toContain("text-st-running")
+    expect(html).toContain("Rodando")
+  })
 })

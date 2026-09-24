@@ -17,6 +17,7 @@ import { fmtCost, fmtDuration } from "@/lib/format"
 import { currentOriginAnyKind, useInteractions } from "@/store/interactions"
 import type { ChatItem } from "@/store/chat"
 import { useApp } from "@/store/app"
+import { cn } from "@/lib/utils"
 
 /** Relógio da aba: 1 s com pedido rodando (a duração anda), 30 s no resto
  *  (o "há X min"). */
@@ -56,6 +57,45 @@ export function cabecalhoDoHistorico(h: ReturnType<typeof historicoDePedidos>): 
   ]
     .filter(Boolean)
     .join(" · ")
+}
+
+/** O cabeçalho como MÉTRICAS (mock `aba-conversa-contraste.html`, 24/09/2026):
+ *  o número com peso, o rótulo em cinza. Numa linha só em mono, os quatro
+ *  números se confundiam. "Rodando" leva a cor do vivo: a aba é chrome (§2.2).
+ *  A frase inteira fica no `aria-label` para quem não vê a grade. */
+function MetricasDoHistorico({ historico }: { historico: ReturnType<typeof historicoDePedidos> }) {
+  const n = historico.pedidos.length
+  const metricas: { valor: string; rotulo: string; vivo?: boolean }[] = [
+    { valor: String(n), rotulo: n === 1 ? "pedido" : "pedidos" },
+  ]
+  if (historico.rodando > 0) metricas.push({ valor: String(historico.rodando), rotulo: "rodando", vivo: true })
+  if (historico.custoTotalUsd != null)
+    metricas.push({
+      valor: fmtCost(historico.custoTotalUsd, historico.custoTotalEstimado ? "estimated" : undefined),
+      rotulo: "gasto",
+    })
+  if (historico.duracaoTotalMs >= 1000) metricas.push({ valor: fmtDuration(historico.duracaoTotalMs), rotulo: "de trabalho" })
+  return (
+    <div
+      role="group"
+      aria-label={cabecalhoDoHistorico(historico)}
+      className="flex items-start justify-between gap-3 border-b border-border/40 px-5 pt-3.5 pb-3"
+    >
+      {metricas.map((m) => (
+        <div key={m.rotulo} className="min-w-0">
+          <div
+            className={cn(
+              "truncate text-[14px] font-medium tabular-nums",
+              m.vivo ? "text-st-running" : "text-foreground",
+            )}
+          >
+            {m.valor}
+          </div>
+          <div className="text-[11px] text-muted-foreground">{m.rotulo}</div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function ConversationMapPanel({
@@ -120,11 +160,7 @@ export function ConversationMapPanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex min-h-11 items-center px-5">
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-muted-foreground tabular-nums">
-          {cabecalhoDoHistorico(historico)}
-        </span>
-      </div>
+      <MetricasDoHistorico historico={historico} />
       {/* `min-h-0` na fronteira flexível (ADR-162): sem ele a área cresce até
           o conteúdo, nunca rola, e o fim da lista é cortado sem aviso. */}
       <ScrollArea className="min-h-0 flex-1">
