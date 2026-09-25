@@ -57,6 +57,9 @@ pub struct BrowserPreviewStatus {
     pub running: bool,
     pub revision: u64,
     pub error: Option<String>,
+    /// A página está atrás de outra na mesma janela e não é pintada (ADR-257):
+    /// a tela oferece abri-la numa janela própria em vez de esperar quadro.
+    pub de_fundo: bool,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -87,6 +90,7 @@ struct PreviewSession {
     last_notice_at: AtomicI64,
     running: AtomicBool,
     error: Mutex<Option<String>>,
+    de_fundo: AtomicBool,
     stop: watch::Sender<bool>,
 }
 
@@ -98,6 +102,7 @@ impl PreviewSession {
             running: self.running.load(Ordering::Relaxed),
             revision: self.revision.load(Ordering::Relaxed),
             error: self.error.lock().ok().and_then(|value| value.clone()),
+            de_fundo: self.de_fundo.load(Ordering::Relaxed),
         }
     }
 }
@@ -275,20 +280,16 @@ pub async fn browser_pages(
         .collect())
 }
 
-/// O que abre a transmissão de uma página, em ordem. A página vem para a
-/// FRENTE antes do screencast: o Chromium só pinta a aba que está à frente na
-/// janela dele, e uma aba de fundo nunca manda quadro. Era o "só consigo ver o
-/// conteúdo de uma página; as outras ficam em 'Aguardando o primeiro quadro'"
-/// (25/09/2026): trocar de página na Frota não trocava a aba no Chromium.
-fn comandos_de_abertura() -> [Value; 2] {
-    [
-        json!({"id": 1, "method": "Page.bringToFront"}),
-        json!({
-            "id": 2,
-            "method": "Page.startScreencast",
-            "params": {"format": "jpeg", "quality": 68, "maxWidth": 1440, "maxHeight": 1000, "everyNthFrame": 1}
-        }),
-    ]
+/// O que abre a transmissão de uma página. Só o screencast: a página NÃO é
+/// trazida para a frente. Isso foi tentado (25/09/2026) e tiraria da frente a
+/// página em que o agente de outra conversa estivesse trabalhando; o conserto
+/// é cada página ter a própria janela (ADR-257, `janela_propria`).
+fn comandos_de_abertura() -> [Value; 1] {
+    [json!({
+        "id": 1,
+        "method": "Page.startScreencast",
+        "params": {"format": "jpeg", "quality": 68, "maxWidth": 1440, "maxHeight": 1000, "everyNthFrame": 1}
+    })]
 }
 
 async fn run_screencast(
@@ -307,7 +308,7 @@ async fn run_screencast(
             .await
             .map_err(|error| format!("não consegui iniciar o preview: {error}"))?;
     }
-    let mut message_id = 3_u64;
+    let mut message_id = 2_u64;
     // Ritmo do screencast (ADR-232, ADR-234): o Chromium só manda o próximo
     // quadro depois do ack. Confirmar na hora fazia ele codificar ~50 JPEGs
     // por segundo (151 KB cada em 1280×800, medido) além do que a tela
@@ -387,8 +388,15 @@ pub async fn browser_preview_start(
     project_path: String,
     target_id: String,
     conversa: Option<String>,
+    // O gesto "Abrir numa janela própria" (ADR-257): a página de fundo reabre
+    // numa janela só dela, e a transmissão começa já na nova.
+    mover: Option<bool>,
 ) -> Result<BrowserPreviewStatus, String> {
-    let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
+    let (project_id, mut page) = target_for(&app, &project_path, &target_id).await?;
+    if mover.unwrap_or(false) {
+        page = janela_propria::mover(&app, &project_path, &page, conversa.as_deref()).await?;
+    }
+    let target_id = page.id.clone();
     // A página que a pessoa olha numa conversa é onde o próximo turno do
     // agente dela começa (ADR-244).
     if let Some(conv) = conversa.as_deref() {
@@ -398,12 +406,22 @@ pub async fn browser_preview_start(
     // primeira vista acerta, sem segurar o quadro (no-op quando já está certa).
     let ajuste = app.clone();
     let caminho = project_path.clone();
+    let alvo = target_id.clone();
     tauri::async_runtime::spawn(async move {
-        crate::browser_janela::ajustar_no_projeto(&ajuste, &caminho).await;
+        crate::browser_janela::ajustar_na_pagina(&ajuste, &caminho, Some(&alvo)).await;
     });
+    // Página de fundo não manda quadro (ADR-257). Só no headless: na janela
+    // visível a pessoa clica na aba do próprio Chromium.
+    let (_, sessao) = project_session(&app, &project_path).await?;
+    let fundo = !sessao.window_visible
+        && match page.websocket_url.as_deref() {
+            Some(ws) => janela_propria::de_fundo(ws).await,
+            None => false,
+        };
     let registry = app.state::<Arc<BrowserPreviewRegistry>>().inner().clone();
     if let Some(current) = registry.get(&project_id) {
         if current.target_id == target_id && current.running.load(Ordering::Relaxed) {
+            current.de_fundo.store(fundo, Ordering::Relaxed);
             return Ok(current.status());
         }
         registry.stop_project(&project_id);
@@ -417,6 +435,7 @@ pub async fn browser_preview_start(
         last_notice_at: AtomicI64::new(0),
         running: AtomicBool::new(true),
         error: Mutex::new(None),
+        de_fundo: AtomicBool::new(fundo),
         stop,
     });
     registry
@@ -770,9 +789,14 @@ async fn pedido_de_aba(url: String, put: bool) -> Result<String, String> {
     resposta.text().await.map_err(|error| error.to_string())
 }
 
+/// A página nova de uma conversa: numa janela própria no headless (ADR-257).
 pub(crate) async fn nova_aba(app: &tauri::AppHandle, project_path: &str) -> Result<RawPage, String> {
-    let (_, session) = project_session(app, project_path).await?;
-    let corpo = pedido_de_aba(format!("{}/json/new?about:blank", session.endpoint), true).await?;
+    janela_propria::nova_pagina(app, project_path).await
+}
+
+/// Uma aba na janela que já existe (a janela visível, que é da pessoa).
+pub(crate) async fn nova_aba_na_janela(endpoint: &str) -> Result<RawPage, String> {
+    let corpo = pedido_de_aba(format!("{endpoint}/json/new?about:blank"), true).await?;
     serde_json::from_str(&corpo).map_err(|error| format!("aba nova ilegível: {error}"))
 }
 
@@ -817,6 +841,9 @@ pub async fn browser_input(
     let commands = comandos_de_input(action, Path::new(&project_path))?;
     send_cdp(websocket_url, commands).await
 }
+
+#[path = "browser_janela_propria.rs"]
+pub(crate) mod janela_propria;
 
 #[cfg(test)]
 mod tests {
@@ -905,12 +932,11 @@ mod tests {
     }
 
     #[test]
-    fn a_pagina_vem_para_a_frente_antes_da_transmissao() {
-        // O Chromium só pinta a aba da frente: sem o `bringToFront`, trocar de
-        // página na Frota ficava em "Aguardando o primeiro quadro".
-        let [frente, transmissao] = comandos_de_abertura();
-        assert_eq!(frente["method"], "Page.bringToFront");
-        assert_eq!(transmissao["method"], "Page.startScreencast");
-        assert!(frente["id"].as_u64() < transmissao["id"].as_u64());
+    fn a_transmissao_nao_rouba_a_frente_de_ninguem() {
+        // Trazer para a frente tiraria da frente a página do agente de outra
+        // conversa (ADR-257). A página de fundo se resolve com janela própria.
+        let comandos = comandos_de_abertura();
+        assert!(comandos.iter().all(|c| c["method"] != "Page.bringToFront"));
+        assert_eq!(comandos[0]["method"], "Page.startScreencast");
     }
 }

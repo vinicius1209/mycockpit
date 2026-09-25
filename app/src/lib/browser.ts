@@ -94,6 +94,8 @@ export interface BrowserPreviewStatus {
   running: boolean
   revision: number
   error: string | null
+  /** A página está atrás de outra na mesma janela e não é pintada (ADR-257). */
+  deFundo: boolean
 }
 
 export interface BrowserPreviewFrame {
@@ -166,11 +168,15 @@ export function startBrowserPreview(
   projectPath: string,
   targetId: string,
   conversa?: string | null,
+  /** Gesto "Abrir numa janela própria" (ADR-257): a página reabre numa janela
+   *  só dela, e o status devolve o id da nova. */
+  mover = false,
 ): Promise<BrowserPreviewStatus> {
   return invoke<BrowserPreviewStatus>("browser_preview_start", {
     projectPath,
     targetId,
     conversa: conversa ?? null,
+    mover,
   })
 }
 

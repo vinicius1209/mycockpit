@@ -9330,3 +9330,35 @@ considerou.
 - **Consequência:** um sinal de vivo reconhecível em todo o app, na cor que a
   pessoa escolheu para a conversa ou o projeto, e que não trava com a janela
   coberta. O "+" do hover do projeto segue substituindo o estado, por escolha.
+
+### ADR-257 · Cada página de conversa numa janela própria do Chromium ✅
+- **Contexto (25/09/2026):** "por que não consigo ver o conteúdo das páginas
+  ao alternar, apenas 1x?". As conversas de um projeto dividiam UMA janela do
+  Chromium, uma aba cada, e só a aba da frente é pintada. Medido no Chromium do
+  Maclan: a página de fundo mandou 0 quadros em 2,5 s; trazida para a frente
+  (`Page.bringToFront`), 149. Esse foi o primeiro conserto (`7db8670`), e a
+  pessoa perguntou o que importava: "e se o agente estiver usando outra aba?".
+  Trazer uma página para a frente tira a do agente, que deixa de ser pintada e
+  tem timers desacelerados. O agente já fazia isso com a própria troca de aba
+  (`ativar_aba`), então duas conversas no mesmo projeto já disputavam a frente.
+- **Decisão:**
+  1. **O `bringToFront` sai**, e um teste cobra que a transmissão não traga
+     página nenhuma para a frente.
+  2. **Página nova de conversa nasce numa janela própria** no headless
+     (`Target.createTarget` com `newWindow`, em segundo plano, do tamanho da
+     viewport). Medido: janela própria mandou 61 quadros em 3 s ao mesmo tempo
+     que a outra página. Na janela visível, que é da pessoa, segue uma aba por
+     conversa.
+  3. **O Chromium é lançado sem a desaceleração de fundo**
+     (`--disable-background-timer-throttling`, `--disable-renderer-backgrounding`,
+     `--disable-backgrounding-occluded-windows`), a partir do próximo "Ligar".
+  4. **Páginas antigas que ainda dividem a janela:** o `browser_preview_start`
+     pergunta `document.visibilityState` e devolve `deFundo`; a aba diz "Esta
+     página está atrás de outra" e oferece "Abrir numa janela própria", que
+     reabre a mesma URL numa janela só dela e fecha a antiga. É gesto, não
+     automático: recarrega (o login fica, o que estava digitado se perde).
+  5. O ajuste de tamanho (ADR-229) passa a acertar a janela da página
+     escolhida, não a primeira da lista.
+- **Consequência:** a pessoa e os agentes de conversas diferentes olham e
+  trabalham em páginas diferentes ao mesmo tempo, sem roubar a frente um do
+  outro. A troca de aba do agente fica inofensiva para as outras conversas.

@@ -69,6 +69,10 @@ export interface NavegadorDoProjeto {
   copiarImagem: () => void
   /** Marca uma região do quadro e manda ao rascunho (R4, B3). */
   marcar: (regiao: RegiaoNoQuadro) => Promise<boolean>
+  /** A página escolhida está atrás de outra e não manda quadro (ADR-257). */
+  deFundo: boolean
+  /** Reabre a página escolhida numa janela própria (gesto, recarrega). */
+  abrirEmJanelaPropria: () => void
 }
 
 /** Vistas montadas por projeto e a parada adiada de cada um. Trocar de vista
@@ -139,6 +143,7 @@ export function useNavegadorDoProjeto(
   const [address, setAddress] = useState("")
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [deFundo, setDeFundo] = useState(false)
   const revisionRef = useRef(0)
   const selectedRef = useRef<string | null>(null)
   const pilotTokenRef = useRef<string | null>(null)
@@ -203,9 +208,11 @@ export function useNavegadorDoProjeto(
       selectedRef.current = page.id
       setAddress(page.url)
       setFrame(null)
+      setDeFundo(false)
       revisionRef.current = 0
       try {
-        await startBrowserPreview(path, page.id, conversa)
+        const status = await startBrowserPreview(path, page.id, conversa)
+        setDeFundo(status.deFundo)
         await pullFrame(path)
         setError(null)
       } catch (cause) {
@@ -327,6 +334,18 @@ export function useNavegadorDoProjeto(
         : null,
     selectPage: (page) => {
       if (projectPath) void showPage(projectPath, page)
+    },
+    deFundo,
+    abrirEmJanelaPropria: () => {
+      if (!projectPath || !selected) return
+      setError(null)
+      void startBrowserPreview(projectPath, selected.id, conversa, true)
+        .then(async (status) => {
+          const nova = await loadPages(projectPath, status.targetId)
+          setDeFundo(status.deFundo)
+          if (nova) await showPage(projectPath, nova)
+        })
+        .catch((cause) => setError(messageOf(cause)))
     },
     acquire: () => {
       if (!projectPath) return

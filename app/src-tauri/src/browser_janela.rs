@@ -43,17 +43,26 @@ fn par(valor: &Value, a: &str, b: &str) -> Option<(u32, u32)> {
 /// dependa dele: falhar só deixa a página no tamanho que estava, e o motivo
 /// vai ao log.
 pub async fn ajustar_no_projeto(app: &tauri::AppHandle, project_path: &str) {
-    if let Err(erro) = ajustar(app, project_path).await {
+    ajustar_na_pagina(app, project_path, None).await
+}
+
+/// O mesmo, na janela de UMA página: com uma janela por página (ADR-257), a
+/// primeira da lista não é a que a pessoa está olhando.
+pub async fn ajustar_na_pagina(app: &tauri::AppHandle, project_path: &str, alvo: Option<&str>) {
+    if let Err(erro) = ajustar(app, project_path, alvo).await {
         eprintln!("[navegador] não acertei o tamanho da página: {erro}");
     }
 }
 
-async fn ajustar(app: &tauri::AppHandle, project_path: &str) -> Result<(), String> {
+async fn ajustar(app: &tauri::AppHandle, project_path: &str, alvo: Option<&str>) -> Result<(), String> {
     let (_, sessao) = crate::browser_cdp::project_session(app, project_path).await?;
     if sessao.window_visible {
         return Ok(());
     }
-    let pagina = crate::browser_cdp::pagina_ativa(app, project_path).await?;
+    let pagina = match alvo {
+        Some(id) => crate::browser_cdp::target_for(app, project_path, id).await?.1,
+        None => crate::browser_cdp::pagina_ativa(app, project_path).await?,
+    };
     let ws = pagina.websocket_url.as_deref().ok_or("a página não publicou canal")?;
     let mut s = crate::browser_marcacao::SessaoCdp::conectar(ws).await?;
     let janela = s.chamar("Browser.getWindowForTarget", json!({})).await?;

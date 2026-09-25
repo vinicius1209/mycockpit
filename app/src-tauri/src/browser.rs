@@ -360,6 +360,13 @@ pub(crate) fn browser_command(binary: &str, user_data_dir: &str, window_visible:
         format!("--user-data-dir={user_data_dir}"),
         "--no-first-run".into(),
         "--no-default-browser-check".into(),
+        // Página de fundo e janela coberta seguem vivas (ADR-257): sem isto o
+        // Chromium desacelera timers e renderização de quem não está à frente,
+        // e o agente que trabalha numa página enquanto a pessoa olha outra
+        // travava esperando algo que só anda em primeiro plano.
+        "--disable-background-timer-throttling".into(),
+        "--disable-renderer-backgrounding".into(),
+        "--disable-backgrounding-occluded-windows".into(),
     ];
     if !window_visible {
         flags.push("--headless=new".into());
@@ -725,6 +732,17 @@ mod tests {
         assert!(!visible.contains("--headless"));
         // janela visível é da pessoa: o tamanho é dela
         assert!(!visible.contains("--window-size"));
+        // ADR-257: página de fundo e janela coberta seguem vivas, nos dois modos,
+        // senão o agente trava na página que a pessoa não está olhando.
+        for comando in [&cmd, &visible] {
+            for opcao in [
+                "--disable-background-timer-throttling",
+                "--disable-renderer-backgrounding",
+                "--disable-backgrounding-occluded-windows",
+            ] {
+                assert!(comando.contains(opcao), "falta {opcao}");
+            }
+        }
     }
 
     #[test]

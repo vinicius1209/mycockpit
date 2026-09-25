@@ -7,6 +7,7 @@
 
 import { useRef, useState } from "react"
 import {
+  AppWindow,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -313,17 +314,28 @@ export function NavegadorVista({
               <p className="mt-2 text-[13px] font-medium">
                 {nav.loading
                   ? "Conectando ao navegador"
-                  : selected
+                  : selected && nav.deFundo
+                    ? "Esta página está atrás de outra"
+                    : selected
                     ? "Aguardando o primeiro quadro"
                     : nav.abrirPagina
                       ? "Esta conversa ainda não tem página"
                       : "Nenhuma página aberta"}
               </p>
-              <p className="mt-1 text-[12px] text-muted-foreground">
-                {!nav.loading && !selected && nav.abrirPagina
+              <p className="mt-1 max-w-[420px] text-[12px] text-muted-foreground">
+                {!nav.loading && selected && nav.deFundo
+                  ? "Ela divide a janela do navegador com outra página, e só a da frente é desenhada. Numa janela própria ela aparece aqui sem tirar a outra da frente; a página recarrega, e o login continua."
+                  : !nav.loading && !selected && nav.abrirPagina
                   ? "Cada conversa usa as próprias páginas do navegador do projeto."
                   : "A imagem é do navegador deste projeto, sem abrir outra janela."}
               </p>
+              {/* ADR-257: gesto, não automático, porque recarrega a página. */}
+              {!nav.loading && selected && nav.deFundo && (
+                <Button size="compacto" variant="secondary" className="mt-3" onClick={nav.abrirEmJanelaPropria}>
+                  <AppWindow />
+                  Abrir numa janela própria
+                </Button>
+              )}
               {!nav.loading && !selected && nav.abrirPagina && (
                 <Button size="compacto" variant="secondary" className="mt-3" onClick={nav.abrirPagina}>
                   <Plus />
