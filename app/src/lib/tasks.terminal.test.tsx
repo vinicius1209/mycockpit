@@ -47,8 +47,9 @@ describe("plano encerrado com quatro de sete etapas concluídas", () => {
 
   it("replay sem processo vivo é estático, mas o plano em execução ainda anima", () => {
     const tasks = deriveTasks(beforeEnd)
-    expect(renderToStaticMarkup(<TaskChecklist tasks={tasks} />)).not.toContain("animate-spin")
-    expect(renderToStaticMarkup(<TaskChecklist tasks={tasks} live />)).toContain("animate-spin")
+    // O indicador vivo é a matriz viva desde a ADR-256 (antes, o arco `animate-spin`).
+    expect(renderToStaticMarkup(<TaskChecklist tasks={tasks} />)).not.toContain("data-vivo")
+    expect(renderToStaticMarkup(<TaskChecklist tasks={tasks} live />)).toContain("data-vivo")
     expect(tasks[0].status).toBe("in_progress")
   })
 

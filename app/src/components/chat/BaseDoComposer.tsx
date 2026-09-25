@@ -19,7 +19,8 @@
 // o detalhe é dela e a gaveta não abre.
 
 import { useMemo, useState, type ReactNode } from "react"
-import { AlertTriangle, Check, ListChecks, Loader2 } from "lucide-react"
+import { AlertTriangle, Check, ListChecks } from "lucide-react"
+import { MatrizViva } from "@/components/ui/matriz-viva"
 import { QueuedChips } from "@/components/chat/FilaDoComposer"
 import { agirNaExcecao, ListaDeExcecoes } from "@/components/chat/ExcecoesDoTurno"
 import { MiniaturaDaTira } from "@/components/chat/MiniaturaDeAnexo"
@@ -145,7 +146,9 @@ export function BaseDoComposer({
             titulo={detalheNoPainel ? "Etapas abertas no painel Plano" : plano.texto}
           >
             {plano.andando && conv.running ? (
-              <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+              <span className="grid size-3.5 shrink-0 place-items-center">
+                <MatrizViva onda="coluna" className="text-muted-foreground" />
+              </span>
             ) : plano.feitas === plano.total ? (
               <Check className="size-3.5 shrink-0 text-muted-foreground/60" />
             ) : (

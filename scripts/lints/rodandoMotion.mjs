@@ -66,6 +66,23 @@ if (!/animation:\s*conv-spin\s+[\d.]+s[^;]*infinite/.test(css)) {
   )
 }
 
+// A MATRIZ VIVA (ADR-256): o sinal de "rodando" saiu da `.conv-spin` (que
+// segue como carregamento) para a `MatrizViva`, movida por um relógio único
+// em JS, porque `@keyframes` congela na oclusão da janela do macOS. As duas
+// condições do §6 continuam, cobradas no fonte: o relógio respeita
+// reduced-motion (quadro parado e visível) e a matriz não depende de animação
+// de CSS, que era o que travava.
+const ler = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8")
+const relogio = ler("../../app/src/lib/relogioDoVivo.ts")
+// Sem comentários: o próprio arquivo explica por que NÃO usa `@keyframes`.
+const matriz = ler("../../app/src/components/ui/matriz-viva.tsx").replace(/\/\/.*$/gm, "")
+if (!/prefers-reduced-motion: reduce/.test(relogio)) {
+  falhas.push("o relógio da matriz viva não respeita `prefers-reduced-motion` (lib/relogioDoVivo.ts)")
+}
+if (/animate-(?:spin|pulse|cockpit)|@keyframes/.test(matriz)) {
+  falhas.push("a matriz viva voltou a depender de animação de CSS (components/ui/matriz-viva.tsx)")
+}
+
 if (falhas.length) {
   console.error("círculo do 'rodando': regra de movimento violada")
   for (const f of falhas) console.error(`- ${f}`)
@@ -75,4 +92,4 @@ if (falhas.length) {
   process.exit(1)
 }
 
-console.log("círculo do 'rodando' ok · reduced-motion com ponto estático · animação em CSS")
+console.log("sinal de 'rodando' ok · .conv-spin com ponto estático · matriz viva pelo relógio, com reduced-motion")

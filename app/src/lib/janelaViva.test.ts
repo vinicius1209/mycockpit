@@ -62,9 +62,14 @@ describe("onde a época PODE e NÃO PODE entrar", () => {
 
   it("os sítios que USAM a época existem de verdade (o teste acima não é vazio)", () => {
     // Sem isto, apagar a feature inteira deixaria o teste acima verde.
-    const usos = Object.values(FONTES).filter((src) =>
-      src.includes("useEpocaDaJanela"),
-    )
-    expect(usos.length).toBeGreaterThanOrEqual(4)
+    // Desde a ADR-256 os spinners de "rodando" são a matriz viva, movida pelo
+    // relógio único (nada de `@keyframes` para congelar), e saíram daqui. A
+    // época segue onde ainda há pulso CSS infinito: o "pede você" da linha da
+    // conversa e do projeto. Nomeados, e não contados: um número só dizia
+    // "tem alguém", e estes dois PRECISAM ter.
+    const usam = Object.entries(FONTES)
+      .filter(([, src]) => src.includes("useEpocaDaJanela"))
+      .map(([rel]) => rel.replace(/^\.\.\/components\//, ""))
+    expect(usam).toEqual(expect.arrayContaining(["layout/ConversationSlot.tsx", "layout/Sidebar/ProjectRow.tsx"]))
   })
 })

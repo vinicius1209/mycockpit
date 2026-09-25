@@ -31,6 +31,7 @@ import { useApp } from "@/store/app"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { MatrizViva } from "@/components/ui/matriz-viva"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 
 /** A marca do projeto (ADR-245): a SUA cor-rótulo num quadradinho, cinza sem
@@ -53,7 +54,7 @@ function MarcaDoProjeto({ color }: { color?: string | null }) {
 /** O estado do projeto em PALAVRA, na coluna direita. Espera vence rodando: um
  *  projeto que roda sozinho não precisa de você; um que parou para perguntar,
  *  sim. Pulso SÓ no "pede você" (S3.2, ADR-071): rodando é presença calma. */
-function EstadoDoProjeto({ status, awaiting }: { status: AgentStatus; awaiting: boolean }) {
+function EstadoDoProjeto({ status, awaiting, cor }: { status: AgentStatus; awaiting: boolean; cor?: string | null }) {
   const epoca = useEpocaDaJanela()
   if (awaiting)
     return (
@@ -64,8 +65,9 @@ function EstadoDoProjeto({ status, awaiting }: { status: AgentStatus; awaiting: 
     )
   if (status === "running")
     return (
-      <span title="Turno rodando neste projeto" className="flex shrink-0 items-center gap-1.5 text-[11px] text-st-running">
-        <span className="size-1.5 rounded-full bg-st-running" />
+      <span title="Turno rodando neste projeto" className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
+        {/* A matriz na cor do projeto, senão o azul de rodando (ADR-256). */}
+        <MatrizViva cor={cor ?? "var(--st-running)"} />
         rodando
       </span>
     )
@@ -213,7 +215,7 @@ export function ProjectRow({
               na mesma coluna e nunca aparecem juntas. */}
           {!editing && (
             <span className="mr-0.5 group-hover:hidden">
-              <EstadoDoProjeto status={status} awaiting={awaiting} />
+              <EstadoDoProjeto status={status} awaiting={awaiting} cor={project.color} />
             </span>
           )}
           {!editing && (

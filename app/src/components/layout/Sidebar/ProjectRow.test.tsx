@@ -31,8 +31,12 @@ describe("linha do projeto", () => {
     expect(html).not.toContain("lucide-folder")
   })
 
-  it("estado é palavra na direita: rodando em azul, e 'pede você' vence rodando", () => {
-    expect(linha({ status: "running" })).toMatch(/text-st-running[^"]*">.*rodando/)
+  it("estado é palavra na direita: rodando com a matriz na cor do projeto, e 'pede você' vence rodando", () => {
+    // ADR-256: a matriz viva herda a cor do projeto; sem cor, o azul de rodando.
+    expect(linha({ status: "running" })).toMatch(/data-vivo[^>]*style="color:#3fcf8e"[\s\S]*rodando/)
+    expect(linha({ status: "running", project: { ...projeto, color: null } })).toMatch(
+      /data-vivo[^>]*style="color:var\(--st-running\)"/,
+    )
     const pede = linha({ status: "running", awaiting: true })
     expect(pede).toContain("pede você")
     expect(pede).not.toContain(">rodando<")

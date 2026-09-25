@@ -278,9 +278,12 @@ describe("MessageList · posse do nome é da ENTIDADE, e desce pela subárvore",
     )
     // eram 3 na mesma linhagem (cabeçalho + tool_use + nó do trabalho); agora
     // o cabeçalho representa o grupo (recolhido é o único sinal) e, dentro da
-    // árvore, só o passo mais profundo em execução gira.
-    const spinners = html.match(/animate-spin/g) ?? []
+    // árvore, só o passo mais profundo em execução se move. Desde a ADR-256 o
+    // indicador animado é a matriz viva, não o arco; a de passo tem a onda em
+    // coluna (a do rodapé "trabalhando", em diagonal, é o batimento do turno).
+    const spinners = html.match(/data-vivo="coluna"/g) ?? []
     expect(spinners).toHaveLength(2)
+    expect(html).not.toContain("animate-spin")
     // o ancestral vivo não some: continua dizendo que o ramo está aceso — agora
     // por CONTRASTE (cinza forte contra os irmãos apagados), não por tinta.
     expect(html).toContain("rounded-full bg-foreground/45")

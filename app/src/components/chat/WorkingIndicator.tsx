@@ -5,8 +5,8 @@ import { abrirBastidores } from "@/components/bastidores/abrirBastidores"
 import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
-import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { cn } from "@/lib/utils"
+import { MatrizViva } from "@/components/ui/matriz-viva"
 import { useTrocou } from "@/lib/nascimento"
 import { deferredLiveLine, useRunLiveness, type RunLiveness } from "@/store/chat"
 import type { Node } from "@/components/chat/messageNodes"
@@ -91,8 +91,6 @@ export function WorkingIndicator({
 }) {
   const storeLiveness = useRunLiveness(convId)
   const runLiveness = propRunLiveness ?? storeLiveness
-  // ADR-071: os dots voltam a pulsar quando a janela reaparece.
-  const epoca = useEpocaDaJanela()
   const presets = usePresets((s) => s.list)
   const { gutter, name, engine } = resolveExecutorIdentity(presets, agent, presetId)
   const live = deferredLiveLine(deferred)
@@ -165,23 +163,19 @@ export function WorkingIndicator({
           </span>
         )
       )}
-      <span className="flex shrink-0 items-center gap-1" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <span
-            key={`${epoca}:${i}`}
-            className={cn(
-              "size-1.5 rounded-full",
-              stalled
-                ? "bg-st-warning/70"
-                // §2.2: a linha "trabalhando" mora DENTRO do fio, então o
-                // vivo dela é o pulso, não a tinta. O âmbar do `stalled` fica:
-                // travado não é "vivo", é aviso, e isso é outro eixo.
-                : "animate-cockpit-pulse bg-foreground/45",
-            )}
-            style={stalled ? undefined : { animationDelay: `${i * 0.18}s` }}
-          />
-        ))}
-      </span>
+      {stalled ? (
+        // Travado não é "vivo", é aviso: pontos âmbar parados, outro eixo.
+        <span className="flex shrink-0 items-center gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="size-1.5 rounded-full bg-st-warning/70" />
+          ))}
+        </span>
+      ) : (
+        // §2.2: dentro do fio o vivo é movimento, não tinta. A matriz viva
+        // (ADR-256) no lugar dos três pontos pulsando: o mesmo sinal da barra
+        // lateral, em cinza, e movido pelo relógio único.
+        <MatrizViva grande className="text-foreground/55" />
+      )}
       {/* Fato que anda no lugar: dígitos de largura fixa, sem crossfade. Some
           com trabalho em segundo plano, onde a linha fala de OUTRO relógio. */}
       {!live && !stalled && completedToolsCount > 0 && (

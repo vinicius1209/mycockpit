@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { controle } from "@/components/ui/controle"
 import type { ConversationMeta } from "@/lib/db/conversations"
+import { useApp } from "@/store/app"
 
 interface ConversationRowProps {
   c: ConversationMeta
@@ -84,6 +85,8 @@ export function ConversationRow({
   renameConversation,
   setConversationColor,
 }: ConversationRowProps) {
+  // O "rodando" herda a cor da conversa, senão a do projeto (ADR-256).
+  const corDoProjeto = useApp((st) => st.projects.find((p) => p.id === projectId)?.color ?? null)
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState("")
   const editInputRef = useRef<HTMLInputElement>(null)
@@ -274,6 +277,7 @@ export function ConversationRow({
               <ConversationSlot
                 pede={isAwaiting}
                 rodando={isRunning}
+                cor={c.color ?? corDoProjeto}
                 falhou={doneUnseen === "error"}
                 updatedAt={c.updatedAt}
               />

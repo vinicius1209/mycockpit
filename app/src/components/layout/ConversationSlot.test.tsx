@@ -65,7 +65,8 @@ function render(c: ConvState | undefined, pede = false) {
   )
 }
 
-const temEsteira = (html: string) => html.includes("conv-spin")
+// A esteira é a matriz viva desde a ADR-256 (antes, o arco `.conv-spin`).
+const temEsteira = (html: string) => html.includes("data-vivo")
 
 describe("a esteira só existe enquanto o turno existe", () => {
   it("turno rodando: a esteira está na linha", () => {
@@ -164,3 +165,14 @@ describe("o slot reserva o espaço mesmo calado", () => {
 // animação em CSS são invariantes do ARQUIVO de estilo, não do componente:
 // vivem em `scripts/lints/esteiraMotion.mjs`, que roda em Node e pode ler o
 // index.css de verdade. Aqui elas passavam lendo string vazia.
+
+describe("a cor do rodando (ADR-256)", () => {
+  it("a matriz herda a cor que a linha passa; sem cor, o azul de rodando", () => {
+    const comCor = renderToStaticMarkup(
+      <ConversationSlot pede={false} rodando falhou={false} updatedAt={1} cor="#c46a8c" />,
+    )
+    expect(comCor).toMatch(/data-vivo[^>]*style="color:#c46a8c"/)
+    const semCor = renderToStaticMarkup(<ConversationSlot pede={false} rodando falhou={false} updatedAt={1} />)
+    expect(semCor).toMatch(/data-vivo[^>]*style="color:var\(--st-running\)"/)
+  })
+})

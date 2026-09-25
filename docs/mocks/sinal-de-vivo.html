@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Sinal de "rodando" · hoje × proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--muted:#9aa0a7;--faint:#687078;--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);--sel:rgba(255,255,255,.065);--brass:#e4a862;--running:#5bb8e8;--warn:#d99138;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;--quadro:0}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 22px;max-width:1020px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:34px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin:0 0 14px;max-width:1020px;line-height:1.55}.q b{color:var(--fg);font-weight:500}
+code{font:12px var(--mono);color:var(--fg)}
+.grade{display:grid;grid-template-columns:170px repeat(4,1fr);gap:0;border:1px solid var(--border);border-radius:12px;overflow:hidden;max-width:1200px}
+.grade > div{padding:14px 14px;border-top:1px solid var(--div);border-left:1px solid var(--div);display:flex;align-items:center;min-height:56px}
+.grade .cab{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);border-top:0;min-height:40px}
+.grade .cab.esc{color:var(--brass)}
+.grade .rot{font-size:12px;color:var(--muted);border-left:0}
+.grade .col-esc{background:rgba(228,168,98,.035)}
+/* contextos reais */
+.linha-conv{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 8px;border-radius:6px;background:var(--sel);font-size:13px;color:var(--fg)}
+.linha-conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj{display:flex;align-items:center;gap:8px;width:100%;font-size:13px;font-weight:600}
+.proj .q9{width:9px;height:9px;border-radius:2px;background:#8aa0c8}
+.proj .estado{margin-left:auto;display:flex;align-items:center;gap:6px;font:500 12px var(--sans);color:var(--muted)}
+.passo{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+.passo b{color:var(--fg);font-weight:500}
+.rodape{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)}
+.rodape .n{font-variant-numeric:tabular-nums;color:var(--faint)}
+
+/* HOJE: o arco do Loader2 (animate-spin) e o ponto */
+.arco{width:12px;height:12px;border-radius:50%;border:1.5px solid rgba(154,160,167,.25);border-top-color:var(--muted);animation:gira 1s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
+.ponto{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.ponto.azul{background:var(--running)}
+
+/* PROPOSTAS: matriz 3×3 guiada pelo relógio (--quadro), não por @keyframes */
+.mx{display:grid;grid-template-columns:repeat(3,3px);grid-template-rows:repeat(3,3px);gap:1.5px;flex-shrink:0}
+.mx i{width:3px;height:3px;border-radius:1px;background:currentColor;opacity:.18;transition:opacity 90ms linear}
+.mx i.on{opacity:1}.mx i.meio{opacity:.5}
+.mx.cinza{color:var(--muted)}
+.mx.azul{color:var(--running)}
+.mx.ref i:nth-child(-n+3){color:#4fa7df}.mx.ref i:nth-child(n+4):nth-child(-n+6){color:#d9a05b}.mx.ref i:nth-child(n+7){color:#c46a8c}
+.mx.g{grid-template-columns:repeat(3,3.5px);grid-template-rows:repeat(3,3.5px);gap:2px}
+.mx.g i{width:3.5px;height:3.5px}
+/* C: anel com cauda, também pelo relógio */
+.cometa{width:12px;height:12px;border-radius:50%;background:conic-gradient(from calc(var(--quadro) * 36deg),transparent 0 35%,rgba(154,160,167,.9) 100%);-webkit-mask:radial-gradient(circle,transparent 3.6px,#000 4.1px);mask:radial-gradient(circle,transparent 3.6px,#000 4.1px)}
+.nota{font-size:12px;color:var(--muted);line-height:1.55;margin:10px 2px 0;max-width:1020px}.nota b{color:var(--fg);font-weight:500}
+.lado{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-start;margin-top:10px}
+.card{background:var(--rail);border:1px solid var(--border);border-radius:12px;padding:14px 16px;width:500px;font-size:13px;color:var(--muted);line-height:1.6}
+.card b{color:var(--fg);font-weight:500}
+.card.esc{outline:1px solid rgba(228,168,98,.45)}
+.card ol{padding-left:18px}.card li{margin-top:4px}
+</style>
+</head>
+<body>
+<h1>O sinal de "rodando"</h1>
+<p class="sub">Do vídeo (<code>docs/analisar.mov</code>): hoje a Frota diz "vivo" com <b>três desenhos diferentes</b>. A linha da conversa na barra lateral tem um arco cinza pequeno girando (o <code>Loader2</code>); o projeto tem um ponto e a palavra "rodando"; o passo do fio, a tira do plano e o botão de preparo têm outros arcos. Na sua imagem de referência, o sinal é uma <b>matriz de 3×3 pontinhos que acendem em onda</b>, uma linha de cada cor. Abaixo, cada proposta está viva, nos quatro lugares onde a Frota mostra que algo está rodando.</p>
+
+<h2>1 · Lado a lado, animando <small>passe o olho na coluna de cada proposta</small></h2>
+<div class="grade">
+  <div class="cab">onde</div><div class="cab">hoje</div><div class="cab esc">A · matriz cinza (recomendo)</div><div class="cab">B · matriz na cor do estado</div><div class="cab">C · anel com cauda</div>
+
+  <div class="rot">Conversa na barra lateral</div>
+  <div><span class="linha-conv"><span class="t">Claude, baseado em toda sua…</span><span class="arco"></span></span></div>
+  <div class="col-esc"><span class="linha-conv"><span class="t">Claude, baseado em toda sua…</span><span class="mx cinza" data-onda="diagonal"></span></span></div>
+  <div><span class="linha-conv"><span class="t">Claude, baseado em toda sua…</span><span class="mx azul" data-onda="diagonal"></span></span></div>
+  <div><span class="linha-conv"><span class="t">Claude, baseado em toda sua…</span><span class="cometa"></span></span></div>
+
+  <div class="rot">Projeto com algo rodando</div>
+  <div><span class="proj"><span class="q9"></span>Maclan<span class="estado"><span class="ponto"></span>rodando</span></span></div>
+  <div class="col-esc"><span class="proj"><span class="q9"></span>Maclan<span class="estado"><span class="mx cinza" data-onda="diagonal"></span>rodando</span></span></div>
+  <div><span class="proj"><span class="q9"></span>Maclan<span class="estado"><span class="mx azul" data-onda="diagonal"></span>rodando</span></span></div>
+  <div><span class="proj"><span class="q9"></span>Maclan<span class="estado"><span class="cometa"></span>rodando</span></span></div>
+
+  <div class="rot">Passo do fio em execução</div>
+  <div><span class="passo"><span class="arco"></span><b>Rodando os testes</b> cargo test</span></div>
+  <div class="col-esc"><span class="passo"><span class="mx cinza" data-onda="coluna"></span><b>Rodando os testes</b> cargo test</span></div>
+  <div><span class="passo"><span class="mx cinza" data-onda="coluna"></span><b>Rodando os testes</b> cargo test</span></div>
+  <div><span class="passo"><span class="cometa"></span><b>Rodando os testes</b> cargo test</span></div>
+
+  <div class="rot">Rodapé do turno</div>
+  <div><span class="rodape"><span class="ponto azul"></span>trabalhando <span class="n">· 6 ações · 7min 11s</span></span></div>
+  <div class="col-esc"><span class="rodape"><span class="mx cinza g" data-onda="diagonal"></span>trabalhando <span class="n">· 6 ações · 7min 11s</span></span></div>
+  <div><span class="rodape"><span class="mx azul g" data-onda="diagonal"></span>trabalhando <span class="n">· 6 ações · 7min 11s</span></span></div>
+  <div><span class="rodape"><span class="cometa"></span>trabalhando <span class="n">· 6 ações · 7min 11s</span></span></div>
+
+  <div class="rot">A referência, como veio</div>
+  <div style="grid-column:2 / span 4"><span class="rodape"><span class="mx ref g" data-onda="diagonal"></span>Escrevendo <span class="n">· 6 ações · 7min 11s</span></span><span class="q" style="margin:0 0 0 18px;font-size:12px">Três cores por linha. Bonito, mas no nosso guia cor é estado (§2): azul, âmbar e rosa juntos leriam como "rodando, pedindo atenção e com erro" ao mesmo tempo.</span></div>
+</div>
+<p class="nota"><b>A</b> é a sua referência sem as três cores: a mesma matriz 3×3, com a onda feita de <b>brilho</b>, em cinza, que é a regra do guia para o vivo dentro do fio (§2.2: "no fio o vivo é movimento, não tinta"). Um desenho só para os quatro lugares, e cada lugar escolhe a onda: diagonal para "a conversa está trabalhando", coluna subindo para "este passo está executando". <b>B</b> usa o azul de "rodando" fora do fio (barra lateral e projeto), como o guia já faz com o ponto. <b>C</b> é a alternativa sem matriz, se a matriz parecer brincadeira demais.</p>
+
+<h2>2 · O "trava e só volta ao clicar" <small>a causa e o conserto, valem para qualquer desenho</small></h2>
+<div class="lado">
+  <div class="card">
+    <b>A causa</b>
+    <p style="margin-top:6px">O giro de hoje é CSS (<code>@keyframes</code>). No macOS, quando a janela da Frota fica coberta por outra (um player, uma notificação, outra janela por cima), o WKWebView suspende a pintura e, ao reaparecer, repinta o <b>último quadro</b>, sem retomar a animação. O app já tinha um remédio para isso (ADR-071, <code>lib/janelaViva.ts</code>): remontar o giro quando a janela <b>ganha foco</b> ou <b>volta a ficar visível</b>. Só que coberta-e-descoberta <b>sem perder o foco</b> não dispara nenhum dos dois eventos. Aí o giro fica parado até um clique forçar a repintura. É o "só volta quando clico no projeto".</p>
+  </div>
+  <div class="card esc">
+    <b>O conserto</b>
+    <ol>
+      <li><b>Um relógio só, do app todo</b>, em vez de uma animação CSS por spinner: um <code>requestAnimationFrame</code> compartilhado que troca uma variável (<code>--quadro</code>) cerca de 12 vezes por segundo, e só enquanto existe algum sinal de vivo na tela. Com nenhum rodando, o relógio para.</li>
+      <li>O quadro é <b>calculado pela hora</b> (<code>performance.now()</code>), não somado. Quando a janela volta, o próximo quadro já nasce no ponto certo. Não existe animação "suspensa" para retomar, porque ela não é mais do navegador.</li>
+      <li>O mock desta página já anima assim: o relógio no fim do arquivo é o mesmo que iria para o app.</li>
+      <li><code>prefers-reduced-motion</code>: a matriz fica parada no quadro do meio, acesa, sem piscar.</li>
+    </ol>
+  </div>
+</div>
+
+<h2>3 · O que também vi no vídeo</h2>
+<p class="q">Com o mouse sobre a linha do projeto <b>Maclan</b>, o "• rodando" some e dá lugar ao "+" (nova conversa). Por um instante a barra lateral deixa de dizer que o projeto está trabalhando. Proposta: o "+" entra <b>ao lado</b> do sinal de vivo, sem apagá-lo.</p>
+
+<script>
+// O RELÓGIO ÚNICO: o mesmo desenho que iria para o app (lib/relogioDoVivo.ts).
+// Quadro calculado pela hora, 12 por segundo; nada de @keyframes.
+const ONDAS = {
+  // ordem em que cada ponto (0..8, linha a linha) acende
+  diagonal: [0, 1, 3, 2, 4, 6, 5, 7, 8].map((_, i, a) => a.indexOf(i)),
+  coluna: [6, 3, 0, 7, 4, 1, 8, 5, 2].map((_, i, a) => a.indexOf(i)),
+}
+for (const el of document.querySelectorAll(".mx")) el.innerHTML = "<i></i>".repeat(9)
+const QPS = 12, CICLO = 12
+function pintar(agora) {
+  const q = Math.floor((agora / 1000) * QPS) % CICLO
+  document.documentElement.style.setProperty("--quadro", q)
+  for (const el of document.querySelectorAll(".mx")) {
+    const ordem = ONDAS[el.dataset.onda || "diagonal"]
+    el.querySelectorAll("i").forEach((p, i) => {
+      const d = (q - ordem[i] + CICLO) % CICLO
+      p.className = d === 0 ? "on" : d === 1 || d === 2 ? "meio" : ""
+    })
+  }
+  requestAnimationFrame(pintar)
+}
+requestAnimationFrame(pintar)
+</script>
+</body>
+</html>

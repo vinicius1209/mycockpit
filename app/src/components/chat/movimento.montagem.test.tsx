@@ -18,7 +18,7 @@ describe("montar não anima (ADR-179)", () => {
     const html = renderToStaticMarkup(
       <ConversationSlot pede={false} rodando falhou={false} updatedAt={Date.now()} />,
     )
-    expect(html).toContain("conv-spin")
+    expect(html).toContain("data-vivo")
     expect(html).not.toContain("fio-nasce")
   })
 

@@ -9296,3 +9296,37 @@ considerou.
 - **Consequência:** a conversa nova do Claude ganha nome de assunto no
   primeiro turno. Motor que ignorar o pedido segue com o helper ou com a
   primeira frase, como antes.
+
+### ADR-256 · O sinal de "rodando" é uma matriz viva, movida por um relógio único ✅
+- **Contexto (25/09/2026):** do vídeo `docs/analisar.mov` e de uma referência
+  (matriz 3×3 de pontinhos acendendo em onda): a Frota dizia "vivo" com três
+  desenhos (o arco `.conv-spin` na conversa, ponto e palavra no projeto, o
+  `Loader2` no fio, três pontos pulsando no rodapé). E "às vezes o spinner
+  trava e só volta quando clico no projeto": animação CSS congela na oclusão da
+  janela do macOS (diagnóstico da ADR-071), e o remédio de lá (remontar no
+  `focus`/`visibilitychange`) não cobre janela coberta e descoberta sem perder
+  o foco. Mock aprovado: `docs/mocks/sinal-de-vivo.html`, variante B, com o
+  pedido de que a matriz herde a cor da conversa ou do projeto.
+- **Decisão:**
+  1. **Uma primitiva só**, `components/ui/matriz-viva`: 3×3 pontos em onda
+     (diagonal = a conversa trabalhando; coluna = um passo executando). Entra
+     na linha da conversa, no estado do projeto, no passo e no grupo do fio, na
+     etapa do plano e no rodapé "trabalhando". Carregamento curto (botão,
+     leitura de pasta, tela de encerramento) segue com o arco.
+  2. **Cor:** na barra lateral, a da conversa, senão a do projeto, senão
+     `st-running`; no fio, cinza (§2.2: lá o vivo é movimento, não tinta).
+  3. **Movimento por um relógio único** (`lib/relogioDoVivo.ts`), não por
+     `@keyframes`: um `requestAnimationFrame` compartilhado, a 12 quadros por
+     segundo, que só roda com alguma matriz na tela. O quadro sai da hora
+     (`quadroEm`), então a janela que volta não tem animação suspensa para
+     retomar. A matriz se pinta direto no DOM, sem re-render do React.
+     Reduced-motion: quadro parado, meia luz com o centro aceso.
+  4. **A guarda `rodandoMotion.mjs` muda por esta decisão:** ela exigia CSS
+     para o "rodando", com medo de timer que sobrevive ao turno. O relógio não
+     decide quem está vivo (só pinta quem o store pôs na tela), e a guarda
+     passa a cobrar o reduced-motion do relógio e a ausência de `@keyframes` na
+     matriz. A época da janela (ADR-071) segue só onde há pulso CSS infinito
+     ("pede você"), e o teste dela nomeia esses lugares.
+- **Consequência:** um sinal de vivo reconhecível em todo o app, na cor que a
+  pessoa escolheu para a conversa ou o projeto, e que não trava com a janela
+  coberta. O "+" do hover do projeto segue substituindo o estado, por escolha.

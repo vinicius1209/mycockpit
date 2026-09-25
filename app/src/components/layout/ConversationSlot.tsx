@@ -4,6 +4,7 @@ import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { minuteNow, subscribeMinute } from "@/lib/minuteTick"
 import { useTrocou } from "@/lib/nascimento"
 import { cn } from "@/lib/utils"
+import { MatrizViva } from "@/components/ui/matriz-viva"
 import {
   fmtQuando,
   slotEstado,
@@ -26,8 +27,8 @@ const TITULO: Record<SlotEstado, string> = {
  * `pede > rodando > falhou > tempo relativo`, decidida em `conversationWhen.ts`.
  *
  * Não há timer aqui dentro: o tempo vem do ticker único de minuto e o
- * "rodando" é uma animação de CSS presa à presença do elemento. Isso é o que
- * garante que o círculo PARA quando o turno acaba, inclusive quando ele morre
+ * "rodando" é a `MatrizViva`, presa à presença do elemento (o relógio único
+ * só pinta quem existe). Isso é o que garante que ela PARA quando o turno acaba, inclusive quando ele morre
  * por erro, por cancelamento ou porque o app foi fechado: `rodando` é derivado
  * do store, que nunca persiste turno vivo, e sem `rodando` o elemento
  * simplesmente não existe. Não existe caminho de desmonte pra alguém esquecer.
@@ -37,11 +38,15 @@ export function ConversationSlot({
   rodando,
   falhou,
   updatedAt,
+  cor,
 }: {
   pede: boolean
   rodando: boolean
   falhou: boolean
   updatedAt: number | null | undefined
+  /** Cor do "rodando": a da conversa, senão a do projeto (ADR-256). Sem
+   *  nenhuma, o azul de rodando. */
+  cor?: string | null
 }) {
   const agora = useSyncExternalStore(subscribeMinute, minuteNow, minuteNow)
   // Época da janela: muda SÓ quando a janela volta a ser vista. Ver
@@ -57,21 +62,10 @@ export function ConversationSlot({
   if (estado === "rodando") {
     return (
       <span key={estado} className={slot} title={TITULO.rodando}>
-        {/* `key` na ÉPOCA: quando a janela volta de uma oclusão do macOS, o
-            WKWebView pode repintar o último quadro sem retomar a animação — o
-            anel fica parado num ângulo qualquer até algo forçar recálculo de
-            estilo. Trocar a chave remonta o elemento, e animação de elemento
-            novo começa do zero, sempre.
-
-            Em uso normal a época NUNCA muda, então isto custa zero: não é um
-            `setInterval` mascarando o problema, é um empurrão no único momento
-            em que ele aparece. */}
-        <span
-          key={epoca}
-          className="conv-spin"
-          aria-label="turno rodando"
-          role="img"
-        />
+        {/* A matriz viva (ADR-256): o movimento vem do relógio único, não de
+            `@keyframes`, então a oclusão da janela no macOS não tem animação
+            para congelar (era o "trava e só volta ao clicar"). */}
+        <MatrizViva cor={cor ?? "var(--st-running)"} rotulo="turno rodando" />
       </span>
     )
   }
