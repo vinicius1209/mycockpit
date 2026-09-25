@@ -117,7 +117,9 @@ impl GatewayConfig {
 /// aba em que o agente está (ADR-231).
 #[derive(Default)]
 pub struct BrowserGateway {
-    lease: Mutex<Option<crate::experience_broker::BrowserPilotLease>>,
+    /// Posse por página (ADR-258): o agente só segura as páginas em que agiu,
+    /// até o fim do run, e as páginas de outras conversas seguem livres.
+    lease: Mutex<std::collections::HashMap<String, crate::experience_broker::BrowserPilotLease>>,
     ultimo_pedido_ms: Mutex<i64>,
     /// A aba do agente neste run. Só muda por gesto dele (selecionar, abrir,
     /// fechar) ou quando ela some.
@@ -313,21 +315,21 @@ fn assegurar_lease(
     app: &tauri::AppHandle,
     gateway: &BrowserGateway,
     project_id: &str,
+    target_id: &str,
     run_id: &str,
 ) -> Result<(), String> {
     use tauri::Manager;
-    let mut lease = gateway.lease.lock().map_err(|_| "lease indisponível".to_string())?;
-    if lease.is_some() {
+    let mut leases = gateway.lease.lock().map_err(|_| "lease indisponível".to_string())?;
+    if leases.contains_key(target_id) {
         return Ok(());
     }
     let broker = app.state::<Arc<crate::experience_broker::ExperienceBroker>>();
-    match broker.acquire_agent(project_id, run_id) {
-        Ok(nova) => {
-            *lease = Some(nova);
-            Ok(())
-        }
-        Err(_) => Err("A pessoa está pilotando o navegador agora. Só observe (snapshot, captura) ou tente de novo quando ela soltar o controle.".into()),
-    }
+    let alcance = crate::experience_broker::Alcance::Pagina(target_id.into());
+    // A recusa já diz quem está com a página (a pessoa, outro agente, um
+    // plugin): antes era sempre "a pessoa está pilotando".
+    let nova = broker.acquire_agent(project_id, alcance, run_id)?;
+    leases.insert(target_id.into(), nova);
+    Ok(())
 }
 
 fn websocket(page: &crate::browser_cdp::RawPage) -> Result<&str, String> {
@@ -401,7 +403,7 @@ pub async fn handle(
             if url.is_empty() {
                 return Err("url ausente".into());
             }
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             let destino = crate::browser_cdp::politica_da_barra(url, Path::new(cwd))?;
             crate::browser_cdp::pilotar(ws, vec![json!({
                 "id": 1, "method": "Page.navigate", "params": {"url": destino}
@@ -412,7 +414,7 @@ pub async fn handle(
         CLICK_TOOL => {
             let x = args.get("x").and_then(Value::as_f64).ok_or("x ausente")?;
             let y = args.get("y").and_then(Value::as_f64).ok_or("y ausente")?;
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Click { x, y },
                 Path::new(cwd),
@@ -425,7 +427,7 @@ pub async fn handle(
             if text.is_empty() {
                 return Err("text ausente".into());
             }
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Text { text: text.into() },
                 Path::new(cwd),
@@ -443,7 +445,7 @@ pub async fn handle(
             if key.is_empty() {
                 return Err("key ausente".into());
             }
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Key { key, code },
                 Path::new(cwd),
@@ -453,7 +455,7 @@ pub async fn handle(
         }
         EVALUATE_TOOL => {
             let expressao = args.get("expression").and_then(Value::as_str).unwrap_or("");
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             let valor = crate::browser_script::executar(ws, expressao).await?;
             Ok(crate::browser_script::resultado_para_o_modelo(&valor))
         }
@@ -473,7 +475,7 @@ pub async fn handle(
                 Path::new(cwd),
                 &crate::browser_script::pastas_temporarias(),
             )?;
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
             let quantos = arquivos.len();
             crate::browser_script::enviar_arquivos(ws, seletor, arquivos).await?;
             Ok(json!({ "ok": true, "arquivos": quantos, "selector": seletor }))
@@ -492,7 +494,7 @@ pub async fn handle(
                 .iter()
                 .find(|p| p.id == id)
                 .ok_or("essa aba não existe mais; liste com browser_tabs")?;
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &page.id, run_id)?;
             gateway.trocar(&page.id);
             crate::browser_donos::com(|d| d.usar(conv_id, &page.id));
             crate::browser_cdp::ativar_aba(app, cwd, &page.id).await?;
@@ -505,8 +507,8 @@ pub async fn handle(
             } else {
                 Some(crate::browser_cdp::politica_da_barra(url, Path::new(cwd))?)
             };
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
             let nova = crate::browser_cdp::nova_aba(app, cwd).await?;
+            assegurar_lease(app, gateway, &alvo.project_id, &nova.id, run_id)?;
             crate::browser_donos::com(|d| {
                 d.tomar(&nova.id, conv_id);
                 d.usar(conv_id, &nova.id);
@@ -536,7 +538,7 @@ pub async fn handle(
             if alvo.abas.len() <= 1 {
                 return Err("é a única aba aberta; navegue nela em vez de fechar".into());
             }
-            assegurar_lease(app, gateway, &alvo.project_id, run_id)?;
+            assegurar_lease(app, gateway, &alvo.project_id, &id, run_id)?;
             crate::browser_cdp::fechar_aba(app, cwd, &id).await?;
             let restantes: Vec<_> = alvo.abas.iter().filter(|p| p.id != id).cloned().collect();
             let ativa = gateway.fixar(&restantes).map(|p| {

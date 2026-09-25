@@ -563,8 +563,8 @@ pub async fn browser_stop(app: tauri::AppHandle, project_path: String) -> Result
     let registry = app.state::<Arc<BrowserRegistry>>().inner().clone();
     let _lifecycle = registry.begin_lifecycle(&project_id)?;
     let broker = app.state::<Arc<crate::experience_broker::ExperienceBroker>>();
-    let pilot = broker.status(&project_id);
-    if matches!(pilot.mode.as_str(), "agent" | "plugin") {
+    // Qualquer página em uso por um run ou plugin impede desligar (ADR-258).
+    if let Some(pilot) = broker.em_uso(&project_id) {
         return Err(format!(
             "o navegador está em uso por {}; encerre a atividade antes de desligá-lo",
             pilot.label.to_lowercase()

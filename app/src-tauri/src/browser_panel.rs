@@ -81,9 +81,11 @@ pub fn close_panel(app: &tauri::AppHandle, label: &str) {
         .lock()
         .ok()
         .and_then(|mut contexts| contexts.remove(label));
-    if let Some(context) = context {
+    // Só as vistas desta janela saem (ADR-258): a aba da conversa na janela
+    // principal, olhando outra página ou a mesma, segue transmitindo.
+    if context.is_some() {
         app.state::<Arc<crate::browser_cdp::BrowserPreviewRegistry>>()
-            .stop_project(&context.project_id);
+            .sair_da_janela(label);
     }
 }
 

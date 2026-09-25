@@ -91,6 +91,9 @@ struct PreviewSession {
     running: AtomicBool,
     error: Mutex<Option<String>>,
     de_fundo: AtomicBool,
+    /// Quem está olhando esta página (ADR-258): a aba da conversa, a janela
+    /// flutuante. Sem ninguém, a transmissão para.
+    vistas: Mutex<std::collections::HashSet<String>>,
     stop: watch::Sender<bool>,
 }
 
@@ -107,27 +110,9 @@ impl PreviewSession {
     }
 }
 
-#[derive(Default)]
-pub struct BrowserPreviewRegistry {
-    sessions: Mutex<HashMap<String, Arc<PreviewSession>>>,
-}
-
-impl BrowserPreviewRegistry {
-    pub fn stop_project(&self, project_id: &str) {
-        if let Ok(mut sessions) = self.sessions.lock() {
-            if let Some(session) = sessions.remove(project_id) {
-                let _ = session.stop.send(true);
-            }
-        }
-    }
-
-    fn get(&self, project_id: &str) -> Option<Arc<PreviewSession>> {
-        self.sessions
-            .lock()
-            .ok()
-            .and_then(|sessions| sessions.get(project_id).cloned())
-    }
-}
+#[path = "browser_transmissoes.rs"]
+mod transmissoes;
+pub use transmissoes::BrowserPreviewRegistry;
 
 fn now_ms() -> i64 {
     SystemTime::now()
@@ -391,7 +376,10 @@ pub async fn browser_preview_start(
     // O gesto "Abrir numa janela própria" (ADR-257): a página de fundo reabre
     // numa janela só dela, e a transmissão começa já na nova.
     mover: Option<bool>,
+    // Quem está olhando: "<janela>:<id da vista>" (ADR-258).
+    vista: Option<String>,
 ) -> Result<BrowserPreviewStatus, String> {
+    let vista = vista.unwrap_or_else(|| "main:sem-vista".into());
     let (project_id, mut page) = target_for(&app, &project_path, &target_id).await?;
     if mover.unwrap_or(false) {
         page = janela_propria::mover(&app, &project_path, &page, conversa.as_deref()).await?;
@@ -419,12 +407,17 @@ pub async fn browser_preview_start(
             None => false,
         };
     let registry = app.state::<Arc<BrowserPreviewRegistry>>().inner().clone();
-    if let Some(current) = registry.get(&project_id) {
-        if current.target_id == target_id && current.running.load(Ordering::Relaxed) {
+    // A vista deixa a página que olhava antes; outra vista na mesma página
+    // segue com a transmissão dela.
+    registry.sair(&project_id, &vista, Some(&target_id));
+    if let Some(current) = registry.get(&project_id, &target_id) {
+        if current.running.load(Ordering::Relaxed) {
+            if let Ok(mut vistas) = current.vistas.lock() {
+                vistas.insert(vista);
+            }
             current.de_fundo.store(fundo, Ordering::Relaxed);
             return Ok(current.status());
         }
-        registry.stop_project(&project_id);
     }
     let (stop, receiver) = watch::channel(false);
     let preview = Arc::new(PreviewSession {
@@ -436,13 +429,10 @@ pub async fn browser_preview_start(
         running: AtomicBool::new(true),
         error: Mutex::new(None),
         de_fundo: AtomicBool::new(fundo),
+        vistas: Mutex::new(std::collections::HashSet::from([vista])),
         stop,
     });
-    registry
-        .sessions
-        .lock()
-        .map_err(|_| "registry de preview indisponível".to_string())?
-        .insert(project_id, preview.clone());
+    registry.inserir(preview.clone())?;
     let status = preview.status();
     let websocket_url = page.websocket_url.expect("target_for exige websocket");
     tauri::async_runtime::spawn(async move {
@@ -461,13 +451,15 @@ pub async fn browser_preview_start(
 pub fn browser_preview_frame(
     app: tauri::AppHandle,
     project_path: String,
+    target_id: String,
     after_revision: Option<u64>,
 ) -> Result<Option<BrowserPreviewFrame>, String> {
     let project_id = crate::browser::project_id_of(&app, &project_path)?;
+    // O quadro é DESTA página (ADR-258): nunca o da página de outra vista.
     let session = app
         .state::<Arc<BrowserPreviewRegistry>>()
-        .get(&project_id)
-        .ok_or("nenhum preview ativo para este projeto")?;
+        .get(&project_id, &target_id)
+        .ok_or("nenhum preview ativo para esta página")?;
     let revision = session.revision.load(Ordering::Relaxed);
     if revision == 0 || after_revision.is_some_and(|after| revision <= after) {
         return Ok(None);
@@ -488,10 +480,18 @@ pub fn browser_preview_frame(
 }
 
 #[tauri::command]
-pub fn browser_preview_stop(app: tauri::AppHandle, project_path: String) -> Result<(), String> {
+pub fn browser_preview_stop(
+    app: tauri::AppHandle,
+    project_path: String,
+    vista: Option<String>,
+) -> Result<(), String> {
     let project_id = crate::browser::project_id_of(&app, &project_path)?;
-    app.state::<Arc<BrowserPreviewRegistry>>()
-        .stop_project(&project_id);
+    let registry = app.state::<Arc<BrowserPreviewRegistry>>();
+    // A vista que saiu leva só a si mesma; sem vista, o projeto inteiro.
+    match vista {
+        Some(vista) => registry.sair(&project_id, &vista, None),
+        None => registry.stop_project(&project_id),
+    }
     Ok(())
 }
 
@@ -830,7 +830,7 @@ pub async fn browser_input(
 ) -> Result<(), String> {
     let (project_id, page) = target_for(&app, &project_path, &target_id).await?;
     app.state::<Arc<crate::experience_broker::ExperienceBroker>>()
-        .validate_human(&project_id, &token)?;
+        .validate_human(&project_id, &target_id, &token)?;
     let websocket_url = page
         .websocket_url
         .as_deref()

@@ -17,7 +17,7 @@ import {
   type McpFallback,
   type McpHealthStatus,
   type McpServer, CONEXOES_DO_NAVEGADOR, type BrowserConexao} from "@/lib/mcp"
-import { browserRowNotice, type BrowserStatus } from "@/lib/browser"
+import { AVISO_DO_NAVEGADOR_INTEIRO, browserRowNotice, type BrowserStatus } from "@/lib/browser"
 import { agentDef } from "@/lib/agents"
 import { cn } from "@/lib/utils"
 
@@ -142,7 +142,7 @@ export function McpAgentRows({
                   </label>
                   <label
                     className="flex items-center gap-1 text-[11px] text-muted-foreground"
-                    title="Usar somente o navegador deste projeto neste MCP"
+                    title={`Usar somente o navegador deste projeto neste MCP. ${AVISO_DO_NAVEGADOR_INTEIRO}`}
                   >
                     <input
                       type="checkbox"

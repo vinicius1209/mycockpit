@@ -132,34 +132,44 @@ export function listBrowserPages(
   return invoke<BrowserPage[]>("browser_pages", { projectPath, conversa: conversa ?? null, abrir })
 }
 
+/** O piloto de UMA página (ADR-258). Sem `targetId`: quem está com o
+ *  navegador do projeto em qualquer página (o cartão de Configurações). */
 export function browserPilotStatus(
   projectPath: string,
+  targetId?: string | null,
 ): Promise<BrowserPilotStatus> {
-  return invoke<BrowserPilotStatus>("browser_pilot_status", { projectPath })
+  return invoke<BrowserPilotStatus>("browser_pilot_status", { projectPath, targetId: targetId ?? null })
 }
 
+/** Assumir o controle vale só para a página escolhida (ADR-258): o agente de
+ *  outra conversa segue na dele. */
 export function acquireBrowserPilot(
   projectPath: string,
+  targetId: string,
 ): Promise<HumanPilotGrant> {
-  return invoke<HumanPilotGrant>("browser_pilot_acquire", { projectPath })
+  return invoke<HumanPilotGrant>("browser_pilot_acquire", { projectPath, targetId })
 }
 
 export function heartbeatBrowserPilot(
   projectPath: string,
+  targetId: string,
   token: string,
 ): Promise<BrowserPilotStatus> {
   return invoke<BrowserPilotStatus>("browser_pilot_heartbeat", {
     projectPath,
+    targetId,
     token,
   })
 }
 
 export function releaseBrowserPilot(
   projectPath: string,
+  targetId: string,
   token: string,
 ): Promise<BrowserPilotStatus> {
   return invoke<BrowserPilotStatus>("browser_pilot_release", {
     projectPath,
+    targetId,
     token,
   })
 }
@@ -167,7 +177,10 @@ export function releaseBrowserPilot(
 export function startBrowserPreview(
   projectPath: string,
   targetId: string,
-  conversa?: string | null,
+  conversa: string | null | undefined,
+  /** Quem está olhando, "<janela>:<id>" (ADR-258). A transmissão é da página
+   *  e vive enquanto houver vista nela. */
+  vista: string,
   /** Gesto "Abrir numa janela própria" (ADR-257): a página reabre numa janela
    *  só dela, e o status devolve o id da nova. */
   mover = false,
@@ -177,21 +190,26 @@ export function startBrowserPreview(
     targetId,
     conversa: conversa ?? null,
     mover,
+    vista,
   })
 }
 
+/** O último quadro DESTA página, nunca o de outra (ADR-258). */
 export function browserPreviewFrame(
   projectPath: string,
+  targetId: string,
   afterRevision?: number,
 ): Promise<BrowserPreviewFrame | null> {
   return invoke<BrowserPreviewFrame | null>("browser_preview_frame", {
     projectPath,
+    targetId,
     afterRevision,
   })
 }
 
-export function stopBrowserPreview(projectPath: string): Promise<void> {
-  return invoke("browser_preview_stop", { projectPath })
+/** A vista sai. A transmissão da página só para quando a última vista sair. */
+export function stopBrowserPreview(projectPath: string, vista: string): Promise<void> {
+  return invoke("browser_preview_stop", { projectPath, vista })
 }
 
 export function sendBrowserInput(
@@ -299,6 +317,10 @@ export function browserDeliveryLabel(entregas: BrowserDelivery[]): string {
     .join(" · ")
 }
 
+/** O que o MCP de terceiros alcança (ADR-258), dito onde a pessoa liga. */
+export const AVISO_DO_NAVEGADOR_INTEIRO =
+  "Esses MCPs veem as páginas de todas as conversas do projeto e, enquanto trabalham, seguram o navegador inteiro."
+
 export interface BrowserChainLine {
   /** `aviso` = âmbar (falta um gesto seu). `ok` = cinza: estado assentado não
    *  ganha tinta (STYLEGUIDE §2, verde é marco, não estado ambiente). */
@@ -329,7 +351,10 @@ export function browserChainLine(
   if (entregas.length > 0) {
     return {
       tom: "ok",
-      texto: `Recebem este navegador: ${browserDeliveryLabel(entregas)}.`,
+      // O MCP de terceiros recebe o endpoint do Chromium inteiro (ADR-258): ele
+      // enxerga as páginas de todas as conversas e segura o navegador todo
+      // enquanto trabalha. As ferramentas do Frota ficam na página da conversa.
+      texto: `Recebem este navegador: ${browserDeliveryLabel(entregas)}. ${AVISO_DO_NAVEGADOR_INTEIRO}`,
     }
   }
   // Ligado e inútil: o caso que não tinha voz nenhuma na UI. O caminho muda

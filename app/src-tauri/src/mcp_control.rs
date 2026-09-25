@@ -2986,7 +2986,7 @@ pub async fn plan_for_run(
                         .state::<Arc<crate::experience_broker::ExperienceBroker>>()
                         .inner()
                         .clone();
-                    match broker.acquire_agent(&project_id, run_id) {
+                    match broker.acquire_agent(&project_id, crate::experience_broker::Alcance::Projeto, run_id) {
                         Ok(lease) => {
                             plan.browser_pilot_leases.push(Arc::new(lease));
                             browser_pilot_acquired = true;

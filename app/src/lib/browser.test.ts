@@ -276,7 +276,8 @@ describe("browserChainLine", () => {
     ]
     expect(browserChainLine(servers, statusDoIncidente(true))).toEqual({
       tom: "ok",
-      texto: "Recebem este navegador: Claude via playwright.",
+      texto:
+        "Recebem este navegador: Claude via playwright. Esses MCPs veem as páginas de todas as conversas do projeto e, enquanto trabalham, seguram o navegador inteiro.",
     })
   })
 

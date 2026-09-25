@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }))
 
 import type { WorkEvent } from "@/lib/work"
-import { abaParaSeguir } from "./useNavegadorDoProjeto"
+import { abaParaSeguir, avisoEhDaPagina, quadroDaPagina } from "./useNavegadorDoProjeto"
 
 // Forma do evento que o gateway emite depois de cada ação (browser_gateway.rs).
 const usou = (targetId: string | null, projectPath = "/Users/me/projetos/landing-prime"): WorkEvent => ({
@@ -39,5 +39,30 @@ describe("a vista de uma conversa não segue o agente de outra (ADR-244)", () =>
 
   it("a janela avulsa do projeto (sem conversa) segue qualquer uma", () => {
     expect(abaParaSeguir(usou("B"), "/Users/me/projetos/landing-prime", "A", false, null)).toBe("B")
+  })
+})
+
+describe("a vista só mostra a página que escolheu (ADR-258)", () => {
+  const quadro = (targetId: string) => ({
+    projectId: "p1",
+    targetId,
+    revision: 3,
+    capturedAt: 0,
+    data: "",
+    width: null,
+    height: null,
+  })
+
+  it("aviso de quadro de outra página, ou de outro projeto, não puxa quadro", () => {
+    expect(avisoEhDaPagina({ projectId: "p1", targetId: "A", revision: 1 }, "p1", "A")).toBe(true)
+    expect(avisoEhDaPagina({ projectId: "p1", targetId: "B", revision: 1 }, "p1", "A")).toBe(false)
+    expect(avisoEhDaPagina({ projectId: "p2", targetId: "A", revision: 1 }, "p1", "A")).toBe(false)
+    expect(avisoEhDaPagina({ projectId: "p1", targetId: "A", revision: 1 }, "p1", null)).toBe(false)
+  })
+
+  it("quadro atrasado da página de antes não aparece com o nome da nova", () => {
+    expect(quadroDaPagina(quadro("A"), "A")?.targetId).toBe("A")
+    expect(quadroDaPagina(quadro("A"), "B")).toBeNull()
+    expect(quadroDaPagina(null, "A")).toBeNull()
   })
 })

@@ -5,9 +5,14 @@
 // Ciclo de vida é do screencast: montar liga o preview da página escolhida,
 // desmontar para o preview e devolve o piloto. Sair da aba, portanto, pausa o
 // stream sem regra extra.
+//
+// Tudo é da PÁGINA, não do projeto (ADR-258): cada vista se apresenta ao
+// backend com um id próprio, recebe só os quadros da página que escolheu, e o
+// controle que a pessoa assume vale só para essa página.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
+import { getCurrentWindow } from "@tauri-apps/api/window"
 import {
   acquireBrowserPilot,
   browserPilotStatus,
@@ -39,7 +44,7 @@ export interface AlvoDoNavegador {
   conversa?: string | null
 }
 
-interface FrameNotice {
+export interface FrameNotice {
   projectId: string
   targetId: string
   revision: number
@@ -75,38 +80,30 @@ export interface NavegadorDoProjeto {
   abrirEmJanelaPropria: () => void
 }
 
-/** Vistas montadas por projeto e a parada adiada de cada um. Trocar de vista
- *  (aba → flutuante) desmonta uma e monta a outra no mesmo commit; parar o
- *  preview na hora e ligar logo depois corre em paralelo no backend e podia
- *  deixar a vista nova sem quadro. A parada espera um instante e desiste se
- *  outra vista do mesmo projeto já montou. */
-const vistasMontadas = new Map<string, number>()
-const paradasPendentes = new Map<string, ReturnType<typeof setTimeout>>()
-const ESPERA_PARA_PARAR_MS = 400
-
-function entrarNaVista(projectPath: string): void {
-  const pendente = paradasPendentes.get(projectPath)
-  if (pendente) {
-    clearTimeout(pendente)
-    paradasPendentes.delete(projectPath)
+/** O id desta vista no backend, "<janela>:<aleatório>" (ADR-258). A janela
+ *  vem na frente para que fechar a flutuante leve as vistas dela. */
+function novaVista(): string {
+  let janela = "main"
+  try {
+    janela = getCurrentWindow().label
+  } catch {
+    // Fora do Tauri (teste): a janela principal. Só nomeia a vista.
   }
-  vistasMontadas.set(projectPath, (vistasMontadas.get(projectPath) ?? 0) + 1)
+  return `${janela}:${crypto.randomUUID()}`
 }
 
-function sairDaVista(projectPath: string): void {
-  const restantes = Math.max(0, (vistasMontadas.get(projectPath) ?? 1) - 1)
-  vistasMontadas.set(projectPath, restantes)
-  if (restantes > 0) return
-  paradasPendentes.set(
-    projectPath,
-    setTimeout(() => {
-      paradasPendentes.delete(projectPath)
-      if ((vistasMontadas.get(projectPath) ?? 0) > 0) return
-      void stopBrowserPreview(projectPath).catch((cause) =>
-        console.warn("Falha ao encerrar preview:", cause),
-      )
-    }, ESPERA_PARA_PARAR_MS),
-  )
+/** O aviso de quadro novo é da página que esta vista mostra? Puro. */
+export function avisoEhDaPagina(aviso: FrameNotice, projectId: string, selecionada: string | null): boolean {
+  return aviso.projectId === projectId && !!selecionada && aviso.targetId === selecionada
+}
+
+/** Só o quadro da página escolhida vai à tela: um quadro atrasado da página
+ *  de antes nunca aparece com o nome da nova no seletor. Puro. */
+export function quadroDaPagina(
+  quadro: BrowserPreviewFrame | null,
+  selecionada: string | null,
+): BrowserPreviewFrame | null {
+  return quadro && quadro.targetId === selecionada ? quadro : null
 }
 
 /** A aba do agente que a vista deve passar a mostrar, ou `null`. Puro. */
@@ -149,10 +146,15 @@ export function useNavegadorDoProjeto(
   const pilotTokenRef = useRef<string | null>(null)
   const pullingFrameRef = useRef(false)
   const pendingFrameRef = useRef(false)
+  const vistaRef = useRef<string | null>(null)
+  vistaRef.current ??= novaVista()
+  const vista = vistaRef.current
+  /** A página em que o controle da pessoa vale (ADR-258). */
+  const pilotPageRef = useRef<string | null>(null)
 
   const refreshPilot = useCallback(async (path: string) => {
     try {
-      setPilot(await browserPilotStatus(path))
+      setPilot(await browserPilotStatus(path, selectedRef.current))
     } catch (cause) {
       setError(messageOf(cause))
     }
@@ -189,7 +191,9 @@ export function useNavegadorDoProjeto(
     try {
       do {
         pendingFrameRef.current = false
-        const next = await browserPreviewFrame(path, revisionRef.current || undefined)
+        const pagina = selectedRef.current
+        if (!pagina) break
+        const next = quadroDaPagina(await browserPreviewFrame(path, pagina, revisionRef.current || undefined), selectedRef.current)
         if (next) {
           revisionRef.current = next.revision
           setFrame(next)
@@ -202,8 +206,23 @@ export function useNavegadorDoProjeto(
     }
   }, [])
 
+  /** Devolve o controle da pessoa, se ela tiver. Trocar de página devolve:
+   *  o controle é da página em que foi assumido. */
+  const devolverPiloto = useCallback((path: string) => {
+    const token = pilotTokenRef.current
+    const pagina = pilotPageRef.current
+    pilotTokenRef.current = null
+    pilotPageRef.current = null
+    setPilotToken(null)
+    if (token && pagina)
+      void releaseBrowserPilot(path, pagina, token).catch((cause) =>
+        console.warn("Falha ao liberar piloto:", cause),
+      )
+  }, [])
+
   const showPage = useCallback(
     async (path: string, page: BrowserPage) => {
+      if (pilotPageRef.current && pilotPageRef.current !== page.id) devolverPiloto(path)
       setSelectedId(page.id)
       selectedRef.current = page.id
       setAddress(page.url)
@@ -211,22 +230,22 @@ export function useNavegadorDoProjeto(
       setDeFundo(false)
       revisionRef.current = 0
       try {
-        const status = await startBrowserPreview(path, page.id, conversa)
+        const status = await startBrowserPreview(path, page.id, conversa, vista)
         setDeFundo(status.deFundo)
         await pullFrame(path)
+        void refreshPilot(path)
         setError(null)
       } catch (cause) {
         setError(messageOf(cause))
       }
     },
-    [pullFrame, conversa],
+    [pullFrame, refreshPilot, devolverPiloto, conversa, vista],
   )
 
   useEffect(() => {
     if (!projectPath || !projectId) return
     let disposed = false
     const unlisteners: UnlistenFn[] = []
-    entrarNaVista(projectPath)
     // Outra conversa (ADR-244): nada da vista anterior fica. Sem isto, quadro,
     // seleção e polling seguiam na página da conversa de antes.
     setPages([])
@@ -242,14 +261,14 @@ export function useNavegadorDoProjeto(
       if (page) await showPage(projectPath, page)
       // Conversa sem página: o screencast da página de outra não segue aberto.
       else
-        void stopBrowserPreview(projectPath).catch((cause) =>
+        void stopBrowserPreview(projectPath, vista).catch((cause) =>
           console.warn("Falha ao encerrar preview:", cause),
         )
     })().finally(() => {
       if (!disposed) setLoading(false)
     })
     void listen<FrameNotice>("browser-preview://frame", (event) => {
-      if (event.payload.projectId === projectId && selectedRef.current) void pullFrame(projectPath)
+      if (avisoEhDaPagina(event.payload, projectId, selectedRef.current)) void pullFrame(projectPath)
     })
       .then((unlisten) => {
         if (disposed) unlisten()
@@ -281,27 +300,28 @@ export function useNavegadorDoProjeto(
       disposed = true
       unlisteners.forEach((unlisten) => unlisten())
       window.clearInterval(poll)
-      sairDaVista(projectPath)
-      const token = pilotTokenRef.current
-      if (token) {
-        pilotTokenRef.current = null
-        void releaseBrowserPilot(projectPath, token).catch((cause) =>
-          console.warn("Falha ao liberar piloto:", cause),
-        )
-      }
+      // A vista sai; a transmissão da página segue se outra vista olha a
+      // mesma página (a aba e a flutuante, ADR-258).
+      void stopBrowserPreview(projectPath, vista).catch((cause) =>
+        console.warn("Falha ao encerrar preview:", cause),
+      )
+      devolverPiloto(projectPath)
     }
-  }, [projectPath, projectId, conversa, loadPages, pullFrame, refreshPilot, showPage])
+  }, [projectPath, projectId, conversa, vista, loadPages, pullFrame, refreshPilot, showPage, devolverPiloto])
 
   // O token humano tem TTL no backend. Enquanto esta vista é o piloto, um
   // heartbeat curto mantém a posse; sumir/crashar libera sozinho em 15 s.
   useEffect(() => {
     if (!projectPath || !pilotToken) return
     const heartbeat = window.setInterval(() => {
-      void heartbeatBrowserPilot(projectPath, pilotToken)
+      const pagina = pilotPageRef.current
+      if (!pagina) return
+      void heartbeatBrowserPilot(projectPath, pagina, pilotToken)
         .then(setPilot)
         .catch((cause) => {
           setPilotToken(null)
           pilotTokenRef.current = null
+          pilotPageRef.current = null
           setError(messageOf(cause))
           void refreshPilot(projectPath)
         })
@@ -339,7 +359,7 @@ export function useNavegadorDoProjeto(
     abrirEmJanelaPropria: () => {
       if (!projectPath || !selected) return
       setError(null)
-      void startBrowserPreview(projectPath, selected.id, conversa, true)
+      void startBrowserPreview(projectPath, selected.id, conversa, vista, true)
         .then(async (status) => {
           const nova = await loadPages(projectPath, status.targetId)
           setDeFundo(status.deFundo)
@@ -348,11 +368,13 @@ export function useNavegadorDoProjeto(
         .catch((cause) => setError(messageOf(cause)))
     },
     acquire: () => {
-      if (!projectPath) return
-      void acquireBrowserPilot(projectPath)
+      if (!projectPath || !selected) return
+      const pagina = selected.id
+      void acquireBrowserPilot(projectPath, pagina)
         .then((grant) => {
           setPilotToken(grant.token)
           pilotTokenRef.current = grant.token
+          pilotPageRef.current = pagina
           setPilot(grant.status)
           setError(null)
         })
@@ -362,12 +384,14 @@ export function useNavegadorDoProjeto(
         })
     },
     release: () => {
-      if (!projectPath || !pilotToken) return
-      void releaseBrowserPilot(projectPath, pilotToken)
+      const pagina = pilotPageRef.current
+      if (!projectPath || !pilotToken || !pagina) return
+      void releaseBrowserPilot(projectPath, pagina, pilotToken)
         .then((status) => {
           setPilot(status)
           setPilotToken(null)
           pilotTokenRef.current = null
+          pilotPageRef.current = null
         })
         .catch((cause) => setError(messageOf(cause)))
     },
@@ -382,7 +406,7 @@ export function useNavegadorDoProjeto(
       if (projectPath && selected) void copiarImagemDaPagina(projectPath, selected.id)
     },
     input: (action) => {
-      if (!projectPath || !selected || !pilotToken) return
+      if (!projectPath || !selected || !pilotToken || pilotPageRef.current !== selected.id) return
       void sendBrowserInput(projectPath, selected.id, pilotToken, action)
         .then(() => setError(null))
         .catch((cause) => {

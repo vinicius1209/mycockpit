@@ -9362,3 +9362,47 @@ considerou.
 - **Consequência:** a pessoa e os agentes de conversas diferentes olham e
   trabalham em páginas diferentes ao mesmo tempo, sem roubar a frente um do
   outro. A troca de aba do agente fica inofensiva para as outras conversas.
+
+### ADR-258 · O navegador é do projeto; a página, a visão e o controle são da página ✅
+- **Contexto (25/09/2026):** depois da ADR-257, "se achar problemas na
+  arquitetura do navegador, proponha algo novo". Três defeitos vinham do mesmo
+  lugar: posse, transmissão e controle eram indexados por PROJETO, e o
+  navegador já tinha uma página por conversa (ADR-244).
+  1. **Posse.** O agente de uma conversa, ao usar o navegador, segurava o
+     projeto inteiro até o fim do run: o agente de outra conversa recebia
+     "outro agente está usando o navegador" e a pessoa não conseguia assumir
+     página nenhuma, nem a da própria conversa.
+  2. **Transmissão.** Uma transmissão por projeto: a aba da conversa e a janela
+     flutuante, olhando páginas diferentes, derrubavam o screencast uma da
+     outra, e o quadro de uma podia aparecer com o nome da página da outra no
+     seletor. A parada adiada (`vistasMontadas`, 400 ms) era remendo disso.
+  3. **Controle.** O token de "Assumir controle" valia para o projeto: a
+     entrada ia a qualquer página, inclusive a de um agente trabalhando.
+- **Decisão:**
+  1. **Posse por alcance** (`experience_broker.rs`, `Alcance::{Projeto,
+     Pagina}`). Páginas diferentes não colidem; `Projeto` colide com tudo. O
+     gateway do Frota pega a posse da página em que o agente age (cada ação,
+     inclusive a página que ele acabou de abrir) e a solta no fim do run. A
+     recusa diz quem está com a página e se é ela ou o projeto inteiro.
+  2. **O MCP de terceiros segura o projeto** (`mcp_control.rs`): ele recebe o
+     `--cdp-endpoint` do Chromium inteiro e não há como limitá-lo a uma página.
+     A UI diz isso onde se liga a marca "navegador" e na linha do cartão do
+     navegador ("veem as páginas de todas as conversas do projeto e, enquanto
+     trabalham, seguram o navegador inteiro").
+  3. **Uma transmissão por página, com vistas** (`browser_transmissoes.rs`).
+     Cada instância da vista se apresenta como `"<janela>:<uuid>"`; a
+     transmissão vive enquanto houver vista nela. Trocar de página sai da
+     anterior; fechar a janela flutuante leva só as vistas dela; desligar o
+     navegador para todas. O quadro e o aviso de quadro são filtrados pela
+     página no backend e de novo no front (quadro atrasado da página de antes
+     é descartado). A parada adiada por projeto sai.
+  4. **Controle da pessoa por página.** Assumir vale para a página escolhida;
+     a entrada em outra página é recusada ("o controle que você assumiu é de
+     outra página"); trocar de página na vista devolve o controle. O cartão de
+     Configurações segue perguntando pelo projeto (sem página: quem estiver em
+     qualquer página, a pessoa inclusive). O desligar só é barrado por agente
+     ou plugin, como antes.
+- **Consequência:** duas conversas usam o navegador do projeto ao mesmo tempo,
+  a pessoa assume a página da sua conversa enquanto o agente de outra trabalha,
+  e a aba e a flutuante mostram páginas diferentes sem uma apagar a outra. O
+  MCP de terceiros continua exclusivo, agora dito com clareza.
