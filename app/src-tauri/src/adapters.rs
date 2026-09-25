@@ -2055,14 +2055,11 @@ impl AgentAdapter for ClaudeAdapter {
                     crate::work_gateway::MCP_SERVER_NAME.into(),
                     gateway.claude_server_json(),
                 );
-                system_nudges.push(format!(
-                    "Use mcp__{}__{} para dev servers, watchers, containers e outros processos longos quando disponível neste modo de permissão; isso mantém PID, saída e controle na Frota. Publique planos vivos com mcp__{}__{} quando a tarefa tiver várias etapas e marque cada início/conclusão com mcp__{}__{}. Se usar a checklist nativa, atualize os estados equivalentes também.",
+                system_nudges.push(crate::work_gateway::ferramentas::instrucao_qualificada(req.resume.is_none()));
+                allowed_internal_tools.push(format!(
+                    "mcp__{}__{}",
                     crate::work_gateway::MCP_SERVER_NAME,
-                    crate::work_gateway::PROCESS_START_TOOL,
-                    crate::work_gateway::MCP_SERVER_NAME,
-                    crate::work_gateway::WORK_PLAN_TOOL,
-                    crate::work_gateway::MCP_SERVER_NAME,
-                    crate::work_gateway::WORK_UPDATE_TOOL,
+                    crate::work_gateway::CONVERSATION_TITLE_TOOL
                 ));
             }
             if let Some(gateway) = &req.browser_gateway {
@@ -3753,10 +3750,10 @@ impl AgyAdapter {
                         .unwrap_or_default()
                         .to_string();
                     let lines = if full.trim().is_empty() {
-                        0
-                    } else {
-                        full.lines().count() as u64
-                    };
+                            0
+                        } else {
+                            full.lines().count() as u64
+                        };
                     let mut text: String = full.chars().take(600).collect();
                     if full.chars().count() > 600 {
                         text.push('…');
@@ -4307,13 +4304,16 @@ mod claude_inventory_tests;
 #[cfg(test)]
 #[path = "adapters_opencode_stream_tests.rs"]
 mod opencode_stream_tests;
+#[cfg(test)]
+#[path = "adapters_claude_titulo_tests.rs"]
+mod claude_titulo_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// RunRequest mínimo p/ testar build_command (sem spawnar nada).
-    fn req(permission: Permission, plan_first: bool) -> RunRequest {
+    pub(super) fn req(permission: Permission, plan_first: bool) -> RunRequest {
         RunRequest {
             prompt: "faça X".to_string(),
             system_prompt: None,
@@ -4340,7 +4340,7 @@ mod tests {
     }
 
     /// argv do Command montado (só os args; o programa fica de fora).
-    fn argv(cmd: &Command) -> Vec<String> {
+    pub(super) fn argv(cmd: &Command) -> Vec<String> {
         cmd.as_std()
             .get_args()
             .map(|a| a.to_string_lossy().into_owned())

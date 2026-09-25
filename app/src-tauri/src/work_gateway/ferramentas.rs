@@ -44,9 +44,36 @@ pub fn instrucao(first_turn: bool) -> String {
         "TELEMETRIA DE TRABALHO: em tarefas com várias etapas, use o MCP `{MCP_SERVER_NAME}` para publicar e atualizar o plano. Para processos longos (dev servers, watchers, containers), use `{PROCESS_START_TOOL}` quando disponível neste modo de permissão. Publique o plano por `{WORK_PLAN_TOOL}` e mantenha cada etapa atualizada ao iniciar/concluir por `{WORK_UPDATE_TOOL}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota."
     );
     if first_turn {
-        s.push_str(&format!(
-            " Esta é a primeira mensagem da conversa: chame `{CONVERSATION_TITLE_TOOL}` UMA vez, logo no início, com um título de 3 a 6 palavras em pt-BR que nomeie o assunto (\"Timer do watchdog\", nunca \"Conversa sobre bug\"), sem aspas nem ponto final."
-        ));
+        s.push(' ');
+        s.push_str(&pedido_de_titulo(CONVERSATION_TITLE_TOOL));
+    }
+    s
+}
+
+/// O pedido de título, com o nome da tool como o motor a enxerga. Um texto
+/// só para os dois caminhos: o Claude recebe as instruções pelo canal de
+/// sistema (nomes qualificados, `instrucao_qualificada`), e esse caminho ficou
+/// sem o pedido na ADR-246. Nenhuma conversa do Claude chegou a ser nomeada
+/// (24/09/2026).
+pub fn pedido_de_titulo(tool: &str) -> String {
+    format!(
+        "Esta é a primeira mensagem da conversa: chame `{tool}` UMA vez, logo no início, com um título de 3 a 6 palavras em pt-BR que nomeie o assunto (\"Timer do watchdog\", nunca \"Conversa sobre bug\"), sem aspas nem ponto final."
+    )
+}
+
+/// A mesma apresentação para o motor que recebe instruções pelo canal de
+/// sistema e vê as tools com o nome qualificado (`mcp__frota-work__…`).
+pub fn instrucao_qualificada(first_turn: bool) -> String {
+    let q = |tool: &str| format!("mcp__{MCP_SERVER_NAME}__{tool}");
+    let mut s = format!(
+        "Use {} para dev servers, watchers, containers e outros processos longos quando disponível neste modo de permissão; isso mantém PID, saída e controle na Frota. Publique planos vivos com {} quando a tarefa tiver várias etapas e marque cada início/conclusão com {}. Se usar a checklist nativa, atualize os estados equivalentes também.",
+        q(PROCESS_START_TOOL),
+        q(WORK_PLAN_TOOL),
+        q(WORK_UPDATE_TOOL),
+    );
+    if first_turn {
+        s.push(' ');
+        s.push_str(&pedido_de_titulo(&q(CONVERSATION_TITLE_TOOL)));
     }
     s
 }
@@ -143,6 +170,17 @@ mod tests {
         assert!(titulo(&json!({ "title": "   " })).is_err());
         assert!(titulo(&json!({ "title": "linha um\nlinha dois" })).is_err());
         assert!(titulo(&json!({ "title": "x".repeat(81) })).is_err());
+    }
+
+    #[test]
+    fn o_canal_de_sistema_tambem_pede_o_titulo_no_primeiro_turno() {
+        // O caminho do Claude ficou sem o pedido na ADR-246: nenhuma conversa
+        // dele foi nomeada. Os dois caminhos agora dizem o mesmo.
+        let primeiro = instrucao_qualificada(true);
+        assert!(primeiro.contains("mcp__frota-work__conversation_title"));
+        assert!(primeiro.contains(&pedido_de_titulo("mcp__frota-work__conversation_title")));
+        assert!(!instrucao_qualificada(false).contains(CONVERSATION_TITLE_TOOL));
+        assert!(instrucao_qualificada(false).contains("mcp__frota-work__work_plan"));
     }
 
     #[test]

@@ -68,6 +68,8 @@ export function presentFrotaTool(
       const primeira = qs[0] ? str(qs[0], "question") ?? str(qs[0], "header") : null
       return view("Perguntar a você", primeira, "coordinate", detail)
     }
+    case "conversation_title":
+      return view("Dar título à conversa", str(i, "title"), "coordinate", detail)
     case "approval_prompt":
       return view("Pedir aprovação", str(i, "tool_name"), "coordinate", detail)
     case "process_start":

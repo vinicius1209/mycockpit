@@ -9264,3 +9264,27 @@ considerou.
 - **Consequência:** o `.env` volta a ser achável sem mudar o que a busca
   varre, e a busca numa pasta com dezenas de projetos se lê por projeto. A
   paginação continua no Rust; "Carregar mais" entra dentro dos grupos.
+
+### ADR-255 · O Claude também recebe o pedido de título no primeiro turno ✅
+- **Contexto (24/09/2026):** "nós não temos uma feature que renomeia a
+  conversa no primeiro turno?". Temos (ADR-246), mas nenhuma conversa desta
+  máquina foi nomeada por ela: zero chamadas de `conversation_title` no banco.
+  O pedido de título foi posto só em `work_gateway::ferramentas::instrucao`,
+  que o `agent.rs` junta ao prompt dos motores SEM canal de sistema. O Claude
+  recebe as instruções pelo canal de sistema, montadas no próprio adaptador
+  com outro texto, e esse texto nunca ganhou o pedido. Além disso, fora do
+  modo Liberado, a tool pediria aprovação: ela não estava na lista das
+  liberadas do Claude.
+- **Decisão:**
+  1. Um texto só: `pedido_de_titulo(tool)` alimenta os dois caminhos, e
+     `instrucao_qualificada(first_turn)` (nomes `mcp__frota-work__…`) sai do
+     adaptador para `work_gateway/ferramentas.rs`, junto da instrução comum.
+     Primeiro turno do Claude = sem `resume`, a mesma régua do `agent.rs`.
+  2. `conversation_title` entra nas tools liberadas do Claude, como a
+     `ask_user`: é tool de conteúdo, não efeito na máquina (a ADR-246 já dizia
+     que ela vale no modo restrito).
+  3. A chamada aparece no fio como "Dar título à conversa: <título>", e não
+     como ferramenta genérica.
+- **Consequência:** a conversa nova do Claude ganha nome de assunto no
+  primeiro turno. Motor que ignorar o pedido segue com o helper ou com a
+  primeira frase, como antes.

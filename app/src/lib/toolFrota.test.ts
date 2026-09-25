@@ -89,3 +89,13 @@ describe("toolFrota · a Frota reconhece as próprias tools", () => {
     expect(v.verb).toBe("Carregar ferramentas")
   })
 })
+
+describe("o título da conversa (ADR-255)", () => {
+  it("a chamada do agente diz o título, com o prefixo de cada motor", () => {
+    for (const nome of ["mcp__frota-work__conversation_title", "conversation_title"]) {
+      const v = presentTool(nome, { title: "Timer do watchdog" })
+      expect(v.verb).toBe("Dar título à conversa")
+      expect(v.object).toEqual({ kind: "text", text: "Timer do watchdog" })
+    }
+  })
+})
