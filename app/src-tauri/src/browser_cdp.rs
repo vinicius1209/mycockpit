@@ -275,6 +275,22 @@ pub async fn browser_pages(
         .collect())
 }
 
+/// O que abre a transmissão de uma página, em ordem. A página vem para a
+/// FRENTE antes do screencast: o Chromium só pinta a aba que está à frente na
+/// janela dele, e uma aba de fundo nunca manda quadro. Era o "só consigo ver o
+/// conteúdo de uma página; as outras ficam em 'Aguardando o primeiro quadro'"
+/// (25/09/2026): trocar de página na Frota não trocava a aba no Chromium.
+fn comandos_de_abertura() -> [Value; 2] {
+    [
+        json!({"id": 1, "method": "Page.bringToFront"}),
+        json!({
+            "id": 2,
+            "method": "Page.startScreencast",
+            "params": {"format": "jpeg", "quality": 68, "maxWidth": 1440, "maxHeight": 1000, "everyNthFrame": 1}
+        }),
+    ]
+}
+
 async fn run_screencast(
     app: tauri::AppHandle,
     session: Arc<PreviewSession>,
@@ -285,19 +301,13 @@ async fn run_screencast(
         .await
         .map_err(|_| "a conexão de preview excedeu o tempo limite".to_string())?
         .map_err(|error| format!("não consegui observar a página: {error}"))?;
-    socket
-        .send(Message::Text(
-            json!({
-                "id": 1,
-                "method": "Page.startScreencast",
-                "params": {"format": "jpeg", "quality": 68, "maxWidth": 1440, "maxHeight": 1000, "everyNthFrame": 1}
-            })
-            .to_string()
-            .into(),
-        ))
-        .await
-        .map_err(|error| format!("não consegui iniciar o preview: {error}"))?;
-    let mut message_id = 2_u64;
+    for comando in comandos_de_abertura() {
+        socket
+            .send(Message::Text(comando.to_string().into()))
+            .await
+            .map_err(|error| format!("não consegui iniciar o preview: {error}"))?;
+    }
+    let mut message_id = 3_u64;
     // Ritmo do screencast (ADR-232, ADR-234): o Chromium só manda o próximo
     // quadro depois do ack. Confirmar na hora fazia ele codificar ~50 JPEGs
     // por segundo (151 KB cada em 1280×800, medido) além do que a tela
@@ -892,5 +902,15 @@ mod tests {
         assert_eq!(sanitize_page_url_no_projeto(&esperado, Some(&raiz)), "docs/mocks/aba-conversa.html");
         assert_eq!(sanitize_page_url_no_projeto("file:///etc/passwd", Some(&raiz)), "file://…");
         let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    #[test]
+    fn a_pagina_vem_para_a_frente_antes_da_transmissao() {
+        // O Chromium só pinta a aba da frente: sem o `bringToFront`, trocar de
+        // página na Frota ficava em "Aguardando o primeiro quadro".
+        let [frente, transmissao] = comandos_de_abertura();
+        assert_eq!(frente["method"], "Page.bringToFront");
+        assert_eq!(transmissao["method"], "Page.startScreencast");
+        assert!(frente["id"].as_u64() < transmissao["id"].as_u64());
     }
 }
