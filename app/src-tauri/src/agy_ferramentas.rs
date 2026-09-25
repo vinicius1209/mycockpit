@@ -85,6 +85,23 @@ pub(crate) fn no_contrato(nome: &str, p: Value) -> (String, Value) {
     }
 }
 
+/// Quantas linhas o resultado tem. A leitura do agy não devolve o arquivo, e
+/// sim um resumo (`498 lines, 50977 bytes`, visto nas conversas reais): contar
+/// as linhas DELE dava "1 linhas" em toda leitura. O resumo diz o número.
+pub(crate) fn linhas_do_resultado(saida: &str) -> u64 {
+    let t = saida.trim();
+    if t.is_empty() {
+        return 0;
+    }
+    let resumo = t
+        .strip_suffix(" bytes")
+        .and_then(|s| s.split_once(", "))
+        .filter(|(_, bytes)| bytes.chars().all(|c| c.is_ascii_digit()))
+        .and_then(|(linhas, _)| linhas.strip_suffix(" lines").or_else(|| linhas.strip_suffix(" line")))
+        .and_then(|n| n.parse::<u64>().ok());
+    resumo.unwrap_or_else(|| t.lines().count() as u64)
+}
+
 /// Parse da mensagem emitida pelo Antigravity / Agy ao despachar comando em background
 /// (payloads reais em bg-sleep e 22/09/2026:
 /// `Tool is running as a background task with task id: <task_id>\n...Task logs are available at: <log_path>`).
@@ -182,6 +199,15 @@ mod tests {
             json!({ "Arguments": "não é dicionário", "ServerName": "s", "ToolName": "t" }),
         );
         assert_eq!(cru, json!({ "arguments": "não é dicionário" }), "o que não se lê vai cru, sem perder");
+    }
+
+    #[test]
+    fn a_leitura_conta_as_linhas_do_arquivo_nao_as_do_resumo() {
+        assert_eq!(linhas_do_resultado("498 lines, 50977 bytes"), 498);
+        assert_eq!(linhas_do_resultado("1 line, 6 bytes"), 1);
+        assert_eq!(linhas_do_resultado("alpha\nbeta\n"), 2, "saída comum conta as próprias linhas");
+        assert_eq!(linhas_do_resultado("   "), 0);
+        assert_eq!(linhas_do_resultado("veja: 3 lines, 10 bytes"), 1, "só o resumo inteiro vale");
     }
 
     #[test]

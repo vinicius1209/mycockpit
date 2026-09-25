@@ -4,6 +4,7 @@ import {
   evidenceMeta,
   presentTool,
   unwrapShellCommand,
+  resultMeta,
 } from "./toolview"
 import { summarizeToolGroup } from "./toolGroup"
 
@@ -164,5 +165,12 @@ describe("evidenceMeta (B1)", () => {
   it("tool sem imagem não ganha meta nenhuma (linha idêntica à de hoje)", () => {
     expect(evidenceMeta(undefined)).toBeNull()
     expect(evidenceMeta([])).toBeNull()
+  })
+})
+
+describe("resultMeta · singular (24/09/2026)", () => {
+  it("uma linha é 'linha', não 'linhas'", () => {
+    expect(resultMeta("Read", { ok: true, text: "1 line, 6 bytes", lines: 1 })).toBe("1 linha")
+    expect(resultMeta("Read", { ok: true, text: "498 lines, 50977 bytes", lines: 498 })).toBe("498 linhas")
   })
 })

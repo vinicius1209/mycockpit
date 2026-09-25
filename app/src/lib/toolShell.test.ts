@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { presentTool } from "@/lib/toolview"
 import { describeToolGroup } from "@/lib/toolGroup"
-import { fraseDoShell, segmentosDoShell } from "@/lib/toolShell"
+import { fraseDoShell, presentShell, segmentosDoShell } from "@/lib/toolShell"
 
 // Payload REAL: o turno do protocolo de arquivos no Rust, 23/09/2026 (sessão
 // b6cd7444 do Claude Code), com `command` e `description` como vieram.
@@ -96,5 +96,31 @@ describe("toolShell · verbo + objeto", () => {
       "head -3",
       "wc -l y.rs",
     ])
+  })
+})
+
+describe("toolShell · script inline e banco (agy, 24/09/2026)", () => {
+  // Comandos REAIS do turno de 3min25s do Antigravity (ADR-253): ele não
+  // narra o comando, e as linhas diziam "Executar comando" uma atrás da outra.
+  it("script que chama uma URL é consulta a serviço externo", () => {
+    const py = `python3 -c "\nimport urllib.request, json\nurl = 'https://erp.olist.com/public-api/v3/contatos'\n"`
+    const node = `node -e '\nconst SUPABASE_URL = "https://ruwodicjbinawojbdouy.supabase.co";\n'`
+    expect(presentShell(py).label).toBe("Consultar um serviço externo")
+    expect(presentShell(node).label).toBe("Consultar um serviço externo")
+  })
+
+  it("script sem rede é script; consulta de banco é banco", () => {
+    expect(presentShell(`node -e 'console.log(require("./package.json").version)'`).label).toBe("Rodar um script")
+    expect(
+      presentShell(`npx supabase db query --project-ref ruwodicjbinawojbdouy "SELECT id FROM clients"`).label,
+    ).toBe("Consultar o banco de dados")
+  })
+
+  it("o corpo do script não vira inspeção de arquivo por conter 'cat' ou 'find('", () => {
+    expect(presentShell(`python3 -c "import os; print(os.path.exists('cat'))"`).label).toBe("Rodar um script")
+  })
+
+  it("script que escreve em arquivo continua sendo alteração", () => {
+    expect(presentShell(`python3 -c "open('out.txt','w').write('x')"`).label).toBe("Alterar arquivos")
   })
 })

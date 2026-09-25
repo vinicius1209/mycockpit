@@ -398,10 +398,11 @@ export function resultMeta(
   if (!result) return null
   if (result.interrupted) return "parou"
   if (!result.ok) return "erro"
-  if (name === "Read") return result.lines > 0 ? `${result.lines} linhas` : null
+  const linhas = (n: number) => `${n} ${n === 1 ? "linha" : "linhas"}`
+  if (name === "Read") return result.lines > 0 ? linhas(result.lines) : null
   if (name === "Grep" || name === "Glob")
     return `${result.lines} ${result.lines === 1 ? "resultado" : "resultados"}`
-  if (name === "Bash") return result.lines > 1 ? `${result.lines} linhas` : null
+  if (name === "Bash") return result.lines > 1 ? linhas(result.lines) : null
   return null
 }
 

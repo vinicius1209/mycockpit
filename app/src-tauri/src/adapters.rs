@@ -3523,7 +3523,7 @@ pub fn agy_result_error(result: &serde_json::Value) -> Option<String> {
 
 #[path = "agy_ferramentas.rs"]
 mod agy_ferramentas;
-use agy_ferramentas::{no_contrato, parse_agy_background_task};
+use agy_ferramentas::{linhas_do_resultado, no_contrato, parse_agy_background_task};
 
 /// Parse da mensagem de notificação de tarefa do Antigravity / Agy
 /// (payloads reais capturados em bg-sleep e 22/09/2026:
@@ -3749,11 +3749,7 @@ impl AgyAdapter {
                         .or_else(|| info.and_then(|i| i.get("output").and_then(|x| x.as_str())))
                         .unwrap_or_default()
                         .to_string();
-                    let lines = if full.trim().is_empty() {
-                            0
-                        } else {
-                            full.lines().count() as u64
-                        };
+                    let lines = linhas_do_resultado(&full);
                     let mut text: String = full.chars().take(600).collect();
                     if full.chars().count() > 600 {
                         text.push('…');

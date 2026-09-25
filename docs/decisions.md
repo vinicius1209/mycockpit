@@ -9234,6 +9234,14 @@ considerou.
   comandos · leu 6 arquivos · pesquisou 3 vezes", com o comando, o arquivo e a
   busca em cada linha. Histórico gravado antes desta mudança segue com os nomes
   antigos.
+- **Complemento (24/09/2026, visto na build):** as linhas de comando do agy
+  diziam "Executar comando" em sequência, porque ele não narra o comando e o
+  guia não põe comando cru no rótulo; e toda leitura dizia "1 linhas", porque o
+  agy devolve um resumo (`498 lines, 50977 bytes`) e a Frota contava as linhas
+  do resumo. Consertos, válidos para qualquer motor: famílias novas no
+  `toolShell` (script inline com URL = "Consultar um serviço externo", sem URL
+  = "Rodar um script", `supabase db query`/`psql`/`mysql` = "Consultar o banco
+  de dados"), o adaptador lê o número do resumo, e a meta aprende o singular.
 
 ### ADR-254 · A árvore mostra o que o git ignora, apagado, e a busca agrupa por projeto ✅
 - **Contexto (24/09/2026):** "da pra fazer a árvore exibir `.env`? parece que

@@ -82,6 +82,17 @@ export function presentShell(command: string): SemanticTool {
   if (ESCREVE_EM_ARQUIVO.test(cmd))
     return { label: "Alterar arquivos", category: "change", emphasis: "normal" }
 
+  // Script inline (`python3 -c`, `node -e`): o corpo tem palavras de tudo
+  // (`find(`, `cat`), então decide ANTES das famílias de inspeção. Sem este
+  // caso, o motor que não narra o comando (o agy, ADR-253) ficava com
+  // "Executar comando" em dezenas de linhas seguidas (24/09/2026).
+  if (/\b(?:psql|mysql|mongosh)\b/.test(lower) || /\bsupabase\s+db\s+(?:query|dump)\b/.test(lower))
+    return { label: "Consultar o banco de dados", category: "inspect", emphasis: "quiet" }
+  if (/(?:^|[\s;&|(])(?:python3?|node|deno|ruby|php)\s+(?:-[a-z]+\s+)*-(?:c|e)\b/.test(lower))
+    return /https?:\/\//.test(lower)
+      ? { label: "Consultar um serviço externo", category: "web", emphasis: "normal" }
+      : { label: "Rodar um script", category: "execute", emphasis: "normal" }
+
   if (/\bsqlite3\b/.test(lower))
     return { label: "Consultar dados locais", category: "inspect", emphasis: "quiet" }
   if (/\bgit\s+status\b/.test(lower))
