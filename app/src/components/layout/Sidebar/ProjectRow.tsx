@@ -31,7 +31,7 @@ import { useApp } from "@/store/app"
 import { useEpocaDaJanela } from "@/lib/janelaViva"
 import type { AgentStatus, Project } from "@/lib/types"
 import { cn } from "@/lib/utils"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { CometaVivo } from "@/components/ui/cometa-vivo"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 
 /** A marca do projeto (ADR-245): a SUA cor-rótulo num quadradinho, cinza sem
@@ -51,10 +51,24 @@ function MarcaDoProjeto({ color }: { color?: string | null }) {
   )
 }
 
-/** O estado do projeto em PALAVRA, na coluna direita. Espera vence rodando: um
- *  projeto que roda sozinho não precisa de você; um que parou para perguntar,
- *  sim. Pulso SÓ no "pede você" (S3.2, ADR-071): rodando é presença calma. */
-function EstadoDoProjeto({ status, awaiting, cor }: { status: AgentStatus; awaiting: boolean; cor?: string | null }) {
+/** O estado do projeto na coluna direita. Espera vence rodando: um projeto que
+ *  roda sozinho não precisa de você; um que parou para perguntar, sim. Pulso
+ *  SÓ no "pede você" (S3.2, ADR-071): rodando é presença calma.
+ *
+ *  Rodando (ADR-259): um sinal por fato. Aberto, quem gira é a conversa logo
+ *  abaixo, e o projeto fica quieto; recolhido, a conversa não aparece e o
+ *  cometa sobe para cá. Sem a palavra: o cometa já diz. */
+function EstadoDoProjeto({
+  status,
+  awaiting,
+  cor,
+  expanded,
+}: {
+  status: AgentStatus
+  awaiting: boolean
+  cor?: string | null
+  expanded: boolean
+}) {
   const epoca = useEpocaDaJanela()
   if (awaiting)
     return (
@@ -63,12 +77,11 @@ function EstadoDoProjeto({ status, awaiting, cor }: { status: AgentStatus; await
         pede você
       </span>
     )
-  if (status === "running")
+  if (status === "running" && !expanded)
     return (
-      <span title="Turno rodando neste projeto" className="flex shrink-0 items-center gap-1.5 text-[11px] text-muted-foreground">
-        {/* A matriz na cor do projeto, senão o azul de rodando (ADR-256). */}
-        <MatrizViva cor={cor ?? "var(--st-running)"} />
-        rodando
+      <span title="Turno rodando neste projeto" className="flex shrink-0 items-center">
+        {/* Na cor do projeto, senão o azul de rodando. */}
+        <CometaVivo cor={cor ?? "var(--st-running)"} rotulo="turno rodando neste projeto" />
       </span>
     )
   return null
@@ -215,7 +228,7 @@ export function ProjectRow({
               na mesma coluna e nunca aparecem juntas. */}
           {!editing && (
             <span className="mr-0.5 group-hover:hidden">
-              <EstadoDoProjeto status={status} awaiting={awaiting} cor={project.color} />
+              <EstadoDoProjeto status={status} awaiting={awaiting} cor={project.color} expanded={expanded} />
             </span>
           )}
           {!editing && (

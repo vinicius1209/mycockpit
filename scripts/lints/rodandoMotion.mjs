@@ -66,21 +66,23 @@ if (!/animation:\s*conv-spin\s+[\d.]+s[^;]*infinite/.test(css)) {
   )
 }
 
-// A MATRIZ VIVA (ADR-256): o sinal de "rodando" saiu da `.conv-spin` (que
-// segue como carregamento) para a `MatrizViva`, movida por um relógio único
-// em JS, porque `@keyframes` congela na oclusão da janela do macOS. As duas
-// condições do §6 continuam, cobradas no fonte: o relógio respeita
-// reduced-motion (quadro parado e visível) e a matriz não depende de animação
-// de CSS, que era o que travava.
+// O SINAL DE VIVO (ADR-256, ADR-259): o "rodando" saiu da `.conv-spin` (que
+// segue como carregamento) para o `CometaVivo` e o `TextoVivo`, movidos por um
+// relógio único em JS, porque `@keyframes` congela na oclusão da janela do
+// macOS. As duas condições do §6 continuam, cobradas no fonte: o relógio
+// respeita reduced-motion (pose parada e visível) e os sinais não dependem de
+// animação de CSS, que era o que travava.
 const ler = (rel) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8")
 const relogio = ler("../../app/src/lib/relogioDoVivo.ts")
-// Sem comentários: o próprio arquivo explica por que NÃO usa `@keyframes`.
-const matriz = ler("../../app/src/components/ui/matriz-viva.tsx").replace(/\/\/.*$/gm, "")
 if (!/prefers-reduced-motion: reduce/.test(relogio)) {
-  falhas.push("o relógio da matriz viva não respeita `prefers-reduced-motion` (lib/relogioDoVivo.ts)")
+  falhas.push("o relógio do vivo não respeita `prefers-reduced-motion` (lib/relogioDoVivo.ts)")
 }
-if (/animate-(?:spin|pulse|cockpit)|@keyframes/.test(matriz)) {
-  falhas.push("a matriz viva voltou a depender de animação de CSS (components/ui/matriz-viva.tsx)")
+// Sem comentários: os próprios arquivos explicam por que NÃO usam `@keyframes`.
+for (const sinal of ["components/ui/cometa-vivo.tsx", "components/ui/texto-vivo.tsx"]) {
+  const fonte = ler(`../../app/src/${sinal}`).replace(/\/\/.*$/gm, "")
+  if (/animate-(?:spin|pulse|cockpit)|@keyframes/.test(fonte)) {
+    falhas.push(`o sinal de vivo voltou a depender de animação de CSS (${sinal})`)
+  }
 }
 
 if (falhas.length) {
@@ -92,4 +94,4 @@ if (falhas.length) {
   process.exit(1)
 }
 
-console.log("sinal de 'rodando' ok · .conv-spin com ponto estático · matriz viva pelo relógio, com reduced-motion")
+console.log("sinal de 'rodando' ok · .conv-spin com ponto estático · cometa e texto vivos pelo relógio, com reduced-motion")

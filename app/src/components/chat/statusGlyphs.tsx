@@ -10,7 +10,7 @@
 // vez de caçar três `Loader2` no meio de 2.200.
 
 import { Check, Circle, X } from "lucide-react"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { CometaVivo } from "@/components/ui/cometa-vivo"
 import type { summarizeToolGroup } from "@/lib/toolGroup"
 
 /** Status de uma ação técnica. `recorded` é histórico antigo/adapter sem
@@ -51,14 +51,14 @@ export function StepDot({
   // CONTRASTE contra os irmãos apagados — mesma forma, cinza mais forte.
   if (status === "running" && ancestor)
     return <span className="size-[7px] shrink-0 rounded-full bg-foreground/45" />
-  // Passo em execução se MOVE (mesmo vocabulário do ToolGroupStatus): a matriz
-  // viva com a onda em coluna, "este passo executando" (ADR-256; o relógio
+  // Passo em execução se MOVE (mesmo vocabulário do ToolGroupStatus): o
+  // cometa cinza, "este passo executando" (ADR-259, ADR-256; o relógio
   // único não congela na oclusão da janela, que era o que o `key` da época
   // remendava aqui). O dot pulsante fica reservado ao rodapé
   // "trabalhando" (batimento do turno + cronômetro) — os dois sinais deixam de
   // ser dois pontos azuis idênticos.
   if (status === "running")
-    return <MatrizViva onda="coluna" className="text-muted-foreground" rotulo="executando" />
+    return <CometaVivo papel="passo" className="text-muted-foreground" rotulo="executando" />
   return <span className="size-[7px] shrink-0 rounded-full bg-muted-foreground/25" />
 }
 
@@ -68,7 +68,7 @@ export function ToolGroupStatus({
   state: ReturnType<typeof summarizeToolGroup>["state"]
 }) {
   if (state === "running")
-    return <MatrizViva onda="coluna" className="text-muted-foreground" rotulo="executando" />
+    return <CometaVivo papel="passo" className="text-muted-foreground" rotulo="executando" />
   if (state === "error")
     return <X className="size-3.5 shrink-0 text-st-error" aria-hidden="true" />
   // Check CINZA (paleta A): a forma segue dizendo "concluiu", sem competir com

@@ -9406,3 +9406,32 @@ considerou.
   a pessoa assume a página da sua conversa enquanto o agente de outra trabalha,
   e a aba e a flutuante mostram páginas diferentes sem uma apagar a outra. O
   MCP de terceiros continua exclusivo, agora dito com clareza.
+
+### ADR-259 · O "rodando" volta ao círculo, um por fato, e no fio a frase é o sinal ✅
+- **Contexto (25/09/2026):** a matriz viva da ADR-256 resolveu o travamento,
+  mas "não gostei muito desse novo layout, será que em círculo não seria
+  melhor? Senti que ficou muito repetitivo no sidebar". No print, o projeto
+  aberto repetia a matriz da conversa logo abaixo e ainda escrevia "rodando":
+  três sinais em duas linhas para um fato só. No fio, "está trabalhando…"
+  vinha com a matriz ao lado, e a pessoa queria o texto "mais animado, sem
+  necessariamente um ícone". Mock: `docs/mocks/sinal-de-vivo-v2.html`
+  (escolhidos: B, cometa, e T1, brilho; o arco do composer fica como está).
+- **Decisão:**
+  1. **O sinal volta a ser um círculo: o cometa** (`components/ui/cometa-vivo`),
+     um anel com cauda que se apaga, na cor da conversa ou do projeto, cinza no
+     passo do fio e no plano. Substitui a matriz em todo lugar; a `MatrizViva`
+     sai (duas formas para o mesmo gesto seriam deriva).
+  2. **Um sinal por fato na barra lateral.** Projeto aberto: só a conversa
+     gira. Projeto recolhido: o cometa sobe para a linha do projeto. A palavra
+     "rodando" sai; "pede você" continua, porque é pedido, não presença.
+  3. **No fio, a frase é o sinal** (`components/ui/texto-vivo`): uma faixa de
+     luz atravessa "está trabalhando…" em 1,4 s e descansa 0,8 s. Sem ícone. A
+     frase continua trocando só por evento real (não volta o carrossel de
+     verbos).
+  4. **O relógio único fica** (`lib/relogioDoVivo.ts`), agora contínuo: a pose
+     (ângulo do cometa, posição da luz) é calculada pela hora a cada quadro,
+     porque um giro a 12 quadros por segundo ficaria aos saltos. Com
+     reduced-motion, o cometa para em ¾ de volta e a frase fica em cor plena.
+     A guarda `rodandoMotion.mjs` passa a cobrar os dois sinais.
+- **Consequência:** uma forma de "vivo" na lateral e no passo, e nenhuma na
+  linha do fio além do próprio texto. Continua sem travar na janela coberta.

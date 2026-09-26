@@ -20,7 +20,7 @@
 
 import { useMemo, useState, type ReactNode } from "react"
 import { AlertTriangle, Check, ListChecks } from "lucide-react"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { CometaVivo } from "@/components/ui/cometa-vivo"
 import { QueuedChips } from "@/components/chat/FilaDoComposer"
 import { agirNaExcecao, ListaDeExcecoes } from "@/components/chat/ExcecoesDoTurno"
 import { MiniaturaDaTira } from "@/components/chat/MiniaturaDeAnexo"
@@ -147,7 +147,7 @@ export function BaseDoComposer({
           >
             {plano.andando && conv.running ? (
               <span className="grid size-3.5 shrink-0 place-items-center">
-                <MatrizViva onda="coluna" className="text-muted-foreground" />
+                <CometaVivo papel="passo" className="text-muted-foreground" />
               </span>
             ) : plano.feitas === plano.total ? (
               <Check className="size-3.5 shrink-0 text-muted-foreground/60" />

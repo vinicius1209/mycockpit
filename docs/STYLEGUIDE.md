@@ -103,7 +103,7 @@ cinza**, nunca por tinta.
 | superfície | o que você está fazendo ali | quem carrega o "vivo" |
 |---|---|---|
 | sidebar, bandeja, missões, linha viva do rodapé | **varrendo** de relance: "o que está acontecendo?" | **cor** (`st-running`) |
-| fio da conversa, grupos e output de ferramenta | **trabalhando**: lendo, mandando prompt, chamando especialista, aprovando plano | **movimento** (a `MatrizViva` cinza, ADR-256) |
+| fio da conversa, grupos e output de ferramenta | **trabalhando**: lendo, mandando prompt, chamando especialista, aprovando plano | **movimento** (o `CometaVivo` cinza no passo, e a frase que brilha no `TextoVivo`, ADR-259) |
 
 **Por que a divisão é essa** (usuário, 23/08/2026): *"na conversa, no output não
 precisa de cores vivas — eu preciso literalmente interagir com os agentes,
@@ -492,16 +492,19 @@ proporcionalidade do Orca:
     neutro (`Rascunho`) entre o título e o slot. Continua visível mesmo se o
     turno roda, pois responde "há algo seu esperando envio?", não "quando?".
 - **Movimento é pra VIVO, e só pro que termina sozinho.** "Rodando" na sidebar é
-  a matriz viva (`components/ui/matriz-viva`, ADR-256), na cor da conversa, senão
-  na do projeto, senão em `st-running`, porque é evento em curso e o único
+  o cometa (`components/ui/cometa-vivo`, ADR-259), na cor da conversa, senão
+  na do projeto, senão em `st-running`. **Um sinal por fato**: com o projeto
+  aberto, só a conversa gira; o projeto só mostra o cometa quando está
+  recolhido, e sem a palavra "rodando". No fio, a linha viva não tem ícone: a
+  frase brilha (`components/ui/texto-vivo`). Isso porque é evento em curso e o único
   estado da lista que acaba por conta própria; ponto azul parado ali seria
   indistinguível de ponto azul esquecido. Pela mesma régua, a falha NÃO pulsa
   (já aconteceu — matiz próprio, não animação). Duas condições
   inegociáveis pra qualquer movimento assim: `prefers-reduced-motion` degrada
   pra indicador **estático e visível** (não pra ausência de sinal), e a animação
   vive presa à PRESENÇA do elemento, nunca a um timer que decide quem está vivo.
-  A matriz viva se move por um relógio único (`lib/relogioDoVivo.ts`, ADR-256),
-  mas ele só pinta as matrizes que existem, e o laço para sem nenhuma — assim ela morre
+  O cometa e o texto vivo se movem por um relógio único (`lib/relogioDoVivo.ts`,
+  ADR-256), mas ele só pinta os sinais que existem, e o laço para sem nenhuma — assim ela morre
   junto com o estado, inclusive quando o turno morre por erro, cancelamento ou
   fechamento do app. Esteira que sobrevive ao fim do turno é número parado
   vestido de vivo.
@@ -720,7 +723,7 @@ nosso; só as regras vieram de lá.
 | `scripts/check-type-scale.mjs` | §3, a escala fechada | aparece tamanho de fonte fora de {11, 12, 13, 14, 20, 30, 38}px em `app/src/**`, seja `text-[15px]`, seja rem arbitrário (`text-[0.9rem]`), seja `font-size:` em CSS. Também acusa classe nomeada do Tailwind (`text-sm`) fora de `components/ui/` |
 | `scripts/check-file-size-ratchet.mjs` | legibilidade (arquivo grande esconde bug) | um arquivo passa do teto do tipo (500 linhas `.ts` · 700 `.tsx` · 900 teste) ou cresce acima do congelado em `scripts/lints/file-size-baseline.json` |
 | `scripts/check-dead-tokens.mjs` | §2, §4 e §7 | volta `shadow-md/lg/xl/2xl`; aparece `st-success` em **qualquer** propriedade (`text-`, `bg-`, `border-`, `ring-`… e `var(--st-success)` cru) além do declarado por arquivo; entra travessão "—" em prosa de UI |
-| `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` (carregamento) perde a animação de CSS ou o bloco `prefers-reduced-motion`; o relógio da matriz viva deixa de respeitar `prefers-reduced-motion`, ou a matriz volta a depender de `@keyframes`/`animate-*` (ADR-256) |
+| `scripts/lints/rodandoMotion.mjs` | §6, o único estado que se move | a `.conv-spin` (carregamento) perde a animação de CSS ou o bloco `prefers-reduced-motion`; o relógio do vivo deixa de respeitar `prefers-reduced-motion`, ou o cometa ou o texto vivo voltam a depender de `@keyframes`/`animate-*` (ADR-256, ADR-259) |
 | `scripts/check-marca.mjs` | o nome do produto | volta `Frota` numa string que o usuário lê ou que vai no prompt de um agente. Só varre a forma com MAIÚSCULAS e ignora comentário: os identificadores persistidos (`mycockpit.db`, `.mycockpit/`, `mc.app`, `dev.vinicius.mycockpit`, `mycockpit.flight-plan`) são minúsculos e ficam de fora POR CONSTRUÇÃO, não por allowlist que alguém precisa lembrar de manter |
 | `scripts/check-primitivas.mjs` | §12, a primitiva certa | um consumidor importa `radix-ui`/`@radix-ui/*` fora de `components/ui/`, ou monta um `DropdownMenuContent` sem nenhum item de menu (painel vestido de lista de comandos) |
 | `scripts/check-geometria-de-controle.mjs` | §13, a escada de controle | um arquivo passa do número de controles à mão congelado em `scripts/lints/geometria-baseline.json`, ou um arquivo novo nasce com geometria própria. Catraca: o número só desce, e `--update` recusa apertar enquanto houver arquivo acima |

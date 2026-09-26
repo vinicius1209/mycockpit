@@ -38,6 +38,14 @@ describe("montar não anima (ADR-179)", () => {
     expect(html).toContain("está trabalhando")
     expect(html).not.toContain("fio-nasce")
   })
+
+  it("linha viva: o sinal é a própria frase, sem ícone ao lado (ADR-259)", () => {
+    const html = renderToStaticMarkup(
+      <WorkingIndicator agent="codex" presetId={null} finalizing={false} running startedAt={Date.now()} nodes={[]} inline />,
+    )
+    expect(html).toMatch(/data-vivo="texto"[^>]*>está trabalhando…</)
+    expect(html.match(/data-vivo=/g)).toHaveLength(1)
+  })
 })
 
 describe("legenda de fim de turno", () => {

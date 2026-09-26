@@ -1,32 +1,31 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { _relogioAtivo, assinarRelogio, brilho, CICLO, quadroEm } from "./relogioDoVivo"
+import {
+  _relogioAtivo,
+  anguloEm,
+  assinarRelogio,
+  CICLO_DO_BRILHO_MS,
+  faixaDoBrilhoEm,
+  TRAVESSIA_MS,
+  VOLTA_MS,
+} from "./relogioDoVivo"
 
-// O relógio do vivo (ADR-256): o quadro sai da HORA, então a janela que volta
-// de uma oclusão não tem animação suspensa para retomar.
+// O relógio do vivo (ADR-256, ADR-259): a pose sai da HORA, então a janela que
+// volta de uma oclusão não tem animação suspensa para retomar.
 
-describe("relógio do vivo: o quadro", () => {
-  it("é calculado pela hora, 12 por segundo, e dá a volta no ciclo", () => {
-    expect(quadroEm(0)).toBe(0)
-    expect(quadroEm(1000 / 12)).toBe(1)
-    expect(quadroEm(1000)).toBe(12 % CICLO)
-    // Depois de uma pausa longa (janela coberta), o quadro é o da hora, não o
+describe("relógio do vivo: a pose", () => {
+  it("o cometa dá uma volta por VOLTA_MS, calculada pela hora", () => {
+    expect(anguloEm(0)).toBe(0)
+    expect(anguloEm(VOLTA_MS / 4)).toBeCloseTo(90)
+    // Depois de uma pausa longa (janela coberta), o ângulo é o da hora, não o
     // de onde parou: é isto que o "trava e só volta ao clicar" não tinha.
-    expect(quadroEm(3_600_000 + 250)).toBe(quadroEm(250))
+    expect(anguloEm(VOLTA_MS * 3271 + 275)).toBeCloseTo(anguloEm(275))
   })
 
-  it("cada ponto acende uma vez por ciclo, com esteira de dois quadros", () => {
-    for (const onda of ["diagonal", "coluna"] as const) {
-      for (let ponto = 0; ponto < 9; ponto++) {
-        const brilhos = Array.from({ length: CICLO }, (_, q) => brilho(q, onda, ponto))
-        expect(brilhos.filter((b) => b === 2)).toHaveLength(1)
-        expect(brilhos.filter((b) => b === 1)).toHaveLength(2)
-      }
-    }
-  })
-
-  it("parado (reduced-motion) é visível: meia luz e o centro aceso, sem piscar", () => {
-    const pontos = Array.from({ length: 9 }, (_, i) => brilho(5, "diagonal", i, true))
-    expect(pontos).toEqual([1, 1, 1, 1, 2, 1, 1, 1, 1])
+  it("o brilho atravessa a frase da esquerda para a direita e descansa fora dela", () => {
+    expect(faixaDoBrilhoEm(0)).toBe(100)
+    expect(faixaDoBrilhoEm(TRAVESSIA_MS / 2)).toBeCloseTo(0)
+    expect(faixaDoBrilhoEm(TRAVESSIA_MS + 1)).toBe(-100)
+    expect(faixaDoBrilhoEm(CICLO_DO_BRILHO_MS * 50 + TRAVESSIA_MS / 2)).toBeCloseTo(0)
   })
 })
 
@@ -44,31 +43,30 @@ describe("relógio do vivo: o laço", () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it("só gira enquanto existe alguém para pintar, e para com o último", () => {
-    const quadros: number[] = []
-    const sair1 = assinarRelogio((q) => quadros.push(q))
+    const horas: number[] = []
+    const sair1 = assinarRelogio((ms) => horas.push(ms))
     const sair2 = assinarRelogio(() => {})
     expect(_relogioAtivo()).toBe(true)
-    expect(quadros).toHaveLength(1) // o quadro de agora, já na assinatura
+    expect(horas).toHaveLength(1) // a pose de agora, já na assinatura
     sair1()
     expect(_relogioAtivo()).toBe(true)
     sair2()
     expect(_relogioAtivo()).toBe(false)
   })
 
-  it("pinta só quando o quadro muda", () => {
-    const quadros: number[] = []
-    const sair = assinarRelogio((q) => quadros.push(q))
-    fila.shift()!(1000) // quadro 0 (12 % 12)
-    fila.shift()!(1010) // mesmo quadro: nada
-    fila.shift()!(1000 + 1000 / 12) // quadro 1
-    expect(quadros.slice(1)).toEqual([0, 1])
+  it("pinta a cada quadro com a hora do quadro", () => {
+    const horas: number[] = []
+    const sair = assinarRelogio((ms) => horas.push(ms))
+    fila.shift()!(1000)
+    fila.shift()!(1016)
+    expect(horas.slice(1)).toEqual([1000, 1016])
     sair()
   })
 
-  it("com reduced-motion não há laço: um quadro parado e só", () => {
+  it("com reduced-motion não há laço: uma pose parada e só", () => {
     vi.stubGlobal("window", { matchMedia: () => ({ matches: true }) })
     const chamadas: [number, boolean][] = []
-    const sair = assinarRelogio((q, parado) => chamadas.push([q, parado]))
+    const sair = assinarRelogio((ms, parado) => chamadas.push([ms, parado]))
     expect(chamadas).toEqual([[0, true]])
     expect(_relogioAtivo()).toBe(false)
     sair()

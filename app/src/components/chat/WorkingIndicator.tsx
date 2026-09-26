@@ -6,7 +6,7 @@ import { ActivityAge, Elapsed } from "@/components/chat/LiveTime"
 import { resolveExecutorIdentity } from "@/components/chat/executorIdentity"
 import type { DeferredWork } from "@/lib/work"
 import { cn } from "@/lib/utils"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { TextoVivo } from "@/components/ui/texto-vivo"
 import { useTrocou } from "@/lib/nascimento"
 import { deferredLiveLine, useRunLiveness, type RunLiveness } from "@/store/chat"
 import type { Node } from "@/components/chat/messageNodes"
@@ -151,7 +151,7 @@ export function WorkingIndicator({
             )}
             title={live.detail}
           >
-            {label}
+            <TextoVivo>{label}</TextoVivo>
             <span className="sr-only"> (acompanhar nos bastidores)</span>
           </button>
         ) : (
@@ -159,22 +159,20 @@ export function WorkingIndicator({
             key={fase}
             className={cn("min-w-0 truncate", trocouFase && "fio-nasce")}
           >
-            {label}
+            {/* §2.2: dentro do fio o vivo é movimento, não tinta. A luz que
+                atravessa a frase é o sinal, movida pelo relógio único. */}
+            <TextoVivo>{label}</TextoVivo>
           </span>
         )
       )}
-      {stalled ? (
-        // Travado não é "vivo", é aviso: pontos âmbar parados, outro eixo.
+      {/* Travado não é "vivo", é aviso: pontos âmbar parados, outro eixo.
+          Vivo não tem ícone: a própria frase brilha (ADR-259). */}
+      {stalled && (
         <span className="flex shrink-0 items-center gap-1" aria-hidden>
           {[0, 1, 2].map((i) => (
             <span key={i} className="size-1.5 rounded-full bg-st-warning/70" />
           ))}
         </span>
-      ) : (
-        // §2.2: dentro do fio o vivo é movimento, não tinta. A matriz viva
-        // (ADR-256) no lugar dos três pontos pulsando: o mesmo sinal da barra
-        // lateral, em cinza, e movido pelo relógio único.
-        <MatrizViva grande className="text-foreground/55" />
       )}
       {/* Fato que anda no lugar: dígitos de largura fixa, sem crossfade. Some
           com trabalho em segundo plano, onde a linha fala de OUTRO relógio. */}

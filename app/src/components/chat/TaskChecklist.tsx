@@ -1,6 +1,6 @@
 import { memo, useState, type KeyboardEvent } from "react"
 import { Check, Circle, CircleDot, ListChecks } from "lucide-react"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { CometaVivo } from "@/components/ui/cometa-vivo"
 import { cn } from "@/lib/utils"
 import { taskStatusForDisplay, type AgentTask } from "@/lib/tasks"
 
@@ -42,7 +42,7 @@ function TaskRow({
           {task.status === "completed" ? (
             <Check className="size-3.5 text-muted-foreground/60" />
           ) : isExecuting ? (
-            <MatrizViva onda="coluna" className="text-muted-foreground" rotulo="em andamento" />
+            <CometaVivo papel="passo" className="text-muted-foreground" rotulo="em andamento" />
           ) : isUnsettled ? (
             <CircleDot className="size-3 text-muted-foreground/60" />
           ) : (

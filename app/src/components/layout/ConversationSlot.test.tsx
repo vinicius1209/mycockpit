@@ -65,7 +65,7 @@ function render(c: ConvState | undefined, pede = false) {
   )
 }
 
-// A esteira é a matriz viva desde a ADR-256 (antes, o arco `.conv-spin`).
+// A esteira é o cometa desde a ADR-259 (antes, a matriz viva e o arco `.conv-spin`).
 const temEsteira = (html: string) => html.includes("data-vivo")
 
 describe("a esteira só existe enquanto o turno existe", () => {
@@ -166,13 +166,13 @@ describe("o slot reserva o espaço mesmo calado", () => {
 // vivem em `scripts/lints/esteiraMotion.mjs`, que roda em Node e pode ler o
 // index.css de verdade. Aqui elas passavam lendo string vazia.
 
-describe("a cor do rodando (ADR-256)", () => {
-  it("a matriz herda a cor que a linha passa; sem cor, o azul de rodando", () => {
+describe("a cor do rodando (ADR-256, ADR-259)", () => {
+  it("o cometa herda a cor que a linha passa; sem cor, o azul de rodando", () => {
     const comCor = renderToStaticMarkup(
       <ConversationSlot pede={false} rodando falhou={false} updatedAt={1} cor="#c46a8c" />,
     )
-    expect(comCor).toMatch(/data-vivo[^>]*style="color:#c46a8c"/)
+    expect(comCor).toMatch(/data-vivo="conversa"[^>]*style="color:#c46a8c;/)
     const semCor = renderToStaticMarkup(<ConversationSlot pede={false} rodando falhou={false} updatedAt={1} />)
-    expect(semCor).toMatch(/data-vivo[^>]*style="color:var\(--st-running\)"/)
+    expect(semCor).toMatch(/data-vivo="conversa"[^>]*style="color:var\(--st-running\);/)
   })
 })

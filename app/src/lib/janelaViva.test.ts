@@ -62,7 +62,7 @@ describe("onde a época PODE e NÃO PODE entrar", () => {
 
   it("os sítios que USAM a época existem de verdade (o teste acima não é vazio)", () => {
     // Sem isto, apagar a feature inteira deixaria o teste acima verde.
-    // Desde a ADR-256 os spinners de "rodando" são a matriz viva, movida pelo
+    // Desde a ADR-256 os spinners de "rodando" se movem pelo
     // relógio único (nada de `@keyframes` para congelar), e saíram daqui. A
     // época segue onde ainda há pulso CSS infinito: o "pede você" da linha da
     // conversa e do projeto. Nomeados, e não contados: um número só dizia

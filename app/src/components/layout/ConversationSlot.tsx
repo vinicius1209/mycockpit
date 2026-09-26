@@ -4,7 +4,7 @@ import { useEpocaDaJanela } from "@/lib/janelaViva"
 import { minuteNow, subscribeMinute } from "@/lib/minuteTick"
 import { useTrocou } from "@/lib/nascimento"
 import { cn } from "@/lib/utils"
-import { MatrizViva } from "@/components/ui/matriz-viva"
+import { CometaVivo } from "@/components/ui/cometa-vivo"
 import {
   fmtQuando,
   slotEstado,
@@ -27,7 +27,7 @@ const TITULO: Record<SlotEstado, string> = {
  * `pede > rodando > falhou > tempo relativo`, decidida em `conversationWhen.ts`.
  *
  * Não há timer aqui dentro: o tempo vem do ticker único de minuto e o
- * "rodando" é a `MatrizViva`, presa à presença do elemento (o relógio único
+ * "rodando" é o `CometaVivo`, presa à presença do elemento (o relógio único
  * só pinta quem existe). Isso é o que garante que ela PARA quando o turno acaba, inclusive quando ele morre
  * por erro, por cancelamento ou porque o app foi fechado: `rodando` é derivado
  * do store, que nunca persiste turno vivo, e sem `rodando` o elemento
@@ -62,10 +62,10 @@ export function ConversationSlot({
   if (estado === "rodando") {
     return (
       <span key={estado} className={slot} title={TITULO.rodando}>
-        {/* A matriz viva (ADR-256): o movimento vem do relógio único, não de
+        {/* O cometa (ADR-259): o giro vem do relógio único, não de
             `@keyframes`, então a oclusão da janela no macOS não tem animação
-            para congelar (era o "trava e só volta ao clicar"). */}
-        <MatrizViva cor={cor ?? "var(--st-running)"} rotulo="turno rodando" />
+            para congelar (era o "trava e só volta ao clicar", ADR-256). */}
+        <CometaVivo cor={cor ?? "var(--st-running)"} rotulo="turno rodando" />
       </span>
     )
   }

@@ -31,15 +31,25 @@ describe("linha do projeto", () => {
     expect(html).not.toContain("lucide-folder")
   })
 
-  it("estado é palavra na direita: rodando com a matriz na cor do projeto, e 'pede você' vence rodando", () => {
-    // ADR-256: a matriz viva herda a cor do projeto; sem cor, o azul de rodando.
-    expect(linha({ status: "running" })).toMatch(/data-vivo[^>]*style="color:#3fcf8e"[\s\S]*rodando/)
+  it("estado na direita: recolhido e rodando, o cometa na cor do projeto; 'pede você' vence rodando", () => {
+    // ADR-259: o cometa herda a cor do projeto; sem cor, o azul de rodando. A
+    // palavra "rodando" saiu: o cometa já diz.
+    const rodando = linha({ status: "running" })
+    expect(rodando).toMatch(/data-vivo="conversa"[^>]*style="color:#3fcf8e/)
+    expect(rodando).not.toContain(">rodando<")
     expect(linha({ status: "running", project: { ...projeto, color: null } })).toMatch(
-      /data-vivo[^>]*style="color:var\(--st-running\)"/,
+      /data-vivo="conversa"[^>]*style="color:var\(--st-running\);/,
     )
     const pede = linha({ status: "running", awaiting: true })
+    expect(pede).not.toContain("data-vivo")
     expect(pede).toContain("pede você")
     expect(pede).not.toContain(">rodando<")
+  })
+
+  it("aberto, o projeto fica quieto: quem gira é a conversa logo abaixo (um sinal por fato)", () => {
+    expect(linha({ status: "running", expanded: true })).not.toContain("data-vivo")
+    // Esperando você, o aviso fica mesmo aberto: é pedido, não presença.
+    expect(linha({ status: "running", expanded: true, awaiting: true })).toContain("pede você")
   })
 
   it("o ativo é peso, sem fundo: o fundo de seleção é da conversa", () => {

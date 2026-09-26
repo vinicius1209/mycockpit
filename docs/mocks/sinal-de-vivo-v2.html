@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="pt-BR" class="dark">
+<head>
+<meta charset="utf-8">
+<title>Sinal de "rodando" v2 · anel e texto vivo</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema escuro (app/src/index.css .dark). */
+:root{--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--muted:#9aa0a7;--faint:#687078;--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.035);--sel:rgba(255,255,255,.065);--brass:#e4a862;
+--verde:#3fcf8e;--laranja:#e0764f;--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050506;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1040px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:34px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin:0 0 14px;max-width:1040px;line-height:1.55}.q b{color:var(--fg);font-weight:500}
+.ctl{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:6px}
+.ctl button{font:500 12px var(--sans);color:var(--fg);background:var(--card);border:1px solid var(--border);border-radius:6px;height:28px;padding:0 10px;cursor:pointer}
+.ctl button[aria-pressed=true]{outline:1px solid rgba(228,168,98,.5)}
+.lado{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:10px}
+.op{width:330px}
+.op .tit{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:0 2px 8px}
+.op .tit.esc{color:var(--brass)}
+.op .nota{font-size:12px;color:var(--muted);line-height:1.55;margin:10px 2px 0}.op .nota b{color:var(--fg);font-weight:500}
+
+/* barra lateral real */
+.rail{background:var(--rail);border:1px solid var(--border);border-radius:12px;padding:12px 10px}
+.rail .sec{font-size:12px;color:var(--faint);margin:0 6px 8px}
+.proj{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;font-size:13px;font-weight:600}
+.proj .q9{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+.proj .dir{margin-left:auto;display:flex;align-items:center;gap:6px;font:500 12px var(--sans);color:var(--muted)}
+.proj .chev{color:var(--faint);font-size:11px;width:12px;text-align:center}
+.conv{display:flex;align-items:center;gap:8px;height:30px;margin:0 0 0 22px;padding:0 8px;border-radius:6px;font-size:13px;color:var(--muted)}
+.conv.sel{background:var(--sel);color:var(--fg)}
+.conv .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv .ic{width:14px;height:14px;border-radius:3px;flex-shrink:0;background:var(--laranja);opacity:.85}
+.conv .quando{font:12px var(--sans);color:var(--faint)}
+.sep{height:10px}
+
+/* ANEL: arco fino, gira pela hora (JS), nunca por @keyframes */
+.anel{width:12px;height:12px;flex-shrink:0;display:block}
+.anel circle{fill:none;stroke-width:1.6;stroke-linecap:round}
+.anel .trilho{stroke:currentColor;opacity:.18}
+.anel .arco{stroke:currentColor}
+/* COMETA: anel com cauda que se apaga */
+.cometa{width:12px;height:12px;border-radius:50%;flex-shrink:0;background:conic-gradient(from var(--ang,0deg),transparent 0 30%,currentColor 100%);-webkit-mask:radial-gradient(circle,transparent 3.8px,#000 4.3px);mask:radial-gradient(circle,transparent 3.8px,#000 4.3px)}
+/* PONTO QUE RESPIRA: o projeto só diz "tem gente viva aqui dentro" */
+.q9.vivo{box-shadow:0 0 0 0 currentColor}
+
+/* fio real */
+.fio{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px 18px;width:520px}
+.autor{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600}
+.autor .av{width:28px;height:28px;border-radius:50%;background:#1b1d21;display:grid;place-items:center}
+.autor .av i{width:12px;height:10px;background:var(--laranja);border-radius:2px}
+.viva{display:flex;align-items:center;gap:8px;margin:6px 0 0 38px;font-size:13px;color:var(--muted);min-height:20px}
+.viva .n{font:12px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.viva .fase{white-space:nowrap}
+/* T1 brilho: o gradiente anda pela hora */
+.brilho{background:linear-gradient(90deg,var(--muted) 0,var(--muted) 38%,var(--fg) 50%,var(--muted) 62%,var(--muted) 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
+/* T2 onda: cada letra com o próprio brilho */
+.onda span{transition:none}
+/* T3 reticências: três pontos que acendem em fila */
+.ret i{font-style:normal;opacity:.25}
+.ret i.on{opacity:1}
+.compo{margin:14px 0 0;border:1px solid var(--border);border-radius:12px;background:var(--card);padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--faint)}
+.compo .esp{flex:1}
+.stop{width:28px;height:28px;border-radius:50%;background:#8a3d3a;display:grid;place-items:center}
+.stop i{width:9px;height:9px;background:#f2d6d3;border-radius:1.5px}
+.card{background:var(--rail);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1040px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:14px}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:4px}.card ol{padding-left:18px}
+</style>
+</head>
+<body>
+<h1>O sinal de "rodando", v2</h1>
+<p class="sub">Volta o círculo, mas movido pelo mesmo relógio único da ADR-256: o giro é <b>calculado pela hora</b> a cada quadro, e não por <code>@keyframes</code>. Por isso continua sem travar quando a janela fica coberta. Tudo nesta página se move por um só <code>requestAnimationFrame</code>, como no app.</p>
+<div class="ctl">
+  <button id="rm" aria-pressed="false">Simular "reduzir movimento"</button>
+  <button id="pausa" aria-pressed="false">Congelar 3 s (simula janela coberta)</button>
+  <span id="estado"></span>
+</div>
+
+<h2>1 · Barra lateral <small>um sinal por fato, não três</small></h2>
+<p class="q">Hoje o projeto aberto repete a matriz da conversa e ainda escreve "rodando". A proposta: <b>quem gira é a conversa</b>. O projeto só carrega o sinal quando está <b>recolhido</b> (aí a conversa não aparece e alguém precisa dizer). Aberto, a linha do projeto fica quieta.</p>
+<div class="lado">
+  <div class="op">
+    <div class="tit">Hoje · matriz duplicada</div>
+    <div class="rail">
+      <div class="sec">Projetos 5</div>
+      <div class="proj"><span class="q9" style="background:var(--verde)"></span>Landing Prime<span class="dir"><span class="mx" data-cor="verde"></span>rodando <span class="chev">⌄</span></span></div>
+      <div class="conv sel"><span class="ic"></span><span class="t">O time comercial da Prime…</span><span class="mx" data-cor="verde"></span></div>
+      <div class="sep"></div>
+      <div class="proj"><span class="q9" style="background:#8aa0c8"></span>sicredi<span class="dir"><span class="mx" data-cor="azul"></span><span class="chev">›</span></span></div>
+    </div>
+    <p class="nota">Três sinais em duas linhas para um fato só.</p>
+  </div>
+
+  <div class="op">
+    <div class="tit esc">A · Anel na cor, só onde está</div>
+    <div class="rail">
+      <div class="sec">Projetos 5</div>
+      <div class="proj"><span class="q9" style="background:var(--verde)"></span>Landing Prime<span class="dir"><span class="chev">⌄</span></span></div>
+      <div class="conv sel"><span class="ic"></span><span class="t">O time comercial da Prime…</span><svg class="anel" data-anel style="color:var(--verde)" viewBox="0 0 12 12"><circle class="trilho" cx="6" cy="6" r="4.8"/><circle class="arco" cx="6" cy="6" r="4.8" stroke-dasharray="9 30.2"/></svg></div>
+      <div class="sep"></div>
+      <div class="proj"><span class="q9" style="background:#8aa0c8"></span>sicredi<span class="dir"><svg class="anel" data-anel style="color:#8aa0c8" viewBox="0 0 12 12"><circle class="trilho" cx="6" cy="6" r="4.8"/><circle class="arco" cx="6" cy="6" r="4.8" stroke-dasharray="9 30.2"/></svg><span class="chev">›</span></span></div>
+    </div>
+    <p class="nota"><b>Arco fino com trilho</b>, na cor da conversa (ou do projeto, quando recolhido). "sicredi" está recolhido, então ele mesmo mostra. Sem a palavra "rodando".</p>
+  </div>
+
+  <div class="op">
+    <div class="tit">B · Cometa (anel com cauda)</div>
+    <div class="rail">
+      <div class="sec">Projetos 5</div>
+      <div class="proj"><span class="q9" style="background:var(--verde)"></span>Landing Prime<span class="dir"><span class="chev">⌄</span></span></div>
+      <div class="conv sel"><span class="ic"></span><span class="t">O time comercial da Prime…</span><span class="cometa" data-cometa style="color:var(--verde)"></span></div>
+      <div class="sep"></div>
+      <div class="proj"><span class="q9" style="background:#8aa0c8"></span>sicredi<span class="dir"><span class="cometa" data-cometa style="color:#8aa0c8"></span><span class="chev">›</span></span></div>
+    </div>
+    <p class="nota">Mais macio que o arco: a cauda se apaga em vez de ter ponta seca. Mesma regra de onde aparece.</p>
+  </div>
+
+  <div class="op">
+    <div class="tit">C · Anel na conversa, quadradinho que respira no projeto</div>
+    <div class="rail">
+      <div class="sec">Projetos 5</div>
+      <div class="proj"><span class="q9" style="background:var(--verde)"></span>Landing Prime<span class="dir"><span class="chev">⌄</span></span></div>
+      <div class="conv sel"><span class="ic"></span><span class="t">O time comercial da Prime…</span><svg class="anel" data-anel style="color:var(--verde)" viewBox="0 0 12 12"><circle class="trilho" cx="6" cy="6" r="4.8"/><circle class="arco" cx="6" cy="6" r="4.8" stroke-dasharray="9 30.2"/></svg></div>
+      <div class="sep"></div>
+      <div class="proj"><span class="q9" data-respira style="background:#8aa0c8"></span>sicredi<span class="dir"><span class="chev">›</span></span></div>
+    </div>
+    <p class="nota">Recolhido, o <b>próprio quadradinho da cor</b> do projeto pulsa devagar, sem ícone novo. É o mais discreto: nenhum giro fora da conversa.</p>
+  </div>
+</div>
+
+<h2>2 · Linha viva no fio <small>o texto é o sinal, sem ícone</small></h2>
+<p class="q">A frase continua a mesma ("está trabalhando…", "finalizando…", trabalho em segundo plano) e só troca por evento real, como hoje (não volta o carrossel de verbos). O que ganha vida é o <b>próprio texto</b>. O número de ações e o cronômetro ficam ao lado, em mono.</p>
+<div class="lado">
+  <div class="op" style="width:520px">
+    <div class="tit">Hoje</div>
+    <div class="fio">
+      <div class="autor"><span class="av"><i></i></span>Claude Code</div>
+      <div class="viva"><span class="fase">está trabalhando…</span><span class="mx" data-cor="cinza"></span><span class="n">3 ações · <span data-crono></span></span></div>
+    </div>
+  </div>
+  <div class="op" style="width:520px">
+    <div class="tit esc">T1 · Brilho que passa pelo texto</div>
+    <div class="fio">
+      <div class="autor"><span class="av"><i></i></span>Claude Code</div>
+      <div class="viva"><span class="fase brilho" data-brilho>está trabalhando…</span><span class="n">3 ações · <span data-crono></span></span></div>
+    </div>
+    <p class="nota">Uma faixa de luz atravessa a frase a cada ~2 s e descansa. É o gesto mais reconhecível de "pensando" e não ocupa espaço nenhum.</p>
+  </div>
+  <div class="op" style="width:520px">
+    <div class="tit">T2 · Onda letra a letra</div>
+    <div class="fio">
+      <div class="autor"><span class="av"><i></i></span>Claude Code</div>
+      <div class="viva"><span class="fase onda" data-onda>está trabalhando…</span><span class="n">3 ações · <span data-crono></span></span></div>
+    </div>
+    <p class="nota">Cada letra acende e apaga em sequência. Mais vivo que T1, mais chamativo também.</p>
+  </div>
+  <div class="op" style="width:520px">
+    <div class="tit">T3 · Só as reticências andam</div>
+    <div class="fio">
+      <div class="autor"><span class="av"><i></i></span>Claude Code</div>
+      <div class="viva"><span class="fase ret" data-ret>está trabalhando<i>.</i><i>.</i><i>.</i></span><span class="n">3 ações · <span data-crono></span></span></div>
+    </div>
+    <p class="nota">O mínimo: a frase parada e os três pontos acendendo em fila, como quem digita.</p>
+  </div>
+</div>
+
+<h2>3 · Juntos, na tela <small>A + T1, com o composer</small></h2>
+<p class="q">Com o anel no composer também (no lugar do arco laranja ao lado do stop), passa a existir <b>um só círculo</b> no app inteiro e um só texto vivo.</p>
+<div class="lado">
+  <div class="op" style="width:560px">
+    <div class="fio" style="width:560px">
+      <div class="autor"><span class="av"><i></i></span>Claude Code</div>
+      <div class="viva"><span class="fase brilho" data-brilho>está trabalhando…</span><span class="n">3 ações · <span data-crono></span></span></div>
+      <div class="compo"><span>Enter corrige agora · Tab envia no próximo turno…</span><span class="esp"></span><svg class="anel" data-anel style="color:var(--brass);width:14px;height:14px" viewBox="0 0 12 12"><circle class="trilho" cx="6" cy="6" r="4.8"/><circle class="arco" cx="6" cy="6" r="4.8" stroke-dasharray="9 30.2"/></svg><span class="stop"><i></i></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <b>O que não muda (as melhorias da ADR-256 ficam):</b>
+  <ol>
+    <li>Relógio único: um <code>requestAnimationFrame</code> para o app, que só gira enquanto há alguém vivo na tela. O ângulo do anel e a posição do brilho vêm da hora; ao descobrir a janela, o próximo quadro já nasce no lugar certo (teste no botão "Congelar").</li>
+    <li>Reduzir movimento: o anel fica parado em ¾ e o brilho vira texto em cor plena. Sinal visível, sem piscar.</li>
+    <li>Cor: a da conversa, ou a do projeto quando recolhido; cinza dentro do fio.</li>
+    <li>Passo executando no checklist: o mesmo anel, menor e cinza (hoje é a matriz em coluna).</li>
+  </ol>
+</div>
+
+<script>
+// A matriz de hoje, para comparar (mesmo relógio).
+const ATRASO=[0,1,2,1,2,3,2,3,4].map(d=>d*2)
+document.querySelectorAll('.mx').forEach(m=>{
+  m.style.cssText='display:grid;grid-template-columns:repeat(3,3px);gap:1.5px;flex-shrink:0;color:'+({verde:'var(--verde)',azul:'#8aa0c8',cinza:'var(--muted)'}[m.dataset.cor]||'var(--muted)')
+  for(let i=0;i<9;i++){const p=document.createElement('i');p.style.cssText='width:3px;height:3px;border-radius:1px;background:currentColor;opacity:.2';m.appendChild(p)}
+})
+document.querySelectorAll('[data-onda]').forEach(el=>{
+  const t=el.textContent;el.textContent=''
+  for(const c of t){const s=document.createElement('span');s.textContent=c;el.appendChild(s)}
+})
+const inicio=performance.now()
+let reduzir=false,congelado=0
+document.getElementById('rm').onclick=e=>{reduzir=!reduzir;e.target.setAttribute('aria-pressed',reduzir)}
+document.getElementById('pausa').onclick=e=>{congelado=performance.now()+3000;document.getElementById('estado').textContent='congelado… ao voltar, o quadro nasce no ponto certo da hora'}
+
+function pinta(ms){
+  // Anel: uma volta por segundo, calculada pela hora.
+  const ang=reduzir?0:(ms/1000*360)%360
+  document.querySelectorAll('[data-anel]').forEach(s=>{
+    s.style.transform=`rotate(${ang-90}deg)`
+    s.querySelector('.arco').setAttribute('stroke-dasharray',reduzir?'22.6 30.2':'9 30.2')
+  })
+  document.querySelectorAll('[data-cometa]').forEach(s=>s.style.setProperty('--ang',(reduzir?270:ang)+'deg'))
+  // Quadradinho que respira: 2,4 s por ciclo.
+  const resp=reduzir?1:0.55+0.45*(0.5+0.5*Math.cos(ms/2400*2*Math.PI))
+  document.querySelectorAll('[data-respira]').forEach(s=>s.style.opacity=resp)
+  // Brilho: atravessa em 1,4 s, descansa 0,8 s.
+  const ciclo=(ms%2200)/1400
+  document.querySelectorAll('[data-brilho]').forEach(s=>{
+    if(reduzir){s.style.color='var(--fg)';s.style.background='none';return}
+    s.style.color='';s.style.background=''
+    s.style.backgroundPosition=`${ciclo>1?-100:100-ciclo*200}% 0`
+  })
+  // Onda: a crista anda 18 letras por segundo.
+  document.querySelectorAll('[data-onda]').forEach(el=>{
+    const n=el.children.length,crista=(ms/1000*18)%(n+10)
+    ;[...el.children].forEach((s,i)=>{const d=Math.abs(i-crista);s.style.color=reduzir||d>=3?'var(--muted)':d<1?'var(--fg)':'#c5c9ce'})
+  })
+  // Reticências: 3 passos por segundo e uma pausa.
+  const passo=Math.floor(ms/1000*3)%5
+  document.querySelectorAll('[data-ret] i').forEach((p,i)=>p.classList.toggle('on',reduzir||i<passo))
+  // Matriz de hoje.
+  const q=Math.floor(ms/1000*12)%12
+  document.querySelectorAll('.mx').forEach(m=>[...m.children].forEach((p,i)=>{const d=(q-ATRASO[i]+12)%12;p.style.opacity=d===0?1:d<=2?.5:.2}))
+  // Cronômetro.
+  const s=Math.floor((ms-inicio)/1000)+13
+  document.querySelectorAll('[data-crono]').forEach(c=>c.textContent=s<60?s+'s':Math.floor(s/60)+'m'+String(s%60).padStart(2,'0')+'s')
+}
+function laco(agora){
+  if(agora<congelado){requestAnimationFrame(laco);return}
+  if(congelado){congelado=0;document.getElementById('estado').textContent=''}
+  pinta(agora);requestAnimationFrame(laco)
+}
+requestAnimationFrame(laco)
+</script>
+</body>
+</html>

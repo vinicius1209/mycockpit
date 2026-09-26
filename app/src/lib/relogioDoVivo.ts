@@ -1,5 +1,5 @@
-// O RELÓGIO DO VIVO (ADR-256): um só para o app inteiro, que move toda
-// `MatrizViva` (o sinal de "rodando").
+// O RELÓGIO DO VIVO (ADR-256, ADR-259): um só para o app inteiro, que move
+// todo sinal de "rodando" (o `CometaVivo` e o `TextoVivo`).
 //
 // # Por que um relógio e não `@keyframes`
 //
@@ -11,73 +11,61 @@
 // visível, mas coberta-e-descoberta SEM perder o foco não dispara nenhum dos
 // dois: o arco ficava parado até um clique forçar a repintura.
 //
-// Aqui não há animação do navegador para retomar. O quadro é CALCULADO pela
-// hora (`quadroEm`), e um `requestAnimationFrame` compartilhado o aplica: quando
-// a janela volta, o próximo quadro já nasce no ponto certo.
+// Aqui não há animação do navegador para retomar. A pose é CALCULADA pela hora
+// (`anguloEm`, `faixaDoBrilhoEm`), e um `requestAnimationFrame` compartilhado a
+// aplica: quando a janela volta, o próximo quadro já nasce no ponto certo.
 //
 // # Por que isto não sobrevive ao fim do turno
 //
 // A guarda `rodandoMotion.mjs` temia "timer de JS que sobrevive ao turno". O
-// relógio não decide QUEM está vivo: só pinta as matrizes que existem, e cada
-// uma existe porque o store diz "rodando". Sem assinante, o laço para.
+// relógio não decide QUEM está vivo: só pinta os sinais que existem, e cada
+// um existe porque o store diz "rodando". Sem assinante, o laço para.
 
-/** Quadros por segundo: a matriz lê como movimento a 12, e custa pouco. */
-export const QUADROS_POR_SEGUNDO = 12
-/** Quadros num ciclo: nove pontos acendendo, e três de respiro. */
-export const CICLO = 12
+/** Uma volta do cometa, em ms. */
+export const VOLTA_MS = 1100
+/** O brilho atravessa a frase em `TRAVESSIA_MS` e descansa até o fim do ciclo. */
+export const TRAVESSIA_MS = 1400
+export const CICLO_DO_BRILHO_MS = 2200
+/** Pose parada (reduced-motion): o cometa em ¾ de volta. */
+export const ANGULO_PARADO = 270
 
-export type Onda = "diagonal" | "coluna"
-
-/** Em que quadro do ciclo cada ponto (0..8, linha a linha) acende.
- *  diagonal: a conversa trabalhando, a onda desce do canto.
- *  coluna: um passo executando, a onda sobe da esquerda para a direita. */
-const ATRASO: Record<Onda, readonly number[]> = {
-  diagonal: [0, 1, 2, 1, 2, 3, 2, 3, 4].map((d) => d * 2),
-  coluna: [2, 5, 8, 1, 4, 7, 0, 3, 6],
+/** Ângulo do cometa naquele instante (ms), 0..360. Puro. */
+export function anguloEm(ms: number): number {
+  return ((ms % VOLTA_MS) / VOLTA_MS) * 360
 }
 
-/** O quadro do ciclo naquele instante (ms). Puro. */
-export function quadroEm(ms: number): number {
-  return Math.floor((ms / 1000) * QUADROS_POR_SEGUNDO) % CICLO
+/** Posição do brilho no texto, em % de `background-position`: de 100 (antes
+ *  da primeira letra) a -100 (depois da última). No descanso, fora do texto.
+ *  Puro. */
+export function faixaDoBrilhoEm(ms: number): number {
+  const t = ms % CICLO_DO_BRILHO_MS
+  if (t >= TRAVESSIA_MS) return -100
+  return 100 - (t / TRAVESSIA_MS) * 200
 }
 
-/** Brilho de um ponto num quadro: 2 aceso, 1 na esteira, 0 apagado. Com
- *  `parado` (reduced-motion), a matriz fica acesa pela metade e o centro
- *  inteiro: sinal visível, sem piscar. Puro. */
-export function brilho(quadro: number, onda: Onda, ponto: number, parado = false): 0 | 1 | 2 {
-  if (parado) return ponto === 4 ? 2 : 1
-  const d = (quadro - ATRASO[onda][ponto] + CICLO) % CICLO
-  return d === 0 ? 2 : d <= 2 ? 1 : 0
-}
-
-type Pintor = (quadro: number, parado: boolean) => void
+type Pintor = (ms: number, parado: boolean) => void
 
 const pintores = new Set<Pintor>()
 let laco: number | null = null
-let ultimo = -1
 
 function semMovimento(): boolean {
   return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
 }
 
 function passo(agora: number) {
-  const q = quadroEm(agora)
-  if (q !== ultimo) {
-    ultimo = q
-    for (const p of pintores) p(q, false)
-  }
+  for (const p of pintores) p(agora, false)
   laco = requestAnimationFrame(passo)
 }
 
-/** Assina o relógio. O pintor recebe o quadro já na assinatura e a cada troca.
+/** Assina o relógio. O pintor recebe a hora já na assinatura e a cada quadro.
  *  Devolve o cancelamento; sem assinantes, o laço para. */
 export function assinarRelogio(pintor: Pintor): () => void {
   pintores.add(pintor)
   if (typeof requestAnimationFrame === "undefined" || semMovimento()) {
-    // Sem animação possível (teste, reduced-motion): um quadro parado e só.
+    // Sem animação possível (teste, reduced-motion): uma pose parada e só.
     pintor(0, true)
   } else {
-    pintor(quadroEm(performance.now()), false)
+    pintor(performance.now(), false)
     if (laco === null) laco = requestAnimationFrame(passo)
   }
   return () => {
@@ -85,7 +73,6 @@ export function assinarRelogio(pintor: Pintor): () => void {
     if (pintores.size === 0 && laco !== null) {
       cancelAnimationFrame(laco)
       laco = null
-      ultimo = -1
     }
   }
 }
