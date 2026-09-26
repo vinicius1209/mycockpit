@@ -9624,3 +9624,48 @@ considerou.
 - **Consequência:** passar o mouse responde a pergunta da zona sem ler rótulo,
   e dá para saber de relance se o Frota aberto é o oficial ou um teste, de
   qual commit.
+
+### ADR-265 · O custo do OpenCode é o que o gateway cobrou, e o fio diz o que ele fez ✅
+- **Contexto (26/09/2026):** numa conversa com `opencode/kimi-k3` o resumo
+  mostrou US$ 0,125 e o gateway cobrou US$ 2,63. Cruzando o log do gateway, o
+  banco do opencode e o `turn_costs`: (1) o adapter do `run` ficava com o
+  ÚLTIMO `step_finish`, mas cada step é um request cobrado à parte (US$ 0,084
+  gravado num turno de US$ 0,448); (2) o subagente `@explore` (US$ 1,68) não
+  passa pelo stream, só o `sessionId` dele no `tool_use` do `task`; (3) o
+  raciocínio ficava fora da saída, e o gateway cobra os dois juntos; (4) o
+  `session` saía com `model: None` e apagava o modelo do ledger; (5) no modo
+  Padrão (ACP) o custo nem era lido. E a fumaça de modelos rodava o agente
+  completo do opencode: US$ 0,20 num `claude-fable-5-1`, só em cache escrito.
+  No fio, o turno inteiro era "está trabalhando…".
+- **Decisão:**
+  1. **`run`** (`adapters_opencode.rs`): soma TODOS os steps; saída inclui
+     `reasoning`; subagentes (e netos) são lidos no fechamento pelo
+     `opencode export <id>` (`info.cost`, que bateu ao centavo com o gateway);
+     filho ilegível vira aviso "custo incompleto", nunca zero calado. O
+     `session` leva o `-m` pedido.
+  2. **ACP** (`opencode_acp_turno.rs`): `usage_update.cost.amount` é o
+     ACUMULADO da sessão (medido em dois turnos); o turno é a diferença para a
+     base do ADR-226, e a retomada sem base sai `Unknown` com aviso, em vez de
+     cobrar a sessão inteira. `used`/`size` viram o anel de contexto com a
+     janela. O modelo vem do `configOptions` quando não foi pedido.
+  3. **A base atravessa os dois caminhos:** o `run` também devolve
+     `reported_cost_total` (base + custo próprio, sem os filhos, que o
+     `session.cost` do opencode não soma), para alternar Liberado/Padrão não
+     cobrar um turno duas vezes.
+  4. **Replay do `session/load`:** o ACP reenvia o histórico inteiro antes do
+     prompt; `session/update` antes do prompt é descartado (pintava a resposta
+     antiga no turno novo).
+  5. **Ferramentas no contrato** (`opencode_ferramentas.rs`, molde do
+     ADR-253): `read/bash/edit/write/grep/glob/webfetch/websearch/task` viram
+     `Read/Bash/Edit/…/Task`. No `run` a ferramenta só chega pronta (sai o par
+     chamada + desfecho); no ACP a chamada sai quando a entrada chega, com o
+     nome guardado do `tool_call` (o `kind` do `task` é `think`).
+  6. **Fumaça** (`model_smoke.rs`): agente mínimo `frota-fumaca` via
+     `OPENCODE_CONFIG_CONTENT` + `--pure`, sem ferramentas: 12049 → 117 tokens
+     de entrada, desfechos de erro idênticos.
+- **Fica de fora, de propósito:** raciocínio no fio (não há evento de
+  raciocínio no contrato para motor nenhum; é decisão de UI com mock);
+  histórico antigo do ledger (a pessoa escolheu não recalcular); passos
+  internos do subagente no `run` (o stream não os entrega); chamadas de
+  título do opencode (~US$ 0,001, fora de `session.cost`).
+- **Verificado:** `cargo test` 1070, `bun run test` 4983, `tsc -b` 0.

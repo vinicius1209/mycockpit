@@ -1291,27 +1291,6 @@ pub const OPENCODE_CAPS: Capabilities = Capabilities {
     modelo_livre: false,
 };
 
-/// O `opencode run` sem bypass **não pergunta: auto-rejeita**, e grava no turno
-/// `"The user rejected permission to use this specific tool call."` (medido em
-/// 26/08/2026). A frase é do fornecedor e atribui ao HUMANO uma recusa que a
-/// máquina tomou sozinha. Esta função separa as duas: só é "recusa sem
-/// pergunta" quando o bypass NÃO foi passado. Com bypass ligado, uma recusa que
-/// chegue veio de regra do próprio opencode, e a frase dele fica de pé.
-fn rejeicao_sem_pergunta(bypass: bool, status: &str, erro: &str) -> bool {
-    !bypass && status == "error" && erro.contains("rejected permission")
-}
-
-/// O que o app diz no lugar da frase do fornecedor. Precisa responder o que a
-/// pessoa vai perguntar ("recusei?") e o que fazer agora.
-fn mensagem_de_rejeicao_sem_pergunta(tool: &str) -> String {
-    format!(
-        "o opencode recusou `{tool}` sozinho, sem perguntar a ninguém. Este motor \
-         só tem o bypass tudo-ou-nada: fora do modo Liberado ele auto-rejeita toda \
-         ferramenta, e registra a recusa como se fosse sua. Rode em Liberado ou \
-         escolha outro motor enquanto o canal de permissão não existe."
-    )
-}
-
 /// Limite do OpenCode/provider. O NVIDIA NIM devolve literalmente "Too Many
 /// Requests" (429), sem as palavras `rate limit`; se isso virar erro genérico,
 /// o usuário procura defeito na chave quando na verdade precisa esperar/trocar.
@@ -1327,6 +1306,15 @@ pub fn opencode_limit(msg: &str) -> Option<LimitHit> {
     })
 }
 
+#[path = "adapters_opencode.rs"]
+mod adapters_opencode;
+pub use adapters_opencode::{
+    exportar_sessao as exportar_sessao_opencode, somar_filhos as somar_filhos_opencode, UsoOpenCode,
+};
+use adapters_opencode::{exportar_sessao, somar_filhos, tool_use, total_da_sessao};
+#[path = "opencode_ferramentas.rs"]
+pub(crate) mod opencode_ferramentas;
+
 /// Adapter do OpenCode: `opencode run --format json`.
 ///
 /// O motor é um MULTIPLICADOR de credencial (OAuth com Copilot, SuperGrok,
@@ -1336,9 +1324,20 @@ pub fn opencode_limit(msg: &str) -> Option<LimitHit> {
 pub struct OpenCodeAdapter {
     /// Texto acumulado dos blocos `text` do turno, pro `Result`.
     texto: String,
-    /// Última contagem vista no `step_finish`. O turno pode ter vários steps;
-    /// vale o ÚLTIMO, e não a soma, porque cada step já reporta o total dele.
-    ultimo_step: Option<(u64, u64, u64, u64, Option<f64>)>,
+    /// SOMA dos `step_finish` do turno, nunca o último (ver `adapters_opencode`).
+    uso: Option<UsoOpenCode>,
+    /// Sessões filhas (subagentes via `task`) vistas no turno. O custo delas
+    /// não passa pelo stream: é lido no fechamento pelo `opencode export`.
+    filhos: Vec<String>,
+    /// Porta de leitura de uma sessão; `None` é o `opencode export` real, e o
+    /// teste injeta o export colhido.
+    exportar: Option<fn(&str) -> Result<String, String>>,
+    /// O `-m` deste turno. O stream não diz o modelo em evento nenhum, e sem
+    /// ele o `session` apagava o modelo da conversa e do ledger.
+    modelo: Option<String>,
+    /// Retomada e acumulado anterior da sessão (ver `total_da_sessao`).
+    retomada: bool,
+    base: Option<f64>,
     /// Falhou? O `error` vem como evento, e o exit code NÃO serve: medido
     /// saindo **0 em falha** (banco local fora de sincronia).
     erro: Option<String>,
@@ -1383,6 +1382,8 @@ impl AgentAdapter for OpenCodeAdapter {
         // `--dir` é o diretório do run; o `current_dir` acompanha porque o
         // resto do loop (sandbox, worktree) raciocina em cima dele.
         cmd.arg("--dir").arg(&req.cwd).current_dir(&req.cwd);
+        (self.modelo, self.retomada) = (req.model.clone(), req.resume.is_some());
+        self.base = req.cost_baseline;
         if let Some(m) = &req.model {
             // O dialeto é `provider/model` — é assim que `opencode models` lista.
             cmd.arg("-m").arg(m);
@@ -1420,7 +1421,7 @@ impl AgentAdapter for OpenCodeAdapter {
                 }
                 vec![AgentEvent::Session {
                     session_id: sid.to_string(),
-                    model: None,
+                    model: self.modelo.clone(),
                     tools: 0,
                 }]
             }
@@ -1439,28 +1440,9 @@ impl AgentAdapter for OpenCodeAdapter {
             }
             "step_finish" => {
                 if let Some(p) = part {
-                    let tk = p.get("tokens");
-                    let n = |k: &str| {
-                        tk.and_then(|t| t.get(k))
-                            .and_then(|x| x.as_u64())
-                            .unwrap_or(0)
-                    };
-                    let cache = tk.and_then(|t| t.get("cache"));
-                    let c = |k: &str| {
-                        cache
-                            .and_then(|x| x.get(k))
-                            .and_then(|x| x.as_u64())
-                            .unwrap_or(0)
-                    };
-                    self.ultimo_step = Some((
-                        // input + cache.read: o `input` do opencode EXCLUI o
-                        // cache (medido), e o nosso contrato INCLUI.
-                        n("input") + c("read"),
-                        n("output"),
-                        c("read"),
-                        c("write"),
-                        p.get("cost").and_then(|x| x.as_f64()),
-                    ));
+                    self.uso
+                        .get_or_insert_with(UsoOpenCode::default)
+                        .somar_step(p);
                 }
                 Vec::new()
             }
@@ -1469,25 +1451,10 @@ impl AgentAdapter for OpenCodeAdapter {
             // nenhum evento `error` nascia, e o `on_close` reportava `ok:true`
             // sobre um turno onde toda ferramenta foi barrada. Sucesso falso.
             "tool_use" => {
-                let st = part.and_then(|p| p.get("state"));
-                let status = st
-                    .and_then(|s| s.get("status"))
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("");
-                let err = st
-                    .and_then(|s| s.get("error"))
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("");
-                if !rejeicao_sem_pergunta(self.bypass, status, err) {
-                    return Vec::new();
-                }
-                let tool = part
-                    .and_then(|p| p.get("tool"))
-                    .and_then(|t| t.as_str())
-                    .unwrap_or("a ferramenta");
-                let msg = mensagem_de_rejeicao_sem_pergunta(tool);
-                self.erro = Some(msg.clone());
-                vec![AgentEvent::Error { message: msg }]
+                let Some(p) = part else { return Vec::new() };
+                let (eventos, erro) = tool_use(p, self.bypass, &mut self.filhos);
+                self.erro = erro.or(self.erro.take());
+                eventos
             }
             "error" => {
                 let msg = v
@@ -1512,9 +1479,19 @@ impl AgentAdapter for OpenCodeAdapter {
     }
 
     fn on_close(&mut self) -> Vec<AgentEvent> {
-        let (input, output, cache_read, cache_creation, cost) =
-            self.ultimo_step.unwrap_or((0, 0, 0, 0, None));
-        vec![AgentEvent::Result {
+        let exportar = self.exportar.unwrap_or(exportar_sessao);
+        let filhos = std::mem::take(&mut self.filhos);
+        let proprio = self.uso.as_ref().and_then(|u| u.cost);
+        let total = total_da_sessao(self.retomada, self.base, proprio);
+        let (uso, mut avisos) = somar_filhos(self.uso.take(), filhos, exportar);
+        let UsoOpenCode {
+            input,
+            output,
+            cache_read,
+            cache_write: cache_creation,
+            cost,
+        } = uso.unwrap_or_default();
+        avisos.push(AgentEvent::Result {
             // O desfecho vem do EVENTO, nunca do exit code: medido saindo 0
             // numa falha real (banco local fora de sincronia).
             ok: self.erro.is_none(),
@@ -1532,8 +1509,9 @@ impl AgentAdapter for OpenCodeAdapter {
             // Reporta por TURNO (medido em dois turnos da mesma sessão): nada
             // a acumular, nada de baseline.
             cumulative_usage: None,
-            reported_cost_total: None,
-        }]
+            reported_cost_total: total,
+        });
+        avisos
     }
 }
 

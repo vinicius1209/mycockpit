@@ -4,7 +4,7 @@
 
 use crate::acp::{self, MensagemAcp};
 use crate::adapters::RunRequest;
-use crate::agent::{AgentEvent, CostSource, RunRegistry};
+use crate::agent::{AgentEvent, RunRegistry};
 use crate::approval::{DirectInteractions, PendingApprovals};
 use serde_json::{json, Value};
 use std::process::Stdio;
@@ -13,6 +13,10 @@ use tauri::ipc::Channel;
 use tokio::io::AsyncWriteExt;
 use tokio::process::{ChildStdin, Command};
 use tokio::sync::{Mutex, Notify};
+
+#[path = "opencode_acp_turno.rs"]
+mod turno;
+use turno::TurnoAcp;
 
 const INIT: i64 = 1;
 const SESSION: i64 = 2;
@@ -179,6 +183,7 @@ pub async fn run(
     let mut approval_seq = 0u64;
     let mut cancelled = false;
     let mut failed = false;
+    let mut turno = TurnoAcp::new(req.resume.is_some(), req.cost_baseline);
 
     if let Err(e) = write(&stdin, &request(INIT, "initialize", json!({
         "protocolVersion": 1,
@@ -284,8 +289,11 @@ pub async fn run(
                         }
                     }
                     MensagemAcp::Notificacao { metodo, params } => {
-                        if metodo == "session/update" {
-                            for event in acp::mapear_update(&params) { let _ = on_event.send(event); }
+                        // Antes do prompt, o `session/update` é o REPLAY do
+                        // histórico que o `session/load` reenvia: não é deste
+                        // turno, e repassá-lo pintava a resposta antiga de novo.
+                        if metodo == "session/update" && prompt_started {
+                            for event in turno.traduzir(&params) { let _ = on_event.send(event); }
                         }
                     }
                     MensagemAcp::Resposta { id, result, erro } => {
@@ -312,7 +320,8 @@ pub async fn run(
                                     .or(req.resume.as_deref()).map(str::to_string)
                                 else { return Outcome::startup("ACP não devolveu sessionId"); };
                                 session_id = Some(sid.clone());
-                                let _ = on_event.send(AgentEvent::Session { session_id: sid.clone(), model: req.model.clone(), tools: 0 });
+                                let model = req.model.clone().or_else(|| turno::modelo_anunciado(&result));
+                                let _ = on_event.send(AgentEvent::Session { session_id: sid.clone(), model, tools: 0 });
                                 if let Some(model) = req.model.as_deref() {
                                     if let Err(e) = write(&stdin, &request(MODEL, "session/set_config_option", json!({"sessionId":sid,"configId":"model","value":model}))).await { return Outcome::startup(e); }
                                 } else {
@@ -358,13 +367,10 @@ pub async fn run(
                                 if let Err(e) = write(&stdin, &request(PROMPT, "session/prompt", prompt_params(sid, &req.prompt))).await { return Outcome::startup(e); }
                             }
                             PROMPT => {
-                                let (input, output, cache) = acp::ler_usage(&result);
-                                if input > 0 { let _ = on_event.send(AgentEvent::ContextUsage { tokens: input, window_tokens: None }); }
-                                let _ = on_event.send(AgentEvent::Result {
-                                    ok: true, text: None, cost_usd: None, cost_source: CostSource::Unknown,
-                                    input_tokens: input, output_tokens: output, cache_read: cache,
-                                    cache_creation: 0, cumulative_usage: None, reported_cost_total: None,
-                                });
+                                let turno = std::mem::take(&mut turno);
+                                for event in turno.fechar(&result, crate::adapters::exportar_sessao_opencode) {
+                                    let _ = on_event.send(event);
+                                }
                                 break;
                             }
                             _ => {}

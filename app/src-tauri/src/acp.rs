@@ -264,7 +264,7 @@ fn texto_do_chunk(u: &Value) -> Option<String> {
 /// O `content` do `tool_call_update` é uma LISTA de blocos, cada um com o texto
 /// aninhado em `content.text`. Vem `null` enquanto a ferramenta não produziu
 /// nada, e tratar null como "" evita `unwrap` num campo que legitimamente falta.
-fn texto_do_conteudo(c: Option<&Value>) -> String {
+pub fn texto_do_conteudo(c: Option<&Value>) -> String {
     let Some(arr) = c.and_then(|x| x.as_array()) else {
         return String::new();
     };

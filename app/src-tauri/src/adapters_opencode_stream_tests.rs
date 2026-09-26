@@ -2,7 +2,7 @@
 //! capturado em 26/08/2026. Saiu de `adapters.rs` pela catraca de tamanho,
 //! no mesmo molde de `adapters_claude_tail_tests.rs`.
 use super::*;
-use super::tests::{argv, has_pair, req_com_anexo};
+use super::tests::{argv, has_pair, req, req_com_anexo};
 
 // ── OpenCode: as linhas abaixo são o stream REAL capturado em 26/08/2026
 //    (`opencode run --format json -m google/gemini-2.5-flash-lite`).
@@ -29,8 +29,65 @@ fn opencode_soma_o_cache_no_input() {
         } => {
             assert_eq!(*input_tokens, 5499 + 36220);
             assert_eq!(*cache_read, 36220);
-            assert_eq!(*output_tokens, 1);
+            // output 1 + reasoning 212: o raciocínio é cobrado como saída.
+            assert_eq!(*output_tokens, 1 + 212);
         }
+        _ => panic!("esperava Result"),
+    }
+}
+
+/// Os sete `step_finish` REAIS de um turno do incidente de 26/09/2026
+/// (opencode 1.18.32, `opencode/kimi-k3`), tirados do banco do próprio
+/// opencode e conferidos contra o log do gateway, request a request.
+const OC_TURNO_DE_SETE_STEPS: [&str; 7] = [
+    r#"{"type":"step_finish","timestamp":1790431903131,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":22061,"input":20629,"output":844,"reasoning":588,"cache":{"write":0,"read":0}},"cost":0.083367}}"#,
+    r#"{"type":"step_finish","timestamp":1790431979525,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":58753,"input":33915,"output":262,"reasoning":3968,"cache":{"write":0,"read":20608}},"cost":0.1713774}}"#,
+    r#"{"type":"step_finish","timestamp":1790431989577,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":61803,"input":7024,"output":111,"reasoning":268,"cache":{"write":0,"read":54400}},"cost":0.043077}}"#,
+    r#"{"type":"step_finish","timestamp":1790431995701,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":62091,"input":671,"output":108,"reasoning":0,"cache":{"write":0,"read":61312}},"cost":0.0220266}}"#,
+    r#"{"type":"step_finish","timestamp":1790432001068,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":62645,"input":567,"output":126,"reasoning":0,"cache":{"write":0,"read":61952}},"cost":0.0221766}}"#,
+    r#"{"type":"step_finish","timestamp":1790432005876,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"tool-calls","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":63122,"input":588,"output":70,"reasoning":0,"cache":{"write":0,"read":62464}},"cost":0.0215532}}"#,
+    r#"{"type":"step_finish","timestamp":1790432076249,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"reason":"stop","snapshot":"2d3fd63c3d8c293c986970c61bddf34ff352ba1c","type":"step-finish","tokens":{"total":68548,"input":1499,"output":2749,"reasoning":1324,"cache":{"write":0,"read":62976}},"cost":0.0844848}}"#,
+];
+
+#[test]
+fn opencode_soma_o_custo_de_todos_os_steps_do_turno() {
+    // Cada step é um request cobrado à parte. Ficar com o último mostrava
+    // US$ 0,084 (só o step final) num turno que custou US$ 0,448: o mesmo
+    // total que o opencode grava em `session.cost` e que o gateway cobrou.
+    let mut a = OpenCodeAdapter::default();
+    for l in OC_TURNO_DE_SETE_STEPS {
+        a.map_line(&oc_linha(l));
+    }
+    match &a.on_close()[0] {
+        AgentEvent::Result {
+            cost_usd,
+            cost_source,
+            input_tokens,
+            output_tokens,
+            cache_read,
+            ..
+        } => {
+            let esperado = 0.083367 + 0.1713774 + 0.043077 + 0.0220266 + 0.0221766 + 0.0215532 + 0.0844848;
+            assert!((cost_usd.unwrap() - esperado).abs() < 1e-9, "{cost_usd:?}");
+            assert!(matches!(cost_source, CostSource::Reported));
+            // input do gateway (sem cache) 64893 + cache lido 323712.
+            assert_eq!(*cache_read, 323_712);
+            assert_eq!(*input_tokens, 64_893 + 323_712);
+            // output 4270 + reasoning 6148, o que o gateway contou como saída.
+            assert_eq!(*output_tokens, 4_270 + 6_148);
+        }
+        _ => panic!("esperava Result"),
+    }
+}
+
+#[test]
+fn opencode_step_sem_custo_nao_apaga_o_custo_dos_outros() {
+    let sem_custo = r#"{"type":"step_finish","timestamp":1,"sessionID":"ses_x","part":{"type":"step-finish","tokens":{"input":10,"output":1,"reasoning":0,"cache":{"write":0,"read":0}}}}"#;
+    let mut a = OpenCodeAdapter::default();
+    a.map_line(&oc_linha(OC_STEP_FINISH));
+    a.map_line(&oc_linha(sem_custo));
+    match &a.on_close()[0] {
+        AgentEvent::Result { cost_usd, .. } => assert_eq!(*cost_usd, Some(0.0009973)),
         _ => panic!("esperava Result"),
     }
 }
@@ -107,7 +164,14 @@ fn opencode_com_bypass_nao_reescreve_recusa_que_e_do_motor() {
     // direção. Guarda dos DOIS lados.
     let mut a = OpenCodeAdapter::default();
     a.bypass = true;
-    assert!(a.map_line(&oc_linha(OC_TOOL_REJEITADA)).is_empty());
+    // A ferramenta aparece com o desfecho falho e a frase do próprio motor;
+    // nenhum erro de turno nasce dela.
+    let evs = a.map_line(&oc_linha(OC_TOOL_REJEITADA));
+    assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Error { .. })));
+    assert!(evs.iter().any(|e| matches!(
+        e,
+        AgentEvent::ToolResult { ok: false, text, .. } if text.contains("rejected permission")
+    )));
     match &a.on_close()[0] {
         AgentEvent::Result { ok, .. } => assert!(ok),
         _ => panic!("esperava Result"),
@@ -116,11 +180,14 @@ fn opencode_com_bypass_nao_reescreve_recusa_que_e_do_motor() {
 
 #[test]
 fn opencode_ferramenta_que_deu_certo_nao_vira_erro() {
-    // Só a recusa SEM pergunta é reescrita; `tool_use` normal segue mudo.
+    // Só a recusa SEM pergunta é reescrita; `tool_use` normal vira a
+    // ferramenta no fio, nunca erro.
     let ok_json = r#"{"type":"tool_use","timestamp":1,"sessionID":"ses_x","part":{"type":"tool","tool":"bash","callID":"c1","state":{"status":"completed","input":{"command":"echo oi"},"output":"oi"}}}"#;
     let mut a = OpenCodeAdapter::default();
     a.bypass = false;
-    assert!(a.map_line(&oc_linha(ok_json)).is_empty());
+    let evs = a.map_line(&oc_linha(ok_json));
+    assert!(!evs.iter().any(|e| matches!(e, AgentEvent::Error { .. })));
+    assert!(matches!(&evs[0], AgentEvent::Tool { name, .. } if name == "Bash"));
     assert!(a.erro.is_none());
 }
 
@@ -231,3 +298,147 @@ fn opencode_anexo_preserva_prompt_do_usuario() {
     assert_eq!(args.get(args.len() - 2).map(String::as_str), Some("--"));
 }
 
+
+// ── Subagentes: o stream do `opencode run` não traz nenhum step do filho
+//    (medido em 26/09/2026 com um `@explore` real). O `tool_use` do `task` é
+//    a linha REAL do incidente, com `state.output` e `input.prompt` podados.
+const OC_TASK_DO_INCIDENTE: &str = r#"{"type":"tool_use","timestamp":1790431493327,"sessionID":"ses_f21f805bbffeKqfuZn15YvQing","part":{"type":"tool","tool":"task","callID":"task_3","state":{"status":"completed","input":{"description":"Mapear superfícies de UI da Frota","subagent_type":"explore"},"metadata":{"parentSessionId":"ses_f21f805bbffeKqfuZn15YvQing","sessionId":"ses_f21f78326ffegEmfF17xS34NyU","truncated":false},"title":"Mapear superfícies de UI da Frota","time":{"start":1790431493353,"end":1790431903020}}}}"#;
+
+/// `opencode export` REAL do subagente do incidente: o `info` como veio
+/// (sem `permission`, e com o `directory` trocado, que não entra na conta),
+/// e as 36 mensagens de fora, porque o total mora no
+/// `info` e bateu ao centavo com o gateway (35 requests, US$ 1,6774503).
+fn export_do_filho(id: &str) -> Result<String, String> {
+    match id {
+        "ses_f21f78326ffegEmfF17xS34NyU" => Ok(r#"{"info": {"id": "ses_f21f78326ffegEmfF17xS34NyU", "slug": "stellar-squid", "projectID": "3f77bd85487d2c33ac9dd844ad438c6b7a21d2c5", "directory": "/Users/x/projetos/frota", "path": "", "parentID": "ses_f21f805bbffeKqfuZn15YvQing", "title": "Mapear superfícies de UI da Frota (@explore subagent)", "agent": "explore", "model": {"id": "kimi-k3", "providerID": "opencode", "variant": "default"}, "version": "1.18.32", "cost": 1.6774503, "tokens": {"input": 204397, "output": 12539, "reasoning": 3170, "cache": {"read": 2762081, "write": 0}}, "time": {"created": 1790431493337, "updated": 1790431903022}}, "messages": []}"#.to_string()),
+        outro => Err(format!("Session not found: {outro}")),
+    }
+}
+
+#[test]
+fn opencode_soma_o_custo_do_subagente_que_o_stream_nao_mostra() {
+    // O incidente: o turno mostrou US$ 0,084 e custou US$ 2,13. Sete steps
+    // do pai (US$ 0,448) mais o `@explore` (US$ 1,677), que nunca passou
+    // pelo stream.
+    let mut a = OpenCodeAdapter {
+        exportar: Some(export_do_filho),
+        ..Default::default()
+    };
+    a.map_line(&oc_linha(OC_TASK_DO_INCIDENTE));
+    for l in OC_TURNO_DE_SETE_STEPS {
+        a.map_line(&oc_linha(l));
+    }
+    let ev = a.on_close();
+    assert_eq!(ev.len(), 1, "sem aviso quando o filho se deixa ler");
+    match &ev[0] {
+        AgentEvent::Result {
+            cost_usd,
+            cache_read,
+            output_tokens,
+            ..
+        } => {
+            let pai = 0.083367 + 0.1713774 + 0.043077 + 0.0220266 + 0.0221766 + 0.0215532 + 0.0844848;
+            assert!((cost_usd.unwrap() - (pai + 1.6774503)).abs() < 1e-9, "{cost_usd:?}");
+            assert_eq!(*cache_read, 323_712 + 2_762_081);
+            assert_eq!(*output_tokens, 4_270 + 6_148 + 12_539 + 3_170);
+        }
+        _ => panic!("esperava Result"),
+    }
+}
+
+#[test]
+fn opencode_subagente_ilegivel_avisa_em_vez_de_virar_zero() {
+    let mut a = OpenCodeAdapter {
+        exportar: Some(|_| Err("Session not found".into())),
+        ..Default::default()
+    };
+    a.map_line(&oc_linha(OC_TASK_DO_INCIDENTE));
+    a.map_line(&oc_linha(OC_STEP_FINISH));
+    let ev = a.on_close();
+    let AgentEvent::Notice { message } = &ev[0] else {
+        panic!("esperava o aviso antes do Result")
+    };
+    assert!(message.contains("incompleto"), "{message}");
+    match &ev[1] {
+        AgentEvent::Result { cost_usd, .. } => assert_eq!(*cost_usd, Some(0.0009973)),
+        _ => panic!("esperava Result"),
+    }
+}
+
+#[test]
+fn opencode_mesmo_subagente_visto_duas_vezes_conta_uma() {
+    // O `task` pode chegar mais de uma vez (running e completed); o filho é
+    // um só, e o neto que ele disparou também entra, uma vez.
+    fn exportar(id: &str) -> Result<String, String> {
+        match id {
+            "filho" => Ok(r#"{"info":{"cost":1.0,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}},"messages":[{"info":{},"parts":[{"type":"tool","tool":"task","state":{"metadata":{"sessionId":"neto"}}}]}]}"#.into()),
+            "neto" => Ok(r#"{"info":{"cost":0.5,"tokens":{"input":1,"output":1,"reasoning":0,"cache":{"read":0,"write":0}}},"messages":[]}"#.into()),
+            _ => Err("?".into()),
+        }
+    }
+    let task = r#"{"type":"tool_use","sessionID":"ses_x","part":{"type":"tool","tool":"task","state":{"status":"completed","metadata":{"sessionId":"filho"}}}}"#;
+    let mut a = OpenCodeAdapter {
+        exportar: Some(exportar),
+        ..Default::default()
+    };
+    a.map_line(&oc_linha(task));
+    a.map_line(&oc_linha(task));
+    match &a.on_close()[0] {
+        AgentEvent::Result { cost_usd, .. } => assert_eq!(*cost_usd, Some(1.5)),
+        _ => panic!("esperava Result"),
+    }
+}
+
+/// `step_start` REAL (opencode 1.18.32, 26/09/2026): nenhum campo de modelo.
+const OC_STEP_START: &str = r#"{"type":"step_start","timestamp":1790433909173,"sessionID":"ses_f21d2b112ffevePRwc9q0v7nD1","part":{"id":"prt_0de2d59b0001Uev1b2U2jj6utS","messageID":"msg_0de2d501b001pKLanNZ6NQkGoK","sessionID":"ses_f21d2b112ffevePRwc9q0v7nD1","type":"step-start"}}"#;
+
+#[test]
+fn opencode_session_leva_o_modelo_pedido() {
+    // O `session` com `model: None` apagava o modelo da conversa, e todo
+    // turno do OpenCode entrou no ledger sem modelo.
+    let mut r = req(Permission::Liberado, false);
+    r.model = Some("opencode/kimi-k3".into());
+    let mut a = OpenCodeAdapter::default();
+    a.build_command(&r).unwrap();
+    match &a.map_line(&oc_linha(OC_STEP_START))[0] {
+        AgentEvent::Session { model, .. } => {
+            assert_eq!(model.as_deref(), Some("opencode/kimi-k3"))
+        }
+        _ => panic!("esperava Session"),
+    }
+}
+
+#[test]
+fn opencode_devolve_o_acumulado_da_sessao_para_a_base_do_proximo_turno() {
+    // Sem isto, um turno em Liberado entre dois turnos em Padrão ficava fora
+    // da base, e o ACP cobraria esse turno de novo.
+    let mut r = req(Permission::Liberado, false);
+    r.resume = Some("ses_x".into());
+    r.cost_baseline = Some(1.0);
+    let mut a = OpenCodeAdapter::default();
+    a.build_command(&r).unwrap();
+    a.map_line(&oc_linha(OC_STEP_FINISH));
+    match &a.on_close()[0] {
+        AgentEvent::Result {
+            cost_usd,
+            reported_cost_total,
+            ..
+        } => {
+            assert_eq!(*cost_usd, Some(0.0009973));
+            assert_eq!(*reported_cost_total, Some(1.0 + 0.0009973));
+        }
+        _ => panic!("esperava Result"),
+    }
+    // Retomada sem base: não há acumulado a afirmar.
+    r.cost_baseline = None;
+    let mut b = OpenCodeAdapter::default();
+    b.build_command(&r).unwrap();
+    b.map_line(&oc_linha(OC_STEP_FINISH));
+    match &b.on_close()[0] {
+        AgentEvent::Result {
+            reported_cost_total,
+            ..
+        } => assert_eq!(*reported_cost_total, None),
+        _ => panic!("esperava Result"),
+    }
+}
