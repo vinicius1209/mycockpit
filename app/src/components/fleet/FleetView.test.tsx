@@ -9,14 +9,17 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it, vi } from "vitest"
 import type { ConversationMeta } from "@/lib/db/conversations"
+import type { ChatItem } from "@/store/chat"
 import {
+  acoesDoTurno,
   buildFleetLines,
-  FleetRowItem,
   parseFleetKey,
   parseUnseenKey,
   rowSubtitle,
+  tempoDaLinha,
   type LinhaDaFrota,
-} from "./FleetView"
+} from "@/lib/fleet/linhas"
+import { CabecalhoDeColunas, FleetRowItem } from "./FleetView"
 
 describe("parseFleetKey", () => {
   it("chave vazia não produz linha nenhuma", () => {
@@ -190,7 +193,10 @@ describe("buildFleetLines", () => {
 })
 
 describe("rowSubtitle — o tempo verbal certo, sem inventar", () => {
-  it("pede é decisão, não atividade", () => {
+  it("pede diz o que o agente pediu; sem pedido legível, o genérico", () => {
+    expect(
+      rowSubtitle({ estado: "pede", finalizando: false, fundo: null, pedido: "Executar · rm -rf dist" }),
+    ).toBe("pede: Executar · rm -rf dist")
     expect(rowSubtitle({ estado: "pede", finalizando: false, fundo: null })).toBe(
       "aguardando sua resposta",
     )
@@ -211,6 +217,72 @@ describe("rowSubtitle — o tempo verbal certo, sem inventar", () => {
     expect(rowSubtitle({ estado: "rodando", finalizando: false, fundo: null })).toBe(
       "está trabalhando…",
     )
+  })
+
+  it("rodando: o verbo é fixo (o do fio) e o que anda é o número de ações", () => {
+    expect(rowSubtitle({ estado: "rodando", finalizando: false, fundo: null, acoes: 14 })).toBe(
+      "está trabalhando · 14 ações",
+    )
+    expect(rowSubtitle({ estado: "rodando", finalizando: false, fundo: null, acoes: 1 })).toBe(
+      "está trabalhando · 1 ação",
+    )
+  })
+})
+
+describe("acoesDoTurno — só o turno em curso, só o que terminou", () => {
+  const ferramenta = (id: string, extra: Partial<Extract<ChatItem, { kind: "tool" }>> = {}): ChatItem => ({
+    kind: "tool",
+    id,
+    name: "Read",
+    input: {},
+    ...extra,
+  })
+  const pronta = { result: { ok: true, text: "", lines: 1 } }
+
+  it("conta desde o seu último pedido, ignora a aberta e o background", () => {
+    const items: ChatItem[] = [
+      { kind: "user", id: "u1", text: "antes" },
+      ferramenta("velha", pronta),
+      { kind: "user", id: "u2", text: "agora" },
+      ferramenta("a", pronta),
+      ferramenta("b", pronta),
+      ferramenta("aberta"),
+      ferramenta("fundo", { ...pronta, deferred: {} as never }),
+    ]
+    expect(acoesDoTurno(items)).toBe(2)
+  })
+
+  it("fala endereçada a um conselheiro não abre turno novo", () => {
+    const items: ChatItem[] = [
+      { kind: "user", id: "u1", text: "faça" },
+      ferramenta("a", pronta),
+      { kind: "user", id: "u2", text: "@aline", advisorTo: { id: "x", name: "Aline" } },
+      ferramenta("b", pronta),
+    ]
+    expect(acoesDoTurno(items)).toBe(2)
+  })
+})
+
+describe("tempoDaLinha — um fato por estado, e a dica diz qual", () => {
+  const agora = 1_700_000_120_000
+  it("rodando com início: cronômetro do turno", () => {
+    expect(
+      tempoDaLinha({ estado: "rodando", inicio: agora - 65_000, updatedAt: null, agora, agoraMinuto: agora }),
+    ).toEqual({ texto: "1min 05s", dica: "Duração do turno" })
+  })
+  it("mais cedo: há quanto terminou", () => {
+    const t = tempoDaLinha({
+      estado: "quando",
+      inicio: null,
+      updatedAt: agora - 2 * 3_600_000,
+      agora,
+      agoraMinuto: agora,
+    })
+    expect(t).toEqual({ texto: "2h", dica: "Quando terminou" })
+  })
+  it("sem nenhum instante, vazio (nunca NaN)", () => {
+    const t = tempoDaLinha({ estado: "quando", inicio: null, updatedAt: null, agora, agoraMinuto: agora })
+    expect(t.texto).toBe("")
   })
 })
 
@@ -237,11 +309,10 @@ function renderLinha(props: Partial<Parameters<typeof FleetRowItem>[0]>): string
     createElement(FleetRowItem, {
       linha: linha({}),
       subtitulo: "está trabalhando…",
+      tempo: { texto: "1min", dica: "Duração do turno" },
       custo: null,
       custoEstimado: false,
       avisoParar: null,
-      agora: 1_700_000_120_000,
-      agoraMinuto: 1_700_000_120_000,
       onOpen: vi.fn(),
       onParar: vi.fn(),
       ...props,
@@ -249,21 +320,26 @@ function renderLinha(props: Partial<Parameters<typeof FleetRowItem>[0]>): string
   )
 }
 
+/** A classe de colunas (`grid-cols-[…]`) de um trecho renderizado. */
+function colunas(html: string): string[] {
+  return html.match(/grid-cols-\[[^\]]+\]/g) ?? []
+}
+
 describe("FleetRowItem — render por props (sem tocar a store)", () => {
-  it("mostra título, projeto e cronômetro da rodando", () => {
-    const inicio = 1_700_000_120_000 - 65_000
-    const html = renderLinha({ linha: linha({ startedAt: inicio }) })
+  it("mostra título, projeto, tempo e o sinal de vivo", () => {
+    const html = renderLinha({})
     expect(html).toContain("Landing page")
     expect(html).toContain("frota")
     expect(html).toContain("1min")
+    expect(html).toContain("Duração do turno")
     expect(html).toContain("turno rodando")
   })
 
-  it("sem startedAt, não escreve tempo nenhum (nunca 'NaN')", () => {
-    const html = renderLinha({
-      linha: linha({ startedAt: null, updatedAt: null }),
-    })
-    expect(html).not.toContain("NaN")
+  it("cabeçalho e linha usam a MESMA grade (a primeira versão desalinhava)", () => {
+    const linhaHtml = colunas(renderLinha({}))
+    const cabHtml = colunas(renderToStaticMarkup(createElement(CabecalhoDeColunas)))
+    expect(linhaHtml.length).toBeGreaterThan(0)
+    expect(cabHtml).toEqual(linhaHtml)
   })
 
   it("custo zerado fica vazio: sem turno terminado não há custo a mostrar", () => {
@@ -277,23 +353,29 @@ describe("FleetRowItem — render por props (sem tocar a store)", () => {
     expect(html).toContain("US$")
   })
 
-  it("pede mostra Responder em vez de Abrir, e mantém Parar se o processo vive", () => {
-    const html = renderLinha({
-      linha: linha({ estado: "pede", rodando: true }),
-      subtitulo: "aguardando sua resposta",
-    })
-    expect(html).toContain("Responder")
-    expect(html).not.toContain("Abrir")
-    expect(html).toContain("Parar")
-    expect(html).toContain("aguardando sua resposta")
+  it("a linha inteira abre a conversa: não há botão Abrir separado", () => {
+    const html = renderLinha({})
+    expect(html).toContain('aria-label="Abrir Landing page"')
+    expect(html).not.toContain(">Abrir<")
   })
 
-  it("concluída não oferece Parar (não há o que cortar)", () => {
+  it("pede mostra só Responder, sempre visível, e diz o pedido", () => {
+    const html = renderLinha({
+      linha: linha({ estado: "pede", rodando: true }),
+      subtitulo: "pede: Executar · rm -rf dist",
+    })
+    expect(html).toContain(">Responder<")
+    expect(html).not.toContain(">Parar<")
+    expect(html).toContain("pede: Executar · rm -rf dist")
+  })
+
+  it("rodando oferece Parar; concluída não oferece gesto nenhum", () => {
+    expect(renderLinha({})).toContain(">Parar<")
     const html = renderLinha({
       linha: linha({ estado: "quando", rodando: false }),
       subtitulo: "concluída",
     })
-    expect(html).toContain("Abrir")
-    expect(html).not.toContain("Parar")
+    expect(html).not.toContain(">Parar<")
+    expect(html).not.toContain(">Responder<")
   })
 })

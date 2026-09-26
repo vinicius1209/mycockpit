@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>M3 · Frota densa</title>
+<title>M3 · Frota densa (revisão 26/09)</title>
 <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 /* Tokens REAIS de app/src/index.css (par claro/escuro). */
@@ -12,10 +12,9 @@
   --muted-foreground:#5c6166;--faint:#8a9099;
   --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);
   --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
-  --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);
-  --st-running:#2f8fbf;--st-queued:#c1861f;--st-warning:#c1861f;--st-error:#cf4a3e;--st-success:#1f9d6b;
-  --id-violet:#6d47b8;
-  --shadow-sm:0 1px 2px rgba(20,22,25,.08);--shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+  --brass:#a9742b;
+  --st-running:#2f8fbf;--st-warning:#c1861f;--st-error:#cf4a3e;--st-success:#1f9d6b;
+  --shadow-sm:0 1px 2px rgba(20,22,25,.08);
   --sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;
 }
 :root[data-theme="dark"]{
@@ -23,201 +22,272 @@
   --muted-foreground:#9aa0a7;--faint:#687078;
   --border:rgba(255,255,255,.08);--border-strong:rgba(255,255,255,.13);
   --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
-  --brass:#e4a862;--brass-soft:rgba(228,168,98,.14);
-  --st-running:#5bb8e8;--st-queued:#d99138;--st-warning:#d99138;--st-error:#f2766b;--st-success:#5bd6a0;
-  --id-violet:#a48af0;
-  --shadow-sm:0 1px 2px rgba(0,0,0,.35);--shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+  --brass:#e4a862;
+  --st-running:#5bb8e8;--st-warning:#d99138;--st-error:#f2766b;--st-success:#5bd6a0;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#ecece9;color:var(--foreground);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 90px}
 :root[data-theme="dark"] body{background:#000}
 h1{font-size:20px;font-weight:600}
-.sub{font-size:13px;color:var(--muted-foreground);margin:6px 0 18px;max-width:1150px;line-height:1.55}
-h2{font-size:14px;font-weight:600;margin:36px 0 4px}
+.sub{font-size:13px;color:var(--muted-foreground);margin:6px 0 18px;max-width:1100px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:40px 0 4px}
 h2 small{font-weight:400;color:var(--muted-foreground);font-size:13px;margin-left:8px}
-.q{font-size:13px;color:var(--muted-foreground);margin:0 0 12px;max-width:1150px;line-height:1.55}
+.q{font-size:13px;color:var(--muted-foreground);margin:0 0 12px;max-width:1100px;line-height:1.55}
 .q b{color:var(--foreground);font-weight:500}
 .tema{position:fixed;top:20px;right:24px;font:12px var(--sans);color:var(--muted-foreground);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;box-shadow:var(--shadow-sm);z-index:5}
-.tema:hover{color:var(--foreground)}
-.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1240px;font-size:13px;color:var(--muted-foreground);line-height:1.6;margin-top:14px}
-.card b{color:var(--foreground);font-weight:500}.card li{margin-top:4px}.card ul{padding-left:18px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1100px;font-size:13px;color:var(--muted-foreground);line-height:1.6;margin-top:14px}
+.card b{color:var(--foreground);font-weight:500}.card li{margin-top:5px}.card ul,.card ol{padding-left:18px}
 code{font:12px var(--mono)}
 
-/* ---------- a view Frota (cobre o cartão central) ---------- */
-.view{width:1240px;background:var(--background);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:10px}
-.vhead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)}
-.vhead .ttl{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint);display:flex;align-items:center;gap:7px}
-.vhead .ttl svg{width:13px;height:13px}
-.vhead .resumo{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
-.vhead .resumo .w{color:var(--st-warning)}
-.vhead .x{color:var(--faint);font-size:14px;padding:2px 6px;border-radius:6px;cursor:pointer}
-.vhead .x:hover{background:var(--sel-hover);color:var(--foreground)}
+/* ---------- a view (cobre o cartão central) ---------- */
+.view{width:1100px;background:var(--background);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:10px;position:relative}
+.miolo{max-width:960px;margin:0 auto;padding:28px 32px 36px}
+.vhead{display:flex;align-items:center;gap:8px;padding-bottom:12px}
+.vhead.filete{border-bottom:1px solid var(--border)}
+.ttl{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint);display:flex;align-items:center;gap:7px}
+.ttl svg{width:13px;height:13px}
+.ttl .n{font-family:var(--mono);letter-spacing:0;text-transform:none}
+.resumo{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums;display:flex;gap:6px}
+.resumo .w{color:var(--st-warning)}
+.x{color:var(--faint);font-size:13px;padding:2px 6px;border-radius:6px;cursor:pointer}
+.etq{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.etq .n{font-family:var(--mono);letter-spacing:0}
 
-/* o cardão de hoje */
-.cardao{margin:44px auto;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm);padding:18px;display:flex;align-items:center;gap:14px}
-.cardao .spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--border-strong);border-top-color:var(--st-running);animation:gira 1s linear infinite;flex-shrink:0}
-@keyframes gira{to{transform:rotate(360deg)}}
-.cardao .t{font-size:13px;font-weight:500}
-.cardao .p{font-size:12px;color:var(--muted-foreground);margin-top:3px}
-.cardao .qdo{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+/* ---------- HOJE: flex com gaps diferentes (reprodução do build #443) ---------- */
+.hoje .secao{padding:20px 8px 6px}
+.hoje .cab{display:flex;align-items:center;gap:4px;padding:0 8px 4px}
+.hoje .lin{display:flex;align-items:center;gap:4px}
+.hoje .btn{display:flex;flex:1;min-width:0;align-items:center;gap:10px;padding:6px 8px;border-radius:6px}
+.hoje .btn:hover{background:var(--sel-hover)}
+.hoje .c-glifo{width:16px;flex-shrink:0;display:grid;place-items:center}
+.hoje .c-tt{flex:1;min-width:0}
+.hoje .c-proj{width:112px;flex-shrink:0}
+.hoje .c-motor{width:104px;flex-shrink:0}
+.hoje .c-tempo{width:76px;flex-shrink:0;text-align:right}
+.hoje .c-custo{width:80px;flex-shrink:0;text-align:right}
+.hoje .c-acoes{width:150px;flex-shrink:0}
+.marca-erro{outline:1.5px dashed var(--st-error);outline-offset:2px;border-radius:3px}
+.pino{position:absolute;width:18px;height:18px;border-radius:50%;background:var(--st-error);color:#fff;font:600 10px var(--sans);display:grid;place-items:center;box-shadow:var(--shadow-sm)}
 
-/* ---------- a tabela densa (a proposta) ---------- */
-.grupo-tit{display:flex;align-items:baseline;gap:8px;font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint);padding:18px 16px 4px}
-.grupo-tit .n{text-transform:none;letter-spacing:0;font-family:var(--mono)}
-.grade{display:grid;grid-template-columns:20px minmax(0,1fr) 132px 118px 64px 84px 148px;align-items:center;column-gap:10px;padding:0 8px}
-.grade.cab{height:26px;font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+/* ---------- PROPOSTA: UMA grade para cabeçalho e linhas ---------- */
+.grade{display:grid;grid-template-columns:16px minmax(0,1fr) 128px 116px 64px 84px 72px;align-items:center;column-gap:12px;padding:0 8px}
+.grade.cab{height:28px}
 .grade.cab .dir{text-align:right}
-.linha{height:36px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--foreground)}
+.grupo{padding:14px 8px 4px}
+.linha{min-height:40px;padding-top:5px;padding-bottom:5px;border-radius:6px;cursor:pointer;font-size:13px}
 .linha:hover{background:var(--sel-hover)}
-.linha .glifo{width:16px;justify-self:center;display:grid;place-items:center}
-.linha .tt{min-width:0}
-.linha .tt .a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:450}
-.linha .tt .b{display:block;white-space:nowrap;overflow:hidden;text-overflow;text-overflow:ellipsis;font-size:11px;color:var(--faint);margin-top:1px}
-.linha .proj{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden}
-.linha .proj .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
-.linha .motor{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
-.linha .logo{width:14px;height:14px;border-radius:4px;display:grid;place-items:center;color:#fff;font:600 8px var(--sans);flex-shrink:0}
-.linha .dur,.linha .custo{font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;text-align:right}
-.linha .acoes{display:flex;justify-content:flex-end;gap:2px;opacity:0;transition:opacity .12s}
-.linha:hover .acoes{opacity:1}
-.acao{font-size:12px;padding:3px 8px;border-radius:6px;color:var(--muted-foreground)}
-.acao:hover{background:var(--sel);color:var(--foreground)}
+.linha:focus-visible{outline:2px solid var(--border-strong);outline-offset:-2px}
+.tt{min-width:0}
+.tt .a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tt .b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px;color:var(--faint);margin-top:1px}
+.tt .b .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.proj,.motor{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;min-width:0}
+.proj span:last-child,.motor span:last-child{overflow:hidden;text-overflow:ellipsis}
+.dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.logo{width:12px;height:12px;border-radius:3px;display:grid;place-items:center;color:#fff;font:600 7px var(--sans);flex-shrink:0}
+.num-col{font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.acoes{display:flex;justify-content:flex-end;opacity:0;transition:opacity .12s}
+.linha:hover .acoes,.linha:focus-within .acoes{opacity:1}
+.acao{font-size:12px;height:24px;display:inline-flex;align-items:center;padding:0 8px;border-radius:6px;color:var(--muted-foreground)}
 .acao.parar{color:var(--st-error)}
-.acao.parar:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent);color:var(--st-error)}
+.acao.parar:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent)}
 .acao.responder{color:var(--st-warning);font-weight:500}
 .acao.responder:hover{background:color-mix(in srgb,var(--st-warning) 10%,transparent)}
-/* com teclado, a ação não pode depender de hover: linha em foco mostra */
-.linha:focus-within .acoes{opacity:1}
+.linha.pede{background:color-mix(in srgb,var(--st-warning) 7%,transparent)}
+.linha.pede:hover{background:color-mix(in srgb,var(--st-warning) 12%,transparent)}
+.linha.pede .tt .b{color:var(--st-warning)}
+.linha.pede .acoes{opacity:1}
+.linha.atenuada .tt .a{color:var(--muted-foreground)}
+.linha.falhou .tt .b{color:var(--st-error)}
 
-.linha.decisao{background:color-mix(in srgb,var(--st-warning) 8%,transparent)}
-.linha.decisao:hover{background:color-mix(in srgb,var(--st-warning) 13%,transparent)}
-.linha.decisao .tt .b{color:var(--st-warning)}
-.linha.atenuada,.linha.atenuada .tt .a{color:var(--muted-foreground)}
-.linha.falha .tt .b{color:var(--st-error)}
-
-/* o sinal de vivo (ADR-259): um arco, não um spinner inteiro */
 .cometa{width:12px;height:12px;border-radius:50%;background:conic-gradient(var(--st-running) 90deg,transparent 100deg);-webkit-mask:radial-gradient(circle,transparent 3px,#000 3.6px);mask:radial-gradient(circle,transparent 3px,#000 3.6px);animation:gira 1.2s linear infinite}
+@keyframes gira{to{transform:rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.cometa{animation:none;background:var(--st-running);-webkit-mask:none;mask:none;width:7px;height:7px}}
-.check{width:13px;height:13px;color:var(--faint)}
-.alerta{width:13px;height:13px;color:var(--st-warning)}
-.erro-g{width:13px;height:13px;color:var(--st-error)}
-
-/* estado vazio honesto */
-.vazia{padding:64px 0 72px;text-align:center}
-.vazia .t1{font-size:14px;color:var(--muted-foreground)}
+.ico{width:13px;height:13px}
+.vazia{padding:72px 0 80px;text-align:center}
+.vazia .t1{font-size:13px;color:var(--muted-foreground)}
 .vazia .t2{font-size:12px;color:var(--faint);margin-top:6px}
+.lado{display:grid;grid-template-columns:1fr 1fr;gap:16px;max-width:1100px}
+.lado .view{width:auto}
+.lado .miolo{padding:22px 20px 26px}
 </style>
 </head>
 <body>
 <button class="tema" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'">alternar tema</button>
 
-<h1>M3 · A Frota como tabela densa</h1>
-<p class="sub">A aba Frota é a resposta para "o que minha frota está fazendo?", mas hoje um trabalho ocupa um cartão de 560px e sobra tela. Com dez trabalhos, isso vira um mural de rolagem. A proposta: linhas de 36px na régua de conversa, com a mesma gramática da sidebar (glifo de estado à esquerda, metadado mono à direita, hover neutro), a mesma precedência do slot (<code>pede &gt; rodando &gt; falhou &gt; tempo</code>) e o passado recolhido numa seção atenuada. Os valores são os dos seus prints.</p>
+<h1>M3 · Frota densa, revisão de 26/09</h1>
+<p class="sub">A primeira versão implementada (build oficial #443) está no ar e "ficou estranha". Abaixo, o que está na tela hoje com os defeitos marcados, e a proposta corrigida. A revisão não muda a ideia da tabela; muda a geometria, e troca duas promessas do mock anterior que o app não tem como cumprir por dados que ele tem.</p>
 
-<h2>Hoje</h2>
-<p class="q">Um card por trabalho, título cru (o primeiro prompt, aqui uma URL), sem motor, sem custo, sem ação disponível.</p>
+<h2>Hoje <small>reprodução do build #443, com os defeitos marcados</small></h2>
+<p class="q">Os valores são os do seu print.</p>
 
-<div class="view" style="height:340px">
-  <div class="vhead">
-    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota · <span style="font-family:var(--mono);letter-spacing:0">1</span></span>
-    <span class="resumo"></span>
-    <span class="x">✕</span>
-  </div>
-  <div class="cardao">
-    <span class="spin"></span>
-    <span>
-      <span class="t">https://x.com/winglee/status/210250704329501…</span>
-      <span class="p">frota</span>
-    </span>
-    <span class="qdo">há 4 min</span>
-  </div>
-</div>
-
-<h2>A · tabela densa <small>recomendo</small></h2>
-<p class="q">Quatro estados numa régua só: a linha que <b>pede decisão</b> sobe ao topo em âmbar (é o mesmo âmbar do cartão de aprovação); a viva gira em cometa; a falha fica vermelha e quieta (já aconteceu, não pulsa); a concluída recolhe atenuada. Ações aparecem no hover e no foco de teclado: <b>Abrir</b> sempre, <b>Responder</b> na pendência, <b>Parar</b> em vermelho só na viva. Custo em cinza: é valor absoluto sem teto (<code>absoluteTone</code>).</p>
-
-<div class="view">
-  <div class="vhead">
-    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota · <span style="font-family:var(--mono);letter-spacing:0">4</span></span>
-    <span class="resumo">1 rodando · <span class="w">1 precisa de você</span> · US$ 2,96 em curso</span>
-    <span class="x">✕</span>
-  </div>
-
-  <div class="grade cab">
-    <span></span><span>Trabalho</span><span>Projeto</span><span>Motor</span>
-    <span class="dir">Duração</span><span class="dir">Custo</span><span></span>
-  </div>
-
-  <div class="grupo-tit">Agora · <span class="n">2</span></div>
-
-  <div class="grade linha decisao" tabindex="0">
-    <span class="glifo"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
-    <span class="tt"><span class="a">O time comercial da Prime utiliza e…</span><span class="b">pergunta: posso apagar a pasta dist e refazer o build?</span></span>
-    <span class="proj"><span class="dot" style="background:#0d9488"></span>Landing Prime</span>
-    <span class="motor"><span class="logo" style="background:#16181b">X</span>Codex</span>
-    <span class="dur">16h</span>
-    <span class="custo">US$ 2,14</span>
-    <span class="acoes"><span class="acao responder">Responder</span><span class="acao">Abrir</span></span>
-  </div>
-
-  <div class="grade linha" tabindex="0">
-    <span class="glifo"><span class="cometa"></span></span>
-    <span class="tt"><span class="a">https://x.com/winglee/status/210250704329501…</span><span class="b">lendo a página citada…</span></span>
-    <span class="proj"><span class="dot" style="background:#78716c"></span>frota</span>
-    <span class="motor"><span class="logo" style="background:#d97757">C</span>Claude Code</span>
-    <span class="dur">4:12</span>
-    <span class="custo">US$ 0,82</span>
-    <span class="acoes"><span class="acao">Abrir</span><span class="acao parar">Parar</span></span>
-  </div>
-
-  <div class="grupo-tit">Mais cedo</div>
-
-  <div class="grade linha falha atenuada" tabindex="0">
-    <span class="glifo"><svg class="erro-g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg></span>
-    <span class="tt"><span class="a">ExpoSale</span><span class="b">falhou: saída inesperada do motor</span></span>
-    <span class="proj"><span class="dot" style="background:#57534e"></span>projetos</span>
-    <span class="motor"><span class="logo" style="background:#8a9099">O</span>OpenCode</span>
-    <span class="dur">1d</span>
-    <span class="custo">US$ 0,44</span>
-    <span class="acoes"><span class="acao">Ver falha</span></span>
-  </div>
-
-  <div class="grade linha atenuada" tabindex="0" style="margin-bottom:14px">
-    <span class="glifo"><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>
-    <span class="tt"><span class="a">Landing vinimachado.dev na Hosti…</span><span class="b">concluída · 3 arquivos alterados</span></span>
-    <span class="proj"><span class="dot" style="background:#57534e"></span>projetos</span>
-    <span class="motor"><span class="logo" style="background:var(--id-violet)">A</span>Antigravity</span>
-    <span class="dur">1h</span>
-    <span class="custo">US$ 1,30</span>
-    <span class="acoes"><span class="acao">Abrir</span></span>
-  </div>
-</div>
-
-<h2>B · vazia</h2>
-<p class="q">Sem trabalho, a view diz o fato e o caminho, sem teatro e sem ilustração brass (§2: brass é gesto, não enfeite de empty state).</p>
-
-<div class="view">
-  <div class="vhead">
-    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota</span>
-    <span class="resumo"></span>
-    <span class="x">✕</span>
-  </div>
-  <div class="vazia">
-    <div class="t1">Nada rodando na frota.</div>
-    <div class="t2">Despache uma tarefa em qualquer conversa e ela aparece aqui.</div>
+<div class="view hoje">
+  <span class="pino" style="left:188px;top:26px">3</span>
+  <span class="pino" style="left:470px;top:88px">1</span>
+  <span class="pino" style="left:870px;top:122px">2</span>
+  <span class="pino" style="left:300px;top:148px">4</span>
+  <span class="pino" style="left:760px;top:122px">5</span>
+  <div class="miolo">
+    <div class="vhead">
+      <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg><span class="marca-erro">Frota <span class="n">1</span></span></span>
+      <span class="resumo">1 rodando</span>
+      <span class="x">✕</span>
+    </div>
+    <div class="hoje secao"><span class="etq marca-erro">Agora · <span class="n">1</span></span></div>
+    <div class="hoje cab etq">
+      <span class="c-glifo"></span>
+      <span class="c-tt">Trabalho</span>
+      <span class="c-proj marca-erro">Projeto</span>
+      <span class="c-motor">Motor</span>
+      <span class="c-tempo">Tempo</span>
+      <span class="c-custo">Custo</span>
+      <span class="c-acoes"></span>
+    </div>
+    <div class="hoje lin">
+      <div class="hoje btn">
+        <span class="c-glifo"><span class="cometa"></span></span>
+        <span class="c-tt tt"><span class="a">Custo real do OpenCode</span><span class="b marca-erro">está trabalhando…</span></span>
+        <span class="c-proj proj"><span class="dot" style="background:#78716c"></span><span>frota</span></span>
+        <span class="c-motor motor"><span class="logo" style="background:#d97757">C</span><span>Claude Code</span></span>
+        <span class="c-tempo num-col">7s</span>
+        <span class="c-custo num-col marca-erro">US$ 11,49</span>
+      </div>
+      <span class="hoje c-acoes"></span>
+    </div>
   </div>
 </div>
 
 <div class="card">
-  <b>Notas de gramática (o que mantém isto dentro do guia):</b>
-  <ul>
-    <li><b>Mesma precedência do slot da sidebar</b> (<code>slotEstado</code> em <code>conversationWhen.ts</code>): <code>pede &gt; rodando &gt; falhou &gt; tempo</code>. Uma pergunta por superfície: aqui é "o que precisa de mim, depois o que vive, depois o que passou".</li>
-    <li><b>Gerúndio no vivo, pretérito no marco</b> (§6): "lendo a página citada…" na linha viva; "concluída", "falhou" nas assentadas. Duração viva em cronômetro estável, congelada no fim.</li>
-    <li><b>Um dono por fato.</b> Trabalho em background continua nos Bastidores; sessão externa no popover de Processos. A Frota mostra turnos de conversa, não duplica os outros inventários.</li>
-    <li><b>"Em curso" é soma real.</b> O "US$ 2,96 em curso" do cabeçalho é a soma dos custos dos turnos vivos vindos de <code>turn_costs</code>; sem turno vivo, o metadado some.</li>
-    <li><b>Ação destrutiva em vermelho, caminho de saída em neutro</b> (§7): "Parar" vermelho só na linha viva; "Abrir" nunca ganha tinta; "Responder" é âmbar porque é a decisão em si.</li>
-    <li><b>Hover revela ação, não informação.</b> Estado, duração e custo estão sempre visíveis; só o gesto espera o mouse (e aparece no <code>:focus-within</code> para teclado).</li>
-  </ul>
+  <ol>
+    <li><b>Colunas desalinhadas.</b> O cabeçalho é um <code>flex</code> com <code>gap-1</code>; a linha é outro <code>flex</code> com <code>gap-2.5</code> DENTRO do botão, e as ações ficam fora dele. As mesmas larguras fixas somam diferente, e "Projeto" fica 18px à direita do valor, "Custo" 39px à esquerda. O mock anterior usava uma grade só; a implementação trocou por <code>flex</code>.</li>
+    <li><b>Um vão de 150px sem nada.</b> A coluna de ações é invisível até o hover e carrega "Abrir", que repete o clique da própria linha.</li>
+    <li><b>A contagem aparece duas vezes</b> ("Frota 1" e "Agora · 1"), e o cabeçalho não tem filete: o título flutua sobre a tabela.</li>
+    <li><b>"está trabalhando…" sem nenhum fato.</b> O fio decidiu em 21/09 que a frase não troca a cada ferramenta, e isso continua certo; mas ele mostra o número de ações andando ao lado. Aqui a linha não diz nem isso: dez conversas vivas ficam idênticas.</li>
+    <li><b>"Custo" é o acumulado da CONVERSA</b> (US$ 11,49 desde o primeiro turno), mas numa linha viva se lê como o custo deste trabalho. Uma conversa de dias sempre parece cara.</li>
+  </ol>
+  <p style="margin-top:8px">Fora do print: a linha que pede decisão não tem o fundo âmbar do mock e diz só "aguardando sua resposta", embora a fila de interações saiba a pergunta (<code>questionHeadline</code>, <code>summarizeApproval</code>).</p>
+</div>
+
+<h2>Proposta <small>uma grade, sem vão, cada célula com um fato</small></h2>
+<p class="q">Mesma gramática da sidebar, mesma precedência (<code>pede &gt; rodando &gt; falhou &gt; tempo</code>). A diferença está na geometria e no que cada célula diz.</p>
+
+<div class="view">
+  <div class="miolo">
+    <div class="vhead filete">
+      <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota</span>
+      <span class="resumo"><span>2 rodando</span><span>·</span><span class="w">1 precisa de você</span></span>
+      <span class="x">✕</span>
+    </div>
+
+    <div class="grade cab etq" style="margin-top:10px">
+      <span></span><span>Trabalho</span><span>Projeto</span><span>Motor</span>
+      <span class="dir">Tempo</span><span class="dir" title="Gasto da conversa inteira, até o último turno terminado">Conversa</span><span></span>
+    </div>
+
+    <div class="grupo etq">Agora · <span class="n">3</span></div>
+
+    <div class="grade linha pede" tabindex="0">
+      <svg class="ico" style="color:var(--st-warning)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <span class="tt"><span class="a">O time comercial da Prime utiliza…</span><span class="b">quer executar: rm -rf dist &amp;&amp; bun run build</span></span>
+      <span class="proj"><span class="dot" style="background:#10b981"></span><span>Landing Prime</span></span>
+      <span class="motor"><span class="logo" style="background:#d97757">C</span><span>Claude Code</span></span>
+      <span class="num-col" title="Esperando você desde 12:31">4min</span>
+      <span class="num-col">US$ 2,14</span>
+      <span class="acoes"><span class="acao responder">Responder</span></span>
+    </div>
+
+    <div class="grade linha" tabindex="0">
+      <span class="cometa"></span>
+      <span class="tt"><span class="a">Custo real do OpenCode</span><span class="b">está trabalhando · <span class="num">14</span> ações</span></span>
+      <span class="proj"><span class="dot" style="background:#78716c"></span><span>frota</span></span>
+      <span class="motor"><span class="logo" style="background:#d97757">C</span><span>Claude Code</span></span>
+      <span class="num-col" title="Duração do turno">2:07</span>
+      <span class="num-col">US$ 11,49</span>
+      <span class="acoes"><span class="acao parar">Parar</span></span>
+    </div>
+
+    <div class="grade linha" tabindex="0">
+      <span class="cometa"></span>
+      <span class="tt"><span class="a">Voce é especialista em ui/ux e…</span><span class="b">em segundo plano: bun run test:e2e</span></span>
+      <span class="proj"><span class="dot" style="background:#78716c"></span><span>frota</span></span>
+      <span class="motor"><span class="logo" style="background:#5c6166">O</span><span>OpenCode</span></span>
+      <span class="num-col" title="Duração do trabalho em segundo plano">0:48</span>
+      <span class="num-col"></span>
+      <span class="acoes"><span class="acao parar">Parar</span></span>
+    </div>
+
+    <div class="grupo etq">Mais cedo</div>
+
+    <div class="grade linha falhou atenuada" tabindex="0">
+      <svg class="ico" style="color:var(--st-error)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg>
+      <span class="tt"><span class="a">ExpoSale</span><span class="b">o último turno falhou</span></span>
+      <span class="proj"><span class="dot" style="background:#57534e"></span><span>projetos</span></span>
+      <span class="motor"><span class="logo" style="background:#5c6166">O</span><span>OpenCode</span></span>
+      <span class="num-col" title="Terminou 12:02">há 40min</span>
+      <span class="num-col">US$ 0,44</span>
+      <span class="acoes"></span>
+    </div>
+
+    <div class="grade linha atenuada" tabindex="0">
+      <svg class="ico" style="color:var(--faint)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg>
+      <span class="tt"><span class="a">https://x.com/winglee/status/2102…</span><span class="b">concluída</span></span>
+      <span class="proj"><span class="dot" style="background:#78716c"></span><span>frota</span></span>
+      <span class="motor"><span class="logo" style="background:#d97757">C</span><span>Claude Code</span></span>
+      <span class="num-col" title="Terminou 11:42">há 1h</span>
+      <span class="num-col">US$ 1,30</span>
+      <span class="acoes"></span>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <b>O que muda, e por quê:</b>
+  <ol>
+    <li><b>Uma grade só</b> (<code>grid-template-columns</code> compartilhado) para o cabeçalho e as linhas: cada rótulo fica exatamente sobre os valores. A linha inteira vira o alvo do clique (<code>role="button"</code> na linha), e a ação mora DENTRO da grade, sem botão aninhado.</li>
+    <li><b>Sai o "Abrir".</b> Clicar na linha já abre a conversa. A coluna de ações encolhe de 150 para 72px e só tem o gesto que a linha não faz: <b>Responder</b> (âmbar, sempre visível na linha que pede) e <b>Parar</b> (vermelho, no hover e no foco da viva).</li>
+    <li><b>A contagem aparece uma vez</b>, no resumo à direita, e o cabeçalho ganha o filete de aresta. O cabeçalho de colunas vem antes das seções, uma vez só.</li>
+    <li><b>O subtítulo diz um fato.</b> Viva: "está trabalhando · 14 ações", o mesmo verbo fixo e o mesmo número que andam no fio (<code>summarizeWorkingNodes</code>). Trabalho em segundo plano: a linha dele (<code>deferredLiveLine</code>), com o cronômetro dele. Pede: o que o agente pediu (<code>summarizeApproval</code>, <code>questionHeadline</code>). Nada de "lendo a página citada…": o fio não troca o verbo por ferramenta, e a Frota não pode inventar outro.</li>
+    <li><b>A coluna de dinheiro se chama "Conversa"</b>, com a dica "gasto da conversa inteira, até o último turno terminado". Sai o "US$ 2,96 em curso" do mock anterior: custo de turno em voo não existe (ele nasce no <code>result</code>), e somar o acumulado das conversas vivas chamando de "em curso" seria inventar.</li>
+    <li><b>Tempo</b>, um fato por estado, com a dica dizendo qual: duração do turno (viva), há quanto espera você (pede), há quanto terminou (mais cedo).</li>
+    <li><b>Mais cedo</b> não tem ação: a linha abre, e abrir já tira da lista (<code>finishedUnseen</code> se apaga ao ver).</li>
+  </ol>
+</div>
+
+<h2>Vazia e estreita</h2>
+<p class="q">Sem trabalho, o fato e o caminho. Em janela estreita, a grade larga some por ordem de menor valor: primeiro a coluna Motor, depois Projeto vira o ponto de cor ao lado do título.</p>
+
+<div class="lado">
+  <div class="view">
+    <div class="miolo">
+      <div class="vhead filete">
+        <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota</span>
+        <span class="resumo"></span><span class="x">✕</span>
+      </div>
+      <div class="vazia">
+        <div class="t1">Nada rodando na frota.</div>
+        <div class="t2">Mande uma tarefa em qualquer conversa e ela aparece aqui.</div>
+      </div>
+    </div>
+  </div>
+  <div class="view">
+    <div class="miolo">
+      <div class="vhead filete">
+        <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota</span>
+        <span class="resumo"><span>1 rodando</span></span><span class="x">✕</span>
+      </div>
+      <div class="grade cab etq" style="margin-top:10px;grid-template-columns:16px minmax(0,1fr) 56px 76px 60px">
+        <span></span><span>Trabalho</span><span style="text-align:right">Tempo</span><span style="text-align:right">Conversa</span><span></span>
+      </div>
+      <div class="grade linha" tabindex="0" style="grid-template-columns:16px minmax(0,1fr) 56px 76px 60px">
+        <span class="cometa"></span>
+        <span class="tt"><span class="a"><span class="dot" style="background:#78716c;display:inline-block;margin-right:6px;vertical-align:1px"></span>Custo real do OpenCode</span><span class="b">está trabalhando · <span class="num">14</span> ações</span></span>
+        <span class="num-col">2:07</span>
+        <span class="num-col">US$ 11,49</span>
+        <span class="acoes"><span class="acao parar">Parar</span></span>
+      </div>
+    </div>
+  </div>
 </div>
 
 </body>
