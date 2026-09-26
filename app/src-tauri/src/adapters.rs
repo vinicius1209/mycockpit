@@ -1364,6 +1364,19 @@ impl AgentAdapter for OpenCodeAdapter {
         CliPromptContract::TrailingAfterSeparator("--")
     }
 
+    fn supports_attachment(&self, kind: &AttachmentKind) -> bool {
+        matches!(kind, AttachmentKind::Image)
+    }
+
+    fn render_attachments(&self, atts: &[Attachment], cmd: &mut Command, prompt: &mut String) {
+        for a in atts {
+            cmd.arg("-f").arg(&a.path);
+        }
+        if prompt.trim().is_empty() && !atts.is_empty() {
+            *prompt = " ".to_string();
+        }
+    }
+
     fn build_command(&mut self, req: &RunRequest) -> Result<Command, String> {
         let mut cmd = Command::new("opencode");
         cmd.arg("run").arg("--format").arg("json");
@@ -1380,10 +1393,8 @@ impl AgentAdapter for OpenCodeAdapter {
         if let Some(r) = &req.resume {
             cmd.arg("-s").arg(r);
         }
-        // Anexo NATIVO, um `-f` por arquivo (o agy não tem isto).
-        for a in &req.attachments {
-            cmd.arg("-f").arg(&a.path);
-        }
+        let mut prompt = req.prompt.clone();
+        self.render_attachments(&req.attachments, &mut cmd, &mut prompt);
         // Só existe o bypass tudo-ou-nada; não há granularidade de modo. Por
         // isso o `enforcement` deste motor é `flag`, nunca `sandbox`, e a UI
         // precisa dizer isso (F3 do plano).
@@ -1394,7 +1405,7 @@ impl AgentAdapter for OpenCodeAdapter {
         // OpenCode 1.18.21: o parser junta `args.message` com `args["--"]`.
         // Sem o separador, pedido iniciado por hífen vira opção desconhecida
         // antes do handler; com ele, segue como texto (probe local 29/08/2026).
-        cmd.arg("--").arg(&req.prompt);
+        cmd.arg("--").arg(&prompt);
         Ok(cmd)
     }
 
@@ -4344,7 +4355,7 @@ mod tests {
     }
 
     /// O par `--flag valor` aparece no argv (adjacente, na ordem)?
-    fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
+    pub(super) fn has_pair(args: &[String], flag: &str, value: &str) -> bool {
         args.windows(2).any(|w| w[0] == flag && w[1] == value)
     }
 
@@ -5939,7 +5950,7 @@ mod tests {
     }
 
     /// RunRequest com um anexo (o path é o que vai pro prompt; nada é lido).
-    fn req_com_anexo(kind: AttachmentKind, path: &str, mime: &str) -> RunRequest {
+    pub(super) fn req_com_anexo(kind: AttachmentKind, path: &str, mime: &str) -> RunRequest {
         let mut r = req(Permission::Padrao, false);
         r.attachments = vec![Attachment {
             path: path.to_string(),
@@ -6759,6 +6770,10 @@ mod tests {
         let agy = AgyAdapter::default();
         assert!(agy.supports_attachment(&AttachmentKind::Image));
         assert!(agy.supports_attachment(&AttachmentKind::Pdf));
+
+        let opencode = OpenCodeAdapter::default();
+        assert!(opencode.supports_attachment(&AttachmentKind::Image));
+        assert!(!opencode.supports_attachment(&AttachmentKind::Pdf));
     }
 
     /// Teste-GÊMEO do espelho TS (src/lib/agents.slash.test.ts) — mesma
@@ -7003,30 +7018,6 @@ mod tests {
         );
     }
 
-    /// O composer aceita uma imagem como mensagem inteira. Os três transports
-    /// suportados precisam conservar um carrier mesmo quando o texto é vazio.
-    #[test]
-    fn turno_so_com_anexo_conserva_o_carrier_do_prompt() {
-        let mut r = req_com_anexo(AttachmentKind::Image, "/tmp/anexos/c1/abc.png", "image/png");
-        r.prompt.clear();
-
-        let mut claude = ClaudeAdapter::default();
-        let claude_args = argv(&claude.build_validated_command(&r).unwrap());
-        assert!(claude_args
-            .last()
-            .unwrap()
-            .contains("/tmp/anexos/c1/abc.png"));
-
-        let mut codex = CodexAdapter::default();
-        let codex_args = argv(&codex.build_validated_command(&r).unwrap());
-        assert!(has_pair(&codex_args, "-i", "/tmp/anexos/c1/abc.png"));
-        assert_eq!(codex_args.last().map(String::as_str), Some(""));
-
-        let mut agy = AgyAdapter::default();
-        let agy_args = argv(&agy.build_validated_command(&r).unwrap());
-        let prompt = &agy_args[agy_args.iter().position(|arg| arg == "-p").unwrap() + 1];
-        assert!(prompt.contains("/tmp/anexos/c1/abc.png"));
-    }
 
     #[test]
     fn agy_sem_anexo_nao_mexe_no_prompt() {

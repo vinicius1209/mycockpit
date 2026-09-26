@@ -9435,3 +9435,34 @@ considerou.
      A guarda `rodandoMotion.mjs` passa a cobrar os dois sinais.
 - **Consequência:** uma forma de "vivo" na lateral e no passo, e nenhuma na
   linha do fio além do próprio texto. Continua sem travar na janela coberta.
+
+### ADR-260 · OpenCode aceita imagens via flag nativa -f ✅
+- **Contexto (25/09/2026):** no ADR-095 a capacidade de anexos do OpenCode ficou
+  em `false` porque a ida-e-volta com imagens não havia sido medida na máquina.
+  O usuário reportou não conseguir anexar nem enviar imagens no Frota ao usar o
+  OpenCode: a UI barrava o envio com chip vermelho ("não é suportado por
+  OpenCode") e o backend descartava qualquer anexo antes do spawn.
+- **Medição empírica no binário local (opencode 1.18.21):**
+  1. `opencode run -f /tmp/test.png --format json -m opencode/mimo-v2.6-flash-free -- "cor?"`:
+     respondeu `{"type":"text","text":"Vermelho"}` em exit 0, ingerindo a
+     imagem no contexto multimodal nativo (11.563 tokens).
+  2. Arquivo externo ao projeto (`--dir` no repo e `-f` em `/tmp`): funcionou
+     identicamente. O OpenCode aceita caminhos absolutos para anexos.
+  3. Turno só com anexo e prompt vazio: `opencode run -f img.png -- ""` falha
+     com `Error: You must provide a message or a command`. Com prompt `" "` ou
+     texto do usuário, executa normalmente.
+  4. Arquivo PDF: modelo respondeu que não lê PDF diretamente no contexto visual
+     e sugeriu extração via ferramentas. Logo, `pdf` permanece `false`.
+- **Decisão:**
+  1. **Capacidade de imagem ligada no OpenCode:** `caps: { image: true, pdf: false }`
+     em `lib/agents.ts` e no espelho de testes `agents.caps.test.ts`.
+  2. **Adapter Rust implementa `supports_attachment` e `render_attachments`:**
+     `supports_attachment` aceita `AttachmentKind::Image`. `render_attachments`
+     injeta `-f <path>` para cada anexo e, se o prompt for vazio (turno só com
+     imagem), injeta carrier `" "` para satisfazer a checagem de argv do CLI.
+  3. **Matriz gêmea atualizada:** `matriz_de_anexo_por_agent` no Rust agora
+     cobra o OpenCode ao lado dos outros 3 motores.
+- **Consequência:** imagens anexadas pelo composer, coladas da área de
+  transferência ou arrastadas são enviadas nativamente ao OpenCode. O chip
+  vermelho desaparece, o botão "Enviar" fica habilitado e o turno roda com
+  sucesso. PDFs seguem honestamente bloqueados.

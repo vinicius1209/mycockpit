@@ -2,6 +2,7 @@
 //! capturado em 26/08/2026. Saiu de `adapters.rs` pela catraca de tamanho,
 //! no mesmo molde de `adapters_claude_tail_tests.rs`.
 use super::*;
+use super::tests::{argv, has_pair, req_com_anexo};
 
 // ── OpenCode: as linhas abaixo são o stream REAL capturado em 26/08/2026
 //    (`opencode run --format json -m google/gemini-2.5-flash-lite`).
@@ -186,3 +187,47 @@ fn opencode_turno_sem_step_finish_nao_inventa_numero() {
         _ => panic!("esperava Result"),
     }
 }
+
+/// O composer aceita uma imagem como mensagem inteira. Os quatro transports
+/// suportados precisam conservar um carrier mesmo quando o texto é vazio.
+#[test]
+fn turno_so_com_anexo_conserva_o_carrier_do_prompt() {
+    let mut r = req_com_anexo(AttachmentKind::Image, "/tmp/anexos/c1/abc.png", "image/png");
+    r.prompt.clear();
+
+    let mut claude = ClaudeAdapter::default();
+    let claude_args = argv(&claude.build_validated_command(&r).unwrap());
+    assert!(claude_args
+        .last()
+        .unwrap()
+        .contains("/tmp/anexos/c1/abc.png"));
+
+    let mut codex = CodexAdapter::default();
+    let codex_args = argv(&codex.build_validated_command(&r).unwrap());
+    assert!(has_pair(&codex_args, "-i", "/tmp/anexos/c1/abc.png"));
+    assert_eq!(codex_args.last().map(String::as_str), Some(""));
+
+    let mut agy = AgyAdapter::default();
+    let agy_args = argv(&agy.build_validated_command(&r).unwrap());
+    let prompt = &agy_args[agy_args.iter().position(|arg| arg == "-p").unwrap() + 1];
+    assert!(prompt.contains("/tmp/anexos/c1/abc.png"));
+
+    let mut opencode = OpenCodeAdapter::default();
+    let opencode_args = argv(&opencode.build_validated_command(&r).unwrap());
+    assert!(has_pair(&opencode_args, "-f", "/tmp/anexos/c1/abc.png"));
+    assert_eq!(opencode_args.last().map(String::as_str), Some(" "));
+}
+
+#[test]
+fn opencode_anexo_preserva_prompt_do_usuario() {
+    let mut a = OpenCodeAdapter::default();
+    let mut r = req_com_anexo(AttachmentKind::Image, "/tmp/anexos/c1/abc.png", "image/png");
+    r.prompt = "analise a imagem".to_string();
+
+    let cmd = a.build_validated_command(&r).unwrap();
+    let args = argv(&cmd);
+    assert!(has_pair(&args, "-f", "/tmp/anexos/c1/abc.png"));
+    assert_eq!(args.last().map(String::as_str), Some("analise a imagem"));
+    assert_eq!(args.get(args.len() - 2).map(String::as_str), Some("--"));
+}
+

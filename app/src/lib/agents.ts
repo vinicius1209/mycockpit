@@ -226,7 +226,7 @@ export const AGENTS: AgentDef[] = [
     kind: "agent",
     available: true,
     description: "Multi-provedor: reaproveita assinaturas por OAuth",
-    caps: { image: false, pdf: false },
+    caps: { image: true, pdf: false },
     models: OPENCODE_MODELS,
     efforts: OPENCODE_EFFORTS,
     defaultModel: "default",

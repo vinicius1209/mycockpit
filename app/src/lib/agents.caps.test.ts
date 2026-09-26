@@ -22,10 +22,10 @@ const MATRIZ: Record<string, { image: boolean; pdf: boolean }> = {
   codex: { image: true, pdf: false },
   // agy: lê os dois via `view_file` (ponteiro + --add-dir). Melhor esforço.
   agy: { image: true, pdf: true },
-  // OpenCode: o `-f` aceita arquivo, mas a ida-e-volta de IMAGEM não foi
-  // medida. Chip que promete e é descartado no spawn é exatamente o estrago
-  // que esta matriz existe pra impedir — só liga depois de alguém ver.
-  opencode: { image: false, pdf: false },
+  // OpenCode: `-f` recebe imagem e injeta no contexto multimodal (provado na
+  // máquina com PNG, 2026-09, ADR-260). PDF segue bloqueado porque o modelo
+  // recusa leitura direta ("Não consigo ler PDF diretamente neste modelo").
+  opencode: { image: true, pdf: false },
 }
 
 describe("capacidade de anexo (espelho do trait Rust)", () => {
