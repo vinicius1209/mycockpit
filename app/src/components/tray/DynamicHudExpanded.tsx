@@ -1,15 +1,5 @@
 import { motion } from "motion/react"
-import {
-  AlertCircle,
-  CheckCircle2,
-  Circle,
-  ExternalLink,
-  LoaderCircle,
-  Pause,
-  Plus,
-  Settings,
-  Square,
-} from "lucide-react"
+import { AlertCircle, CheckCircle2, Circle, Coffee, ExternalLink, LoaderCircle, Pause, Plus, Settings, Square } from "lucide-react"
 import { FrotaMark } from "@/components/brand/FrotaMark"
 import { Button } from "@/components/ui/button"
 import type { HudRuntimeView } from "@/lib/hud"
@@ -105,6 +95,15 @@ function SystemLine({ snapshot }: { snapshot: TraySnapshot }) {
       </button>
       <span aria-hidden>·</span>
       <span className="max-w-[48%] truncate">{external}</span>
+      {snapshot.acordado && (
+        <>
+          <span aria-hidden>·</span>
+          <span className="flex shrink-0 items-center gap-1">
+            <Coffee className="size-3" aria-hidden />
+            acordado
+          </span>
+        </>
+      )}
     </p>
   )
 }

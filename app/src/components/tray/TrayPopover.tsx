@@ -3,16 +3,7 @@ import { fraseDoTurno } from "@/lib/turnReceipt"
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import {
-  ArrowUpRight,
-  CalendarClock,
-  CheckCircle2,
-  Circle,
-  Pause,
-  Plus,
-  Settings,
-  Square,
-} from "lucide-react"
+import { ArrowUpRight, CalendarClock, CheckCircle2, Circle, Coffee, Pause, Plus, Settings, Square } from "lucide-react"
 import {
   decisionSubtitle,
   runTrayAction,
@@ -240,6 +231,14 @@ export function TrayPopover() {
                 {headline}
               </h1>
             </div>
+            {/* O sono vem da trava real (o Rust preenche `acordado` na saída
+                do snapshot), então vale com a janela principal fechada. */}
+            {snapshot.acordado && (
+              <p className="mt-1.5 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Coffee className="size-3 shrink-0" aria-hidden />
+                {snapshot.modoAcordado === "on" ? "Mac acordado (sempre)" : "Mac acordado enquanto rodam"}
+              </p>
+            )}
           </div>
           <button
             onClick={() => void runTrayAction("open")}

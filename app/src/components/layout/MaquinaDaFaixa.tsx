@@ -6,23 +6,33 @@
 //
 // Amostra a cada 2 s SÓ com a janela visível; o detalhe (árvore de
 // processos, a parte cara) só com o painel aberto.
+//
+// Manter acordado (mock `docs/mocks/manter-acordado.html`): a xícara na faixa
+// e a linha da dica vêm do ESTADO da trava (`amostra.sono`, lido do
+// `despertador.rs`), nunca da preferência; o seletor do painel escreve na
+// mesma `settings.keepAwake` da Configuração.
 
 import { useEffect, useState } from "react"
-import { Cpu } from "lucide-react"
+import { Coffee, Cpu } from "lucide-react"
 import { AgentLogo } from "@/components/common/AgentLogo"
 import { GrupoDeProcessos } from "@/components/layout/ArvoreDeProcessos"
 import { AcaoDoClique, GatilhoDaFaixa, PainelDaFaixa } from "@/components/layout/statusBarChrome"
+import { SELECT_TRIGGER } from "@/components/settings/parts"
 import { Button } from "@/components/ui/button"
+import { RichSelect } from "@/components/ui/RichSelect"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { stopProjectBrowser } from "@/lib/browser"
 import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import type { LinhaDaArvore } from "@/lib/arvoreDoTurno"
 import { confirm } from "@/lib/confirm"
 import { isTauri } from "@/lib/db"
+import { aplicarKeepAwake, KEEP_AWAKE_OPTIONS, type KeepAwake } from "@/lib/keepAwake"
 import {
   AMOSTRAS_NO_TRACO,
   fmtGb,
+  fraseDoSono,
   INTERVALO_DA_AMOSTRA_MS,
+  linhaDoSono,
   lerAmostra,
   encerrarProcesso,
   lerDetalhe,
@@ -82,6 +92,8 @@ export function MaquinaDaFaixa() {
   const byId = useChat((s) => s.byId)
   const porProjeto = useChat((s) => s.conversationsByProject)
   const projetos = useApp((s) => s.projects)
+  const keepAwake = useApp((s) => s.settings.keepAwake)
+  const setSettings = useApp((s) => s.setSettings)
 
   const [amostrar] = useState(() => () => {
     void lerAmostra()
@@ -108,6 +120,13 @@ export function MaquinaDaFaixa() {
   const livre = Math.max(0, amostra.memTotalMb - amostra.memUsadaMb)
   const doFrota = Math.min(detalhe?.frotaMb ?? 0, amostra.memUsadaMb)
   const pct = (mb: number) => `${(mb / Math.max(1, amostra.memTotalMb)) * 100}%`
+  const sono = amostra.sono
+  const linhaSono = sono ? linhaDoSono(sono) : null
+  const trocarSono = (v: string) => {
+    setSettings({ keepAwake: v as KeepAwake })
+    // A próxima amostra (2 s) já traz o estado novo da trava.
+    void aplicarKeepAwake(v as KeepAwake)
+  }
 
   const convDoRun = (runId: string) => Object.entries(byId).find(([, c]) => c.runId === runId)?.[0] ?? null
 
@@ -166,6 +185,24 @@ export function MaquinaDaFaixa() {
             </span>
             {media != null && <span className="text-[11px] text-muted-foreground">média {media}%</span>}
           </div>
+          {linhaSono && (
+            <div className="flex items-center gap-2 border-t border-border/40 pt-2 text-[12px]">
+              {linhaSono.tom === "vivo" && <Coffee className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+              <span
+                className={cn(
+                  "flex-1",
+                  linhaSono.tom === "warn"
+                    ? "text-st-warning"
+                    : linhaSono.tom === "vivo"
+                      ? "text-foreground"
+                      : "text-muted-foreground",
+                )}
+              >
+                {linhaSono.texto}
+              </span>
+              <span className="text-[11px] text-muted-foreground">{linhaSono.detalhe}</span>
+            </div>
+          )}
         </>
       }
       peDaDica={
@@ -179,6 +216,35 @@ export function MaquinaDaFaixa() {
       nota={`${fmtGb(amostra.memTotalMb)} GB · ${amostra.nucleos} núcleos · amostra a cada 2 s com a janela visível`}
       conteudo={
         <div className="space-y-3">
+          {sono && (
+            <div className="flex items-center gap-3 border-b border-border/40 px-1 pb-3">
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "flex items-center gap-1.5 text-[13px]",
+                    sono.falhou ? "text-st-warning" : "text-foreground",
+                  )}
+                >
+                  {sono.acordado && <Coffee className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />}
+                  {fraseDoSono(sono)}
+                </div>
+                {sono.suportado && (
+                  <div className="mt-0.5 text-[11px] text-muted-foreground">
+                    Só o sono por inatividade. Fechar a tampa continua dormindo.
+                  </div>
+                )}
+              </div>
+              <RichSelect
+                value={keepAwake}
+                onValueChange={trocarSono}
+                options={KEEP_AWAKE_OPTIONS}
+                disabled={!sono.suportado}
+                align="end"
+                triggerClassName={SELECT_TRIGGER}
+                aria-label="Manter o computador acordado"
+              />
+            </div>
+          )}
           <div className="px-1">
             <div className="flex text-[11px] font-medium text-muted-foreground">
               Memória
@@ -284,6 +350,12 @@ export function MaquinaDaFaixa() {
         </span>
         <span className="text-muted-foreground/70">· cpu</span>
         <span className="w-8 tabular-nums text-foreground">{cpuAgora != null ? `${Math.round(cpuAgora)}%` : "…"}</span>
+        {sono?.acordado && (
+          <>
+            <span className="text-muted-foreground/70">·</span>
+            <Coffee className="size-3 shrink-0 text-muted-foreground" aria-label="mantendo o computador acordado" />
+          </>
+        )}
       </GatilhoDaFaixa>
     </PainelDaFaixa>
   )

@@ -3,6 +3,7 @@
 // Rust (`sistema.rs`); aqui só a forma e a régua, puras.
 
 import { invoke } from "@tauri-apps/api/core"
+import type { KeepAwake } from "@/lib/keepAwake"
 import type { MeterTone } from "@/lib/meter"
 
 export interface AmostraDoSistema {
@@ -11,6 +12,55 @@ export interface AmostraDoSistema {
   /** `null` na primeira leitura: CPU é diferença entre duas amostras. */
   cpuPct: number | null
   nucleos: number
+  /** O sono da máquina AGORA, lido da trava real (`despertador.rs`). */
+  sono: EstadoDoSono
+}
+
+/** O sono da máquina como ele está (`despertador::EstadoDoSono`). */
+export interface EstadoDoSono {
+  /** A trava existe agora: o `caffeinate` está vivo. */
+  acordado: boolean
+  modo: KeepAwake
+  /** Pediu a trava e o `caffeinate` não abriu. */
+  falhou: boolean
+  /** Só o macOS segura o sono (o `caffeinate -w` morre com o app). */
+  suportado: boolean
+  turnos: number
+}
+
+const turnosRodando = (n: number) => (n === 1 ? "1 turno" : `${n} turnos`)
+
+/** A linha do sono na dica da Máquina: `null` onde o Frota não segura o sono
+ *  (a linha some, em vez de prometer). Puro. */
+export function linhaDoSono(
+  e: EstadoDoSono,
+): { texto: string; detalhe: string; tom: "vivo" | "quieto" | "warn" } | null {
+  if (!e.suportado) return null
+  const modo = e.modo === "on" ? "sempre" : e.modo === "off" ? "nunca" : "com agente"
+  if (e.falhou) return { texto: "Não consegui segurar o sono", detalhe: modo, tom: "warn" }
+  if (e.acordado) {
+    return {
+      texto: "Mantendo acordado",
+      detalhe: e.modo === "agent" ? `${modo} · ${turnosRodando(e.turnos)}` : modo,
+      tom: "vivo",
+    }
+  }
+  return {
+    texto: "Dorme normalmente",
+    detalhe: e.modo === "agent" ? `${modo} · nada rodando` : modo,
+    tom: "quieto",
+  }
+}
+
+/** A frase do topo do painel da Máquina, ao lado do seletor. Puro. */
+export function fraseDoSono(e: EstadoDoSono): string {
+  if (!e.suportado) return "Neste sistema o Frota não segura o sono."
+  if (e.falhou) return "Não consegui segurar o sono: o computador pode dormir no meio de um turno."
+  if (!e.acordado) return "Dorme normalmente."
+  if (e.modo === "on") return "Mantendo acordado enquanto o app estiver aberto."
+  return e.turnos === 1
+    ? "Mantendo acordado enquanto 1 turno roda."
+    : `Mantendo acordado enquanto ${e.turnos} turnos rodam.`
 }
 
 export type PapelDoProcesso = "motor" | "comando" | "mcp" | "frota" | "processo"
@@ -59,7 +109,10 @@ export function fmtGb(mb: number): string {
 /** Cor da faixa: cinza no normal (estado assentado não ganha tinta); âmbar
  *  com a memória acima de 85% ou um turno acima de 4 GB; vermelho acima de
  *  95%. CPU não pinta: pico de CPU é o trabalho acontecendo. Puro. */
-export function tomDaMaquina(a: AmostraDoSistema, maiorTurnoMb: number): MeterTone {
+export function tomDaMaquina(
+  a: Pick<AmostraDoSistema, "memUsadaMb" | "memTotalMb">,
+  maiorTurnoMb: number,
+): MeterTone {
   const uso = a.memTotalMb > 0 ? a.memUsadaMb / a.memTotalMb : 0
   if (uso >= 0.95) return "danger"
   if (uso >= 0.85 || maiorTurnoMb >= TURNO_PESADO_MB) return "warn"

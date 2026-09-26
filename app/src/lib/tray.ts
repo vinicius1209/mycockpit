@@ -53,6 +53,11 @@ export interface TraySnapshot {
   deferred: number
   /** Sessões externas observadas pelos hooks (H1). */
   external: TrayExternalSession[]
+  /** O Mac está sendo mantido acordado agora. Preenchido pelo Rust na saída
+   *  para a bandeja (`tray::com_o_sono`), a partir da trava real. */
+  acordado?: boolean
+  /** `on` | `agent` | `off`. */
+  modoAcordado?: string
 }
 
 export interface TrayAction {

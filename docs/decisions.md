@@ -9669,3 +9669,25 @@ considerou.
   internos do subagente no `run` (o stream não os entrega); chamadas de
   título do opencode (~US$ 0,001, fora de `session.cost`).
 - **Verificado:** `cargo test` 1070, `bun run test` 4983, `tsc -b` 0.
+
+### ADR-266 · Manter acordado aparece onde você olha para a máquina, pelo estado da trava ✅
+- **Contexto (26/09/2026):** "dá para o Mac não hibernar?" já existia desde a
+  trava do `despertador.rs` (`caffeinate -i -w <pid>`, Configurações ›
+  Piloto automático, padrão Com agente), e a pessoa não sabia: nada na tela
+  dizia quando o sono estava sendo segurado, a falha de abrir o `caffeinate`
+  era silenciosa, e um `caffeinate` morto por fora deixava o app jurando que
+  segurava o sono para sempre.
+- **Decisão (mock `docs/mocks/manter-acordado.html`):**
+  1. `Despertador::estado` responde se a trava EXISTE agora, o modo, se a
+     abertura falhou e se o sistema suporta (só macOS: o `systemd-inhibit`
+     não morre com o nosso pid). Antes de responder, colhe o filho morto
+     (`try_wait`) e reabre se ainda precisa.
+  2. O estado viaja na amostra de 2 s da Máquina (`sistema_amostra.sono`) e
+     no snapshot da bandeja, preenchido pelo Rust na saída
+     (`tray::com_o_sono`), então vale com a janela principal fechada.
+  3. Faixa: a xícara ao lado de "mem · cpu" só com a trava viva; dica com a
+     linha do estado (âmbar se falhou); painel com a frase e o MESMO seletor
+     da Configuração, escrevendo em `settings.keepAwake`. Bandeja: "Mac
+     acordado…" sob o título. Notch expandido: "acordado" na linha de sistema.
+- **Fica igual:** o mecanismo (sem `pmset`, sem `sudo`, tampa fechada dorme)
+  e a preferência única.

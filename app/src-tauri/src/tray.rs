@@ -119,6 +119,14 @@ pub struct TraySnapshot {
     /// antigos (campo ausente = vazio).
     #[serde(default)]
     pub external: Vec<TrayExternalSession>,
+    /// O Mac está sendo mantido acordado agora (a trava do `despertador`
+    /// existe). O front não sabe isto: o Rust preenche na saída
+    /// (`com_o_sono`), então vale com a janela principal fechada.
+    #[serde(default)]
+    pub acordado: bool,
+    /// `on` | `agent` | `off`, para a bandeja dizer "(sempre)".
+    #[serde(default)]
+    pub modo_acordado: String,
 }
 
 pub struct TrayState {
@@ -212,6 +220,16 @@ fn load_tray_preferences(app: &AppHandle) {
 
 pub(crate) fn current_snapshot(state: &TrayState) -> TraySnapshot {
     state.snapshot.lock().map(|s| s.clone()).unwrap_or_default()
+}
+
+/// O snapshot com o sono da máquina lido da trava real, na hora de sair para
+/// a bandeja e o notch.
+pub(crate) fn com_o_sono<R: Runtime>(app: &AppHandle<R>, mut s: TraySnapshot) -> TraySnapshot {
+    let registry = app.state::<crate::agent::RunRegistry>();
+    let sono = registry.2.estado(registry.ativos());
+    s.acordado = sono.acordado;
+    s.modo_acordado = sono.modo;
+    s
 }
 
 fn fleet_status(s: &TraySnapshot) -> String {
@@ -516,7 +534,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
         return;
     };
     if crate::hud::is_floating(app) {
-        let s = current_snapshot(&app.state::<TrayState>());
+        let s = com_o_sono(app, current_snapshot(&app.state::<TrayState>()));
         let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
         crate::hud::toggle_from_tray(app);
         return;
@@ -588,7 +606,7 @@ fn toggle_popover(app: &AppHandle, rect: tauri::Rect) {
             let _ = win.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
         }
     }
-    let s = current_snapshot(&app.state::<TrayState>());
+    let s = com_o_sono(app, current_snapshot(&app.state::<TrayState>()));
     let _ = app.emit_to(POPOVER_LABEL, "tray://snapshot", s);
     ensure_vibrancy(app, &win); // agora a janela está realizada (contentView ok)
     let _ = win.show();
@@ -693,7 +711,8 @@ pub fn set_tray_snapshot(
         // re-emite o snapshot fresco imediatamente antes do show().
         if let Some(pop) = handle.get_webview_window(POPOVER_LABEL) {
             if pop.is_visible().unwrap_or(false) {
-                let _ = handle.emit_to(POPOVER_LABEL, "tray://snapshot", snapshot);
+                let s = com_o_sono(&handle, snapshot);
+                let _ = handle.emit_to(POPOVER_LABEL, "tray://snapshot", s);
             }
         }
     })
@@ -701,8 +720,8 @@ pub fn set_tray_snapshot(
 }
 
 #[tauri::command]
-pub fn get_tray_snapshot(state: State<'_, TrayState>) -> TraySnapshot {
-    current_snapshot(&state)
+pub fn get_tray_snapshot(app: AppHandle, state: State<'_, TrayState>) -> TraySnapshot {
+    com_o_sono(&app, current_snapshot(&state))
 }
 
 #[tauri::command]

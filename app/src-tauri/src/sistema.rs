@@ -33,6 +33,9 @@ pub struct AmostraDoSistema {
     /// "0%" inventado seria teatro.
     pub cpu_pct: Option<f32>,
     pub nucleos: usize,
+    /// O sono da máquina AGORA (a trava existe?), na mesma amostra: a faixa
+    /// desenha a xícara a partir disto, nunca da preferência.
+    pub sono: crate::despertador::EstadoDoSono,
 }
 
 /// Um processo na árvore de um turno ou de um navegador, pronto para o painel.
@@ -134,7 +137,9 @@ pub fn sistema_amostra(app: tauri::AppHandle) -> Result<AmostraDoSistema, String
     let sys = guarda.get_or_insert_with(System::new);
     sys.refresh_memory();
     sys.refresh_cpu_usage();
+    let registry = app.state::<crate::agent::RunRegistry>();
     Ok(AmostraDoSistema {
+        sono: registry.2.estado(registry.ativos()),
         mem_usada_mb: sys.used_memory() / MB,
         mem_total_mb: sys.total_memory() / MB,
         cpu_pct: (!primeira).then(|| sys.global_cpu_usage()),

@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<title>Manter acordado, na zona da Máquina · proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbfbfa;--fg:#16181b;--card:#fff;--sec:#f4f4f2;--muted:#5c6166;--faint:#8a9099;--border:rgba(0,0,0,.09);--div:rgba(0,0,0,.06);--sel:rgba(0,0,0,.055);--hover:rgba(0,0,0,.028);--brass:#a9742b;--warn:#c1861f;--err:#cf4a3e;--claude:#d97757;
+--pop:0 12px 40px -8px rgba(20,22,25,.18);--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+:root[data-theme="dark"]{--bg:#0a0b0d;--fg:#e7e8ea;--card:#141619;--sec:#1b1e22;--muted:#9aa0a7;--faint:#687078;--border:rgba(255,255,255,.08);--div:rgba(255,255,255,.06);--sel:rgba(255,255,255,.065);--hover:rgba(255,255,255,.032);--brass:#e4a862;--warn:#d99138;--pop:0 12px 40px -8px rgba(0,0,0,.55)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+:root[data-theme="dark"] body{background:#000}
+h1{font-size:20px;font-weight:600}
+.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1100px;line-height:1.55}.sub b{color:var(--fg);font-weight:500}
+h2{font-size:14px;font-weight:600;margin:34px 0 10px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.tema{position:fixed;top:20px;right:24px;font:12px var(--sans);color:var(--muted);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;z-index:5}
+.lado{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:6px}
+.tit{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-left:2px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6;max-width:1100px;margin-top:16px}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:5px}.card ul,.card ol{padding-left:18px}
+code{font:12px var(--mono)}
+
+/* a faixa de baixo (ADR-262): mono 11px, zonas de 24px */
+.faixa{width:560px;height:32px;background:var(--bg);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;padding:0 8px;font:11px var(--mono);color:var(--muted);gap:4px}
+.faixa .esp{flex:1}
+.zona{display:flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:6px;white-space:nowrap}
+.zona:hover,.zona.aceso{background:var(--sel)}
+.zona .fg{color:var(--fg)}.zona .fr{color:var(--faint)}
+.zona svg{width:12px;height:12px;flex-shrink:0}
+.legenda{font-size:12px;color:var(--muted);max-width:560px;line-height:1.5}
+.legenda b{color:var(--fg);font-weight:500}
+
+/* a dica: superfície do painel, sem título (ADR-264), 320px */
+.dica{width:320px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--pop);overflow:hidden}
+.dica .corpo{padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.dica .pe{border-top:1px solid var(--div);padding:7px 12px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.dica .pe kbd{margin-left:auto;font:10px var(--mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;color:var(--muted)}
+.lin{display:flex;align-items:center;gap:8px;font-size:12px}
+.lin .n{flex:1;white-space:nowrap}
+.lin .v{font:12px var(--mono);color:var(--fg);white-space:nowrap}
+.lin .f{font-size:11px;color:var(--faint)}
+.sep{height:1px;background:var(--div)}
+.ram{height:8px;border-radius:4px;background:var(--sec);overflow:hidden}.ram i{display:block;height:100%;background:rgba(92,97,102,.5);border-radius:4px}
+.nota{font-size:11px;color:var(--faint);line-height:1.45}
+.ic{width:13px;height:13px;flex-shrink:0;color:var(--muted)}
+
+/* o painel (clique) */
+.painel{width:540px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--pop);padding:12px}
+.painel .cab{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;padding:2px 4px 10px}
+.painel .cab svg{width:14px;height:14px;color:var(--muted)}
+.bloco{padding:0 4px}
+.bloco .t{display:flex;font-size:11px;font-weight:500;color:var(--muted)}
+.bloco .t span{margin-left:auto;font:11px var(--mono);font-weight:400}
+.sono{display:flex;align-items:center;gap:10px;padding:10px 4px 12px;border-bottom:1px solid var(--div);margin-bottom:10px}
+.sono .txt{flex:1;min-width:0}
+.sono .a{font-size:13px;color:var(--fg);display:flex;align-items:center;gap:6px}
+.sono .b{font-size:11px;color:var(--faint);margin-top:2px}
+/* o RichSelect da Configuração, no degrau compacto (28px) */
+.select{height:28px;display:inline-flex;align-items:center;gap:6px;padding:0 8px 0 10px;border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--fg);background:var(--card);white-space:nowrap}
+.select svg{width:12px;height:12px;color:var(--faint)}
+.menu{width:260px;background:var(--card);border:1px solid var(--border);border-radius:10px;box-shadow:var(--pop);padding:4px;margin-top:4px}
+.opt{display:flex;gap:8px;padding:6px 8px;border-radius:6px}
+.opt.on{background:var(--sel)}
+.opt .l{font-size:13px;color:var(--fg)}.opt .d{font-size:11px;color:var(--faint)}
+.opt .ck{width:14px;color:var(--fg);font-size:12px}
+.tabela{border-collapse:collapse;font-size:12px;margin-top:8px;background:var(--card);border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.tabela th,.tabela td{padding:7px 12px;text-align:left;border-bottom:1px solid var(--div);white-space:nowrap}
+.tabela th{font:500 11px var(--sans);color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+.tabela td{color:var(--muted)}.tabela td b{color:var(--fg);font-weight:500}
+.tabela tr:last-child td{border-bottom:0}
+
+/* bandeja e notch */
+.tray{width:340px;background:var(--card);border:1px solid var(--border);border-radius:13px;box-shadow:var(--pop);overflow:hidden}
+.tray .cab{padding:14px 16px 12px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;gap:12px}
+.tray .etq{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-bottom:8px}
+.tray h3{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+.tray .pt{width:8px;height:8px;border-radius:50%;background:#2f8fbf}
+.tray .acd{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-top:6px}
+.tray .abrir{margin-left:auto;font-size:12px;font-weight:500;border:1px solid var(--border);border-radius:6px;padding:5px 10px}
+.tray .corpo{padding:12px 16px;font-size:12px;color:var(--faint)}
+.hud{width:420px;background:#0b0c0e;color:#e7e8ea;border-radius:0 0 22px 22px;padding:14px 18px 12px;box-shadow:var(--pop)}
+.hud .h{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.hud .h .pt{width:7px;height:7px;border-radius:50%;background:#5bb8e8}
+.hud .cena{font-size:12px;color:#9aa0a7;margin:10px 0 12px}
+.hud .sys{display:flex;justify-content:center;align-items:center;gap:5px;font-size:11px;color:#9aa0a7}
+.hud .sys b{color:rgba(231,232,234,.75);font-weight:500}
+.hud .ic{color:#9aa0a7}
+</style>
+</head>
+<body>
+<button class="tema" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'">alternar tema</button>
+
+<h1>Manter acordado, onde você já olha para a máquina</h1>
+<p class="sub">O recurso já existe (<b>Configurações › Piloto automático</b>, padrão <b>Com agente</b>, via <code>caffeinate -i -w &lt;pid do Frota&gt;</code>), mas nada na tela diz quando ele está segurando o sono. A proposta não cria outro toggle: traz <b>o estado real</b> para a zona da Máquina na faixa, e a <b>troca de modo</b> para o painel dela, escrevendo na mesma preferência.</p>
+
+<h2>1 · Na faixa <small>o sinal aparece só quando a trava existe de fato</small></h2>
+<div class="lado">
+  <div class="col"><div class="tit">Dormindo normalmente</div>
+    <div class="faixa"><span class="esp"></span>
+      <span class="zona">mem <span class="fg">12/16 GB</span> <span class="fr">·</span> cpu <span class="fg">21%</span></span>
+    </div>
+    <p class="legenda">Com agente e nada rodando, ou Nunca: a zona fica como hoje.</p>
+  </div>
+  <div class="col"><div class="tit">Segurando o sono</div>
+    <div class="faixa"><span class="esp"></span>
+      <span class="zona">mem <span class="fg">12/16 GB</span> <span class="fr">·</span> cpu <span class="fg">21%</span> <span class="fr">·</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-label="mantendo acordado"><path d="M10 2v2M14 2v2M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/></svg>
+      </span>
+    </div>
+    <p class="legenda"><b>Recomendo:</b> a xícara (o <code>Coffee</code> do lucide), na cor da zona. É o idioma do próprio <code>caffeinate</code>, cabe na faixa sem empurrar nada, e a dica diz o resto.</p>
+  </div>
+  <div class="col"><div class="tit">Alternativa: a palavra</div>
+    <div class="faixa"><span class="esp"></span>
+      <span class="zona">mem <span class="fg">12/16 GB</span> <span class="fr">·</span> cpu <span class="fg">21%</span> <span class="fr">·</span> <span class="fg">acordado</span></span>
+    </div>
+    <p class="legenda">Mais explícita, mas custa 9 caracteres fixos numa faixa que já está cheia.</p>
+  </div>
+</div>
+
+<h2>2 · A dica <small>hover: o mesmo corpo de hoje, mais uma linha com o estado</small></h2>
+<div class="lado">
+  <div class="col"><div class="tit">Com agente, 2 turnos rodando</div>
+    <div class="dica">
+      <div class="corpo">
+        <div class="lin"><span class="n">Memória</span><span class="v">12,0 de 16,0 GB</span></div>
+        <div class="ram"><i style="width:75%"></i></div>
+        <div class="sep"></div>
+        <div class="lin"><span class="n">CPU</span>
+          <svg width="96" height="18"><path d="M0,12 L8,11 L16,13 L24,9 L32,10 L40,6 L48,8 L56,11 L64,7 L72,9 L80,5 L88,8 L96,7" fill="none" stroke="#8a9099" stroke-width="1.3"/></svg>
+          <span class="v">21%</span><span class="f">média 34%</span></div>
+        <div class="sep"></div>
+        <div class="lin">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v2M14 2v2M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/></svg>
+          <span class="n">Mantendo acordado</span><span class="f">com agente · 2 turnos</span></div>
+      </div>
+      <div class="pe">16,0 GB · 8 núcleos <kbd>clique</kbd></div>
+    </div>
+  </div>
+  <div class="col"><div class="tit">Com agente, nada rodando</div>
+    <div class="dica">
+      <div class="corpo">
+        <div class="lin"><span class="n">Memória</span><span class="v">9,4 de 16,0 GB</span></div>
+        <div class="ram"><i style="width:59%"></i></div>
+        <div class="sep"></div>
+        <div class="lin"><span class="n">CPU</span>
+          <svg width="96" height="18"><path d="M0,15 L8,15 L16,14 L24,15 L32,13 L40,15 L48,14 L56,15 L64,15 L72,14 L80,15 L88,14 L96,15" fill="none" stroke="#8a9099" stroke-width="1.3"/></svg>
+          <span class="v">6%</span><span class="f">média 8%</span></div>
+        <div class="sep"></div>
+        <div class="lin"><span class="n muted" style="color:var(--muted)">Dorme normalmente</span><span class="f">com agente · nada rodando</span></div>
+      </div>
+      <div class="pe">16,0 GB · 8 núcleos <kbd>clique</kbd></div>
+    </div>
+  </div>
+  <div class="col"><div class="tit">Pediu e não conseguiu</div>
+    <div class="dica">
+      <div class="corpo">
+        <div class="lin"><span class="n">Memória</span><span class="v">12,0 de 16,0 GB</span></div>
+        <div class="ram"><i style="width:75%"></i></div>
+        <div class="sep"></div>
+        <div class="lin"><span class="n" style="color:var(--warn)">Não consegui segurar o sono</span><span class="f">sempre</span></div>
+        <div class="nota">O <code>caffeinate</code> não abriu. O Mac pode dormir no meio de um turno.</div>
+      </div>
+      <div class="pe">16,0 GB · 8 núcleos <kbd>clique</kbd></div>
+    </div>
+  </div>
+</div>
+
+<h2>3 · O painel <small>clique: a troca de modo no topo, com o mesmo seletor da Configuração</small></h2>
+<div class="lado">
+  <div class="painel">
+    <div class="cab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M9 9h6v6H9zM9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 14h3M1 9h3M1 14h3"/></svg>Máquina</div>
+    <div class="sono">
+      <div class="txt">
+        <div class="a"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v2M14 2v2M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/></svg>Mantendo acordado enquanto 2 turnos rodam</div>
+        <div class="b">Só o sono por inatividade. Fechar a tampa continua dormindo.</div>
+      </div>
+      <span class="select">Com agente <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+    </div>
+    <div class="bloco">
+      <div class="t">Memória <span>12,0 de 16,0 GB</span></div>
+      <div class="ram" style="margin-top:6px"><i style="width:75%"></i></div>
+      <div class="t" style="margin-top:14px">CPU <span>21% agora · média 34%</span></div>
+      <svg width="508" height="36" style="display:block;margin-top:4px"><path d="M0,26 L40,24 L80,28 L120,18 L160,20 L200,12 L240,16 L280,22 L320,14 L360,18 L400,10 L440,16 L508,14" fill="none" stroke="#8a9099" stroke-width="1.3"/></svg>
+      <div class="t" style="margin-top:10px">Rodando no Frota</div>
+      <div class="nota" style="margin-top:4px">(a árvore de processos de hoje, sem mudança)</div>
+    </div>
+  </div>
+  <div class="col"><div class="tit">O seletor aberto</div>
+    <span class="select" style="align-self:flex-start">Com agente <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></span>
+    <div class="menu">
+      <div class="opt on"><span class="ck">✓</span><span><div class="l">Com agente</div><div class="d">Só enquanto um turno está rodando</div></span></div>
+      <div class="opt"><span class="ck"></span><span><div class="l">Sempre</div><div class="d">Enquanto o app estiver aberto</div></span></div>
+      <div class="opt"><span class="ck"></span><span><div class="l">Nunca</div><div class="d">A máquina dorme como sempre</div></span></div>
+    </div>
+    <p class="legenda" style="max-width:260px;margin-top:6px">Os mesmos três textos de <code>KEEP_AWAKE_OPTIONS</code>: é a mesma preferência, e mudar aqui muda lá.</p>
+  </div>
+</div>
+
+<h2>4 · Estado por modo</h2>
+<table class="tabela">
+  <tr><th>Modo</th><th>Turnos rodando</th><th>Faixa</th><th>Linha da dica</th></tr>
+  <tr><td><b>Com agente</b></td><td>0</td><td>sem sinal</td><td>Dorme normalmente · com agente · nada rodando</td></tr>
+  <tr><td><b>Com agente</b></td><td>2</td><td>xícara</td><td>Mantendo acordado · com agente · 2 turnos</td></tr>
+  <tr><td><b>Sempre</b></td><td>qualquer</td><td>xícara</td><td>Mantendo acordado · sempre</td></tr>
+  <tr><td><b>Nunca</b></td><td>qualquer</td><td>sem sinal</td><td>Dorme normalmente · nunca</td></tr>
+  <tr><td>qualquer, e o <code>caffeinate</code> falhou</td><td>qualquer</td><td>sem sinal</td><td style="color:var(--warn)">Não consegui segurar o sono</td></tr>
+  <tr><td>Linux</td><td>qualquer</td><td>sem sinal</td><td>Neste sistema o Frota não segura o sono (a linha some; o seletor fica desabilitado com essa frase)</td></tr>
+</table>
+
+
+<h2>5 · Com a janela fechada <small>a trava segue viva; o sinal vai junto para a bandeja e o notch</small></h2>
+<p class="sub">Fechar a janela só a esconde (<code>prevent_close</code>): o app segue na barra de menu, o <code>caffeinate -w</code> segue observando o mesmo pid, e os turnos seguem rodando. Só o <b>Sair</b> solta a trava. Com a janela fechada, você olha para a bandeja e para o notch, então o sinal aparece nos dois, lido pelo Rust direto da trava (um campo novo no <code>TraySnapshot</code>), sem depender da janela principal.</p>
+<div class="lado">
+  <div class="col"><div class="tit">Bandeja (popover da barra de menu)</div>
+    <div class="tray">
+      <div class="cab">
+        <div>
+          <div class="etq">Frota</div>
+          <h3><span class="pt"></span>2 tarefas em voo</h3>
+          <div class="acd"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v2M14 2v2M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/></svg>Mac acordado enquanto rodam</div>
+        </div>
+        <span class="abrir">Abrir</span>
+      </div>
+      <div class="corpo">(as atividades de hoje, sem mudança)</div>
+    </div>
+    <p class="legenda" style="max-width:340px">Uma linha sob o título, só enquanto a trava existe. Com "Sempre" e nada rodando: "Mac acordado (sempre)".</p>
+  </div>
+  <div class="col"><div class="tit">Notch expandido (HUD)</div>
+    <div class="hud">
+      <div class="h"><span class="pt"></span>2 tarefas em voo</div>
+      <div class="cena">(a cena de voo de hoje, sem mudança)</div>
+      <div class="sys"><b>Sem automações</b><span>·</span><span>Terminal não observado</span><span>·</span><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 2v2M14 2v2M16 8a1 1 0 0 1 1 1v8a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4V9a1 1 0 0 1 1-1h14a4 4 0 1 1 0 8h-1M6 2v2"/></svg><span>acordado</span></div>
+    </div>
+    <p class="legenda" style="max-width:420px">Na linha de sistema do rodapé, o mesmo lugar que já diz automações e terminal. O notch compacto não muda: nele só cabe o que pede você.</p>
+  </div>
+</div>
+
+<div class="card">
+  <b>O que isto pede do código, e o que fica igual:</b>
+  <ol>
+    <li><b>Estado real, não preferência.</b> O Rust passa a responder se a trava EXISTE (o <code>caffeinate</code> filho está vivo, <code>try_wait</code>), junto com o modo, na mesma amostra de 2 s da Máquina. O sinal nunca é desenhado a partir da preferência sozinha.</li>
+    <li><b>Uma preferência só.</b> O seletor do painel escreve em <code>settings.keepAwake</code> e chama o mesmo <code>set_keep_awake</code>; a Configuração continua existindo, com a mesma nota da tampa.</li>
+    <li><b>Falha deixa de ser silêncio.</b> Hoje <code>aplicarKeepAwake</code> engole o erro e o Rust só loga. Com o estado real na amostra, "pediu e não conseguiu" aparece na dica, em âmbar, sem toast.</li>
+    <li><b>Mecanismo igual.</b> <code>caffeinate -i -w &lt;pid&gt;</code> segue sendo a trava: morre junto com o app, de qualquer jeito que ele morra. Nada de <code>pmset</code>, nada de <code>sudo</code>, nada de travar a tampa.</li>
+    <li><b>Bandeja e notch.</b> O <code>TraySnapshot</code> ganha <code>acordado</code> (a trava existe) e o modo; o Rust preenche direto do <code>Despertador</code>, então funciona com a janela principal fechada.</li>
+    <li><b>Trava que morreu por fora.</b> Hoje, se o <code>caffeinate</code> morrer (alguém o mata no Monitor de Atividade), o app segue achando que segura o sono e nunca reabre. A leitura do estado passa a colher o filho morto (<code>try_wait</code>) e reabrir na próxima reavaliação.</li>
+    <li><b>Linux, depois.</b> <code>systemd-inhibit</code> não tem o "morre com o pid"; entra quando houver um relógio de morte equivalente. Até lá, a tela diz que não tem efeito.</li>
+  </ol>
+</div>
+</body>
+</html>
