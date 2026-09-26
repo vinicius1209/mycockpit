@@ -54,6 +54,9 @@ window-vibrancy = "0.6" # NSVisualEffectView no popover da tray (blur nativo)
 # é o único que funciona sem entitlement/Team ID (o `protected` devolve -34018
 # em app sem App ID). MIT OR Apache-2.0.
 keyring = "4.1"
+# Memória e CPU do computador na faixa de baixo (ADR-262): Mac e Linux pelo
+# mesmo caminho, sem subprocesso a cada amostra. Só as features de sistema.
+sysinfo = { version = "0.39", default-features = false, features = ["system"] }
 tauri-plugin-clipboard-manager = "2.3.2"
 # A6 (Companion): Web Push, RFC 8291 (ECDH P-256 + HKDF + AES128GCM) e VAPID
 # (JWT ES256). Sem crate de push pronta: o que precisamos é pequeno e o teste

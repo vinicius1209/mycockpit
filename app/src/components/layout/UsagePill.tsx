@@ -16,14 +16,14 @@
 // Régua de cor: a de lib/meter, a mesma do anel de contexto — cinza até 60,
 // âmbar 60 a 80, vermelho 80+. Números em tabular-nums com largura reservada.
 //
-// NÃO afirme aqui "suporte multi-agent (Claude, Codex, Antigravity)": o `agy`
-// tem `usageWindow: null` no registry, logo está fora do `duePollAgents` e a
-// pill se esconde nas conversas dele. Quando existir leitura da conta Google AI
-// Pro, o que muda é o REGISTRY e o Rust — não este comentário.
+// Na FAIXA (`compact`), desde a ADR-262, a pill mostra TODOS os planos com
+// leitura, cada um com o seu logo, a sua pior janela e o nome dela
+// (`lib/faixaDosPlanos`); o da conversa aberta vem primeiro. Fora da faixa ela
+// segue contextual, pela `pillWindow`.
 
 import { useEffect, useState } from "react"
 import { Gauge, RefreshCw, X } from "lucide-react"
-import { PainelDaFaixa } from "@/components/layout/statusBarChrome"
+import { AcaoDoClique, GatilhoDaFaixa, PainelDaFaixa } from "@/components/layout/statusBarChrome"
 import { Button } from "@/components/ui/button"
 import { agentDef } from "@/lib/agents"
 import { usageWindowAgents } from "@/lib/agentRoster"
@@ -49,6 +49,7 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useUsage } from "@/store/usage"
+import { planosDaFaixa, rotuloCurtoDaJanela, rotuloDoPlano } from "@/lib/faixaDosPlanos"
 import { cn } from "@/lib/utils"
 
 const TONE_BAR = METER_FILL
@@ -72,6 +73,62 @@ function UsageBar({ pct, wide = false }: { pct: number; wide?: boolean }) {
         style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
       />
     </span>
+  )
+}
+
+/** O anel de percentual da faixa (ADR-262): 12px, legível até em 4%, onde a
+ *  barra de 24px virava um ponto. A cor vem do texto (`currentColor`), então o
+ *  tom da régua do §2 vale para ele sem cor nova. */
+function AnelDePercentual({ pct, className }: { pct: number; className?: string }) {
+  const p = Math.min(100, Math.max(0, pct))
+  const furo = "radial-gradient(circle, transparent 3.2px, #000 3.7px)"
+  return (
+    <span
+      aria-hidden
+      className={cn("size-3 shrink-0 rounded-full", className)}
+      style={{
+        background: `conic-gradient(currentColor ${p}%, color-mix(in srgb, currentColor 20%, transparent) 0)`,
+        WebkitMask: furo,
+        mask: furo,
+      }}
+    />
+  )
+}
+
+/** A dica da faixa (ADR-262, ADR-264): uma linha por motor, com o plano, a
+ *  pior janela em barra e quando ela reseta. Sem título: a zona já diz. */
+function DicaDosPlanos({ planos, byAgent, now }: { planos: ReturnType<typeof planosDaFaixa>; byAgent: Record<string, UsageSnapshot>; now: number }) {
+  return (
+    <>
+      {planos.map((p) => {
+        const plano = rotuloDoPlano(byAgent[p.agent]?.planType)
+        const reset = fmtResetIn(p.janela.resetsAt, now)
+        const tom = usageTone(p.janela.usedPercent)
+        return (
+          <div key={p.agent} className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
+            <span className="grid size-4 place-items-center">
+              <AgentLogo agent={p.agent} />
+            </span>
+            <span className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[13px] font-medium text-foreground">{agentDef(p.agent)?.label ?? p.agent}</span>
+              {plano && <span className="shrink-0 rounded bg-secondary px-1.5 text-[11px] text-muted-foreground">{plano}</span>}
+            </span>
+            <span className={cn("font-mono text-[12px] font-medium tabular-nums", tom === "ok" ? "text-foreground" : TONE_TEXT[tom])}>
+              {fmtPct(p.janela.usedPercent)}
+            </span>
+            <span />
+            <span className="col-span-2 h-1.5 overflow-hidden rounded-full bg-secondary">
+              <span className={cn("block h-full rounded-full", TONE_BAR[tom])} style={{ width: `${Math.min(100, p.janela.usedPercent)}%` }} />
+            </span>
+            <span />
+            <span className="col-span-2 flex justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate">janela de {p.janela.label}</span>
+              {reset && <span className="shrink-0">{reset}</span>}
+            </span>
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -103,7 +160,7 @@ function ProviderCard({
           </span>
           {snap?.planType ? (
             <span className="rounded bg-secondary px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground border">
-              {snap.planType}
+              {rotuloDoPlano(snap.planType)}
             </span>
           ) : null}
         </div>
@@ -204,8 +261,9 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
 
   if (!enabled) return null
   const sel = pillWindow(activeAgent, byAgent, failures, now)
+  const planos = compact ? planosDaFaixa(activeAgent, byAgent, failures, now) : []
   const failing = Object.keys(failures).length > 0
-  if (!sel && !failing) return null
+  if (!sel && planos.length === 0 && !failing) return null
 
   const providers = usageWindowAgents()
   const measurable = providers.filter(
@@ -222,9 +280,12 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
       )
 
   const tone = sel ? usageTone(sel.window.usedPercent) : "ok"
-  const pillTitle = sel
-    ? `Janela de uso do plano · ${agentDef(sel.agent)?.label ?? sel.agent}`
-    : "Janela de uso do plano"
+  const pillTitle =
+    compact && planos.length > 0
+      ? "Janelas de uso dos planos: a pior janela de cada motor"
+      : sel
+        ? `Janela de uso do plano · ${agentDef(sel.agent)?.label ?? sel.agent}`
+        : "Janela de uso do plano"
 
   return (
     <PainelDaFaixa
@@ -238,6 +299,13 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
       side={compact ? "top" : "bottom"}
       align={compact ? "start" : "end"}
       largura="w-[460px]"
+      dica={compact && planos.length > 0 ? <DicaDosPlanos planos={planos} byAgent={byAgent} now={now} /> : undefined}
+      peDaDica={
+        <>
+          {planos.length > 0 && <span>leitura {fmtAge(Math.min(...planos.map((p) => byAgent[p.agent]?.fetchedAt ?? now)), now)}</span>}
+          <AcaoDoClique>todas as janelas</AcaoDoClique>
+        </>
+      }
       acao={
         <Button
           type="button"
@@ -302,36 +370,56 @@ export function UsagePill({ compact = false }: { compact?: boolean }) {
         </>
       }
     >
-      <button
-        type="button"
-        title={pillTitle}
-        aria-label={pillTitle}
-        className={cn(
-          "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring/50 sm:flex",
+      {compact && planos.length > 0 ? (
+        <GatilhoDaFaixa aria-label={pillTitle} className="hidden gap-2.5 sm:flex">
+          {planos.map((p) => {
+            const t = usageTone(p.janela.usedPercent)
+            return (
+              <span key={p.agent} className="flex items-center gap-1">
+                <AnelDePercentual pct={p.janela.usedPercent} className={t === "ok" ? "text-muted-foreground" : TONE_TEXT[t]} />
+                <span className="grid size-3 place-items-center">
+                  <AgentLogo agent={p.agent} />
+                </span>
+                <span className={cn("tabular-nums", t === "ok" ? "text-foreground" : TONE_TEXT[t])}>
+                  {fmtPct(p.janela.usedPercent)}
+                </span>
+                <span className="text-muted-foreground/70">{rotuloCurtoDaJanela(p.janela)}</span>
+              </span>
+            )
+          })}
+        </GatilhoDaFaixa>
+      ) : (
+        <button
+          type="button"
+          title={pillTitle}
+          aria-label={pillTitle}
+          className={cn(
+            "pointer-events-auto hidden items-center gap-1.5 text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-1 focus-visible:ring-ring/50 sm:flex",
             compact
               ? "-mx-1 h-5 rounded px-1 font-mono text-[11px] hover:bg-accent/50"
               : "rounded-full border bg-secondary/50 px-2.5 py-1 text-[12px]",
           )}
         >
-          <Gauge className={compact ? "size-3" : "size-3.5"} aria-hidden />
-          {sel ? (
-            <>
-              <span className="max-w-20 truncate">{usagePillLabel(sel.agent)}</span>
-              <UsageBar pct={sel.window.usedPercent} />
-              <span
-                className={cn(
-                  "min-w-[34px] text-right font-mono font-medium tabular-nums",
-                  // Saudável em texto pleno, não cinza: o número é a leitura.
-                  tone === "ok" ? "text-foreground" : TONE_TEXT[tone],
-                )}
-              >
-                {fmtPct(sel.window.usedPercent)}
-              </span>
-            </>
-          ) : (
-            <span className="text-st-error">sem leitura</span>
-          )}
-      </button>
+            <Gauge className={compact ? "size-3" : "size-3.5"} aria-hidden />
+            {sel ? (
+              <>
+                <span className="max-w-20 truncate">{usagePillLabel(sel.agent)}</span>
+                <UsageBar pct={sel.window.usedPercent} />
+                <span
+                  className={cn(
+                    "min-w-[34px] text-right font-mono font-medium tabular-nums",
+                    // Saudável em texto pleno, não cinza: o número é a leitura.
+                    tone === "ok" ? "text-foreground" : TONE_TEXT[tone],
+                  )}
+                >
+                  {fmtPct(sel.window.usedPercent)}
+                </span>
+              </>
+            ) : (
+              <span className="text-st-error">sem leitura</span>
+            )}
+        </button>
+      )}
     </PainelDaFaixa>
   )
 }

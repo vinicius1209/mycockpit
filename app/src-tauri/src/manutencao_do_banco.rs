@@ -5,6 +5,11 @@
 
 use tauri::Manager;
 
+/// As três partes de um banco SQLite em WAL. Copiar só o `.db` deixaria para
+/// trás transações que ainda vivem no log. (Morava em `lib.rs`; só este módulo
+/// a usa.)
+pub(crate) const PARTES: [&str; 3] = ["db", "db-wal", "db-shm"];
+
 /// Backup rotativo do banco no boot (rede de segurança contra perda de dados).
 /// Copia db + WAL + SHM (snapshot consistente: roda antes do plugin SQL abrir)
 /// para app_data_dir/backups/frota-{1..3}.db, no máx. 1x a cada ~20h.
@@ -34,14 +39,14 @@ pub(crate) fn backup_database(app: &tauri::AppHandle) -> Result<(), String> {
 
     // rotação 2→3, 1→2 (o 3 mais antigo cai), depois copia o atual pro 1.
     for (from, to) in [(2u8, 3u8), (1, 2)] {
-        for ext in crate::PARTES {
+        for ext in PARTES {
             let src = dir.join(format!("frota-{from}.{ext}"));
             if src.exists() {
                 let _ = std::fs::rename(&src, dir.join(format!("frota-{to}.{ext}")));
             }
         }
     }
-    for ext in crate::PARTES {
+    for ext in PARTES {
         let src = data.join(format!("frota.{ext}"));
         let dst = dir.join(format!("frota-1.{ext}"));
         if src.exists() {
@@ -130,7 +135,7 @@ pub(crate) fn migrar_banco_entre(novo_dir: &std::path::Path, legado_dir: &std::p
     };
     let base_origem = origem.with_extension("");
     std::fs::create_dir_all(novo_dir).map_err(|e| e.to_string())?;
-    for ext in crate::PARTES {
+    for ext in PARTES {
         let src = base_origem.with_extension(ext);
         if !src.exists() {
             continue; // sem WAL/SHM é estado normal (banco fechado limpo)

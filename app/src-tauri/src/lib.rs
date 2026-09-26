@@ -12,6 +12,7 @@ mod adapters;
 mod agent;
 mod agy_recovery;
 mod approval;
+mod arvore_de_processos;
 mod attachments;
 mod browser;
 mod browser_capture;
@@ -92,44 +93,24 @@ mod run_processes;
 mod run_resources;
 mod sandbox;
 pub mod scope_guidance;
+mod sistema;
 mod skills;
 mod soltura;
 mod sources;
 mod provider_commands;
 mod statusline_install;
 mod stt;
+mod subcomandos;
 mod tool_gateway;
 mod tray;
 mod update;
 mod usage_window;
 mod utility;
+mod versao;
 mod work_gateway;
 mod work_mcp_setup;
 
-/// Os subcomandos: ESTE binário também roda como os servidores MCP stdio que
-/// os motores spawnam. Chamado pelo `main.rs` ANTES do Tauri subir; `true`
-/// quer dizer que era um subcomando e o processo não é o app.
-pub fn run_subcomando(nome: &str) -> bool {
-    match nome {
-        // aprovação granular inline quando o `claude -p` o spawna
-        "approval-server" => approval::run_mcp_server(),
-        // memória/contexto só leitura, o mesmo contrato para qualquer motor
-        "context-server" => context_gateway::run_mcp_server(),
-        // plano, etapas e processos gerenciados
-        "work-server" => work_gateway::run_mcp_server(),
-        // o navegador da Frota (ADR-224) e o controle do desktop (ADR-225)
-        "browser-server" => browser_gateway::run_mcp_server(),
-        "desktop-server" => desktop_gateway::run_mcp_server(),
-        // materializador do Tool Catalog: grants e workers ficam no app
-        "tool-server" => tool_gateway::run_mcp_server(),
-        // proxy autenticado (A2): o token fica no app, nunca neste processo
-        "mcp-proxy-server" => mcp_proxy::run_mcp_server(),
-        // MCP contribuído, com o descriptor revalidado antes de executar
-        "plugin-mcp-server" => plugin_mcp::run_mcp_server(),
-        _ => return false,
-    }
-    true
-}
+pub use subcomandos::run_subcomando;
 
 /// Nome do arquivo do banco.
 pub const BANCO: &str = "frota.db";
@@ -141,10 +122,6 @@ pub const BANCO: &str = "frota.db";
 /// no diretório antigo e invisíveis.
 pub const BANCO_LEGADO: &str = "mycockpit.db";
 pub const ID_LEGADO: &str = "dev.vinicius.mycockpit";
-
-/// As três partes de um banco SQLite em WAL. Copiar só o `.db` deixaria para
-/// trás transações que ainda vivem no log.
-pub(crate) const PARTES: [&str; 3] = ["db", "db-wal", "db-shm"];
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -873,25 +850,16 @@ pub fn run() {
         )
         .manage(agent::RunRegistry::default())
         .manage(std::sync::Arc::new(work_gateway::ProcessRegistry::default()))
-        .manage(std::sync::Arc::new(
-            plugin_runtime::PluginRuntimeRegistry::default(),
-        ))
-        .manage(std::sync::Arc::new(
-            resource_broker::ResourceLeaseRegistry::default(),
-        ))
-        .manage(std::sync::Arc::new(
-            experience_broker::ExperienceBroker::default(),
-        ))
-        .manage(std::sync::Arc::new(
-            desktop_broker::DesktopBroker::default(),
-        ))
+        .manage(std::sync::Arc::new(plugin_runtime::PluginRuntimeRegistry::default()))
+        .manage(std::sync::Arc::new(resource_broker::ResourceLeaseRegistry::default()))
+        .manage(std::sync::Arc::new(experience_broker::ExperienceBroker::default()))
+        .manage(std::sync::Arc::new(desktop_broker::DesktopBroker::default()))
         // Navegador POR PROJETO (B2.1): só o mapa projeto → sessão viva. O
         // processo em si mora no ProcessRegistry acima, então o kill_all do
         // quit já o alcança.
         .manage(std::sync::Arc::new(browser::BrowserRegistry::default()))
-        .manage(std::sync::Arc::new(
-            browser_cdp::BrowserPreviewRegistry::default(),
-        ))
+        .manage(std::sync::Arc::new(sistema::Sistema::default()))
+        .manage(std::sync::Arc::new(browser_cdp::BrowserPreviewRegistry::default()))
         .manage(browser_panel::BrowserPanelRegistry::default())
         .manage(hud::HudState::default())
         .manage(tray::TrayState::default())
@@ -1047,6 +1015,10 @@ pub fn run() {
             browser_cdp::browser_preview_start,
             browser_cdp::browser_preview_frame,
             browser_cdp::browser_preview_stop,
+            sistema::sistema_amostra,
+            sistema::sistema_detalhe,
+            sistema::sistema_encerrar,
+            versao::build_info,
             browser_cdp::browser_input,
             browser_capture::browser_capture_attach,
             browser_capture::browser_capture_copy,
@@ -1116,7 +1088,7 @@ pub fn run() {
 
 #[cfg(test)]
 mod testes_migracao_do_banco {
-    use super::{BANCO, BANCO_LEGADO, PARTES};
+    use super::{manutencao_do_banco::PARTES, BANCO, BANCO_LEGADO};
     use crate::manutencao_do_banco::migrar_banco_entre;
     use std::path::PathBuf;
 

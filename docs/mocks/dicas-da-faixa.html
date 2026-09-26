@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>As dicas da faixa e a versão · proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbfbfa;--fg:#16181b;--card:#fff;--sec:#f4f4f2;--muted:#5c6166;--faint:#8a9099;--border:rgba(0,0,0,.09);--div:rgba(0,0,0,.06);--sel:rgba(0,0,0,.055);--brass:#a9742b;--warn:#b7791f;--ok:#2f8a57;--claude:#d97757;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1120px;line-height:1.55}.sub b{color:var(--fg);font-weight:500}
+h2{font-size:14px;font-weight:600;margin:30px 0 10px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.lado{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start}
+.col{display:flex;flex-direction:column;gap:6px}
+.tit{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin-left:2px}
+/* o cartão da dica: a superfície do painel (card, borda, elevação pop) */
+.dica{width:320px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px -8px rgba(20,22,25,.18);overflow:hidden}
+.dica .cab{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.dica .cab .ic{width:22px;height:22px;border-radius:6px;background:var(--sec);display:grid;place-items:center;font-size:12px;color:var(--brass)}
+.dica .cab b{font-size:13px;font-weight:600}
+.dica .cab .meta{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+.dica .corpo{padding:2px 12px 10px;display:flex;flex-direction:column;gap:8px}
+.dica .pe{border-top:1px solid var(--div);padding:7px 12px;font-size:11px;color:var(--muted);display:flex;align-items:center;gap:6px;background:rgba(244,244,242,.45)}
+.dica .pe kbd{font:10px var(--mono);border:1px solid var(--border);border-radius:4px;padding:0 4px;background:var(--card);color:var(--muted)}
+.logo{width:16px;height:16px;border-radius:4px;display:inline-grid;place-items:center;color:#fff;font:600 9px var(--sans);flex-shrink:0}
+.selo{font:500 10px var(--sans);color:var(--muted);background:var(--sec);border-radius:4px;padding:1px 5px;white-space:nowrap}
+/* linha de plano */
+.plano{display:grid;grid-template-columns:16px 1fr auto;gap:2px 8px;align-items:center}
+.plano .nome{display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;white-space:nowrap}
+.plano .pct{font:500 12px var(--mono);text-align:right}
+.plano .barra{grid-column:2/4;height:5px;border-radius:3px;background:var(--sec);overflow:hidden}
+.plano .barra i{display:block;height:100%;border-radius:3px;background:#8a9099}
+.plano .barra.w i{background:var(--warn)}
+.plano .sub2{grid-column:2/4;display:flex;justify-content:space-between;font-size:11px;color:var(--faint)}
+/* números grandes */
+.grande{display:flex;align-items:baseline;gap:6px}
+.grande b{font:600 20px var(--sans);letter-spacing:-.01em}
+.grande span{font-size:12px;color:var(--muted)}
+.linha{display:flex;align-items:center;gap:8px;font-size:12px}
+.linha .n{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.linha .v{font:12px var(--mono);color:var(--fg)}
+.linha .bar{width:60px;height:4px;border-radius:2px;background:var(--sec);overflow:hidden}.linha .bar i{display:block;height:100%;background:#8a9099;border-radius:2px}
+.sep{height:1px;background:var(--div)}
+.muted{color:var(--muted)}.faint{color:var(--faint)}
+.ram{height:8px;border-radius:4px;background:var(--sec);display:flex;overflow:hidden}.ram i{display:block;height:100%}
+.leg{display:flex;gap:10px;font-size:11px;color:var(--muted)}.leg i{display:inline-block;width:7px;height:7px;border-radius:2px;margin-right:4px}
+/* faixa */
+.faixa{width:1100px;height:36px;background:var(--bg);border-radius:10px;display:flex;align-items:center;padding:0 14px;font:11px var(--mono);color:var(--muted);gap:14px}
+.faixa .esp{flex:1}
+.zona{display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px}
+.zona:hover{background:var(--sel)}
+.pontinho{width:6px;height:6px;border-radius:50%}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;font-size:13px;color:var(--muted);line-height:1.6;max-width:1120px;margin-top:16px}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:4px}.card ul{padding-left:18px}
+code{font:12px var(--mono)}
+</style>
+</head>
+<body>
+<h1>As dicas da faixa, redesenhadas, e a versão</h1>
+<p class="sub">O hover continua fácil (passou o mouse, apareceu); muda o <b>conteúdo</b>. Cada dica ganha o mesmo esqueleto: um <b>cabeçalho</b> com ícone e o número principal, um <b>corpo</b> com linhas de verdade (logo, nome, barra, valor) e, no pé, o <b>atalho</b> para o painel. Largura fixa de 320px: nada quebra no meio ("7 / dias").</p>
+
+<h2>As três dicas</h2>
+<div class="lado">
+  <div class="col"><div class="tit">Planos</div>
+    <div class="dica">
+      <div class="cab"><span class="ic">◔</span><b>Planos</b><span class="meta">há 1 min</span></div>
+      <div class="corpo">
+        <div class="plano">
+          <span class="logo" style="background:var(--claude)">C</span>
+          <span class="nome">Claude Code <span class="selo">Max 5x</span></span>
+          <span class="pct" style="color:var(--warn)">75%</span>
+          <span class="barra w"><i style="width:75%"></i></span>
+          <span class="sub2"><span>janela de 7 dias</span><span>reseta em 2d 6h</span></span>
+        </div>
+        <div class="plano">
+          <span class="logo" style="background:#16181b">X</span>
+          <span class="nome">Codex <span class="selo">Free</span></span>
+          <span class="pct">27%</span>
+          <span class="barra"><i style="width:27%"></i></span>
+          <span class="sub2"><span>janela de 30 dias</span><span>reseta em 26d 5h</span></span>
+        </div>
+        <div class="plano">
+          <span class="logo" style="background:#16181b">A</span>
+          <span class="nome">Antigravity</span>
+          <span class="pct">32%</span>
+          <span class="barra"><i style="width:32%"></i></span>
+          <span class="sub2"><span>5 h · Gemini</span><span>reseta em 4h 12min</span></span>
+        </div>
+      </div>
+      <div class="pe">Todas as janelas de cada plano <span style="margin-left:auto"><kbd>clique</kbd></span></div>
+    </div>
+  </div>
+
+  <div class="col"><div class="tit">Gasto</div>
+    <div class="dica">
+      <div class="cab"><span class="ic">$</span><b>Gasto de hoje</b><span class="meta">todos os motores</span></div>
+      <div class="corpo">
+        <div class="grande"><b>US$ 37,36</b><span>hoje</span></div>
+        <div class="linha"><span class="logo" style="background:var(--claude)">C</span><span class="n">Claude Code</span><span class="bar"><i style="width:84%"></i></span><span class="v">US$ 31,40</span></div>
+        <div class="linha"><span class="logo" style="background:#16181b">X</span><span class="n">Codex</span><span class="bar"><i style="width:12%"></i></span><span class="v">US$ 4,48</span></div>
+        <div class="linha"><span class="logo" style="background:#16181b">A</span><span class="n">Antigravity</span><span class="bar"><i style="width:4%"></i></span><span class="v">~US$ 1,48</span></div>
+        <div class="sep"></div>
+        <div class="linha"><span class="n muted">Esta conversa, desde o início</span><span class="v">~US$ 196,27</span></div>
+      </div>
+      <div class="pe">Hoje e 7 dias por motor <span style="margin-left:auto"><kbd>clique</kbd></span></div>
+    </div>
+  </div>
+
+  <div class="col"><div class="tit">Máquina</div>
+    <div class="dica">
+      <div class="cab"><span class="ic">▣</span><b>Máquina</b><span class="meta">16 GB · 8 núcleos</span></div>
+      <div class="corpo">
+        <div class="linha"><span class="n">Memória</span><span class="v">12 de 16 GB</span></div>
+        <div class="ram"><i style="width:9%;background:rgba(22,24,27,.6)"></i><i style="width:66%;background:rgba(92,97,102,.3)"></i></div>
+        <div class="leg"><span><i style="background:rgba(22,24,27,.6)"></i>Frota 1,4 GB</span><span><i style="background:rgba(92,97,102,.3)"></i>resto 10,6 GB</span><span>livre 4 GB</span></div>
+        <div class="sep"></div>
+        <div class="linha"><span class="n">CPU</span>
+          <svg width="96" height="18"><path d="M0,12 L8,11 L16,13 L24,9 L32,10 L40,6 L48,8 L56,11 L64,7 L72,9 L80,5 L88,8 L96,7" fill="none" stroke="#8a9099" stroke-width="1.3"/></svg>
+          <span class="v">28%</span><span class="faint" style="font-size:11px">média 45%</span></div>
+      </div>
+      <div class="pe">O que é do Frota, processo a processo <span style="margin-left:auto"><kbd>clique</kbd></span></div>
+    </div>
+  </div>
+</div>
+
+<h2>A versão <small>hoje: "local · v0.1.0-t442", sem dizer mais nada</small></h2>
+<div class="lado">
+  <div class="col"><div class="tit">Na faixa</div>
+    <div class="faixa" style="width:560px">
+      <span class="esp"></span>
+      <span class="zona"><span class="pontinho" style="background:var(--brass)"></span>teste <span style="color:var(--fg)">#442</span></span>
+    </div>
+    <div class="faixa" style="width:560px">
+      <span class="esp"></span>
+      <span class="zona"><span class="pontinho" style="background:var(--ok)"></span>oficial <span style="color:var(--fg)">#441</span></span>
+    </div>
+    <div class="faixa" style="width:560px">
+      <span class="esp"></span>
+      <span class="zona"><span class="pontinho" style="background:#8a9099"></span>dev <span style="color:var(--fg)">5a06f2e</span><span class="faint">+</span></span>
+    </div>
+    <p class="sub" style="margin-top:6px;max-width:560px">O <b>canal</b> vem de onde o app roda (<code>/Applications</code> é o oficial, <code>builds/test</code> é o teste, <code>tauri dev</code> é dev), e o <b>número do build</b> é o do <code>build.sh</code>. Um ponto de cor por canal, para bater o olho e saber qual Frota está aberto.</p>
+  </div>
+  <div class="col"><div class="tit">A dica da versão</div>
+    <div class="dica">
+      <div class="cab"><span class="ic">◆</span><b>Frota #442</b><span class="selo" style="margin-left:auto;color:var(--brass);background:rgba(169,116,43,.12)">teste</span></div>
+      <div class="corpo">
+        <div class="linha"><span class="n muted">Versão</span><span class="v">0.1.0-test.442</span></div>
+        <div class="linha"><span class="n muted">Commit</span><span class="v">b982da6</span><span class="selo">com mudanças locais</span></div>
+        <div class="linha"><span class="n muted">Feito</span><span class="v">hoje, 14:32</span><span class="faint" style="font-size:11px">há 2 h</span></div>
+        <div class="linha"><span class="n muted">Rodando de</span><span class="v">builds/test/442</span></div>
+      </div>
+      <div class="pe">Copiar a versão para um relato <span style="margin-left:auto"><kbd>clique</kbd></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <ul>
+    <li><b>Mesma superfície do painel</b> (card, borda, elevação de popover), não mais o texto solto: a dica é uma prévia do painel, e parece com ele.</li>
+    <li><b>Cabeçalho</b> com o ícone da zona e o número que responde à pergunta ("US$ 37,36", "75%"); <b>corpo</b> com linhas estruturadas; <b>pé</b> dizendo o que o clique abre, no lugar da frase "Clique para ver…" solta.</li>
+    <li><b>Versão:</b> número do build, commit, se tinha mudança não commitada e quando foi feito são carimbados no binário pelo <code>build.sh</code>. Clicar copia "Frota 0.1.0-test.442 (b982da6)" para colar num relato.</li>
+  </ul>
+</div>
+</body>
+</html>

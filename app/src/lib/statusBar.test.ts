@@ -20,10 +20,12 @@ describe("statusBarAccepts (a fronteira faixa × linha viva)", () => {
     // duas contam RECURSO DEIXADO PARA TRÁS, e nenhuma narra o agora de um
     // turno.
     expect(statusBarAccepts("processos")).toBe(true)
+    // ADR-262: memória e CPU do computador. Ambiente, não o agora do turno.
+    expect(statusBarAccepts("maquina")).toBe(true)
     // O número é tripwire de propósito: mexer nele é assinar embaixo. Cada
     // entrada nova precisa do argumento escrito no módulo, não da conveniência
     // de quem tem um dado sobrando e uma faixa vazia na frente.
-    expect(STATUS_BAR_KINDS).toHaveLength(6)
+    expect(STATUS_BAR_KINDS).toHaveLength(7)
   })
 
   it("recusa o AGORA do turno: a linha viva não sai do composer", () => {
@@ -59,7 +61,7 @@ describe("statusCostItem", () => {
     const item = statusCostItem(cost(12.5, 4), null)
     expect(item?.kind).toBe("cost")
     expect(item?.text).toBe("US$ 12,50")
-    expect(item?.label).toBe("sessão")
+    expect(item?.label).toBe("esta conversa")
     expect(item?.tone).toBe("ok")
   })
 
@@ -82,9 +84,17 @@ describe("statusCostItem", () => {
 describe("statusBuildItem", () => {
   it("mostra a versão curta e guarda a completa no tooltip (nunca trunca)", () => {
     const item = statusBuildItem("0.1.0-test.177")
-    expect(item.text).toBe("local · v0.1.0-t177")
+    expect(item.text).toBe("local v0.1.0-t177")
     expect(item.title).toContain("0.1.0-test.177")
     expect(item.tone).toBe("ok")
+  })
+
+  // ADR-264: o canal e o número do build, carimbados pelo build.sh.
+  it("com o build carimbado, diz o canal e o número; sem número, o commit", () => {
+    const info = { canal: "teste" as const, numero: 442, commit: "b982da6", mudancasLocais: true, feitoEm: null, pasta: null }
+    expect(statusBuildItem("0.1.0-test.442", info).text).toBe("teste #442")
+    expect(statusBuildItem("0.1.0", { ...info, canal: "dev", numero: null }).text).toBe("dev b982da6")
+    expect(statusBuildItem("0.1.0-test.442", info).title).toContain("0.1.0-test.442")
   })
 
   it("sem versão carimbada fica 'local', nunca um 'v?' inventado", () => {

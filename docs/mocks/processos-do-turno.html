@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Processos do turno · o painel da máquina expandido</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#fbfbfa;--fg:#16181b;--card:#fff;--sec:#f4f4f2;--muted:#5c6166;--faint:#8a9099;--border:rgba(0,0,0,.09);--div:rgba(0,0,0,.05);--sel:rgba(0,0,0,.055);--brass:#a9742b;--warn:#b7791f;--err:#d6483b;--claude:#d97757;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1100px;line-height:1.55}.sub b{color:var(--fg);font-weight:500}
+.lado{display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap}
+.pop{width:520px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px -8px rgba(20,22,25,.18);padding:12px;font-size:13px}
+.cab{display:flex;align-items:center;gap:6px;font:600 11px var(--sans);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0 4px 6px;border-bottom:1px solid var(--div)}
+.cab i{color:var(--brass);font-style:normal}
+.sec{padding:10px 4px 4px}
+.rot{display:flex;font:500 11px var(--sans);color:var(--muted)}.rot span{margin-left:auto;font:11px var(--mono)}
+.ram{height:8px;border-radius:4px;background:var(--sec);display:flex;overflow:hidden;margin:6px 0 5px}.ram i{display:block;height:100%}
+.leg{display:flex;gap:12px;font-size:11px;color:var(--muted)}.leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.turno{border:1px solid var(--border);border-radius:8px;background:rgba(244,244,242,.25);margin-top:6px;overflow:hidden}
+.linha{display:flex;align-items:center;gap:8px;padding:7px 10px;cursor:pointer}
+.linha:hover{background:rgba(244,244,242,.6)}
+.chev{width:12px;color:var(--faint);font-size:10px;transition:transform .12s}
+.aberto .chev{transform:rotate(90deg)}
+.logo{width:14px;height:14px;border-radius:3px;display:inline-grid;place-items:center;color:#fff;font:600 8px var(--sans);flex-shrink:0}
+.n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.m{font:11px var(--mono);color:var(--muted);white-space:nowrap}
+.bt{height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;font:500 11px var(--sans);display:inline-flex;align-items:center;background:var(--card);cursor:pointer}
+.bt:hover{background:var(--sec)}
+.bt.fant{border-color:transparent;background:transparent;color:var(--muted);visibility:hidden}
+.proc:hover .bt.fant{visibility:visible;border-color:var(--border)}
+.arvore{border-top:1px solid var(--div);padding:4px 0 6px}
+.cols{display:grid;grid-template-columns:18px 64px 1fr 58px 40px 52px 70px;gap:0 8px;align-items:center;padding:0 10px}
+.cols.th{font:500 10px var(--sans);color:var(--faint);text-transform:uppercase;letter-spacing:.04em;padding-top:4px;padding-bottom:3px}
+.proc{height:28px}
+.proc:hover{background:rgba(244,244,242,.7)}
+.papel{font:500 10px var(--sans);color:var(--muted);background:var(--sec);border-radius:4px;padding:1px 5px;justify-self:start}
+.papel.agora{color:var(--fg);background:rgba(169,116,43,.12)}
+.cmd{font:12px var(--mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmd small{color:var(--faint);font-size:11px}
+.num{font:11px var(--mono);color:var(--muted);text-align:right}
+.num.f{color:var(--fg)}
+.ind{color:var(--faint);font:11px var(--mono)}
+.grupo .cmd{color:var(--muted);font-family:var(--sans);font-size:12px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;width:520px;font-size:13px;color:var(--muted);line-height:1.6}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:5px}.card ol{padding-left:18px}
+code{font:12px var(--mono)}
+.conf{width:360px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 12px 40px -8px rgba(20,22,25,.18);padding:16px;margin-top:18px}
+.conf b{font-size:14px;font-weight:600}.conf p{font-size:13px;color:var(--muted);margin:6px 0 14px;line-height:1.5}
+.conf .bts{display:flex;gap:8px;justify-content:flex-end}
+.bt.dest{background:var(--err);color:#fff;border-color:transparent}
+</style>
+</head>
+<body>
+<h1>Os processos de cada turno</h1>
+<p class="sub">Dados <b>reais</b> desta máquina (26/09/2026, <code>ps</code> da árvore do Frota). Clique na linha do turno para abrir e fechar; passe o mouse num processo para ver o <b>Encerrar</b>. As ferramentas do próprio Frota vêm agrupadas numa linha (são cinco processos de 9 MB que não pedem atenção); o resto aparece um por um.</p>
+<div class="lado">
+<div>
+  <div class="pop">
+    <div class="cab"><i>▣</i> Máquina</div>
+    <div class="sec">
+      <div class="rot">Memória<span>11 de 16 GB</span></div>
+      <div class="ram"><i style="width:8.7%;background:rgba(22,24,27,.6)"></i><i style="width:60%;background:rgba(92,97,102,.3)"></i></div>
+      <div class="leg"><span><i style="background:rgba(22,24,27,.6)"></i>Frota 1,4 GB</span><span><i style="background:rgba(92,97,102,.3)"></i>resto do sistema 9,6 GB</span><span>livre 5 GB</span></div>
+    </div>
+    <div class="sec">
+      <div class="rot">Rodando no Frota</div>
+
+      <div class="turno aberto" id="t1">
+        <div class="linha" onclick="document.getElementById('t1').classList.toggle('aberto');document.getElementById('a1').hidden=!document.getElementById('a1').hidden">
+          <span class="chev">▶</span><span class="logo" style="background:var(--claude)">C</span>
+          <span class="n">Frota · Seria muito legal se a gente…</span>
+          <span class="m">0,5 GB · 12 proc.</span><span class="bt" onclick="event.stopPropagation()">Parar</span>
+        </div>
+        <div class="arvore" id="a1">
+          <div class="cols th"><span></span><span>papel</span><span>processo</span><span style="text-align:right">memória</span><span style="text-align:right">CPU</span><span style="text-align:right">tempo</span><span></span></div>
+          <div class="cols proc"><span class="ind"></span><span class="papel">motor</span><span class="cmd">claude</span><span class="num f">365 MB</span><span class="num f">16%</span><span class="num">1min43</span><span></span></div>
+          <div class="cols proc"><span class="ind">└</span><span class="papel agora">comando</span><span class="cmd">ps -axo pid=,ppid=,rss=… <small>· zsh</small></span><span class="num">5 MB</span><span class="num">0%</span><span class="num">0s</span><span><span class="bt fant">Encerrar</span></span></div>
+          <div class="cols proc"><span class="ind">└</span><span class="papel">MCP</span><span class="cmd">hostinger-api-mcp <small>· node</small></span><span class="num">73 MB</span><span class="num">0%</span><span class="num">1min43</span><span><span class="bt fant">Encerrar</span></span></div>
+          <div class="cols proc grupo"><span class="ind">└</span><span class="papel">Frota</span><span class="cmd">aprovações, navegador, contexto, computador, trabalho</span><span class="num">45 MB</span><span class="num">0%</span><span class="num">1min43</span><span></span></div>
+        </div>
+      </div>
+
+      <div class="turno" id="t2">
+        <div class="linha" onclick="document.getElementById('t2').classList.toggle('aberto');document.getElementById('a2').hidden=!document.getElementById('a2').hidden">
+          <span class="chev">▶</span><span class="logo" style="background:#16181b">A</span>
+          <span class="n">Landing Prime · O time comercial da Prime…</span>
+          <span class="m">0,5 GB · 6 proc.</span><span class="bt" onclick="event.stopPropagation()">Parar</span>
+        </div>
+        <div class="arvore" id="a2" hidden>
+          <div class="cols th"><span></span><span>papel</span><span>processo</span><span style="text-align:right">memória</span><span style="text-align:right">CPU</span><span style="text-align:right">tempo</span><span></span></div>
+          <div class="cols proc"><span class="ind"></span><span class="papel">motor</span><span class="cmd">agy</span><span class="num f">293 MB</span><span class="num">0,4%</span><span class="num">5min47</span><span></span></div>
+          <div class="cols proc"><span class="ind">└</span><span class="papel">MCP</span><span class="cmd">@playwright/mcp <small>· npm exec</small></span><span class="num">159 MB</span><span class="num">0%</span><span class="num">5min46</span><span><span class="bt fant">Encerrar</span></span></div>
+          <div class="cols proc"><span class="ind">└</span><span class="papel">processo</span><span class="cmd">SkyComputerUseClient</span><span class="num">35 MB</span><span class="num">0,9%</span><span class="num">5min46</span><span><span class="bt fant">Encerrar</span></span></div>
+          <div class="cols proc grupo"><span class="ind">└</span><span class="papel">Frota</span><span class="cmd">computador, navegador</span><span class="num">18 MB</span><span class="num">0%</span><span class="num">5min46</span><span></span></div>
+        </div>
+      </div>
+    </div>
+    <p style="font-size:11px;color:var(--muted);padding:8px 4px 0">16 GB · 8 núcleos · amostra a cada 2 s com a janela visível</p>
+  </div>
+  <div class="conf">
+    <b>Encerrar hostinger-api-mcp?</b>
+    <p>O processo e os filhos dele recebem o pedido para fechar. O turno segue: o agente vê essa ferramenta cair e continua sem ela.</p>
+    <div class="bts"><span class="bt">Cancelar</span><span class="bt dest">Encerrar</span></div>
+  </div>
+</div>
+<div class="card">
+  <b>Como cada coisa se lê</b>
+  <ol>
+    <li><b>Papel</b> diz o que o processo é para o turno: <b>motor</b> (o CLI do agente), <b>comando</b> (o que o agente está rodando agora, com o texto do comando e não o <code>zsh -c source …</code> de embrulho), <b>MCP</b>, <b>Frota</b> (as ferramentas do próprio app, agrupadas) e <b>processo</b> (o resto). O papel vem do comando real; nada é inventado.</li>
+    <li><b>Processo</b> mostra o nome que importa (<code>hostinger-api-mcp</code>, <code>@playwright/mcp</code>) e, apagado, quem o roda (<code>node</code>, <code>npm exec</code>). O comando inteiro fica no hover.</li>
+    <li><b>Memória, CPU e tempo</b> de cada um, do mesmo leitor que mede o turno: o total do turno, a soma da árvore e o "Frota" da barra passam a ser o mesmo número (hoje o painel dizia "Frota 0,7 GB" com um turno de 1,4 GB).</li>
+    <li><b>Encerrar</b> aparece no hover, com confirmação, só para processos dentro do turno (nunca o motor: para isso é o Parar). O Rust confere que o processo ainda é descendente do turno antes de sinalizar.</li>
+    <li>O Chromium de cada projeto também abre: principal e os renderizadores agrupados.</li>
+  </ol>
+</div>
+</div>
+</body>
+</html>

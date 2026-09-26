@@ -4,7 +4,7 @@
 fn main() {
     // Subcomando (`approval-server`, `browser-server`…): ESTE binário rodando
     // como o MCP stdio que o motor spawnou. Intercepta ANTES do Tauri subir,
-    // porque esse processo não é o app. A lista mora em `run_subcomando`.
+    // porque esse processo não é o app. A lista mora em `subcomandos.rs`.
     if let Some(nome) = std::env::args().nth(1) {
         if app_lib::run_subcomando(&nome) {
             return;

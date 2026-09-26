@@ -66,6 +66,12 @@ use tokio::process::Command;
 
 /// Endpoint da conta (o mesmo que o `/usage` do CLI consulta).
 const USAGE_URL: &str = "https://api.anthropic.com/api/oauth/usage";
+/// Perfil da conta: é daqui que sai o plano de VERDADE (ADR-262). O
+/// `subscriptionType` da credencial é gravado no login e não acompanha upgrade:
+/// visto em 26/09/2026, a credencial dizia `pro` numa conta Max 5x.
+const PROFILE_URL: &str = "https://api.anthropic.com/api/oauth/profile";
+/// O plano muda raramente: uma consulta por hora basta.
+const PLANO_VALIDO_MS: i64 = 60 * 60 * 1000;
 /// Header beta que fixa a versão do contrato (o CLI manda; hoje não é exigido).
 const BETA_HEADER: &str = "anthropic-beta: oauth-2025-04-20";
 /// UA de CLI: o endpoint é do fluxo OAuth do Claude Code, não da API pública.
@@ -351,10 +357,10 @@ fn aspas(valor: &str) -> String {
 
 /// GET autenticado. Devolve (status, corpo). O config vai pelo stdin do curl
 /// (mesma garantia do mcp_auth.rs: em `ps` só aparece `curl --config -`).
-async fn http_get_usage(token: &str) -> Result<(u16, String), UsageFetchError> {
+async fn http_get(url: &str, token: &str) -> Result<(u16, String), UsageFetchError> {
     let config = format!(
         "url = {}\nheader = {}\nheader = {}\nheader = {}\nsilent\nshow-error\nwrite-out = \"\\n%{{http_code}}\"\nmax-time = {}\n",
-        aspas(USAGE_URL),
+        aspas(url),
         aspas(&format!("Authorization: Bearer {token}")),
         aspas(BETA_HEADER),
         aspas(UA_HEADER),
@@ -413,7 +419,7 @@ async fn http_get_usage(token: &str) -> Result<(u16, String), UsageFetchError> {
 /// Chamada SÓ pelo `usage_fetch`, que já gateou pela capability.
 pub async fn fetch(agent: &str) -> Result<UsageSnapshot, UsageFetchError> {
     let cred = read_credential().await?;
-    let (status, corpo) = http_get_usage(&cred.access_token).await?;
+    let (status, corpo) = http_get(USAGE_URL, &cred.access_token).await?;
     if status != 200 {
         return Err(classify_http(status, &corpo));
     }
@@ -426,13 +432,67 @@ pub async fn fetch(agent: &str) -> Result<UsageSnapshot, UsageFetchError> {
             "a API de uso da conta respondeu sem nenhuma janela",
         ));
     }
+    let plan_type = plano_da_conta(&cred.access_token)
+        .await
+        .or_else(|| cred.subscription_type.clone());
     Ok(UsageSnapshot {
         agent: agent.to_string(),
         source: "oauth".into(),
         windows,
-        plan_type: cred.subscription_type,
+        plan_type,
         fetched_at: now_ms(),
     })
+}
+
+// ---------------------------------------------------------------------------
+// O plano pelo perfil da conta (ADR-262).
+// ---------------------------------------------------------------------------
+
+/// Perfil da conta → plano canônico (`max_5x`, `max_20x`, `pro`, `team`…).
+/// Quem formata para a pessoa é o front. PURO.
+///
+/// `organization_type` diz a família (`claude_max`, `claude_pro`…) e o
+/// `rate_limit_tier` diz o tamanho (`default_claude_max_5x`). Tipo novo que a
+/// Anthropic inventar degrada para ele mesmo, sem o prefixo `claude_`.
+pub fn parse_profile_plan(v: &Value) -> Option<String> {
+    let org = v.get("organization")?;
+    let tipo = org.get("organization_type").and_then(|x| x.as_str()).map(str::trim).filter(|s| !s.is_empty())?;
+    let familia = tipo.strip_prefix("claude_").unwrap_or(tipo);
+    if familia == "max" {
+        let tier = org.get("rate_limit_tier").and_then(|x| x.as_str()).unwrap_or("");
+        for tamanho in ["20x", "5x"] {
+            if tier.ends_with(&format!("_{tamanho}")) {
+                return Some(format!("max_{tamanho}"));
+            }
+        }
+    }
+    Some(familia.to_string())
+}
+
+static PLANO: std::sync::Mutex<Option<(i64, String)>> = std::sync::Mutex::new(None);
+
+/// O plano da conta, com cache de uma hora. Falha na consulta devolve `None`
+/// e quem chama cai na credencial: o medidor nunca deixa de medir por causa
+/// do nome do plano.
+async fn plano_da_conta(token: &str) -> Option<String> {
+    let agora = now_ms();
+    if let Ok(cache) = PLANO.lock() {
+        if let Some((quando, plano)) = cache.as_ref() {
+            if agora - quando < PLANO_VALIDO_MS {
+                return Some(plano.clone());
+            }
+        }
+    }
+    let (status, corpo) = http_get(PROFILE_URL, token).await.ok()?;
+    if status != 200 {
+        log::info!("perfil da conta do Claude respondeu {status}; o plano vem da credencial");
+        return None;
+    }
+    let plano = serde_json::from_str::<Value>(&corpo).ok().as_ref().and_then(parse_profile_plan)?;
+    if let Ok(mut cache) = PLANO.lock() {
+        *cache = Some((agora, plano.clone()));
+    }
+    Some(plano)
 }
 
 // ---------------------------------------------------------------------------
@@ -444,6 +504,34 @@ pub async fn fetch(agent: &str) -> Result<UsageSnapshot, UsageFetchError> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// Campos de plano do `GET /api/oauth/profile` REAL (26/09/2026, conta
+    /// Max 5x cuja credencial local dizia `pro`). Só os campos de plano: o
+    /// resto do perfil é dado pessoal e não entra no repo.
+    const FIXTURE_PROFILE: &str = r#"{
+      "account": { "has_claude_max": true, "has_claude_pro": false },
+      "organization": {
+        "organization_type": "claude_max",
+        "billing_type": "stripe_subscription",
+        "rate_limit_tier": "default_claude_max_5x",
+        "seat_tier": null,
+        "subscription_status": "active"
+      }
+    }"#;
+
+    #[test]
+    fn o_plano_vem_do_perfil_da_conta_e_nao_da_credencial_velha() {
+        let v: Value = serde_json::from_str(FIXTURE_PROFILE).unwrap();
+        assert_eq!(parse_profile_plan(&v).as_deref(), Some("max_5x"));
+        let vinte = json!({"organization": {"organization_type": "claude_max", "rate_limit_tier": "default_claude_max_20x"}});
+        assert_eq!(parse_profile_plan(&vinte).as_deref(), Some("max_20x"));
+        let pro = json!({"organization": {"organization_type": "claude_pro", "rate_limit_tier": "default_claude_ai"}});
+        assert_eq!(parse_profile_plan(&pro).as_deref(), Some("pro"));
+        // Família nova passa como veio; perfil sem organização não inventa plano.
+        let novo = json!({"organization": {"organization_type": "claude_ultra"}});
+        assert_eq!(parse_profile_plan(&novo).as_deref(), Some("ultra"));
+        assert_eq!(parse_profile_plan(&json!({})), None);
+    }
 
     /// Corpo REAL de `GET /api/oauth/usage` (HTTP 200, 12/08/2026), verbatim.
     const FIXTURE_OAUTH: &str = r#"{

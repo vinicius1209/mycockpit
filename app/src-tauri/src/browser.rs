@@ -141,6 +141,11 @@ impl BrowserRegistry {
             .unwrap_or_default()
     }
 
+    /// As sessões vivas (o painel da máquina mede a memória de cada uma).
+    pub(crate) fn sessoes(&self) -> Vec<BrowserSession> {
+        self.sessions.lock().map(|m| m.values().cloned().collect()).unwrap_or_default()
+    }
+
     pub(crate) fn get(&self, project_id: &str) -> Option<BrowserSession> {
         self.sessions
             .lock()

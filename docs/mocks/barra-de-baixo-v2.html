@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Barra de baixo v2 · separação, hover e leitura</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema claro (app/src/index.css :root). */
+:root{--bg:#fbfbfa;--rail:#f6f6f4;--fg:#16181b;--card:#fff;--muted:#5c6166;--faint:#8a9099;--border:rgba(0,0,0,.09);--div:rgba(0,0,0,.06);--sel:rgba(0,0,0,.055);--selh:rgba(0,0,0,.035);--brass:#a9742b;--warn:#b7791f;--err:#d6483b;
+--claude:#d97757;--codex:#16181b;--agy:#16181b;--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1100px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:32px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin:0 0 10px;max-width:1100px;line-height:1.55}.q b{color:var(--fg);font-weight:500}
+.dica{font-size:12px;color:var(--brass);margin:0 0 8px}
+/* a faixa real: 24px, mono 11px, cinza */
+.faixa{width:1240px;height:36px;background:var(--bg);border-radius:10px;display:flex;align-items:center;padding:0 12px;font:11px var(--mono);color:var(--muted);white-space:nowrap;gap:2px}
+.faixa .esp{flex:1}
+.fr{color:var(--faint)}.v{color:var(--fg)}.w{color:var(--warn)}
+/* --- ZONA: a área de clique cresce para fora (24px, raio 6), o conteúdo não se move --- */
+.zona{display:flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;cursor:pointer;transition:background .12s}
+.zona:hover{background:var(--sel)}
+.zona:hover .v{color:var(--fg)}
+.div{width:1px;height:14px;background:var(--div);margin:0 4px}
+/* mini anel de percentual (12px): legível até em 4% */
+.anel{width:12px;height:12px;border-radius:50%;flex-shrink:0;background:conic-gradient(var(--c,#8a9099) calc(var(--p)*1%),rgba(0,0,0,.10) 0);-webkit-mask:radial-gradient(circle,transparent 3.2px,#000 3.7px);mask:radial-gradient(circle,transparent 3.2px,#000 3.7px)}
+.logo{width:13px;height:13px;border-radius:3px;display:inline-grid;place-items:center;color:#fff;font:600 8px var(--sans);flex-shrink:0}
+.prov{display:flex;align-items:center;gap:5px}
+.prov + .prov{margin-left:10px}
+.barra{width:40px;height:4px;border-radius:2px;background:rgba(0,0,0,.08);overflow:hidden}.barra i{display:block;height:100%;background:#8a9099;border-radius:2px}
+.barra.w i{background:var(--warn)}
+/* cápsula (variante C) */
+.cap{display:flex;align-items:center;gap:5px;height:20px;padding:0 7px;border-radius:10px;background:var(--selh);cursor:pointer;transition:background .12s}
+.cap:hover{background:var(--sel)}
+.cap + .cap{margin-left:4px}
+/* tooltip rico ao passar o mouse (sem clicar) */
+.tem-dica{position:relative}
+.tem-dica .bal{display:none;position:absolute;bottom:30px;left:0;background:var(--card);border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.10);padding:8px 10px;font:12px var(--sans);color:var(--fg);white-space:nowrap;z-index:2}
+.tem-dica:hover .bal{display:block}
+.bal .l{display:flex;gap:10px;justify-content:space-between;font:11px var(--mono);color:var(--muted);margin-top:3px}
+.bal .l b{color:var(--fg);font-weight:500}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1240px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:16px}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:4px}.card ul{padding-left:18px}
+code{font:12px var(--mono)}
+</style>
+</head>
+<body>
+<h1>A barra de baixo, v2</h1>
+<p class="sub">Os valores são os do seu print (Claude 74% 7d, Codex 27% 30d, agy 23% 7d, hoje US$ 21,54, conversa US$ 575,24, 11/16 GB, CPU 16%). Três problemas a resolver: <b>1)</b> os motores se misturam (o espaço entre motores é igual ao espaço dentro de cada um); <b>2)</b> nada parece clicável, e as zonas não se separam; <b>3)</b> "hoje US$ 21 · esta conversa US$ 575" lê como contradição (a conversa é o total de toda a vida dela).</p>
+
+<h2>Hoje</h2>
+<div class="faixa">
+  <span class="prov"><span class="logo" style="background:var(--claude)">C</span><span class="barra w" style="width:24px"><i style="width:74%"></i></span><span class="w">74%</span> <span class="fr">7d</span></span>
+  <span class="prov" style="margin-left:6px"><span class="logo" style="background:var(--codex)">X</span>● <span class="v">27%</span> <span class="fr">30d</span></span>
+  <span class="prov" style="margin-left:6px"><span class="logo" style="background:var(--agy)">A</span>● <span class="v">23%</span> <span class="fr">7d</span></span>
+  <span style="margin-left:10px">hoje <span class="v">US$ 21,54</span> · esta conversa US$ 575,24</span>
+  <span class="esp"></span>
+  <span>mem <span class="v">11/16 GB</span> · cpu ____ <span class="v">16%</span></span>
+  <span style="margin-left:12px">local · v0.1.0-t441</span>
+</div>
+
+<h2>A · zonas com hover e divisor <small>recomendo</small></h2>
+<p class="dica">Passe o mouse em cada zona.</p>
+<div class="faixa">
+  <span class="zona tem-dica">
+    <span class="prov"><span class="anel" style="--p:74;--c:var(--warn)"></span><span class="logo" style="background:var(--claude)">C</span><span class="w">74%</span><span class="fr">7d</span></span>
+    <span class="prov"><span class="anel" style="--p:27"></span><span class="logo" style="background:var(--codex)">X</span><span class="v">27%</span><span class="fr">30d</span></span>
+    <span class="prov"><span class="anel" style="--p:23"></span><span class="logo" style="background:var(--agy)">A</span><span class="v">23%</span><span class="fr">7d</span></span>
+    <span class="bal"><b>Planos</b> · a pior janela de cada um<div class="l"><span>Claude Max 5x · 7 dias</span><b>74% · reseta em 2d 6h</b></div><div class="l"><span>Codex Free · 30 dias</span><b>27% · reseta em 26d</b></div><div class="l"><span>Antigravity · 7 dias</span><b>23% · reseta em 3d</b></div><div class="l" style="margin-top:6px"><span>clique para ver todas as janelas</span></div></span>
+  </span>
+  <span class="div"></span>
+  <span class="zona tem-dica"><span class="fr">hoje</span><span class="v">US$ 21,54</span>
+    <span class="bal"><b>Gasto de hoje</b>, todos os motores<div class="l"><span>esta conversa, desde o início</span><b>US$ 575,24</b></div><div class="l"><span>clique para ver por motor e 7 dias</span></div></span>
+  </span>
+  <span class="esp"></span>
+  <span class="zona tem-dica"><span class="fr">mem</span><span class="v">11/16 GB</span><span class="fr">· cpu</span><span class="v">16%</span>
+    <span class="bal" style="left:auto;right:0"><b>Máquina</b><div class="l"><span>memória</span><b>11 de 16 GB · Frota 3,2 GB</b></div><div class="l"><span>CPU</span><b>16% agora · média 1 min 22%</b></div></span>
+  </span>
+  <span class="div"></span>
+  <span class="zona" style="cursor:default">local · v0.1.0-t441</span>
+</div>
+<div class="card">
+  <ul>
+    <li><b>Zona</b> = área de clique de 24px com fundo de seleção no hover (<code>bg-sel</code>), raio 6. A área cresce para fora: o texto fica onde está (§14).</li>
+    <li><b>Divisor</b> fino entre zonas (o filete de divisor interno, §4), só onde muda o assunto.</li>
+    <li><b>Planos:</b> anel de 12px em vez da barra de 24px. O anel lê bem até em 4%, e o percentual fica colado no logo. Entre motores, 10px; dentro de um motor, 5px. Assim cada grupo se lê como um.</li>
+    <li><b>Gasto:</b> a faixa diz só "hoje". O total da conversa vai para a dica e para o painel, onde aparece como "desde o início" e não se confunde com hoje.</li>
+    <li><b>Máquina:</b> sem o traço minúsculo (virava "____"); o traço fica no painel, onde tem tamanho para dizer algo.</li>
+    <li><b>Dica ao passar o mouse</b> (sem clicar): o resumo de cada zona. O clique continua abrindo o painel.</li>
+  </ul>
+</div>
+
+<h2>B · uma leitura por zona <small>o mais calmo</small></h2>
+<div class="faixa">
+  <span class="zona tem-dica"><span class="anel" style="--p:74;--c:var(--warn)"></span><span class="fr">planos</span><span class="w">74%</span><span class="fr">Claude 7d · +2</span>
+    <span class="bal">o plano mais apertado agora é o do <b>Claude</b> (7 dias)<div class="l"><span>Codex 27% · Antigravity 23%</span></div></span>
+  </span>
+  <span class="div"></span>
+  <span class="zona"><span class="fr">hoje</span><span class="v">US$ 21,54</span></span>
+  <span class="esp"></span>
+  <span class="zona"><span class="fr">mem</span><span class="v">11/16 GB</span><span class="fr">· cpu</span><span class="v">16%</span></span>
+  <span class="div"></span>
+  <span class="zona" style="cursor:default">local · v0.1.0-t441</span>
+</div>
+<div class="card">Um número por assunto. Planos mostra o mais apertado de todos e "+2" diz que há mais; o resto fica na dica e no painel. É o mais silencioso, mas volta a esconder os outros motores, que foi o que você pediu para ver.</div>
+
+<h2>C · cápsulas por motor</h2>
+<div class="faixa">
+  <span class="cap"><span class="logo" style="background:var(--claude)">C</span><span class="w">74%</span><span class="fr">7d</span></span>
+  <span class="cap"><span class="logo" style="background:var(--codex)">X</span><span class="v">27%</span><span class="fr">30d</span></span>
+  <span class="cap"><span class="logo" style="background:var(--agy)">A</span><span class="v">23%</span><span class="fr">7d</span></span>
+  <span class="div"></span>
+  <span class="zona"><span class="fr">hoje</span><span class="v">US$ 21,54</span></span>
+  <span class="esp"></span>
+  <span class="zona"><span class="fr">mem</span><span class="v">11/16 GB</span><span class="fr">· cpu</span><span class="v">16%</span></span>
+  <span class="div"></span>
+  <span class="zona" style="cursor:default">local · v0.1.0-t441</span>
+</div>
+<div class="card">Cada motor numa cápsula com fundo leve: a separação fica explícita, e cada cápsula abre o painel já no motor dela. Mais "coisa" na faixa: é a mais pesada das três.</div>
+</body>
+</html>

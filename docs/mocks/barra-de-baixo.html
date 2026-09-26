@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Barra de baixo · planos, gasto e máquina</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS do tema claro (app/src/index.css :root). */
+:root{--bg:#fbfbfa;--rail:#f6f6f4;--fg:#16181b;--card:#fff;--muted:#5c6166;--faint:#8a9099;--border:rgba(0,0,0,.09);--div:rgba(0,0,0,.05);--sel:rgba(0,0,0,.055);--brass:#a9742b;--running:#2f8fbf;--warn:#c1861f;--err:#d6483b;--claude:#d97757;--codex:#16181b;--agy:#4f7df0;--opencode:#8a9099;
+--sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--fg);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 80px}
+h1{font-size:20px;font-weight:600}.sub{font-size:13px;color:var(--muted);margin:6px 0 18px;max-width:1080px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:34px 0 4px}h2 small{font-weight:400;color:var(--muted);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted);margin:0 0 12px;max-width:1080px;line-height:1.55}.q b{color:var(--fg);font-weight:500}
+code{font:12px var(--mono)}
+.tit{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);margin:16px 2px 6px}.tit.esc{color:var(--brass)}
+.nota{font-size:12px;color:var(--muted);line-height:1.55;margin:8px 2px 0;max-width:1080px}.nota b{color:var(--fg);font-weight:500}
+
+/* a faixa real: h-6, mono 11px, muted */
+.faixa{width:1180px;height:40px;background:var(--bg);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;gap:14px;padding:0 16px;font:11px var(--mono);color:var(--muted);white-space:nowrap}
+.faixa .dir{margin-left:auto;display:flex;align-items:center;gap:14px}
+.faixa .item{display:flex;align-items:center;gap:6px;padding:3px 6px;border-radius:6px}
+.faixa .item.abre{background:var(--sel)}
+.barra{display:inline-block;width:40px;height:4px;border-radius:2px;background:rgba(0,0,0,.08);overflow:hidden;vertical-align:middle}
+.barra i{display:block;height:100%;border-radius:2px;background:var(--faint)}
+.barra.m i{background:var(--warn)}.barra.a i{background:var(--err)}
+.barra.fina{width:24px;height:3px}
+.pct{color:var(--fg)}.pct.m{color:var(--warn)}.pct.a{color:var(--err)}
+.sep{color:var(--faint)}
+.logo{width:12px;height:12px;border-radius:3px;display:inline-grid;place-items:center;color:#fff;font:600 8px var(--sans)}
+.faint{color:var(--faint)}
+.spark{vertical-align:middle}
+
+/* painéis (popover do app: card, borda, elevação pop) */
+.lado{display:flex;gap:18px;flex-wrap:wrap;align-items:flex-start;margin-top:8px}
+.pop{width:470px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.10);font-size:13px}
+.pop .cab{display:flex;align-items:center;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--div)}
+.pop .cab b{font-weight:600}
+.pop .cab .d{margin-left:auto;font-size:11px;color:var(--faint)}
+.pop .sec{padding:10px 14px;border-bottom:1px solid var(--div)}
+.pop .sec:last-child{border-bottom:0}
+.pop .rot{font:500 11px var(--sans);color:var(--faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:8px;display:flex}
+.pop .rot span{margin-left:auto;text-transform:none;letter-spacing:0;font-weight:400}
+.prov{display:grid;grid-template-columns:110px 1fr 1fr 74px;gap:10px;align-items:center;padding:6px 0}
+.prov + .prov{border-top:1px solid var(--div)}
+.prov .nome{display:flex;align-items:center;gap:6px;font-weight:500}
+.prov .nome small{font-weight:400;color:var(--faint);font-size:11px}
+.jan{font:11px var(--mono);color:var(--muted)}
+.jan .l{display:flex;justify-content:space-between;margin-bottom:3px}
+.jan .l b{font-weight:500;color:var(--fg)}
+.jan .t{height:5px;border-radius:3px;background:rgba(0,0,0,.07);overflow:hidden}
+.jan .t i{display:block;height:100%;background:var(--faint);border-radius:3px}
+.jan .t.m i{background:var(--warn)}.jan .t.a i{background:var(--err)}
+.jan .r{font-size:11px;color:var(--faint);margin-top:3px}
+.jan.vazia{color:var(--faint);font:12px var(--sans)}
+.gasto{font:12px var(--mono);text-align:right;color:var(--fg)}
+.gasto small{display:block;font-size:11px;color:var(--faint)}
+.tot{display:flex;gap:18px;font:12px var(--mono);color:var(--muted)}
+.tot b{color:var(--fg);font-weight:500}
+.linha{display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px}
+.linha .n{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.linha .v{font:12px var(--mono);color:var(--muted)}
+.linha .bt{height:24px;padding:0 8px;border:1px solid var(--border);border-radius:6px;font-size:11px;display:inline-flex;align-items:center;background:var(--card)}
+.ram{height:10px;border-radius:5px;background:rgba(0,0,0,.07);display:flex;overflow:hidden;margin:6px 0 4px}
+.ram i{display:block;height:100%}
+.leg{display:flex;gap:14px;font-size:11px;color:var(--muted)}
+.leg i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1180px;font-size:13px;color:var(--muted);line-height:1.6;margin-top:18px}
+.card b{color:var(--fg);font-weight:500}.card li{margin-top:4px}.card ol{padding-left:18px}
+</style>
+</head>
+<body>
+<h1>A barra de baixo: planos, gasto e máquina</h1>
+<p class="sub">Hoje a barra mostra só o plano do motor da conversa aberta ("Claude 73%", sem dizer se é a janela de 5 h ou a de 7 dias) e o custo <b>só desta conversa</b>. Proposta: três peças, cada uma um assunto, e cada uma abre um painel. A barra diz o essencial de relance; o painel diz o resto. Os números abaixo são exemplos.</p>
+
+<h2>1 · A barra <small>hoje × proposta</small></h2>
+<div class="tit">Hoje</div>
+<div class="faixa">
+  <span class="item">◔ Claude <span class="barra"><i style="width:73%;background:var(--warn)"></i></span> <span class="pct m">73%</span></span>
+  <span>sessão ~US$ 166,65</span>
+  <span class="dir"><span>local · v0.1.0-t440</span></span>
+</div>
+
+<div class="tit esc">A · uma peça por assunto (recomendo)</div>
+<div class="faixa">
+  <span class="item abre" title="Planos: a pior janela de cada motor">
+    <span class="logo" style="background:var(--claude)">C</span><span class="barra fina m"><i style="width:73%"></i></span><span class="pct m">73%</span><span class="faint">5h</span>
+    <span class="logo" style="background:var(--codex)">X</span><span class="barra fina"><i style="width:12%"></i></span><span class="pct">12%</span><span class="faint">7d</span>
+    <span class="logo" style="background:var(--agy)">A</span><span class="barra fina"><i style="width:41%"></i></span><span class="pct">41%</span><span class="faint">5h</span>
+  </span>
+  <span class="sep">·</span>
+  <span class="item">hoje US$ 212,40 <span class="faint">· esta conversa ~US$ 166,65</span></span>
+  <span class="dir">
+    <span class="item" title="Memória e CPU do computador">
+      mem <svg class="spark" width="40" height="12"><rect x="0" y="4" width="40" height="4" rx="2" fill="rgba(0,0,0,.08)"/><rect x="0" y="4" width="29" height="4" rx="2" fill="#8a9099"/></svg> 23,4/32 GB
+      <span class="sep">·</span> cpu <svg class="spark" width="36" height="12" id="sp1"></svg> <span id="cpu1">38%</span>
+    </span>
+    <span>local · v0.1.0-t440</span>
+  </span>
+</div>
+<p class="nota"><b>Planos:</b> todo motor com janela de plano, cada um com a SUA pior janela e o nome dela (5h, 7d). O motor da conversa aberta vem primeiro. OpenCode não tem janela e não aparece aqui (aparece no gasto). <b>Gasto:</b> o de hoje somando todos os motores, e o desta conversa ao lado, apagado. <b>Máquina:</b> memória usada do total, e CPU com um traço dos últimos 60 s.</p>
+
+<div class="tit">B · mais enxuta: uma peça de plano só</div>
+<div class="faixa">
+  <span class="item" title="Planos"><span class="logo" style="background:var(--claude)">C</span><span class="barra m"><i style="width:73%"></i></span><span class="pct m">73%</span><span class="faint">5h · +2</span></span>
+  <span class="sep">·</span>
+  <span class="item">hoje US$ 212,40</span>
+  <span class="dir">
+    <span class="item">mem 23,4 GB <span class="sep">·</span> cpu <span id="cpu2">38%</span></span>
+    <span>local · v0.1.0-t440</span>
+  </span>
+</div>
+<p class="nota">Mostra só o motor da conversa (e "+2" diz que há mais dois); os outros ficam no painel. Menos ruído, menos visão de relance.</p>
+
+<h2>2 · O painel de planos e gasto <small>abre ao clicar em "planos" ou em "hoje"</small></h2>
+<p class="q">Um painel só para os dois assuntos, porque a pergunta é a mesma: <b>quanto eu ainda posso usar, e quanto já gastei?</b> Uma linha por motor, com as duas janelas e o gasto de hoje e da semana. Motor sem janela de plano diz isso, e o gasto dele aparece mesmo assim.</p>
+<div class="lado">
+  <div class="pop">
+    <div class="cab"><b>Planos e gasto</b><span class="d">atualizado há 2 min · <u>Atualizar</u></span></div>
+    <div class="sec">
+      <div class="rot">Motor<span style="margin-left:92px">janela curta</span><span style="margin-left:60px">janela longa</span><span>hoje · semana</span></div>
+      <div class="prov">
+        <span class="nome"><span class="logo" style="background:var(--claude)">C</span>Claude <small>Max</small></span>
+        <div class="jan"><div class="l"><span>5h</span><b style="color:var(--warn)">73%</b></div><div class="t m"><i style="width:73%"></i></div><div class="r">reseta 19:40</div></div>
+        <div class="jan"><div class="l"><span>7d</span><b>48%</b></div><div class="t"><i style="width:48%"></i></div><div class="r">reseta sáb 09:00</div></div>
+        <div class="gasto">US$ 188,10<small>US$ 604,20</small></div>
+      </div>
+      <div class="prov">
+        <span class="nome"><span class="logo" style="background:var(--codex)">X</span>Codex <small>Pro</small></span>
+        <div class="jan vazia">sem janela curta</div>
+        <div class="jan"><div class="l"><span>7d</span><b>12%</b></div><div class="t"><i style="width:12%"></i></div><div class="r">reseta ter 14:12</div></div>
+        <div class="gasto">US$ 18,90<small>US$ 71,30</small></div>
+      </div>
+      <div class="prov">
+        <span class="nome"><span class="logo" style="background:var(--agy)">A</span>agy</span>
+        <div class="jan"><div class="l"><span>5h</span><b>41%</b></div><div class="t"><i style="width:41%"></i></div><div class="r">reseta 17:05</div></div>
+        <div class="jan"><div class="l"><span>7d</span><b>9%</b></div><div class="t"><i style="width:9%"></i></div><div class="r">reseta dom 00:00</div></div>
+        <div class="gasto">~US$ 5,40<small>~US$ 11,80</small></div>
+      </div>
+      <div class="prov">
+        <span class="nome"><span class="logo" style="background:var(--opencode)">O</span>OpenCode</span>
+        <div class="jan vazia" style="grid-column:span 2">o OpenCode não informa janela de plano</div>
+        <div class="gasto">US$ 0,00<small>US$ 2,10</small></div>
+      </div>
+    </div>
+    <div class="sec">
+      <div class="tot"><span>hoje <b>US$ 212,40</b></span><span>semana <b>US$ 689,40</b></span><span>esta conversa <b>~US$ 166,65</b></span></div>
+      <p class="nota" style="margin-top:6px">"~" = parte do valor é estimativa (o motor não mandou o custo). Turnos sem preço são contados à parte.</p>
+    </div>
+  </div>
+  <div class="card" style="width:520px;margin-top:0">
+    <b>De onde vem cada número (nada inventado)</b>
+    <ol>
+      <li><b>Janelas:</b> as mesmas fontes de hoje (Claude pela API de uso, Codex pelo app-server, agy pelo <code>/usage</code>). O painel atual já tem os cartões; ele passa a ser uma tabela, com o nome da janela sempre à vista.</li>
+      <li><b>Gasto por motor:</b> o livro de custos que o app já grava por turno (<code>turn_costs</code>), agrupado por motor em hoje e semana. É o mesmo número do Painel de custos.</li>
+      <li><b>"Esta conversa"</b> continua sendo o custo da conversa aberta, agora rotulado assim, em vez de "sessão".</li>
+      <li>Motor sem janela (OpenCode, modelo avulso) diz isso em vez de sumir.</li>
+    </ol>
+  </div>
+</div>
+
+<h2>3 · O painel da máquina <small>abre ao clicar em "mem" ou "cpu"</small></h2>
+<p class="q">A memória do computador inteiro, separando o que é <b>dos turnos do Frota</b> do resto do sistema, e a lista do que o Frota está rodando agora, do maior para o menor, com o Parar ao lado. O aviso no fio ("este turno está usando 2,4 GB") continua: ele é o histórico da conversa; a barra é o agora.</p>
+<div class="lado">
+  <div class="pop">
+    <div class="cab"><b>Máquina</b><span class="d">MacBook Pro · 32 GB · 12 núcleos</span></div>
+    <div class="sec">
+      <div class="rot">Memória<span>23,4 de 32 GB</span></div>
+      <div class="ram"><i style="width:14%;background:var(--brass)"></i><i style="width:59%;background:#b9bcc0"></i></div>
+      <div class="leg"><span><i style="background:var(--brass)"></i>turnos do Frota 4,6 GB</span><span><i style="background:#b9bcc0"></i>resto do sistema 18,8 GB</span><span><i style="background:rgba(0,0,0,.07)"></i>livre 8,6 GB</span></div>
+    </div>
+    <div class="sec">
+      <div class="rot">CPU<span id="cpu3">38% agora · média 1 min 31%</span></div>
+      <svg width="440" height="44" id="sp2"></svg>
+    </div>
+    <div class="sec">
+      <div class="rot">Rodando no Frota<span>por memória</span></div>
+      <div class="linha"><span class="logo" style="background:var(--claude)">C</span><span class="n">Landing Prime · O time comercial da Prime…</span><span class="v">2,4 GB · 18 proc.</span><span class="bt">Parar</span></div>
+      <div class="linha"><span class="logo" style="background:var(--codex)">X</span><span class="n">sicredi · Revisar o PR 214</span><span class="v">1,3 GB · 6 proc.</span><span class="bt">Parar</span></div>
+      <div class="linha"><span class="logo" style="background:#8a9099">▣</span><span class="n">Chromium do Maclan</span><span class="v">0,9 GB</span><span class="bt">Desligar</span></div>
+    </div>
+  </div>
+  <div class="card" style="width:520px;margin-top:0">
+    <b>Como isto se mede sem pesar</b>
+    <ol>
+      <li>Uma amostra a cada 2 s, e <b>só com a janela visível</b>; escondida, para. A soma do Frota reaproveita a leitura que o turno já faz a cada 5 s.</li>
+      <li>Mac e Linux pelo mesmo caminho no Rust (crate <code>sysinfo</code>, ou <code>vm_stat</code>/<code>/proc</code>).</li>
+      <li>Tom: a barra fica âmbar acima de 85% da memória e vermelha acima de 95%, ou quando um turno passa de 4 GB. Sem cor no resto do tempo (estado assentado não ganha tinta).</li>
+      <li>"Desligar" o Chromium e "Parar" o turno são os mesmos gestos que já existem, só que aqui, onde o custo aparece.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+// CPU viva só para o mock: um traço de 60 s que anda.
+const pts=[];for(let i=0;i<60;i++)pts.push(25+Math.random()*25)
+function desenha(){
+  pts.shift();pts.push(Math.max(5,Math.min(95,pts[pts.length-1]+(Math.random()-.5)*14)))
+  const agora=Math.round(pts[pts.length-1])
+  const m=Math.round(pts.reduce((a,b)=>a+b,0)/pts.length)
+  for(const [id,w,h] of [["sp1",36,12],["sp2",440,44]]){
+    const el=document.getElementById(id);const d=pts.map((v,i)=>`${i?"L":"M"}${(i/(pts.length-1)*w).toFixed(1)},${(h-1-v/100*(h-2)).toFixed(1)}`).join(" ")
+    el.innerHTML=`<path d="${d}" fill="none" stroke="#8a9099" stroke-width="${id==="sp1"?1:1.5}"/>`
+  }
+  document.getElementById("cpu1").textContent=agora+"%"
+  document.getElementById("cpu2").textContent=agora+"%"
+  document.getElementById("cpu3").textContent=`${agora}% agora · média 1 min ${m}%`
+}
+desenha();setInterval(desenha,2000)
+</script>
+</body>
+</html>

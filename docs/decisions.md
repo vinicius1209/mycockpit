@@ -9508,3 +9508,119 @@ considerou.
   decisão some com um clique no ✕; o composer fica livre. A faixa de pré-envio
   ("este MCP exige o navegador") e a gaveta de exceções do turno seguem onde
   estão: são o lugar do SEU envio, não pedidos do agente.
+
+### ADR-262 · A faixa de baixo mostra todos os planos, o gasto de hoje e a máquina ✅
+- **Contexto (26/09/2026):** "aproveitar a barra fixa para exibir memória e
+  CPU do computador; e ver o uso de todos os providers, não só o da conversa".
+  A faixa mostrava só a pior janela do motor da conversa aberta ("Claude 73%",
+  sem dizer se era a de 5 h ou a de 7 dias) e o custo SÓ desta conversa
+  ("sessão"). A memória existia apenas por turno (aviso no fio ao passar de
+  2, 4, 8 GB); do computador inteiro, nada. E o selo do plano estava errado:
+  a credencial local do Claude dizia `pro` numa conta Max 5x (medido: o perfil
+  da conta no servidor dizia `claude_max` / `default_claude_max_5x`).
+  Mock: `docs/mocks/barra-de-baixo.html`, variante A; depois do primeiro build,
+  `docs/mocks/barra-de-baixo-v2.html`, variante A ("falta separação ou hover
+  nos itens; os motores se misturam").
+- **Decisão:**
+  1. **Todos os planos na faixa** (`lib/faixaDosPlanos.ts`): cada motor com o
+     seu logo, a sua pior janela e o nome dela (5h, 7d); o da conversa aberta
+     primeiro. Isso não repete o bug do build 201 (o número de um motor no
+     lugar do outro): ninguém ocupa o lugar de ninguém, e motor sem leitura
+     fresca não aparece. O painel de planos fica como estava.
+  2. **O plano do Claude vem do perfil da conta** (`/api/oauth/profile`,
+     `organization_type` + `rate_limit_tier` → `max_5x`), com cache de 1 h e a
+     credencial como reserva; o front mostra "Max 5x", "Plus", "Pro".
+  3. **Gasto:** a faixa diz só "hoje US$ X", somando todos os motores. O total
+     da conversa saiu dela: "hoje US$ 21 · esta conversa US$ 575" lia como
+     contradição (a conversa soma toda a vida dela); ele fica na dica e no
+     painel, como "esta conversa, desde o início". O painel lista hoje e 7
+     dias por motor, do livro de custos (`turn_costs`, o mesmo do Painel).
+     Relê quando um turno termina.
+  4. **Máquina** (`sistema.rs`, crate `sysinfo`, Mac e Linux): memória usada
+     do total e CPU com um traço do último minuto, a cada 2 s e só com a
+     janela visível. O painel separa a memória do Frota (a árvore de processos
+     do app, lida só com o painel aberto) do resto do sistema, e lista os
+     turnos vivos por memória com Parar e cada Chromium com Desligar. Tom:
+     âmbar com a memória acima de 85% ou um turno acima de 4 GB; vermelho
+     acima de 95%; CPU não pinta.
+  5. **Zonas** (`GatilhoDaFaixa`, `DivisorDaFaixa`): cada item é uma zona de
+     24px (degrau `chip`) com fundo de seleção no hover e com o painel aberto,
+     a área crescendo para fora; um divisor fino só onde muda o assunto, que
+     se esconde quando sobra na ponta. Os planos usam um anel de 12px por
+     motor (a barra de 24px virava um ponto em 20%), com mais espaço entre
+     motores do que dentro de cada um. Ao passar o mouse, uma dica
+     (`HoverCard`) resume a zona; o clique abre o painel. O traço de CPU saiu
+     da faixa (a 28px virava "____") e ficou no painel.
+  6. `maquina` entra na lista fechada da faixa (`STATUS_BAR_KINDS`), com o
+     argumento escrito: é ambiente, não o agora de um turno.
+- **Consequência:** de relance, quanto ainda dá para usar em cada plano,
+  quanto já foi gasto hoje e se a máquina está apertada, e por causa de quem.
+  O aviso de memória no fio continua: ele é o histórico da conversa.
+
+### ADR-263 · Uma árvore de processos só, e cada turno se abre nela ✅
+- **Contexto (26/09/2026):** "seria muito legal expandir os processos que o
+  Frota está mostrando". E o print trazia um número errado: o painel da
+  máquina dizia "Frota 0,7 GB" com um turno de 1,4 GB logo abaixo. Causa: três
+  leitores da tabela de processos para a mesma coisa. A memória do turno
+  (`run_resources`, `ps` com pid/pai/memória), os processos de motor soltos
+  (`processos`, outro `ps`, com tempo e comando) e o painel (`sistema`, pelo
+  `sysinfo`, que perdia o pai de 272 de 710 processos nesta máquina e
+  entregava uma árvore incompleta). Mock: `docs/mocks/processos-do-turno.html`.
+- **Decisão:**
+  1. **Um leitor só** (`arvore_de_processos.rs`): uma leitura do `ps -Ao
+     pid,ppid,rss,pcpu,etime,args` (Mac e Linux), a árvore de um pid em ordem
+     de desenhar e a soma. Os três usuários passam por ele; "Frota", o total
+     do turno e a soma da árvore são o mesmo número. O `sysinfo` fica só para
+     memória total e CPU da máquina.
+  2. **O papel de cada processo**, lido do comando real (testado com a tabela
+     real capturada): *motor* (a raiz), *comando* (um shell `-c`, mostrando o
+     comando que o agente pediu, e não o preâmbulo `source <snapshot> && …
+     eval '…'`), *MCP* (o token com `mcp`, sem versão, e quem o roda:
+     `@playwright/mcp · npm exec`), *Frota* (o binário do app num subcomando,
+     pelo nome: "aprovações", "navegador") e *processo*. O nome do executável
+     dentro de um `.app` vem de `/Contents/MacOS/`, porque o `ps` não põe
+     aspas em caminho com espaço.
+  3. **Os subcomandos têm casa própria** (`subcomandos.rs`, saído do
+     `lib.rs`): o despacho e o nome de cada um para a pessoa, numa lista só.
+  4. **O painel abre cada turno e cada Chromium** numa tabela: papel, nome,
+     memória, CPU e tempo. As ferramentas do Frota irmãs viram uma linha, e
+     irmãos idênticos viram "nome ×N" (renderizadores); o comando inteiro,
+     com o home como `~`, fica no hover.
+  5. **Encerrar** um processo do turno (e os filhos, TERM), com confirmação:
+     o Rust relê a árvore e recusa o motor (isso é o Parar) e o que já não é
+     do turno (pid reciclado entre a tela e o clique). O turno segue; o
+     agente vê a ferramenta cair.
+- **Consequência:** "o Mac está lento por causa de quem?" tem resposta até o
+  processo, com um número que bate em todo lugar, e o gesto de encerrar o que
+  travou sem derrubar o turno inteiro.
+
+### ADR-264 · A dica da faixa começa na resposta, e a versão diz qual Frota é ✅
+- **Contexto (26/09/2026):** as dicas da faixa eram texto solto ("meio apagado
+  demais, solto demais"), com linha quebrando no meio ("7 / dias") e um
+  "Clique para ver…" sobrando. No mock (`docs/mocks/dicas-da-faixa.html`) a
+  pessoa gostou da estrutura e cortou o título: "a gente já sabe, fica
+  implícito que no hover estou vendo gasto, computador". E a versão dizia só
+  "local · v0.1.0-t442".
+- **Decisão:**
+  1. **`DicaDaFaixa`** (`statusBarChrome`): a superfície do painel, largura
+     fixa de 320px, **sem título** (a dica sai da zona que você aponta), corpo
+     que começa no número que responde, e um pé com o dado de apoio à esquerda
+     e o que o clique faz (`AcaoDoClique`). O `PainelDaFaixa` a usa por dentro
+     (`dica`, `peDaDica`).
+  2. **Planos:** uma linha por motor com logo, plano, percentual, barra, a
+     janela e o reset; o pé diz a idade da leitura. **Gasto:** "US$ 37,36 hoje"
+     em 20px (exceção declarada do §3), cada motor com barra proporcional, e a
+     conversa desde o início abaixo de um divisor; o pé, os 7 dias.
+     **Máquina:** memória com barra no tom da régua, CPU com o traço do
+     último minuto; o pé, o total e os núcleos.
+  3. **Versão** (`versao.rs`): o `build.sh` carimba número, commit, mudança
+     local e data (`FROTA_BUILD_*`, `option_env!`); o canal vem de onde o app
+     roda (`/Applications` oficial, `builds/test` teste, debug dev). A faixa
+     diz "teste #442", com um ponto de cor fora do oficial; a dica traz
+     versão, commit, quando foi feito e de onde roda; o clique copia "Frota
+     0.1.0-test.442 (b982da6)" para colar num relato.
+  4. `PARTES` (as partes de um banco em WAL) mudou de `lib.rs` para
+     `manutencao_do_banco.rs`, o único que a usa.
+- **Consequência:** passar o mouse responde a pergunta da zona sem ler rótulo,
+  e dá para saber de relance se o Frota aberto é o oficial ou um teste, de
+  qual commit.

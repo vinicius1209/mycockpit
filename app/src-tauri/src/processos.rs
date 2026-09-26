@@ -16,6 +16,7 @@
 //! de alguém, e adivinhar isso não é papel de app. Por isso não existe limpeza
 //! no boot: app que mata processo sozinho ao abrir é pior que o problema.
 
+use crate::arvore_de_processos::Processo;
 use serde::Serialize;
 use std::process::Command;
 
@@ -40,25 +41,6 @@ pub struct ProcessoDeMotor {
     pub orfao: bool,
 }
 
-/// `etime` do `ps` → segundos. Os três formatos que ele emite:
-/// `MM:SS`, `HH:MM:SS`, `DD-HH:MM:SS`.
-pub fn segundos_de_etime(etime: &str) -> Option<u64> {
-    let (dias, resto) = match etime.split_once('-') {
-        Some((d, r)) => (d.trim().parse::<u64>().ok()?, r),
-        None => (0, etime),
-    };
-    let partes: Vec<u64> = resto
-        .split(':')
-        .map(|p| p.trim().parse::<u64>().ok())
-        .collect::<Option<Vec<u64>>>()?;
-    let (h, m, s) = match partes.len() {
-        3 => (partes[0], partes[1], partes[2]),
-        2 => (0, partes[0], partes[1]),
-        _ => return None,
-    };
-    Some(dias * 86_400 + h * 3_600 + m * 60 + s)
-}
-
 /// O motor de uma linha de comando, ou `None` se não é motor conhecido.
 ///
 /// Olha o BASENAME do executável (primeiro token). `/usr/local/bin/claude`
@@ -73,23 +55,23 @@ pub fn motor_de(args: &str) -> Option<String> {
         .map(|m| (*m).to_string())
 }
 
-/// Uma linha de `ps -Ao pid=,ppid=,rss=,etime=,args=` → processo de motor.
-pub fn parse_linha(linha: &str) -> Option<ProcessoDeMotor> {
-    let mut campos = linha.trim().splitn(5, char::is_whitespace);
-    let pid: u32 = campos.next()?.trim().parse().ok()?;
-    let ppid: u32 = campos.next()?.trim().parse().ok()?;
-    let rss_kb: u64 = campos.next()?.trim().parse().ok()?;
-    let etime = campos.next()?.trim();
-    let args = campos.next()?.trim();
-    let motor = motor_de(args)?;
+/// Um processo da tabela → processo de motor, ou `None` se não é motor.
+pub fn de_processo(p: &Processo) -> Option<ProcessoDeMotor> {
     Some(ProcessoDeMotor {
-        pid,
-        ppid,
-        motor,
-        rss_mb: rss_kb / 1024,
-        idade_s: segundos_de_etime(etime)?,
-        orfao: ppid == 1,
+        pid: p.pid,
+        ppid: p.ppid,
+        motor: motor_de(&p.args)?,
+        rss_mb: p.rss_kb / 1024,
+        idade_s: p.tempo_s,
+        orfao: p.ppid == 1,
     })
+}
+
+/// Uma linha do `ps` (colunas do leitor único) → processo de motor. Só os
+/// testes leem linha a linha; o app lê a tabela pelo `varrer`.
+#[cfg(test)]
+fn parse_linha(linha: &str) -> Option<ProcessoDeMotor> {
+    crate::arvore_de_processos::parse_linha(linha).as_ref().and_then(de_processo)
 }
 
 /// Filtra o que é NOSSO: os pids que o `RunRegistry` está tocando agora.
@@ -105,13 +87,13 @@ pub fn sem_os_nossos(todos: Vec<ProcessoDeMotor>, nossos: &[u32]) -> Vec<Process
         .collect()
 }
 
-fn varrer() -> Result<Vec<ProcessoDeMotor>, String> {
-    let saida = Command::new("ps")
-        .args(["-Ao", "pid=,ppid=,rss=,etime=,args="])
-        .output()
-        .map_err(|e| format!("não consegui listar processos: {e}"))?;
-    let texto = String::from_utf8_lossy(&saida.stdout);
-    Ok(texto.lines().filter_map(parse_linha).collect())
+/// A tabela vem do leitor único (ADR-263), o mesmo da memória do turno e do
+/// painel da máquina.
+async fn varrer() -> Result<Vec<ProcessoDeMotor>, String> {
+    let procs = crate::arvore_de_processos::ler()
+        .await
+        .ok_or("não consegui listar processos")?;
+    Ok(procs.iter().filter_map(de_processo).collect())
 }
 
 #[tauri::command]
@@ -123,7 +105,7 @@ pub async fn listar_processos_de_motor(
         .lock()
         .map(|m| m.values().copied().collect())
         .unwrap_or_default();
-    Ok(sem_os_nossos(varrer()?, &nossos))
+    Ok(sem_os_nossos(varrer().await?, &nossos))
 }
 
 /// Mata UM processo, e só se ele estiver na lista que acabamos de varrer.
@@ -142,7 +124,7 @@ pub async fn matar_processo_de_motor(
         .lock()
         .map(|m| m.values().copied().collect())
         .unwrap_or_default();
-    let vivos = sem_os_nossos(varrer()?, &nossos);
+    let vivos = sem_os_nossos(varrer().await?, &nossos);
     if !vivos.iter().any(|p| p.pid == pid) {
         return Err("esse processo não está mais na lista".into());
     }
@@ -182,6 +164,7 @@ mod tests {
 
     #[test]
     fn etime_nos_tres_formatos_do_ps() {
+        use crate::arvore_de_processos::segundos_de_etime;
         assert_eq!(segundos_de_etime("00:42"), Some(42));
         assert_eq!(segundos_de_etime("01:00:00"), Some(3_600));
         assert_eq!(segundos_de_etime("17-05:16:10"), Some(17 * 86_400 + 18_970));
@@ -203,7 +186,7 @@ mod tests {
 
     #[test]
     fn linha_do_ps_vira_processo() {
-        let p = parse_linha("21633 32926 305664 11-11:49:23 claude --resume abc").unwrap();
+        let p = parse_linha("21633 32926 305664 0.0 11-11:49:23 claude --resume abc").unwrap();
         assert_eq!(p.pid, 21633);
         assert_eq!(p.motor, "claude");
         assert_eq!(p.rss_mb, 298);
@@ -213,13 +196,13 @@ mod tests {
 
     #[test]
     fn ppid_1_e_orfao() {
-        let p = parse_linha("18338 1 0 17-05:16:10 codex serve").unwrap();
+        let p = parse_linha("18338 1 0 0.0 17-05:16:10 codex serve").unwrap();
         assert!(p.orfao, "pai morto deixou isto pra trás");
     }
 
     #[test]
     fn o_que_nao_e_motor_nao_entra() {
-        assert!(parse_linha("999 1 100 00:10 /bin/zsh -c ls").is_none());
+        assert!(parse_linha("999 1 100 0.0 00:10 /bin/zsh -c ls").is_none());
         assert!(parse_linha("cabeçalho inválido").is_none());
     }
 
@@ -227,8 +210,8 @@ mod tests {
     fn o_run_do_proprio_app_nao_aparece_na_lista() {
         // Ele tem dono, tem cara na tela e morre com o app. Aparecer aqui faria
         // o cockpit denunciar a si mesmo — e a reação seria matar o turno vivo.
-        let meu = parse_linha("100 2 1024 00:30 claude -p oi").unwrap();
-        let alheio = parse_linha("200 1 1024 05-00:00:00 claude --resume x").unwrap();
+        let meu = parse_linha("100 2 1024 0.0 00:30 claude -p oi").unwrap();
+        let alheio = parse_linha("200 1 1024 0.0 05-00:00:00 claude --resume x").unwrap();
         let fora = sem_os_nossos(vec![meu.clone(), alheio.clone()], &[100]);
         assert_eq!(fora, vec![alheio]);
     }

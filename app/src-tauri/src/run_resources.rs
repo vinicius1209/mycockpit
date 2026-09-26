@@ -5,12 +5,9 @@
 //! limites: um CLI também pode consumir memória dentro do próprio heap sem
 //! publicar byte algum.
 
-use std::collections::{HashMap, HashSet, VecDeque};
 use std::fmt;
-use std::process::Stdio;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
-use tokio::process::Command;
 use tokio::time::{Duration, Interval};
 
 pub(crate) const MAX_PROTOCOL_LINE_BYTES: usize = 64 * 1024 * 1024;
@@ -345,87 +342,35 @@ async fn process_tree_observation(root_pid: Option<u32>) -> ProcessObservation {
             root_rss_mb: None,
         };
     };
-    #[cfg(unix)]
-    {
-        let output = Command::new("ps")
-            .args(["-axo", "pid=,ppid=,rss="])
-            .stdin(Stdio::null())
-            .stderr(Stdio::null())
-            .output()
-            .await
-            .ok();
-        match output.filter(|value| value.status.success()) {
-            Some(output) => {
-                process_tree_from_ps(&String::from_utf8_lossy(&output.stdout), root_pid)
-            }
-            None => ProcessObservation {
-                main_alive: None,
-                descendants: None,
-                rss_mb: None,
-                root_rss_mb: None,
-            },
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = root_pid;
-        ProcessObservation {
+    // O leitor único da tabela de processos (ADR-263): o mesmo que o painel
+    // da máquina usa, para o número do turno e o do painel serem um só.
+    match crate::arvore_de_processos::ler().await {
+        Some(procs) => observacao_da_arvore(&procs, root_pid),
+        None => ProcessObservation {
             main_alive: None,
             descendants: None,
             rss_mb: None,
             root_rss_mb: None,
-        }
+        },
     }
 }
 
-fn process_tree_from_ps(table: &str, root_pid: u32) -> ProcessObservation {
-    let rows = table
-        .lines()
-        .filter_map(|line| {
-            let mut fields = line.split_whitespace();
-            Some((
-                fields.next()?.parse::<u32>().ok()?,
-                fields.next()?.parse::<u32>().ok()?,
-                fields.next()?.parse::<u64>().ok()?,
-            ))
-        })
-        .collect::<Vec<_>>();
-    if !rows.iter().any(|(pid, _, _)| *pid == root_pid) {
+fn observacao_da_arvore(procs: &[crate::arvore_de_processos::Processo], root_pid: u32) -> ProcessObservation {
+    let arvore = crate::arvore_de_processos::arvore(procs, root_pid);
+    let Some((_, raiz)) = arvore.first() else {
         return ProcessObservation {
             main_alive: Some(false),
             descendants: Some(0),
             rss_mb: Some(0),
             root_rss_mb: Some(0),
         };
-    }
-
-    let rss_by_pid = rows
-        .iter()
-        .map(|(pid, _, rss)| (*pid, *rss))
-        .collect::<HashMap<_, _>>();
-    let mut children = HashMap::<u32, Vec<u32>>::new();
-    for (pid, ppid, _) in rows {
-        children.entry(ppid).or_default().push(pid);
-    }
-    let mut seen = HashSet::from([root_pid]);
-    let mut queue = VecDeque::from([root_pid]);
-    while let Some(parent) = queue.pop_front() {
-        for child in children.get(&parent).into_iter().flatten() {
-            if seen.insert(*child) {
-                queue.push_back(*child);
-            }
-        }
-    }
-    let root_rss_kb = rss_by_pid.get(&root_pid).copied().unwrap_or(0);
-    let rss_kb = seen
-        .iter()
-        .filter_map(|pid| rss_by_pid.get(pid))
-        .sum::<u64>();
+    };
+    let rss_kb: u64 = arvore.iter().map(|(_, p)| p.rss_kb).sum();
     ProcessObservation {
         main_alive: Some(true),
-        descendants: Some(seen.len().saturating_sub(1) as u32),
+        descendants: Some(arvore.len().saturating_sub(1) as u32),
         rss_mb: Some(rss_kb / 1024),
-        root_rss_mb: Some(root_rss_kb / 1024),
+        root_rss_mb: Some(raiz.rss_kb / 1024),
     }
 }
 
@@ -500,11 +445,12 @@ mod tests {
 
     #[test]
     fn arvore_soma_apenas_raiz_e_descendentes_do_run() {
-        // Fixture no formato real de `ps -axo pid=,ppid=,rss=`. O processo
-        // 77 pertence a outro run e não pode contaminar memória nem contagem.
-        let table = "10 1 1024\n11 10 2048\n12 11 3072\n77 1 8192\n";
+        // Fixture no formato do leitor único (`ps -Ao pid,ppid,rss,pcpu,etime,
+        // args`). O processo 77 pertence a outro run e não pode contaminar
+        // memória nem contagem.
+        let table = "10 1 1024 0.0 00:10 claude\n11 10 2048 0.0 00:09 node mcp\n12 11 3072 0.0 00:08 cargo build\n77 1 8192 0.0 00:10 claude\n";
         assert_eq!(
-            process_tree_from_ps(table, 10),
+            observacao_da_arvore(&crate::arvore_de_processos::parse_ps(table), 10),
             ProcessObservation {
                 main_alive: Some(true),
                 descendants: Some(2),
@@ -517,7 +463,7 @@ mod tests {
     #[test]
     fn arvore_confirma_quando_o_processo_principal_morreu() {
         assert_eq!(
-            process_tree_from_ps("77 1 8192\n", 10),
+            observacao_da_arvore(&crate::arvore_de_processos::parse_ps("77 1 8192 0.0 00:10 claude\n"), 10),
             ProcessObservation {
                 main_alive: Some(false),
                 descendants: Some(0),

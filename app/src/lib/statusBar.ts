@@ -19,7 +19,7 @@
 
 import { absoluteTone, type MeterTone } from "@/lib/meter"
 import { fmtCost } from "@/lib/format"
-import { shortVersion } from "@/lib/version"
+import { shortVersion, type InfoDoBuild } from "@/lib/version"
 
 /** O que a faixa aceita hospedar. Lista FECHADA (ver o cabeçalho). */
 export const STATUS_BAR_KINDS = [
@@ -34,6 +34,11 @@ export const STATUS_BAR_KINDS = [
   // DEIXADO PARA TRÁS. E, como todos os outros, some sozinho quando não há o
   // que dizer.
   "processos",
+  // A MÁQUINA (ADR-262): memória e CPU do computador. É ambiente pela mesma
+  // régua dos outros: verdade enquanto você trabalha, não o agora de um turno
+  // (a memória POR turno segue no fio, como aviso, e na linha viva). Pedido de
+  // 26/09/2026: "aproveitar a barra fixa para exibir memória e CPU".
+  "maquina",
 ] as const
 export type StatusKind = (typeof STATUS_BAR_KINDS)[number]
 
@@ -91,21 +96,21 @@ export function statusCostItem(
     if (unpriced <= 0) return null
     return {
       kind: "cost",
-      label: "sessão",
+      label: "esta conversa",
       text: "sem preço",
       title:
-        "Esta sessão consumiu tokens em modelo fora da tabela de preço. O consumo está no fio e no ledger; o valor em US$ o app não sabe, e não inventa.",
+        "Esta conversa consumiu tokens em modelo fora da tabela de preço. O consumo está no fio e no ledger; o valor em US$ o app não sabe, e não inventa.",
       tone: absoluteTone(0, limit),
     }
   }
   return {
     kind: "cost",
-    label: "sessão",
+    label: "esta conversa",
     text: fmtCost(cost.total, cost.estimated ? "estimated" : "reported"),
     title:
       (limit
-        ? `Custo acumulado desta sessão (soma dos turnos), contra o seu teto de ${fmtCost(limit)}`
-        : "Custo acumulado desta sessão (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar.") +
+        ? `Custo acumulado desta conversa (soma dos turnos), contra o seu teto de ${fmtCost(limit)}`
+        : "Custo acumulado desta conversa (soma dos turnos). Defina um teto em Configurações ▸ Uso e custo pra ele avisar.") +
       (unpriced > 0
         ? `. Fora desta soma: ${unpriced} turno${unpriced === 1 ? "" : "s"} com preço desconhecido`
         : ""),
@@ -118,16 +123,22 @@ export function statusCostItem(
  * qual build está rodando é ambiente e permanente, e no rodapé da sidebar
  * sumia junto com a sidebar fechada.
  *
+ * Desde a ADR-264 diz o CANAL e o número do build ("teste #442"): o canal vem
+ * de onde o app roda e o número é carimbado pelo `build.sh`. Sem número (build
+ * de dev), o commit; sem nada, a versão curta, como antes.
+ *
  * A versão NUNCA trunca (S3.1): forma curta na linha, string completa no
  * tooltip. Sem versão (vite dev, fora do Tauri) fica "local" — nunca "v?" nem
  * campo vazio fingindo dado.
  */
-export function statusBuildItem(version: string | null): StatusItem {
+export function statusBuildItem(version: string | null, info: InfoDoBuild | null = null): StatusItem {
   const short = version ? shortVersion(version) : null
+  const canal = info?.canal ?? "local"
+  const qual = info?.numero != null ? `#${info.numero}` : (info?.commit ?? short)
   return {
     kind: "build",
     label: "",
-    text: short ? `local · ${short}` : "local",
+    text: qual ? `${canal} ${qual}` : canal,
     title: version ? `Build em execução: v${version}` : "Build local (sem versão carimbada)",
     tone: "ok",
   }

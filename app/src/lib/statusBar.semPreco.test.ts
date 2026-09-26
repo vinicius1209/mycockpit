@@ -14,7 +14,7 @@ describe("statusCostItem — consumo sem preço na faixa", () => {
       null,
     )
     expect(item?.text).toBe("sem preço")
-    expect(item?.label).toBe("sessão")
+    expect(item?.label).toBe("esta conversa")
     expect(item?.title).toContain("não sabe")
   })
 

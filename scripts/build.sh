@@ -41,6 +41,10 @@ case "${1:-test}" in
       echo "  backup do banco → $OUT/mycockpit.db.backup"
     fi
 
+    # Carimbo do build no binário (ADR-264): a faixa do app diz qual Frota é,
+    # de qual commit e quando foi feito (`versao.rs`, `option_env!`).
+    export FROTA_BUILD_NUM=$((10#$NUM)) FROTA_BUILD_SHA="$SHA" FROTA_BUILD_DATE="$(date +%Y-%m-%dT%H:%M:%S)"
+    export FROTA_BUILD_DIRTY=$([[ -n "$DIRTY" ]] && echo 1 || echo 0)
     (cd "$APP_DIR" && bun tauri build --bundles app --config "{\"version\": \"$VERSION\"}")
 
     BUNDLE="$APP_DIR/src-tauri/target/release/bundle/macos/Frota.app"

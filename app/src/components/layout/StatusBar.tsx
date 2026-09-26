@@ -1,8 +1,9 @@
 // <StatusBar> — a faixa de 24px do rodapé da janela. AMBIENTE, e só.
 //
 // Regra de ocupação (pura e testada em lib/statusBar): entra o que é verdade
-// permanente enquanto você trabalha — janela do plano, custo da sessão, build
-// em execução. NÃO entra o agora do turno: a linha viva é dona do agora e mora
+// permanente enquanto você trabalha — os planos de todos os motores, o gasto
+// de hoje e desta conversa, a máquina (memória e CPU, ADR-262), o build em
+// execução. NÃO entra o agora do turno: a linha viva é dona do agora e mora
 // no composer (§6 do STYLEGUIDE, "dono único do agora"; dois relógios narrando
 // o mesmo agora foi o bug dos builds 181/182).
 //
@@ -23,12 +24,9 @@
 //   11px mono, `tabular-nums`, cinza. Tom só sobe por régua do §2.
 
 import { useCallback, useEffect, useState } from "react"
-import { getVersion } from "@tauri-apps/api/app"
 import { UsagePill } from "@/components/layout/UsagePill"
 import { METER_TEXT } from "@/lib/meter"
 import {
-  statusBuildItem,
-  statusCostItem,
   statusProcessosItem,
   statusUpdateItem,
   statusWorktreeItem,
@@ -40,13 +38,16 @@ import {
   resumirProcessos,
   type ProcessoDeMotor,
 } from "@/lib/processos"
-import { sessionCost, sessionUnpricedTurns } from "@/lib/sessionCost"
+import { GastoDaFaixa } from "@/components/layout/GastoDaFaixa"
+import { MaquinaDaFaixa } from "@/components/layout/MaquinaDaFaixa"
+import { VersaoDaFaixa } from "@/components/layout/VersaoDaFaixa"
+import { DivisorDaFaixa, GatilhoDaFaixa } from "@/components/layout/statusBarChrome"
 import { labelOf, useUpdates } from "@/lib/updates"
 import { looseWorktrees } from "@/lib/worktrees"
 import { WorktreesPainel } from "@/components/layout/WorktreesPainel"
-import { useActiveConv, useChat } from "@/store/chat"
+import { useChat } from "@/store/chat"
 import { useWorktrees } from "@/store/worktrees"
-import { useActiveProject, useApp } from "@/store/app"
+import { useActiveProject } from "@/store/app"
 import { cn } from "@/lib/utils"
 
 /** Um item de telemetria: etiqueta em sussurro + valor tabular. */
@@ -64,22 +65,6 @@ function Item({ item }: { item: StatusItem }) {
       </span>
     </span>
   )
-}
-
-function SessionCostItem() {
-  const conv = useActiveConv()
-  const limit = useApp((s) => s.settings.sessionCostLimit)
-  const item = statusCostItem(
-    {
-      ...sessionCost(conv.items),
-      // ADR-047: turno sem preço não é turno de graça. A zona precisa saber
-      // que a soma é parcial pra não passar "US$ 0" (ou o vazio) por medida.
-      unpriced: sessionUnpricedTurns(conv.items),
-    },
-    limit,
-  )
-  if (!item) return null
-  return <Item item={item} />
 }
 
 function UpdateItem() {
@@ -136,12 +121,9 @@ function WorktreeItem() {
       projectPath={project.path}
       loose={loose}
     >
-      <button
-        type="button"
-        className="rounded outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
-      >
+      <GatilhoDaFaixa>
         <Item item={item} />
-      </button>
+      </GatilhoDaFaixa>
     </WorktreesPainel>
   )
 }
@@ -177,25 +159,13 @@ function ProcessosItem() {
       lista={lista}
       onMudou={recarregar}
     >
-      <button
-        type="button"
-        className="rounded outline-none transition-colors hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring/50"
-      >
+      <GatilhoDaFaixa>
         <Item item={item} />
-      </button>
+      </GatilhoDaFaixa>
     </ProcessosPopover>
   )
 }
 
-function BuildItem() {
-  const [version, setVersion] = useState<string | null>(null)
-  useEffect(() => {
-    getVersion()
-      .then(setVersion)
-      .catch(() => {}) // browser (vite dev): sem versão, fica "local"
-  }, [])
-  return <Item item={statusBuildItem(version)} />
-}
 
 export function StatusBar() {
   return (
@@ -217,8 +187,11 @@ export function StatusBar() {
     >
       {/* ESQUERDA — telemetria. Cada peça some sozinha sem dado (a pill já tem
           as 4 camadas de esconder; o custo exige ≥2 turnos e gasto real). */}
-      <UsagePill compact />
-      <SessionCostItem />
+      <div className="flex items-center gap-3">
+        <UsagePill compact />
+        <DivisorDaFaixa />
+        <GastoDaFaixa />
+      </div>
 
       {/* DIREITA — o build em execução, herdado do rodapé da sidebar (lá ele
           sumia junto com a sidebar fechada), e os worktrees soltos.
@@ -229,10 +202,12 @@ export function StatusBar() {
           ninguém mais mostra esse dado, e quem lê o git é UM (store/worktrees),
           não um efeito de tela. */}
       <div className="ml-auto flex items-center gap-3">
+        <MaquinaDaFaixa />
         <ProcessosItem />
         <WorktreeItem />
         <UpdateItem />
-        <BuildItem />
+        <DivisorDaFaixa />
+        <VersaoDaFaixa />
       </div>
     </footer>
   )
