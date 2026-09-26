@@ -6,11 +6,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({
-  // Object.assign: o store/interactions usa `toast.error` (a resposta do usuário
-  // não pode falhar em silêncio), então o mock precisa das duas formas.
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 // notify puxa o plugin nativo do Tauri — mock inteiro. Inclui os avisos que o
 // store/interactions importa (a fábrica substitui o módulo pra todo mundo).
 vi.mock("@/lib/notify", () => ({

@@ -11,7 +11,7 @@ import {
   Upload,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { FlightPlanBuilder } from "@/components/mission/FlightPlanBuilder"
 import { FlightPlanLibrary } from "@/components/mission/FlightPlanLibrary"
@@ -44,7 +44,7 @@ function downloadPlan(plan: MissionPreset) {
   anchor.click()
   anchor.remove()
   window.setTimeout(() => URL.revokeObjectURL(url), 0)
-  toast(`Plano “${plan.name}” exportado.`)
+  avisar.feito(`Plano “${plan.name}” exportado.`)
 }
 
 export function FlightPlansView() {
@@ -107,7 +107,7 @@ export function FlightPlansView() {
     duplicate.name = `${selectedPlan.name} · cópia`
     savePlans([...plans, duplicate])
     openPlan(duplicate)
-    toast("Plano duplicado.")
+    avisar.feito("Plano duplicado.")
   }
 
   async function removeSelected() {
@@ -146,7 +146,7 @@ export function FlightPlansView() {
     if (!file) return
     const result = parseMissionPlan(await file.text())
     if (!result.ok) {
-      toast.error(result.error)
+      avisar.erro(result.error)
       return
     }
     const collision = plans.some((plan) => plan.id === result.plan.id)
@@ -159,7 +159,7 @@ export function FlightPlansView() {
       : result.plan
     savePlans([...plans, plan])
     openPlan(plan)
-    toast.success(`Plano “${plan.name}” importado.`)
+    avisar.feito(`Plano “${plan.name}” importado.`)
   }
 
   function closeView() {

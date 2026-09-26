@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Loader2, Sparkles } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -43,7 +43,7 @@ export function SkillDraftDialog({
     if (!projectPath) return
     const trimmed = name.trim()
     if (!trimmed) {
-      toast.error("Dê um nome à skill.")
+      avisar.erro("Dê um nome à skill.")
       return
     }
     // Descrição vira frontmatter do command (a descoberta do app lê
@@ -56,10 +56,10 @@ export function SkillDraftDialog({
     setSaving(true)
     try {
       const rel = await writeSkill(projectPath, trimmed, content)
-      toast.success(`Skill salva em ${rel}`)
+      avisar.feito(`Skill salva em ${rel}`)
       onOpenChange(false)
     } catch (e) {
-      toast.error(String(e))
+      avisar.erro("Não consegui salvar a skill.", { detalhe: mensagemDe(e) })
     } finally {
       setSaving(false)
     }

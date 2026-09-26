@@ -10,7 +10,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { ArrowLeft, ArrowRight, FolderPlus } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import appIcon from "@/assets/app-icon.png"
 import { isTauri } from "@/lib/db"
@@ -133,8 +133,8 @@ export function OnboardingWizard() {
     )
     if (outcome === "already") return
     if (outcome === "retry") {
-      toast.error("Não consegui salvar o progresso da configuração.", {
-        description: "Nada foi perdido. Tente de novo.",
+      avisar.erro("Não consegui salvar o progresso da configuração.", {
+        detalhe: "Nada foi perdido. Tente de novo.",
       })
       return
     }

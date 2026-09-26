@@ -16,7 +16,7 @@
 // se chamam AGENTS.md… Abra pelo explorador", um aviso sem saída, para um
 // arquivo que a conversa tinha editado por script no Bash.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { caminhosComONome, isImagePath, type FileTarget } from "@/lib/fileLink"
 import { arquivosCitadosEmShell } from "@/lib/caminhosEmComando"
 import { arquivosTocados } from "@/lib/mentionRank"
@@ -35,7 +35,7 @@ export interface PontoDoClique {
   y: number
 }
 
-function raizDaConversa(projectPath: string): string {
+export function raizDaConversa(projectPath: string): string {
   const chat = useChat.getState()
   const lista = chat.conversationsByProject[chat.projectId ?? ""] ?? chat.conversations
   return lista.find((c) => c.id === chat.activeId)?.worktreePath ?? projectPath
@@ -57,7 +57,7 @@ export async function abrirMencaoDeArquivo(
     return
   }
   if (!raizDoProjeto) {
-    toast.error("Abra um projeto para ver arquivos citados na conversa.")
+    avisar.erro("Abra um projeto para ver arquivos citados na conversa.")
     return
   }
   const abrir = (rel: string) => useApp.getState().openFileTab(rel)
@@ -84,7 +84,7 @@ export async function abrirMencaoDeArquivo(
     )
   } catch (erro) {
     console.error("[fio] busca do arquivo citado falhou", erro)
-    toast.error(`Não consegui procurar ${target.rel} no projeto`)
+    avisar.erro(`Não consegui procurar ${target.rel} no projeto`)
     return
   }
   if (candidatos.length === 1) {
@@ -92,7 +92,7 @@ export async function abrirMencaoDeArquivo(
     return
   }
   if (candidatos.length === 0) {
-    toast.error(`Não achei ${target.rel} no projeto`)
+    avisar.erro(`Não achei ${target.rel} no projeto`)
     return
   }
   // Desempate: o que a conversa usou, entre os que EXISTEM (o índice confirma;
@@ -115,5 +115,5 @@ export async function abrirMencaoDeArquivo(
   }
   const lista = candidatos.slice(0, MAX_CANDIDATOS_NO_AVISO).join(", ")
   const resto = candidatos.length > MAX_CANDIDATOS_NO_AVISO ? ` e mais ${candidatos.length - MAX_CANDIDATOS_NO_AVISO}` : ""
-  toast(`${candidatos.length} arquivos se chamam ${target.rel}: ${lista}${resto}. Abra pelo explorador.`)
+  avisar.nota(`${candidatos.length} arquivos se chamam ${target.rel}: ${lista}${resto}. Abra pelo explorador.`)
 }

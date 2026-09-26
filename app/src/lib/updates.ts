@@ -22,7 +22,7 @@
 import { create } from "zustand"
 import { invoke } from "@tauri-apps/api/core"
 import { listen } from "@tauri-apps/api/event"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { isTauri } from "@/lib/db"
 import { detectAgents, toProbeMap } from "@/lib/detect"
 import { useApp } from "@/store/app"
@@ -122,7 +122,7 @@ function announceOutcome(job: UpdateJob): void {
   if (job.status === "ok") {
     // "atualizado" VERIFICADO: o Rust só entrega `ok` quando a versão do
     // binário mudou de verdade (classify_outcome), não pelo exit 0.
-    toast.success(
+    avisar.feito(
       `${label} atualizado (${job.method})${job.version ? ` para v${job.version}` : ""}.`,
       { id },
     )
@@ -132,7 +132,7 @@ function announceOutcome(job: UpdateJob): void {
   if (job.status === "unchanged") {
     // exit 0 sem a versão mudar (brew "already installed"): informativo, não
     // success falso — o incidente do "atualizado" que não atualizava nada.
-    toast(
+    avisar.nota(
       `${label} já está na última do canal ${job.method}${job.version ? ` (v${job.version})` : ""}.`,
       { id },
     )
@@ -141,15 +141,15 @@ function announceOutcome(job: UpdateJob): void {
   }
   if (job.method === "none" || !job.command) {
     // sem canal / não chegou a rodar → neutro, com o caminho manual na descrição.
-    toast(`Não deu pra atualizar ${label} automaticamente.`, {
+    avisar.nota(`Não deu pra atualizar ${label} automaticamente.`, {
       id,
-      description: job.outputTail.slice(-400),
+      detalhe: job.outputTail.slice(-400),
     })
     return
   }
-  toast.error(`Falha ao atualizar ${label} (${job.command}).`, {
+  avisar.erro(`Falha ao atualizar ${label} (${job.command}).`, {
     id,
-    description: job.outputTail.slice(-300),
+    detalhe: job.outputTail.slice(-300),
   })
 }
 
@@ -244,9 +244,7 @@ export async function startUpdate(agent: string): Promise<void> {
     const job = await invoke<UpdateJob>("update_agent", { agent })
     applyJob(job, "event")
   } catch (e) {
-    toast.error(e instanceof Error ? e.message : `Falha ao atualizar ${label}`, {
-      id,
-    })
+    avisar.erro(`Não consegui atualizar ${label}.`, { id, detalhe: mensagemDe(e) })
   }
 }
 

@@ -21,7 +21,7 @@
 // interceptam o /compactar ANTES da expansão de .md e chamam runCompactTurn —
 // a coreografia de store/fila/persist fica aqui, uma vez só.
 
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
 import { blocoDaDoutrina, decideDoctrine, readDoctrine } from "@/lib/doctrine"
@@ -233,7 +233,7 @@ function recordCompactError(convId: string, error: unknown, fallback: string) {
   if (!last || last.kind !== "error" || last.message !== message) {
     useChat.getState().handleEvent(convId, { type: "error", message })
   }
-  toast.error(message)
+  avisar.erro(message)
 }
 
 /** Executa o /compactar numa conversa PARADA (as superfícies já enfileiram
@@ -258,7 +258,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     sessionId: conv.sessionId ?? null,
   })
   if (plan.mode === "none") {
-    toast(plan.reason)
+    avisar.nota(plan.reason)
     return
   }
   // guarda de availability (F-A): compactar em CLI ausente/deslogada só rende
@@ -268,7 +268,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     useApp.getState().settings.detected ?? {},
   )
   if (blocked) {
-    toast.error(blocked)
+    avisar.erro(blocked)
     return
   }
   const runId = crypto.randomUUID()
@@ -337,7 +337,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
       }
     } catch (e) {
       if (accepted) recordCompactError(args.convId, e, "Falha ao compactar o contexto")
-      else toast.error("Não consegui verificar as capacidades da compactação.")
+      else avisar.erro("Não consegui verificar as capacidades da compactação.")
     } finally {
       if (accepted) {
         chat.finish(args.convId)
@@ -463,7 +463,7 @@ export async function runCompactTurn(args: CompactRunArgs): Promise<void> {
     }
   } catch (e) {
     if (accepted) recordCompactError(args.convId, e, "Falha ao renovar a sessão")
-    else toast.error(typeof e === "string" ? e : "A renovação não foi iniciada.")
+    else avisar.erro("A renovação não foi iniciada.", { detalhe: mensagemDe(e) })
   } finally {
     if (accepted) {
       chat.finish(args.convId)

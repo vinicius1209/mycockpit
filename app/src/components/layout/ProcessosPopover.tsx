@@ -7,7 +7,7 @@
 // mata cinco coisas transforma um engano em cinco.
 
 import { Activity } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   LinhaDoPainel,
   PainelDaFaixa,
@@ -84,7 +84,7 @@ export function ProcessosPopover({
       await matarProcesso(p.pid)
       onMudou()
     } catch (err) {
-      toast.error("Não consegui encerrar.", { description: String(err) })
+      avisar.erro("Não consegui encerrar.", { detalhe: String(err) })
     }
   }
 

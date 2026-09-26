@@ -10,7 +10,7 @@
 // vive em ./gateAnswerDraft e é testada sem DOM.
 import { useEffect, useRef, useState, type ReactNode } from "react"
 import { Paperclip } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { open } from "@tauri-apps/plugin-dialog"
 import { AttachmentChips } from "@/components/chat/ComposerParts"
 import { isTauri } from "@/lib/db"
@@ -93,7 +93,7 @@ export function GateAnswerForm({
       files,
       existing,
       saveAttachment,
-      (msg) => toast.error(msg),
+      (msg) => avisar.erro(msg),
     )
     if (atts.length) setDrafts((cur) => draftAddAttachments(cur, i, atts))
   }
@@ -124,7 +124,7 @@ export function GateAnswerForm({
   // File picker (mesmo diálogo do composer) → attachPath vira Attachment real.
   async function pickFiles(i: number) {
     if (!isTauri()) {
-      toast("Anexos disponíveis no app (tauri dev)")
+      avisar.nota("Anexos disponíveis no app (tauri dev)")
       return
     }
     const sel = await open({ multiple: true, title: "Anexar à resposta" })
@@ -134,14 +134,14 @@ export function GateAnswerForm({
     let count = drafts[i]?.attachments.length ?? 0
     for (const p of paths) {
       if (count >= MAX_ATTACH_COUNT) {
-        toast.error(`máx. ${MAX_ATTACH_COUNT} anexos por resposta`)
+        avisar.erro(`máx. ${MAX_ATTACH_COUNT} anexos por resposta`)
         break
       }
       try {
         atts.push(await attachPath(convId, p))
         count++
       } catch (err) {
-        toast.error(typeof err === "string" ? err : "falha ao anexar")
+        avisar.erro("Não consegui anexar o arquivo.", { detalhe: mensagemDe(err) })
       }
     }
     if (atts.length) setDrafts((cur) => draftAddAttachments(cur, i, atts))

@@ -7,7 +7,7 @@ import {
   Archive,
   ArchiveRestore,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { confirm } from "@/lib/confirm"
@@ -68,11 +68,11 @@ function confirmDeleteProject(project: Project) {
       if (st.activeProjectId === project.id) {
         st.setActiveProject(remaining[0]?.id ?? null)
       }
-      toast(`"${project.name}" removido`, {
-        description: "Arquivado. Dá pra restaurar.",
-        action: {
-          label: "Desfazer",
-          onClick: () => {
+      avisar.feito(`"${project.name}" removido`, {
+        detalhe: "Arquivado. Dá pra restaurar.",
+        acao: {
+          rotulo: "Desfazer",
+          fazer: () => {
             void (async () => {
               await restoreProject(project.id)
               const s = useApp.getState()
@@ -80,13 +80,13 @@ function confirmDeleteProject(project: Project) {
                 s.setProjects([project, ...s.projects])
               }
               s.setActiveProject(project.id)
-              toast.success(`"${project.name}" restaurado`)
+              avisar.feito(`"${project.name}" restaurado`)
             })()
           },
         },
       })
     } catch {
-      toast.error("Falha ao remover o projeto")
+      avisar.erro("Falha ao remover o projeto")
     }
   })()
 }
@@ -139,9 +139,9 @@ function ArchivedSection() {
       const fresh = await listProjects()
       if (fresh) setProjects(fresh)
       setActiveProject(p.id)
-      toast.success(`"${p.name}" desarquivado`)
+      avisar.feito(`"${p.name}" desarquivado`)
     } catch {
-      toast.error("Falha ao desarquivar o projeto")
+      avisar.erro("Falha ao desarquivar o projeto")
     }
   }
 
@@ -162,9 +162,9 @@ function ArchivedSection() {
       // os agendamentos do projeto morreram no banco → re-hidrata a store
       // (senão a view Agendado seguiria listando automação de projeto morto).
       void useSchedules.getState().reload()
-      toast(`"${p.name}" excluído de vez`)
+      avisar.feito(`"${p.name}" excluído de vez`)
     } catch {
-      toast.error("Falha ao excluir o projeto")
+      avisar.erro("Falha ao excluir o projeto")
     }
   }
 

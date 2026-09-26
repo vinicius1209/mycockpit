@@ -4,17 +4,24 @@
 // de uma linha só segue igual. Número e unidade chegam ligados por espaço
 // inquebrável do Rust ("2,3 GB" nunca se parte).
 
-import { AlertCircle } from "lucide-react"
+// A decisão (`tom: "decisao"`, ADR-261) é o registro de um gesto seu sobre um
+// pedido do agente: o cartão do pedido assenta nesta linha, com o ✓ e a hora,
+// e ela fica como histórico.
 
-export function AvisoDoFio({ message }: { message: string }) {
+import { AlertCircle, Check } from "lucide-react"
+
+const hora = (ts: number) => new Date(ts).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+
+export function AvisoDoFio({ message, tom, ts }: { message: string; tom?: "decisao"; ts?: number }) {
   const quebra = message.indexOf("\n")
   const resumo = quebra < 0 ? message : message.slice(0, quebra)
   const detalhe = quebra < 0 ? "" : message.slice(quebra + 1).trim()
   return (
     <div className="flex items-center gap-2 px-1 text-[12px] text-muted-foreground/80">
-      <AlertCircle className="size-3 shrink-0" />
+      {tom === "decisao" ? <Check className="size-3 shrink-0" /> : <AlertCircle className="size-3 shrink-0" />}
       <span>
         {resumo}
+        {tom === "decisao" && ts != null && <span className="text-faint"> · {hora(ts)}</span>}
         {detalhe && (
           <span
             title={detalhe}

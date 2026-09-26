@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/advisor", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/advisor")>()),
   runAdvisor: vi.fn(),

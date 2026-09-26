@@ -18,7 +18,7 @@
 // Isto mora fora do `ChatPanel` porque é uma decisão com estado, prazo e
 // caminho de falha, e no componente ela não tinha teste nenhum.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { writeProjectConfig } from "@/lib/configDoProjeto"
 import { avisoDeDescarte, PASTA_LIBERADA } from "@/lib/sendOrigin"
 import type { Project } from "@/lib/types"
@@ -53,7 +53,7 @@ export async function gravarPastaLiberada(
   try {
     await writeProjectConfig(project.path, { extraDirs: next })
   } catch {
-    toast.error("Não consegui salvar a pasta permitida no config.")
+    avisar.erro("Não consegui salvar a pasta permitida no config.")
     return "falha-ao-salvar"
   }
   app.setProjectConfig(project.id, {
@@ -91,7 +91,7 @@ export async function allowBlockedDir(args: {
   // o reenvio NÃO acontece: um turno novo só nasce depois deste.
   const conv = convId ? useChat.getState().byId[convId] : undefined
   if (conv?.running || conv?.finalizing) {
-    toast.success(avisoDeDescarte(PASTA_LIBERADA))
+    avisar.feito(avisoDeDescarte(PASTA_LIBERADA))
     return "turno-em-voo"
   }
   const items = conv?.items ?? []
@@ -104,10 +104,10 @@ export async function allowBlockedDir(args: {
     }
   }
   if (!lastUser) {
-    toast.success("Pasta liberada.")
+    avisar.feito("Pasta liberada.")
     return "sem-pedido"
   }
-  toast.success("Pasta liberada. Reenviando o pedido…")
+  avisar.feito("Pasta liberada. Reenviando o pedido…")
   args.reenviar(lastUser)
   return "reenviada"
 }

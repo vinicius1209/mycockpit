@@ -25,3 +25,16 @@ describe("aviso do fio (ADR-249)", () => {
     expect(html).not.toContain("(detalhe)")
   })
 })
+
+// ADR-261: o cartão de pedido assenta numa linha de decisão, com ✓ e hora.
+describe("a decisão no fio", () => {
+  it("leva o ✓ e a hora; o aviso do sistema segue com o alerta e sem hora", () => {
+    const ts = new Date(2026, 8, 25, 18, 44).getTime()
+    const decisao = renderToStaticMarkup(<AvisoDoFio message="Você ligou o navegador do Maclan." tom="decisao" ts={ts} />)
+    expect(decisao).toContain("lucide-check")
+    expect(decisao).toContain("18:44")
+    const aviso = renderToStaticMarkup(<AvisoDoFio message="Memória alta" ts={ts} />)
+    expect(aviso).not.toContain("lucide-check")
+    expect(aviso).not.toContain("18:44")
+  })
+})

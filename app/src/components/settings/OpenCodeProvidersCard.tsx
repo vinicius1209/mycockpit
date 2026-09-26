@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { ArrowRight, KeyRound, Loader2, Plus, Trash2 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -62,7 +62,7 @@ export function OpenCodeProvidersCard({ refreshToken, onChanged }: {
       setCredentials(creds)
       if (listing) setModels(listing.models)
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Não consegui ler os provedores do OpenCode")
+      avisar.erro("Não consegui ler os provedores do OpenCode.", { detalhe: mensagemDe(e) })
     } finally {
       setLoading(false)
     }
@@ -95,9 +95,9 @@ export function OpenCodeProvidersCard({ refreshToken, onChanged }: {
       closeDialog(false)
       await onChanged()
       await load()
-      toast.success(`${provider} conectado e modelos atualizados`)
+      avisar.feito(`${provider} conectado e modelos atualizados`)
     } catch (e) {
-      toast.error(typeof e === "string" ? e : `Não consegui conectar ${provider}`)
+      avisar.erro(`Não consegui conectar ${provider}.`, { detalhe: mensagemDe(e) })
     } finally {
       setWorking(null)
     }
@@ -110,9 +110,9 @@ export function OpenCodeProvidersCard({ refreshToken, onChanged }: {
       setConfirmRemove(null)
       await onChanged()
       await load()
-      toast.success(`${provider} removido`)
+      avisar.feito(`${provider} removido`)
     } catch (e) {
-      toast.error(typeof e === "string" ? e : `Não consegui remover ${provider}`)
+      avisar.erro(`Não consegui remover ${provider}.`, { detalhe: mensagemDe(e) })
     } finally {
       setWorking(null)
     }

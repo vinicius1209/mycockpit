@@ -14,9 +14,7 @@ const h = vi.hoisted(() => ({
   commandsThrow: false,
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
 vi.mock("@/lib/agentDefs", () => ({
   getAgentDef: vi.fn(async () => {
@@ -31,7 +29,7 @@ vi.mock("@/lib/sources", () => ({
   }),
 }))
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { getAgentDef } from "@/lib/agentDefs"
 import { readProjectCommands } from "@/lib/sources"
 import {
@@ -437,30 +435,30 @@ describe("warnPresetDrift — aviso obrigatório, turno segue", () => {
     const stamped = await presetDigest(preset())
     const v = await warnPresetDrift("c1", "pr1", stamped, "/proj")
     expect(v).toBe("ok")
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.nota).not.toHaveBeenCalled()
   })
 
   it("digest antigo ≠ atual dispara o aviso de persona mudada", async () => {
     const v = await warnPresetDrift("c1", "pr1", "digest-de-quando-começou", "/proj")
     expect(v).toBe("drift")
-    expect(toast).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast).mock.calls[0][0]).toContain('"UI Engineer" mudou')
+    expect(avisar.nota).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(avisar.nota).mock.calls[0][0]).toContain('"UI Engineer" mudou')
   })
 
   it("mesma divergência não re-toasta a cada turno (1 aviso por episódio)", async () => {
     await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
     await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.nota).toHaveBeenCalledTimes(1)
     // outra conversa é outro episódio
     await warnPresetDrift("c2", "pr1", "digest-velho", "/proj")
-    expect(toast).toHaveBeenCalledTimes(2)
+    expect(avisar.nota).toHaveBeenCalledTimes(2)
   })
 
   it("preset apagado com conversa apontando → aviso equivalente", async () => {
     h.preset = null
     const v = await warnPresetDrift("c1", "pr1", "digest-velho", "/proj")
     expect(v).toBe("deleted")
-    expect(vi.mocked(toast).mock.calls[0][0]).toContain("apagado")
+    expect(vi.mocked(avisar.nota).mock.calls[0][0]).toContain("apagado")
   })
 
   it("sem carimbo (preset escolhido mas nunca rodou) não verifica nada", async () => {

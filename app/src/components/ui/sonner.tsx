@@ -15,10 +15,18 @@ import { Toaster as Sonner, type ToasterProps } from "sonner"
 // achando que era o fechar. Era o ÍCONE de erro (`OctagonX`), e não havia
 // botão de fechar nenhum; o aviso de navegador antigo (`duration: Infinity`)
 // não saía nunca. Por isso o erro usa um ícone que não é um X.
+//
+// O lugar (ADR-261): canto superior direito, logo abaixo da faixa da janela
+// (`ALTURA_DA_FAIXA`, 56px). No centro de baixo o aviso tampava o composer,
+// justo onde a pessoa estava escrevendo. E o ✕ vai para a direita, onde o
+// olho procura o fechar.
 const Toaster = ({ ...props }: ToasterProps) => {
   return (
     <Sonner
       className="toaster group"
+      position="top-right"
+      offset={{ top: 64, right: 16 }}
+      visibleToasts={4}
       closeButton
       icons={{
         success: <CircleCheckIcon className="size-4" />,
@@ -33,6 +41,9 @@ const Toaster = ({ ...props }: ToasterProps) => {
           "--normal-text": "var(--popover-foreground)",
           "--normal-border": "var(--border)",
           "--border-radius": "var(--radius)",
+          "--toast-close-button-start": "unset",
+          "--toast-close-button-end": "0",
+          "--toast-close-button-transform": "translate(35%, -35%)",
         } as React.CSSProperties
       }
       {...props}

@@ -7,14 +7,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({
-  // toast() neutro + .loading/.success/.error: o store usa as quatro formas.
-  toast: Object.assign(vi.fn(), {
-    loading: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-  }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }))
 vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn(async () => () => {}) }))
 // fora do Tauri o módulo é no-op; os testes fingem o app de verdade.
@@ -25,7 +18,7 @@ vi.mock("@/lib/detect", () => ({
   toProbeMap: vi.fn(() => ({})),
 }))
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { invoke } from "@tauri-apps/api/core"
 import { detectAgents } from "@/lib/detect"
 import {
@@ -88,12 +81,12 @@ beforeEach(() => {
 describe("id estável do toast", () => {
   it("job RODANDO não gera toast; só o desfecho, com id estável", () => {
     _handleUpdateEvent(evt({ phase: "started" }))
-    expect(toast).not.toHaveBeenCalled()
-    expect(toast.loading).not.toHaveBeenCalled()
+    expect(avisar.nota).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
 
     _handleUpdateEvent(evt({ phase: "finished", ok: true }))
-    expect(toast.success).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(toast.success).mock.calls[0][1]).toMatchObject({
+    expect(avisar.feito).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(avisar.feito).mock.calls[0][1]).toMatchObject({
       id: updateToastId("codex"),
     })
   })
@@ -103,27 +96,27 @@ describe("id estável do toast", () => {
     // reabrir o modal → hydrate devolve o job ainda running.
     vi.mocked(invoke).mockResolvedValueOnce([job()])
     await hydrateUpdateJobs()
-    expect(toast.loading).not.toHaveBeenCalled()
-    expect(toast.success).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
     expect(useUpdates.getState().byAgent.codex.status).toBe("running")
   })
 })
 
 describe("started → finished", () => {
-  it("sucesso vira toast.success e dispara a re-verificação de versões", () => {
+  it("sucesso vira avisar.feito e dispara a re-verificação de versões", () => {
     _handleUpdateEvent(evt({ phase: "started" }))
     expect(useUpdates.getState().byAgent.codex.status).toBe("running")
 
     _handleUpdateEvent(evt({ phase: "finished", ok: true }))
     expect(useUpdates.getState().byAgent.codex.status).toBe("ok")
-    expect(toast.success).toHaveBeenCalledWith(
+    expect(avisar.feito).toHaveBeenCalledWith(
       "Codex atualizado (homebrew).",
       expect.objectContaining({ id: updateToastId("codex") }),
     )
     expect(detectAgents).toHaveBeenCalledTimes(1)
   })
 
-  it("erro vira toast.error com o comando no título e o tail na descrição", () => {
+  it("erro vira avisar.erro com o comando no título e o tail na descrição", () => {
     _handleUpdateEvent(evt({ phase: "started" }))
     _handleUpdateEvent(
       evt({
@@ -133,11 +126,11 @@ describe("started → finished", () => {
       }),
     )
     expect(useUpdates.getState().byAgent.codex.status).toBe("failed")
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       "Falha ao atualizar Codex (brew upgrade codex).",
       expect.objectContaining({
         id: updateToastId("codex"),
-        description: expect.stringContaining("Homebrew"),
+        detalhe: expect.stringContaining("Homebrew"),
       }),
     )
     expect(detectAgents).not.toHaveBeenCalled()
@@ -148,7 +141,7 @@ describe("started → finished", () => {
     _handleUpdateEvent(
       evt({ phase: "finished", ok: true, status: "ok", version: "0.147.0" }),
     )
-    expect(toast.success).toHaveBeenCalledWith(
+    expect(avisar.feito).toHaveBeenCalledWith(
       "Codex atualizado (homebrew) para v0.147.0.",
       expect.objectContaining({ id: updateToastId("codex") }),
     )
@@ -172,12 +165,12 @@ describe("started → finished", () => {
       }),
     )
     expect(useUpdates.getState().byAgent["claude-code"].status).toBe("unchanged")
-    expect(toast).toHaveBeenCalledWith(
+    expect(avisar.nota).toHaveBeenCalledWith(
       "Claude Code já está na última do canal homebrew (v2.1.212).",
       expect.objectContaining({ id: updateToastId("claude-code") }),
     )
-    expect(toast.success).not.toHaveBeenCalled()
-    expect(toast.error).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
+    expect(avisar.erro).not.toHaveBeenCalled()
     // re-verifica mesmo assim: o probe por canal conserta o "última vX".
     expect(detectAgents).toHaveBeenCalledTimes(1)
   })
@@ -193,11 +186,11 @@ describe("started → finished", () => {
         outputTail: "Este agent não tem canal de atualização conhecido.",
       }),
     )
-    expect(toast).toHaveBeenCalledWith(
+    expect(avisar.nota).toHaveBeenCalledWith(
       "Não deu pra atualizar Codex automaticamente.",
       expect.objectContaining({ id: updateToastId("codex") }),
     )
-    expect(toast.error).not.toHaveBeenCalled()
+    expect(avisar.erro).not.toHaveBeenCalled()
   })
 })
 
@@ -209,15 +202,15 @@ describe("re-hidratação por snapshot (update_jobs)", () => {
     vi.mocked(invoke).mockResolvedValueOnce([job({ status: "ok" })])
     await hydrateUpdateJobs()
     expect(useUpdates.getState().byAgent.codex.status).toBe("ok")
-    expect(toast.success).toHaveBeenCalledTimes(1)
+    expect(avisar.feito).toHaveBeenCalledTimes(1)
   })
 
   it("job terminado em sessão ANTIGA (sem running aqui) não ganha toast", async () => {
     vi.mocked(invoke).mockResolvedValueOnce([job({ status: "failed" })])
     await hydrateUpdateJobs()
     expect(useUpdates.getState().byAgent.codex.status).toBe("failed")
-    expect(toast.error).not.toHaveBeenCalled()
-    expect(toast.success).not.toHaveBeenCalled()
+    expect(avisar.erro).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
   })
 
   it("falha do snapshot é fail-open: não derruba o estado que já existe", async () => {
@@ -233,7 +226,7 @@ describe("startUpdate (gesto do usuário)", () => {
     vi.mocked(invoke).mockResolvedValueOnce(job())
     await startUpdate("codex")
     expect(invoke).toHaveBeenCalledWith("update_agent", { agent: "codex" })
-    expect(toast.loading).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
     expect(useUpdates.getState().byAgent.codex.status).toBe("running")
   })
 
@@ -245,12 +238,13 @@ describe("startUpdate (gesto do usuário)", () => {
     expect(invoke).toHaveBeenCalledTimes(1)
   })
 
-  it("falha do invoke vira toast.error no MESMO id (fail-open)", async () => {
+  it("falha do invoke vira avisar.erro no MESMO id (fail-open)", async () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error("ipc fora do ar"))
     await startUpdate("codex")
-    expect(toast.error).toHaveBeenCalledWith(
-      "ipc fora do ar",
-      expect.objectContaining({ id: updateToastId("codex") }),
+    // A causa vai ao detalhe; o título diz o que não aconteceu (ADR-261).
+    expect(avisar.erro).toHaveBeenCalledWith(
+      "Não consegui atualizar Codex.",
+      expect.objectContaining({ id: updateToastId("codex"), detalhe: "ipc fora do ar" }),
     )
   })
 })

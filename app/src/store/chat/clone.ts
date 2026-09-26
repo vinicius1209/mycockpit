@@ -15,7 +15,7 @@
 // não criam ciclo de import em runtime, mesmo com chat.ts importando as três
 // funções deste arquivo de volta.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { ChatItem, ChatState } from "@/store/chat"
 import { emptyConv, markOrphanedProcesses, projectOfConv, uid } from "@/store/chat"
 import {
@@ -173,12 +173,12 @@ async function isolateFork(
     // `setWorktree` (a MESMA ação do "Isolar" do menu de contexto) já grava no
     // banco, na meta da sidebar e no byId — não duplicamos esse caminho aqui.
     get().setWorktree(convId, info.path)
-    toast.success(`Fork isolado em ${info.branch}`, {
-      description: "Parte do último commit; mudança não-commitada não veio junto.",
+    avisar.feito(`Fork isolado em ${info.branch}`, {
+      detalhe: "Parte do último commit; mudança não-commitada não veio junto.",
     })
   } catch (e) {
-    toast("Fork criado, mas sem isolamento.", {
-      description:
+    avisar.feito("Fork criado, mas sem isolamento.", {
+      detalhe:
         typeof e === "string" && e
           ? e
           : "Não deu pra criar o worktree; dá pra isolar depois pelo menu da conversa.",

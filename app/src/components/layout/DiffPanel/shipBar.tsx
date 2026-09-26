@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { GitPullRequest, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { createPr, prContext, type PrContext } from "@/lib/git"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
@@ -74,10 +74,10 @@ export function PrComposer({
     setBusy(true)
     try {
       const r = await createPr(cwd, base, account, title.trim(), body)
-      toast.success("Pull request aberto")
+      avisar.feito("Pull request aberto")
       onOpened(r.url)
     } catch (e) {
-      toast.error(errorMessage(e, "Não foi possível abrir o pull request."))
+      avisar.erro("Não consegui abrir o pull request.", { detalhe: errorMessage(e, "") || null })
     } finally {
       setBusy(false)
     }

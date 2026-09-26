@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Copy, FileWarning, FolderOpen, LoaderCircle, SquareArrowOutUpRight } from "lucide-react"
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { Button } from "@/components/ui/button"
@@ -113,12 +113,12 @@ export function ProjectFileViewer({
   const midia = kind === "video" || kind === "audio" || kind === "pdf" || kind === "svg"
   // O aviso vai por ref para o efeito depender só do status: o `onSumiu` chega
   // como função nova a cada render, e nas dependências relançaria o aviso.
-  const avisar = useRef(onSumiu)
+  const avisarSumico = useRef(onSumiu)
   useEffect(() => {
-    avisar.current = onSumiu
+    avisarSumico.current = onSumiu
   })
   useEffect(() => {
-    if (state.status !== "loading") avisar.current?.(state.status === "sumiu")
+    if (state.status !== "loading") avisarSumico.current?.(state.status === "sumiu")
   }, [state.status])
 
   useEffect(() => {
@@ -217,7 +217,7 @@ export function ProjectFileViewer({
           size="icone-compacto"
           onClick={() => {
             void copyText(path).then((copied) => {
-              if (copied) toast.success("Caminho copiado")
+              if (copied) avisar.feito(`Caminho de ${path.split("/").pop() || path} copiado.`)
             })
           }}
           aria-label="Copiar caminho"
@@ -299,7 +299,7 @@ export function ProjectFileViewer({
 function SemPrevia({ caminho, completo, tamanho }: { caminho: string; completo: string; tamanho: number | null }) {
   const nome = caminho.split("/").pop() || caminho
   const ext = nome.includes(".") ? nome.split(".").pop()!.toUpperCase().slice(0, 4) : "?"
-  const falhou = (erro: unknown) => toast.error(errorMessage(erro))
+  const falhou = (erro: unknown) => avisar.erro(`Não consegui abrir ${nome}.`, { detalhe: errorMessage(erro) })
   return (
     <div className="grid min-h-0 flex-1 place-items-center px-8">
       <div className="w-full max-w-sm rounded-xl border bg-card p-4">

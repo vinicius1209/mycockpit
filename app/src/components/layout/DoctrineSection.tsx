@@ -7,7 +7,7 @@
 // pior desfecho: duas fontes de regra divergindo em silêncio.
 
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { BookText, Check, FileInput } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import {
@@ -78,7 +78,7 @@ export function DoctrineSection({
       setDraft(await readDoctrineSeed(projectPath, name))
     } catch (e) {
       console.error("[doutrina] falha ao ler a semente", name, e)
-      toast.error(`Não consegui ler o ${name}.`)
+      avisar.erro(`Não consegui ler o ${name}.`)
     }
   }
 
@@ -89,12 +89,12 @@ export function DoctrineSection({
       setContent(draft)
       setExists(draft.trim().length > 0)
       setOpen(false)
-      toast.success("Doutrina salva, vale a partir do próximo envio.")
+      avisar.feito("Doutrina salva, vale a partir do próximo envio.")
     } catch (e) {
       // erro de escrita NÃO pode passar batido: o usuário acharia que escreveu
       // regra que não existe (mesma lição do saveLesson).
       console.error("[doutrina] falha ao gravar", e)
-      toast.error("Não consegui gravar a doutrina. O arquivo não foi alterado.")
+      avisar.erro("Não consegui gravar a doutrina. O arquivo não foi alterado.")
     } finally {
       setSaving(false)
     }

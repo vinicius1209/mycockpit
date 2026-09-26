@@ -9,7 +9,7 @@ import {
   Sparkles,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
@@ -542,7 +542,7 @@ export function StickyNotesDock(superficie: ComponentProps<"aside">) {
    */
   function handleInsertIntoPrompt(nota: StickyNote) {
     if (!activeId) {
-      toast.error("Nenhuma conversa ativa no momento.")
+      avisar.erro("Nenhuma conversa ativa no momento.")
       return
     }
     const endereco = mencaoDaNota(nota, notes)

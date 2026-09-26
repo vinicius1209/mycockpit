@@ -31,9 +31,7 @@ vi.mock("@/lib/configDoProjeto", async (orig) => ({
   writeProjectConfig: h.write,
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(h.toast, { success: h.sucesso, error: h.erro }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos({ nota: h.toast, feito: h.sucesso, erro: h.erro, evento: vi.fn(), fechar: vi.fn() }))
 
 import { allowBlockedDir } from "./dirGate"
 import { retidoPorTurnoEmVoo } from "./sendGate"

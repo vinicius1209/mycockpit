@@ -268,7 +268,17 @@ async fn alvo(
                 "browser_needed",
                 json!({ "runId": run_id, "convId": conv_id, "projectPath": cwd }),
             );
-            esperar_o_gesto(app, &project_id, cwd, agora).await?;
+            // O agente parou de esperar sem o navegador (recusa ou teto): o
+            // pedido sai da tela, senão ficaria dizendo que ele espera
+            // (ADR-261).
+            if let Err(motivo) = esperar_o_gesto(app, &project_id, cwd, agora).await {
+                crate::work_gateway::emit_work(
+                    app,
+                    "pedido_encerrado",
+                    json!({ "runId": run_id, "convId": conv_id, "recurso": "navegador" }),
+                );
+                return Err(motivo);
+            }
         }
     }
     // Só as páginas desta conversa (ADR-244), e o run começa na última em que

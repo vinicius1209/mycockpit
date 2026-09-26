@@ -6,7 +6,7 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentMark } from "@/components/common/AgentMark"
 import { Button } from "@/components/ui/button"
@@ -177,7 +177,7 @@ export function BranchSplitView() {
       ensureConversationLoaded(activeProjectId, activeFork.id),
     ]).catch((error) => {
       console.error("[branch-split] não consegui carregar os ramos", error)
-      toast.error("Não consegui carregar as conversas para comparar")
+      avisar.erro("Não consegui carregar as conversas para comparar")
     })
   }, [activeFork, activeProjectId, ensureConversationLoaded, rootConv])
 

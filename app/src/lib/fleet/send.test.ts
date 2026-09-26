@@ -2,7 +2,7 @@
 // fechada do §9 do docs/agent-office.md. Stores e libs com efeito são mocados;
 // o que se verifica é a COREOGRAFIA (guardas, argumentos do runAgent, finally).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cancelAgent, runAgent } from "@/lib/agent"
 import { wantsAutoResume } from "@/lib/autoResume"
 import { listConversations, type ConversationMeta } from "@/lib/db/conversations"
@@ -47,9 +47,7 @@ const h = vi.hoisted(() => ({
   },
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async (...args: unknown[]) => {
     const onEvent = args[10] as (event: typeof acceptedRunEvent) => void
@@ -267,7 +265,7 @@ describe("sendFromDesk — guardas", () => {
   it("conversa corrompida bloqueia o envio com aviso", async () => {
     arm(makeConv({ corrupt: true }))
     await sendFromDesk(args)
-    expect(toast.error).toHaveBeenCalled()
+    expect(avisar.erro).toHaveBeenCalled()
     expect(runAgent).not.toHaveBeenCalled()
     expect(chat.start).not.toHaveBeenCalled()
   })
@@ -276,7 +274,7 @@ describe("sendFromDesk — guardas", () => {
     const onAccepted = vi.fn()
     h.mission.byConv = { c1: { status: "running" } }
     await sendFromDesk({ ...args, onAccepted })
-    expect(toast).toHaveBeenCalledWith(
+    expect(avisar.nota).toHaveBeenCalledWith(
       "Missão em andamento. Pare a missão para enviar manualmente.",
     )
     expect(runAgent).not.toHaveBeenCalled()
@@ -310,7 +308,7 @@ describe("sendFromDesk — guardas", () => {
     const onAccepted = vi.fn()
     armDetected("claude-code", "missing")
     await sendFromDesk({ ...args, onAccepted })
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       expect.stringContaining("sem login"),
     )
     expect(chat.start).not.toHaveBeenCalled()
@@ -322,7 +320,7 @@ describe("sendFromDesk — guardas", () => {
     arm(makeConv({ agent: "codex", items: [user("antes")] }))
     armDetected("codex", "missing")
     await sendFromDesk(args) // mesa do claude-code, conversa travada no codex
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       expect.stringContaining("Codex"),
     )
     expect(runAgent).not.toHaveBeenCalled()
@@ -338,7 +336,7 @@ describe("sendFromDesk — guardas", () => {
     arm(makeConv({ items: [user("pedido pendente")] }))
     armDetected("codex", "missing")
     await continueInAgent(args, "codex")
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       expect.stringContaining("sem login"),
     )
     expect(chat.beginTransplant).not.toHaveBeenCalled()
@@ -569,7 +567,7 @@ describe("sendFromDesk — persona do preset (S3)", () => {
       error: 'O preset "UI" referencia uma skill que não existe: /testes.',
     })
     await sendFromDesk({ ...args, onAccepted })
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       'O preset "UI" referencia uma skill que não existe: /testes.',
     )
     expect(chat.start).not.toHaveBeenCalled()
@@ -772,7 +770,7 @@ describe("sendFromDesk — finally", () => {
     expect(chat.persist).not.toHaveBeenCalled()
     expect(chat.handleEvent).not.toHaveBeenCalled()
     expect(chat.clearPreparation).toHaveBeenCalled()
-    expect(toast.error).toHaveBeenCalledWith(
+    expect(avisar.erro).toHaveBeenCalledWith(
       "Não consegui verificar as capacidades deste envio.",
     )
     expect(notifyTurnEnd).not.toHaveBeenCalled()

@@ -12,7 +12,7 @@
 import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { RichSelect } from "@/components/ui/RichSelect"
 import { Switch } from "@/components/ui/switch"
 import { BlockTitle, Row } from "@/components/settings/parts"
@@ -66,13 +66,13 @@ function StatuslineRow({ def }: { def: AgentDef }) {
     try {
       setStatus(await invoke<StatuslineStatus>(cmd, { agent: def.id }))
       setError(null)
-      toast.success(
+      avisar.feito(
         cmd === "usage_statusline_install"
           ? `Medidor ativado. O ${def.label} passa a reportar a janela a cada turno.`
           : "Medidor desativado, statusline restaurada como estava.",
       )
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha na operação")
+      avisar.erro("Não consegui mudar o medidor de uso.", { detalhe: mensagemDe(e) })
     } finally {
       setBusy(false)
     }

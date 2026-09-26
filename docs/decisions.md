@@ -9466,3 +9466,45 @@ considerou.
   transferência ou arrastadas são enviadas nativamente ao OpenCode. O chip
   vermelho desaparece, o botão "Enviar" fica habilitado e o turno roda com
   sucesso. PDFs seguem honestamente bloqueados.
+
+### ADR-261 · Avisos por natureza: pedido é cartão, o resto passa por uma porta com identidade ✅
+- **Contexto (25/09/2026):** "esse toast tá muito ruim, e depois do meu aceite
+  mostra 'navegador do projeto ligado', mas qual projeto? Queria repensar
+  nossos alertas e confirmações". Havia 293 chamadas de `toast` em 88
+  arquivos, com o tempo e o texto de cada um; o toast morava no centro de
+  baixo, em cima do composer; o pedido do agente para ligar o navegador (e o
+  de controlar o computador) era toast sem prazo, e o ✕ dele era a recusa;
+  eram pelo menos cinco idiomas para "o agente está pedindo algo"; e três
+  `window.confirm` nativos. Mock: `docs/mocks/avisos.html`.
+- **Decisão:**
+  1. **Pedido é cartão, nunca toast.** Navegador e computador entram na fila de
+     interações como o kind local `recurso` (irmão do `plan`,
+     `lib/pedidosDeRecurso.ts`): cartão âmbar dentro da conversa que pediu, ou
+     no canto quando você está noutra; ponto na barra lateral, sino, bandeja,
+     notificação do sistema e Companion (como aprovação). "Agora não" é botão;
+     o cartão não tem ✕. Depois do gesto, assenta numa linha de decisão no fio
+     (`notice` com `tom: "decisao"`, ✓ e hora), que fica como histórico. Se o
+     gesto falha, o pedido volta, porque o agente segue esperando.
+  2. **O backend avisa quando para de esperar** (`pedido_encerrado`, no teto de
+     90 s, na recusa e no fim do turno): o cartão sai e o fio registra "O
+     agente deixou de esperar pelo navegador". Antes o aviso ficava dizendo que
+     ele esperava, para sempre.
+  3. **O Revogar do computador** saiu do toast para uma faixa viva na conversa
+     dona (e no canto, fora dela), alimentada por `desktop_state`
+     (`store/liberacoes.ts`).
+  4. **Porta única, `lib/avisos.ts`**, com cinco naturezas: `feito` (resultado
+     do seu gesto, 2,5 s), `nota` (o gesto não aconteceu e por quê, 4 s),
+     `evento` (aconteceu sem você: identidade projeto · conversa na primeira
+     linha, 8 s, cópia no sino), `erro` (identidade quando há dono; com ação
+     fica até fechar). Título diz o que não aconteceu; a causa do backend vai ao
+     detalhe, nunca ao título.
+  5. **O toast mora no canto superior direito**, abaixo da faixa da janela, com
+     o fechar à direita.
+  6. `window.confirm` vira o `confirm()` do app.
+  7. Guarda `check-avisos` (em `bun run check`): `sonner` só na porta e no
+     wrapper; caixa nativa proibida. As 293 chamadas foram migradas, a baseline
+     é zero.
+- **Consequência:** "qual projeto?" tem resposta em todo aviso de fundo; nenhuma
+  decisão some com um clique no ✕; o composer fica livre. A faixa de pré-envio
+  ("este MCP exige o navegador") e a gaveta de exceções do turno seguem onde
+  estão: são o lugar do SEU envio, não pedidos do agente.

@@ -1,18 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn(async () => {}) }))
 vi.mock("@/lib/db", () => ({ isTauri: vi.fn(() => true) }))
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 
 import { copyRich, copyText } from "./clipboard"
 import { isTauri } from "@/lib/db"
 
 beforeEach(() => {
-  vi.mocked(toast.success).mockClear()
-  vi.mocked(toast.error).mockClear()
+  vi.mocked(avisar.feito).mockClear()
+  vi.mocked(avisar.erro).mockClear()
   vi.mocked(writeText).mockClear().mockResolvedValue(undefined)
   vi.mocked(isTauri).mockReturnValue(true)
 })
@@ -24,7 +24,7 @@ describe("escrita de texto não passa pelo WebView", () => {
     // stream e a escrita do WebView falhava. O caminho nativo não depende dela.
     expect(await copyText("codigo")).toBe(true)
     expect(writeText).toHaveBeenCalledWith("codigo")
-    expect(toast.success).toHaveBeenCalledWith("Copiado")
+    expect(avisar.feito).toHaveBeenCalledWith("Copiado")
   })
 
   it("não toca no navigator.clipboard quando está no Tauri", async () => {
@@ -46,7 +46,7 @@ describe("escrita de texto não passa pelo WebView", () => {
   it("texto vazio não copia nem avisa", async () => {
     expect(await copyText("   ")).toBe(false)
     expect(writeText).not.toHaveBeenCalled()
-    expect(toast.error).not.toHaveBeenCalled()
+    expect(avisar.erro).not.toHaveBeenCalled()
   })
 
   it("falha do nativo vira toast E log com o motivo", async () => {
@@ -56,7 +56,7 @@ describe("escrita de texto não passa pelo WebView", () => {
     vi.mocked(writeText).mockRejectedValue(erro)
     const log = vi.spyOn(console, "error").mockImplementation(() => {})
     expect(await copyText("x")).toBe(false)
-    expect(toast.error).toHaveBeenCalledWith("Não consegui copiar")
+    expect(avisar.erro).toHaveBeenCalledWith("Não consegui copiar")
     expect(log.mock.calls[0][0]).toContain("NotAllowedError")
     expect(log.mock.calls[0][0]).toContain("Document is not focused")
     log.mockRestore()
@@ -74,7 +74,7 @@ describe("tabela: degradação declarada em vez de não copiar", () => {
     })
     expect(await copyRich({ plain: "a\tb", html: "<table/>" })).toBe(true)
     expect(writeText).toHaveBeenCalledWith("a\tb")
-    expect(toast.success).toHaveBeenCalledWith("Copiado como texto")
+    expect(avisar.feito).toHaveBeenCalledWith("Copiado como texto")
   })
 
   it("quando nem o texto nativo vai, avisa e devolve false", async () => {
@@ -88,7 +88,7 @@ describe("tabela: degradação declarada em vez de não copiar", () => {
     vi.mocked(writeText).mockRejectedValue(new Error("sem clipboard"))
     const log = vi.spyOn(console, "error").mockImplementation(() => {})
     expect(await copyRich({ plain: "a", html: "<p/>" })).toBe(false)
-    expect(toast.error).toHaveBeenCalledWith("Não consegui copiar")
+    expect(avisar.erro).toHaveBeenCalledWith("Não consegui copiar")
     log.mockRestore()
   })
 })

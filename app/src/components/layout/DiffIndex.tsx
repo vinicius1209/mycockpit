@@ -39,7 +39,7 @@ import { openUrl } from "@tauri-apps/plugin-opener"
 import { useApp } from "@/store/app"
 import { controle } from "@/components/ui/controle"
 import { confirm } from "@/lib/confirm"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 
 /** Última leitura por pasta: trocar de aba e voltar mostra a lista na hora
@@ -147,20 +147,20 @@ export function DiffIndex({
   async function handleStageAll() {
     try {
       await stageAll(cwd)
-      toast.success("Todas as alterações foram preparadas para commit")
+      avisar.feito("Todas as alterações foram preparadas para commit")
       reload()
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao preparar as alterações")
+      avisar.erro("Não consegui preparar as alterações.", { detalhe: mensagemDe(e) })
     }
   }
 
   async function handleUnstageAll() {
     try {
       await unstageAll(cwd)
-      toast.success("Todas as alterações saíram da preparação")
+      avisar.feito("Todas as alterações saíram da preparação")
       reload()
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao desfazer a preparação")
+      avisar.erro("Não consegui desfazer a preparação.", { detalhe: mensagemDe(e) })
     }
   }
 
@@ -175,10 +175,10 @@ export function DiffIndex({
     if (!accepted) return
     try {
       await discardAll(cwd)
-      toast.success("Alterações não preparadas descartadas")
+      avisar.feito("Alterações não preparadas descartadas")
       reload()
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao descartar alterações")
+      avisar.erro("Não consegui descartar as alterações.", { detalhe: mensagemDe(e) })
     }
   }
 
@@ -432,11 +432,7 @@ export function DiffIndex({
                 type="button"
                 onClick={() =>
                   void openUrl(prUrl).catch((error) =>
-                    toast.error(
-                      typeof error === "string"
-                        ? error
-                        : "Não foi possível abrir o pull request.",
-                    ),
+                    avisar.erro("Não consegui abrir o pull request.", { detalhe: mensagemDe(error) }),
                   )
                 }
                 className={cn(

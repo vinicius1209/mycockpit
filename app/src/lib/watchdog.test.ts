@@ -6,11 +6,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({
-  // Object.assign: o store/interactions usa `toast.error` (a resposta do usuário
-  // não pode falhar em silêncio), então o mock precisa das duas formas.
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 // notify importa o plugin nativo do Tauri — mock inteiro (só o spy interessa).
 vi.mock("@/lib/notify", () => ({
   notifyTurnStalled: vi.fn(),
@@ -27,7 +23,7 @@ vi.mock("@/lib/cancelLinearTurn", () => ({
   cancelLinearTurn: vi.fn(async () => "signaled"),
 }))
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import { notifyCardStalled, notifyTurnStalled } from "@/lib/notify"
 import { useApp } from "@/store/app"
@@ -133,7 +129,7 @@ describe("checkStalledTurns", () => {
     checkStalledTurns(T0 + 10 * MIN)
     expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
     expect(notifyTurnStalled).toHaveBeenCalledWith("c1", "claude-code", 10)
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
     // flag transient aponta pra ÚLTIMA atividade (início do silêncio)
     expect(useChat.getState().byId.c1.stalledSince).toBe(T0)
 
@@ -141,7 +137,7 @@ describe("checkStalledTurns", () => {
     checkStalledTurns(T0 + 15 * MIN)
     checkStalledTurns(T0 + 60 * MIN)
     expect(notifyTurnStalled).toHaveBeenCalledTimes(1)
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
   })
 
   it("atividade fecha o episódio; mudo de novo por OUTRO período re-notifica", () => {
@@ -239,7 +235,7 @@ describe("checkStalledTurns", () => {
     checkStalledTurns(T0)
     checkStalledTurns(T0 + 120 * MIN)
     expect(notifyTurnStalled).not.toHaveBeenCalled()
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.evento).not.toHaveBeenCalled()
     expect(useChat.getState().byId.c1.stalledSince).toBeUndefined()
   })
 
@@ -274,7 +270,7 @@ describe("checkStalledCards (S2.2)", () => {
     checkStalledCards(T0 + 10 * MIN)
     expect(notifyCardStalled).toHaveBeenCalledTimes(1)
     expect(notifyCardStalled).toHaveBeenCalledWith("Revisar o parser", "review", 10)
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
     // flag transient aponta pro início do silêncio (updated_at do card)
     expect(useCards.getState().all[0].stalledSince).toBe(T0)
 
@@ -282,7 +278,7 @@ describe("checkStalledCards (S2.2)", () => {
     checkStalledCards(T0 + 15 * MIN)
     checkStalledCards(T0 + 60 * MIN)
     expect(notifyCardStalled).toHaveBeenCalledTimes(1)
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
   })
 
   it("card blocked também é vigiado (a outra sala de espera do humano)", () => {
@@ -337,7 +333,7 @@ describe("checkStalledCards (S2.2)", () => {
     checkStalledCards(T0 + 11 * MIN)
     // o MESMO silêncio não vira episódio novo…
     expect(notifyCardStalled).toHaveBeenCalledTimes(1)
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
     // …e a flag transient é re-afirmada (o badge acompanha o episódio aberto)
     expect(useCards.getState().all[0].stalledSince).toBe(T0)
   })
@@ -367,7 +363,7 @@ describe("checkStalledCards (S2.2)", () => {
     useCards.setState({ all: [card()] })
     checkStalledCards(T0 + 120 * MIN)
     expect(notifyCardStalled).not.toHaveBeenCalled()
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.evento).not.toHaveBeenCalled()
     expect(useCards.getState().all[0].stalledSince).toBeUndefined()
   })
 
@@ -409,7 +405,7 @@ describe("checkStalledCards (S2.2)", () => {
     })
     checkStalledCards(T0 + 120 * MIN)
     expect(notifyCardStalled).not.toHaveBeenCalled()
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.evento).not.toHaveBeenCalled()
   })
 })
 

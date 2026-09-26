@@ -3,7 +3,7 @@
 // e retirar quando quiser. Desligada, o agente pede e espera.
 
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Field } from "@/components/settings/parts"
 import { Switch } from "@/components/ui/switch"
 import { agentePodeLigarNavegador, setAgentePodeLigarNavegador } from "@/lib/browser"
@@ -30,7 +30,7 @@ export function AgentePodeLigarNavegador({ projectPath }: { projectPath: string 
     try {
       setPermitido(await setAgentePodeLigarNavegador(projectPath, v))
     } catch (erro) {
-      toast.error(erro instanceof Error ? erro.message : String(erro))
+      avisar.erro("Não consegui mudar a autorização do navegador.", { origem: { projeto: projectPath }, detalhe: mensagemDe(erro) })
     }
   }
 

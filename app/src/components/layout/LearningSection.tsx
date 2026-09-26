@@ -9,7 +9,7 @@
 // parecida. As aprovadas entram em todo turno; as candidatas só depois de
 // aprovadas, e a tela diz isso.
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   ArrowDown,
   ArrowUp,
@@ -78,7 +78,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
         next.splice(Math.min(priorIndex, next.length), 0, prior)
         return next
       })
-      toast.error("Não foi possível descartar a memória.")
+      avisar.erro("Não foi possível descartar a memória.")
     }
   }
 
@@ -96,7 +96,7 @@ export function LearningSection({ projectId }: { projectId: string }) {
           ),
         )
       }
-      toast.error("Não foi possível alterar a memória.")
+      avisar.erro("Não foi possível alterar a memória.")
     }
   }
 
@@ -108,9 +108,9 @@ export function LearningSection({ projectId }: { projectId: string }) {
       const fresh = await listLessons(projectId)
       setLessons(fresh)
       if (deduped === 0 && demoted === 0) {
-        toast("Memória revisada, nada a mudar.")
+        avisar.feito("Memória revisada, nada a mudar.")
       } else {
-        toast(`${deduped} deduplicada(s), ${demoted} rebaixada(s).`)
+        avisar.feito(`${deduped} deduplicada(s), ${demoted} rebaixada(s).`)
       }
     } finally {
       setCurating(false)

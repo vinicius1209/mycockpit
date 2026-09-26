@@ -10,7 +10,7 @@
 // faixa volta a não existir.
 
 import { useMemo } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import {
   conversationPresence,
@@ -71,7 +71,7 @@ export function PresenceBar() {
       confirmLabel: "Retomar",
     })
     if (!ok) return
-    if (await returnWheel(activeId)) toast("Volante retomado")
+    if (await returnWheel(activeId)) avisar.feito("Volante retomado")
   }
 
   // Tirar um convidado da conversa: remove os pareceres dele do fio (a presença é
@@ -85,7 +85,7 @@ export function PresenceBar() {
     })
     if (!ok) return
     removeAdvice(activeId, id)
-    toast(`${name} saiu da conversa`)
+    avisar.feito(`${name} saiu da conversa`)
   }
 
   return (

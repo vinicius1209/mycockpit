@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { readText } from "@tauri-apps/plugin-clipboard-manager"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 
 import {
   PointMenu,
@@ -320,7 +320,7 @@ async function executar(
       if (alvo.tipo !== "imagem" || !alvo.path) return
       await openConvImage(alvo.path).catch((err) => {
         console.error("[menu] não consegui abrir a imagem", err)
-        toast.error("Não consegui abrir no app padrão (o arquivo ainda existe?)")
+        avisar.erro("Não consegui abrir no app padrão (o arquivo ainda existe?)")
       })
       return
 
@@ -328,7 +328,7 @@ async function executar(
       if (alvo.tipo !== "imagem" || !alvo.path) return
       await revealConvImage(alvo.path).catch((err) => {
         console.error("[menu] não consegui mostrar a imagem na pasta", err)
-        toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
+        avisar.erro("Não consegui mostrar na pasta (o arquivo ainda existe?)")
       })
       return
 
@@ -346,7 +346,7 @@ async function executar(
       const preferred = state.settings.preferredEditor
       const escolhido = pickEditor(detected, preferred)
       if (!escolhido) {
-        toast.error("Nenhum editor de código detectado nesta máquina")
+        avisar.erro("Nenhum editor de código detectado nesta máquina")
         return
       }
       await openInEditor({
@@ -356,7 +356,7 @@ async function executar(
         line: alvo.line,
       }).catch((err) => {
         console.error("[menu] não consegui abrir no editor", err)
-        toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
+        avisar.erro("Não consegui abrir no editor.", { detalhe: mensagemDe(err) })
       })
       return
     }
@@ -365,7 +365,7 @@ async function executar(
       if (alvo.tipo !== "arquivo") return
       const texto = alvo.line ? `${alvo.rel}:${alvo.line}` : alvo.rel
       await copyText(texto)
-      toast.success("Caminho relativo copiado")
+      avisar.feito("Caminho relativo copiado")
       return
     }
 
@@ -374,7 +374,7 @@ async function executar(
       const base = alvo.abs || alvo.rel
       const texto = alvo.line ? `${base}:${alvo.line}` : base
       await copyText(texto)
-      toast.success("Caminho copiado")
+      avisar.feito(`Caminho de ${base.split("/").pop() || base} copiado.`)
       return
     }
 
@@ -382,7 +382,7 @@ async function executar(
       if (alvo.tipo !== "arquivo" || !alvo.abs) return
       await revealItemInDir(alvo.abs).catch((err) => {
         console.error("[menu] não consegui mostrar na pasta", err)
-        toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
+        avisar.erro("Não consegui mostrar na pasta (o arquivo ainda existe?)")
       })
       return
     }
@@ -400,7 +400,7 @@ async function executar(
         // ADR-017: quem clicou em "Colar" espera resultado; engolir aqui
         // deixaria o menu parecendo quebrado sem dizer por quê.
         console.error("[menu] não consegui ler a área de transferência", err)
-        toast.error("Não consegui ler a área de transferência")
+        avisar.erro("Não consegui ler a área de transferência")
         return
       }
       if (!texto) return
@@ -436,9 +436,9 @@ async function copiarImagem(img: HTMLImageElement | null) {
     // O blob vai DIRETO: no WebKit, ClipboardItem com Promise é recusado com
     // NotAllowedError (medido em 14/08/2026).
     await navigator.clipboard.write([new ClipboardItem({ "image/png": png })])
-    toast.success("Imagem copiada")
+    avisar.feito("Imagem copiada")
   } catch (err) {
     console.error("[menu] não consegui copiar a imagem", err)
-    toast.error("Não consegui copiar a imagem")
+    avisar.erro("Não consegui copiar a imagem")
   }
 }

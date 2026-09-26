@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Copy, Check, ExternalLink } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { Button } from "@/components/ui/button"
 import { Markdown } from "@/components/common/Markdown"
@@ -70,7 +70,7 @@ export function MarkdownViewerDialog() {
     const ok = await copyText(content)
     if (ok) {
       setCopied(true)
-      toast.success("Conteúdo copiado")
+      avisar.feito("Conteúdo copiado")
       setTimeout(() => setCopied(false), 1400)
     }
   }
@@ -85,7 +85,7 @@ export function MarkdownViewerDialog() {
       })
     } catch (err) {
       console.error("[markdown-viewer] erro ao abrir no editor", err)
-      toast.error(typeof err === "string" ? err : "Não consegui abrir no editor")
+      avisar.erro("Não consegui abrir no editor.", { detalhe: mensagemDe(err) })
     }
   }
 

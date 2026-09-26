@@ -7,7 +7,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { ChevronDown, Columns2, Copy, FileDiff, FolderTree, PanelRightClose, RotateCcw, X } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -200,7 +200,7 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
               <ContextMenuItem
                 onSelect={() =>
                   void copyText(caminho).then((ok) => {
-                    if (ok) toast.success("Caminho copiado")
+                    if (ok) avisar.feito(`Caminho de ${caminho.split("/").pop() || caminho} copiado.`)
                   })
                 }
               >

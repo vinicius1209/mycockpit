@@ -7,12 +7,11 @@
     "rs": 1000
   },
   "arquivos": {
-    "components/chat/ChatPanel.tsx": 999,
-    "lib/companion.ts": 564,
+    "components/chat/ChatPanel.tsx": 952,
     "lib/db.ts": 2023,
     "lib/fleet/derive.test.ts": 1042,
     "lib/fleet/derive.ts": 805,
-    "lib/fleet/send.test.ts": 977,
+    "lib/fleet/send.test.ts": 975,
     "lib/fleet/send.ts": 711,
     "src-tauri/adapters.rs": 7537,
     "src-tauri/agent.rs": 2320,
@@ -34,7 +33,7 @@
     "src-tauri/work_gateway.rs": 1089,
     "store/chat.ts": 2128,
     "store/fusion.ts": 507,
-    "store/interactions.ts": 640,
+    "store/interactions.ts": 598,
     "store/mission.ts": 1258
   }
 }

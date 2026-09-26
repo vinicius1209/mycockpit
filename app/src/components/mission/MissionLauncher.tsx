@@ -6,6 +6,7 @@
 // a MESMA trava de capacidade — valem p/ o agent da FASE 1 e vão no prompt
 // dela pelo caminho existente do runAgent (nada muda no Rust). Clicar fora NÃO
 // fecha (anti miss-click); Esc/X fecham, mas rascunho sujo pede confirmação.
+import { confirm } from "@/lib/confirm"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Paperclip, Rocket, Zap } from "lucide-react"
 import {
@@ -235,7 +236,7 @@ export function MissionLauncher({
   // Esc e o X do dialog caem aqui (controlado). Clicar FORA nem chega — o
   // onInteractOutside abaixo bloqueia (anti miss-click). Rascunho sujo →
   // confirmação antes de descartar.
-  function handleOpenChange(next: boolean) {
+  async function handleOpenChange(next: boolean) {
     if (!next) {
       const dirty = draftDirty({
         task,
@@ -243,7 +244,9 @@ export function MissionLauncher({
         attachmentCount: attachments.length,
         customized,
       })
-      if (dirty && !window.confirm("Descartar o rascunho da missão?")) return
+      // O confirm do app, não o `window.confirm` nativo (ADR-261).
+      if (dirty && !(await confirm({ title: "Descartar o rascunho da missão?", confirmLabel: "Descartar", danger: true })))
+        return
       resetLocal(true)
     }
     onOpenChange(next)

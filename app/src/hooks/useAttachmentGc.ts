@@ -13,7 +13,7 @@
 //    apagada" de "front que ainda não montou".
 
 import { useEffect } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { gcAttachments } from "@/lib/attachments"
 import { listConvRefs, isTauri } from "@/lib/db"
 import { BYTES_PER_MB } from "@/lib/format"
@@ -29,7 +29,7 @@ export function useAttachmentGc() {
         const notasVivas = useStickyNotes.getState().notes.map((n) => n.id)
         const r = await gcAttachments(refs, notasVivas)
         if (r.freed_bytes > 0) {
-          toast(
+          avisar.evento(
             `Cache de anexos: ${(r.freed_bytes / BYTES_PER_MB).toFixed(1)} MB liberados`,
           )
         }

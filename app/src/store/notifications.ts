@@ -12,6 +12,9 @@ export type NotifKind =
    *  Irmão do approval — a diferença é que aqui o modelo quer CONTEÚDO, não
    *  autorização (ver docs/interactive-input.md). */
   | "question"
+  /** Algo aconteceu sem você (ADR-261): o navegador caiu, uma atualização
+   *  chegou. O toast some; a cópia fica aqui. */
+  | "evento"
 
 export interface Notification {
   id: string

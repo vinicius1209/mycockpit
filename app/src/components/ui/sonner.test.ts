@@ -15,4 +15,11 @@ describe("Toaster", () => {
   it("o ícone de erro não é um X", () => {
     expect(fonte).not.toMatch(/error: <\w*X\w*Icon/)
   })
+
+  // ADR-261: no centro de baixo o aviso tampava o composer.
+  it("mora no canto superior direito, abaixo da faixa da janela, com o fechar à direita", () => {
+    expect(fonte).toMatch(/position="top-right"/)
+    expect(fonte).toMatch(/offset=\{\{ top: 64/)
+    expect(fonte).toMatch(/"--toast-close-button-end": "0"/)
+  })
 })

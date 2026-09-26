@@ -10,7 +10,7 @@
 // e nunca vira uma seção em Configurações que você configura uma vez e esquece.
 
 import { useEffect } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { SquareArrowOutUpRight } from "lucide-react"
 import {
   ContextMenu,
@@ -45,9 +45,7 @@ export function OpenProjectInEditorItem({ projectPath }: { projectPath: string }
       onSelect={() => {
         void openInEditor({ editor: escolhido.id, projectPath, rel: "" }).catch(
           (e: unknown) =>
-            toast.error(
-              typeof e === "string" && e ? e : "Não consegui abrir no editor",
-            ),
+            avisar.erro("Não consegui abrir no editor.", { detalhe: mensagemDe(e) }),
         )
       }}
     >
@@ -90,7 +88,7 @@ export function OpenInEditor({
     } catch (e) {
       // O Rust já devolve o motivo (não instalado, fora do projeto, spawn
       // falhou). Engolir aqui deixaria o clique sem resposta nenhuma.
-      toast.error(typeof e === "string" && e ? e : "Não consegui abrir no editor")
+      avisar.erro("Não consegui abrir no editor.", { detalhe: mensagemDe(e) })
     }
   }
 

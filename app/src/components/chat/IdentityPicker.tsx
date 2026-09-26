@@ -8,7 +8,7 @@
 
 import { useState } from "react"
 import { Check } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   Command,
   CommandEmpty,
@@ -137,7 +137,7 @@ export function IdentityPicker({
   function confirmCustom() {
     const v = customDraft.trim()
     const problema = v ? problemaNoSlug(v) : null
-    if (problema) toast.error(problema)
+    if (problema) avisar.erro(problema)
     else if (v) onModelChange(v)
     setCustomEditing(false)
   }

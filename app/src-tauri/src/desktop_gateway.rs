@@ -156,10 +156,19 @@ async fn assegurar_grant(
         "desktop_needed",
         json!({ "runId": run_id, "convId": conv_id }),
     );
-    match broker
+    let espera = broker
         .esperar_grant(run_id, agora, ESPERA_PELO_GESTO, std::time::Duration::from_millis(250))
-        .await
-    {
+        .await;
+    // O agente parou de esperar sem a liberação: o pedido sai da tela, senão
+    // ficaria dizendo que ele espera (ADR-261).
+    if espera != EsperaDoGrant::Liberado {
+        crate::work_gateway::emit_work(
+            app,
+            "pedido_encerrado",
+            json!({ "runId": run_id, "convId": conv_id, "recurso": "computador" }),
+        );
+    }
+    match espera {
         EsperaDoGrant::Liberado => Ok(broker),
         EsperaDoGrant::Recusado => Err(RECUSA.into()),
         EsperaDoGrant::Encerrado => Err(TURNO_ENCERRADO.into()),

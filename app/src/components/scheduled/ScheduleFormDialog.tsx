@@ -9,7 +9,7 @@
 // e o store recusa.
 
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Route } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { controle } from "@/components/ui/controle"
@@ -211,18 +211,14 @@ export function ScheduleFormDialog({
     try {
       if (schedule) await editSchedule(schedule.id, input)
       else await createSchedule(input)
-      toast.success(
+      avisar.feito(
         `Automação "${d.name.trim()}" ${editando ? "salva" : "criada"}`,
       )
       onOpenChange(false)
     } catch (e) {
       // motivo real quando existe (ex.: a guarda de horário no passado do
       // store) — genérico só quando a falha vem muda.
-      toast.error(
-        e instanceof Error && e.message
-          ? e.message
-          : `Falha ao ${editando ? "salvar" : "criar"} a automação`,
-      )
+      avisar.erro(`Não consegui ${editando ? "salvar" : "criar"} a automação.`, { detalhe: mensagemDe(e) })
     } finally {
       setSaving(false)
     }

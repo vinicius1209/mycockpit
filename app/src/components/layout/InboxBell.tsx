@@ -6,6 +6,7 @@ import {
   CircleHelp,
   Gauge,
   Bell,
+  Info,
   Lightbulb,
   MessageCircleQuestion,
   ShieldQuestion,
@@ -184,6 +185,7 @@ function NotifIcon({ kind }: { kind: Notification["kind"] }) {
   // ícone de fala — é conteúdo que falta, não autorização.
   if (kind === "question")
     return <MessageCircleQuestion className="size-3.5 shrink-0 text-st-warning" />
+  if (kind === "evento") return <Info className="size-3.5 shrink-0 text-muted-foreground" />
   return <Check className="size-3.5 shrink-0 text-st-success" />
 }
 
@@ -443,7 +445,9 @@ export function InboxBell() {
                           ? "missão pausada"
                           : n.kind === "approval" || n.kind === "question"
                             ? "turno parado"
-                            : "turno concluído"}
+                            : n.kind === "evento"
+                              ? "aviso"
+                              : "turno concluído"}
                   </span>
                   {/* (M2) O recibo: o que o turno FEZ. Linha própria porque é a
                       única informação aqui que não é rótulo — e `line-clamp-2`

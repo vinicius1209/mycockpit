@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { Attachment } from "@/lib/attachments"
 import { listAgentDefs, type AgentDef } from "@/lib/agentDefs"
 import { agentDef as motorDef } from "@/lib/agents"
@@ -107,7 +107,7 @@ async function registrarFalha(
 ): Promise<void> {
   const detalhe = motivo?.trim() ? `: ${motivo.trim()}` : "."
   const message = `${nome} não opinou neste turno${detalhe}`
-  toast.error(message)
+  avisar.erro(message)
   await useChat.getState().appendItems(convId, [
     { kind: "notice", id: crypto.randomUUID(), message, ts: Date.now() },
   ])
@@ -137,7 +137,7 @@ export async function consultarMencionados(entrada: {
   // e um turno pode ter começado nesse meio-tempo.
   const agora = useChat.getState().byId[convId]
   if (agora?.running || agora?.finalizing || agora?.advising) {
-    toast("Termine o turno atual antes de pedir um parecer.")
+    avisar.nota("Termine o turno atual antes de pedir um parecer.")
     return true
   }
 
@@ -148,11 +148,11 @@ export async function consultarMencionados(entrada: {
   for (const chamado of chamados) {
     const achado = await resolveAdvisor(project.path, chamado.def.id)
     if (achado.status === "unreadable") {
-      toast.error(`Não consegui ler a persona "${chamado.def.name}" do disco. Tente de novo.`)
+      avisar.erro(`Não consegui ler a persona "${chamado.def.name}" do disco. Tente de novo.`)
       return true
     }
     if (achado.status === "missing") {
-      toast.error(`A persona "${chamado.def.name}" não existe mais.`)
+      avisar.erro(`A persona "${chamado.def.name}" não existe mais.`)
       return true
     }
     resolvidos.push({ def: achado.def, question: chamado.question })

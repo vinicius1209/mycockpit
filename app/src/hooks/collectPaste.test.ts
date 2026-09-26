@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest"
 
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open: vi.fn(async () => null) }))
-vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn() }) }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 
 const { collectPaste } = await import("@/hooks/useAttachments")
 

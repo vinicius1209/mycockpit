@@ -9,7 +9,7 @@
 //    do pedido e do Revogar, e nenhuma tela dizia isso.
 
 import { useCallback, useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { CadastroGlobalDoMotor } from "@/components/settings/CadastroGlobalDoMotor"
 import { AGENTS, type AgentDef } from "@/lib/agents"
@@ -58,7 +58,7 @@ function Terceiros({ agent, versao }: { agent: AgentDef; versao: number }) {
     try {
       await setDesktopExternalEnabled(agent.id, controle.name, !controle.enabled)
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
+      avisar.erro(`Não consegui mudar ${controle.name}.`, { detalhe: mensagemDe(cause) })
     } finally {
       setMexendo(null)
       await ler()

@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { AgentEvent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
 import { markLessonsUsed } from "@/lib/learning"
@@ -63,7 +63,7 @@ export function recordDispatchError(
   if (!last || last.kind !== "error" || last.message !== message) {
     useChat.getState().handleEvent(convId, { type: "error", message })
   }
-  toast.error(message)
+  avisar.erro(message)
 }
 
 export function acceptChatTurn({
@@ -143,7 +143,7 @@ export function acceptChatTurn({
         personaStamp.digest,
         personaStamp.name,
       )
-      .catch(() => toast.error("Não consegui registrar a persona deste turno."))
+      .catch(() => avisar.erro("Não consegui registrar a persona deste turno."))
   }
   onAccepted?.()
 }

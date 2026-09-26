@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { Loader2, LockKeyhole, RefreshCcw } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
 import { PillSelect } from "@/components/ui/PillSelect"
@@ -112,7 +112,7 @@ export function McpSettings() {
         ),
       )
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
+      avisar.erro("Não consegui contar as integrações por projeto.", { detalhe: mensagemDe(cause) })
     }
   }, [])
 
@@ -209,11 +209,11 @@ export function McpSettings() {
       try {
         const status = await mcpOauthLogin(path, server.id)
         setAuthByServer((atual) => ({ ...atual, [server.id]: status }))
-        toast.success(`Login concluído em ${server.name}.`)
+        avisar.feito(`Login concluído em ${server.name}.`)
       } catch (cause) {
         // Motivo legível vindo do backend (issuer divergente, sem PKCE, porta
         // ocupada, recusa do servidor). Nunca engolido.
-        toast.error(cause instanceof Error ? cause.message : String(cause))
+        avisar.erro(`Não consegui entrar em ${server.name}.`, { detalhe: mensagemDe(cause) })
       } finally {
         setAuthKeyBusy(server.id, false)
       }
@@ -240,9 +240,9 @@ export function McpSettings() {
             revogavel: atual[server.id]?.revogavel ?? false,
           },
         }))
-        toast.success(resultado)
+        avisar.feito(resultado)
       } catch (cause) {
-        toast.error(cause instanceof Error ? cause.message : String(cause))
+        avisar.erro(`Não consegui sair de ${server.name}.`, { detalhe: mensagemDe(cause) })
       } finally {
         setAuthKeyBusy(server.id, false)
       }
@@ -318,7 +318,7 @@ export function McpSettings() {
           browser: next.browser,
           browserConexao: next.browserConexao,
         }),
-      onError: (message) => toast.error(message),
+      onError: (message) => avisar.erro(message),
     })
     setKeyBusy(key, false)
     if (!confirmed) return
@@ -335,12 +335,12 @@ export function McpSettings() {
         })
         applyHealthResult(path, server.id, state.agent, result)
         if (result.status !== "healthy" && result.status !== "auth-delegated") {
-          toast.warning(`${server.name}: ${mcpHealthLabel(result.status)}`, {
-            description: result.detail ?? undefined,
+          avisar.nota(`${server.name}: ${mcpHealthLabel(result.status)}`, {
+            detalhe: result.detail ?? undefined,
           })
         }
       } catch (cause) {
-        toast.error(cause instanceof Error ? cause.message : String(cause))
+        avisar.erro(`Não consegui testar ${server.name}.`, { detalhe: mensagemDe(cause) })
       } finally {
         setCheckingKeys((prev) => toggleKey(prev, key, false))
       }
@@ -360,17 +360,17 @@ export function McpSettings() {
         agent: state.agent,
       })
       if (result.status === "healthy") {
-        toast.success(
+        avisar.feito(
           `${server.name}: saudável${result.toolCount ? ` · ${result.toolCount} tools` : ""}`,
         )
       } else {
-        toast.warning(`${server.name}: ${mcpHealthLabel(result.status)}`, {
-          description: result.detail ?? undefined,
+        avisar.nota(`${server.name}: ${mcpHealthLabel(result.status)}`, {
+          detalhe: result.detail ?? undefined,
         })
       }
       applyHealthResult(path, server.id, state.agent, result)
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
+      avisar.erro(`Não consegui testar ${server.name}.`, { detalhe: mensagemDe(cause) })
     } finally {
       setKeyBusy(key, false)
     }
@@ -384,7 +384,7 @@ export function McpSettings() {
     const busyKey = `cli:${key}`
     if (busyKeysRef.current.has(busyKey)) return
     if (state.escopo === "global" && (!state.cliInstallation || state.cliInstallation === "unknown")) {
-      toast.error("Reverifique o inventário do CLI antes de alterar")
+      avisar.erro("Reverifique o inventário do CLI antes de alterar")
       return
     }
     const path = project.path
@@ -399,9 +399,9 @@ export function McpSettings() {
         instalar,
       })
       // A voz do CLI é a evidência; o app não reescreve o que ele disse.
-      toast.success(dito || `${server.name} ${instalar ? "instalado" : "removido"} no ${state.agent}`)
+      avisar.feito(dito || `${server.name} ${instalar ? "instalado" : "removido"} no ${state.agent}`)
     } catch (cause) {
-      toast.error(cause instanceof Error ? cause.message : String(cause))
+      avisar.erro(`Não consegui ${instalar ? "instalar" : "remover"} ${server.name}.`, { detalhe: mensagemDe(cause) })
     } finally {
       try {
         const found = await discoverMcpServers(path, { force: true })

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, RefreshCcw } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { Card, CardBody } from "./parts"
 import { AGENTS, type AgentDef } from "@/lib/agents"
@@ -35,7 +35,7 @@ function WorkMcpRow({ agent, onChanged }: { agent: AgentDef; onChanged: () => Pr
     } catch (cause) {
       setSnapshot(null)
       setError(String(cause))
-      toast.error(String(cause))
+      avisar.erro("Não consegui mudar as ferramentas de trabalho do Frota.", { detalhe: mensagemDe(cause) })
     } finally { inFlight.current = false; setBusy(false) }
   }
   const action = snapshot && workMcpAction(snapshot.state)

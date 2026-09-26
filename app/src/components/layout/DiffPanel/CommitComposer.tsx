@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { Check, ChevronDown, FileText, Loader2, Sparkles } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { gitCommit } from "@/lib/git"
 import { generateCommitMessage } from "@/lib/commitAi"
 import { mensagemDaFalhaUtilitaria } from "@/lib/utility/falha"
@@ -42,7 +42,7 @@ export function CommitComposer({
   async function handleGenerateAi() {
     if (generating || busy || !hasChanges) return
     if (!helperModel) {
-      toast.error("Ative o modelo auxiliar nas Configurações para sugerir a mensagem")
+      avisar.erro("Ative o modelo auxiliar nas Configurações para sugerir a mensagem")
       return
     }
     setGenerating(true)
@@ -54,12 +54,12 @@ export function CommitComposer({
           setBody(msg.body)
           setShowBody(true)
         }
-        toast.success("Mensagem sugerida")
+        avisar.feito("Mensagem sugerida")
       } else {
-        toast.error("Não foi possível sugerir a mensagem de commit")
+        avisar.erro("Não foi possível sugerir a mensagem de commit")
       }
     } catch (e) {
-      toast.error(mensagemDaFalhaUtilitaria(e, "Falha ao sugerir a mensagem"))
+      avisar.erro("Não consegui sugerir a mensagem do commit.", { detalhe: mensagemDaFalhaUtilitaria(e, "") || null })
     } finally {
       setGenerating(false)
     }
@@ -69,7 +69,7 @@ export function CommitComposer({
     if (busy || !hasChanges) return
     const cleanTitle = title.trim()
     if (!cleanTitle) {
-      toast.error("Informe o título do commit")
+      avisar.erro("Informe o título do commit")
       return
     }
     const cleanBody = body.trim()
@@ -81,14 +81,14 @@ export function CommitComposer({
       // Se não tiver nenhum em stage, faz stageAll: true automaticamente.
       const stageAll = stagedCount === 0
       const sha = await gitCommit(cwd, fullMessage, { amend, stageAll })
-      toast.success(amend ? `Commit ${sha} retificado` : `Commit ${sha} criado`)
+      avisar.feito(amend ? `Commit ${sha} retificado` : `Commit ${sha} criado`)
       setTitle("")
       setBody("")
       setShowBody(false)
       setAmend(false)
       onCommitted()
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha ao commitar")
+      avisar.erro("Não consegui fazer o commit.", { detalhe: mensagemDe(e) })
     } finally {
       setBusy(false)
     }

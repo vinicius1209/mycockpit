@@ -4,7 +4,7 @@
 
 import { useRef, useState } from "react"
 import { Dices, Trash2, Upload } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { useApp } from "@/store/app"
 import { UserAvatar } from "@/components/user/UserAvatar"
 import {
@@ -79,9 +79,9 @@ export function ProfileSettings() {
         avatarType: "image",
         customImageDataUri: dataUri,
       })
-      toast.success("Foto de perfil atualizada")
+      avisar.feito("Foto de perfil atualizada")
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao carregar imagem")
+      avisar.erro("Não consegui carregar a imagem.", { detalhe: mensagemDe(err) })
     } finally {
       setIsProcessingImage(false)
     }
@@ -92,7 +92,7 @@ export function ProfileSettings() {
       customImageDataUri: null,
       avatarType: displayName ? "initials" : "icon",
     })
-    toast(displayName ? "Foto removida. Usando iniciais." : "Foto removida.")
+    avisar.feito(displayName ? "Foto removida. Usando iniciais." : "Foto removida.")
   }
 
   function randomizeDicebearSeed() {
@@ -105,7 +105,7 @@ export function ProfileSettings() {
 
   async function previewTaskDoneChime() {
     if (!(await playTaskDoneChime())) {
-      toast.error("Não foi possível reproduzir o som nesta máquina.")
+      avisar.erro("Não foi possível reproduzir o som nesta máquina.")
     }
   }
 

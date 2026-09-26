@@ -7,7 +7,7 @@
 // MIGRAÇÃO das personas antigas, uma vez por sessão.
 
 import { create } from "zustand"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   deleteAgentDef,
   dedupeByScope,
@@ -98,7 +98,7 @@ async function migrarLegado(existentes: AgentDef[]): Promise<boolean> {
       n++
     }
     if (n > 0) {
-      toast(
+      avisar.evento(
         `${n} ${n === 1 ? "persona migrada" : "personas migradas"} para ~/.mycockpit/agents (agora são arquivos).`,
       )
     }
@@ -140,7 +140,7 @@ export const usePresets = create<PresetsState>((set, get) => ({
   create: async (p, scope) => {
     const { todas, projectPath } = get()
     if (scope === "projeto" && !projectPath) {
-      toast.error("Abra um projeto para criar uma persona só dele.")
+      avisar.erro("Abra um projeto para criar uma persona só dele.")
       return null
     }
     try {
@@ -156,7 +156,7 @@ export const usePresets = create<PresetsState>((set, get) => ({
       return criada
     } catch (e) {
       console.error("[personas] falha ao criar", e)
-      toast.error("Não consegui gravar a persona.")
+      avisar.erro("Não consegui gravar a persona.")
       return null
     }
   },
@@ -195,7 +195,7 @@ export const usePresets = create<PresetsState>((set, get) => ({
       return nova
     } catch (e) {
       console.error("[personas] falha ao salvar", e)
-      toast.error("Não consegui gravar a persona.")
+      avisar.erro("Não consegui gravar a persona.")
       return null
     }
   },
@@ -210,7 +210,7 @@ export const usePresets = create<PresetsState>((set, get) => ({
       set({ todas: proximas, list: dedupeByScope(proximas) })
     } catch (e) {
       console.error("[personas] falha ao apagar", e)
-      toast.error("Não consegui apagar a persona.")
+      avisar.erro("Não consegui apagar a persona.")
     }
   },
 
@@ -230,7 +230,7 @@ export const usePresets = create<PresetsState>((set, get) => ({
       if (criada) criados++
     }
     if (criados > 0) {
-      toast(
+      avisar.feito(
         `${criados} ${criados === 1 ? "especialista instalado" : "especialistas instalados"} (equipe inicial, em ~/.mycockpit/agents).`,
       )
     }

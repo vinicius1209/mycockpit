@@ -16,7 +16,7 @@
 // precisa parar o app é dialog (§12).
 
 import { useMemo } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 
 import {
   AutoResumeBanner,
@@ -210,7 +210,7 @@ export function BannersDoComposer({
           aviso={motorAusente}
           onCopiar={(cmd) => {
             void navigator.clipboard?.writeText(cmd)
-            toast.success("Comando copiado")
+            avisar.feito("Comando copiado")
           }}
         />
       )}

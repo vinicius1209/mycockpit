@@ -8,9 +8,7 @@
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/notify", () => ({
   notifyTurnStalled: vi.fn(),
   notifyCardStalled: vi.fn(),
@@ -26,7 +24,7 @@ vi.mock("@/lib/agent", async (importOriginal) => {
   return { ...mod, cancelAgent: vi.fn(async () => {}) }
 })
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { notifyMissionStalled } from "@/lib/notify"
 import type {
   MissionPhaseDef,
@@ -153,11 +151,11 @@ describe("checkStalledMissions (MH1.2)", () => {
       "Executar",
       10,
     )
-    expect(toast).toHaveBeenCalledTimes(1)
+    expect(avisar.evento).toHaveBeenCalledTimes(1)
     // o toast oferece o Stop REAL da missão, não um dismiss
-    const opts = (toast as unknown as ReturnType<typeof vi.fn>).mock
-      .calls[0][1] as { cancel: { label: string } }
-    expect(opts.cancel.label).toBe("Parar missão")
+    const opts = vi.mocked(avisar.evento).mock
+      .calls[0][1] as { secundaria: { rotulo: string } }
+    expect(opts.secundaria.rotulo).toBe("Parar missão")
 
     // silêncio continuado NÃO re-avisa (1 por episódio)
     checkStalledMissions(T0 + 20 * MIN)
@@ -281,6 +279,6 @@ describe("checkStalledMissions (MH1.2)", () => {
     checkStalledMissions(T0)
     checkStalledMissions(T0 + 120 * MIN)
     expect(notifyMissionStalled).not.toHaveBeenCalled()
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.evento).not.toHaveBeenCalled()
   })
 })

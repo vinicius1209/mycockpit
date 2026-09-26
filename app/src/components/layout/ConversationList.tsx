@@ -1,6 +1,6 @@
 import { retomadaAgendada } from "@/lib/autoResume"
 import { useMemo, useRef, useState } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { confirm } from "@/lib/confirm"
 import { createWorktree, removeWorktree, worktreeRemovalNote } from "@/lib/git"
 import { useWorktrees } from "@/store/worktrees"
@@ -210,22 +210,20 @@ export function ConversationList({ projectId }: { projectId: string }) {
       try {
         const nota = worktreeRemovalNote(await removeWorktree(project.path, wt))
         setWorktree(id, null)
-        toast.success("Isolamento removido", nota ? { description: nota } : undefined)
+        avisar.feito("Isolamento removido", { detalhe: nota })
       } catch (e) {
         // git recusa sem --force se houver mudança não-commitada (preserva o trabalho)
-        toast.error(
-          typeof e === "string" && e
-            ? e
-            : "Não removi; há mudanças não-commitadas no worktree?",
-        )
+        avisar.erro("Não removi o isolamento.", {
+          detalhe: typeof e === "string" && e ? e : "Há mudanças não commitadas no worktree?",
+        })
       }
     } else {
       try {
         const info = await createWorktree(project.path, id)
         setWorktree(id, info.path)
-        toast.success(`Isolado em ${info.branch}`)
+        avisar.feito(`Isolado em ${info.branch}`)
       } catch (e) {
-        toast.error(typeof e === "string" ? e : "Falha ao isolar")
+        avisar.erro("Não consegui isolar a conversa.", { detalhe: mensagemDe(e) })
       }
     }
     releitura()

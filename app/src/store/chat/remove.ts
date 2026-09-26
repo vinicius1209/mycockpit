@@ -14,7 +14,7 @@
 // Tipos importados de @/store/chat são TYPE-ONLY (apagados na compilação):
 // não criam ciclo de import em runtime.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { deFundo } from "@/lib/deFundo"
 import type { ChatState } from "@/store/chat"
 import { projectOfConv } from "@/store/chat"
@@ -68,8 +68,8 @@ async function dropWorktree(before: ChatState, id: string): Promise<void> {
     // confirmação — repetir aqui só faz barulho. Branch que ficou, não: é
     // estado novo no repositório que ninguém pediu.
     if (r.branch && !r.branchRemoved) {
-      toast("Worktree removido, branch preservado.", {
-        description: worktreeRemovalNote(r) ?? undefined,
+      avisar.feito("Worktree removido, branch preservado.", {
+        detalhe: worktreeRemovalNote(r) ?? undefined,
       })
     }
   } catch (e) {
@@ -77,8 +77,8 @@ async function dropWorktree(before: ChatState, id: string): Promise<void> {
     // nossa e não vira erro vermelho: é trabalho preservado — mas o usuário
     // acabou de apagar a conversa e precisa saber que a pasta ficou, senão
     // nunca mais volta lá.
-    toast("A conversa foi apagada, mas o worktree ficou.", {
-      description:
+    avisar.feito("A conversa foi apagada, mas o worktree ficou.", {
+      detalhe:
         typeof e === "string" && e
           ? `${e} (a pasta segue em ${wt}).`
           : `Há mudança não-commitada em ${wt}; o git preservou o trabalho.`,

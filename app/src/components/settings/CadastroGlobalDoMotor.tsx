@@ -6,7 +6,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, RefreshCcw } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import type { AgentDef } from "@/lib/agents"
 import { workMcpAction, type WorkMcpSetup } from "@/lib/workMcpSetup"
@@ -65,7 +65,7 @@ export function CadastroGlobalDoMotor({
     } catch (cause) {
       setSnapshot(null)
       setError(String(cause))
-      toast.error(String(cause))
+      avisar.erro("Não consegui mudar o cadastro global do motor.", { detalhe: mensagemDe(cause) })
     } finally {
       inFlight.current = false
       setBusy(false)

@@ -4,7 +4,8 @@
 // inventário completo mora na aba "O que o agente vê".
 
 import { AlertTriangle, Info } from "lucide-react"
-import { toast } from "sonner"
+import { nomeDoProjeto } from "@/lib/pedidosDeRecurso"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { PENDING_DECISION } from "@/lib/attention"
 import { startProjectBrowser } from "@/lib/browser"
@@ -63,6 +64,11 @@ export function agirNaExcecao(e: ExcecaoDoTurno, projectPath: string | null): vo
   }
   if (!projectPath) return
   void startProjectBrowser(projectPath)
-    .then(() => toast.success("Navegador do projeto ligado. Ele entra no próximo turno."))
-    .catch((erro) => toast.error(erro instanceof Error ? erro.message : String(erro)))
+    .then(() => avisar.feito(`Navegador do ${nomeDoProjeto(projectPath) ?? "projeto"} ligado. Ele entra no próximo turno.`))
+    .catch((erro) =>
+      avisar.erro(`Não consegui ligar o navegador do ${nomeDoProjeto(projectPath) ?? "projeto"}.`, {
+        origem: { projeto: projectPath },
+        detalhe: mensagemDe(erro),
+      }),
+    )
 }

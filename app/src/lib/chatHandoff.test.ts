@@ -31,11 +31,13 @@ const mocks = vi.hoisted(() => {
     prepareHybridHandoff: vi.fn(),
     markLessonsUsed: vi.fn(async () => {}),
     notifyTurnEnd: vi.fn(async () => {}),
-    toastError: vi.fn(),
+    avisoDeErro: vi.fn(),
   }
 })
 
-vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }))
+vi.mock("@/lib/avisos", async () =>
+  (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos({ erro: mocks.avisoDeErro, feito: vi.fn(), nota: vi.fn(), evento: vi.fn(), fechar: vi.fn() }),
+)
 vi.mock("@/lib/agent", () => ({
   agentLabel: (agent: string) => agent,
   runAgent: mocks.runAgent,

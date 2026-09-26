@@ -3,7 +3,7 @@
 // só se decide para onde ela vai: o rascunho da conversa ativa ou o clipboard.
 
 import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { agentDef } from "@/lib/agents"
 import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 import { useChat } from "@/store/chat"
@@ -35,7 +35,7 @@ export function linhaDaPagina(pagina: Pick<PaginaAnexada, "title" | "url">): str
 export async function anexarPaginaAoRascunho(projectPath: string, targetId: string): Promise<void> {
   const convId = useChat.getState().activeId
   if (!convId) {
-    toast.error("Abra uma conversa para anexar a página.")
+    avisar.erro("Abra uma conversa para anexar a página.")
     return
   }
   try {
@@ -50,23 +50,23 @@ export async function anexarPaginaAoRascunho(projectPath: string, targetId: stri
       pagina.attachment,
     )
     if (!coube) {
-      toast.error(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para anexar a página.`)
+      avisar.erro(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para anexar a página.`)
       return
     }
     drafts.setAttachments(convId, anexos)
     drafts.appendText(convId, linhaDaPagina(pagina))
-    toast.success("Página anexada ao rascunho da conversa.")
+    avisar.feito("Página anexada ao rascunho da conversa.")
   } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
+    avisar.erro("Não consegui anexar a página.", { detalhe: mensagemDe(cause) })
   }
 }
 
 export async function copiarImagemDaPagina(projectPath: string, targetId: string): Promise<void> {
   try {
     await invoke("browser_capture_copy", { projectPath, targetId })
-    toast.success("Imagem da página copiada.")
+    avisar.feito("Imagem da página copiada.")
   } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
+    avisar.erro("Não consegui copiar a imagem da página.", { detalhe: mensagemDe(cause) })
   }
 }
 
@@ -107,7 +107,7 @@ export async function marcarRegiaoNoRascunho(
   const chat = useChat.getState()
   const convId = chat.activeId
   if (!convId) {
-    toast.error("Abra uma conversa para enviar a marcação.")
+    avisar.erro("Abra uma conversa para enviar a marcação.")
     return false
   }
   try {
@@ -131,11 +131,11 @@ export async function marcarRegiaoNoRascunho(
       altura: marcacao.regiao.altura,
       descricao: marcacao.descricao,
     })
-    if (aviso) toast(aviso)
-    else toast.success("Marcação no rascunho da conversa.")
+    if (aviso) avisar.nota(aviso)
+    else avisar.feito("Marcação no rascunho da conversa.")
     return true
   } catch (cause) {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
+    avisar.erro("Não consegui marcar a região.", { detalhe: mensagemDe(cause) })
     return false
   }
 }

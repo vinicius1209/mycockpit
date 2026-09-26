@@ -28,9 +28,7 @@ const h = vi.hoisted(() => ({
   fusion: { byConv: {} as Record<string, { phase: string }>, abort: vi.fn() },
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async (...args: unknown[]) => {
     const onEvent = args[10] as (event: typeof acceptedRunEvent) => void

@@ -1,7 +1,7 @@
 // O gesto de citar (pílula ou menu do botão direito): a seleção de uma
 // mensagem do fio vira citação no rascunho da conversa ativa (capricho PRD R3).
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { agentDef } from "@/lib/agents"
 import { citacaoDoTrecho, TETO_DE_CITACOES } from "@/lib/citacao"
 import { focusConsoleComposer } from "@/lib/focusComposer"
@@ -23,7 +23,7 @@ export function citarTrecho(itemId: string, selecao: string): boolean {
   })
   if (!citacao) return false
   if (!useComposerDrafts.getState().addCitacao(convId, citacao)) {
-    toast.error(`Até ${TETO_DE_CITACOES} citações por mensagem. Remova uma para citar outra.`)
+    avisar.erro(`Até ${TETO_DE_CITACOES} citações por mensagem. Remova uma para citar outra.`)
     return false
   }
   window.getSelection()?.removeAllRanges()

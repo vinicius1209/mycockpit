@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { copyRich } from "./clipboard"
 
 class FakeClipboardItem {
@@ -13,8 +13,8 @@ class FakeClipboardItem {
 }
 
 beforeEach(() => {
-  vi.mocked(toast.success).mockClear()
-  vi.mocked(toast.error).mockClear()
+  vi.mocked(avisar.feito).mockClear()
+  vi.mocked(avisar.erro).mockClear()
 })
 afterEach(() => vi.unstubAllGlobals())
 
@@ -27,7 +27,7 @@ describe("copiar texto e HTML juntos", () => {
     const [item] = write.mock.calls[0][0]
     expect(Object.keys(item.itens).sort()).toEqual(["text/html", "text/plain"])
     expect(await item.itens["text/html"].text()).toBe("<table></table>")
-    expect(toast.success).toHaveBeenCalledWith("Tabela copiada")
+    expect(avisar.feito).toHaveBeenCalledWith("Tabela copiada")
   })
 
   it("sem escrita assíncrona, cai no evento copy com os dois formatos", async () => {
@@ -52,12 +52,12 @@ describe("copiar texto e HTML juntos", () => {
     vi.stubGlobal("navigator", { clipboard: { write: vi.fn(async () => { throw new Error("negado") }) } })
     vi.stubGlobal("document", { addEventListener() {}, removeEventListener() {}, execCommand: () => false })
     expect(await copyRich({ plain: "x", html: "<b>x</b>" })).toBe(false)
-    expect(toast.error).toHaveBeenCalledWith("Não consegui copiar")
+    expect(avisar.erro).toHaveBeenCalledWith("Não consegui copiar")
   })
 
   it("conteúdo vazio não copia nem avisa", async () => {
     expect(await copyRich({ plain: "  " })).toBe(false)
-    expect(toast.success).not.toHaveBeenCalled()
-    expect(toast.error).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
+    expect(avisar.erro).not.toHaveBeenCalled()
   })
 })

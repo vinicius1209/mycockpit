@@ -3,19 +3,19 @@ import { cleanup, render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
-vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({ writeText: vi.fn(async () => {}) }))
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
 
 import { writeText } from "@tauri-apps/plugin-clipboard-manager"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 
 import { Markdown } from "@/components/common/Markdown"
 
 beforeEach(() => {
   vi.mocked(writeText).mockClear().mockResolvedValue(undefined)
-  vi.mocked(toast.success).mockClear()
-  vi.mocked(toast.error).mockClear()
+  vi.mocked(avisar.feito).mockClear()
+  vi.mocked(avisar.erro).mockClear()
 })
 afterEach(cleanup)
 
@@ -28,7 +28,7 @@ describe("copiar o bloco de código", () => {
     await user.click(screen.getByRole("button", { name: "Copiar" }))
     expect(writeText).toHaveBeenCalledTimes(1)
     expect(vi.mocked(writeText).mock.calls[0][0]).toContain("const a = 1")
-    expect(toast.success).toHaveBeenCalledWith("Copiado")
+    expect(avisar.feito).toHaveBeenCalledWith("Copiado")
   })
 
   it("o WebView não é tocado: é isso que solta o copiar do turno em voo", async () => {
@@ -54,7 +54,7 @@ describe("copiar o bloco de código", () => {
     const user = userEvent.setup()
     render(<Markdown text={BLOCO} />)
     await user.click(screen.getByRole("button", { name: "Copiar" }))
-    expect(toast.error).toHaveBeenCalledWith("Não consegui copiar")
+    expect(avisar.erro).toHaveBeenCalledWith("Não consegui copiar")
     expect(log.mock.calls[0][0]).toContain("NotAllowedError")
     log.mockRestore()
   })

@@ -5,7 +5,7 @@
 
 import { useState } from "react"
 import { Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { migrarPastaDoProjeto } from "@/lib/configDoProjeto"
 import { recarregarConfigDoProjeto } from "@/hooks/useProjectConfig"
@@ -38,10 +38,10 @@ export function PastaAntigaDoProjeto({
       const r = await migrarPastaDoProjeto(project.path)
       await recarregarConfigDoProjeto(project)
       onMigrou()
-      if (r.conflitos.length > 0) toast.warning(avisoDaMigracao(r))
-      else toast.success(avisoDaMigracao(r))
+      if (r.conflitos.length > 0) avisar.nota(avisoDaMigracao(r))
+      else avisar.feito(avisoDaMigracao(r))
     } catch (erro) {
-      toast.error(erro instanceof Error ? erro.message : String(erro))
+      avisar.erro("Não consegui mover a pasta antiga do projeto.", { detalhe: mensagemDe(erro) })
     } finally {
       setMovendo(false)
     }

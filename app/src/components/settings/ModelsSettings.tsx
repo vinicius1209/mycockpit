@@ -13,7 +13,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { ChevronRight, RotateCcw } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { agentDef } from "@/lib/agents"
 import {
@@ -141,7 +141,7 @@ export function ModelsSettings() {
   async function decide(p: ModelProposal, status: "active" | "dismissed") {
     const ok = await setModelProposalStatus(p.id, status)
     if (!ok) {
-      toast.error("Não deu pra gravar a decisão. O modelo continua como estava.")
+      avisar.erro("Não deu pra gravar a decisão. O modelo continua como estava.")
       return
     }
     // O picker é montado do BANCO, sempre: aprovar e tirar passam pelo mesmo
@@ -158,21 +158,19 @@ export function ModelsSettings() {
       // O preço é uma das três pernas: catálogo velho reprovaria candidato por
       // desatualização nossa. Rede caída não impede a rodada (o SEED responde).
       if (!(await refreshCatalogIntoSettings()))
-        toast.warning(
+        avisar.erro(
           "Não deu pra baixar o catálogo agora. O snapshot anterior segue valendo.",
         )
       const report = await runModelRound({ trigger: "gesture" })
       if (!report) {
-        toast.error("A rodada não rodou (o app precisa estar no desktop).")
+        avisar.erro("A rodada não rodou (o app precisa estar no desktop).")
         return
       }
-      toast.success(roundSummary(report))
-      for (const gap of roundGaps(report, rotulo)) toast.warning(gap)
+      avisar.feito(roundSummary(report))
+      for (const gap of roundGaps(report, rotulo)) avisar.nota(gap)
     } catch (e) {
       // Gesto espera resultado: falha vira frase, não silêncio.
-      toast.error(
-        `A rodada de modelos falhou: ${e instanceof Error ? e.message : String(e)}`,
-      )
+      avisar.erro("A rodada de modelos falhou.", { detalhe: mensagemDe(e) })
     } finally {
       await load()
       setChecking(false)

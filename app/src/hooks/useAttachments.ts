@@ -1,5 +1,5 @@
 import { useEffect, useState, type SetStateAction } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { open } from "@tauri-apps/plugin-dialog"
 import { isTauri } from "@/lib/db"
 import type { Attachment } from "@/lib/attachments"
@@ -124,11 +124,11 @@ export function useAttachments({
     let count = attachments.length
     for (const f of files) {
       if (f.size > MAX_ATTACH_BYTES) {
-        toast.error(`"${f.name || "anexo"}" excede ${MAX_ATTACH_MB} MB`)
+        avisar.erro(`"${f.name || "anexo"}" excede ${MAX_ATTACH_MB} MB`)
         continue
       }
       if (count >= MAX_ATTACH_COUNT) {
-        toast.error(`máx. ${MAX_ATTACH_COUNT} anexos por mensagem`)
+        avisar.erro(`máx. ${MAX_ATTACH_COUNT} anexos por mensagem`)
         break
       }
       try {
@@ -137,7 +137,7 @@ export function useAttachments({
         setAttachments((a) => [...a, att])
         count++
       } catch (err) {
-        toast.error(typeof err === "string" ? err : "falha ao anexar")
+        avisar.erro("Não consegui anexar o arquivo.", { detalhe: mensagemDe(err) })
       }
     }
   }

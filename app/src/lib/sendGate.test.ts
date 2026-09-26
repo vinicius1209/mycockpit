@@ -10,9 +10,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const h = vi.hoisted(() => ({ toast: vi.fn() }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(h.toast, { success: vi.fn(), error: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos({ nota: h.toast, feito: vi.fn(), evento: vi.fn(), erro: vi.fn(), fechar: vi.fn() }))
 
 import { retidoPorTurnoEmVoo } from "./sendGate"
 import { AUTO_RESUME, HUMANO, PASTA_LIBERADA } from "./sendOrigin"

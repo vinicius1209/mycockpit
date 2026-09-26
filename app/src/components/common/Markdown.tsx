@@ -13,7 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { openUrl } from "@tauri-apps/plugin-opener"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 import { copyRich, copyText } from "@/lib/clipboard"
 import { conteudoDaTabela, lerTabela, type DestinoDaTabela } from "@/lib/tabelaClipboard"
@@ -187,7 +187,7 @@ function MarkdownLink({
       e.preventDefault()
       void openUrl(href).catch((err) => {
         console.error("[markdown] não consegui abrir url", err)
-        toast.error("Não consegui abrir o link no navegador")
+        avisar.erro("Não consegui abrir o link no navegador")
       })
       return
     }

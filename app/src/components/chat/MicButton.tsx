@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { Loader2, Mic, Square } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import {
   DictationOverlay,
@@ -110,7 +110,7 @@ export function MicButton({
   async function start() {
     if (stateRef.current !== "idle") return
     if (!isTauri()) {
-      toast("Ditado disponível no app (tauri dev)")
+      avisar.nota("Ditado disponível no app (tauri dev)")
       return
     }
     const attempt = ++startAttemptRef.current
@@ -140,14 +140,14 @@ export function MicButton({
         throw new Error("o microfone respondeu para outra tentativa")
       }
       setActiveDeviceName(opened.deviceName)
-      if (opened.warn) toast.warning(opened.warn)
+      if (opened.warn) avisar.nota(opened.warn)
       setSince(Date.now())
       go("rec")
     } catch (e) {
       if (wasCancelled()) {
         return
       }
-      toast.error(typeof e === "string" ? e : "Falha ao iniciar o ditado")
+      avisar.erro("Não consegui iniciar o ditado.", { detalhe: mensagemDe(e) })
       activeAttemptIdRef.current = null
       targetConvIdRef.current = null
       go("idle")
@@ -164,9 +164,9 @@ export function MicButton({
     try {
       const { text, warn } = await sttStop()
       if (text) deliver(text)
-      if (warn) toast.warning(warn)
+      if (warn) avisar.nota(warn)
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha na transcrição")
+      avisar.erro("A transcrição falhou.", { detalhe: mensagemDe(e) })
     } finally {
       activeAttemptIdRef.current = null
       targetConvIdRef.current = null
@@ -187,7 +187,7 @@ export function MicButton({
     setActiveDeviceName(null)
     captureLostRef.current = null
     void sttCancel().catch((e) => {
-      toast.error(typeof e === "string" ? e : "Falha ao cancelar o ditado")
+      avisar.erro("Não consegui cancelar o ditado.", { detalhe: mensagemDe(e) })
     })
   }
 
@@ -241,7 +241,7 @@ export function MicButton({
         .catch(() => {
           if (disposed || listenerFailureShown) return
           listenerFailureShown = true
-          toast.error("Não consegui acompanhar o microfone. O ditado foi cancelado.")
+          avisar.erro("Não consegui acompanhar o microfone. O ditado foi cancelado.")
           cancel()
         })
     track(
@@ -262,7 +262,7 @@ export function MicButton({
       listen<SttCaptureLostEvent>("stt://capture-lost", (e) => {
         if (!sttEventBelongsTo(activeAttemptIdRef.current, e.payload)) return
         captureLostRef.current = e.payload.message
-        toast.warning(e.payload.message)
+        avisar.nota(e.payload.message)
       }),
     )
     track(
@@ -276,10 +276,10 @@ export function MicButton({
         const warning = e.payload?.warn
         const t = e.payload?.text?.trim()
         if (t) deliver(t)
-        if (warning && warning !== captureLost) toast.warning(warning)
-        if (e.payload?.error) toast.error(e.payload.error)
+        if (warning && warning !== captureLost) avisar.nota(warning)
+        if (e.payload?.error) avisar.erro(e.payload.error)
         else if (!captureLost)
-          toast("O ditado encerrou sozinho, texto aproveitado no rascunho")
+          avisar.feito("O ditado encerrou sozinho, texto aproveitado no rascunho")
         setLevel(0)
         setActiveDeviceName(null)
         captureLostRef.current = null

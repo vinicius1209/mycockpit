@@ -6,7 +6,7 @@
 // "Promover pra docs/" nos relatórios que valem versionar.
 
 import { useEffect, useState } from "react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { FileText, FolderOpen, Upload } from "lucide-react"
 import {
   Dialog,
@@ -94,12 +94,12 @@ export function MissionFilesDialog({
     try {
       const r = await promoteToDocs(cwd, dir, f, slug)
       if (r.alreadyThere) {
-        toast(`Já estava em ${r.path} (idêntico)`)
+        avisar.feito(`Já estava em ${r.path} (idêntico)`)
       } else {
-        toast.success(`Promovido para ${r.path} (versionado no git)`)
+        avisar.feito(`Promovido para ${r.path} (versionado no git)`)
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Falha ao promover")
+      avisar.erro("Não consegui promover o arquivo.", { detalhe: mensagemDe(e) })
     }
   }
 

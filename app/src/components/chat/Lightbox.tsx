@@ -8,7 +8,7 @@
 
 import { useEffect, useState } from "react"
 import { ChevronLeft, ChevronRight, ExternalLink, X } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 import { ALTURA_DA_FAIXA, RECUO_DOS_BOTOES } from "@/components/layout/faixaDaJanela"
 import { attachmentUrl, type Attachment } from "@/lib/attachments"
@@ -109,7 +109,7 @@ export function LightboxOverlay() {
               type="button"
               onClick={() => {
                 openConvImage(img.path).catch(() =>
-                  toast.error(
+                  avisar.erro(
                     "Não consegui abrir no app padrão (o arquivo ainda existe?)",
                   ),
                 )

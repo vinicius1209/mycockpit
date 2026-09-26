@@ -14,7 +14,7 @@
 // único caminho que existe.
 
 import { writeText as writeTextNativo } from "@tauri-apps/plugin-clipboard-manager"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 
 import { isTauri } from "@/lib/db"
 
@@ -28,7 +28,7 @@ function motivo(e: unknown): string {
 
 function falhou(onde: string, e: unknown): false {
   console.error(`[clipboard] ${onde} falhou · ${motivo(e)}`)
-  toast.error("Não consegui copiar")
+  avisar.erro("Não consegui copiar")
   return false
 }
 
@@ -49,7 +49,7 @@ export async function copyText(
   if (!s) return false
   try {
     await escreverTexto(text)
-    toast.success(label)
+    avisar.feito(label)
     return true
   } catch (e) {
     return falhou("copyText", e)
@@ -125,14 +125,14 @@ export async function copyRich(conteudo: ConteudoRico, label = "Copiado"): Promi
     // Último recurso: o texto, pelo caminho que não depende do WebView.
     try {
       await escreverTexto(conteudo.plain)
-      toast.success("Copiado como texto")
+      avisar.feito("Copiado como texto")
       return true
     } catch (e) {
       ultimoErro = e
     }
   }
   if (ok) {
-    toast.success(label)
+    avisar.feito(label)
     return true
   }
   return falhou("copyRich", ultimoErro)

@@ -24,7 +24,7 @@
 
 import { useCallback, useEffect, useState } from "react"
 import { Check, Loader2, Copy, RotateCcw } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import {
   diagnosticoDoGh,
   lerGhStatus,
@@ -95,12 +95,12 @@ function CartaoGitHub({
     setTrocando(user)
     try {
       await trocarContaGh(user)
-      toast.success(`Conta ativa agora é ${user}`)
+      avisar.feito(`Conta ativa agora é ${user}`)
       onMudou()
     } catch (e) {
       // A mensagem do `gh` vai inteira: o usuário pediu uma mudança e ela não
       // aconteceu; genérico aqui esconde a única pista.
-      toast.error(typeof e === "string" ? e : "Não consegui trocar a conta")
+      avisar.erro("Não consegui trocar a conta.", { detalhe: mensagemDe(e) })
     } finally {
       setTrocando(null)
     }

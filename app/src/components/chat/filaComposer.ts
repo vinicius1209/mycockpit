@@ -7,7 +7,7 @@ import { useChat, type QueuedMsg } from "@/store/chat"
 import type { Attachment } from "@/lib/attachments"
 import { cancelConversationTurn } from "@/lib/cancelConversationTurn"
 import { marcarCausaDoCorte } from "@/lib/corte"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 
 export async function stopActiveConversation(): Promise<void> {
   const convId = useChat.getState().activeId
@@ -18,7 +18,7 @@ export async function stopActiveConversation(): Promise<void> {
     await cancelConversationTurn(convId, "parada")
   } catch (error) {
     console.error("falha ao parar a conversa", error)
-    toast.error("Não consegui parar o turno.")
+    avisar.erro("Não consegui parar o turno.")
   }
 }
 
@@ -99,7 +99,7 @@ function dispatchNotice(convId: string): void {
     marcarCausaDoCorte(convId, "correcao")
     return
   }
-  toast(
+  avisar.feito(
     conv?.finalizing
       ? "A fila será enviada assim que o turno fechar."
       : "Enviando a fila…",
@@ -120,7 +120,7 @@ export function forceSendQueued(
   dispatchNotice(convId)
   void onDispatch(convId).catch((error) => {
     console.error("falha ao interromper o turno para enviar a fila", error)
-    toast.error("Não consegui interromper o turno. A mensagem continua na fila.")
+    avisar.erro("Não consegui interromper o turno. A mensagem continua na fila.")
   })
 }
 
@@ -140,7 +140,7 @@ export function forceSendDraft(
   dispatchNotice(convId)
   void onDispatch(convId).catch((error) => {
     console.error("falha ao interromper o turno para enviar a fila", error)
-    toast.error("Não consegui interromper o turno. A mensagem continua na fila.")
+    avisar.erro("Não consegui interromper o turno. A mensagem continua na fila.")
   })
 }
 

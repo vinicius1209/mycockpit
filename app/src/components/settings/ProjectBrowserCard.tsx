@@ -6,7 +6,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { AlertTriangle, Eye, Globe, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { nomeDoProjeto } from "@/lib/pedidosDeRecurso"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -57,7 +58,7 @@ export function useProjectBrowser(projectPath: string | null): ProjectBrowser {
     } catch (cause) {
       if (pathRef.current === projectPath) {
         setStatus(null)
-        toast.error(cause instanceof Error ? cause.message : String(cause))
+        avisar.erro("Não consegui ler o estado do navegador.", { origem: { projeto: projectPath }, detalhe: mensagemDe(cause) })
       }
     }
   }, [projectPath])
@@ -94,15 +95,13 @@ export function useProjectBrowser(projectPath: string | null): ProjectBrowser {
       try {
         if (on) {
           const session = await startProjectBrowser(projectPath)
-          toast.success(
-            `Navegador do projeto ligado · ${session.browser ?? "chromium"}`,
-          )
+          avisar.feito(`Navegador do ${nomeDoProjeto(projectPath) ?? "projeto"} ligado · ${session.browser ?? "chromium"}`)
         } else {
           await stopProjectBrowser(projectPath)
         }
         await refresh()
       } catch (cause) {
-        toast.error(cause instanceof Error ? cause.message : String(cause))
+        avisar.erro(`Não consegui ${on ? "ligar" : "desligar"} o navegador do ${nomeDoProjeto(projectPath) ?? "projeto"}.`, { origem: { projeto: projectPath }, detalhe: mensagemDe(cause) })
       } finally {
         setBusy(false)
       }

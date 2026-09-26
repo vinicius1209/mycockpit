@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { comRedeDePreparo } from "@/components/chat/redeDePreparo"
 import { perfOperation } from "@/lib/fleet/perf"
 import type { DeskSendArgs } from "@/lib/fleet/send"
@@ -45,5 +45,5 @@ export async function runDeskPreparation(
     useChat.getState().clearPreparation(convId, runId)
   }
   finish({ outcome: ok ? outcome : "error" })
-  if (!ok) toast.error("O turno não começou. O pedido continua disponível.")
+  if (!ok) avisar.erro("O turno não começou. O pedido continua disponível.")
 }

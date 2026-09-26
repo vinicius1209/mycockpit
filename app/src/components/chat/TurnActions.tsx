@@ -31,7 +31,7 @@ import {
   ThumbsUp,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { TurnNoteComposer } from "@/components/chat/TurnNote"
 import { Button } from "@/components/ui/button"
 import { openDeliveryDiff } from "@/lib/deliveryDiff"
@@ -65,7 +65,7 @@ const THUMB_DOWN = "👎"
 
 /** Aviso leve de duplicata: dedup preferível a ruído (nunca grava 2 iguais). */
 function toastDuplicate() {
-  toast("Já existe uma regra parecida, não salvei de novo.")
+  avisar.nota("Já existe uma regra parecida, não salvei de novo.")
 }
 
 /** Ações de fim de turno — fork, diff, reação e "virar aprendizado" — ícone-só,
@@ -138,8 +138,8 @@ export function TurnActions({
       setMode(r2 === "salva" ? "done" : "idle")
       if (r2 === "duplicata") toastDuplicate()
       if (r2 === "erro") {
-        toast.error("Não consegui salvar a regra.", {
-          description: "O detalhe está no console. Sua regra NÃO foi gravada.",
+        avisar.erro("Não consegui salvar a regra.", {
+          detalhe: "O detalhe está no console. Sua regra NÃO foi gravada.",
         })
       }
     } finally {

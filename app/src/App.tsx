@@ -3,7 +3,7 @@ import { useEffect } from "react"
 import { rastrearModalidade } from "@/lib/modalidade"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
 import { getCurrentWindow } from "@tauri-apps/api/window"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { Toaster } from "@/components/ui/sonner"
@@ -123,7 +123,7 @@ export default function App() {
         enabled: () => useApp.getState().settings.dictationEnabled,
         blocked: () =>
           !!document.querySelector('[role="dialog"][data-state="open"]'),
-        onNoTarget: () => toast("Abra uma conversa para ditar"),
+        onNoTarget: () => avisar.nota("Abra uma conversa para ditar"),
       }),
     [],
   )
@@ -145,9 +145,9 @@ export default function App() {
       const next = scaleFromShortcut(event, app.settings.conversationScale)
       if (next == null) return
       app.setSettings({ conversationScale: next })
-      toast(`Fonte da conversa: ${conversationScalePercent(next)}`, {
+      avisar.feito(`Fonte da conversa: ${conversationScalePercent(next)}`, {
         id: "conversation-scale",
-        duration: 1400,
+        duracao: 1400,
       })
     }
     window.addEventListener("keydown", onKey, true)
@@ -435,7 +435,7 @@ export default function App() {
       const visible = await getCurrentWindow()
         .isVisible()
         .catch(() => true)
-      if (visible) toast(message)
+      if (visible) avisar.feito(message)
       else void nativeNotify("Frota", message)
     }
     listen<TrayAction>("tray://action", async ({ payload }) => {
@@ -443,7 +443,7 @@ export default function App() {
       if (payload.action === "new-task") {
         const projectId = app.activeProjectId ?? app.projects[0]?.id
         if (!projectId) {
-          toast("Adicione um projeto antes de criar uma tarefa")
+          avisar.nota("Adicione um projeto antes de criar uma tarefa")
           return
         }
         app.setActiveProject(projectId)
@@ -610,7 +610,7 @@ export default function App() {
             fixed = viewport, bottom-center REAL da janela. Antes vivia dentro do
             painel de conteúdo com um wrapper transform, o que o centrava só na
             coluna de conteúdo (parecia deslocado pra direita). */}
-        <Toaster position="bottom-center" theme={theme} />
+        <Toaster theme={theme} />
         <CommandMenu />
         {/* Host GLOBAL de interações (§6.1 item 4): approvals/perguntas têm
             card em QUALQUER viewMode (o ChatPanel não o monta mais). */}

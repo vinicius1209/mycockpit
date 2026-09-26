@@ -4,7 +4,7 @@
 
 import { useMemo, useState } from "react"
 import { Check, Copy, CornerDownRight, GitFork, PenLine } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { splitMentions } from "@/components/chat/mentions"
 import { Button } from "@/components/ui/button"
 import { usePresets } from "@/store/presets"
@@ -109,7 +109,7 @@ export function UserMessageBubble({
     if (inputEl) {
       inputEl.focus()
     }
-    toast("Mensagem carregada no composer para edição.")
+    avisar.feito("Mensagem carregada no composer para edição.")
   }
 
   async function handleFork() {
@@ -120,11 +120,11 @@ export function UserMessageBubble({
     try {
       const created = await useChat.getState().forkConversationAt(convId, itemId)
       if (!created) {
-        toast.error("Não foi possível bifurcar a conversa a partir desta mensagem.")
+        avisar.erro("Não foi possível bifurcar a conversa a partir desta mensagem.")
       }
     } catch (err) {
-      toast.error("Não foi possível bifurcar a conversa.", {
-        description: err instanceof Error ? err.message : undefined,
+      avisar.erro("Não foi possível bifurcar a conversa.", {
+        detalhe: err instanceof Error ? err.message : undefined,
       })
     } finally {
       setForking(false)
@@ -136,9 +136,9 @@ export function UserMessageBubble({
       await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-      toast("Mensagem copiada para a área de transferência.")
+      avisar.feito("Mensagem copiada para a área de transferência.")
     } catch {
-      toast.error("Não foi possível copiar o texto.")
+      avisar.erro("Não foi possível copiar o texto.")
     }
   }
 
@@ -155,7 +155,7 @@ export function UserMessageBubble({
             const items = convId ? useChat.getState().byId[convId]?.items : undefined
             const original = items ? itemDaCitacao(items, c.trecho, itemId) : null
             if (convId && original) useApp.getState().revealTranscriptItem(convId, original)
-            else toast("A mensagem citada não está mais nesta conversa.")
+            else avisar.nota("A mensagem citada não está mais nesta conversa.")
           }}
           className="mb-1 flex max-w-[520px] items-center gap-1.5 text-left text-[12px] text-muted-foreground transition-colors hover:text-foreground"
         >

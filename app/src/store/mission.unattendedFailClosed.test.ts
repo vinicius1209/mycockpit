@@ -26,9 +26,7 @@ const h = vi.hoisted(() => ({
   gateDoc: null as HandoffDoc | null,
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/notify", () => ({
   nativeNotify: vi.fn(async () => {}),
   notifyTurnEnd: vi.fn(),

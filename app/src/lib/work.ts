@@ -112,6 +112,9 @@ export interface WorkEvent {
     | "desktop_state"
     /** O agente deu título à conversa no primeiro turno (ADR-246). */
     | "conversation_title"
+    /** O agente parou de esperar por um recurso que pediu (recusa, teto de
+     *  90 s ou fim do turno): o pedido sai da tela (ADR-261). */
+    | "pedido_encerrado"
   data: {
     /** `conversation_title`: o nome como o agente mandou; quem limpa é o front. */
     title?: string
@@ -129,6 +132,8 @@ export interface WorkEvent {
     /** A aba em que o agente está (`browser_agent_active`, ADR-231). */
     targetId?: string | null
     granted?: boolean
+    /** `pedido_encerrado`: qual recurso deixou de ser esperado. */
+    recurso?: "navegador" | "computador"
     tasks?: Array<{
       id: string
       title: string

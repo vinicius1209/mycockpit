@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { AgentEvent } from "@/lib/agent"
 import {
   beginPreparationState,
@@ -1188,7 +1188,7 @@ export const useChat = create<ChatState>((set, get) => {
         await dbSetPreset(convId, presetId, digest)
       } catch (e) {
         console.warn("[presets] falha ao gravar o carimbo da persona:", e)
-        toast(
+        avisar.erro(
           "Não consegui gravar o carimbo da persona no banco. Após reiniciar, o aviso de mudança de persona pode não funcionar nesta conversa.",
         )
       }

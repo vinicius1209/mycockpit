@@ -9,7 +9,7 @@
 //    A Frota só oferece encerrar; quem decide é a pessoa.
 
 import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { startProjectBrowser } from "@/lib/browser"
 import { isTauri } from "@/lib/db"
 import { listenWorkEvents, type ManagedProcess } from "@/lib/work"
@@ -54,16 +54,16 @@ function projeto(id: string) {
 async function verificarOrfaos(): Promise<void> {
   const orfaos = await invoke<NavegadorOrfao[]>("browser_orfaos").catch(() => [])
   if (orfaos.length === 0) return
-  toast(avisoDeOrfaos(orfaos, (id) => projeto(id)?.name ?? null), {
-    duration: Infinity,
-    action: {
-      label: orfaos.length === 1 ? "Encerrar" : "Encerrar todos",
-      onClick: () => {
+  avisar.evento(avisoDeOrfaos(orfaos, (id) => projeto(id)?.name ?? null), {
+    duracao: Infinity,
+    acao: {
+      rotulo: orfaos.length === 1 ? "Encerrar" : "Encerrar todos",
+      fazer: () => {
         void Promise.allSettled(orfaos.map((o) => invoke("browser_encerrar_orfao", { pid: o.pid }))).then(
           (resultados) => {
             const falhas = resultados.filter((r) => r.status === "rejected").length
-            if (falhas === 0) toast.success("Navegador antigo encerrado.")
-            else toast.error("Não consegui encerrar todos os navegadores antigos.")
+            if (falhas === 0) avisar.feito("Navegador antigo encerrado.")
+            else avisar.erro("Não consegui encerrar todos os navegadores antigos.")
           },
         )
       },
@@ -82,15 +82,18 @@ export function startVigiaDoNavegador(): () => void {
     if (!queda || avisados.has(event.data.process.id)) return
     avisados.add(event.data.process.id)
     const p = projeto(queda.projectId)
-    toast.error(`O navegador do projeto${p ? ` ${p.name}` : ""} parou sozinho.`, {
-      description: queda.exitCode != null ? `O processo saiu com código ${queda.exitCode}.` : undefined,
-      duration: 15_000,
-      action: p
+    avisar.erro(`O navegador do ${p?.name ?? "projeto"} parou sozinho.`, {
+      origem: { projeto: queda.projectId },
+      detalhe: queda.exitCode != null ? `O processo saiu com código ${queda.exitCode}.` : undefined,
+      acao: p
         ? {
-            label: "Ligar de novo",
-            onClick: () => {
+            rotulo: "Ligar de novo",
+            fazer: () => {
               void startProjectBrowser(p.path).catch((err) =>
-                toast.error(err instanceof Error ? err.message : String(err)),
+                avisar.erro(`Não consegui ligar o navegador do ${p.name}.`, {
+                  origem: { projeto: p.id },
+                  detalhe: mensagemDe(err),
+                }),
               )
             },
           }

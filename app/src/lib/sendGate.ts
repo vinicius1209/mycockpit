@@ -14,7 +14,7 @@
 // A regra em uma frase: **a fila do composer é do humano** (ADR-046). O que o
 // app dispara sozinho não espera nela; espera o turno acabar ou não acontece.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { Attachment } from "@/lib/attachments"
 import {
   avisoDeDescarte,
@@ -52,6 +52,6 @@ export function retidoPorTurnoEmVoo(
     useChat.getState().enqueue(convId, text, attachments, origem)
     return true
   }
-  toast(avisoDeDescarte(origem))
+  avisar.nota(avisoDeDescarte(origem))
   return true
 }

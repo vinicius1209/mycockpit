@@ -12,7 +12,7 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification"
 import { invoke } from "@tauri-apps/api/core"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { isTauri } from "@/lib/db"
 
 
@@ -98,9 +98,9 @@ function warnNativeBlocked(reason: string) {
   if (nativeBlockedWarned) return
   nativeBlockedWarned = true
   console.warn(`[notify] nenhuma notificação de SO disponível: ${reason}`)
-  toast("Avisos do sistema indisponíveis; use o sino e o ícone da bandeja.", {
-    description:
+  avisar.nota("Avisos do sistema indisponíveis; use o sino e o ícone da bandeja.", {
+    detalhe:
       "Nem o plugin nativo nem o osascript entregaram. O feed no app continua funcionando.",
-    duration: 8000,
+    duracao: 8000,
   })
 }

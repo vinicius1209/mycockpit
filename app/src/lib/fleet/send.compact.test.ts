@@ -7,7 +7,7 @@
 // scaffolding espelha o send.slash.test.ts, só o subset usado).
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { runAgent } from "@/lib/agent"
 import { RENEWAL_INSTRUCTION } from "@/lib/compact"
 import type { ConversationMeta } from "@/lib/db/conversations"
@@ -33,9 +33,7 @@ const h = vi.hoisted(() => ({
   fusion: { byConv: {} as Record<string, { phase: string }>, abort: vi.fn() },
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/agent", () => ({
   runAgent: vi.fn(async (...args: unknown[]) => {
     const onEvent = args[10] as (event: typeof acceptedRunEvent) => void
@@ -301,9 +299,9 @@ describe("sendFromDesk — /compactar em motor SEM nativeCompact (codex)", () =>
     vi.mocked(exportConvContext).mockRejectedValueOnce(new Error("disco cheio"))
     await sendFromDesk({ ...args, agent: "codex" })
     expect(vi.mocked(runAgent)).not.toHaveBeenCalled()
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-      "Não foi possível salvar a memória completa; a sessão original foi preservada.",
-    )
+    expect(vi.mocked(avisar.erro)).toHaveBeenCalledWith("A renovação não foi iniciada.", {
+      detalhe: "Não foi possível salvar a memória completa; a sessão original foi preservada.",
+    })
   })
 })
 
@@ -316,7 +314,7 @@ describe("sendFromDesk — /compactar sem o que compactar (fail-closed no efeito
     expect(h.chat.start).not.toHaveBeenCalled()
     expect(h.chat.beginTransplant).not.toHaveBeenCalled()
     expect(onAccepted).not.toHaveBeenCalled()
-    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+    expect(vi.mocked(avisar.nota)).toHaveBeenCalledWith(
       expect.stringContaining("Nada para compactar"),
     )
   })
@@ -325,7 +323,7 @@ describe("sendFromDesk — /compactar sem o que compactar (fail-closed no efeito
     arm(makeConv({ items: [] }))
     await sendFromDesk(args)
     expect(vi.mocked(runAgent)).not.toHaveBeenCalled()
-    expect(vi.mocked(toast)).toHaveBeenCalledWith(
+    expect(vi.mocked(avisar.nota)).toHaveBeenCalledWith(
       expect.stringContaining("Nada para compactar"),
     )
   })

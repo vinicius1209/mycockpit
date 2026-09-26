@@ -1,5 +1,5 @@
 import { create } from "zustand"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import type { Attachment } from "@/lib/attachments"
 import { comNovaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/citacao"
 import type { BlocoMarcacao } from "@/lib/marcacao"
@@ -75,8 +75,8 @@ interface ComposerDraftState {
 function announceFailure(conversationId: string): void {
   if (failed.has(conversationId)) return
   failed.add(conversationId)
-  toast.error("Não consegui salvar o rascunho.", {
-    description: "Ele continua nesta sessão; tente novamente antes de fechar o app.",
+  avisar.erro("Não consegui salvar o rascunho.", {
+    detalhe: "Ele continua nesta sessão; tente novamente antes de fechar o app.",
   })
 }
 

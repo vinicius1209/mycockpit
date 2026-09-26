@@ -10,12 +10,28 @@ const listenWorkEvents = vi.fn(async (onEvent: (event: unknown) => void) => {
 })
 
 vi.mock("@/lib/db", () => ({ isTauri: () => true }))
-const { toast, startProjectBrowser, recusarPedidoDeNavegador } = vi.hoisted(() => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), dismiss: vi.fn() }),
-  startProjectBrowser: vi.fn(async (_path: string) => ({})),
-  recusarPedidoDeNavegador: vi.fn(async (_path: string) => {}),
-}))
-vi.mock("sonner", () => ({ toast }))
+const { avisar, startProjectBrowser, recusarPedidoDeNavegador, fila, announceArrival, appendItems } = vi.hoisted(() => {
+  // A fila de verdade é um store zustand com ouvintes de Tauri no import; aqui
+  // basta o contrato que os ouvintes usam: push (dedup por id), resolve, queue.
+  const fila = {
+    queue: [] as { id: string; kind: string; run_id?: string; data: unknown }[],
+    push(req: { id: string; kind: string; run_id?: string; data: unknown }) {
+      if (!fila.queue.some((r) => r.id === req.id)) fila.queue = [...fila.queue, req]
+    },
+    resolve(id: string) {
+      fila.queue = fila.queue.filter((r) => r.id !== id)
+    },
+  }
+  return {
+    avisar: { evento: vi.fn(), erro: vi.fn(), feito: vi.fn(), fechar: vi.fn() },
+    startProjectBrowser: vi.fn(async (_path: string) => ({})),
+    recusarPedidoDeNavegador: vi.fn(async (_path: string) => {}),
+    fila,
+    announceArrival: vi.fn(),
+    appendItems: vi.fn(async () => {}),
+  }
+})
+vi.mock("@/lib/avisos", () => ({ avisar, mensagemDe: (e: unknown) => String(e) }))
 vi.mock("@/lib/browser", () => ({ startProjectBrowser, recusarPedidoDeNavegador }))
 const { desktopGrantRun, desktopRevokeRun, desktopRecusarPedido } = vi.hoisted(() => ({
   desktopGrantRun: vi.fn(async (_runId: string) => {}),
@@ -25,9 +41,12 @@ const { desktopGrantRun, desktopRevokeRun, desktopRecusarPedido } = vi.hoisted((
 vi.mock("@/lib/resources", () => ({ desktopGrantRun, desktopRevokeRun, desktopRecusarPedido }))
 vi.mock("@/store/app", () => ({ useApp: { getState: () => ({ projects: [{ id: "p1", name: "Frota", path: "/repo/frota" }] }) } }))
 vi.mock("@/lib/work", () => ({ listenWorkEvents: (cb: (event: unknown) => void) => listenWorkEvents(cb) }))
-vi.mock("@/store/chat", () => ({ useChat: { getState: () => ({ handleWorkEvent }) } }))
+vi.mock("@/store/chat", () => ({ useChat: { getState: () => ({ handleWorkEvent, appendItems, byId: {} }) } }))
+vi.mock("@/store/interactions", () => ({ useInteractions: { getState: () => fila }, announceArrival }))
 
-import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho, pedidoDeDesktop, pedidoDeNavegador } from "./eventosDeTrabalho"
+import { _resetEventosDeTrabalho, iniciarEventosDeTrabalho, pedidoDeDesktop, pedidoDeNavegador, pedidoEncerrado } from "./eventosDeTrabalho"
+import { responderRecurso } from "./pedidosDeRecurso"
+import { useLiberacoes } from "@/store/liberacoes"
 
 beforeEach(() => {
   _resetEventosDeTrabalho()
@@ -67,154 +86,148 @@ describe("iniciarEventosDeTrabalho", () => {
     erro.mockRestore()
   })
 
-  it("pedido de navegador vira aviso com o gesto de ligar, nunca navegador sozinho", async () => {
-    toast.mockClear()
+  it("pedido de navegador vira cartão na conversa que pediu, com o gesto de ligar; nunca navegador sozinho", async () => {
+    fila.queue = []
     startProjectBrowser.mockClear()
     pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: "/repo/frota" } })
-    expect(toast).toHaveBeenCalledTimes(1)
-    const [texto, opcoes] = toast.mock.calls[0] as [string, { duration: number; action: { label: string; onClick: () => void } }]
-    expect(texto).toContain("Frota")
-    // Decisão humana pendente não expira sozinha (22/09/2026: com 30 s o
-    // aviso sumia antes de a pessoa olhar).
-    expect(opcoes.duration).toBe(Infinity)
+    expect(fila.queue).toHaveLength(1)
+    const req = fila.queue[0]
+    expect(req).toMatchObject({ id: "recurso:navegador:r1", kind: "recurso", run_id: "r1" })
+    expect(req.data).toMatchObject({ recurso: "navegador", convId: "c1", projectPath: "/repo/frota" })
+    // Chegou: sino e nativa, como qualquer pedido que para o turno.
+    expect(announceArrival).toHaveBeenCalledWith(req, [])
+    // Pedido não é toast (ADR-261).
+    expect(avisar.evento).not.toHaveBeenCalled()
     expect(startProjectBrowser).not.toHaveBeenCalled()
-    expect(opcoes.action.label).toBe("Ligar navegador")
-    opcoes.action.onClick()
+    // O gesto: "Ligar navegador" responde sim.
+    await responderRecurso(req as never, true, () => {})
     expect(startProjectBrowser).toHaveBeenCalledWith("/repo/frota")
   })
 
-  it("evento de outro tipo, ou sem caminho, não avisa", () => {
-    toast.mockClear()
+  it("evento de outro tipo, ou sem caminho, não pede nada", () => {
+    fila.queue = []
     pedidoDeNavegador({ kind: "work_update", data: { task: { id: "p1", status: "completed" } } })
     pedidoDeNavegador({ kind: "browser_needed", data: {} })
-    expect(toast).not.toHaveBeenCalled()
+    expect(fila.queue).toHaveLength(0)
   })
 
-  it("o navegador ligando por qualquer caminho recolhe o pedido", () => {
-    toast.dismiss.mockClear()
+  it("o navegador ligando por qualquer caminho recolhe o pedido, sem responder", () => {
+    fila.queue = []
+    recusarPedidoDeNavegador.mockClear()
+    pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: "/repo/frota" } })
     pedidoDeNavegador({
       kind: "browser_state",
       data: { projectId: "p1", session: { projectId: "p1", projectPath: "/repo/frota" } as never },
     })
-    expect(toast.dismiss).toHaveBeenCalledWith("browser-needed:/repo/frota")
+    expect(fila.queue).toHaveLength(0)
+    expect(recusarPedidoDeNavegador).not.toHaveBeenCalled()
   })
 })
 
-// ADR-228: o agente ESPERA o gesto. Fechar o aviso é recusa; o aviso que sai
-// porque o navegador ligou, não. Visto no sicredi em 23/09/2026: o aviso dizia
-// "o agente tenta de novo sozinho", e a pessoa teve de escrever "tente
-// novamente".
-describe("o aviso de ligar o navegador", () => {
-  type Opcoes = { description: string; onDismiss: () => void; action: { onClick: () => void } }
-  const pedido = (path: string) =>
-    pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r1", convId: "c1", projectPath: path } })
-  const opcoes = () => toast.mock.calls.at(-1)![1] as Opcoes
-
-  it("diz que o agente está esperando, não que ele tenta sozinho", () => {
-    pedido("/repo/frota")
-    expect(opcoes().description).toContain("o agente está esperando")
-    expect(opcoes().description).not.toContain("tenta de novo sozinho")
+// ADR-228: o agente ESPERA o gesto. ADR-261: "Agora não" é o botão da recusa;
+// o cartão que sai porque o navegador ligou não é recusa. Visto no sicredi em
+// 23/09/2026: o aviso dizia "o agente tenta de novo sozinho", e a pessoa teve
+// de escrever "tente novamente".
+describe("o pedido de ligar o navegador", () => {
+  const req = (path: string) => ({
+    id: `recurso:navegador:r-${path}`,
+    kind: "recurso" as const,
+    run_id: `r-${path}`,
+    data: { recurso: "navegador" as const, convId: "c1", projectPath: path },
   })
 
-  it("fechar o aviso sem ligar vira recusa para o agente", () => {
+  it("\"Agora não\" é recusa para o agente, e a decisão fica no fio", async () => {
     recusarPedidoDeNavegador.mockClear()
-    pedido("/repo/a")
-    opcoes().onDismiss()
+    appendItems.mockClear()
+    await responderRecurso(req("/repo/a"), false, () => {})
     expect(recusarPedidoDeNavegador).toHaveBeenCalledWith("/repo/a")
+    expect(appendItems).toHaveBeenCalledWith("c1", [
+      expect.objectContaining({ kind: "notice", tom: "decisao", message: "Você preferiu não ligar o navegador do projeto." }),
+    ])
   })
 
-  it("o aviso que sai porque o navegador ligou não é recusa", () => {
-    recusarPedidoDeNavegador.mockClear()
-    pedido("/repo/b")
-    const { onDismiss } = opcoes()
-    pedidoDeNavegador({ kind: "browser_state", data: { session: { projectPath: "/repo/b" } as never } })
-    onDismiss()
-    expect(recusarPedidoDeNavegador).not.toHaveBeenCalled()
-    // Clicar em "Ligar navegador" também não.
-    pedido("/repo/c")
-    const c = opcoes()
-    c.action.onClick()
-    c.onDismiss()
-    expect(recusarPedidoDeNavegador).not.toHaveBeenCalled()
+  it("ligar que falha devolve o pedido (o agente segue esperando) e diz o erro com a origem", async () => {
+    startProjectBrowser.mockRejectedValueOnce(new Error("Chromium não encontrado"))
+    avisar.erro.mockClear()
+    const devolver = vi.fn()
+    await responderRecurso(req("/repo/frota"), true, devolver)
+    expect(devolver).toHaveBeenCalled()
+    expect(avisar.erro.mock.calls[0][0]).toBe("Não consegui ligar o navegador do Frota.")
+    expect(avisar.erro.mock.calls[0][1]).toMatchObject({ origem: { projeto: "/repo/frota", conversa: "c1" } })
   })
 
-  it("quando o agente liga por autorização, a tela diz que foi ele", () => {
-    toast.mockClear()
-    pedidoDeNavegador({ kind: "browser_autostarted", data: { runId: "r1", projectPath: "/repo/frota" } })
-    expect(toast.mock.calls[0][0]).toBe("O agente ligou o navegador do projeto Frota.")
+  it("quando o agente liga por autorização, a tela diz que foi ele, e de qual projeto", () => {
+    avisar.evento.mockClear()
+    pedidoDeNavegador({ kind: "browser_autostarted", data: { runId: "r1", convId: "c1", projectPath: "/repo/frota" } })
+    expect(avisar.evento.mock.calls[0][0]).toBe("O agente ligou o navegador do Frota.")
+    expect(avisar.evento.mock.calls[0][1]).toMatchObject({ origem: { projeto: "/repo/frota", conversa: "c1" } })
+  })
+
+  it("o agente que desiste de esperar tira o cartão e deixa o registro no fio", () => {
+    fila.queue = []
+    appendItems.mockClear()
+    pedidoDeNavegador({ kind: "browser_needed", data: { runId: "r9", convId: "c1", projectPath: "/repo/frota" } })
+    pedidoEncerrado({ kind: "pedido_encerrado", data: { runId: "r9", convId: "c1", recurso: "navegador" } })
+    expect(fila.queue).toHaveLength(0)
+    expect(appendItems).toHaveBeenCalledWith("c1", [
+      expect.objectContaining({ message: "O agente deixou de esperar pelo navegador e seguiu sem ele." }),
+    ])
+    // Já decidido (o cartão saiu antes): nada a registrar de novo.
+    appendItems.mockClear()
+    pedidoEncerrado({ kind: "pedido_encerrado", data: { runId: "r9", convId: "c1", recurso: "navegador" } })
+    expect(appendItems).not.toHaveBeenCalled()
   })
 })
 
 // ADR-225, correção de 22/09/2026: o Rust emitia `desktop_needed` e ninguém
 // escutava; o agente ouvia "a Frota mostrou o pedido na tela" e nada aparecia.
 describe("pedidoDeDesktop", () => {
-  type Opcoes = { id: string; duration: number; action: { label: string; onClick: () => void } }
   const RUN = "1ae5b180-3c53-403a-b2c4-639682128e15"
 
   beforeEach(() => {
-    toast.mockClear()
-    toast.dismiss.mockClear()
+    fila.queue = []
+    useLiberacoes.setState({ porRun: {} })
     desktopGrantRun.mockClear()
     desktopRevokeRun.mockClear()
+    desktopRecusarPedido.mockClear()
   })
 
-  it("pedido vira aviso que espera a pessoa, e liberar é o gesto dela", () => {
+  it("pedido vira cartão que espera a pessoa, e liberar é o gesto dela", async () => {
     pedidoDeDesktop({ kind: "desktop_needed", data: { runId: RUN, convId: "c1" } })
-    expect(toast).toHaveBeenCalledTimes(1)
-    const opcoes = toast.mock.calls[0][1] as Opcoes
-    expect(opcoes.id).toBe(`desktop-needed:${RUN}`)
-    expect(opcoes.duration).toBe(Infinity)
+    expect(fila.queue[0]).toMatchObject({ id: `recurso:computador:${RUN}`, kind: "recurso" })
     expect(desktopGrantRun).not.toHaveBeenCalled()
-    expect(opcoes.action.label).toBe("Liberar neste turno")
-    opcoes.action.onClick()
+    await responderRecurso(fila.queue[0] as never, true, () => {})
     expect(desktopGrantRun).toHaveBeenCalledWith(RUN)
   })
 
-  it("liberado, o pedido sai e o Revogar fica à mão", () => {
+  it("liberado, o pedido sai e o Revogar fica à mão na conversa dona", () => {
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: RUN, convId: "c1" } })
     pedidoDeDesktop({ kind: "desktop_state", data: { runId: RUN, granted: true } })
-    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-needed:${RUN}`)
-    const opcoes = toast.mock.calls[0][1] as Opcoes
-    expect(opcoes.id).toBe(`desktop-granted:${RUN}`)
-    expect(opcoes.action.label).toBe("Revogar")
-    opcoes.action.onClick()
-    expect(desktopRevokeRun).toHaveBeenCalledWith(RUN)
+    expect(fila.queue).toHaveLength(0)
+    expect(useLiberacoes.getState().porRun).toEqual({ [RUN]: "c1" })
   })
 
-  it("revogado ou turno encerrado recolhe os dois avisos", () => {
+  it("revogado ou turno encerrado recolhe o pedido e a faixa, sem recusar", () => {
+    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: RUN, convId: "c1" } })
+    useLiberacoes.getState().liberar(RUN, "c1")
     pedidoDeDesktop({ kind: "desktop_state", data: { runId: RUN, convId: "c1", granted: false } })
-    expect(toast).not.toHaveBeenCalled()
-    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-needed:${RUN}`)
-    expect(toast.dismiss).toHaveBeenCalledWith(`desktop-granted:${RUN}`)
+    expect(fila.queue).toHaveLength(0)
+    expect(useLiberacoes.getState().porRun).toEqual({})
+    expect(desktopRecusarPedido).not.toHaveBeenCalled()
   })
 
   // ADR-242, 24/09/2026: "eu liberei, aceitei", e o agente já tinha ouvido
-  // "não liberado". Agora a tool espera o gesto; fechar o aviso é a resposta.
-  it("diz que o agente está esperando, e fechar sem liberar vira recusa", () => {
-    desktopRecusarPedido.mockClear()
+  // "não liberado". A tool espera o gesto; "Agora não" é a resposta.
+  it("\"Agora não\" vira recusa para o agente", async () => {
     pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-z", convId: "c1" } })
-    const opcoes = toast.mock.calls[0][1] as Opcoes & { description: string; onDismiss: () => void }
-    expect(opcoes.description).toContain("Ele está esperando")
-    opcoes.onDismiss()
+    await responderRecurso(fila.queue[0] as never, false, () => {})
     expect(desktopRecusarPedido).toHaveBeenCalledWith("run-z")
-  })
-
-  it("o aviso que sai por liberação ou fim do turno não é recusa", () => {
-    desktopRecusarPedido.mockClear()
-    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-a", convId: "c1" } })
-    const a = toast.mock.calls.at(-1)![1] as Opcoes & { onDismiss: () => void }
-    a.action.onClick()
-    a.onDismiss()
-    pedidoDeDesktop({ kind: "desktop_needed", data: { runId: "run-b", convId: "c1" } })
-    const b = toast.mock.calls.at(-1)![1] as Opcoes & { onDismiss: () => void }
-    pedidoDeDesktop({ kind: "desktop_state", data: { runId: "run-b", granted: false } })
-    b.onDismiss()
-    expect(desktopRecusarPedido).not.toHaveBeenCalled()
   })
 
   it("evento sem run, ou de outro tipo, não mexe na tela", () => {
     pedidoDeDesktop({ kind: "desktop_needed", data: {} })
     pedidoDeDesktop({ kind: "browser_needed", data: { runId: RUN, projectPath: "/repo/frota" } })
-    expect(toast).not.toHaveBeenCalled()
-    expect(toast.dismiss).not.toHaveBeenCalled()
+    expect(fila.queue).toHaveLength(0)
+    expect(useLiberacoes.getState().porRun).toEqual({})
   })
 })

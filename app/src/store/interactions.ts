@@ -8,7 +8,7 @@
 // (fail-closed local); o resolved do Drop cobre o resto (run morto/cancelado).
 
 import { useSyncExternalStore } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { create } from "zustand"
 import { isTauri } from "@/lib/db"
 import {
@@ -35,6 +35,9 @@ import {
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useMission } from "@/store/mission"
+import { approvalSignature } from "@/store/interactions/lote"
+import { nomeDoProjeto, responderRecurso, textoDoPedido } from "@/lib/pedidosDeRecurso"
+import type { ApprovalAnswer, RecursoData } from "@/lib/interaction"
 
 interface InteractionsState {
   /** Pedidos pendentes em ordem de chegada (FIFO — a UI mostra o primeiro). */
@@ -89,6 +92,12 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
     // Gate de PLANO é LOCAL: quem executa a decisão é o app, não o backend
     // (lib/planGate). Entregar aqui cairia sempre no catch abaixo.
     if (req?.kind === "plan") return
+    // Pedido de RECURSO também é local (ADR-261): ligar o navegador, liberar o
+    // computador ou dizer que não. Se falhar, o pedido volta para a fila.
+    if (req?.kind === "recurso") {
+      void responderRecurso(req, (answer as ApprovalAnswer).allow === true, (r) => get().push(r))
+      return
+    }
     // Isto NÃO é best-effort: é a ÚNICA entrega da sua decisão. O comentário
     // antigo supunha "se falhou, o run já morreu e o Drop do backend cobre" —
     // suposição, não fato: o invoke pode falhar com o run VIVO, e aí o card já
@@ -100,8 +109,9 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
       // devolve o pedido pra fila: o card volta e você pode tentar de novo,
       // que é melhor que um turno parado sem sintoma.
       if (req) get().push(req)
-      toast.error("Não consegui entregar sua resposta ao agent.", {
-        description: "O pedido voltou para a fila, tente responder de novo.",
+      avisar.erro("Não consegui entregar sua resposta ao agente.", {
+        origem: req ? { conversa: currentOriginAnyKind(req)?.convId ?? null } : undefined,
+        detalhe: "O pedido voltou para a conversa. Tente responder de novo.",
       })
     })
   },
@@ -122,76 +132,15 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
   },
 }))
 
-// ---------------------------------------------------------------------------
-// Aprovações em LOTE (frente P4): agrupamento por ASSINATURA + confirmação
-// explícita. Funções PURAS (testáveis sem UI); a execução real é answerGroup.
-// ---------------------------------------------------------------------------
-
-/** Assinatura de agrupamento de UMA aprovação: tool_name + comando EXATO (só
- *  trim nas pontas — "bun test" ≠ "rm -rf", e também ≠ "bun  test"; normalizar
- *  demais aprovaria comando que o usuário não leu). Tools sem comando (Write
- *  etc.) usam o input serializado — "idêntica" tem que ser idêntica MESMO.
- *  Questions e kinds desconhecidos NUNCA agrupam ⇒ null. */
-export function approvalSignature(req: InteractionRequest): string | null {
-  if (req.kind !== "approval") return null
-  const d = req.data as Partial<ApprovalData> | null | undefined
-  const tool = typeof d?.tool_name === "string" ? d.tool_name.trim() : ""
-  if (!tool) return null
-  const cmd = typeof d?.command === "string" ? d.command.trim() : ""
-  if (cmd) return `${tool}\u0000cmd\u0000${cmd}`
-  try {
-    return `${tool}\u0000input\u0000${JSON.stringify(d?.input ?? null)}`
-  } catch {
-    return null // input cíclico/não-serializável: não agrupa (fail-safe)
-  }
-}
-
-/** Grupo pendente do request na fila (ele incluso). <2 ⇒ sem lote na UI. */
-export function pendingGroup(
-  queue: InteractionRequest[],
-  req: InteractionRequest,
-): InteractionRequest[] {
-  const sig = approvalSignature(req)
-  if (!sig) return []
-  return queue.filter((r) => approvalSignature(r) === sig)
-}
-
-/** Confirmação pendente de um lote (o que o card mostra antes de executar). */
-export interface BatchConfirm {
-  signature: string
-  allow: boolean
-  count: number
-}
-
-export type BatchAction =
-  | { type: "request"; confirm: BatchConfirm }
-  | { type: "confirm" }
-  | { type: "cancel" }
-
-/** Decisão PURA do fluxo "Aprovar/Negar todas": clicar NUNCA executa direto —
- *  vira uma confirmação pendente (comando + contagem na tela); só o clique de
- *  confirmar com uma pendência ativa produz `execute`. */
-export function decideBatch(
-  pending: BatchConfirm | null,
-  action: BatchAction,
-): {
-  pending: BatchConfirm | null
-  execute: { signature: string; allow: boolean } | null
-} {
-  switch (action.type) {
-    case "request":
-      return { pending: action.confirm, execute: null }
-    case "confirm":
-      return pending
-        ? {
-            pending: null,
-            execute: { signature: pending.signature, allow: pending.allow },
-          }
-        : { pending: null, execute: null }
-    case "cancel":
-      return { pending: null, execute: null }
-  }
-}
+// Aprovações em LOTE (frente P4): moram em `store/interactions/lote.ts`, que
+// saiu daqui pela catraca de tamanho. A porta continua sendo este módulo.
+export {
+  approvalSignature,
+  decideBatch,
+  pendingGroup,
+  type BatchAction,
+  type BatchConfirm,
+} from "@/store/interactions/lote"
 
 // ---------------------------------------------------------------------------
 // Aprovações CONTEXTUAIS (docs/agent-office.md §8, doc histórico): mapeamento
@@ -265,8 +214,9 @@ export function ownerByRunId(
   },
 ): InteractionTarget | null {
   // Gate de PLANO traz a conversa no payload: nasce com o turno já encerrado,
-  // sem `run_id` vivo pra amarrar (lib/planGate).
-  if (req.kind === "plan") {
+  // sem `run_id` vivo pra amarrar (lib/planGate). O pedido de RECURSO também
+  // (ADR-261): o evento do backend já diz de qual conversa é.
+  if (req.kind === "plan" || req.kind === "recurso") {
     const convId = (req.data as { convId?: string } | null)?.convId
     return convId ? { convId, kind: "linear" } : null
   }
@@ -569,6 +519,14 @@ export function announceArrival(
   const focused = typeof document !== "undefined" && document.hasFocus()
   const seen = split.inlineConvId === origin.convId && focused
 
+  if (req.kind === "recurso") {
+    // Autorização de recurso é uma permissão: mesmo sino e mesma nativa.
+    const data = req.data as RecursoData
+    const texto = textoDoPedido(data, nomeDoProjeto(data.projectPath))
+    notifyApproval({ ...origin, toolName: texto.oQue, headline: texto.resumo, seen })
+    return
+  }
+
   if (req.kind === "question") {
     const data = req.data as QuestionData | undefined
     notifyQuestion({
@@ -613,9 +571,9 @@ if (isTauri()) {
     // feature inteira apaga e o sintoma é "o agent travou sozinho". Falha rara,
     // custo de diagnosticar altíssimo — por isso grita.
     console.error("[interações] listener de pedidos não registrou", e)
-    toast.error("Pedidos de permissão não vão aparecer nesta sessão.", {
-      description: "Reinicie o app. Enquanto isso, turnos que pedirem permissão podem ficar parados.",
-      duration: 12_000,
+    avisar.erro("Pedidos de permissão não vão aparecer nesta sessão.", {
+      detalhe: "Reinicie o app. Enquanto isso, turnos que pedirem permissão podem ficar parados.",
+      duracao: Infinity,
     })
   })
   void onInteractionResolved((id) =>

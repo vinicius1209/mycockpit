@@ -16,7 +16,7 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
   }),
 }))
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn(async () => {}) }))
-vi.mock("sonner", () => ({ toast: vi.fn() }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 // só o isTauri muda (liga o caminho nativo); o resto do db segue real.
 vi.mock("@/lib/db", async (importOriginal) => {
   const mod = await importOriginal<typeof import("@/lib/db")>()

@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Camera, Maximize2, Pause, Play, Repeat, Volume2, VolumeX } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { anexosComCaptura } from "@/components/browser/capturaDaPagina"
 import { MAX_ATTACH_COUNT, saveAttachment } from "@/lib/attachments"
@@ -41,7 +41,7 @@ export interface InfoDoVideo {
 async function copiarQuadro(video: HTMLVideoElement, caminho: string): Promise<void> {
   const convId = useChat.getState().activeId
   if (!convId) {
-    toast.error("Abra uma conversa para levar o quadro ao rascunho.")
+    avisar.erro("Abra uma conversa para levar o quadro ao rascunho.")
     return
   }
   const escala = Math.min(1, LARGURA_DO_QUADRO / video.videoWidth)
@@ -57,12 +57,12 @@ async function copiarQuadro(video: HTMLVideoElement, caminho: string): Promise<v
   const drafts = useComposerDrafts.getState()
   const { anexos, coube } = anexosComCaptura(drafts.byConv[convId]?.attachments ?? [], anexo)
   if (!coube) {
-    toast.error(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para levar o quadro.`)
+    avisar.erro(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para levar o quadro.`)
     return
   }
   drafts.setAttachments(convId, anexos)
   drafts.appendText(convId, `Quadro de ${caminho} em ${tempo}:`)
-  toast.success("Quadro levado ao rascunho da conversa.")
+  avisar.feito("Quadro levado ao rascunho da conversa.")
 }
 
 export function PlayerDeVideo({
@@ -200,7 +200,7 @@ export function PlayerDeVideo({
           aria-label="Copiar este quadro para o rascunho"
           onClick={() => {
             const v = video.current
-            if (v) void copiarQuadro(v, caminho).catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
+            if (v) void copiarQuadro(v, caminho).catch((err) => avisar.erro("Não consegui copiar o quadro.", { detalhe: mensagemDe(err) }))
           }}
         >
           <Camera />

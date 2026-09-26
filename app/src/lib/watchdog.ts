@@ -32,7 +32,7 @@
 // Aqui NÃO há setTimeout por pedido: o ticker É o timer e a memória é podada
 // contra a fila viva, então run que acaba antes do prazo não deixa nada.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { agentLabel } from "@/lib/agent"
 import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import {
@@ -166,16 +166,17 @@ function showStalledToast(
   agent: string,
   minutes: number,
 ): void {
-  toast(`Sem atualizações de ${agentLabel(agent)} há ${minutes} min`, {
-    description: "O turno ainda aparece em execução, mas a ponte não publicou progresso novo.",
-    duration: 15_000,
-    action: {
-      label: "Ver conversa",
-      onClick: () => void openStalledConv(convId),
+  avisar.evento(`Sem atualizações de ${agentLabel(agent)} há ${minutes} min`, {
+    origem: { conversa: convId },
+    detalhe: "O turno ainda aparece em execução, mas a ponte não publicou progresso novo.",
+    duracao: 15_000,
+    acao: {
+      rotulo: "Ver conversa",
+      fazer: () => void openStalledConv(convId),
     },
-    cancel: {
-      label: "Cancelar turno",
-      onClick: () => void cancelStalledTurn(convId),
+    secundaria: {
+      rotulo: "Cancelar turno",
+      fazer: () => void cancelStalledTurn(convId),
     },
   })
 }
@@ -242,18 +243,19 @@ function showStalledMissionToast(
   agent: string,
   minutes: number,
 ): void {
-  toast(`Missão: a fase "${phaseLabel}" está muda há ${minutes} min`, {
-    description: `${agentLabel(agent)} segue em execução, mas sem produzir nada novo.`,
-    duration: 15_000,
-    action: {
-      label: "Ver conversa",
-      onClick: () => void openStalledConv(convId),
+  avisar.evento(`Missão: a fase "${phaseLabel}" está muda há ${minutes} min`, {
+    origem: { conversa: convId },
+    detalhe: `${agentLabel(agent)} segue em execução, mas sem produzir nada novo.`,
+    duracao: 15_000,
+    acao: {
+      rotulo: "Ver conversa",
+      fazer: () => void openStalledConv(convId),
     },
-    cancel: {
+    secundaria: {
       // Stop REAL da missão (cancela o run da fase e marca aborted) — o mesmo
       // gesto do "Parar" da timeline, nunca um dismiss disfarçado de ação.
-      label: "Parar missão",
-      onClick: () => useMission.getState().abort(convId),
+      rotulo: "Parar missão",
+      fazer: () => useMission.getState().abort(convId),
     },
   })
 }
@@ -322,25 +324,25 @@ function showStalledCardToast(
   state: "review" | "blocked",
   minutes: number,
 ): void {
-  toast(`"${title}" está parado há ${minutes} min`, {
-    description:
+  avisar.evento(`"${title}" está parado há ${minutes} min`, {
+    detalhe:
       state === "blocked"
         ? "O card segue bloqueado, esperando um gesto seu."
         : "O card segue em revisão, esperando um gesto seu.",
-    duration: 15_000,
-    action: {
+    duracao: 15_000,
+    acao: {
       // com conversa ligada abre a conversa; sem conversa não há tela do card
       // (o Board saiu do Painel, ADR-040), então o destino é a fila da faixa,
       // que é onde ele existe como decisão pendente.
-      label: "Abrir card",
-      onClick: () =>
+      rotulo: "Abrir card",
+      fazer: () =>
         void openCardConversation(cardId).then((ok) => {
           if (!ok) useApp.getState().setDecisionsOpen(true)
         }),
     },
-    cancel: {
-      label: "Dispensar",
-      onClick: () => {}, // só fecha o toast; o episódio continua marcado
+    secundaria: {
+      rotulo: "Dispensar",
+      fazer: () => {}, // só fecha o toast; o episódio continua marcado
     },
   })
 }

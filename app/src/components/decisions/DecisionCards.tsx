@@ -12,7 +12,7 @@
 
 import { useState } from "react"
 import { Lightbulb, SquareKanban, Swords } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { openCardConversation } from "@/store/cards"
@@ -35,8 +35,8 @@ export async function goToDecision(d: Decision) {
     // Sem conversa ligada não existe destino: o card JÁ está na sua frente, na
     // fila. Explicar é honesto; trocar de tela pra nada não é.
     if (!(await openCardConversation(d.cardId))) {
-      toast(`"${d.title}" não tem conversa ligada`, {
-        description:
+      avisar.nota(`"${d.title}" não tem conversa ligada`, {
+        detalhe:
           "Não há pra onde abrir. Ele fica na fila até mudar de estado.",
       })
     }

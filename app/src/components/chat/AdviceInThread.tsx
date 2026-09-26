@@ -6,7 +6,7 @@
 // cartão chega) e nada mais no fio depende delas.
 
 import { CornerDownRight, MessageSquareQuote } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
 import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { shortDigest } from "@/lib/presets"
@@ -128,7 +128,7 @@ export function AdviceCard({ item }: { item: Extract<ChatItem, { kind: "advice" 
                 .passWheel(convId, item.personaId, persona!.name)
                 .then((ok) => {
                   if (ok)
-                    toast(
+                    avisar.feito(
                       `${item.personaName} vai pilotar o próximo turno (a doutrina viaja no envio).`,
                     )
                 })

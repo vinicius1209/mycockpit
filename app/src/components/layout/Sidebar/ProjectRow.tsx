@@ -8,7 +8,7 @@
 // conversa desde que o spike S2 mostrou por que ele não funcionava no app.
 
 import { useState } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   Archive,
   ArrowDown,
@@ -283,7 +283,7 @@ export function ProjectRow({
         <ContextMenuItem
           onSelect={() => {
             void navigator.clipboard.writeText(project.path)
-            toast.success("Caminho copiado")
+            avisar.feito(`Caminho do ${project.name} copiado.`)
           }}
         >
           <Copy /> Copiar caminho

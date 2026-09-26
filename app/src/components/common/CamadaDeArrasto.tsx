@@ -12,7 +12,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { createPortal } from "react-dom"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   alvoDoAtributo,
   cancelarArrasto,
@@ -117,7 +117,7 @@ function alvoSob(x: number, y: number): { alvo: AlvoDoArrasto; el: Element } | n
 function soltarNoComposer(carga: CargaArrastada): void {
   const convId = useChat.getState().activeId
   if (!convId) {
-    toast.error("Abra uma conversa para soltar aqui.")
+    avisar.erro("Abra uma conversa para soltar aqui.")
     return
   }
   const app = useApp.getState()
@@ -140,7 +140,7 @@ function soltarNoComposer(carga: CargaArrastada): void {
     const atuais = drafts.byConv[convId]?.attachments ?? []
     const { anexos, coube } = anexosComOutro(atuais, carga.anexo as Attachment)
     if (!coube) {
-      toast.error(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para anexar esta imagem.`)
+      avisar.erro(`O rascunho já tem ${MAX_ATTACH_COUNT} anexos. Remova um para anexar esta imagem.`)
       return
     }
     drafts.setAttachments(convId, anexos)

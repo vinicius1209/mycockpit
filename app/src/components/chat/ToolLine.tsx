@@ -18,7 +18,7 @@ import {
   Wrench,
 } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { StepDot, type StepStatus } from "@/components/chat/statusGlyphs"
 import { DeferredOutputFile } from "@/components/chat/DeferredOutputFile"
 import { EvidenceThumb, evidenceGallery } from "@/components/chat/MiniaturasDoFio"
@@ -406,7 +406,7 @@ export const ToolLine = memo(function ToolLine({
                       onClick={(e) => {
                         e.stopPropagation()
                         void navigator.clipboard?.writeText(p.detail!)
-                        toast.success(isCommand ? "Comando copiado" : "Entrada copiada")
+                        avisar.feito(isCommand ? "Comando copiado" : "Entrada copiada")
                       }}
                       className="mr-1.5 shrink-0 rounded p-1 text-muted-foreground/60 transition-colors hover:bg-accent/40 hover:text-foreground"
                     >

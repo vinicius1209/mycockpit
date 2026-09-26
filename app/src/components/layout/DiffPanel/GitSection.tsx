@@ -20,7 +20,7 @@ import { FilePathLabel, STATUS_META } from "./parts"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { controle } from "@/components/ui/controle"
 import { confirm } from "@/lib/confirm"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 
 export function GitSection({
@@ -239,14 +239,14 @@ export function GitFileRow({
     try {
       if (file.staged) {
         await unstageFile(cwd, file.path)
-        toast.success(`Preparação desfeita em ${file.path}`)
+        avisar.feito(`Preparação desfeita em ${file.path}`)
       } else {
         await stageFile(cwd, file.path)
-        toast.success(`${file.path} preparado para commit`)
+        avisar.feito(`${file.path} preparado para commit`)
       }
       onReload()
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Falha ao atualizar a preparação")
+      avisar.erro("Não consegui atualizar a preparação.", { detalhe: mensagemDe(err) })
     } finally {
       setBusy(false)
     }
@@ -269,10 +269,10 @@ export function GitFileRow({
     setBusy(true)
     try {
       await discardFile(cwd, file.path)
-      toast.success(`Alterações descartadas em ${file.path}`)
+      avisar.feito(`Alterações descartadas em ${file.path}`)
       onReload()
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Falha ao descartar")
+      avisar.erro("Não consegui descartar.", { detalhe: mensagemDe(err) })
     } finally {
       setBusy(false)
     }

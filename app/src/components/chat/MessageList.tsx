@@ -160,7 +160,7 @@ const MessageItem = memo(function MessageItem({
 
   if (it.kind === "cancelled") return <MarcoDeCorte item={it} />
 
-  if (it.kind === "notice") return <AvisoDoFio message={it.message} />
+  if (it.kind === "notice") return <AvisoDoFio message={it.message} tom={it.tom} ts={it.ts} />
 
   if (it.kind === "advice") {
     return <AdviceCard item={it} />

@@ -12,9 +12,7 @@ vi.mock("@/lib/projectFilesService", () => ({
     return { page: { entries: busca.entradas }, cache: "miss", generation: 1 }
   }),
 }))
-vi.mock("sonner", () => ({
-  toast: Object.assign((m: string) => avisos.info.push(m), { error: (m: string) => avisos.erro.push(m) }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos({ nota: (m: string) => avisos.info.push(m), erro: (m: string) => avisos.erro.push(m), feito: vi.fn(), evento: vi.fn(), fechar: vi.fn() }))
 
 import { useApp } from "@/store/app"
 import { emptyConv, useChat } from "@/store/chat"

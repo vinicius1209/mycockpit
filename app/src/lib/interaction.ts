@@ -5,7 +5,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event"
  *  (aprovar comando, responder pergunta estruturada, aprovar plano — futuro). Uma
  *  abstração, N `kind`s. O turno FICA PAUSADO até `answerInteraction`. Espelha o
  *  §Contrato de docs/interactive-input.md. */
-export type InteractionKind = "approval" | "question" | "plan"
+export type InteractionKind = "approval" | "question" | "plan" | "recurso"
 
 /** Pedido normalizado emitido pelo backend no evento `interaction://request`.
  *  `data` varia por `kind` (ver ApprovalData / QuestionData). */
@@ -50,6 +50,25 @@ export interface PlanData {
   /** O plano proposto, pra quem mostra o pedido fora da conversa (sino,
    *  Companion) poder dizer do que se trata. */
   text: string
+}
+
+/**
+ * `data` de um pedido de RECURSO (kind="recurso", ADR-261): o agente pediu o
+ * navegador do projeto ou o computador e está esperando o seu gesto.
+ *
+ * LOCAL como o gate de plano: quem executa a decisão é o app (ligar o
+ * navegador, liberar o computador, ou dizer ao backend que você preferiu não),
+ * não o `answer_interaction`. Entrou na fila pelo mesmo motivo do plano: é
+ * aqui que um pedido ganha ponto na barra lateral, sino, bandeja, Companion e
+ * o cartão dentro da conversa dona. Antes era um toast sem prazo em cima do
+ * composer, e fechá-lo era recusar.
+ */
+export interface RecursoData {
+  recurso: "navegador" | "computador"
+  /** Conversa dona: veio no evento, não depende de casar o run. */
+  convId: string
+  /** Projeto (caminho) do navegador pedido; o computador não é de projeto. */
+  projectPath?: string | null
 }
 
 /** Resposta a um gate de plano. `keepPlanning` = recusa que CONTINUA o

@@ -1,7 +1,7 @@
 // Adição e configuração de projetos — seletor de pasta nativo + diálogo de criação.
 // Toca a store (setProjects/addProject/setActiveProject) e o banco diretamente.
 import { open } from "@tauri-apps/plugin-dialog"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import {
   isTauri,
   listProjects,
@@ -18,7 +18,7 @@ import type { Project } from "@/lib/types"
 /** Abre o picker nativo de pasta e devolve o caminho escolhido, ou null. */
 export async function pickProjectDirectory(): Promise<string | null> {
   if (!isTauri()) {
-    toast("Seleção de pasta disponível no app (tauri dev)")
+    avisar.nota("Seleção de pasta disponível no app (tauri dev)")
     return null
   }
   try {
@@ -30,7 +30,7 @@ export async function pickProjectDirectory(): Promise<string | null> {
     return typeof dir === "string" ? dir : null
   } catch (e) {
     console.error("Falha ao abrir seletor de pasta:", e)
-    toast.error("Não foi possível abrir o seletor de pasta")
+    avisar.erro("Não foi possível abrir o seletor de pasta")
     return null
   }
 }
@@ -43,7 +43,7 @@ export async function createProject(opts: {
 }): Promise<Project | null> {
   const trimmedPath = opts.path.trim()
   if (!trimmedPath) {
-    toast.error("Selecione a pasta do projeto")
+    avisar.erro("Selecione a pasta do projeto")
     return null
   }
   // A pasta ainda está lá? O picker garante isso no instante do clique, mas
@@ -51,7 +51,7 @@ export async function createProject(opts: {
   // que já nasce apontando pro vazio é criar o defeito em vez de evitá-lo.
   const problema = (await conferirPastas([trimmedPath]))[trimmedPath]
   if (problema) {
-    toast.error(COPY_DA_PASTA[problema])
+    avisar.erro(COPY_DA_PASTA[problema])
     return null
   }
   const derivedName = trimmedPath.split("/").filter(Boolean).pop() ?? trimmedPath
@@ -87,7 +87,7 @@ export async function createProject(opts: {
         const fresh = await listProjects()
         if (fresh) useApp.getState().setProjects(fresh)
         useApp.getState().setActiveProject(existing.id)
-        toast.success(
+        avisar.feito(
           existing.deleted
             ? `Projeto restaurado: ${name}`
             : `Projeto atualizado: ${name}`,
@@ -99,16 +99,16 @@ export async function createProject(opts: {
       // store — ele apareceria na sidebar e evaporaria no restart, que é
       // exatamente o id fantasma que o `findProjectByPath` acima existe pra
       // evitar. Falhar alto é o único desfecho honesto.
-      toast.error("Não consegui gravar o projeto no banco")
+      avisar.erro("Não consegui gravar o projeto no banco")
       return null
     }
     useApp.getState().addProject(project)
     useApp.getState().setActiveProject(project.id)
-    toast.success(`Projeto adicionado: ${name}`)
+    avisar.feito(`Projeto adicionado: ${name}`)
     return project
   } catch (e) {
     console.error("Falha ao adicionar projeto:", e)
-    toast.error("Não foi possível adicionar o projeto")
+    avisar.erro("Não foi possível adicionar o projeto")
     return null
   }
 }

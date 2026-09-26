@@ -14,9 +14,7 @@ vi.mock("@/lib/git", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/git")>()),
   createWorktree: vi.fn(),
 }))
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/db/conversations", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/lib/db/conversations")>()
   return {

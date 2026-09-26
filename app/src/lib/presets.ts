@@ -10,7 +10,7 @@
 // Limitação aceita no v1 (plano, correção 7): o digest cobre os NOMES das
 // skills, não o conteúdo dos arquivos .md — drift de conteúdo não é detectado.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { isTauri, type AgentPreset } from "@/lib/db"
 import { getAgentDef } from "@/lib/agentDefs"
 import { readProjectCommands } from "@/lib/sources"
@@ -368,11 +368,11 @@ export async function warnPresetDrift(
   if (driftWarned.get(convId) === episode) return verdict
   driftWarned.set(convId, episode)
   if (verdict === "deleted") {
-    toast(
+    avisar.nota(
       "O preset desta conversa foi apagado. O agente segue sem a verificação de persona.",
     )
   } else {
-    toast(
+    avisar.nota(
       `A persona "${preset!.name}" mudou desde que esta conversa começou (agora v${preset!.version}). O agente segue com o contexto original do 1º turno.`,
     )
   }

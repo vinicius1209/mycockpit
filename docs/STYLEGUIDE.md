@@ -732,6 +732,7 @@ nosso; só as regras vieram de lá.
 | `scripts/lints/paletaCrua.mjs` | §2, cor vem de token | entra cor crua do Tailwind (`bg-amber-500`, `text-emerald-400`) em vez de token da casa |
 | `scripts/check-guia-sem-linha.mjs` | este documento | volta referência `arquivo:linha` no guia. A catraca do §10 move números por desenho, então referência com linha apodrece sozinha e manda o leitor pro lugar errado com a autoridade do guia. Nome de símbolo é greppável e sobrevive à divisão |
 | `scripts/check-config-de-agent.mjs` | o produto roda em OUTRAS máquinas | entra caminho fixo de config de um CLI no código. Onde cada motor guarda config é conhecimento do fornecedor, muda com a versão, e já mudou uma vez aqui |
+| `scripts/check-avisos.mjs` | §12, avisos por natureza (ADR-261) | um arquivo importa `sonner` fora de `lib/avisos.ts` e `components/ui/sonner.tsx`, ou usa `window.confirm`/`window.alert`. Comentário e teste ficam de fora |
 | `scripts/check-barra-de-acento.mjs` | §2, seleção não é cor | volta o filete tingido de seleção: elemento `absolute` de dimensão ≤ 3px, colado numa aresta (`left-0`, `inset-x-0`, `-bottom-px`…), com `bg-brass` ou `bg-st-*`. Pega as duas formas, a barra vertical da sidebar (Fase 1) e o sublinhado da aba (Fase 2) |
 
 Regras de convívio (as três valem mais que a conveniência do momento):
@@ -846,6 +847,20 @@ A régua tem duas perguntas, nesta ordem. A primeira decide sozinha:
 | escolha entre valores de um campo | `ui/select` · `ui/RichSelect` · `ui/PillSelect` | modelo, motor |
 | busca sobre muitos itens | `ui/command` | ⌘K, menu de `@` |
 | o nome do que o ícone já diz | `ui/tooltip` | ícone sem rótulo |
+
+**Avisos (ADR-261).** O que o app diz sem ser perguntado tem cinco naturezas, e
+cada uma tem um lugar só:
+
+| Natureza | Onde mora | Exemplo |
+|---|---|---|
+| **pedido** (precisa de decisão sua) | cartão da fila de interações na conversa que pediu, nunca toast | "Usar o navegador do Maclan", com "Agora não" e "Ligar navegador" |
+| **feito** (resultado do seu gesto) | no próprio gesto; toast `avisar.feito` só quando o lugar some, dizendo o objeto | "Caminho de WorkingIndicator.tsx copiado." |
+| **nota** (o gesto não aconteceu, e por quê) | `avisar.nota`, neutra e curta | "Missão em andamento. Pare a missão para enviar manualmente." |
+| **evento** (aconteceu sem você) | `avisar.evento`, com a linha de identidade projeto · conversa e cópia no sino | "Sem atualizações do Codex há 12 min" |
+| **erro** | `avisar.erro`: o título diz o que não aconteceu, a causa do backend vai ao detalhe | "Não consegui ligar o navegador do Maclan." |
+
+Decisão tomada vira linha no fio (`notice` com `tom: "decisao"`), não toast de
+confirmação. O toast mora no canto superior direito, longe do composer.
 
 Regras decidíveis:
 

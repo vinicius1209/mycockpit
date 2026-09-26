@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react"
 import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Switch } from "@/components/ui/switch"
 import { SectionHeader } from "@/components/settings/parts"
 import { sectionDef } from "@/components/settings/sections"
@@ -95,7 +95,7 @@ function HooksRow({ def }: { def: AgentDef }) {
       setStatus(s)
       setWantPermission(s.permissionInstalled)
       setError(null)
-      toast.success(
+      avisar.feito(
         cmd === "hooks_uninstall"
           ? "Hooks desativados, as entradas do Frota foram removidas do config."
           : jaEstava
@@ -103,7 +103,7 @@ function HooksRow({ def }: { def: AgentDef }) {
             : `Hooks ativados. Sessões do ${def.label} abertas no terminal passam a aparecer no Painel e no tray.`,
       )
     } catch (e) {
-      toast.error(typeof e === "string" ? e : "Falha na operação")
+      avisar.erro("Não consegui mudar os hooks do Frota.", { detalhe: mensagemDe(e) })
     } finally {
       setBusy(false)
     }

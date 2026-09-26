@@ -19,7 +19,7 @@
 // 30s; ela mudou de casa junto com a fila.
 
 import { useEffect, useMemo, useState } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -145,7 +145,7 @@ export function DecisionStrip() {
       )
       setRefreshTick((t) => t + 1)
     } catch {
-      toast.error("Falha ao dispensar a proposta")
+      avisar.erro("Falha ao dispensar a proposta")
     }
   }
 

@@ -42,12 +42,14 @@ export function _resetPendingMarks(): void {
  *  fail-closed (o turno destrava e termina) e deixa o desfecho VISÍVEL. */
 /** Gate de PLANO fica de fora do vigia: não trava run nenhum (nasce com o turno
  *  já encerrado), e auto-negar seria descartar o plano em silêncio — o sumiço
- *  que ele veio consertar (lib/planGate). O predicado ESTREITA o tipo pra que
- *  quem consome (notify) não precise fingir que sabe lidar com "plan". */
+ *  que ele veio consertar (lib/planGate). O pedido de RECURSO também (ADR-261):
+ *  o backend espera no máximo 90 s e avisa quando desiste (`pedido_encerrado`).
+ *  O predicado ESTREITA o tipo pra que quem consome (notify) não precise fingir
+ *  que sabe lidar com os locais. */
 function naoEhPlano(
   r: InteractionRequest,
 ): r is InteractionRequest & { kind: "approval" | "question" } {
-  return r.kind !== "plan"
+  return r.kind !== "plan" && r.kind !== "recurso"
 }
 
 function answerUnattended(

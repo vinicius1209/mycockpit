@@ -1,7 +1,7 @@
 // As portas de entrada dos Bastidores (ADR-200): a linha "N em segundo plano"
 // do fio e o bloco de saída em disco de um trabalho diferido.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { registrarEscolhaDeAba } from "@/components/layout/useContextPanelTab"
 import { bastidoresDaConversa } from "@/lib/bastidores"
 import { useApp } from "@/store/app"
@@ -35,7 +35,7 @@ export function abrirBastidores(convId?: string | null, itemId?: string): void {
     alvo = (lista.find((b) => b.estado === "vivo") ?? lista[0])?.itemId
   }
   if (!alvo) {
-    toast("Nada em segundo plano nesta conversa.")
+    avisar.nota("Nada em segundo plano nesta conversa.")
     return
   }
   prepararTela()

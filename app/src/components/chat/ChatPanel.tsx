@@ -5,7 +5,7 @@ import { stopActiveConversation } from "@/components/chat/filaComposer"
 import { identidadeDoDespacho } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
 import { ArrowDown } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { withNotasDoTurno } from "@/lib/fleet/promptCascade"
 import { CommandConsole } from "@/components/chat/CommandConsole"
 import { Especialistas } from "@/components/settings/Especialistas"
@@ -21,8 +21,6 @@ import { useActiveProject, useApp } from "@/store/app"
 import {
   useChat,
   useActiveConv,
-  deferredLabel,
-  deferredResumePrompt,
   executorItems,
   needsPersonaReinject,
 } from "@/store/chat"
@@ -66,10 +64,8 @@ import type { AgentRunConfig } from "@/lib/types"
 import type { McpRecoveryKind, McpRunOverride } from "@/lib/tooling"
 import { isTauri } from "@/lib/db"
 import { buildLearningBlocks } from "@/lib/learning"
-import { presentTool } from "@/lib/toolview"
+import { repetirEtapa } from "@/components/chat/repetirEtapa"
 import {
-  retryManagedProcess,
-  startManagedProcess,
   stopManagedProcess,
 } from "@/lib/work"
 import {
@@ -210,17 +206,16 @@ export function ChatPanel() {
         resendPreflight,
       )
       if (result === "missing-project") return
-      toast.success(
+      avisar.feito(
         result === "sent"
-          ? "Navegador ligado. Enviando seu pedido."
-          : "Navegador ligado. Seu pedido continua pronto para enviar.",
+          ? `Navegador do ${project?.name ?? "projeto"} ligado. Enviando seu pedido.`
+          : `Navegador do ${project?.name ?? "projeto"} ligado. Seu pedido continua pronto para enviar.`,
       )
     } catch (error) {
-      toast.error(
-        typeof error === "string"
-          ? error
-          : "Não consegui ligar o navegador deste projeto.",
-      )
+      avisar.erro(`Não consegui ligar o navegador do ${project?.name ?? "projeto"}.`, {
+        origem: { conversa: activeId },
+        detalhe: mensagemDe(error),
+      })
     }
   }
 
@@ -276,7 +271,7 @@ export function ChatPanel() {
   ) {
     if (origem.autor === "humano") followLatest()
     if (!isTauri()) {
-      toast("O dispatch dos agents roda no app (bun run tauri dev)")
+      avisar.nota("O dispatch dos agents roda no app (bun run tauri dev)")
       return
     }
     // Alvo: conversa + projeto DONO; cwd, permissão e lições são do fio.
@@ -289,23 +284,23 @@ export function ChatPanel() {
     // conversa ainda carregando do disco (janela do switch): enviar agora
     // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
     if (target.status === "loading") {
-      toast("Conversa ainda carregando. Tenta de novo.")
+      avisar.nota("Conversa ainda carregando. Tenta de novo.")
       return
     }
     if (target.status !== "ok") return
     const { convId, conv, project } = target
     if (conv.preparing) {
-      toast("As capacidades deste envio ainda estão sendo verificadas.")
+      avisar.nota("As capacidades deste envio ainda estão sendo verificadas.")
       return
     }
     // Missão rodando nesta conversa: as fases compartilham o worktree; um envio
     // manual em paralelo embolaria o diff/handoff. Bloqueia (M2).
     if (useMission.getState().byConv[convId]?.status === "running") {
-      toast("Missão em andamento. Pare a missão para enviar manualmente.")
+      avisar.nota("Missão em andamento. Pare a missão para enviar manualmente.")
       return
     }
     if (conv.corrupt) {
-      toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
+      avisar.erro("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
       return
     }
     // Especialistas E1 — `@persona` no envio dispara parecer lateral read-only,
@@ -406,7 +401,7 @@ export function ChatPanel() {
     })
     if (persona.status === "blocked") {
       useChat.getState().clearPreparation(convId, runId)
-      toast.error(persona.error)
+      avisar.erro(persona.error)
       return
     }
     if (persona.status === "ready") {
@@ -450,7 +445,7 @@ export function ChatPanel() {
     )
     if (dispatchBlock) {
       useChat.getState().clearPreparation(convId, runId)
-      toast.error(dispatchBlock)
+      avisar.erro(dispatchBlock)
       return
     }
     // D2 — corrida do await acima: outro envio pode ter passado pelas guardas
@@ -638,13 +633,13 @@ export function ChatPanel() {
         mcpRecoveries,
       )
       if (!acceptance.accepted() && !useChat.getState().byId[convId]?.preflightGate) {
-        toast.error("O turno não começou. O pedido continua no composer.")
+        avisar.erro("O turno não começou. O pedido continua no composer.")
       }
     } catch (e) {
       if (acceptance.accepted()) {
         recordDispatchError(convId, e, "Falha ao executar o agent")
       }
-      else toast.error("Não consegui verificar as capacidades deste envio.")
+      else avisar.erro("Não consegui verificar as capacidades deste envio.")
     } finally {
       if (!acceptance.accepted()) {
         useChat.getState().clearPreparation(convId, runId)
@@ -716,7 +711,7 @@ export function ChatPanel() {
         ),
     )
     if (!ok) {
-      toast.error("Não consegui preparar este envio. O pedido segue no composer.")
+      avisar.erro("Não consegui preparar este envio. O pedido segue no composer.")
     }
   }
 
@@ -837,57 +832,15 @@ export function ChatPanel() {
               onStop={(tool) => {
                 if (tool.managedProcess) {
                   void stopManagedProcess(tool.managedProcess.id).catch((error) =>
-                    toast.error("Não consegui parar o processo.", {
-                      description: String(error),
+                    avisar.erro("Não consegui parar o processo.", {
+                      detalhe: String(error),
                     }),
                   )
                   return
                 }
                 void stopActiveConversation()
               }}
-              onRetry={(tool) => {
-                const label = presentTool(tool.name, tool.input).label
-                // Retomar ≠ repetir (decisão 3 do deferred-work-plan): trabalho
-                // diferido interrompido RETOMA de onde parou (cache do
-                // workflow); relançar do zero pagaria os subagentes de novo.
-                // running/completed não têm ação (o botão nem aparece).
-                if (tool.deferred) {
-                  const prompt = deferredResumePrompt(tool.deferred)
-                  if (!prompt) return
-                  const ok = window.confirm(
-                    `Retomar “${deferredLabel(tool.deferred)}” de onde parou? O que já foi executado volta do cache, sem pagar de novo.`,
-                  )
-                  if (!ok) return
-                  void handleSend(prompt, undefined, [], HUMANO)
-                  return
-                }
-                if (tool.managedProcess) {
-                  const ok = window.confirm(
-                    `Repetir “${label}” como um novo processo gerenciado?`,
-                  )
-                  if (!ok) return
-                  const restart =
-                    tool.managedProcess.status === "orphaned"
-                      ? startManagedProcess(tool.managedProcess)
-                      : retryManagedProcess(tool.managedProcess.id)
-                  void restart.catch((error) =>
-                    toast.error("Não consegui repetir o processo.", {
-                      description: String(error),
-                    }),
-                  )
-                  return
-                }
-                const ok = window.confirm(
-                  `Repetir “${label}” em um novo turno? A etapa pode produzir efeitos novamente.`,
-                )
-                if (!ok) return
-                void handleSend(
-                  `Repita somente a etapa “${label}” do turno anterior. Reavalie o estado atual antes de executar para não duplicar efeitos já aplicados.`,
-                  undefined,
-                  [],
-                  HUMANO,
-                )
-              }}
+              onRetry={(tool) => void repetirEtapa(tool, handleSend)}
               feedback={feedback}
               reveal={
                 transcriptReveal?.conversationId === activeId

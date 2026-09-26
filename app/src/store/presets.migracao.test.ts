@@ -13,9 +13,7 @@ const h = vi.hoisted(() => ({
   listaThrows: false,
 }))
 
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/db", () => ({
   isTauri: () => true,
   listPresets: vi.fn(async () => {

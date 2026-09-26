@@ -8,7 +8,7 @@ import {
   Trash2,
   ChevronDown,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
 import { controle } from "@/components/ui/controle"
 import { copyText } from "@/lib/clipboard"
@@ -183,7 +183,7 @@ export function StickyNoteCard({
     const ok = await copyText(note.content)
     if (ok) {
       setCopied(true)
-      toast.success("Nota copiada")
+      avisar.feito("Nota copiada")
       setTimeout(() => setCopied(false), 1500)
     }
   }
@@ -209,7 +209,7 @@ export function StickyNoteCard({
           await saveNoteAttachment(note.id, f.name || "colado", f.type, bytes),
         )
       } catch (err) {
-        toast.error("Não consegui anexar.", { description: String(err) })
+        avisar.erro("Não consegui anexar.", { detalhe: String(err) })
       }
     }
     if (novos.length > 0) {
@@ -220,7 +220,7 @@ export function StickyNoteCard({
   function handlePromptInsert() {
     if (!note.content.trim()) return
     onInsertIntoPrompt?.(note)
-    toast.success("Nota endereçada no composer")
+    avisar.feito("Nota endereçada no composer")
   }
 
   function handlePromoteTask() {

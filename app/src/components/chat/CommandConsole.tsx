@@ -8,7 +8,7 @@ import {
   useState,
   type SetStateAction,
 } from "react"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { ComposerShell } from "@/components/chat/ComposerShell"
 import { ContextRing } from "@/components/chat/ContextRing"
 import { IdentityDoor } from "@/components/chat/ComposerExecutionControls"
@@ -643,7 +643,7 @@ export function CommandConsole({
                       const nextStaged = v === conv.agent ? null : v
                       useChat.getState().stageAgent(activeId, nextStaged)
                       clearPresetOnManualChange()
-                      toast.info(avisoDeRevezamento(nextStaged, conv.agent))
+                      avisar.nota(avisoDeRevezamento(nextStaged, conv.agent))
                       return
                     }
                     setDestination(v)

@@ -3,7 +3,7 @@ import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 
 const invokeMock = vi.fn()
 vi.mock("@tauri-apps/api/core", () => ({ invoke: (...args: unknown[]) => invokeMock(...args) }))
-vi.mock("sonner", () => ({ toast: Object.assign(vi.fn(), { error: vi.fn(), success: vi.fn() }) }))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/db/conversationDrafts", () => ({
   loadComposerDraft: vi.fn(async () => null),
   saveComposerDraft: vi.fn(async () => {}),

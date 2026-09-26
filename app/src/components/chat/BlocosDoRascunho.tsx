@@ -9,7 +9,7 @@ import { horaDaCitacao, type BlocoCitacao, type BlocoDoRascunho } from "@/lib/ci
 import { rotuloDaColagem, type BlocoColagem } from "@/lib/colagem"
 import { rotuloDaMarcacao, type BlocoMarcacao } from "@/lib/marcacao"
 import { rotuloDoParecer, type BlocoParecer } from "@/lib/parecerTrazido"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { CartaoDeArquivo } from "@/components/chat/CartaoDeArquivo"
 import { useContextoDoCartao } from "@/components/chat/useContextoDoCartao"
 import { gravarPastaLiberada } from "@/lib/dirGate"
@@ -170,7 +170,7 @@ async function liberarSempre(dir: string) {
   const project = app.projects.find((p) => p.id === app.activeProjectId)
   if (!project) return
   const feito = await gravarPastaLiberada(project, dir)
-  if (feito === "liberada") toast.success("Pasta liberada para este projeto.")
+  if (feito === "liberada") avisar.feito("Pasta liberada para este projeto.")
 }
 
 export function BlocosDoRascunho({ convId, blocos }: { convId: string; blocos: BlocoDoRascunho[] }) {

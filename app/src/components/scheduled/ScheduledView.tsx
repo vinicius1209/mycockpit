@@ -21,7 +21,7 @@ import {
   Trash2,
   X,
 } from "lucide-react"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { AppDialog } from "@/components/ui/app-dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -121,7 +121,7 @@ function ScheduleRow({
     // ligar de volta uma "uma vez" cujo horário já passou NÃO cria disparo
     // nenhum: avisa, em vez de deixar o switch verde mentindo.
     if (v && rec && computeNextRun(rec, new Date()) == null) {
-      toast("Sem próxima execução: o horário já passou. Use Reagendar.")
+      avisar.nota("Sem próxima execução: o horário já passou. Use Reagendar.")
     }
   }
 
@@ -135,7 +135,7 @@ function ScheduleRow({
     })
     if (ok) {
       await remove(s.id)
-      toast(`"${s.name}" excluída`)
+      avisar.feito(`"${s.name}" excluída`)
     }
   }
 
@@ -411,12 +411,10 @@ function RescheduleDialog({
     setSaving(true)
     try {
       await reschedule(s.id, ms)
-      toast.success(`"${s.name}" reagendada para ${fmtScheduleWhen(ms)}`)
+      avisar.feito(`"${s.name}" reagendada para ${fmtScheduleWhen(ms)}`)
       onOpenChange(false)
     } catch (e) {
-      toast.error(
-        e instanceof Error && e.message ? e.message : "Falha ao reagendar",
-      )
+      avisar.erro(`Não consegui reagendar "${s.name}".`, { detalhe: mensagemDe(e) })
     } finally {
       setSaving(false)
     }

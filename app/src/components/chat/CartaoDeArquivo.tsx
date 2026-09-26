@@ -10,7 +10,7 @@
 
 import { FolderOpen, X } from "lucide-react"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
 import { FileIcon } from "@/components/ui/file-icon"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
@@ -158,7 +158,7 @@ export function CartaoDeArquivo({
               size="chip"
               className="text-muted-foreground"
               onClick={() =>
-                void revealItemInDir(caminho).catch(() => toast.error("Não encontrei o arquivo (ele ainda existe?)"))
+                void revealItemInDir(caminho).catch(() => avisar.erro("Não encontrei o arquivo (ele ainda existe?)"))
               }
             >
               <FolderOpen />

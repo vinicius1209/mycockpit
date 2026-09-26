@@ -6,7 +6,7 @@
 // "contou quando sobrou?".
 
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { useChat, type ConvState } from "../chat"
 import { useApp } from "@/store/app"
 import { removeWorktree } from "@/lib/git"
@@ -23,9 +23,7 @@ vi.mock("@/lib/git", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/git")>()),
   removeWorktree: vi.fn(async () => ({ branch: null, branchRemoved: false })),
 }))
-vi.mock("sonner", () => ({
-  toast: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn() }),
-}))
+vi.mock("@/lib/avisos", async () => (await import("@/test/avisosFalsos")).moduloDeAvisosFalsos())
 vi.mock("@/lib/db/conversations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/db/conversations")>()),
   deleteConversation: vi.fn(async () => {}),
@@ -129,7 +127,7 @@ describe("o que sobra é DITO; o esperado é silencioso", () => {
       branchRemoved: true,
     })
     await useChat.getState().removeConversation(ALVO)
-    expect(toast).not.toHaveBeenCalled()
+    expect(avisar.feito).not.toHaveBeenCalled()
   })
 
   it("branch que SOBREVIVEU é anunciado com o nome (senão vira lixo invisível)", async () => {
@@ -138,18 +136,18 @@ describe("o que sobra é DITO; o esperado é silencioso", () => {
       branchRemoved: false,
     })
     await useChat.getState().removeConversation(ALVO)
-    expect(toast).toHaveBeenCalled()
-    const [titulo, opts] = vi.mocked(toast).mock.calls[0] as [string, { description?: string }]
+    expect(avisar.feito).toHaveBeenCalled()
+    const [titulo, opts] = vi.mocked(avisar.feito).mock.calls[0] as [string, { detalhe?: string }]
     expect(titulo).toContain("branch preservado")
-    expect(opts?.description).toContain("mycockpit/convalvo")
+    expect(opts?.detalhe).toContain("mycockpit/convalvo")
   })
 
   it("pasta que ficou (mudança não-commitada) é dita COM o caminho", async () => {
     vi.mocked(removeWorktree).mockRejectedValue("contains modified files")
     await useChat.getState().removeConversation(ALVO)
-    const [titulo, opts] = vi.mocked(toast).mock.calls[0] as [string, { description?: string }]
+    const [titulo, opts] = vi.mocked(avisar.feito).mock.calls[0] as [string, { detalhe?: string }]
     expect(titulo).toContain("worktree ficou")
-    expect(opts?.description).toContain(WT)
+    expect(opts?.detalhe).toContain(WT)
   })
 
   it("git falhando não impede a conversa de ser apagada", async () => {

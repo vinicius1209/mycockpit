@@ -86,7 +86,15 @@ type ChatItemBody =
    *  Por que é item e não campo: store/chat/planGate.ts. */
   | { kind: "planGate"; id: string; text: string; decision?: "approved" | "discarded" | "superseded" }
   | { kind: "cancelled"; id: string; cause?: CausaDoCorte }
-  | { kind: "notice"; id: string; message: string }
+  | {
+      kind: "notice"
+      id: string
+      message: string
+      /** `decisao`: registro de um gesto seu sobre um pedido do agente
+       *  ("Você ligou o navegador do Maclan", ADR-261). Ausente: aviso do
+       *  sistema. */
+      tom?: "decisao"
+    }
   /** Limite de uso/cota do agent atingido: cartão acionável (revezamento). */
   | { kind: "limit"; id: string; message: string; resetHint?: string }
   /** Parecer de um CONSELHEIRO (Especialistas E1): uma persona chamada inline

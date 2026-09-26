@@ -1,4 +1,5 @@
 import { InteractionHost } from "@/components/chat/InteractionHost"
+import { LiberacoesForaDaTela } from "@/components/chat/LiberacaoDoComputador"
 
 /** GlobalInteractionHost — montagem GLOBAL do InteractionHost (§6.1 item 4 do
  *  docs/agent-office.md, doc histórico). Antes o host morava dentro do
@@ -30,6 +31,10 @@ export function GlobalInteractionHost() {
     <div className="pointer-events-none fixed bottom-12 right-4 z-40 flex w-full max-w-[420px] flex-col-reverse">
       <div className="pointer-events-auto empty:hidden rounded-lg bg-background shadow-[var(--shadow-pop)]">
         <InteractionHost />
+      </div>
+      {/* O Revogar das conversas que não estão na tela (ADR-261). */}
+      <div className="pointer-events-auto empty:hidden mb-2 rounded-lg bg-background shadow-[var(--shadow-pop)]">
+        <LiberacoesForaDaTela />
       </div>
     </div>
   )

@@ -10,141 +10,120 @@
 // registrada". Ingestão de estado não pode depender de um componente estar
 // montado, ainda mais agora que a conversa tem fronteira de erro própria.
 
-import { toast } from "sonner"
-import { recusarPedidoDeNavegador, startProjectBrowser } from "@/lib/browser"
-import { desktopGrantRun, desktopRecusarPedido, desktopRevokeRun } from "@/lib/resources"
+import { avisar } from "@/lib/avisos"
+import type { InteractionRequest, RecursoData } from "@/lib/interaction"
+import { idDoPedido, nomeDoProjeto, pedidoDeRecurso } from "@/lib/pedidosDeRecurso"
+import { announceArrival, useInteractions } from "@/store/interactions"
+import { useLiberacoes } from "@/store/liberacoes"
 import { isTauri } from "@/lib/db"
 import { listenWorkEvents, type WorkEvent } from "@/lib/work"
 import { vistaDoAgenteNoNavegador } from "@/lib/navegadorAoVivo"
-import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 import { tituloDoAgente } from "@/store/chat/titulo"
 
 let iniciada = false
 
-/** Avisos que saíram da tela porque o navegador LIGOU (e não porque a pessoa
- *  fechou): o `onDismiss` não pode contar esses como recusa. */
-const atendidos = new Set<string>()
-/** Projetos com aviso de pedido NA TELA agora. */
-const abertos = new Set<string>()
+/** Conversa de cada run que pediu o computador: o `desktop_state` do backend
+ *  não repete a conversa, e a faixa do Revogar precisa dela. */
+const conversaDoRun = new Map<string, string>()
+
+/** Enfileira um pedido de recurso e avisa a chegada (sino, nativa), como o
+ *  ouvinte de `interaction://request` faz com os pedidos do backend. */
+function enfileirar(req: InteractionRequest): void {
+  const fila = useInteractions.getState()
+  const antes = fila.queue
+  fila.push(req)
+  if (useInteractions.getState().queue.length > antes.length) announceArrival(req, antes)
+}
+
+/** O pedido saiu da tela sem a sua decisão (o navegador ligou por outro
+ *  caminho, o turno acabou, o agente desistiu). `true` se ele estava lá. */
+function recolher(id: string): boolean {
+  const estava = useInteractions.getState().queue.some((r) => r.id === id)
+  useInteractions.getState().resolve(id)
+  return estava
+}
 
 /** O agente pediu o navegador do projeto e ele está desligado (ADR-224 §1,
  *  ADR-228). Ligar é gesto da pessoa, e o agente ESPERA por ele (até 90 s):
- *  ligou, ele segue no mesmo turno; fechou o aviso, ele recebe na hora que
- *  você preferiu não ligar. Antes o aviso dizia "o agente tenta de novo
- *  sozinho", e nada fazia isso. */
+ *  ligou, ele segue no mesmo turno; "Agora não", ele recebe na hora que você
+ *  preferiu não ligar. Desde a ADR-261 o pedido é cartão na conversa que
+ *  pediu, não toast (`lib/pedidosDeRecurso`). */
 export function pedidoDeNavegador(event: WorkEvent): void {
   // O navegador ligou (por aqui ou por Configurações): o pedido já foi
-  // atendido e sai da tela sozinho.
+  // atendido e sai da tela sozinho. Não é recusa.
   if (event.kind === "browser_state" && event.data.session) {
-    if (abertos.has(event.data.session.projectPath)) atendidos.add(event.data.session.projectPath)
-    toast.dismiss(`browser-needed:${event.data.session.projectPath}`)
+    const path = event.data.session.projectPath
+    for (const r of useInteractions.getState().queue) {
+      if (r.kind === "recurso" && (r.data as RecursoData).projectPath === path) recolher(r.id)
+    }
     return
   }
   if (event.kind === "browser_autostarted" && event.data.projectPath) {
-    const nome = useApp.getState().projects.find((p) => p.path === event.data.projectPath)?.name
-    toast(`O agente ligou o navegador do projeto${nome ? ` ${nome}` : ""}.`, {
-      description: "Você autorizou isso em Configurações › Recursos locais. Dá para revogar lá.",
+    const path = event.data.projectPath
+    avisar.evento(`O agente ligou o navegador do ${nomeDoProjeto(path) ?? "projeto"}.`, {
+      origem: { projeto: path, conversa: event.data.convId ?? null },
+      detalhe: "Você autorizou isso em Configurações › Recursos locais. Dá para revogar lá.",
     })
     return
   }
   if (event.kind !== "browser_needed") return
-  const path = event.data.projectPath
-  if (!path) return
-  const projeto = useApp.getState().projects.find((p) => p.path === path)
-  // Pedido que espera uma decisão humana não expira sozinho: visto em
-  // 22/09/2026, com 30 s o aviso já tinha sumido quando a pessoa olhou, e
-  // "nada mudou na tela". Fica até ela ligar ou fechar.
-  abertos.add(path)
-  toast(`O agente quer usar o navegador do projeto${projeto ? ` ${projeto.name}` : ""}.`, {
-    id: `browser-needed:${path}`,
-    description: "Ele está desligado. Ligar abre um Chromium da Frota em segundo plano; o agente está esperando e segue sozinho. Fechar este aviso diz a ele que você preferiu não ligar.",
-    duration: Infinity,
-    closeButton: true,
-    onDismiss: () => {
-      abertos.delete(path)
-      if (atendidos.delete(path)) return
-      void recusarPedidoDeNavegador(path).catch((err) => console.error("[navegador] recusa não chegou ao agente", err))
-    },
-    action: {
-      label: "Ligar navegador",
-      onClick: () => {
-        atendidos.add(path)
-        void startProjectBrowser(path)
-          .then(() => {
-            toast.dismiss(`browser-needed:${path}`)
-            toast.success("Navegador do projeto ligado")
-          })
-          .catch((err) => toast.error(err instanceof Error ? err.message : String(err)))
-      },
-    },
-  })
-}
-
-/** Pedidos de desktop que saíram da tela por liberação ou fim do turno, e não
- *  porque a pessoa fechou: o `onDismiss` não conta esses como recusa. */
-const desktopAtendidos = new Set<string>()
-/** Runs com pedido de desktop NA TELA agora. */
-const desktopAbertos = new Set<string>()
-
-function erroEmAviso(err: unknown): void {
-  toast.error(err instanceof Error ? err.message : String(err))
+  const { runId, convId, projectPath } = event.data
+  if (!runId || !convId || !projectPath) return
+  enfileirar(pedidoDeRecurso("navegador", { runId, convId, projectPath }))
 }
 
 /** O agente pediu o computador (ADR-225). Mesmo idioma do pedido de navegador:
- *  aviso que espera a pessoa, com o gesto no botão. Fechar é não liberar.
- *  Liberado, o aviso vira o de "pode controlar", com o Revogar à mão até o
- *  turno acabar; quem recolhe é o Rust (`desktop_state`), nunca um timer. */
+ *  cartão que espera a pessoa. Liberado, o cartão sai e a faixa do Revogar
+ *  fica até o turno acabar; quem recolhe é o Rust (`desktop_state`), nunca um
+ *  timer. */
 export function pedidoDeDesktop(event: WorkEvent): void {
   const runId = event.data.runId
   if (!runId) return
-  const pedido = `desktop-needed:${runId}`
-  const liberado = `desktop-granted:${runId}`
   if (event.kind === "desktop_needed") {
-    desktopAbertos.add(runId)
-    toast("O agente quer ver a tela e controlar o computador.", {
-      id: pedido,
-      description: "Ele está esperando e segue sozinho quando você liberar. Liberar vale só para este turno: ele poderá capturar a tela, mover o mouse e digitar, e você pode revogar a qualquer momento. Fechar este aviso diz a ele que você preferiu não liberar.",
-      duration: Infinity,
-      closeButton: true,
-      // Fechar é resposta (ADR-242): o agente espera o gesto, e sem isso
-      // esperaria os 90 s inteiros por um "não" que já foi dado.
-      onDismiss: () => {
-        desktopAbertos.delete(runId)
-        if (desktopAtendidos.delete(runId)) return
-        void desktopRecusarPedido(runId).catch((err) =>
-          console.error("[desktop] recusa não chegou ao agente", err),
-        )
-      },
-      action: {
-        label: "Liberar neste turno",
-        onClick: () => {
-          desktopAtendidos.add(runId)
-          void desktopGrantRun(runId).catch(erroEmAviso)
-        },
-      },
-    })
+    const convId = event.data.convId
+    if (!convId) return
+    conversaDoRun.set(runId, convId)
+    enfileirar(pedidoDeRecurso("computador", { runId, convId }))
     return
   }
   if (event.kind !== "desktop_state") return
-  // O aviso que sai porque o estado mudou (liberado, revogado, turno acabou)
-  // não é recusa. Só marca o que está na tela: marca solta engoliria uma
-  // recusa futura do mesmo turno.
-  if (desktopAbertos.has(runId)) desktopAtendidos.add(runId)
-  toast.dismiss(pedido)
+  // O pedido que sai porque o estado mudou (liberado, revogado, turno acabou)
+  // não é recusa: sai sem responder.
+  recolher(idDoPedido("computador", runId))
   if (!event.data.granted) {
-    toast.dismiss(liberado)
+    useLiberacoes.getState().encerrar(runId)
+    conversaDoRun.delete(runId)
     return
   }
-  toast("O agente pode controlar o computador neste turno.", {
-    id: liberado,
-    description: "A liberação acaba sozinha quando o turno termina.",
-    duration: Infinity,
-    action: {
-      label: "Revogar",
-      onClick: () => void desktopRevokeRun(runId).catch(erroEmAviso),
-    },
-  })
+  const convId =
+    event.data.convId ??
+    conversaDoRun.get(runId) ??
+    Object.entries(useChat.getState().byId).find(([, c]) => c.runId === runId)?.[0]
+  if (convId) useLiberacoes.getState().liberar(runId, convId)
+}
+
+/** O agente parou de esperar por um recurso (teto de 90 s, recusa, fim do
+ *  turno). Se o cartão ainda estava na tela, ninguém decidiu: ele sai e o fio
+ *  guarda que o agente deixou de esperar. Antes o aviso ficava dizendo que ele
+ *  esperava, para sempre (ADR-261). */
+export function pedidoEncerrado(event: WorkEvent): void {
+  if (event.kind !== "pedido_encerrado") return
+  const { runId, convId, recurso } = event.data
+  if (!runId || !recurso) return
+  if (!recolher(idDoPedido(recurso, runId)) || !convId) return
+  const peloQue = recurso === "navegador" ? "pelo navegador" : "pelo computador"
+  void useChat
+    .getState()
+    .appendItems(convId, [
+      {
+        kind: "notice",
+        id: crypto.randomUUID(),
+        message: `O agente deixou de esperar ${peloQue} e seguiu sem ele.`,
+        ts: Date.now(),
+      },
+    ])
+    .catch((err) => console.error("[pedido] o fim da espera não entrou no fio:", err))
 }
 
 /** Liga a escuta uma vez por janela e nunca desliga. Idempotente. */
@@ -156,6 +135,7 @@ export function iniciarEventosDeTrabalho(): void {
     pedidoDeNavegador(event)
     vistaDoAgenteNoNavegador(event)
     pedidoDeDesktop(event)
+    pedidoEncerrado(event)
     void tituloDoAgente(event).catch((err) => console.error("[título] o do agente não entrou:", err))
   }).catch((erro) => {
     // Sem escuta o plano e os processos ficam mudos: tem que aparecer no log,

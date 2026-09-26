@@ -1,4 +1,4 @@
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef, dispatchBlockReason } from "@/lib/agents"
 import { blocoDaDoutrina, doctrineFingerprint, readDoctrine } from "@/lib/doctrine"
@@ -23,7 +23,7 @@ function recordHandoffError(convId: string, error: unknown) {
   if (!last || last.kind !== "error" || last.message !== message) {
     useChat.getState().handleEvent(convId, { type: "error", message })
   }
-  toast.error(message)
+  avisar.erro(message)
 }
 
 export async function continueConversationWith({
@@ -58,7 +58,7 @@ export async function continueConversationWith({
     useApp.getState().settings.detected ?? {},
   )
   if (dispatchBlock) {
-    toast.error(dispatchBlock)
+    avisar.erro(dispatchBlock)
     return
   }
   const pending = pendingExecutorRequest(conv.items)
@@ -180,7 +180,7 @@ export async function continueConversationWith({
     )
   } catch (error) {
     if (accepted) recordHandoffError(convId, error)
-    else toast.error("O revezamento não foi iniciado.")
+    else avisar.erro("O revezamento não foi iniciado.")
   } finally {
     if (accepted) {
       useChat.getState().finish(convId)

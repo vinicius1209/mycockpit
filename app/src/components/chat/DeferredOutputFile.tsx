@@ -1,6 +1,6 @@
 import { Copy, FolderOpen, PanelRight } from "lucide-react"
 import { abrirBastidorDoArquivo } from "@/components/bastidores/abrirBastidores"
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { Button } from "@/components/ui/button"
 import { copyText } from "@/lib/clipboard"
@@ -27,7 +27,7 @@ export function DeferredOutputFile({
       await revealItemInDir(outputFile)
     } catch (err) {
       console.error("[deferred-output] não consegui mostrar na pasta", err)
-      toast.error("Não consegui mostrar na pasta (o arquivo ainda existe?)")
+      avisar.erro("Não consegui mostrar na pasta (o arquivo ainda existe?)")
     }
   }
 

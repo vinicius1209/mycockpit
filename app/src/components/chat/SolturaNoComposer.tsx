@@ -16,7 +16,7 @@ import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
-import { toast } from "sonner"
+import { avisar, mensagemDe } from "@/lib/avisos"
 import { attachPath, type Attachment } from "@/lib/attachments"
 import { blocosComArquivos } from "@/lib/arquivoCitado"
 import { isTauri } from "@/lib/db"
@@ -45,7 +45,7 @@ async function soltar(paths: string[]): Promise<void> {
     try {
       novos.push(await attachPath(convId, path))
     } catch (err) {
-      toast.error(typeof err === "string" ? err : "Não consegui anexar o arquivo.")
+      avisar.erro("Não consegui anexar o arquivo.", { detalhe: mensagemDe(err) })
     }
   }
   const agora = useComposerDrafts.getState().byConv[convId]
@@ -60,7 +60,7 @@ async function soltar(paths: string[]): Promise<void> {
     const blocos = useComposerDrafts.getState().byConv[convId]?.blocos ?? []
     useComposerDrafts.getState().setBlocos(convId, blocosComArquivos(blocos, plano.arquivos))
   }
-  for (const aviso of plano.recusados) toast.error(aviso)
+  for (const aviso of plano.recusados) avisar.erro(aviso)
 }
 
 export function SolturaNoComposer() {
@@ -84,7 +84,7 @@ export function SolturaNoComposer() {
         const dentro = Boolean(r && dentroDoRetangulo(p.position, window.devicePixelRatio, r))
         if (p.type === "drop") {
           setPairando(null)
-          if (dentro) void soltar(p.paths).catch(() => toast.error("Não consegui usar os arquivos soltos."))
+          if (dentro) void soltar(p.paths).catch(() => avisar.erro("Não consegui usar os arquivos soltos."))
           return
         }
         setPairando(

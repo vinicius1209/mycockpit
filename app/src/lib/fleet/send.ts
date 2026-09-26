@@ -6,7 +6,7 @@
 // fila + auto-resume + notify + sugestões). A duplicação é um risco ACEITO
 // (§10), coberta pela lista fechada de testes de paridade em send.test.ts.
 
-import { toast } from "sonner"
+import { avisar } from "@/lib/avisos"
 import { agentLabel, runAgent } from "@/lib/agent"
 import { agentDef as engineDef, dispatchBlockReason } from "@/lib/agents"
 import type { Attachment } from "@/lib/attachments"
@@ -178,13 +178,13 @@ async function sendFromDeskPrepared(
   const { convId, projectId, projectPath, text } = args
   const attachments = args.attachments ?? []
   if (!isTauri()) {
-    toast("O dispatch dos agents roda no app (bun run tauri dev)")
+    avisar.nota("O dispatch dos agents roda no app (bun run tauri dev)")
     return
   }
   const appCommand = findAppCommand(text)
   const known = useChat.getState().byId[convId]
   if (known?.preparing) {
-    toast("As capacidades deste envio ainda estão sendo verificadas.")
+    avisar.nota("As capacidades deste envio ainda estão sendo verificadas.")
     return
   }
   // Quando a Mesa já conhece a conversa, o primeiro quadro fica marcado antes
@@ -196,21 +196,21 @@ async function sendFromDeskPrepared(
   // janela do load: enviar agora criaria estado vazio e o persist (UPSERT de
   // linha inteira) apagaria o histórico — mesma guarda do ChatPanel.
   if (!conv) {
-    toast("Conversa ainda carregando. Tenta de novo.")
+    avisar.nota("Conversa ainda carregando. Tenta de novo.")
     return
   }
   if (conv.preparing && conv.preparing.runId !== runId) {
-    toast("As capacidades deste envio ainda estão sendo verificadas.")
+    avisar.nota("As capacidades deste envio ainda estão sendo verificadas.")
     return
   }
   if (conv.corrupt) {
-    toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
+    avisar.erro("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
     return
   }
   // Missão rodando NESTA conversa: as fases compartilham o worktree; um run
   // manual em paralelo embolaria o diff/handoff.
   if (useMission.getState().byConv[convId]?.status === "running") {
-    toast("Missão em andamento. Pare a missão para enviar manualmente.")
+    avisar.nota("Missão em andamento. Pare a missão para enviar manualmente.")
     return
   }
   // Rodando/finalizando: mensagem SUA vai pra fila (o finally drena e coalesce);
@@ -273,7 +273,7 @@ async function sendFromDeskPrepared(
     forceReinject: reinject,
   })
   if (persona.status === "blocked") {
-    toast.error(persona.error)
+    avisar.erro(persona.error)
     return
   }
   if (persona.status === "ready") {
@@ -309,7 +309,7 @@ async function sendFromDeskPrepared(
     useApp.getState().settings.detected ?? {},
   )
   if (dispatchBlock) {
-    toast.error(dispatchBlock)
+    avisar.erro(dispatchBlock)
     return
   }
   // D2 — corrida do await acima: outro envio pode ter iniciado um run durante o
@@ -514,13 +514,13 @@ async function sendFromDeskPrepared(
       instructionSources,
     )
     if (!acceptance.accepted() && !useChat.getState().byId[convId]?.preflightGate) {
-      toast.error("O turno não começou. O pedido continua no rascunho.")
+      avisar.erro("O turno não começou. O pedido continua no rascunho.")
     }
   } catch (e) {
     if (acceptance.accepted()) {
       recordDispatchError(convId, e, "Falha ao executar o agent")
     }
-    else toast.error("Não consegui verificar as capacidades deste envio.")
+    else avisar.erro("Não consegui verificar as capacidades deste envio.")
   } finally {
     if (!acceptance.accepted()) {
       useChat.getState().clearPreparation(convId, runId)
@@ -618,29 +618,29 @@ export async function continueInAgent(
 ): Promise<void> {
   const { convId, projectId, projectPath } = args
   if (!isTauri()) {
-    toast("O dispatch dos agents roda no app (bun run tauri dev)")
+    avisar.nota("O dispatch dos agents roda no app (bun run tauri dev)")
     return
   }
   await useChat.getState().ensureConversationLoaded(projectId, convId)
   const conv = useChat.getState().byId[convId]
   if (!conv) {
-    toast("Conversa ainda carregando. Tenta de novo.")
+    avisar.nota("Conversa ainda carregando. Tenta de novo.")
     return
   }
   if (conv.corrupt) {
-    toast.error("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
+    avisar.erro("Histórico corrompido no banco. Envio bloqueado nesta conversa.")
     return
   }
   // missão rodando nesta conversa: as fases mandam no worktree — revezar por
   // fora embolaria o diff/handoff (mesma guarda do sendFromDesk).
   if (useMission.getState().byConv[convId]?.status === "running") {
-    toast("Missão em andamento. Pare a missão para revezar.")
+    avisar.nota("Missão em andamento. Pare a missão para revezar.")
     return
   }
   // turno em andamento: revezar agora atropelaria o run corrente (o transplante
   // reinicia running/runId). Bloqueia — o usuário para primeiro.
   if (conv.running || conv.finalizing) {
-    toast("Turno em andamento. Espere terminar para revezar.")
+    avisar.nota("Turno em andamento. Espere terminar para revezar.")
     return
   }
   const permission =
