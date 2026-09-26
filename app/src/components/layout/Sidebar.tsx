@@ -1,3 +1,4 @@
+import { conversaTrabalhando } from "@/lib/conversaTrabalhando"
 import { useEffect, useRef, useState } from "react"
 import {
   Plus,
@@ -289,12 +290,13 @@ export function Sidebar({ onAddProject }: { onAddProject: () => void }) {
     if (activeId && !userCollapsed.current.has(activeId)) openExpand(activeId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId])
-  // Projetos com QUALQUER conversa rodando (string estável → menos re-render).
+  // Projetos com QUALQUER conversa trabalhando, turno ou parecer (ADR-267;
+  // string estável → menos re-render).
   const runningProjectsKey = useChat((s) =>
     Array.from(
       new Set(
         Object.values(s.byId)
-          .filter((c) => c.running)
+          .filter((c) => conversaTrabalhando(c))
           .map((c) => c.projectId),
       ),
     )

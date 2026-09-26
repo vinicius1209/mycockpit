@@ -41,6 +41,8 @@ interface ConversationRowProps {
   viewMode: string
   defaultAgent: string
   isRunning: boolean
+  /** O especialista dando parecer aqui (ADR-267): o hover do sinal diz quem. */
+  especialista?: string | null
   doneUnseen?: "ok" | "error"
   isDeciding: boolean
   hasFusion: boolean
@@ -70,6 +72,7 @@ export function ConversationRow({
   viewMode,
   defaultAgent,
   isRunning,
+  especialista = null,
   doneUnseen,
   isDeciding,
   hasFusion,
@@ -277,6 +280,7 @@ export function ConversationRow({
               <ConversationSlot
                 pede={isAwaiting}
                 rodando={isRunning}
+                quem={especialista}
                 cor={c.color ?? corDoProjeto}
                 falhou={doneUnseen === "error"}
                 updatedAt={c.updatedAt}

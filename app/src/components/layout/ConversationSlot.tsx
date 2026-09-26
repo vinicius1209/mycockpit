@@ -39,6 +39,7 @@ export function ConversationSlot({
   falhou,
   updatedAt,
   cor,
+  quem = null,
 }: {
   pede: boolean
   rodando: boolean
@@ -47,6 +48,8 @@ export function ConversationSlot({
   /** Cor do "rodando": a da conversa, senão a do projeto (ADR-256). Sem
    *  nenhuma, o azul de rodando. */
   cor?: string | null
+  /** Quando é um especialista dando parecer, o nome dele (ADR-267). */
+  quem?: string | null
 }) {
   const agora = useSyncExternalStore(subscribeMinute, minuteNow, minuteNow)
   // Época da janela: muda SÓ quando a janela volta a ser vista. Ver
@@ -61,11 +64,11 @@ export function ConversationSlot({
 
   if (estado === "rodando") {
     return (
-      <span key={estado} className={slot} title={TITULO.rodando}>
+      <span key={estado} className={slot} title={quem ? `${quem} está dando um parecer` : TITULO.rodando}>
         {/* O cometa (ADR-259): o giro vem do relógio único, não de
             `@keyframes`, então a oclusão da janela no macOS não tem animação
             para congelar (era o "trava e só volta ao clicar", ADR-256). */}
-        <CometaVivo cor={cor ?? "var(--st-running)"} rotulo="turno rodando" />
+        <CometaVivo cor={cor ?? "var(--st-running)"} rotulo={quem ? `${quem} dando parecer` : "turno rodando"} />
       </span>
     )
   }

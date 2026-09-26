@@ -10,6 +10,14 @@ import type { Attachment } from "@/lib/attachments"
 import type { CausaDoCorte } from "@/lib/corte"
 import type { DeferredWork, ManagedProcess } from "@/lib/work"
 
+/** Um parecer levado num pedido: o bastante para a linha "↳ parecer da Íris"
+ *  achar o parecer no fio e dizer de quem é. */
+export interface ParecerLevado {
+  itemId: string
+  personaId: string
+  personaNome: string
+}
+
 type ChatItemBody =
   | {
       kind: "user"
@@ -26,6 +34,9 @@ type ChatItemBody =
        *  Vai ao motor como pedido, mas não foi você que escreveu, e a régua e
        *  o histórico dizem isso em vez de pôr na sua boca. */
       retomada?: true
+      /** Os pareceres que ESTE pedido levou ao executor (ADR-267): o bloco sai
+       *  do rascunho no envio, e sem isto a mensagem enviada não dizia nada. */
+      pareceres?: ParecerLevado[]
     }
   | { kind: "text"; id: string; text: string }
   | {
@@ -110,6 +121,10 @@ type ChatItemBody =
       /** A pergunta que originou o parecer (rastro). */
       question: string
       text: string
+      /** "mensagem": o parecer nasceu depois da ADR-267 e se desenha como
+       *  mensagem (balão, rodapé de ações). Ausente: o cartão de antes, que
+       *  os pareceres antigos mantêm. */
+      estilo?: "mensagem"
     }
 
 /** Todo item do fio carrega o instante em que NASCEU (epoch ms), carimbado na

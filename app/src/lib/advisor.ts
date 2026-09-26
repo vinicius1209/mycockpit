@@ -14,6 +14,7 @@
 //  - auditoria: o item de parecer carimba persona id + version + digest (reusa o
 //    presetDigest já computado no AgentDef) — serve pro drift, igual à conversa.
 
+import { ESCREVENDO, estadoDaFerramenta, type ParecerAoVivo } from "@/lib/parecerAoVivo"
 import { getAgentDef, slugify, type AgentDef } from "@/lib/agentDefs"
 import { runAgent } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
@@ -272,6 +273,9 @@ export async function runAdvisor(opts: {
    *  a raiz de anexos) e o adapter dá o acesso nativo. Só leitura segue valendo
    *  pelo `fusion-ro`. */
   attachments?: Attachment[]
+  /** O parecer AO VIVO (ADR-267): o que ele está fazendo, a partir dos eventos
+   *  reais do motor, e o texto que já chegou. */
+  aoVivo?: (v: ParecerAoVivo) => void
 }): Promise<RunAdvisorResult> {
   if (!isTauri()) {
     return { ok: false, text: "", error: "indisponível fora do app" }
@@ -298,6 +302,9 @@ export async function runAdvisor(opts: {
       if (e.type === "text_delta") {
         buf += e.text
         sawDelta = true
+        opts.aoVivo?.({ estado: ESCREVENDO, texto: buf })
+      } else if (e.type === "tool") {
+        opts.aoVivo?.({ estado: estadoDaFerramenta(e.name, e.input), texto: buf })
       } else if (e.type === "text") {
         // dedup: se veio por deltas, o bloco completo é o mesmo texto (mesma
         // régua do reducer do chat).
@@ -335,6 +342,7 @@ export function buildAdviceItem(
     digest: def.digest,
     question,
     text,
+    estilo: "mensagem",
     ts: now,
   }
 }

@@ -25,7 +25,7 @@ import { GroupRow } from "@/components/chat/GroupRow"
 import { ToolGroup } from "@/components/chat/ToolGroup"
 import { type Node, type ToolItem } from "@/components/chat/messageNodes"
 import { hiddenNodeCount, useJanelaProgressiva, useStableNodes } from "@/components/chat/useStableNodes"
-import { groupByAuthor, groupTs, corteNasceu } from "@/components/chat/messageGroups"
+import { groupByAuthor, groupTs, corteNasceu, estreiasDeEspecialista, type MessageGroup } from "@/components/chat/messageGroups"
 import {
   feedbackTextByResult,
   turnStartIndex,
@@ -33,10 +33,15 @@ import {
   visibleThreadItems,
   windowStartIndex,
 } from "@/components/chat/threadWindow"
-import { AdviceArrivalRow, AdviceCard } from "@/components/chat/AdviceInThread"
+import { AdviceCard } from "@/components/chat/AdviceInThread"
+import { ChegadaDoEspecialista, EntrouNaConversa, ParecerEmMensagem } from "@/components/chat/ParecerEmMensagem"
+import { shortDigest } from "@/lib/presets"
+import { LinhaDoParecerLevado } from "@/components/chat/RastroDoParecer"
 import { EnderecoDoConselheiro } from "@/components/chat/EnderecoDoConselheiro"
 import { PlanGateCard } from "@/components/chat/PlanGateCard"
 import { UserMessageBubble } from "@/components/chat/UserMessageBubble"
+import type { Consultado } from "@/lib/parecerAoVivo"
+import { cn } from "@/lib/utils"
 import { Markdown } from "@/components/common/Markdown"
 import {
   pendingDeferred,
@@ -90,11 +95,13 @@ const MessageItem = memo(function MessageItem({
         mime: a.mime,
       }))
     return (
-      <div className="flex flex-col items-start gap-1.5">
+      <div className={cn("flex flex-col gap-1.5", it.advisorTo ? "items-end" : "items-start")}>
         {/* Endereçamento (Especialistas E1): esta fala foi PARA um conselheiro,
             não pro piloto — quem responde é outra pessoa. Metadado em sussurro
             cinza (STYLEGUIDE §2: brass é gesto, não ênfase genérica). */}
         {it.advisorTo && <EnderecoDoConselheiro destinatario={it.advisorTo} />}
+        {/* O rastro do parecer que este pedido levou (ADR-267). */}
+        {it.pareceres?.map((p) => <LinhaDoParecerLevado key={p.itemId} levado={p} />)}
         {it.attachments && it.attachments.length > 0 && (
           <div className="flex max-w-full flex-wrap gap-1.5">
             {it.attachments.map((a) => (
@@ -117,7 +124,7 @@ const MessageItem = memo(function MessageItem({
             ))}
           </div>
         )}
-        {it.text && <UserMessageBubble itemId={it.id} text={it.text} />}
+        {it.text && <UserMessageBubble itemId={it.id} text={it.text} aDireita={!!it.advisorTo} />}
       </div>
     )
   }
@@ -163,7 +170,7 @@ const MessageItem = memo(function MessageItem({
   if (it.kind === "notice") return <AvisoDoFio message={it.message} tom={it.tom} ts={it.ts} />
 
   if (it.kind === "advice") {
-    return <AdviceCard item={it} />
+    return it.estilo === "mensagem" ? <ParecerEmMensagem item={it} /> : <AdviceCard item={it} />
   }
 
   if (it.kind === "note") {
@@ -353,7 +360,7 @@ export function MessageList({
   presetId?: string | null
   /** Especialistas E1: conselheiro em consulta (id+nome) — enquanto setado, a
    *  linha de chegada aparece no fim do fio; some quando o item `advice` cai. */
-  advising?: { id: string; name: string } | null
+  advising?: Consultado | null
   /** Watchdog do turno: presente quando o provider está vivo, mas sem eventos
    *  observáveis desde este instante. */
   stalledSince?: number
@@ -440,6 +447,7 @@ export function MessageList({
   // antigos sem `ts` → undefined, e o grupo omite a hora.
   const tsById = useMemo(() => tsForGroups(threadItems, groups), [threadItems, groups])
   const tsCauda = useMemo(() => tsDaCauda(threadItems), [threadItems])
+  const estreias = useMemo(() => estreiasDeEspecialista(groups), [groups])
   // Identidade fixa: estes cruzam o `memo` do ToolGroup/ToolLine.
   const stableStop = useStableHandler(onStop)
   const stableRetry = useStableHandler(onRetry)
@@ -478,6 +486,9 @@ export function MessageList({
                 vem logo após uma mensagem SUA — troca de autor abre grupo novo,
                 então o divisor cai sempre ENTRE grupos. */}
             {unseenDividerId != null && g.nodes[0]?.key === unseenDividerId && <DivisorNovasMensagens />}
+            {g.author.kind === "especialista" && estreias.has(g.key) && (
+              <EntrouNaConversa personaId={g.author.personaId} nome={g.author.personaName} />
+            )}
             <GroupRow
               groupKey={g.key}
               author={g.author}
@@ -485,6 +496,7 @@ export function MessageList({
               agent={agent}
               presetId={presetId ?? null}
               ts={groupTs(g, tsById)}
+              auditoria={auditoriaDoGrupo(g)}
               workingTail={
                 canCoalesceWorking ? (
                   <WorkingIndicator
@@ -516,7 +528,12 @@ export function MessageList({
           </Fragment>
         )
       })}
-      {advising && <AdviceArrivalRow advising={advising} />}
+      {advising && (
+        <ChegadaDoEspecialista
+          advising={advising}
+          estreia={!threadItems.some((i) => i.kind === "advice" && i.personaId === advising.id)}
+        />
+      )}
       {/* Sem `nodes`: é decisão, e o porquê está no contrato da prop. */}
       {(running || finalizing) && (advising || groups[groups.length - 1]?.author.kind !== "executor") && (
         <WorkingIndicator
@@ -532,4 +549,11 @@ export function MessageList({
       )}
     </div>
   )
+}
+
+/** "Íris · v3 · 04ab091d" no hover da hora de um parecer em mensagem. */
+function auditoriaDoGrupo(g: MessageGroup): string | undefined {
+  const n = g.nodes[0]
+  if (n?.type !== "item" || n.item.kind !== "advice" || n.item.estilo !== "mensagem") return undefined
+  return `${n.item.personaName} · v${n.item.personaVersion} · ${shortDigest(n.item.digest)}`
 }

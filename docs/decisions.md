@@ -9691,3 +9691,38 @@ considerou.
      acordado…" sob o título. Notch expandido: "acordado" na linha de sistema.
 - **Fica igual:** o mecanismo (sem `pmset`, sem `sudo`, tampa fechada dorme)
   e a preferência única.
+
+### ADR-267 · O especialista é gente do time: entra, lê de verdade, responde numa mensagem ✅
+- **Contexto (26/09/2026):** com um especialista trabalhando, a barra lateral
+  não mostrava nada (só `running`, o turno do executor, acendia o cometa). No
+  fio, o parecer chegava de uma vez, como bloco de sistema (caixa bege, selo
+  "parecer · só leitura", carimbo "v1 · 04ab091d"), depois de "está lendo o
+  contexto" com três pontos, embora o texto já chegasse aos pedaços no
+  `runAdvisor`. Depois de "Trazer pro executor", a mensagem enviada não dizia
+  que levou o parecer, e as ações flutuavam num idioma próprio.
+- **Decisão (mock `docs/mocks/especialista-na-conversa.html`, B1 e C):**
+  1. Trabalhar é `running || advising` (`lib/conversaTrabalhando`): a linha da
+     conversa e o projeto mostram o cometa, com a dica "Íris está dando um
+     parecer".
+  2. Ao vivo: `runAdvisor` repassa o que o motor faz (`aoVivo`), o gerúndio do
+     verbo da ferramenta com o objeto ("lendo oferta.ts"), depois
+     "escrevendo" com o texto que já chegou (`lib/parecerAoVivo`). O estado
+     vive em `conv.advising.aoVivo`, efêmero como antes. Nada de roteiro:
+     antes do primeiro evento, "lendo a conversa".
+  3. O parecer é mensagem (`ParecerEmMensagem`): balão branco, nome na cor da
+     persona, selo "especialista", versão e digest no hover da hora; longo
+     mostra o começo e "Mostrar tudo". Só os novos (`estilo: "mensagem"`,
+     carimbado em `buildAdviceItem`): o histórico mantém o cartão de antes.
+  4. O seu pedido a um especialista vai à direita, em grupo próprio
+     (`you:especialista`); ao executor segue à esquerda.
+  5. "Íris entrou na conversa · especialista em X" na primeira vez da persona
+     na conversa (derivado dos grupos, nunca gravado).
+  6. Rastro: o pedido que levou pareceres guarda `pareceres` (no aceite do
+     turno, antes de o bloco sair do rascunho); a mensagem mostra "↳ parecer
+     de Íris · 19:50 «…»" e o parecer, "levado ao Claude Code no seu pedido
+     das 19:52", os dois no idioma da citação e levando um ao outro.
+  7. Ações no rodapé, no idioma do executor (`TurnActions`): "Trazer pro
+     executor" sempre à mão (é estado, o mesmo clique tira), e Responder,
+     Passar o volante, Copiar e Dispensar como ícones no hover do turno.
+- **Fica igual:** o parecer continua só leitura (`fusion-ro`), fora do reducer
+  do executor, e `advising` não trava o envio nem finge turno.

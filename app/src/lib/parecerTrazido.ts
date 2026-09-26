@@ -87,6 +87,16 @@ export function blocoDosPareceres(
 }
 
 
+/** Quais pareceres o rascunho desta conversa está levando, para o pedido
+ *  enviado guardar o rastro (ADR-267). Puro sobre os blocos. */
+export function pareceresLevados(
+  blocos: readonly { tipo: string }[] | undefined,
+): { itemId: string; personaId: string; personaNome: string }[] {
+  return (blocos ?? [])
+    .filter((b): b is BlocoParecer => b.tipo === "parecer")
+    .map((p) => ({ itemId: p.itemId, personaId: p.personaId, personaNome: p.personaNome }))
+}
+
 /** Atalho do caminho de envio: o que o rascunho desta conversa está levando de
  *  parecer, já emoldurado para o prompt. Mora aqui para o `ChatPanel` não
  *  precisar conhecer o formato nem a store. */

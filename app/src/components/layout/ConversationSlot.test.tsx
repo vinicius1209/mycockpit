@@ -176,3 +176,12 @@ describe("a cor do rodando (ADR-256, ADR-259)", () => {
     expect(semCor).toMatch(/data-vivo="conversa"[^>]*style="color:var\(--st-running\);/)
   })
 })
+
+// ADR-267: o parecer de um especialista também acende o sinal, e o hover diz quem.
+describe("o especialista trabalhando", () => {
+  it("o sinal de rodando diz o nome de quem dá o parecer", () => {
+    const html = renderToStaticMarkup(<ConversationSlot pede={false} rodando falhou={false} updatedAt={1} quem="Íris" />)
+    expect(html).toContain('title="Íris está dando um parecer"')
+    expect(html).toContain('aria-label="Íris dando parecer"')
+  })
+})

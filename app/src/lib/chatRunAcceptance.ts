@@ -4,6 +4,8 @@ import type { Attachment } from "@/lib/attachments"
 import { markLessonsUsed } from "@/lib/learning"
 import type { McpPreflightGate } from "@/lib/tooling"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { pareceresLevados } from "@/lib/parecerTrazido"
+import type { ParecerLevado } from "@/store/chat/itens"
 import { useChat } from "@/store/chat"
 import { maybeNotifyDeferredEvent } from "@/lib/notify/deferredWork"
 
@@ -122,14 +124,19 @@ export function acceptChatTurn({
   } else {
     chat.start(convId, text, runId, agent, model, effort, attachments)
   }
-  if (retomada) marcarRetomada(convId)
+  if (retomada) marcarUltimoPedido(convId, { retomada: true })
   if (modelChangeNotice) {
     chat.handleEvent(convId, { type: "notice", message: modelChangeNotice })
   }
   if (effortChangeNotice) {
     chat.handleEvent(convId, { type: "notice", message: effortChangeNotice })
   }
-  if (broughtAdvice) useComposerDrafts.getState().tirarPareceres(convId)
+  if (broughtAdvice) {
+    // O rastro fica no pedido antes do bloco sair do rascunho (ADR-267).
+    const levados = pareceresLevados(useComposerDrafts.getState().byConv[convId]?.blocos)
+    if (levados.length > 0) marcarUltimoPedido(convId, { pareceres: levados })
+    useComposerDrafts.getState().tirarPareceres(convId)
+  }
   recordLessons(lessonIds)
   if (lessonIds.length > 0) void markLessonsUsed(lessonIds)
   if (doctrineFingerprint) {
@@ -151,14 +158,17 @@ export function acceptChatTurn({
 /** Marca o pedido que acabou de nascer como retomada do app. Fora do store
  *  porque é um dado a mais no item, não uma transição: o persist do fim do
  *  turno grava o item já marcado. */
-function marcarRetomada(convId: string) {
+/** Anota no pedido que acabou de entrar no fio o que só o aceite sabe: que o
+ *  texto é da retomada automática (ADR-250), ou que ele levou pareceres
+ *  (ADR-267). */
+function marcarUltimoPedido(convId: string, marca: { retomada?: true; pareceres?: ParecerLevado[] }) {
   useChat.setState((s) => {
     const conv = s.byId[convId]
     const i = conv ? conv.items.findLastIndex((it) => it.kind === "user") : -1
     const item = conv?.items[i]
     if (!conv || !item || item.kind !== "user") return {}
     const items = conv.items.slice()
-    items[i] = { ...item, retomada: true }
+    items[i] = { ...item, ...marca }
     return { byId: { ...s.byId, [convId]: { ...conv, items } } }
   })
 }

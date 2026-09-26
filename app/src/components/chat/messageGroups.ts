@@ -10,9 +10,9 @@ import type { Node } from "./messageNodes"
  *  pareceres de personas DIFERENTES não colapsem no mesmo grupo. `system` é a
  *  voz sem dono (interrupção/aviso) — sem avatar, centralizada. */
 export type GroupAuthor =
-  | { kind: "you" }
+  | { kind: "you"; aoEspecialista?: true }
   | { kind: "executor" }
-  | { kind: "especialista"; personaId: string; personaName: string }
+  | { kind: "especialista"; personaId: string; personaName: string; mensagem?: true }
   | { kind: "system" }
 
 /** Chave de colapso: nós contíguos com a MESMA chave viram um grupo. O
@@ -20,7 +20,9 @@ export type GroupAuthor =
 export function authorKey(a: GroupAuthor): string {
   switch (a.kind) {
     case "you":
-      return "you"
+      // O pedido a um especialista vai à direita (ADR-267): não cola no grupo
+      // das suas mensagens ao executor.
+      return a.aoEspecialista ? "you:especialista" : "you"
     case "executor":
       return "executor"
     case "system":
@@ -45,12 +47,13 @@ export function nodeAuthor(node: Node): GroupAuthor {
   const it = node.item
   switch (it.kind) {
     case "user":
-      return { kind: "you" }
+      return it.advisorTo ? { kind: "you", aoEspecialista: true } : { kind: "you" }
     case "advice":
       return {
         kind: "especialista",
         personaId: it.personaId,
         personaName: it.personaName,
+        ...(it.estilo === "mensagem" ? { mensagem: true as const } : {}),
       }
     case "cancelled":
     case "notice":
@@ -116,4 +119,18 @@ export function corteNasceu(
   return group!.nodes.some(
     (n) => n.type === "item" && n.item.kind === "cancelled" && nasceuAgora(n.item.ts, now),
   )
+}
+
+/** Os grupos em que um especialista ESTREIA na conversa (ADR-267): o primeiro
+ *  de cada persona, e só no estilo mensagem (o "entrou na conversa" não se
+ *  pinta no histórico antigo). Puro. */
+export function estreiasDeEspecialista(groups: MessageGroup[]): Set<string> {
+  const vistos = new Set<string>()
+  const estreias = new Set<string>()
+  for (const g of groups) {
+    if (g.author.kind !== "especialista" || vistos.has(g.author.personaId)) continue
+    vistos.add(g.author.personaId)
+    if (g.author.mensagem) estreias.add(g.key)
+  }
+  return estreias
 }

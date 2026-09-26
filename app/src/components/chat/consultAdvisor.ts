@@ -77,6 +77,8 @@ export async function consultAdvisor(
       prompt,
       cwd,
       attachments: [...anexos.doPedido, ...anexos.anteriores],
+      aoVivo: (aoVivo) =>
+        useChat.getState().setAdvising(convId, { id: def.id, name: def.name, aoVivo }),
     })
     if (!result.text) {
       await registrarFalha(convId, def.name, result.error)

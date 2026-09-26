@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { buildNodes } from "./messageNodes"
-import { groupByAuthor, groupTs, nodeAuthor } from "./messageGroups"
+import { estreiasDeEspecialista, groupByAuthor, groupTs, nodeAuthor } from "./messageGroups"
 import type { ChatItem } from "@/store/chat"
 
 const user = (id: string, text: string): ChatItem => ({ kind: "user", id, text })
@@ -116,5 +116,40 @@ describe("groupTs — hora do grupo via a key do 1º nó (estilo Slack)", () => 
     const tsById = new Map(items.map((it) => [it.id, it.ts] as const))
     const groups = groupByAuthor(buildNodes(items))
     expect(groupTs(groups[0], tsById)).toBeUndefined()
+  })
+})
+
+describe("especialista como gente do time (ADR-267)", () => {
+  const pedido = (id: string): ChatItem => ({
+    kind: "user",
+    id,
+    text: "@Aline oi",
+    advisorTo: { id: "aline", name: "Aline" },
+  })
+  const nova = (id: string, personaId: string): ChatItem => ({
+    ...(advice(id, personaId, personaId) as Extract<ChatItem, { kind: "advice" }>),
+    estilo: "mensagem",
+  })
+
+  it("o pedido a um especialista não cola no grupo das suas mensagens ao executor", () => {
+    const groups = groupByAuthor(buildNodes([user("u1", "oi"), pedido("u2")]))
+    expect(groups).toHaveLength(2)
+    expect(groups[1].author).toEqual({ kind: "you", aoEspecialista: true })
+  })
+
+  it("estreia é o primeiro grupo de cada persona, e só no estilo mensagem", () => {
+    const groups = groupByAuthor(
+      buildNodes([
+        advice("a0", "velha", "Velha"),
+        pedido("u1"),
+        nova("a1", "aline"),
+        pedido("u2"),
+        nova("a2", "aline"),
+        nova("a3", "bia"),
+      ]),
+    )
+    const estreias = estreiasDeEspecialista(groups)
+    const donos = groups.filter((g) => estreias.has(g.key)).map((g) => g.nodes[0].key)
+    expect(donos).toEqual(["a1", "a3"])
   })
 })

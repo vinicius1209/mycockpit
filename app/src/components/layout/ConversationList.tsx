@@ -1,3 +1,4 @@
+import { conversaTrabalhando, especialistaTrabalhando } from "@/lib/conversaTrabalhando"
 import { retomadaAgendada } from "@/lib/autoResume"
 import { useMemo, useRef, useState } from "react"
 import { avisar, mensagemDe } from "@/lib/avisos"
@@ -18,17 +19,31 @@ import {
   groupConversationTree,
 } from "@/components/layout/conversationTree"
 
-/** Ids das conversas rodando, como string estável (só muda em transição de run
- * , não a cada delta de streaming, evitando re-render da sidebar inteira). */
+/** Ids das conversas em que alguém trabalha (turno OU parecer de especialista,
+ * ADR-267), como string estável (só muda em transição, não a cada delta de
+ * streaming, evitando re-render da sidebar inteira). */
 function useRunningConvIds(): Set<string> {
   const key = useChat((s) =>
     Object.entries(s.byId)
-      .filter(([, c]) => c.running)
+      .filter(([, c]) => conversaTrabalhando(c))
       .map(([id]) => id)
       .sort()
       .join(","),
   )
   return new Set(key ? key.split(",") : [])
+}
+
+/** Quem dá parecer em cada conversa (id → nome), para o hover dizer quem. */
+function useEspecialistasTrabalhando(): Map<string, string> {
+  const key = useChat((s) =>
+    Object.entries(s.byId)
+      .map(([id, c]) => [id, especialistaTrabalhando(c)] as const)
+      .filter(([, nome]) => nome != null)
+      .map(([id, nome]) => `${id}\u0000${nome}`)
+      .sort()
+      .join("\u0001"),
+  )
+  return new Map(key ? key.split("\u0001").map((par) => par.split("\u0000") as [string, string]) : [])
 }
 
 /** Conversas que TERMINARAM sem você ver. Só a falha ainda pinta a linha: o
@@ -156,6 +171,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
   // renderiza dimmed (memória preservada, ênfase removida). String estável.
   const viewMode = useApp((s) => s.scheduledOpen || s.flightPlansOpen || s.fleetOpen ? "global" : s.viewMode)
   const running = useRunningConvIds()
+  const especialistas = useEspecialistasTrabalhando()
   const finished = useFinishedUnseen()
   const defaultAgent = useApp((s) => s.settings.defaultAgent)
   const deciding = useDecidingConvIds()
@@ -284,6 +300,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
             viewMode={viewMode}
             defaultAgent={defaultAgent}
             isRunning={running.has(c.id)}
+            especialista={especialistas.get(c.id) ?? null}
             doneUnseen={finished.get(c.id)}
             isDeciding={deciding.has(c.id)}
             hasFusion={fusionAlive.has(c.id)}

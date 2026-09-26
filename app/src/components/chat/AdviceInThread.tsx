@@ -1,72 +1,15 @@
-// O CONSELHEIRO no fio (Especialistas E1): a linha de chegada enquanto ele lê,
-// e o cartão do parecer quando ele responde.
-//
-// Saiu do MessageList.tsx, que estava exatamente no teto da catraca. O recorte
-// é fechado — as duas peças só existem uma pela outra (a linha some quando o
-// cartão chega) e nada mais no fio depende delas.
+// O cartão do parecer de antes da ADR-267 (Especialistas E1). Os pareceres
+// novos são mensagem (`ParecerEmMensagem`, com a chegada ao vivo); este fica
+// para os antigos, que não mudam de cara.
 
 import { CornerDownRight, MessageSquareQuote } from "lucide-react"
 import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
-import { AgentAvatar } from "@/components/chat/AgentAvatar"
 import { shortDigest } from "@/lib/presets"
 import { usePresets } from "@/store/presets"
 import { useChat, type ChatItem } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { parecerJaTrazido } from "@/lib/parecerTrazido"
-import { quemVemDepois } from "@/lib/filaDeConselheiros"
-import { useFilaDeConselheiros } from "@/store/filaConselheiros"
-
-/** Linha de CHEGADA do conselheiro (Especialistas E1): enquanto o parecer não
- *  resolve (`conv.advising` setado), a persona "entra no fio" estilo Slack —
- *  avatar + nome + "está lendo o contexto…" com dots pulsando; some quando o
- *  item `advice` chega. Fail-soft: sem persona resolvida, avatar genérico. */
-export function AdviceArrivalRow({
-  advising,
-}: {
-  advising: { id: string; name: string }
-}) {
-  const persona = usePresets((s) =>
-    s.list.find((p) => p.id === advising.id || p.name === advising.name),
-  )
-  // Com mais de um chamado, a linha de chegada também diz quem vem depois:
-  // é o que impede a segunda consulta de parecer perdida.
-  const proxima = useFilaDeConselheiros((s) =>
-    quemVemDepois(s.porConversa[useChat.getState().activeId ?? ""]),
-  )
-  return (
-    <div className="flex gap-3 animate-cockpit-rise">
-      <div className="w-7 shrink-0 pt-0.5">
-        <AgentAvatar
-          def={persona}
-          seed={persona ? undefined : advising.id || advising.name}
-          size={28}
-          rounded
-        />
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="mb-1 flex items-baseline gap-2">
-          <span className="text-[13px] font-medium text-brass">
-            {persona?.name ?? advising.name}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
-          <span>está lendo o contexto</span>
-          {proxima && <span className="text-muted-foreground/70">· {proxima}</span>}
-          <span className="flex items-center gap-1" aria-hidden>
-            {[0, 1, 2].map((i) => (
-              <span
-                key={i}
-                className="animate-cockpit-pulse size-1.5 rounded-full bg-brass/70"
-                style={{ animationDelay: `${i * 0.18}s` }}
-              />
-            ))}
-          </span>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 /** Parecer de um CONSELHEIRO (Especialistas E1): item atribuído à persona,
  *  visualmente distinto de uma ação do executor (borda brass, cabeçalho com o

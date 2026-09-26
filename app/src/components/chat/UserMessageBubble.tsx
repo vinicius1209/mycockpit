@@ -66,9 +66,12 @@ export function MentionText({ text }: { text: string }) {
 export function UserMessageBubble({
   itemId,
   text,
+  aDireita,
 }: {
   itemId: string
   text: string
+  /** Pedido a um especialista (ADR-267): a bolha vai à direita, o bico também. */
+  aDireita?: boolean
 }) {
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
@@ -176,7 +179,7 @@ export function UserMessageBubble({
       )}
       <div
         data-selectable
-        className="max-w-full rounded-2xl rounded-tl-md bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground"
+        className={cn("max-w-full rounded-2xl bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground", aDireita ? "rounded-tr-md" : "rounded-tl-md")}
       >
         <MentionText text={corpo} />
       </div>

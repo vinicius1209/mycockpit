@@ -8,6 +8,7 @@ import { fmtTime } from "@/lib/format"
 import { useNasceuAgora } from "@/lib/nascimento"
 import { cn } from "@/lib/utils"
 import type { GroupAuthor } from "@/components/chat/messageGroups"
+import { CabecalhoDoEspecialista, usePersona } from "@/components/chat/ParecerEmMensagem"
 
 /** Uma linha de grupo estilo Slack: avatar no gutter + cabeçalho (nome) UMA vez,
  *  e os corpos dos nós contíguos daquele autor indentados sob o mesmo gutter
@@ -24,6 +25,7 @@ export function GroupRow({
   presetId,
   ts,
   brasa,
+  auditoria,
   children,
   workingTail,
 }: {
@@ -38,6 +40,9 @@ export function GroupRow({
    *  que decai sozinha. Render-time de propósito: o bloco já existia quando o
    *  corte chegou, então a decisão não pode ser da montagem dele. */
   brasa?: boolean
+  /** Parecer como mensagem (ADR-267): persona, versão e digest, no hover da
+   *  hora. A auditoria sai da cara da mensagem, não do fio. */
+  auditoria?: string
   children: ReactNode
   workingTail?: ReactNode
 }) {
@@ -47,9 +52,25 @@ export function GroupRow({
   // A chegada do grupo (ADR-179): a sua mensagem sobe, o agente acende.
   // Decidido na montagem; reabrir a conversa não reencena.
   const nasceu = useNasceuAgora(ts)
+  const { cor } = usePersona(author.kind === "especialista" ? author.personaId : "")
 
   if (author.kind === "system") {
     return <div className="flex flex-col gap-1.5">{children}</div>
+  }
+
+  // O seu pedido a um especialista vai à direita, sem gutter (ADR-267): é o
+  // que separa, de relance, a conversa com ele da conversa com o executor.
+  if (author.kind === "you" && author.aoEspecialista) {
+    return (
+      <div
+        id={`msg-group-${groupKey}`}
+        data-turn-key={groupKey}
+        className={cn("group/turno flex scroll-mt-6 flex-col items-end gap-2 pl-10", nasceu && "fio-nasce-sobe")}
+      >
+        {time && <span className="text-[11px] tabular-nums text-muted-foreground/60">{time}</span>}
+        {children}
+      </div>
+    )
   }
 
   let gutter: ReactNode
@@ -58,6 +79,7 @@ export function GroupRow({
   // Selo do motor no CABEÇALHO (B2.3): só no grupo do executor, e só quando o
   // nome exibido é de uma persona (senão o nome já é o motor).
   let engine: string | null = null
+  let header: ReactNode = null
   if (author.kind === "you") {
     gutter = <UserAvatar size={28} profile={userProfile} alt="" />
     name =
@@ -76,6 +98,9 @@ export function GroupRow({
     )
     name = author.personaName
     nameClass = "text-brass"
+    if (author.mensagem) {
+      header = <CabecalhoDoEspecialista nome={persona?.name ?? name} cor={cor} hora={time} auditoria={auditoria} />
+    }
   } else {
     // executor: identidade compartilhada com o indicador de "trabalhando…".
     const id = resolveExecutorIdentity(presets, agent, presetId)
@@ -99,6 +124,7 @@ export function GroupRow({
     >
       <div className="w-7 shrink-0 pt-0.5">{gutter}</div>
       <div className="min-w-0 flex-1">
+        {header ? <div className="mb-1">{header}</div> : (
         <div className="mb-1 flex items-baseline gap-2">
           <span className={cn("text-[13px] font-medium", nameClass)}>{name}</span>
           {engine && (
@@ -112,6 +138,7 @@ export function GroupRow({
             </span>
           )}
         </div>
+        )}
         <div className="flex min-w-0 flex-col gap-2">
           {children}
           {workingTail}

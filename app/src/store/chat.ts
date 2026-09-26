@@ -82,8 +82,9 @@ import {
   type ContextSnapshotState,
 } from "@/lib/contextSnapshot"
 
-export type { ChatItem } from "@/store/chat/itens"
+export type { ChatItem, ParecerLevado } from "@/store/chat/itens"
 import type { ChatItem } from "@/store/chat/itens"
+import type { Consultado } from "@/lib/parecerAoVivo"
 
 /** Um processo marcado como vivo no snapshot anterior não pertence ao registry
  * desta nova instância. Não finge "rodando": preserva PID/tail e marca órfão,
@@ -232,7 +233,7 @@ export interface ConvState extends ContextSnapshotState {
    *  (id + nome da persona) — a "linha de chegada" no fim do fio enquanto o
    *  parecer não chega resolve o AgentDef por esse id (fallback: nome). NÃO é
    *  `running` (não trava o envio nem finge turno de executor). Efêmero. */
-  advising?: { id: string; name: string } | null
+  advising?: Consultado | null
   /** Higiene de injeção (H2/H4 do prompt-hygiene-plan) — ledger POR CONVERSA
    *  do último fingerprint injetado, por chave: `doctrine` = hash do bloco de
    *  doutrina considerado no envio (H4, re-injeta só quando o arquivo muda);
@@ -449,10 +450,7 @@ export interface ChatState {
   /** Limpa o selo de "terminou e você não viu" (ao abrir a conversa). */
   markSeen: (convId: string) => void
   /** Especialistas E1: marca/limpa o conselheiro em consulta (id+nome ou null). */
-  setAdvising: (
-    convId: string,
-    advising: { id: string; name: string } | null,
-  ) => void
+  setAdvising: (convId: string, advising: Consultado | null) => void
   /** Especialistas E1: consome e limpa os pareceres pendentes (no envio). */
   /** Especialistas E1: "Dispensar" — remove o item de parecer do fio + persiste. */
   /** Carimba notas como ENTREGUES ao agente (não repetir no próximo prompt). */
