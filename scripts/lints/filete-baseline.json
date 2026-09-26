@@ -1,13 +1,11 @@
 {
   "components/chat/ComposerParts.tsx": 1,
   "components/chat/ComposerShell.tsx": 1,
-  "components/chat/InteractionHost.tsx": 4,
   "components/chat/PresenceBar.tsx": 1,
   "components/chat/TurnNote.tsx": 2,
   "components/common/CommandMenu.tsx": 2,
   "components/common/Markdown.tsx": 2,
   "components/decisions/DecisionCards.tsx": 1,
-  "components/fleet/FleetView.tsx": 2,
   "components/layout/AddProjectDialog.tsx": 2,
   "components/layout/DiffPanel.tsx": 4,
   "components/layout/DiffPanel/sendBar.tsx": 1,

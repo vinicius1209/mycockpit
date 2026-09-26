@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="pt-BR" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>M3 · Frota densa</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens REAIS de app/src/index.css (par claro/escuro). */
+:root{
+  --background:#fbfbfa;--rail:#f6f6f4;--foreground:#16181b;--card:#ffffff;
+  --muted-foreground:#5c6166;--faint:#8a9099;
+  --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);
+  --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+  --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);
+  --st-running:#2f8fbf;--st-queued:#c1861f;--st-warning:#c1861f;--st-error:#cf4a3e;--st-success:#1f9d6b;
+  --id-violet:#6d47b8;
+  --shadow-sm:0 1px 2px rgba(20,22,25,.08);--shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);
+  --sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;
+}
+:root[data-theme="dark"]{
+  --background:#0a0b0d;--rail:#0c0d10;--foreground:#e7e8ea;--card:#141619;
+  --muted-foreground:#9aa0a7;--faint:#687078;
+  --border:rgba(255,255,255,.08);--border-strong:rgba(255,255,255,.13);
+  --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
+  --brass:#e4a862;--brass-soft:rgba(228,168,98,.14);
+  --st-running:#5bb8e8;--st-queued:#d99138;--st-warning:#d99138;--st-error:#f2766b;--st-success:#5bd6a0;
+  --id-violet:#a48af0;
+  --shadow-sm:0 1px 2px rgba(0,0,0,.35);--shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#ecece9;color:var(--foreground);font-family:var(--sans);-webkit-font-smoothing:antialiased;padding:28px 28px 90px}
+:root[data-theme="dark"] body{background:#000}
+h1{font-size:20px;font-weight:600}
+.sub{font-size:13px;color:var(--muted-foreground);margin:6px 0 18px;max-width:1150px;line-height:1.55}
+h2{font-size:14px;font-weight:600;margin:36px 0 4px}
+h2 small{font-weight:400;color:var(--muted-foreground);font-size:13px;margin-left:8px}
+.q{font-size:13px;color:var(--muted-foreground);margin:0 0 12px;max-width:1150px;line-height:1.55}
+.q b{color:var(--foreground);font-weight:500}
+.tema{position:fixed;top:20px;right:24px;font:12px var(--sans);color:var(--muted-foreground);background:var(--card);border:1px solid var(--border);border-radius:8px;padding:6px 12px;cursor:pointer;box-shadow:var(--shadow-sm);z-index:5}
+.tema:hover{color:var(--foreground)}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;max-width:1240px;font-size:13px;color:var(--muted-foreground);line-height:1.6;margin-top:14px}
+.card b{color:var(--foreground);font-weight:500}.card li{margin-top:4px}.card ul{padding-left:18px}
+code{font:12px var(--mono)}
+
+/* ---------- a view Frota (cobre o cartão central) ---------- */
+.view{width:1240px;background:var(--background);border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-top:10px}
+.vhead{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--border)}
+.vhead .ttl{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint);display:flex;align-items:center;gap:7px}
+.vhead .ttl svg{width:13px;height:13px}
+.vhead .resumo{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+.vhead .resumo .w{color:var(--st-warning)}
+.vhead .x{color:var(--faint);font-size:14px;padding:2px 6px;border-radius:6px;cursor:pointer}
+.vhead .x:hover{background:var(--sel-hover);color:var(--foreground)}
+
+/* o cardão de hoje */
+.cardao{margin:44px auto;max-width:560px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow-sm);padding:18px;display:flex;align-items:center;gap:14px}
+.cardao .spin{width:16px;height:16px;border-radius:50%;border:2px solid var(--border-strong);border-top-color:var(--st-running);animation:gira 1s linear infinite;flex-shrink:0}
+@keyframes gira{to{transform:rotate(360deg)}}
+.cardao .t{font-size:13px;font-weight:500}
+.cardao .p{font-size:12px;color:var(--muted-foreground);margin-top:3px}
+.cardao .qdo{margin-left:auto;font:11px var(--mono);color:var(--faint);font-variant-numeric:tabular-nums}
+
+/* ---------- a tabela densa (a proposta) ---------- */
+.grupo-tit{display:flex;align-items:baseline;gap:8px;font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint);padding:18px 16px 4px}
+.grupo-tit .n{text-transform:none;letter-spacing:0;font-family:var(--mono)}
+.grade{display:grid;grid-template-columns:20px minmax(0,1fr) 132px 118px 64px 84px 148px;align-items:center;column-gap:10px;padding:0 8px}
+.grade.cab{height:26px;font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.04em;color:var(--faint)}
+.grade.cab .dir{text-align:right}
+.linha{height:36px;border-radius:7px;cursor:pointer;font-size:13px;color:var(--foreground)}
+.linha:hover{background:var(--sel-hover)}
+.linha .glifo{width:16px;justify-self:center;display:grid;place-items:center}
+.linha .tt{min-width:0}
+.linha .tt .a{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:450}
+.linha .tt .b{display:block;white-space:nowrap;overflow:hidden;text-overflow;text-overflow:ellipsis;font-size:11px;color:var(--faint);margin-top:1px}
+.linha .proj{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden}
+.linha .proj .dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.linha .motor{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+.linha .logo{width:14px;height:14px;border-radius:4px;display:grid;place-items:center;color:#fff;font:600 8px var(--sans);flex-shrink:0}
+.linha .dur,.linha .custo{font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;text-align:right}
+.linha .acoes{display:flex;justify-content:flex-end;gap:2px;opacity:0;transition:opacity .12s}
+.linha:hover .acoes{opacity:1}
+.acao{font-size:12px;padding:3px 8px;border-radius:6px;color:var(--muted-foreground)}
+.acao:hover{background:var(--sel);color:var(--foreground)}
+.acao.parar{color:var(--st-error)}
+.acao.parar:hover{background:color-mix(in srgb,var(--st-error) 10%,transparent);color:var(--st-error)}
+.acao.responder{color:var(--st-warning);font-weight:500}
+.acao.responder:hover{background:color-mix(in srgb,var(--st-warning) 10%,transparent)}
+/* com teclado, a ação não pode depender de hover: linha em foco mostra */
+.linha:focus-within .acoes{opacity:1}
+
+.linha.decisao{background:color-mix(in srgb,var(--st-warning) 8%,transparent)}
+.linha.decisao:hover{background:color-mix(in srgb,var(--st-warning) 13%,transparent)}
+.linha.decisao .tt .b{color:var(--st-warning)}
+.linha.atenuada,.linha.atenuada .tt .a{color:var(--muted-foreground)}
+.linha.falha .tt .b{color:var(--st-error)}
+
+/* o sinal de vivo (ADR-259): um arco, não um spinner inteiro */
+.cometa{width:12px;height:12px;border-radius:50%;background:conic-gradient(var(--st-running) 90deg,transparent 100deg);-webkit-mask:radial-gradient(circle,transparent 3px,#000 3.6px);mask:radial-gradient(circle,transparent 3px,#000 3.6px);animation:gira 1.2s linear infinite}
+@media (prefers-reduced-motion:reduce){.cometa{animation:none;background:var(--st-running);-webkit-mask:none;mask:none;width:7px;height:7px}}
+.check{width:13px;height:13px;color:var(--faint)}
+.alerta{width:13px;height:13px;color:var(--st-warning)}
+.erro-g{width:13px;height:13px;color:var(--st-error)}
+
+/* estado vazio honesto */
+.vazia{padding:64px 0 72px;text-align:center}
+.vazia .t1{font-size:14px;color:var(--muted-foreground)}
+.vazia .t2{font-size:12px;color:var(--faint);margin-top:6px}
+</style>
+</head>
+<body>
+<button class="tema" onclick="const r=document.documentElement;r.dataset.theme=r.dataset.theme==='light'?'dark':'light'">alternar tema</button>
+
+<h1>M3 · A Frota como tabela densa</h1>
+<p class="sub">A aba Frota é a resposta para "o que minha frota está fazendo?", mas hoje um trabalho ocupa um cartão de 560px e sobra tela. Com dez trabalhos, isso vira um mural de rolagem. A proposta: linhas de 36px na régua de conversa, com a mesma gramática da sidebar (glifo de estado à esquerda, metadado mono à direita, hover neutro), a mesma precedência do slot (<code>pede &gt; rodando &gt; falhou &gt; tempo</code>) e o passado recolhido numa seção atenuada. Os valores são os dos seus prints.</p>
+
+<h2>Hoje</h2>
+<p class="q">Um card por trabalho, título cru (o primeiro prompt, aqui uma URL), sem motor, sem custo, sem ação disponível.</p>
+
+<div class="view" style="height:340px">
+  <div class="vhead">
+    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota · <span style="font-family:var(--mono);letter-spacing:0">1</span></span>
+    <span class="resumo"></span>
+    <span class="x">✕</span>
+  </div>
+  <div class="cardao">
+    <span class="spin"></span>
+    <span>
+      <span class="t">https://x.com/winglee/status/210250704329501…</span>
+      <span class="p">frota</span>
+    </span>
+    <span class="qdo">há 4 min</span>
+  </div>
+</div>
+
+<h2>A · tabela densa <small>recomendo</small></h2>
+<p class="q">Quatro estados numa régua só: a linha que <b>pede decisão</b> sobe ao topo em âmbar (é o mesmo âmbar do cartão de aprovação); a viva gira em cometa; a falha fica vermelha e quieta (já aconteceu, não pulsa); a concluída recolhe atenuada. Ações aparecem no hover e no foco de teclado: <b>Abrir</b> sempre, <b>Responder</b> na pendência, <b>Parar</b> em vermelho só na viva. Custo em cinza: é valor absoluto sem teto (<code>absoluteTone</code>).</p>
+
+<div class="view">
+  <div class="vhead">
+    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota · <span style="font-family:var(--mono);letter-spacing:0">4</span></span>
+    <span class="resumo">1 rodando · <span class="w">1 precisa de você</span> · US$ 2,96 em curso</span>
+    <span class="x">✕</span>
+  </div>
+
+  <div class="grade cab">
+    <span></span><span>Trabalho</span><span>Projeto</span><span>Motor</span>
+    <span class="dir">Duração</span><span class="dir">Custo</span><span></span>
+  </div>
+
+  <div class="grupo-tit">Agora · <span class="n">2</span></div>
+
+  <div class="grade linha decisao" tabindex="0">
+    <span class="glifo"><svg class="alerta" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg></span>
+    <span class="tt"><span class="a">O time comercial da Prime utiliza e…</span><span class="b">pergunta: posso apagar a pasta dist e refazer o build?</span></span>
+    <span class="proj"><span class="dot" style="background:#0d9488"></span>Landing Prime</span>
+    <span class="motor"><span class="logo" style="background:#16181b">X</span>Codex</span>
+    <span class="dur">16h</span>
+    <span class="custo">US$ 2,14</span>
+    <span class="acoes"><span class="acao responder">Responder</span><span class="acao">Abrir</span></span>
+  </div>
+
+  <div class="grade linha" tabindex="0">
+    <span class="glifo"><span class="cometa"></span></span>
+    <span class="tt"><span class="a">https://x.com/winglee/status/210250704329501…</span><span class="b">lendo a página citada…</span></span>
+    <span class="proj"><span class="dot" style="background:#78716c"></span>frota</span>
+    <span class="motor"><span class="logo" style="background:#d97757">C</span>Claude Code</span>
+    <span class="dur">4:12</span>
+    <span class="custo">US$ 0,82</span>
+    <span class="acoes"><span class="acao">Abrir</span><span class="acao parar">Parar</span></span>
+  </div>
+
+  <div class="grupo-tit">Mais cedo</div>
+
+  <div class="grade linha falha atenuada" tabindex="0">
+    <span class="glifo"><svg class="erro-g" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="9"/><path d="M15 9l-6 6M9 9l6 6"/></svg></span>
+    <span class="tt"><span class="a">ExpoSale</span><span class="b">falhou: saída inesperada do motor</span></span>
+    <span class="proj"><span class="dot" style="background:#57534e"></span>projetos</span>
+    <span class="motor"><span class="logo" style="background:#8a9099">O</span>OpenCode</span>
+    <span class="dur">1d</span>
+    <span class="custo">US$ 0,44</span>
+    <span class="acoes"><span class="acao">Ver falha</span></span>
+  </div>
+
+  <div class="grade linha atenuada" tabindex="0" style="margin-bottom:14px">
+    <span class="glifo"><svg class="check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>
+    <span class="tt"><span class="a">Landing vinimachado.dev na Hosti…</span><span class="b">concluída · 3 arquivos alterados</span></span>
+    <span class="proj"><span class="dot" style="background:#57534e"></span>projetos</span>
+    <span class="motor"><span class="logo" style="background:var(--id-violet)">A</span>Antigravity</span>
+    <span class="dur">1h</span>
+    <span class="custo">US$ 1,30</span>
+    <span class="acoes"><span class="acao">Abrir</span></span>
+  </div>
+</div>
+
+<h2>B · vazia</h2>
+<p class="q">Sem trabalho, a view diz o fato e o caminho, sem teatro e sem ilustração brass (§2: brass é gesto, não enfeite de empty state).</p>
+
+<div class="view">
+  <div class="vhead">
+    <span class="ttl"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 15c-1.5 1.2-2 5-2 5s3.8-.5 5-2M14 4c2.5-2.5 6-2 6-2s.5 3.5-2 6l-7 7-3-3 6-6z"/></svg>Frota</span>
+    <span class="resumo"></span>
+    <span class="x">✕</span>
+  </div>
+  <div class="vazia">
+    <div class="t1">Nada rodando na frota.</div>
+    <div class="t2">Despache uma tarefa em qualquer conversa e ela aparece aqui.</div>
+  </div>
+</div>
+
+<div class="card">
+  <b>Notas de gramática (o que mantém isto dentro do guia):</b>
+  <ul>
+    <li><b>Mesma precedência do slot da sidebar</b> (<code>slotEstado</code> em <code>conversationWhen.ts</code>): <code>pede &gt; rodando &gt; falhou &gt; tempo</code>. Uma pergunta por superfície: aqui é "o que precisa de mim, depois o que vive, depois o que passou".</li>
+    <li><b>Gerúndio no vivo, pretérito no marco</b> (§6): "lendo a página citada…" na linha viva; "concluída", "falhou" nas assentadas. Duração viva em cronômetro estável, congelada no fim.</li>
+    <li><b>Um dono por fato.</b> Trabalho em background continua nos Bastidores; sessão externa no popover de Processos. A Frota mostra turnos de conversa, não duplica os outros inventários.</li>
+    <li><b>"Em curso" é soma real.</b> O "US$ 2,96 em curso" do cabeçalho é a soma dos custos dos turnos vivos vindos de <code>turn_costs</code>; sem turno vivo, o metadado some.</li>
+    <li><b>Ação destrutiva em vermelho, caminho de saída em neutro</b> (§7): "Parar" vermelho só na linha viva; "Abrir" nunca ganha tinta; "Responder" é âmbar porque é a decisão em si.</li>
+    <li><b>Hover revela ação, não informação.</b> Estado, duração e custo estão sempre visíveis; só o gesto espera o mouse (e aparece no <code>:focus-within</code> para teclado).</li>
+  </ul>
+</div>
+
+</body>
+</html>
