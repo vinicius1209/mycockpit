@@ -1,7 +1,7 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { FraseDaAcao } from "@/components/chat/FraseDaAcao"
+import { alvoDaPilula, FraseDaAcao, PilulaDeArquivo } from "@/components/chat/FraseDaAcao"
 import { presentTool } from "@/lib/toolview"
 
 const html = (name: string, input: unknown) =>
@@ -41,5 +41,36 @@ describe("FraseDaAcao · verbo + objeto na linha do fio", () => {
     expect(out).toContain(">Concluir etapa<")
     expect(out).toContain(">estudo<")
     expect(out).not.toContain("Executar ferramenta")
+  })
+})
+
+describe("a pílula abre o arquivo, não a ação", () => {
+  const raiz = "/Users/x/projetos/app"
+
+  it("caminho absoluto do motor dentro da raiz da conversa vira alvo relativo, com a primeira linha da faixa", () => {
+    expect(alvoDaPilula(`${raiz}/src/components/chat/WorkingIndicator.tsx`, raiz, "60–160")).toMatchObject({
+      rel: "src/components/chat/WorkingIndicator.tsx",
+      line: 60,
+    })
+  })
+
+  it("caminho relativo (motor que manda relativo) é da raiz da conversa", () => {
+    expect(alvoDaPilula("src/lib/x.ts", raiz)).toMatchObject({ rel: "src/lib/x.ts" })
+  })
+
+  it("fora do projeto e das raízes autorizadas, ou sem projeto, não é alvo: a pílula não vira clique", () => {
+    expect(alvoDaPilula("/etc/hosts.ts", raiz)).toBeNull()
+    expect(alvoDaPilula(`${raiz}/a.ts`, null)).toBeNull()
+  })
+
+  it("com alvo, a pílula é clicável e leva o arquivo ao menu de contexto; sem alvo, é só objeto", () => {
+    const alvo = alvoDaPilula(`${raiz}/src/a.ts`, raiz)
+    const com = renderToStaticMarkup(createElement(PilulaDeArquivo, { path: `${raiz}/src/a.ts`, alvo, raiz }))
+    expect(com).toContain('role="link"')
+    expect(com).toContain('aria-label="Abrir a.ts"')
+    expect(com).toContain('data-ctx-arquivo="src/a.ts"')
+    const sem = renderToStaticMarkup(createElement(PilulaDeArquivo, { path: "/etc/hosts.ts" }))
+    expect(sem).not.toContain('role="link"')
+    expect(sem).not.toContain("cursor-pointer")
   })
 })
