@@ -212,7 +212,7 @@ pub fn read_text_file(app: tauri::AppHandle, root: String, path: String) -> Resu
     read_text_file_scoped(&root, &path, attachments.as_deref())
 }
 
-fn read_text_file_scoped(
+pub(crate) fn read_text_file_scoped(
     root: &str,
     path: &str,
     attachments: Option<&Path>,

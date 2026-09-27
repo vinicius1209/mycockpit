@@ -17,6 +17,7 @@ import { currentOriginAnyKind, useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
 import { useSchedules } from "@/store/schedules"
+import { useEdicao } from "@/store/edicao"
 
 type ConversationTitles = Record<
   string,
@@ -238,5 +239,7 @@ export function enviarSnapshotDaTray(
     lastTurn: ultimoTurno(useNotifs.getState().items, currentTitleOf),
     enabledSchedules: scheduleState.schedules.filter((s) => s.enabled)
       .length,
+    // Texto editado e não salvo só existe na página: a saída avisa (ADR-164).
+    arquivosSujos: Object.keys(useEdicao.getState().sujos).length,
   })
 }

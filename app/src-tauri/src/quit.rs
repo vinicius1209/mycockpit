@@ -180,6 +180,9 @@ struct QuitInventory {
     enabled_schedules: usize,
     external_sessions: usize,
     instrument_visible: bool,
+    /// Arquivos editados e não salvos: não interrompem trabalho, mas o texto
+    /// só vive na página e some com ela.
+    unsaved_files: usize,
 }
 
 impl QuitInventory {
@@ -196,12 +199,14 @@ impl QuitInventory {
     }
 
     fn needs_confirmation(&self) -> bool {
-        self.interrupts_work() || self.enabled_schedules > 0
+        self.interrupts_work() || self.enabled_schedules > 0 || self.unsaved_files > 0
     }
 
     fn action_label(&self) -> &'static str {
         if self.interrupts_work() {
             "Interromper e sair"
+        } else if self.unsaved_files > 0 {
+            "Descartar e sair"
         } else {
             "Sair"
         }
@@ -209,6 +214,12 @@ impl QuitInventory {
 
     fn message(&self) -> String {
         let mut lines = Vec::new();
+        push_count(
+            &mut lines,
+            self.unsaved_files,
+            "1 arquivo com alterações não salvas será descartado.",
+            |count| format!("{count} arquivos com alterações não salvas serão descartados."),
+        );
         push_count(
             &mut lines,
             self.runs,
@@ -320,6 +331,7 @@ async fn inventory(app: &AppHandle) -> QuitInventory {
         enabled_schedules: persisted_schedules.max(tray.enabled_schedules as usize),
         external_sessions: tray.external.len(),
         instrument_visible: crate::hud::is_floating(app),
+        unsaved_files: tray.arquivos_sujos as usize,
     }
 }
 
@@ -624,6 +636,38 @@ mod tests {
             inventory.message(),
             "3 automações não executarão enquanto o Frota estiver fechado."
         );
+    }
+
+    #[test]
+    fn arquivo_nao_salvo_confirma_e_diz_que_descarta() {
+        let um = QuitInventory {
+            unsaved_files: 1,
+            ..Default::default()
+        };
+        assert!(um.needs_confirmation());
+        assert!(!um.interrupts_work());
+        assert_eq!(um.action_label(), "Descartar e sair");
+        assert_eq!(um.message(), "1 arquivo com alterações não salvas será descartado.");
+        let com_tarefa = QuitInventory {
+            unsaved_files: 3,
+            runs: 1,
+            ..Default::default()
+        };
+        assert_eq!(com_tarefa.action_label(), "Interromper e sair");
+        assert!(com_tarefa
+            .message()
+            .starts_with("3 arquivos com alterações não salvas serão descartados."));
+    }
+
+    #[test]
+    fn snapshot_antigo_sem_arquivos_sujos_le_zero() {
+        let antigo: crate::tray::TraySnapshot = serde_json::from_value(serde_json::json!({
+            "running": 0, "decisions": 0, "activities": [], "decisionConvId": null,
+            "decisionProjectId": null, "nextSchedule": null, "lastRun": null,
+            "enabledSchedules": 0
+        }))
+        .unwrap();
+        assert_eq!(antigo.arquivos_sujos, 0);
     }
 
     #[test]

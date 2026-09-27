@@ -19,6 +19,7 @@ import { confirm } from "@/lib/confirm"
 import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat, type ChatItem } from "@/store/chat"
+import { avisoDeSujosDaConversa } from "@/lib/edicao/acoes"
 
 function BranchStreamColumn({
   convId,
@@ -206,11 +207,13 @@ export function BranchSplitView() {
   const rootId = rootConv.id
 
   async function handleDiscardFork(forkId: string, wt: string | null) {
+    const sujos = avisoDeSujosDaConversa(forkId)
     const ok = await confirm({
       title: "Descartar ramo?",
-      description: wt
-        ? "O histórico deste fork será excluído e o worktree isolado será removido do disco. Esta ação não pode ser desfeita."
-        : "O histórico deste fork será excluído. Esta ação não pode ser desfeita.",
+      description:
+        (wt
+          ? "O histórico deste fork será excluído e o worktree isolado será removido do disco. Esta ação não pode ser desfeita."
+          : "O histórico deste fork será excluído. Esta ação não pode ser desfeita.") + (sujos ? ` ${sujos}` : ""),
       confirmLabel: "Descartar",
       danger: true,
     })

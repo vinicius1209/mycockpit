@@ -58,6 +58,9 @@ export interface TraySnapshot {
   acordado?: boolean
   /** `on` | `agent` | `off`. */
   modoAcordado?: string
+  /** Arquivos com alterações não salvas no visualizador: a saída avisa que o
+   *  texto, que só existe na página, se perde. */
+  arquivosSujos?: number
 }
 
 export interface TrayAction {

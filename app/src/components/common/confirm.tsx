@@ -49,6 +49,12 @@ export function ConfirmHost() {
           )}
         </DialogHeader>
         <DialogFooter>
+          {req?.alternativa && (
+            // Longe do Enter e do confirmar: "Não salvar" perde trabalho.
+            <Button variant="ghost" className="sm:mr-auto" onClick={() => close("alternativa")}>
+              {req.alternativa}
+            </Button>
+          )}
           <Button variant="ghost" onClick={() => close(false)}>
             {req?.cancelLabel ?? "Cancelar"}
           </Button>

@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
-import { Copy, FileWarning, FolderOpen, LoaderCircle, SquareArrowOutUpRight } from "lucide-react"
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
+import { Copy, Eye, FileWarning, FolderOpen, LoaderCircle, Lock, Pencil, SquareArrowOutUpRight } from "lucide-react"
 import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener"
 import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { Button } from "@/components/ui/button"
+import { controle } from "@/components/ui/controle"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { copyText } from "@/lib/clipboard"
 import { isTauri } from "@/lib/db"
 import {
@@ -19,6 +21,12 @@ import {
 import { PlayerDeVideo, fmtTempo, type InfoDoVideo } from "@/components/layout/PlayerDeVideo"
 import { readProjectFileBytes, readTextFile } from "@/lib/sources"
 import { detectLanguage, highlightCode } from "@/lib/syntaxHighlight"
+import { obterDaAba, textoAtual } from "@/lib/edicao/buffers"
+import { useEdicao } from "@/store/edicao"
+
+/** O editor (CodeMirror) só carrega quando um arquivo de texto abre. Enquanto
+ *  isso, e se ele falhar, a tela é o `CodePreview` estático. */
+const CodeEditor = lazy(() => import("@/components/editor/CodeEditor"))
 
 type PreviewState =
   | { status: "loading" }
@@ -89,12 +97,15 @@ function CodePreview({ path, content }: { path: string; content: string }) {
 export function ProjectFileViewer({
   root,
   path,
+  convId = null,
   acoes,
   onSumiu,
   aoFecharSumido,
 }: {
   root: string
   path: string
+  /** A conversa que tem esta aba: vira dona do texto em edição. */
+  convId?: string | null
   /** Botões da aba no fim do cabeçalho (lado a lado, trazer para a tira). */
   acoes?: ReactNode
   /** Avisa, a cada leitura, se o arquivo saiu do disco. */
@@ -110,6 +121,11 @@ export function ProjectFileViewer({
   )
   const [infoDoVideo, setInfoDoVideo] = useState<InfoDoVideo | null>(null)
   const [tamanho, setTamanho] = useState<number | null>(null)
+  /** Motivo de só leitura que o editor informou; `null` = grava. */
+  const [soLeitura, setSoLeitura] = useState<string | null>(null)
+  const abaDoModo = `${root}\0${path}`
+  const modo = useEdicao((s) => s.modo[abaDoModo] ?? "previa")
+  const noEditor = state.status === "text" && (kind !== "markdown" || modo === "editor")
   const midia = kind === "video" || kind === "audio" || kind === "pdf" || kind === "svg"
   // O aviso vai por ref para o efeito depender só do status: o `onSumiu` chega
   // como função nova a cada render, e nas dependências relançaria o aviso.
@@ -142,6 +158,7 @@ export function ProjectFileViewer({
       return
     }
     setState({ status: "loading" })
+    setSoLeitura(null)
     const fullPath = absolutePath(root, path)
     setInfoDoVideo(null)
     setTamanho(null)
@@ -225,6 +242,28 @@ export function ProjectFileViewer({
         >
           <Copy className="size-3.5" />
         </Button>
+        {noEditor && soLeitura && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span tabIndex={0} className={`${controle("chip")} bg-secondary text-muted-foreground`}>
+                <Lock className="size-3" />
+                Só leitura
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{soLeitura}</TooltipContent>
+          </Tooltip>
+        )}
+        {kind === "markdown" && state.status === "text" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="compacto"
+            onClick={() => useEdicao.getState().setModo(abaDoModo, modo === "editor" ? "previa" : "editor")}
+          >
+            {modo === "editor" ? <Eye /> : <Pencil />}
+            {modo === "editor" ? "Ver prévia" : "Editar"}
+          </Button>
+        )}
         {!externo && <OpenInEditor projectPath={root} rel={path} alvo="o arquivo" />}
         {acoes}
       </div>
@@ -281,17 +320,32 @@ export function ProjectFileViewer({
             className="max-h-full max-w-full object-contain"
           />
         </div>
-      ) : kind === "markdown" ? (
+      ) : !noEditor ? (
         <div data-selectable className="min-h-0 flex-1 overflow-auto select-text">
           <div className="mx-auto max-w-4xl px-6 py-5">
-            <Markdown text={state.content} />
+            {/* Com texto em edição, a prévia mostra o texto, não o disco. */}
+            <Markdown text={textoDoBuffer(root, path) ?? state.content} />
           </div>
         </div>
       ) : (
-        <CodePreview path={path} content={state.content} />
+        <Suspense fallback={<CodePreview path={path} content={state.content} />}>
+          <CodeEditor
+            root={root}
+            chave={path}
+            convId={convId}
+            reserva={<CodePreview path={path} content={state.content} />}
+            aoFechar={aoFecharSumido}
+            aoMotivo={setSoLeitura}
+          />
+        </Suspense>
       )}
     </div>
   )
+}
+
+function textoDoBuffer(root: string, path: string): string | null {
+  const b = obterDaAba(root, path)
+  return b ? textoAtual(b) : null
 }
 
 /** Formato sem leitor na tela (zip, docx…): em vez de beco sem saída, o que é,

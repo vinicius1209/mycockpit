@@ -18,6 +18,7 @@ import {
   EMPTY_CONVERSATIONS,
   groupConversationTree,
 } from "@/components/layout/conversationTree"
+import { avisoDeSujosDaConversa } from "@/lib/edicao/acoes"
 
 /** Ids das conversas em que alguém trabalha (turno OU parecer de especialista,
  * ADR-267), como string estável (só muda em transição, não a cada delta de
@@ -203,11 +204,13 @@ export function ConversationList({ projectId }: { projectId: string }) {
   // aparece ANTES do clique: apagar uma conversa que também apaga um branch é
   // mais do que o usuário pediu se ele não foi avisado.
   async function askDeleteConv(id: string, title: string | null, wt: string | null) {
+    const sujos = avisoDeSujosDaConversa(id)
     const ok = await confirm({
       title: "Excluir conversa?",
-      description: wt
+      description: (wt
         ? `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados, e o worktree isolado volta pro repositório (o branch some junto se não tiver commit). Não dá pra desfazer.`
-        : `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`,
+        : `"${title ?? "Nova conversa"}": o histórico e os anexos são apagados. Não dá pra desfazer.`) +
+        (sujos ? ` ${sujos}` : ""),
       confirmLabel: "Excluir",
       danger: true,
     })

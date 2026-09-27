@@ -5,7 +5,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 /// Inset Y dos semáforos p/ centrá-los no header de 56px (h-14). Calibrado por
 /// medição no app real (o inset do decorum não é o centro geométrico do botão).
 #[cfg(target_os = "macos")]
-const TRAFFIC_LIGHTS_Y: f32 = 37.0;
+pub(crate) const TRAFFIC_LIGHTS_Y: f32 = 37.0;
 
 mod acp;
 mod adapters;
@@ -51,6 +51,7 @@ mod desktop_driver;
 mod desktop_gateway;
 mod despertador;
 mod detect;
+mod edicao;
 mod editor;
 mod evidence;
 mod experience_broker;
@@ -61,6 +62,7 @@ mod hook_gateway;
 mod hook_sessions;
 mod hooks_install;
 mod hud;
+mod janela_eventos;
 mod mcp_auth;
 mod mcp_control;
 mod mcp_instalacao;
@@ -784,55 +786,7 @@ pub fn run() {
 
             Ok(())
         })
-        // Fechar a janela = esconder (app segue vivo no tray). Cmd+Q / "Sair"
-        // do tray NÃO passam por aqui (viram ExitRequested) e encerram normal.
-        .on_window_event(|window, event| {
-            if window.label() == "main" {
-                // Reaplica o inset dos semáforos DEPOIS do decorum (que reseta
-                // pra y=16 no resize dele): resize/move/foco durante o boot ou
-                // pelo usuário reposicionavam os botões pro topo, desalinhando.
-                #[cfg(target_os = "macos")]
-                if matches!(
-                    event,
-                    tauri::WindowEvent::Resized(_)
-                        | tauri::WindowEvent::Moved(_)
-                        | tauri::WindowEvent::Focused(true)
-                ) {
-                    if let Some(w) = window.app_handle().get_webview_window("main") {
-                        let _ = w.set_traffic_lights_inset(18.0, TRAFFIC_LIGHTS_Y);
-                    }
-                }
-                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    api.prevent_close();
-                    if tray::should_keep_in_tray(window.app_handle()) {
-                        if let Err(error) = tray::hide_main_window(window) {
-                            log::warn!("não consegui manter a janela em background: {error}");
-                        }
-                        tray::notify_window_hidden(window.app_handle());
-                    } else {
-                        quit::request_quit(window.app_handle(), quit::QuitOrigin::CloseWindow);
-                    }
-                }
-            } else if window.label() == tray::POPOVER_LABEL {
-                match event {
-                    tauri::WindowEvent::Focused(false) => {
-                        tray::mark_popover_blur_hidden(window.app_handle());
-                        hud::collapse_after_blur(window.app_handle());
-                    }
-                    // Cmd+W (menu padrão do macOS) DESTRUIRIA o webview e o
-                    // popover nunca é recriado (create só roda no setup).
-                    tauri::WindowEvent::CloseRequested { api, .. } => {
-                        api.prevent_close();
-                        hud::collapse_after_blur(window.app_handle());
-                    }
-                    _ => {}
-                }
-            } else if window.label().starts_with("browser-panel-") {
-                if matches!(event, tauri::WindowEvent::Destroyed) {
-                    browser_panel::close_panel(window.app_handle(), window.label());
-                }
-            }
-        })
+        .on_window_event(janela_eventos::ao_evento)
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
@@ -936,6 +890,9 @@ pub fn run() {
             frota_dir::export_context_bundle,
             sources::read_project_sources,
             sources::read_text_file,
+            edicao::abrir_para_edicao,
+            edicao::versao_no_disco,
+            edicao::salvar_arquivo,
             sources::read_project_file_bytes,
             sources::read_project_commands,
             command_inventory::read_command_inventory,

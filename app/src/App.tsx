@@ -66,6 +66,7 @@ import {
 import { cancelLinearTurn } from "@/lib/cancelLinearTurn"
 import { abortarDisputa } from "@/lib/cancelConversationTurn"
 import { enviarSnapshotDaTray, useLastTurnTrayKey } from "@/lib/traySnapshot"
+import { useEdicao } from "@/store/edicao"
 import { isTauri, listProjects } from "@/lib/db"
 import {
   commandForChannel,
@@ -366,6 +367,7 @@ export default function App() {
     externalSessionsKey(visibleSessions(s.sessions)),
   )
   const lastTurnTrayKey = useLastTurnTrayKey()
+  const arquivosSujos = useEdicao((s) => Object.keys(s.sujos).length)
   useEffect(() => {
     if (!isTauri()) return
     // O QUE a bandeja mostra mora em lib/traySnapshot; aqui fica o QUANDO.
@@ -387,6 +389,7 @@ export default function App() {
     schedules,
     externalKey,
     lastTurnTrayKey,
+    arquivosSujos,
   ])
 
   // Preferências persistidas do ciclo de vida → backend (que recebe o evento

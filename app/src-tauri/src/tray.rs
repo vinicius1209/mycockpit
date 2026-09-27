@@ -127,6 +127,10 @@ pub struct TraySnapshot {
     /// `on` | `agent` | `off`, para a bandeja dizer "(sempre)".
     #[serde(default)]
     pub modo_acordado: String,
+    /// Arquivos com alterações não salvas no visualizador. O texto só existe
+    /// na página; a saída avisa que ele se perde. `default` p/ snapshots antigos.
+    #[serde(default)]
+    pub arquivos_sujos: u32,
 }
 
 pub struct TrayState {

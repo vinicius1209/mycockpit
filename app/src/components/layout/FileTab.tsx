@@ -6,27 +6,19 @@ import {
   fecharOLado,
   trazerParaATira,
 } from "@/components/layout/abasNoPrincipal"
+import { useRaizEfetiva } from "@/components/layout/raizEfetiva"
 import { Button } from "@/components/ui/button"
 import { useAbasDeArquivo } from "@/store/abasDeArquivo"
-import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
 
 /** Resolve a raiz efetiva da conversa e entrega o palco ao arquivo: largo,
  *  como aba, ou ao lado da conversa (`aoLado`, ADR-243). */
 export function FileTab({ path, aoLado = false }: { path: string; aoLado?: boolean }) {
-  const project = useApp((state) =>
-    state.projects.find((item) => item.id === state.activeProjectId),
-  )
-  const worktree = useChat(
-    (state) =>
-      (state.conversationsByProject[state.projectId ?? ""] ?? state.conversations).find(
-        (conversation) => conversation.id === state.activeId,
-      )?.worktreePath ?? null,
-  )
+  const raiz = useRaizEfetiva()
   const ladoCabe = useAbasDeArquivo((s) => s.ladoCabe)
   const convId = useChat((state) => state.activeId)
 
-  if (!project) {
+  if (!raiz) {
     return (
       <div className="grid h-full place-items-center text-[13px] text-muted-foreground">
         Nenhum projeto selecionado.
@@ -51,8 +43,9 @@ export function FileTab({ path, aoLado = false }: { path: string; aoLado?: boole
 
   return (
     <ProjectFileViewer
-      root={worktree ?? project.path}
+      root={raiz}
       path={path}
+      convId={convId}
       acoes={acoes}
       onSumiu={(sumiu) => {
         if (convId) useAbasDeArquivo.getState().marcarSumido(convId, path, sumiu)

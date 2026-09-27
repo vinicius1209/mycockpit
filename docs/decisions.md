@@ -9772,3 +9772,55 @@ considerou.
   pessoa (nada é cadastrado sozinho). O modelo auxiliar por projeto e as pastas
   permitidas continuam no painel de contexto; trazê-los para a zona do projeto
   fica para depois, sem data.
+
+### ADR-269 · O arquivo aberto na conversa se edita ali, e o ⌘S nunca atropela o disco ✅
+- **Contexto (26/09/2026):** a pessoa pediu para "editar os arquivos abertos,
+  estilo um vscode mesmo … seleção, control+F". O visualizador era HTML
+  estático do highlight.js; a leitura corta em 400 KB e cola um aviso no texto
+  (salvar aquilo apagaria o resto); a guarda de leitura autoriza `~/.claude`, o
+  brain do agy e os anexos; e nada avisava a tela de que o agente mudou o
+  arquivo. PRD `docs/edicao-de-arquivos-prd.md`, SPEC
+  `docs/edicao-de-arquivos-spec.md`, mock `docs/mocks/edicao-de-arquivos.html`.
+- **Decisão:**
+  1. **CodeMirror 6, sob demanda.** O `CodePreview` estático continua como o
+     que se vê enquanto o chunk carrega e se ele falhar. Medido no
+     `vite build`: nada do CodeMirror no `main`; o editor com o núcleo custa
+     ~114 KB gzip, e com as sete linguagens carregadas ~243 KB (orçamento 250).
+     Monaco fica fora (workers, peso).
+  2. **Três comandos em `edicao.rs`**, assíncronos: `abrir_para_edicao` lê o
+     arquivo inteiro (acima de 2 MB, só leitura) e devolve versão (blake3 dos
+     bytes), fim de linha, BOM e se grava; `versao_no_disco`; `salvar_arquivo`
+     grava num temporário único com as permissões do original, confere a versão
+     e só então troca (`rename`). Versão diferente é `Conflito` e nada é
+     escrito. A janela entre a conferência e o `rename` é de microssegundos e
+     não há trava (o agente não a respeitaria).
+  3. **Escrita tem lista própria**: a raiz efetiva (projeto ou worktree) e os
+     `extra_dirs` do projeto, por decisão da pessoa. Consequência aceita: com
+     `~/projetos` vinculado, a Frota salva arquivo de outro projeto aberto por
+     esta conversa. `~/.claude`, brain e anexos abrem só leitura.
+  4. **O texto mora no `EditorState`**, num registro de módulo por caminho
+     canônico (`lib/edicao/buffers.ts`); o store `useEdicao` guarda só quem
+     está sujo, em conflito ou salvando, sem `persist`. O CodeMirror guarda
+     `\n` por dentro, e o CRLF volta no salvar (`sliceString` com o separador),
+     o que também cura colar texto LF num arquivo CRLF.
+  5. **Portões que já existiam**: `fecharArquivos` pergunta (Salvar, Não
+     salvar, Cancelar) só quando há aba suja, e continua síncrono sem ela; o
+     `confirm` ganhou `perguntar` com a terceira resposta; apagar conversa
+     acrescenta a linha dos arquivos que só ela tinha; a saída (ADR-164) conta
+     `arquivosSujos` pelo snapshot da bandeja e diz "Descartar e sair".
+  6. **Reconciliação sem watcher**: os sinais da aba Alterações saíram para
+     `lib/sinaisDoDisco.ts` e ganharam o `avisarGravacao`. Texto limpo recarrega
+     sozinho (sem histórico: desfazer não volta a um texto que não está mais no
+     disco); texto sujo ganha a faixa "Usar a do disco / Manter a minha"; o
+     sumiço, "Copiar o texto".
+  7. **Estilo VS Code onde não custa**: ⌥+clique põe cursor, ⇧⌥+arrastar
+     seleciona coluna, ⌘D a próxima ocorrência. A busca é painel nosso sobre a
+     API do CodeMirror, com contagem "3 de 12" (teto 1.000), `Aa`, palavra
+     inteira e regex; ⌘⌥F (e Ctrl+H no Linux) abre com substituir. Seleção e
+     achados são neutros (ADR-043).
+  8. **`lib.rs` estava no congelado (1276)**: os eventos de janela saíram para
+     `janela_eventos.rs` e a baseline desceu para 1233.
+- **Fica igual:** `read_text_file` e seus três leitores; o app não salva
+  sozinho em nenhuma circunstância; criar, renomear e apagar arquivo seguem
+  fora; dono e grupo do arquivo não são preservados pelo `rename` (Mac de
+  usuário único).

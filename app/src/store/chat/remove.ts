@@ -29,6 +29,7 @@ import { useStickyNotes } from "@/store/stickyNotes"
 import { useComposerDrafts } from "@/store/composerDrafts"
 import { useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { useComentariosDoDiff } from "@/store/comentariosDoDiff"
+import { soltarConversa } from "@/lib/edicao/acoes"
 
 type Get = () => ChatState
 type Set = (fn: (s: ChatState) => Partial<ChatState>) => void
@@ -148,6 +149,8 @@ export async function removeConversationImpl(
   // As abas da conversa (arquivos, lado, Navegador) e a revisão solta no diff
   // (ADR-251): no disco e na memória, sem dono, pra sempre.
   useAbasDeArquivo.getState().esquecer(id)
+  // O texto em edição que só esta conversa tinha (a confirmação avisou).
+  soltarConversa(id)
   useComentariosDoDiff.getState().esquecerConversa(id)
   const wasActive = before.activeId === id
   // projeto DONO da conversa removida (pode não ser o ativo)

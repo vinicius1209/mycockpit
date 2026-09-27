@@ -42,6 +42,9 @@ import { cn } from "@/lib/utils"
 import { abasDo, chaveDoSumido, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useEdicao } from "@/store/edicao"
+import { caminhoDaAba } from "@/lib/edicao/buffers"
+import { useRaizEfetiva } from "@/components/layout/raizEfetiva"
 
 const ATALHO = "ml-auto pl-4 font-mono text-[11px] text-muted-foreground/60"
 
@@ -61,6 +64,9 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
   const refs = useRef<(HTMLElement | null)[]>([])
   const acabouDeArrastar = useRef(false)
   const plataforma = currentPlatform()
+  // O ponto de "não salvo": o buffer é por arquivo, e a aba chega nele pela raiz.
+  const sujos = useEdicao((s) => s.sujos)
+  const raiz = useRaizEfetiva()
 
   // A aba à vista entra na área visível da tira. À mão, e não com
   // `scrollIntoView`, que rolaria também os ancestrais (ADR-122).
@@ -97,6 +103,7 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
         const aoLado = ladoCabe && abas.aoLado === chave
         const ativa = vista === chave
         const sumiu = Boolean(sumidos[chaveDoSumido(convId, chave)])
+        const suja = !diff && raiz !== null && Boolean(sujos[caminhoDaAba(raiz, chave) ?? ""])
         const alvo = arrasto?.ativo && arrasto.para === i && arrasto.de !== i
         return (
           <ContextMenu key={chave}>
@@ -169,14 +176,26 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                 </button>
                 <button
                   onClick={() => fecharArquivos([chave])}
-                  title={`Fechar ${rotulo.nome}`}
-                  aria-label={`Fechar ${rotulo.nome}`}
+                  title={suja ? `Fechar ${rotulo.nome} (alterações não salvas)` : `Fechar ${rotulo.nome}`}
+                  aria-label={suja ? `Fechar ${rotulo.nome} (alterações não salvas)` : `Fechar ${rotulo.nome}`}
                   className={cn(
                     "mr-1 rounded p-0.5 transition-colors hover:!text-foreground focus-visible:text-muted-foreground/60",
-                    ativa ? "text-muted-foreground/60" : "text-transparent group-hover/aba:text-muted-foreground/60",
+                    ativa || suja ? "text-muted-foreground/60" : "text-transparent group-hover/aba:text-muted-foreground/60",
                   )}
                 >
-                  <X className="size-3" />
+                  {suja ? (
+                    <>
+                      {/* A mesma caixa do X (o nome não anda). O ponto tem 7px,
+                          e não 6, por ajuste ÓPTICO: pesa o mesmo que o X ao lado.
+                          No hover o X volta, e fechar segue a um clique. */}
+                      <span aria-hidden className="grid size-3 place-items-center group-hover/aba:hidden">
+                        <span className="size-[7px] rounded-full bg-foreground/80" />
+                      </span>
+                      <X className="hidden size-3 group-hover/aba:block" />
+                    </>
+                  ) : (
+                    <X className="size-3" />
+                  )}
                 </button>
               </div>
             </ContextMenuTrigger>

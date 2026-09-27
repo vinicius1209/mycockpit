@@ -1,0 +1,22 @@
+HTTP/2 401 
+date: Fri, 07 Aug 2026 12:11:37 GMT
+content-type: application/json
+cf-ray: a2762f53285b4468-NVT
+cf-cache-status: DYNAMIC
+access-control-allow-origin: *
+server: cloudflare
+vary: Accept-Encoding
+www-authenticate: Bearer resource_metadata="https://tsxtyuyjmouuyzkzwdtz.supabase.co/functions/v1/mcp/.well-known/oauth-protected-resource"
+access-control-allow-headers: authorization, x-client-info, apikey, content-type, mcp-session-id, mcp-protocol-version
+access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS
+access-control-expose-headers: WWW-Authenticate, mcp-session-id
+endpoint-load-metrics: application_utilization:7,named_metrics.queue_depth:7
+sb-gateway-version: 1
+sb-project-ref: tsxtyuyjmouuyzkzwdtz
+sb-request-id: 019fdc22-cff8-71e8-b8d3-f4381d87e61d
+x-deno-execution-id: 9d17dca3-8dfc-4bc1-ae14-9b8cf3b6d0cd
+x-sb-edge-region: sa-east-1
+x-served-by: supabase-edge-runtime
+strict-transport-security: max-age=31536000; includeSubDomains; preload
+alt-svc: h3=":443"; ma=86400
+

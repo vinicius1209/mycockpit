@@ -15,6 +15,8 @@ import {
 } from "@/lib/abasDeArquivo"
 import { currentPlatform } from "@/lib/commandMenu"
 import { isTauri } from "@/lib/db"
+import { planoDoPortao, resolverPerguntas, soltarAsFechadas } from "@/lib/edicao/portao"
+import { raizEfetivaAgora } from "@/components/layout/raizEfetiva"
 import type { MainTab } from "@/lib/mainTabs"
 import { abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { useApp } from "@/store/app"
@@ -52,9 +54,23 @@ export function mostrar(chave: string | null): void {
   else app.openFileTab(caminho)
 }
 
-export function fecharArquivos(caminhos: readonly string[]): void {
+export function fecharArquivos(pedidos: readonly string[]): void {
   const convId = conversaAtiva()
-  if (!convId || caminhos.length === 0) return
+  if (!convId || pedidos.length === 0) return
+  // Aba com texto não salvo pergunta antes (docs/edicao-de-arquivos-spec.md
+  // §9.1). Sem pergunta, o fechamento continua síncrono, como sempre foi.
+  const root = raizEfetivaAgora()
+  const plano = planoDoPortao(convId, pedidos, root)
+  if (plano.perguntar.length === 0) return fecharJa(convId, pedidos, root)
+  void resolverPerguntas(plano).then((fecham) => {
+    if (fecham === null) return
+    const podem = pedidos.filter((c) => plano.fechaDireto.includes(c) || fecham.includes(c))
+    if (podem.length > 0 && conversaAtiva() === convId) fecharJa(convId, podem, root)
+  })
+}
+
+function fecharJa(convId: string, caminhos: readonly string[], root: string | null): void {
+  soltarAsFechadas(convId, caminhos, root)
   const abertas = abasDo(useAbasDeArquivo.getState(), convId).abertas
   const vista = abaAVista()
   const saiAVista = vista !== null && caminhos.includes(vista)

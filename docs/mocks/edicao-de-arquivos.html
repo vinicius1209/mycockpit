@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Edição de arquivos no visualizador</title>
+<style>
+  /* Tokens do tema escuro, os mesmos dos mocks aprovados (abas-de-arquivo-persistentes).
+     Fontes só da escala fechada: 11, 12, 13, 14 (20 no título do mock). Controles:
+     chip 24 · compacto 28 · padrao 32. Cores de código = --hljs-* do index.css (.dark).
+     Arquivo e contagem REAIS: app/src/components/layout/FileTab.tsx tem 3 "ladoCabe". */
+  :root{
+    --background:#0a0b0d;--rail:#0c0d10;--card:#141619;--secondary:#191c20;--popover:#181a1e;
+    --foreground:#e7e8ea;--muted-foreground:#9aa0a7;--faint:#687078;
+    --border:rgba(255,255,255,.08);--divisor:rgba(255,255,255,.032);
+    --sel:rgba(255,255,255,.065);--sel-hover:rgba(255,255,255,.032);
+    --brass:#e4a862;--error:#f2766b;--running:#6ea8fe;--md:#6ea8fe;--ts:#6ea8fe;
+    --shadow-pop:0 10px 30px rgba(0,0,0,.45),0 0 0 1px rgba(255,255,255,.08);
+    --kw:#d8a657;--str:#a3c785;--num:#d99a6c;--title:#82a8d8;--var:#c4b6e8;
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 80px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:44px 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1100px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:18px 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:10px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  svg.i{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .palco{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+
+  /* ---- cartão do arquivo ---- */
+  .cartao{background:var(--card);border-radius:12px;box-shadow:0 0 0 1px var(--border);overflow:hidden;display:flex;flex-direction:column;width:900px}
+  .cartao.medio{width:640px}
+  .tira{display:flex;align-items:center;gap:2px;height:40px;padding:0 8px;border-bottom:1px solid var(--divisor)}
+  .aba{display:flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 8px;border-radius:7px;font-size:11px;font-weight:500;color:rgba(154,160,167,.6);white-space:nowrap}
+  .aba.ativa{background:var(--sel);color:var(--foreground)}
+  .aba .pasta{color:var(--faint);font-weight:400}
+  /* A caixa de 16px é a mesma do ×: trocar um pelo outro não move o nome. */
+  .aba .x{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .aba .x.oculto{opacity:0}
+  .aba .suja{width:16px;height:16px;display:grid;place-items:center}
+  /* Óptico: 7px e não 6, para o ponto pesar o mesmo que o × de 12px ao lado. */
+  .aba .suja::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--foreground);opacity:.8}
+  .aba.hover .suja::before{display:none}
+  .ic-ts{color:var(--ts)} .ic-md{color:var(--md)}
+  .cab{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px 0 16px;border-bottom:1px solid var(--divisor);background:var(--card)}
+  .cab .cam{flex:1;font:11px var(--mono);color:rgba(231,232,234,.8);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .icone{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);white-space:nowrap}
+  .btn.ghost{background:transparent;color:var(--muted-foreground)}
+  .btn.primario{background:var(--foreground);color:var(--background);font-weight:500}
+  .btn.chip{height:24px;padding:0 8px;font-size:11px}
+  .selo{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;color:var(--muted-foreground)}
+
+  /* ---- editor ---- */
+  .editor{position:relative;display:flex;font:12px/1.55 var(--mono);background:rgba(10,11,13,.4);min-height:0;overflow:hidden}
+  .gutter{padding:14px 0;background:var(--card);border-right:1px solid var(--divisor);color:rgba(154,160,167,.4);text-align:right;font-variant-numeric:tabular-nums;user-select:none}
+  .gutter div{padding:0 12px 0 14px}
+  .gutter .atual{color:var(--muted-foreground)}
+  .linhas{padding:14px 0;flex:1;min-width:0;white-space:pre;color:rgba(231,232,234,.9)}
+  .linhas > div{padding:0 16px;position:relative}
+  .linhas .atual{background:rgba(255,255,255,.025)}
+  .k{color:var(--kw)} .s{color:var(--str)} .t{color:var(--title)} .v{color:var(--var)} .c{color:var(--muted-foreground);font-style:italic}
+  /* Seleção e achado são neutros: seleção não é cor, nem âmbar nem brass (ADR-043). */
+  .achado{background:rgba(231,232,234,.10);border-radius:2px;box-shadow:0 0 0 1px rgba(231,232,234,.22)}
+  .achado.foco{background:rgba(231,232,234,.26)}
+  .sel{background:rgba(110,168,254,.28);border-radius:2px}
+  .caret{display:inline-block;width:0;height:15px;margin:0 -1px;vertical-align:-3px;box-shadow:0 0 0 1px var(--foreground)}
+
+  /* ---- busca (painel nosso, D7) ---- */
+  .busca{position:absolute;top:10px;right:14px;width:392px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:6px;display:flex;flex-direction:column;gap:6px;font-family:var(--sans)}
+  .busca .linha{display:flex;align-items:center;gap:4px}
+  .busca .campo{flex:1;display:flex;align-items:center;gap:6px;height:28px;padding:0 4px 0 8px;border-radius:7px;background:var(--background);box-shadow:inset 0 0 0 1px var(--border);font:12px var(--mono);color:var(--foreground);min-width:0}
+  .busca .campo.erro{box-shadow:inset 0 0 0 1px rgba(242,118,107,.6)}
+  .busca .campo .vazio{color:var(--faint);font-family:var(--sans)}
+  .busca .campo .texto{flex:1;white-space:nowrap;overflow:hidden}
+  .alt{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font:500 11px var(--mono);color:var(--faint)}
+  .alt.on{background:var(--sel);color:var(--foreground)}
+  .conta{font:11px var(--mono);color:var(--muted-foreground);font-variant-numeric:tabular-nums;min-width:52px;text-align:right;padding-right:2px}
+  .conta.erro{color:var(--error)}
+  .busca .icone{width:24px;height:24px;border-radius:6px}
+
+  /* ---- faixa do arquivo (D6) ---- */
+  .faixa{display:flex;align-items:center;gap:10px;padding:8px 12px 8px 16px;border-bottom:1px solid var(--divisor);background:var(--sel-hover);font-size:12px;color:rgba(231,232,234,.9)}
+  /* Âmbar só no ícone do conflito: ele pede decisão sua (§2). */
+  .faixa .ic{color:var(--queued,#e0a05c)}
+  .faixa .txt{flex:1}
+  .faixa.sumiu{background:rgba(255,255,255,.03)}
+  .faixa.sumiu .ic{color:var(--muted-foreground)}
+
+  /* ---- diálogo (confirm estendido, D5) ---- */
+  .veu{width:640px;height:300px;border-radius:12px;background:rgba(0,0,0,.55);box-shadow:0 0 0 1px var(--border);display:grid;place-items:center}
+  .dialogo{width:384px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);padding:20px}
+  .dialogo h4{font-size:14px;font-weight:600}
+  .dialogo p{font-size:13px;color:var(--muted-foreground);margin-top:6px;line-height:1.5}
+  .dialogo ul{margin:10px 0 0;padding:0;list-style:none;font:12px var(--mono);color:rgba(231,232,234,.85)}
+  .dialogo li{display:flex;align-items:center;gap:8px;height:24px}
+  .dialogo li .pasta{color:var(--faint)}
+  .dialogo .rodape{display:flex;gap:8px;margin-top:18px}
+  .dialogo .rodape .esp{flex:1}
+  .dialogo .btn{height:32px;padding:0 12px;font-size:13px}
+
+  /* ---- tooltip, toast, markdown ---- */
+  .tooltip{display:inline-block;background:var(--popover);border-radius:7px;box-shadow:var(--shadow-pop);padding:6px 9px;font-size:12px;color:rgba(231,232,234,.9);margin:8px 0 0 470px}
+  .toast{width:360px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:12px 14px;display:flex;gap:10px}
+  .toast .ic{color:var(--error);margin-top:2px}
+  .toast b{font-size:13px;font-weight:500;display:block}
+  .toast span{font-size:12px;color:var(--muted-foreground);display:block;margin-top:2px}
+  .md{padding:18px 26px;height:228px;overflow:hidden}
+  .md h3{font-size:20px;font-weight:600;margin-bottom:10px}
+  .md p{font-size:13px;line-height:1.65;color:rgba(231,232,234,.85);margin-bottom:10px;max-width:560px}
+  .md code{font:12px var(--mono);background:rgba(255,255,255,.06);padding:1px 5px;border-radius:4px}
+
+  .decisoes{margin-top:48px;max-width:1100px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin-bottom:6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></symbol>
+  <symbol id="copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="ext" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="cols" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m18 15-6-6-6 6"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="warn" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="ghost" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M9 15h6"/></symbol>
+  <symbol id="lock" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></symbol>
+  <symbol id="pencil" viewBox="0 0 24 24"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="eye" viewBox="0 0 24 24"><path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="err" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></symbol>
+</svg>
+
+<h1>Edição de arquivos no visualizador</h1>
+<p class="sub">O arquivo que a conversa abriu passa a ser editável: digitar, selecionar com vários cursores, buscar e substituir com <span class="kbd">⌘F</span>, salvar com <span class="kbd">⌘S</span>. O que muda na tela é pouco, de propósito: um ponto na aba, um painel de busca, uma faixa quando o disco discorda de você e uma pergunta ao fechar. PRD: <span class="kbd">docs/edicao-de-arquivos-prd.md</span>.</p>
+
+<!-- 1 -->
+<h2>1. Editando: aba suja, vários cursores e busca aberta</h2>
+<p class="legenda">⌘F com "ladoCabe" selecionado · ⌥+clique pôs um segundo cursor</p>
+<div class="cartao">
+  <div class="tira">
+    <div class="aba"><svg class="i ic-md"><use href="#file"/></svg>decisions.md<span class="x oculto"><svg class="i" style="width:12px;height:12px"><use href="#x"/></svg></span></div>
+    <div class="aba ativa"><svg class="i ic-ts"><use href="#file"/></svg>FileTab.tsx <span class="pasta">layout</span><span class="suja" title="Alterações não salvas"></span></div>
+    <div class="aba"><svg class="i ic-ts"><use href="#file"/></svg>abasDeArquivo.ts<span class="x oculto"><svg class="i" style="width:12px;height:12px"><use href="#x"/></svg></span></div>
+  </div>
+  <div class="cab">
+    <span class="cam">app/src/components/layout/FileTab.tsx</span>
+    <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+    <span class="icone"><svg class="i"><use href="#ext"/></svg></span>
+    <span class="icone"><svg class="i"><use href="#cols"/></svg></span>
+  </div>
+  <div class="editor" style="height:330px">
+    <div class="gutter">
+      <div>16</div><div>17</div><div>18</div><div>19</div><div>20</div><div>21</div><div>22</div><div>23</div><div>24</div><div>25</div><div class="atual">26</div><div>27</div><div>28</div><div>29</div><div>30</div><div>31</div><div>32</div><div>33</div>
+    </div>
+    <div class="linhas">
+<div><span class="k">export function</span> <span class="t">FileTab</span>({ path, aoLado = <span class="k">false</span> }: { path: <span class="k">string</span>; aoLado?: <span class="k">boolean</span> }) {</div>
+<div>  <span class="k">const</span> project = <span class="t">useApp</span>((state) =&gt;</div>
+<div>    state.projects.<span class="t">find</span>((item) =&gt; item.id === state.activeProjectId),</div>
+<div>  )</div>
+<div>  <span class="k">const</span> worktree = <span class="t">useChat</span>(</div>
+<div>    (state) =&gt;</div>
+<div>      (state.conversationsByProject[state.projectId ?? <span class="s">""</span>] ?? state.conversations).<span class="t">find</span>(</div>
+<div>        (conversation) =&gt; conversation.id === state.activeId,</div>
+<div>      )?.worktreePath ?? <span class="k">null</span>,</div>
+<div>  )</div>
+<div class="atual">  <span class="k">const</span> <span class="achado foco sel">ladoCabe</span><span class="caret"></span> = <span class="t">useAbasDeArquivo</span>((s) =&gt; s.<span class="achado">ladoCabe</span>)</div>
+<div>  <span class="k">const</span> convId = <span class="t">useChat</span>((state) =&gt; state.activeId)<span class="caret"></span></div>
+<div></div>
+<div>  <span class="k">if</span> (!project) {</div>
+<div>    <span class="k">return</span> (</div>
+<div>      &lt;<span class="t">div</span> <span class="v">className</span>=<span class="s">"grid h-full place-items-center text-[13px] text-muted-foreground"</span>&gt;</div>
+<div>        Nenhum projeto selecionado.</div>
+<div>      &lt;/<span class="t">div</span>&gt;</div>
+    </div>
+
+    <div class="busca">
+      <div class="linha">
+        <span class="icone"><svg class="i" style="transform:rotate(90deg)"><use href="#right"/></svg></span>
+        <div class="campo"><span class="texto">ladoCabe</span><span class="alt">Aa</span><span class="alt">ab</span><span class="alt">.*</span></div>
+        <span class="conta">1 de 3</span>
+        <span class="icone"><svg class="i"><use href="#up"/></svg></span>
+        <span class="icone"><svg class="i"><use href="#down"/></svg></span>
+        <span class="icone"><svg class="i"><use href="#x"/></svg></span>
+      </div>
+      <div class="linha" style="padding-left:28px">
+        <div class="campo"><span class="texto">cabeAoLado</span></div>
+        <span class="btn chip">Substituir</span>
+        <span class="btn chip">Todas</span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>A aba</b>: o × vira ponto na mesma caixa de 16px, então o nome não anda; no hover o × volta, e fechar continua a um clique (e pergunta, seção 4). <b>A busca</b> é painel nosso sobre a API do CodeMirror: a contagem "1 de 3" e o <span class="kbd">⌘⌥F</span> / <span class="kbd">Ctrl+H</span> não vêm prontos. A seta à esquerda recolhe a linha de substituir; em arquivo só leitura ela não existe. "Todas" é um passo só de desfazer. <b>Sem toast ao salvar</b>: o ponto apagar é o retorno.</p>
+
+<div class="palco" style="margin-top:18px">
+  <div>
+    <p class="legenda">Busca sem casamento</p>
+    <div class="busca" style="position:static">
+      <div class="linha">
+        <span class="icone"><svg class="i"><use href="#right"/></svg></span>
+        <div class="campo"><span class="texto">cabeAoLado</span><span class="alt">Aa</span><span class="alt">ab</span><span class="alt">.*</span></div>
+        <span class="conta">Nada</span>
+        <span class="icone" style="opacity:.4"><svg class="i"><use href="#up"/></svg></span>
+        <span class="icone" style="opacity:.4"><svg class="i"><use href="#down"/></svg></span>
+        <span class="icone"><svg class="i"><use href="#x"/></svg></span>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Expressão regular inválida</p>
+    <div class="busca" style="position:static">
+      <div class="linha">
+        <span class="icone"><svg class="i"><use href="#right"/></svg></span>
+        <div class="campo erro"><span class="texto">lado(Cabe</span><span class="alt">Aa</span><span class="alt">ab</span><span class="alt on">.*</span></div>
+        <span class="conta erro">Expressão inválida</span>
+        <span class="icone"><svg class="i"><use href="#x"/></svg></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 -->
+<h2>2. O disco mudou enquanto você editava</h2>
+<p class="legenda">O agente gravou FileTab.tsx; você tinha alterações não salvas</p>
+<div class="cartao medio">
+  <div class="cab">
+    <span class="cam">app/src/components/layout/FileTab.tsx</span>
+    <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+    <span class="icone"><svg class="i"><use href="#ext"/></svg></span>
+  </div>
+  <div class="faixa">
+    <svg class="i ic"><use href="#warn"/></svg>
+    <span class="txt">Este arquivo mudou no disco depois que você começou a editar.</span>
+    <span class="btn ghost">Usar a do disco</span>
+    <span class="btn">Manter a minha</span>
+  </div>
+  <div class="editor" style="height:96px">
+    <div class="gutter"><div>26</div><div>27</div><div>28</div></div>
+    <div class="linhas">
+<div>  <span class="k">const</span> cabeAoLado = <span class="t">useAbasDeArquivo</span>((s) =&gt; s.ladoCabe)</div>
+<div>  <span class="k">const</span> convId = <span class="t">useChat</span>((state) =&gt; state.activeId)</div>
+<div></div>
+    </div>
+  </div>
+</div>
+<p class="nota">A mesma faixa nasce quando o <span class="kbd">⌘S</span> encontra o disco diferente da versão que você leu: <b>o ⌘S nunca atropela</b>. "Manter a minha" não grava nada; ele adota a versão do disco como base, e o próximo ⌘S grava por cima, agora por decisão sua. Se o arquivo estivesse <b>limpo</b>, não haveria faixa: ele recarregaria sozinho ao fim da ação do agente, e o desfazer zera.</p>
+
+<p class="legenda" style="margin-top:22px">O arquivo foi apagado ou movido</p>
+<div class="cartao medio">
+  <div class="cab"><span class="cam">app/src/components/layout/FileTab.tsx</span></div>
+  <div class="faixa sumiu">
+    <svg class="i ic"><use href="#ghost"/></svg>
+    <span class="txt">Este arquivo não está mais no disco. O que você escreveu ainda está aqui.</span>
+    <span class="btn ghost">Fechar sem salvar</span>
+    <span class="btn">Copiar o texto</span>
+  </div>
+</div>
+
+<!-- 3 -->
+<h2>3. Fechar com alterações</h2>
+<p class="sub">Todo fechamento passa por <span class="kbd">fecharArquivos</span>: ×, botão do meio, menu de contexto, "Fechar todas", <span class="kbd">⌘W</span> do menu do Mac e <span class="kbd">Ctrl+W</span> no Linux. É o <span class="kbd">confirm</span> do app com um parâmetro a mais (a terceira resposta), não uma superfície nova.</p>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">Uma aba</p>
+    <div class="veu">
+      <div class="dialogo">
+        <h4>Salvar as alterações em FileTab.tsx?</h4>
+        <p>Se não salvar, o que você escreveu nesta aba se perde.</p>
+        <div class="rodape">
+          <span class="btn ghost">Não salvar</span>
+          <span class="esp"></span>
+          <span class="btn ghost">Cancelar</span>
+          <span class="btn primario">Salvar</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Em lote ("Fechar todas")</p>
+    <div class="veu">
+      <div class="dialogo">
+        <h4>2 arquivos têm alterações não salvas</h4>
+        <ul>
+          <li><svg class="i ic-ts"><use href="#file"/></svg>FileTab.tsx <span class="pasta">layout</span></li>
+          <li><svg class="i ic-md"><use href="#file"/></svg>decisions.md <span class="pasta">docs</span></li>
+        </ul>
+        <div class="rodape">
+          <span class="btn ghost">Não salvar</span>
+          <span class="esp"></span>
+          <span class="btn ghost">Cancelar</span>
+          <span class="btn primario">Salvar as 2</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota">"Não salvar" fica à esquerda, longe do Enter. "Cancelar" não fecha nada do lote. Se um "Salvar" falhar (conflito, arquivo sumiu), aquela aba <b>não fecha</b> e a faixa da seção 2 explica. O mesmo arquivo aberto em outra conversa fecha sem perguntar: o buffer é do arquivo e continua lá. Sair do app com arquivo sujo faz a mesma pergunta.</p>
+
+<!-- 4 -->
+<h2>4. Só leitura, com o motivo</h2>
+<p class="sub">Todo texto abre no editor (busca e seleção valem para todos). Quando não dá para gravar, o cabeçalho diz, e o editor não aceita digitação: nada de digitar e descobrir no ⌘S.</p>
+<div class="palco" style="margin-top:14px;flex-direction:column;gap:14px">
+  <div class="cartao medio">
+    <div class="cab">
+      <span class="cam">~/.claude/settings.json</span>
+      <span class="selo"><svg class="i" style="width:12px;height:12px"><use href="#lock"/></svg>Só leitura</span>
+      <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+    </div>
+  </div>
+  <span class="tooltip">Fora das pastas do projeto</span>
+  <div class="cartao medio">
+    <div class="cab">
+      <span class="cam">app/bun.lock</span>
+      <span class="selo"><svg class="i" style="width:12px;height:12px"><use href="#lock"/></svg>Só leitura</span>
+      <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+      <span class="icone"><svg class="i"><use href="#ext"/></svg></span>
+    </div>
+  </div>
+  <span class="tooltip">Grande demais para editar aqui (3,4 MB)</span>
+</div>
+
+<!-- 5 -->
+<h2>5. Markdown: prévia por padrão, editar é um gesto</h2>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">Prévia (como hoje) · o botão diz o destino</p>
+    <div class="cartao" style="width:560px">
+      <div class="cab">
+        <span class="cam">docs/decisions.md</span>
+        <span class="btn ghost"><svg class="i"><use href="#pencil"/></svg>Editar</span>
+        <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+      </div>
+      <div class="md">
+        <h3>ADR-NNN, edição no visualizador</h3>
+        <p>A Frota passa a gravar arquivo do projeto pelo visualizador, com versão esperada e escrita atômica.</p>
+        <p>Toda gravação leva a versão lida; o Rust recusa com <code>Conflito</code> se o disco mudou.</p>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Editor · alteração não salva, a prévia já mostra o buffer</p>
+    <div class="cartao" style="width:560px">
+      <div class="tira" style="height:34px">
+        <div class="aba ativa"><svg class="i ic-md"><use href="#file"/></svg>decisions.md <span class="pasta">docs</span><span class="suja"></span></div>
+      </div>
+      <div class="cab">
+        <span class="cam">docs/decisions.md</span>
+        <span class="btn ghost"><svg class="i"><use href="#eye"/></svg>Ver prévia</span>
+        <span class="icone"><svg class="i"><use href="#copy"/></svg></span>
+      </div>
+      <div class="editor" style="height:194px">
+        <div class="gutter"><div>1</div><div>2</div><div>3</div><div>4</div><div>5</div></div>
+        <div class="linhas">
+<div><span class="k">## ADR-NNN, edição no visualizador</span></div>
+<div></div>
+<div>A Frota passa a gravar arquivo do projeto pelo visualizador,</div>
+<div>com versão esperada e escrita atômica.</div>
+<div class="atual">Toda gravação leva a versão lida; o Rust recusa com <span class="s">`Conflito`</span><span class="caret"></span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 6 -->
+<h2>6. Salvar falhou</h2>
+<p class="sub">O único toast da frente, porque é erro (STYLEGUIDE §12): o título diz o que não aconteceu, a causa vem do Rust no detalhe, e a aba continua suja.</p>
+<div style="margin-top:14px" class="toast">
+  <svg class="i ic"><use href="#err"/></svg>
+  <div><b>Não consegui salvar FileTab.tsx.</b><span>Permission denied (os error 13)</span></div>
+</div>
+
+<div class="decisoes">
+  <h3>O que este mock decide</h3>
+  <ul>
+    <li><b>Quatro peças novas, nenhuma primitiva crua</b>: ponto na aba, painel de busca, faixa do arquivo, selo de só leitura. A pergunta ao fechar é o <b>confirm</b> com parâmetro; o alternador do Markdown é um <b>Button compacto</b>.</li>
+    <li><b>Toast só para erro.</b> Salvar tem retorno no próprio gesto (o ponto some). Conflito e sumiço são estado do arquivo, então moram numa faixa dentro dele, não num aviso que some.</li>
+    <li><b>O ⌘S nunca atropela o disco</b>, e recarregar nunca atropela você. Os dois lados do conflito têm botão com o resultado escrito.</li>
+    <li><b>Escalas</b>: fonte 11 (aba, contagem, selo), 12 (código, faixa), 13 (diálogo), 14 (título do diálogo). Controles chip 24 (alternâncias, Substituir), compacto 28 (campos, botões do cabeçalho), padrão 32 (rodapé do diálogo).</li>
+    <li><b>Cor de código</b> = tokens <span class="kbd">--hljs-*</span>: o mesmo trecho tem a mesma cor no fio e no editor.</li>
+  </ul>
+</div>
+
+</body>
+</html>

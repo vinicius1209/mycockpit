@@ -1,0 +1,3 @@
+# O fixture de CRLF é CRLF de propósito (edicao_tests.rs): sem isto, o
+# core.autocrlf guardaria LF e o teste de CRLF quebraria num clone novo.
+crlf-resposta-http.txt -text
