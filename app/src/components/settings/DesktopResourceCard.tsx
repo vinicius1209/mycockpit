@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { CheckCircle2, Loader2, MonitorCog, RefreshCcw } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { ComputadorPorMotor } from "@/components/settings/ComputadorPorMotor"
 import { Card, CardBody, CardHead, Selo } from "@/components/settings/parts"
 import {
   desktopCapabilityStatus,
@@ -132,7 +131,11 @@ export function DesktopResourceCard() {
             </p>
           </div>
         )}
-        <ComputadorPorMotor />
+        <p className="mt-2 border-t border-border/40 pt-2 text-[12px] leading-snug text-muted-foreground">
+          Como o controle chega a cada motor, e os controles de terceiro que
+          algum motor tenha por fora da Frota, ficam na página de cada motor,
+          em Motores.
+        </p>
         {error && (
           <p role="alert" className="mt-2 text-[11px] text-st-error">
             {error}

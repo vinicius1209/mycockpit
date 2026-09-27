@@ -9726,3 +9726,49 @@ considerou.
      Passar o volante, Copiar e Dispensar como ícones no hover do turno.
 - **Fica igual:** o parecer continua só leitura (`fusion-ro`), fora do reducer
   do executor, e `advising` não trava o envio nem finge turno.
+
+### ADR-268 · Configurações seguem as perguntas de quem usa: o que espera por você, um lugar por motor, e o escopo na cara ✅
+- **Contexto (26/09/2026):** o Agy não nomeava a conversa no primeiro turno.
+  A causa era o `frota-work` fora do cadastro global dele, e o conserto era um
+  botão Conectar num cartão **abaixo** da lista de 11 MCPs, numa página onde o
+  `frota-work` nem era linha. O aviso do turno mandava para "Configurações >
+  MCPs"; os do navegador e do computador, para "Recursos locais". Um motor
+  ficava espalhado em até cinco seções, os canais da Frota apareciam de três
+  jeitos, a lista de MCPs aparecia três vezes na mesma página, três seções
+  tinham seletor de projeto próprio, e "Sugestões" escondia o modelo que também
+  nomeia a conversa. PRD `docs/configuracoes-prd.md`, mock
+  `docs/mocks/configuracoes.html`.
+- **Decisão:**
+  1. **Precisa de você** abre as Configurações (`pending`). Pendência é coisa
+     meio-configurada que a pessoa conserta: CLI instalada sem conta, motor de
+     cadastro global sem acompanhamento, `gh` sem conta, MCP ligado pedindo
+     login. A regra é UMA função pura (`settings/pendencias.ts`) lida pela
+     página e pelo ponto do rail. O acompanhamento se conecta ali mesmo.
+  2. **Uma página por motor** (`motor:<id>`, gerada de `motoresDaMaquina()`):
+     CLI e conta, modelos, o que a Frota liga (acompanhamento, navegador,
+     controle do computador) e sessões no terminal. Tudo por capability:
+     `workMcpGlobalEnv` mostra o cadastro com o gesto, `workMcp` sem ele diz
+     "Automático, a cada turno", `hooksStatus` decide o bloco de terminal. A
+     seção "Sessões no terminal" deixou de existir (legado `hooks` → página do
+     primeiro motor com hooks).
+  3. **MCPs lista só os MCPs da pessoa**: saem os internos (`managed: false`)
+     e o cartão do acompanhamento; o inventário por motor fica recolhido e sem
+     os canais da Frota.
+  4. **Escopo na cara**: o rail tem as zonas *Neste Mac* e *No projeto*, com
+     um seletor de projeto só (`projetoDasConfiguracoes`), lido por MCPs,
+     Skills e Navegador. "Navegador e desktop" se dividiu: o navegador é do
+     projeto; as permissões do computador são do Mac (Segurança).
+  5. **O turno aponta para o motor**: o manifesto ganhou
+     `missingFrotaChannels` (`work`), e o composer mostra "O Antigravity não
+     está conectado ao acompanhamento" com **Conectar** levando à página do
+     motor. Os três avisos de texto apontam para
+     `work_mcp_setup::ONDE_CONECTAR`. O sino (login, update, modos) abre a
+     página do motor da linha.
+  6. **Palavras de gente**: "Sugestões" virou **Modelo auxiliar**, com a lista
+     do que ele faz; estados dos canais são "Conectado"/"Não conectado" nos
+     três; "depende do provider" virou "o motor decide"; os caminhos citam
+     `.frota/`.
+- **Fica igual:** o que cada ajuste faz. Conectar continua sendo gesto da
+  pessoa (nada é cadastrado sozinho). O modelo auxiliar por projeto e as pastas
+  permitidas continuam no painel de contexto; trazê-los para a zona do projeto
+  fica para depois, sem data.

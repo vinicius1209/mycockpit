@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { motoresDaMaquina } from "@/lib/agentRoster"
 import {
   DEFAULT_SECTION,
   LEGACY_SECTION_IDS,
@@ -7,6 +8,9 @@ import {
   resolveSection,
   sectionDef,
   sectionsByGroup,
+  motorDaSecao,
+  secaoDoMotor,
+  zonaDaSecao,
 } from "./sections"
 
 describe("resolveSection", () => {
@@ -34,14 +38,23 @@ describe("resolveSection", () => {
     expect(resolveSection({ id: "ledger" })).toBe(DEFAULT_SECTION)
   })
 
-  it("seção escondida por falta de capability não vira destino", () => {
-    // build sem motor com hooks: "hooks" some do rail, e quem pedir "hooks"
-    // cai na primeira seção disponível em vez de abrir um painel vazio.
-    const disponiveis = SETTINGS_SECTIONS.filter((s) => s.id !== "hooks").map(
+  it("seção fora da lista disponível não vira destino", () => {
+    // Seção que o build não tem some do rail, e quem pedir por ela cai na
+    // primeira seção disponível em vez de abrir um painel vazio.
+    const disponiveis = SETTINGS_SECTIONS.filter((s) => s.id !== "ledger").map(
       (s) => s.id,
     )
-    expect(resolveSection("hooks", disponiveis)).toBe(disponiveis[0])
-    expect(resolveSection("ledger", disponiveis)).toBe("ledger")
+    expect(resolveSection("ledger", disponiveis)).toBe(disponiveis[0])
+    expect(resolveSection("dictation", disponiveis)).toBe("dictation")
+  })
+
+  it("'hooks' (Sessões no terminal) leva à página do motor que tem hooks (ADR-268)", () => {
+    expect(resolveSection("hooks")).toBe("motor:claude-code")
+  })
+
+  it("página de motor é destino direto, e motor que não existe cai no padrão", () => {
+    expect(resolveSection("motor:agy")).toBe("motor:agy")
+    expect(resolveSection("motor:nao-existe")).toBe(DEFAULT_SECTION)
   })
 
   it("id legado resolve dentro da lista disponível", () => {
@@ -79,7 +92,7 @@ describe("registro das seções", () => {
   })
 
   it("sectionDef devolve os metadados da seção pedida", () => {
-    expect(sectionDef("machine").title).toBe("Agentes na máquina")
+    expect(sectionDef("machine").title).toBe("Motores")
     expect(sectionDef("ledger").question).toContain("janela do plano")
   })
 
@@ -101,13 +114,16 @@ describe("sectionsByGroup", () => {
 
   it("mantém os grupos na ordem declarada", () => {
     expect(sectionsByGroup().map((entry) => entry.group.id)).toEqual([
-      "interface",
+      "inicio",
+      "voce",
+      "motores",
+      "uso",
       "conversas",
-      "agentes",
-      "capacidades",
-      "extensoes",
+      "automacao",
+      "seguranca",
       "conexoes",
       "app",
+      "projeto",
     ])
   })
 
@@ -116,6 +132,41 @@ describe("sectionsByGroup", () => {
     // nenhum grupo entra na lista com zero seções.
     for (const entry of sectionsByGroup()) {
       expect(entry.sections.length).toBeGreaterThan(0)
+    }
+  })
+})
+
+describe("ADR-268: a árvore segue as perguntas de quem usa", () => {
+  it("abre em 'Precisa de você'", () => {
+    expect(DEFAULT_SECTION).toBe("pending")
+    expect(resolveSection(null)).toBe("pending")
+  })
+
+  it("cada motor do registry ganha uma página, na ordem dele, dentro de Motores", () => {
+    const motores = SETTINGS_SECTIONS.filter((s) => s.id.startsWith("motor:"))
+    expect(motores.map((s) => s.id)).toEqual(
+      motoresDaMaquina().map((a) => `motor:${a.id}`),
+    )
+    for (const m of motores) expect(m.group).toBe("motores")
+    expect(motorDaSecao("motor:agy")).toBe("agy")
+    expect(motorDaSecao("machine")).toBeNull()
+    expect(secaoDoMotor("agy")).toBe("motor:agy")
+  })
+
+  it("MCPs, Skills e Navegador são do projeto; o resto é deste Mac", () => {
+    const doProjeto = SETTINGS_SECTIONS.filter((s) => zonaDaSecao(s.id) === "projeto").map((s) => s.id)
+    expect(doProjeto).toEqual(["integrations", "extensions", "resources"])
+    expect(zonaDaSecao("desktop")).toBe("mac")
+    expect(zonaDaSecao("motor:agy")).toBe("mac")
+  })
+
+  it("'Sugestões' se chama pelo que é: Modelo auxiliar", () => {
+    expect(sectionDef("suggestions").label).toBe("Modelo auxiliar")
+  })
+
+  it("nenhuma pergunta de seção fala a língua do código", () => {
+    for (const s of SETTINGS_SECTIONS) {
+      expect(s.question ?? "", s.id).not.toMatch(/binding|provider|\brun\b|stdio/i)
     }
   })
 })

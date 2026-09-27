@@ -63,7 +63,7 @@ export function pedidoDeNavegador(event: WorkEvent): void {
     const path = event.data.projectPath
     avisar.evento(`O agente ligou o navegador do ${nomeDoProjeto(path) ?? "projeto"}.`, {
       origem: { projeto: path, conversa: event.data.convId ?? null },
-      detalhe: "Você autorizou isso em Configurações › Recursos locais. Dá para revogar lá.",
+      detalhe: "Você autorizou isso em Configurações › Navegador, no projeto. Dá para revogar lá.",
     })
     return
   }

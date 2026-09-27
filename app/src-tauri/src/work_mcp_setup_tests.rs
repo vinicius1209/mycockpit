@@ -100,3 +100,46 @@ fn o_canal_do_desktop_e_reconhecido_pelo_proprio_subcomando() {
     assert_ne!(chave("agy", TRABALHO), chave("agy", DESKTOP));
 }
 
+
+// ADR-268: o aviso do turno aponta para a página do motor, e diz o que falta
+// para a pessoa, não o nome do MCP. Antes mandava para "Configurações > MCPs",
+// onde o `frota-work` nem era linha (26/09/2026).
+#[test]
+fn aviso_do_acompanhamento_ausente_aponta_a_pagina_do_motor_e_diz_o_que_falta() {
+    let aviso = aviso_do_acompanhamento(None);
+    assert!(aviso.contains(ONDE_CONECTAR));
+    assert!(aviso.contains("título automático"));
+    assert!(!aviso.contains("> MCPs"));
+    let ausente = WorkMcpSetup {
+        agent: "agy".into(),
+        state: SetupState::Absent,
+        checked_at: now_ms(),
+        detail: None,
+    };
+    assert_eq!(aviso_do_acompanhamento(Some(&ausente)), aviso);
+}
+
+#[test]
+fn aviso_do_acompanhamento_conectado_diz_a_idade_da_verificacao() {
+    let conectado = WorkMcpSetup {
+        agent: "agy".into(),
+        state: SetupState::Configured,
+        checked_at: now_ms(),
+        detail: None,
+    };
+    let aviso = aviso_do_acompanhamento(Some(&conectado));
+    assert!(aviso.contains("verificado há 0s"));
+    assert!(aviso.contains(ONDE_CONECTAR));
+}
+
+#[test]
+fn canal_ausente_so_conta_o_que_a_pessoa_resolve_com_um_gesto() {
+    // Motor de cadastro global, sem o gateway de trabalho: falta o canal.
+    assert_eq!(canais_ausentes(true, false, false), vec![CANAL_TRABALHO.to_string()]);
+    // Com o gateway de pé, nada falta.
+    assert!(canais_ausentes(true, false, true).is_empty());
+    // Só leitura nunca recebe o canal: não é ausência, é o modo.
+    assert!(canais_ausentes(true, true, false).is_empty());
+    // Motor que recebe por turno não tem cadastro para fazer.
+    assert!(canais_ausentes(false, false, false).is_empty());
+}

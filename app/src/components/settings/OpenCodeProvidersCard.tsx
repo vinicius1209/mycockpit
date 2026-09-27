@@ -129,7 +129,7 @@ export function OpenCodeProvidersCard({ refreshToken, onChanged }: {
       <CardBody>
         {!probe?.installed ? (
           <p className="text-[12px] leading-snug text-muted-foreground">
-            Instale o OpenCode em <strong className="font-medium text-foreground">Agentes na máquina</strong>. Depois os provedores serão conectados aqui, sem terminal.
+            Instale o OpenCode em <strong className="font-medium text-foreground">Motores ▸ OpenCode</strong>. Depois os provedores serão conectados aqui, sem terminal.
           </p>
         ) : <>
           <div className="mb-3 flex items-center gap-2 rounded-md border bg-secondary/25 px-3 py-2 text-[12px]">

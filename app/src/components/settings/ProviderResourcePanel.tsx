@@ -47,7 +47,7 @@ export function consequence(
   }
   const semBinding = agents.some((id) => agentDef(id)?.mcpEscopo !== "por-run")
   return semBinding
-    ? "Esta integração abre o próprio navegador, fora da Frota. Neste motor a Frota não vincula MCP por projeto: desabilite-a no CLI ou conecte o navegador da Frota em Recursos locais."
+    ? "Esta integração abre o próprio navegador, fora da Frota. Neste motor a Frota não vincula MCP por projeto: desabilite-a no CLI ou conecte o navegador da Frota na página do motor, em Motores."
     : "Esta integração pode escolher perfil e janela fora da Frota. Para garantir o navegador do projeto, entregue-a por um binding MCP marcado como navegador."
 }
 
@@ -65,8 +65,8 @@ export function ProviderResourcePanel({
 
   return (
     <Block>
-      <BlockTitle hint="Configurações que pertencem aos providers continuam vivas fora dos bindings da Frota.">
-        Fora do controle por run
+      <BlockTitle hint="Vêm da configuração de cada motor e seguem valendo por fora do pedido e do Revogar da Frota.">
+        De fora da Frota
       </BlockTitle>
 
       <div className="space-y-2">
@@ -82,7 +82,7 @@ export function ProviderResourcePanel({
                     {resourceKindLabel(kind)}
                   </span>
                 }
-                selo={<Selo tom="atencao">provider</Selo>}
+                selo={<Selo tom="atencao">do motor</Selo>}
               />
               <CardBody>
                 <div className="divide-y divide-border/40">
@@ -124,7 +124,7 @@ export function ProviderResourcePanel({
       {opaque > 0 && (
         <p className="mt-2 flex items-start gap-1.5 text-[11px] leading-snug text-st-warning">
           <TriangleAlert className="mt-px size-3.5 shrink-0" />
-          {opaque} {opaque === 1 ? "provider não publicou" : "providers não publicaram"}{" "}
+          {opaque} {opaque === 1 ? "motor não publicou" : "motores não publicaram"}{" "}
           inventário suficiente. Ausência nesta lista não é garantia de que
           nenhum recurso será usado.
         </p>

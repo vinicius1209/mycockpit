@@ -62,3 +62,10 @@ export function modelSmokeAgents(): AgentDef[] {
 export function machineAgents(): AgentDef[] {
   return AGENTS.filter((a) => a.kind === "agent" && a.available)
 }
+
+/** Os motores que a pessoa pode usar nesta build, na ordem do registry. Cada
+ *  um ganha uma página própria nas Configurações (ADR-268): quem monta o rail
+ *  pergunta AQUI, e motor novo aparece sozinho quando entra no registry. */
+export function motoresDaMaquina(): AgentDef[] {
+  return AGENTS.filter((a) => a.kind === "agent" && a.available)
+}

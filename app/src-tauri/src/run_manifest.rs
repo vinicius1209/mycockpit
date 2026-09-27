@@ -34,6 +34,9 @@ pub struct EffectiveRunManifest {
     /// provider deixa entrar neste run, fora do pedido e do Revogar da Frota
     /// (ADR-225).
     pub external_desktop_mcps: Vec<String>,
+    /// Canais da Frota que este turno deveria ter e não tem (ADR-268), por id
+    /// estável (`work`). O front decide a exceção por ele, nunca pelo texto.
+    pub missing_frota_channels: Vec<String>,
     pub notices: Vec<String>,
     pub omissions: Vec<EffectiveCapabilityOmission>,
     /// Redução de permissão aceita explicitamente só para este envio.
@@ -339,6 +342,7 @@ pub fn build(
                 .any(|item| item.kind == ToolMaterializerKind::ExternalMcp),
         external_browser_mcps: Vec::new(),
         external_desktop_mcps: Vec::new(),
+        missing_frota_channels: Vec::new(),
         notices: mcp_plan
             .notices
             .iter()

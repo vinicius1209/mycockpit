@@ -824,7 +824,7 @@ fn agy_version_gate(agent: &str, detected: Option<String>) -> Result<(), String>
             "o {agent} instalado nesta máquina é a v{v}, e os hooks exigem ≥{AGY_MIN} (abaixo disso o Stop hook não roda e a sessão nunca ficaria ociosa); atualize a CLI e tente de novo. Nada foi alterado"
         )),
         None => Err(format!(
-            "não consegui perguntar a versão ao binário do {agent} ({} --version não respondeu); os hooks exigem ≥{AGY_MIN}, então nada foi alterado. Confira a seção Agentes na máquina e tente de novo",
+            "não consegui perguntar a versão ao binário do {agent} ({} --version não respondeu); os hooks exigem ≥{AGY_MIN}, então nada foi alterado. Confira a página do motor em Configurações › Motores e tente de novo",
             crate::detect::agent_bin(agent).unwrap_or(agent)
         )),
     }

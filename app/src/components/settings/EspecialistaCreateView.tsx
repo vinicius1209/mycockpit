@@ -175,9 +175,9 @@ export function CreateView({
                     title={
                       s === "projeto"
                         ? projectPath
-                          ? `Só neste projeto · ${projectPath}/.mycockpit/agents`
+                          ? `Só neste projeto · ${projectPath}/.frota/agents`
                           : "Abra um projeto para criar uma persona só dele"
-                        : "Em todos os projetos · ~/.mycockpit/agents"
+                        : "Em todos os projetos · ~/.frota/agents"
                     }
                   >
                     {s === "projeto" ? "Este projeto" : "Todos os projetos"}
@@ -410,7 +410,7 @@ export function CreateView({
             <span className="font-mono">
               {scope === "projeto"
                 ? caminhoNaPasta("agents")
-                : "~/.mycockpit/agents"}
+                : "~/.frota/agents"}
             </span>
             . Editar o arquivo à mão também vale, o app relê.
           </div>

@@ -609,11 +609,7 @@ pub async fn run_agent(
                 .is_some_and(|setup| setup.state == crate::work_mcp_setup::SetupState::Configured))
         && !matches!(permission, adapters::Permission::FusionRo);
     if caps.work_mcp_global_env && !matches!(permission, adapters::Permission::FusionRo) {
-        mcp_plan.notices.push(match global_work {
-            Some(setup) if setup.state == crate::work_mcp_setup::SetupState::Configured => format!(
-                "Ao iniciar este turno, o cadastro do acompanhamento havia sido verificado há {}s. Reverifique em Configurações se alterou o CLI.", setup.age_secs()),
-            _ => "Acompanhamento de etapas indisponível neste motor. Conecte ou reverifique em Configurações > MCPs.".into(),
-        });
+        mcp_plan.notices.push(crate::work_mcp_setup::aviso_do_acompanhamento(global_work.as_ref()));
     }
     let mut _work_listener = None;
     let work_processes_allowed =
@@ -679,10 +675,10 @@ pub async fn run_agent(
         && work_gateway.is_some()
         && crate::desktop::controller_ready()
     {
-        mcp_plan.notices.push("Controle do computador da Frota indisponível neste motor: conecte o frota-desktop em Configurações > Recursos locais > Controle do desktop.".into());
+        mcp_plan.notices.push(format!("Controle do computador da Frota indisponível neste motor: conecte em {}.", crate::work_mcp_setup::ONDE_CONECTAR));
     }
     if caps.work_mcp_global_env && browser_gateway.is_none() && work_gateway.is_some() {
-        mcp_plan.notices.push("Navegador da Frota indisponível neste motor: conecte o frota-browser em Configurações > Recursos locais.".into());
+        mcp_plan.notices.push(format!("Navegador da Frota indisponível neste motor: conecte em {}.", crate::work_mcp_setup::ONDE_CONECTAR));
     }
     // Tool Catalog por-run. Discovery e preflight são sem efeito: plugin não
     // executa e navegador desligado continua desligado. Só adapters capazes de
@@ -818,6 +814,7 @@ pub async fn run_agent(
         manifest.external_desktop_mcps =
             crate::mcp_control::externos_do_motor(&app, &agent, ResourceKind::DesktopControl);
     }
+    manifest.missing_frota_channels = crate::work_mcp_setup::canais_ausentes(caps.work_mcp_global_env, matches!(permission, adapters::Permission::FusionRo), work_gateway.is_some());
     let _ = on_event.send(AgentEvent::RunManifest { manifest });
     // H2 — cadência do preâmbulo por capability: canal system → corpo limpo
     // (o adapter re-envia anúncio+telemetria no canal a cada spawn); motor

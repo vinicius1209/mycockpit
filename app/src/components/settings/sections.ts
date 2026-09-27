@@ -8,14 +8,22 @@
 // que aconteceu com "CLIs instaladas" (virou depósito de medidor, hooks e
 // curador de modelos).
 //
+// ADR-268 acrescentou duas regras. A árvore segue as perguntas de quem usa, não
+// as camadas do código: primeiro "tem algo esperando por mim?" (Precisa de
+// você), depois "este motor está pronto?" (uma página por motor), por último
+// as preferências. E o escopo fica na cara: a zona "Neste Mac" vale para a
+// máquina inteira, a zona "No projeto" vale para o projeto escolhido no rail.
+//
 // Id órfão (seção que sumiu/renomeou) NUNCA vira tela branca: `resolveSection`
 // traduz pelo mapa de legado ou cai na primeira seção válida — mesma
 // disciplina do migrate de viewMode (ADR-035).
 
 import {
+  Bell,
   Bot,
   CircleDollarSign,
   Cpu,
+  Globe,
   Info,
   Layers,
   Mic,
@@ -28,15 +36,20 @@ import {
   Radar,
   ShieldCheck,
   Smartphone,
-  SquareTerminal,
   Users,
   Sparkles,
+  SquareTerminal,
   Waypoints,
   User,
 } from "lucide-react"
-import { hooksAgents } from "@/lib/agentRoster"
+import { hooksAgents, motoresDaMaquina } from "@/lib/agentRoster"
+import { pendencias, type FatosDoRail } from "@/components/settings/pendencias"
 
-export type SectionId =
+export type { FatosDoRail } from "@/components/settings/pendencias"
+
+/** Seções fixas. A página de cada motor é `motor:<id do registry>`. */
+export type SecaoFixa =
+  | "pending"
   | "profile"
   | "appearance"
   | "tray"
@@ -48,24 +61,32 @@ export type SectionId =
   | "missions"
   | "machine"
   | "sandbox"
+  | "desktop"
   | "resources"
   | "extensions"
   | "models"
-  | "hooks"
   | "ledger"
   | "integrations"
   | "services"
   | "companion"
   | "about"
 
+export type SectionId = SecaoFixa | `motor:${string}`
+
+/** "Neste Mac" vale para a máquina; "No projeto", para o projeto do rail. */
+export type Zona = "mac" | "projeto"
+
 export type GroupId =
-  | "interface"
+  | "inicio"
+  | "voce"
+  | "motores"
+  | "uso"
   | "conversas"
-  | "agentes"
-  | "capacidades"
-  | "extensoes"
+  | "automacao"
+  | "seguranca"
   | "conexoes"
   | "app"
+  | "projeto"
 
 export interface SettingsSection {
   id: SectionId
@@ -93,24 +114,57 @@ export interface SettingsSection {
   busca: string[]
 }
 
-export const SETTINGS_GROUPS: { id: GroupId; label: string }[] = [
-  { id: "interface", label: "Interface" },
-  { id: "conversas", label: "Conversas" },
-  { id: "agentes", label: "Agentes e uso" },
-  { id: "capacidades", label: "Capacidades" },
-  { id: "extensoes", label: "Extensões" },
-  { id: "conexoes", label: "Conexões" },
-  { id: "app", label: "App" },
+export const SETTINGS_GROUPS: { id: GroupId; label: string; zona: Zona }[] = [
+  { id: "inicio", label: "Início", zona: "mac" },
+  { id: "voce", label: "Você", zona: "mac" },
+  { id: "motores", label: "Motores", zona: "mac" },
+  { id: "uso", label: "Uso e custo", zona: "mac" },
+  { id: "conversas", label: "Conversas", zona: "mac" },
+  { id: "automacao", label: "Automação", zona: "mac" },
+  { id: "seguranca", label: "Segurança", zona: "mac" },
+  { id: "conexoes", label: "Conexões", zona: "mac" },
+  { id: "app", label: "Sobre", zona: "mac" },
+  { id: "projeto", label: "Deste projeto", zona: "projeto" },
 ]
 
+/** O id da página de um motor. Único lugar que monta o prefixo. */
+export function secaoDoMotor(agentId: string): SectionId {
+  return `motor:${agentId}`
+}
+
+/** O id do motor de uma seção, ou `null` se ela não é página de motor. */
+export function motorDaSecao(id: string): string | null {
+  return id.startsWith("motor:") ? id.slice("motor:".length) : null
+}
+
+/** Uma página por motor do registry, na ordem dele. Motor novo aparece sozinho. */
+const SECOES_DE_MOTOR: SettingsSection[] = motoresDaMaquina().map((a) => ({
+  id: secaoDoMotor(a.id),
+  label: a.label,
+  title: a.label,
+  question: `O que a Frota precisa do ${a.label} para trabalhar por inteiro.`,
+  icon: Cpu,
+  group: "motores",
+  busca: [a.label, a.shortLabel, a.id, "acompanhamento", "canal", "hooks", "terminal", "conectar"],
+}))
+
 export const SETTINGS_SECTIONS: SettingsSection[] = [
+  {
+    id: "pending",
+    label: "Precisa de você",
+    title: "Precisa de você",
+    question: "Tudo que está esperando um gesto seu. Resolveu, some daqui.",
+    icon: Bell,
+    group: "inicio",
+    busca: ["pendência", "atenção", "aviso", "conectar", "login", "falta"],
+  },
   {
     id: "profile",
     label: "Perfil",
     title: "Perfil e preferências",
     question: "Seu nome, avatar e como você se identifica no app.",
     icon: User,
-    group: "interface",
+    group: "voce",
     busca: ["perfil", "avatar", "foto", "imagem", "nome", "usuário", "identidade", "você", "atalho", "som"],
   },
   {
@@ -119,8 +173,17 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Aparência",
     question: "Como o app se parece e o que ele lembra entre reinícios.",
     icon: Palette,
-    group: "interface",
+    group: "voce",
     busca: ["tema", "escuro", "claro", "cor", "fonte", "densidade", "aparência"],
+  },
+  {
+    id: "dictation",
+    label: "Ditado",
+    title: "Ditado",
+    question: "Falar no lugar de digitar, em pt-BR e sem sair da máquina.",
+    icon: Mic,
+    group: "voce",
+    busca: ["microfone", "mic", "voz", "ditado", "atalho", "vocabulário", "fala", "push-to-talk"],
   },
   {
     id: "tray",
@@ -128,27 +191,46 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     title: "Barra de menus",
     question: "O que acontece ao fechar a janela e o que o instrumento mostra.",
     icon: PanelTop,
-    group: "interface",
+    group: "voce",
     busca: ["tray", "barra de menus", "menubar", "fechar janela", "ícone", "dock"],
+  },
+  {
+    id: "machine",
+    label: "Todos os motores",
+    title: "Motores",
+    question: "Quais motores existem aqui, em que versão, e com conta conectada ou não.",
+    icon: SquareTerminal,
+    group: "motores",
+    busca: ["motor", "cli", "versão", "instalar", "atualizar", "login", "path"],
+  },
+  ...SECOES_DE_MOTOR,
+  {
+    id: "models",
+    label: "Modelos e preços",
+    title: "Modelos e preços",
+    question: "Quais modelos entram no seletor dos motores e quanto custam.",
+    icon: Layers,
+    group: "motores",
+    busca: ["modelo", "opus", "sonnet", "gpt", "gemini", "preço", "token", "catálogo"],
+  },
+  {
+    id: "ledger",
+    label: "Uso e custo",
+    title: "Uso e custo",
+    question:
+      "Quanto da janela do plano já foi usada e quanto os turnos custaram em US$.",
+    icon: CircleDollarSign,
+    group: "uso",
+    busca: ["custo", "dólar", "gasto", "limite", "janela de uso", "plano", "histórico"],
   },
   {
     id: "new-chats",
     label: "Novas conversas",
     title: "Novas conversas",
-    question: "Com o que uma conversa nova começa: agent, modelo e esforço.",
+    question: "Com o que uma conversa nova começa: motor, modelo e esforço.",
     icon: Bot,
     group: "conversas",
     busca: ["agent padrão", "modelo padrão", "esforço", "nova conversa", "default"],
-  },
-  {
-    id: "autopilot",
-    label: "Vigias e automação",
-    title: "Vigias e automação",
-    question:
-      "O que o app faz sozinho enquanto ninguém olha: retomar, vigiar e responder.",
-    icon: Radar,
-    group: "conversas",
-    busca: ["auto-revive", "rate limit", "retomar", "vigia", "acordado", "sono", "dormir", "caffeinate"],
   },
   {
     id: "presets",
@@ -161,21 +243,22 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
   },
   {
     id: "suggestions",
-    label: "Sugestões",
-    title: "Sugestões",
-    question: "Qual modelo escreve as sugestões automáticas do composer.",
+    label: "Modelo auxiliar",
+    title: "Modelo auxiliar",
+    question: "Um modelo leve que faz os trabalhos pequenos em volta das conversas.",
     icon: Sparkles,
     group: "conversas",
-    busca: ["sugestão", "helper", "haiku", "composer"],
+    busca: ["sugestão", "helper", "haiku", "composer", "auxiliar", "título", "recibo", "lições"],
   },
   {
-    id: "dictation",
-    label: "Ditado",
-    title: "Ditado",
-    question: "Falar no lugar de digitar, em pt-BR e sem sair da máquina.",
-    icon: Mic,
-    group: "conversas",
-    busca: ["microfone", "mic", "voz", "ditado", "atalho", "vocabulário", "fala", "push-to-talk"],
+    id: "autopilot",
+    label: "Vigias e automação",
+    title: "Vigias e automação",
+    question:
+      "O que o app faz sozinho enquanto ninguém olha: retomar, vigiar e responder.",
+    icon: Radar,
+    group: "automacao",
+    busca: ["auto-revive", "rate limit", "retomar", "vigia", "acordado", "sono", "dormir", "caffeinate"],
   },
   {
     id: "missions",
@@ -184,46 +267,8 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     badge: "beta",
     question: "Cada missão executa um plano de voo salvo, em fases com gates.",
     icon: Waypoints,
-    group: "conversas",
+    group: "automacao",
     busca: ["missão", "plano de voo", "fase", "gate"],
-  },
-  {
-    id: "machine",
-    label: "Agentes na máquina",
-    title: "Agentes na máquina",
-    question: "Quais CLIs de agent existem aqui, em que versão e logadas ou não.",
-    icon: Cpu,
-    group: "agentes",
-    busca: ["claude", "codex", "antigravity", "agy", "cli", "versão", "instalar", "atualizar", "login", "path"],
-  },
-  {
-    id: "models",
-    label: "Modelos",
-    title: "Modelos",
-    question: "Quais modelos entram no seletor dos agents e quanto custam.",
-    icon: Layers,
-    group: "agentes",
-    busca: ["modelo", "opus", "sonnet", "gpt", "gemini", "preço", "token", "catálogo"],
-  },
-  {
-    id: "hooks",
-    label: "Sessões no terminal",
-    title: "Sessões no terminal",
-    question:
-      "Sessões abertas fora do app aparecendo no Painel e no tray, só de leitura.",
-    icon: SquareTerminal,
-    group: "agentes",
-    busca: ["hook", "terminal", "statusline", "sessão externa"],
-  },
-  {
-    id: "ledger",
-    label: "Uso e custo",
-    title: "Uso e custo",
-    question:
-      "Quanto da janela do plano já foi usada e quanto os turnos custaram em US$.",
-    icon: CircleDollarSign,
-    group: "agentes",
-    busca: ["custo", "dólar", "gasto", "limite", "janela de uso", "plano", "ledger"],
   },
   {
     id: "sandbox",
@@ -232,28 +277,18 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     question:
       "O que o sistema operacional barra quando um agente roda aqui, e em quais modos.",
     icon: ShieldCheck,
-    group: "capacidades",
+    group: "seguranca",
     busca: ["sandbox", "confinamento", "seatbelt", "sandbox-exec", "escrita", "segurança", "modo"],
   },
   {
-    id: "resources",
-    label: "Navegador e desktop",
-    title: "Navegador e desktop",
+    id: "desktop",
+    label: "Controle do computador",
+    title: "Controle do computador",
     question:
-      "Quais recursos locais podem ser operados e quem controla o acesso por run.",
+      "O que o sistema deixa a Frota ver e operar na tela. Cada turno ainda pede a você.",
     icon: MonitorCog,
-    group: "capacidades",
-    busca: ["navegador", "browser", "chromium", "chrome", "desktop", "macos", "computer use", "playwright", "recurso", "permissão"],
-  },
-  {
-    id: "extensions",
-    label: "Skills e plugins",
-    title: "Skills e plugins",
-    question:
-      "Quais extensões existem, quem as recebe e quais capabilities pedem.",
-    icon: Puzzle,
-    group: "extensoes",
-    busca: ["skill", "plugin", "extensão", "comando", "slash", "manifesto", "capability", "fingerprint"],
+    group: "seguranca",
+    busca: ["desktop", "computer use", "tela", "acessibilidade", "gravação de tela", "permissão", "macos"],
   },
   {
     id: "services",
@@ -263,15 +298,6 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: GitPullRequest,
     group: "conexoes",
     busca: ["gh", "github", "pr", "pull request", "conta", "merge", "checks", "repositório", "serviço", "integração", "gitlab"],
-  },
-  {
-    id: "integrations",
-    label: "MCPs",
-    title: "MCPs",
-    question: null,
-    icon: Network,
-    group: "conexoes",
-    busca: ["mcp", "servidor", "integração", "ferramenta externa"],
   },
   {
     id: "companion",
@@ -291,10 +317,45 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     group: "app",
     busca: ["versão", "sobre", "onboarding", "refazer"],
   },
+  {
+    id: "integrations",
+    label: "MCPs",
+    title: "MCPs",
+    question: null,
+    icon: Network,
+    group: "projeto",
+    busca: ["mcp", "servidor", "integração", "ferramenta externa"],
+  },
+  {
+    id: "extensions",
+    label: "Skills e plugins",
+    title: "Skills e plugins",
+    question:
+      "Quais extensões existem neste projeto, que motores as recebem e o que pedem.",
+    icon: Puzzle,
+    group: "projeto",
+    busca: ["skill", "plugin", "extensão", "comando", "slash", "manifesto", "capability", "fingerprint"],
+  },
+  {
+    id: "resources",
+    label: "Navegador",
+    title: "Navegador do projeto",
+    question: "O navegador que a Frota mantém para este projeto, e quem pode ligá-lo.",
+    icon: Globe,
+    group: "projeto",
+    busca: ["navegador", "browser", "chromium", "chrome", "playwright", "recurso", "ligar"],
+  },
 ]
 
-/** A seção que abre quando não há pedido válido. */
+/** A seção que abre quando não há pedido válido: o que espera por você. */
 export const DEFAULT_SECTION: SectionId = SETTINGS_SECTIONS[0].id
+
+/** Onde moram os hooks de terminal hoje: na página do primeiro motor que os
+ *  tem (ADR-268). Sem nenhum, a visão geral dos motores. */
+export function secaoDosHooks(): SectionId {
+  const motor = hooksAgents().find((a) => a.kind === "agent" && a.available)
+  return motor ? secaoDoMotor(motor.id) : "machine"
+}
 
 /** Ids que já existiram → onde o conteúdo deles mora hoje. Entrada aqui é
  *  contrato: some daqui só quando o id não puder mais chegar de lugar nenhum. */
@@ -306,6 +367,9 @@ export const LEGACY_SECTION_IDS: Record<string, SectionId> = {
   // "github" era uma seção por FORNECEDOR: o rail cresceria um item por vendor
   // (ADR-086). Virou "services", com o provedor como CARTÃO.
   github: "services",
+  // "Sessões no terminal" era uma seção com uma linha por motor; cada linha
+  // foi para a página do seu motor (ADR-268).
+  hooks: secaoDosHooks(),
 }
 
 const KNOWN = new Set<string>(SETTINGS_SECTIONS.map((s) => s.id))
@@ -333,7 +397,7 @@ export function resolveSection(
  *  seções sem capability (1ª camada de esconder); grupo que ficou sem seção
  *  some junto (nada de rótulo órfão no rail). */
 export function sectionsByGroup(available?: readonly SectionId[]): {
-  group: { id: GroupId; label: string }
+  group: { id: GroupId; label: string; zona: Zona }
   sections: SettingsSection[]
 }[] {
   const pool = available?.length ? new Set<string>(available) : KNOWN
@@ -345,15 +409,20 @@ export function sectionsByGroup(available?: readonly SectionId[]): {
   })).filter((entry) => entry.sections.length > 0)
 }
 
+/** A zona de uma seção: o rail e a barra do painel dizem o escopo por ela. */
+export function zonaDaSecao(id: SectionId): Zona {
+  const group = sectionDef(id).group
+  return SETTINGS_GROUPS.find((g) => g.id === group)?.zona ?? "mac"
+}
+
 /** As seções que ESTE BUILD tem, já filtradas por capability.
  *
- *  Mora aqui e não no dialog porque agora existem DOIS consumidores — o rail e
- *  a paleta ⌘K — e a regra tem que ser a mesma nos dois. Seção escondida no
- *  rail e alcançável pela paleta seria um destino fantasma. */
+ *  Mora aqui e não no dialog porque existem DOIS consumidores — o rail e a
+ *  paleta ⌘K — e a regra tem que ser a mesma nos dois. Seção escondida no
+ *  rail e alcançável pela paleta seria um destino fantasma. As páginas de
+ *  motor já nascem filtradas pelo registry (`motoresDaMaquina`). */
 export function secoesDisponiveis(): SectionId[] {
-  return SETTINGS_SECTIONS.filter(
-    (s) => s.id !== "hooks" || hooksAgents().length > 0,
-  ).map((s) => s.id)
+  return SETTINGS_SECTIONS.map((s) => s.id)
 }
 
 /** O termo casa com a seção? Junta rótulo, título, a pergunta e as palavras
@@ -364,7 +433,7 @@ export function casaBusca(s: SettingsSection, termo: string): boolean {
     t
       .toLowerCase()
       .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[̀-ͯ]/g, "")
   const alvo = normaliza(
     [s.label, s.title, s.question ?? "", ...s.busca].join(" "),
   )
@@ -374,39 +443,22 @@ export function casaBusca(s: SettingsSection, termo: string): boolean {
     .every((palavra) => alvo.includes(palavra))
 }
 
-/** Os fatos que o rail consulta pra decidir onde pintar "precisa de atenção".
- *  Campos OPCIONAIS de propósito: ausente = ainda não olhamos, e não olhar
- *  nunca pode virar alarme. */
-export interface FatosDoRail {
-  detected?: Record<string, { installed: boolean; auth: string }>
-  gh?: { installed: boolean; contas: number }
-}
-
 /**
  * A seção precisa de atenção?
  *
- * A REGRA, e ela é a decisão inteira desta função: atenção é **coisa
- * meio-configurada que VOCÊ pode consertar**. Não é capacidade ausente por
- * escolha, e não é limitação da máquina.
+ * Lê a MESMA lista da página "Precisa de você" (`pendencias`): o ponto do rail
+ * e a lista não podem discordar (ADR-268). A regra de o que é pendência mora
+ * lá; aqui só se decide em que seção ela acende:
  *
- *   CLI instalada e DESLOGADA  → atenção. Você instalou, falta terminar.
- *   CLI não instalada          → não. Talvez você não queira aquele motor.
- *   `gh` instalado e sem conta → atenção. Mesma lógica.
- *   `gh` ausente               → não. É opcional; o resto do app funciona.
- *   máquina sem sandbox        → NUNCA. É fato do sistema, não tem o que
- *                                consertar, e um ponto que não apaga é pior
- *                                que ponto nenhum: ensina a ignorar o ponto.
+ *   "Precisa de você"   → qualquer pendência.
+ *   "Todos os motores"  → pendência de algum motor.
+ *   qualquer outra      → pendência daquela seção.
  */
 export function precisaDeAtencao(id: SectionId, f: FatosDoRail): boolean {
-  if (id === "machine") {
-    return Object.values(f.detected ?? {}).some(
-      (p) => p.installed && p.auth === "missing",
-    )
-  }
-  if (id === "services") {
-    return f.gh ? f.gh.installed && f.gh.contas === 0 : false
-  }
-  return false
+  const lista = pendencias(f)
+  if (id === "pending") return lista.length > 0
+  if (id === "machine") return lista.some((p) => motorDaSecao(p.secao) !== null)
+  return lista.some((p) => p.secao === id)
 }
 
 /** Metadados de uma seção (título/pergunta do cabeçalho). */

@@ -40,7 +40,19 @@ describe("exceções do turno", () => {
     const [e] = excecoesDoTurno({ ...manifest, externalDesktopMcps: ["computer-use"] }, "Claude Code")
     expect(e.texto).toContain("controlar o computador fora da Frota, pelo computer-use")
     expect(e.detalhe).toContain("sem Revogar")
-    expect(e.detalhe).toContain("Controle do desktop")
+    // ADR-268: o controle de terceiro mora na página do motor, que é quem o tem.
+    expect(e.detalhe).toContain("Configurações › Motores › Claude Code")
+    expect(e.acao).toEqual({ tipo: "configuracoes", rotulo: "Configurar", secao: "motor:engine" })
+  })
+
+  it("motor sem o acompanhamento diz o que falta e leva ao gesto na página dele (ADR-268)", () => {
+    const [e] = excecoesDoTurno({ ...manifest, missingFrotaChannels: ["work"] }, "Antigravity")
+    expect(e.id).toBe("sem-acompanhamento")
+    expect(e.texto).toBe("O Antigravity não está conectado ao acompanhamento da Frota.")
+    expect(e.detalhe).toContain("título automático")
+    expect(e.acao).toEqual({ tipo: "configuracoes", rotulo: "Conectar", secao: "motor:engine" })
+    // Canal desconhecido não vira exceção: o front só fala do que conhece.
+    expect(excecoesDoTurno({ ...manifest, missingFrotaChannels: ["outro"] }, "Antigravity")).toEqual([])
   })
 
   it("capacidade que não entrou diz qual, por quê, e o gesto quando há", () => {

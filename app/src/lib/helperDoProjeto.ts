@@ -30,7 +30,7 @@ export interface FontesDoHelper {
   /** Espelho de `.frota/config.toml` do projeto, ou `undefined` quando a
    *  config nunca foi lida (projeto não-ativo é o caso comum). */
   cfg: Pick<ProjectConfig, "helper"> | undefined
-  /** Default global (Configurações › Sugestões; `null` = desligado). */
+  /** Default global (Configurações › Modelo auxiliar; `null` = desligado). */
   global: string | null
 }
 

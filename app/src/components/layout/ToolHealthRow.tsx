@@ -95,7 +95,7 @@ function linha(item: ToolHealthItem): {
       icon: <Download className="size-3.5 shrink-0 text-muted-foreground" />,
       alarme: false,
       title: `Atualização do ${item.label} disponível`,
-      detail: `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Agentes na máquina`,
+      detail: `v${item.current ?? "?"} → v${item.latest ?? "?"} · Atualizar em Configurações ▸ Motores ▸ ${item.label}`,
     }
   if (item.kind === "modes")
     return {

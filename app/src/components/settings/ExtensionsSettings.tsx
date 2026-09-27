@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { listen } from "@tauri-apps/api/event"
 import { Boxes, RefreshCcw, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { PillSelect } from "@/components/ui/PillSelect"
+import { EscopoDoProjeto, useProjetoDasConfiguracoes } from "@/components/settings/projetoDasConfiguracoes"
 import {
   Block,
   BlockTitle,
@@ -30,9 +30,7 @@ import {
   stopPluginRuntime,
   type PluginInventory,
 } from "@/lib/plugins"
-import { initialMcpProjectId } from "@/lib/mcp"
 import { readProjectCommands } from "@/lib/sources"
-import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
 import { isTauri } from "@/lib/db"
 
@@ -50,7 +48,7 @@ function originLabel(entry: ExtensionEntry): string {
   if (entry.kind === "plugin-skill") {
     return `${scope} · plugin revisado · expandida pela Frota`
   }
-  return `${entry.source} · ${scope} · depende do provider`
+  return `${entry.source} · ${scope} · o motor decide`
 }
 
 function ExtensionRow({ entry }: { entry: ExtensionEntry }) {
@@ -74,16 +72,8 @@ function ExtensionRow({ entry }: { entry: ExtensionEntry }) {
 }
 
 export function ExtensionsSettings() {
-  const projects = useApp((state) => state.projects)
-  const activeProjectId = useApp((state) => state.activeProjectId)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const project = useMemo(() => {
-    const id =
-      selectedProjectId && projects.some((item) => item.id === selectedProjectId)
-        ? selectedProjectId
-        : initialMcpProjectId(projects, activeProjectId)
-    return projects.find((item) => item.id === id) ?? null
-  }, [activeProjectId, projects, selectedProjectId])
+  // O projeto vem do seletor único do rail (ADR-268).
+  const { project } = useProjetoDasConfiguracoes()
 
   const [entries, setEntries] = useState<ExtensionEntry[]>([])
   const [plugins, setPlugins] = useState<PluginInventory | null>(null)
@@ -201,19 +191,8 @@ export function ExtensionsSettings() {
     <div>
       <SectionHeader
         title="Skills e plugins"
-        description="Quais extensões existem, para quais agents valem e que código a Frota se recusa a executar sem consentimento."
-        escopo={
-          project ? (
-            <PillSelect
-              value={project.id}
-              onValueChange={setSelectedProjectId}
-              options={projects.map((item) => ({ value: item.id, label: item.name }))}
-              triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
-              title="Escopo deste painel; não muda o projeto ativo do app"
-              aria-label="Projeto das skills"
-            />
-          ) : null
-        }
+        description="Quais extensões existem, para quais motores valem e que código a Frota se recusa a executar sem consentimento."
+        escopo={project ? <EscopoDoProjeto nome={project.name} /> : null}
         action={
           <Button
             type="button"
@@ -229,7 +208,7 @@ export function ExtensionsSettings() {
       />
 
 
-      <BlockTitle hint="O inventário é calculado por adapter; a mesma skill compartilhada aparece uma vez com todos os destinos que a recebem.">
+      <BlockTitle hint="Cada motor lê as suas; a mesma skill compartilhada aparece uma vez, com todos os motores que a recebem.">
         Skills e comandos efetivos
       </BlockTitle>
       {entries.length > 0 ? (
@@ -254,8 +233,8 @@ export function ExtensionsSettings() {
       )}
 
       <Block>
-        <BlockTitle hint="Pacotes globais usam frota-plugin.json v1; manifesto, arquivos contribuídos e código entram no fingerprint de consentimento.">
-          Plugins
+        <BlockTitle hint="Valem para todos os projetos. Manifesto, arquivos e código entram no consentimento: mudou algo, a Frota pede de novo.">
+          Plugins deste Mac
         </BlockTitle>
         <div className="space-y-2">
           {plugins?.plugins.map((plugin) => (

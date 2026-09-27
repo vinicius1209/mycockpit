@@ -1,6 +1,6 @@
-// Configurações dos HOOKS DE STATUS (hooks-plan H1) — seção própria "Sessões
-// no terminal" (saiu de dentro de "CLIs instaladas": observar sessões abertas
-// fora do app é uma capacidade, não um detalhe do binário instalado).
+// Configurações dos HOOKS DE STATUS (hooks-plan H1). Foi seção própria,
+// "Sessões no terminal", com uma linha por motor; desde a ADR-268 cada linha
+// mora na página do seu motor, que é onde a pessoa procura o que ele precisa.
 // A instalação é GESTO do usuário (nunca no boot), com
 // transparência total: mostra O QUE será escrito no config de hooks de cada
 // CLI (as entradas entram AO LADO das existentes, nunca substituem), backup
@@ -12,10 +12,7 @@ import { invoke } from "@tauri-apps/api/core"
 import { Check, ChevronDown, Loader2 } from "lucide-react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { Switch } from "@/components/ui/switch"
-import { SectionHeader } from "@/components/settings/parts"
-import { sectionDef } from "@/components/settings/sections"
 import { type AgentDef } from "@/lib/agents"
-import { hooksAgents } from "@/lib/agentRoster"
 import { isTauri } from "@/lib/db"
 import { cn } from "@/lib/utils"
 
@@ -54,7 +51,7 @@ function textoDesatualizado(status: HooksStatus): string {
   return `Script desatualizado: ${versao}. Reinstale para aplicar as melhorias, entre elas parar de esperar o tempo cheio a cada pedido quando o app não responde.`
 }
 
-function HooksRow({ def }: { def: AgentDef }) {
+export function HooksRow({ def }: { def: AgentDef }) {
   const [status, setStatus] = useState<HooksStatus | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -266,30 +263,15 @@ function HooksRow({ def }: { def: AgentDef }) {
   )
 }
 
-export function HooksSettings() {
-  const providers = hooksAgents()
-  // nenhum motor com hooks (build sem os três integrados): o bloco some
-  // inteiro (degradação honesta).
-  if (providers.length === 0) return null
-
+/** O que os hooks fazem, dito uma vez acima da linha do motor. */
+export function ExplicacaoDosHooks() {
   return (
-    <div>
-      <SectionHeader
-        title={sectionDef("hooks").title}
-        description={sectionDef("hooks").question}
-      />
-      <p className="mb-2 text-[12px] leading-snug text-muted-foreground">
-        Sessões abertas direto no terminal aparecem no Painel e no tray com
-        status honesto (trabalhando, esperando você, ociosa). O app só
-        observa: nada é enviado às sessões e nada fica salvo entre reinícios.
-        Fail-open: com o app fechado, o hook falha em silêncio em menos de 1s
-        e a CLI segue normal.
-      </p>
-      <ul className="flex flex-col gap-1.5">
-        {providers.map((def) => (
-          <HooksRow key={def.id} def={def} />
-        ))}
-      </ul>
-    </div>
+    <p className="mb-2 text-[12px] leading-snug text-muted-foreground">
+      Sessões abertas direto no terminal aparecem no Painel e no tray com
+      status honesto (trabalhando, esperando você, ociosa). O app só
+      observa: nada é enviado às sessões e nada fica salvo entre reinícios.
+      Com o app fechado, o hook falha em silêncio em menos de 1s e a CLI
+      segue normal.
+    </p>
   )
 }

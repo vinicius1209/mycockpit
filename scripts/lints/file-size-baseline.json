@@ -14,7 +14,7 @@
     "lib/fleet/send.test.ts": 975,
     "lib/fleet/send.ts": 711,
     "src-tauri/adapters.rs": 7515,
-    "src-tauri/agent.rs": 2320,
+    "src-tauri/agent.rs": 2317,
     "src-tauri/codex_appserver.rs": 1963,
     "src-tauri/companion.rs": 3065,
     "src-tauri/context_gateway.rs": 1321,

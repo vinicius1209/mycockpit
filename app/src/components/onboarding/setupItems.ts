@@ -9,7 +9,7 @@
 //   3. item de capacidade que esta máquina não tem some da lista inteira, em
 //      vez de virar linha morta que nunca completa (§5.1).
 
-import type { SectionId } from "@/components/settings/sections"
+import { secaoDosHooks, type SectionId } from "@/components/settings/sections"
 
 export type GuideItemId =
   | "agent"
@@ -85,7 +85,8 @@ const CATALOG: {
   {
     id: "hooks",
     label: "Instalar hooks para enxergar sessões do terminal",
-    target: { kind: "settings", section: "hooks" },
+    // Os hooks moram na página do motor que os tem (ADR-268).
+    target: { kind: "settings", section: secaoDosHooks() },
     optional: true,
     needs: "hooks",
   },

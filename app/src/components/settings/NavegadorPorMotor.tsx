@@ -11,15 +11,40 @@ import { browserMcpLabel, browserMcpStatus, setBrowserMcpEnabled } from "@/lib/w
 /** A frase de cada motor, derivada do escopo, nunca do nome. Puro. */
 export function comoONavegadorChega(agent: Pick<AgentDef, "mcpEscopo" | "workMcpGlobalEnv">): string {
   if (agent.mcpEscopo === "por-run") {
-    return "pelo frota-browser em todo turno, e por um MCP do projeto marcado como navegador"
+    return "automático em todo turno, e por um MCP do projeto marcado como navegador"
   }
   if (agent.workMcpGlobalEnv) {
-    return "pelo frota-browser cadastrado no CLI (vale para todos os projetos)"
+    return "cadastrado no CLI uma vez, vale para todos os projetos"
   }
   if (agent.mcpEscopo === "por-projeto") {
     return "ainda sem caminho: este motor lê o MCP do próprio projeto e a Frota não escreve nele"
   }
   return "ainda sem caminho neste motor"
+}
+
+/** A linha de UM motor. `soCorpo` tira o nome do motor da frente quando a
+ *  linha mora na página do próprio motor (ADR-268), onde o título é o canal. */
+export function NavegadorDoMotor({ agent, soCorpo = false }: { agent: AgentDef; soCorpo?: boolean }) {
+  // Sozinha, a frase abre a linha: começa em maiúscula.
+  const frase = comoONavegadorChega(agent)
+  return (
+    <div className={soCorpo ? undefined : "py-1.5 first:pt-0 last:pb-0"}>
+      <p className="text-[12px] leading-snug">
+        {!soCorpo && <span className="font-medium text-foreground">{agent.shortLabel} · </span>}
+        <span className="text-muted-foreground">{soCorpo ? frase.replace(/^./, (c) => c.toUpperCase()) : frase}</span>
+      </p>
+      {agent.workMcpGlobalEnv && (
+        <CadastroGlobalDoMotor
+          agent={agent}
+          consultar={browserMcpStatus}
+          alterar={setBrowserMcpEnabled}
+          rotuloDoEstado={browserMcpLabel}
+          rotuloConectar="Usar o navegador da Frota"
+          alvo="o navegador da Frota"
+        />
+      )}
+    </div>
+  )
 }
 
 export function NavegadorPorMotor({ agents = AGENTS }: { agents?: AgentDef[] }) {
@@ -28,22 +53,7 @@ export function NavegadorPorMotor({ agents = AGENTS }: { agents?: AgentDef[] }) 
   return (
     <div className="mt-2 divide-y divide-border/40">
       {motores.map((agent) => (
-        <div key={agent.id} className="py-1.5 first:pt-0 last:pb-0">
-          <p className="text-[12px] leading-snug">
-            <span className="font-medium text-foreground">{agent.shortLabel}</span>
-            <span className="text-muted-foreground"> · {comoONavegadorChega(agent)}</span>
-          </p>
-          {agent.workMcpGlobalEnv && (
-            <CadastroGlobalDoMotor
-              agent={agent}
-              consultar={browserMcpStatus}
-              alterar={setBrowserMcpEnabled}
-              rotuloDoEstado={browserMcpLabel}
-              rotuloConectar="Usar o navegador da Frota"
-              alvo="o navegador da Frota"
-            />
-          )}
-        </div>
+        <NavegadorDoMotor key={agent.id} agent={agent} />
       ))}
     </div>
   )

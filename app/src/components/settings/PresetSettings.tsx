@@ -209,8 +209,8 @@ export function PresetSettings() {
                     )}
                     title={
                       p.scope === "projeto"
-                        ? "Vale só neste projeto (.mycockpit/agents)"
-                        : "Vale em todos os projetos (~/.mycockpit/agents)"
+                        ? "Vale só neste projeto (.frota/agents)"
+                        : "Vale em todos os projetos (~/.frota/agents)"
                     }
                   >
                     {p.scope}
@@ -267,9 +267,9 @@ export function PresetSettings() {
                     title={
                       s === "projeto"
                         ? projectPath
-                          ? `Só neste projeto · ${projectPath}/.mycockpit/agents`
+                          ? `Só neste projeto · ${projectPath}/.frota/agents`
                           : "Abra um projeto para criar uma persona só dele"
-                        : "Em todos os projetos · ~/.mycockpit/agents"
+                        : "Em todos os projetos · ~/.frota/agents"
                     }
                     className={cn(
                       "h-6 rounded-md px-2.5 text-[12px] transition-colors disabled:opacity-40",

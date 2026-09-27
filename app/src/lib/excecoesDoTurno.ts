@@ -38,6 +38,14 @@ export interface ExcecaoDoTurno {
 
 const CONFIGURAR_MCP: AcaoDaExcecao = { tipo: "configuracoes", rotulo: "Configurar", secao: "integrations" }
 
+/** A página do motor nas Configurações (ADR-268): é lá que moram os canais da
+ *  Frota e os controles de terceiro de cada motor. */
+const paginaDoMotor = (agentId: string, rotulo: string): AcaoDaExcecao => ({
+  tipo: "configuracoes",
+  rotulo,
+  secao: `motor:${agentId}`,
+})
+
 function acaoDaOmissao(code: McpPlanIssueCode): AcaoDaExcecao | null {
   if (code === "browser-offline") return { tipo: "ligar-navegador", rotulo: "Ligar" }
   if (code === "source-missing" || code === "incompatible" || code === "health-unavailable") return CONFIGURAR_MCP
@@ -68,8 +76,21 @@ export function excecoesDoTurno(m: EffectiveRunManifest | undefined, motor: stri
       id: "computador-de-terceiro",
       tom: "atencao",
       texto: `Este turno pode controlar o computador fora da Frota, pelo ${nomes(m.externalDesktopMcps)}.`,
-      detalhe: "Sem pedido na tela e sem Revogar. Desative em Configurações › Navegador e desktop › Controle do desktop.",
-      acao: { tipo: "configuracoes", rotulo: "Configurar", secao: "resources" },
+      detalhe: `Sem pedido na tela e sem Revogar. Desative em Configurações › Motores › ${motor}.`,
+      acao: paginaDoMotor(m.agentId, "Configurar"),
+    })
+  }
+  // O acompanhamento é o canal que dá título à conversa, plano e etapas. Sem
+  // ele o motor trabalha, mas a Frota fica cega, e antes isso só aparecia na
+  // aba "O que o agente vê" apontando para uma página onde o gesto nem era
+  // linha (26/09/2026). Info, não atenção: o turno funciona.
+  if (m.missingFrotaChannels?.includes("work")) {
+    excecoes.push({
+      id: "sem-acompanhamento",
+      tom: "info",
+      texto: `O ${motor} não está conectado ao acompanhamento da Frota.`,
+      detalhe: "A conversa não ganha título automático, e plano e etapas não aparecem.",
+      acao: paginaDoMotor(m.agentId, "Conectar"),
     })
   }
   // Com o navegador da Frota no turno, um MCP vinculado ao navegador que ficou

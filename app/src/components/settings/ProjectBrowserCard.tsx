@@ -25,7 +25,6 @@ import {
   type BrowserStatus,
   type BrowserPilotStatus,
 } from "@/lib/browser"
-import { NavegadorPorMotor } from "@/components/settings/NavegadorPorMotor"
 import { AgentePodeLigarNavegador } from "@/components/settings/AgentePodeLigarNavegador"
 import { listenWorkEvents } from "@/lib/work"
 import type { McpServer } from "@/lib/mcp"
@@ -203,7 +202,10 @@ export function ProjectBrowserCard({
           nunca abre outra janela.
         </p>
         {projectPath && <AgentePodeLigarNavegador projectPath={projectPath} />}
-        <NavegadorPorMotor />
+        <p className="mt-2 text-[12px] leading-snug text-muted-foreground">
+          Como ele chega a cada motor, e o cadastro de quem precisa, fica na
+          página de cada motor, em Motores.
+        </p>
         {status?.session && pilot && (
           <p className="mt-2 text-[11px] text-muted-foreground">
             Piloto: {pilot.label}. {pilot.mode === "idle" ? "O painel ou um run pode assumir." : "Outras superfícies permanecem em observação."}

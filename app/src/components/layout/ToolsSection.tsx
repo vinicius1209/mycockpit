@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { ToolHealthRow } from "@/components/layout/ToolHealthRow"
 import { agentLabel } from "@/lib/agent"
+import { secaoDoMotor, type SectionId } from "@/components/settings/sections"
 import {
   listModelProposals,
   listModelRetirements,
@@ -192,7 +193,8 @@ export function ToolsSection({
   openSettings,
 }: {
   state: ToolsSectionState
-  openSettings: (secao: "machine" | "models") => void
+  /** A página do motor desde a ADR-268: cada linha abre onde o gesto dela mora. */
+  openSettings: (secao: SectionId) => void
 }) {
   if (!state.hasSection) return null
   return (
@@ -205,7 +207,7 @@ export function ToolsSection({
         <ToolHealthRow
           key={`${item.agent}:auth`}
           item={item}
-          onOpen={() => openSettings("machine")}
+          onOpen={() => openSettings(secaoDoMotor(item.agent))}
         />
       ))}
       {state.limitedIds.map((id) => (
@@ -224,7 +226,7 @@ export function ToolsSection({
         <ToolHealthRow
           key={`${item.agent}:update`}
           item={item}
-          onOpen={() => openSettings("machine")}
+          onOpen={() => openSettings(secaoDoMotor(item.agent))}
           onDismiss={() => state.dismissUpdate(item)}
         />
       ))}
@@ -249,7 +251,7 @@ export function ToolsSection({
         <ToolHealthRow
           key={item.id}
           item={item}
-          onOpen={() => openSettings("machine")}
+          onOpen={() => openSettings(secaoDoMotor(item.agent))}
         />
       ))}
     </>

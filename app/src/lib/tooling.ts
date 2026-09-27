@@ -128,6 +128,9 @@ export interface EffectiveRunManifest {
    *  provider deixa entrar, fora do pedido e do Revogar (ADR-225). Ausente em
    *  manifests anteriores a 22/09/2026. */
   externalDesktopMcps?: string[]
+  /** Canais da Frota que o turno deveria ter e não tem (ADR-268), por id
+   *  estável: `work` = acompanhamento. Ausente em manifests anteriores. */
+  missingFrotaChannels?: string[]
   notices: string[]
   /** Ausente em manifests anteriores ao preflight tipado. */
   omissions?: EffectiveCapabilityOmission[]
@@ -207,5 +210,5 @@ export function toolScopeLabel(scope: ToolScope): string {
 export function toolEnforceabilityLabel(
   value: ToolEnforceability,
 ): string {
-  return value === "hard" ? "controlado pela Frota" : "depende do provider"
+  return value === "hard" ? "controlado pela Frota" : "o motor decide"
 }

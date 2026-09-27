@@ -25,6 +25,8 @@ describe("canal de trabalho e cadastro global", () => {
     expect(workMcpAction("disabled")).toBe("Ativar")
     expect(workMcpAction("conflict")).toBeNull()
     expect(workMcpAction("unavailable")).toBeNull()
-    expect(workMcpLabel("configured")).toContain("Cadastro confirmado")
+    // ADR-268: o estado em palavras de gente, o mesmo nos três canais.
+    expect(workMcpLabel("configured")).toBe("Conectado")
+    expect(workMcpLabel("absent")).toBe("Não conectado")
   })
 })

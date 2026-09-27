@@ -1,5 +1,5 @@
-import { Radar } from "lucide-react"
-import { Card, CardBody } from "@/components/settings/parts"
+import { ChevronRight } from "lucide-react"
+import { Card } from "@/components/settings/parts"
 import { agentDef } from "@/lib/agents"
 import { type ProviderMcpInventory, type ProviderMcpServer } from "@/lib/mcp"
 import { toolEnforceabilityLabel, toolScopeLabel } from "@/lib/tooling"
@@ -31,31 +31,39 @@ function inventoryLabel(inventory: ProviderMcpInventory): string {
     .join(" · ")
 }
 
+/** Os canais da Frota que um motor de cadastro global lista no próprio CLI
+ *  (`work_gateway`, `browser_gateway`, `desktop_gateway::MCP_SERVER_NAME`).
+ *  Não são MCPs da pessoa: moram na página de cada motor (ADR-268), e aqui só
+ *  repetiriam a mesma coisa com outro nome. */
+const CANAIS_DA_FROTA = new Set(["frota-work", "frota-browser", "frota-desktop"])
+
+/** O inventário sem os canais da Frota. Puro. */
+export function semCanaisDaFrota(inventory: ProviderMcpInventory): ProviderMcpInventory {
+  return { ...inventory, servers: inventory.servers.filter((s) => !CANAIS_DA_FROTA.has(s.name)) }
+}
+
 export function ProviderMcpInventoryPanel({
   inventories,
 }: {
   inventories: ProviderMcpInventory[]
 }) {
   if (inventories.length === 0) return null
+  // Recolhido: repete a lista de cima pelo ângulo de cada motor. Serve a quem
+  // quer conferir o que o CLI de um motor tem cadastrado, não a primeira leitura.
   return (
-    <Card className="mt-3 bg-secondary/15">
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-background/60">
-          <Radar className="size-3.5 text-brass" />
-        </span>
-        <div className="min-w-0">
-          <h3 className="text-[13px] font-medium text-foreground">
-            Estado nos providers
-          </h3>
-          <p className="mt-0.5 text-[12px] leading-snug text-muted-foreground">
-            MCPs que já vivem no CLI ou no projeto. A Frota os mostra, mas não chama
-            configuração persistente de controle por run.
-          </p>
-        </div>
-      </div>
-      <CardBody>
+    <Card className="mt-3">
+    <details className="group">
+      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[13px] text-foreground select-none [&::-webkit-details-marker]:hidden">
+        <ChevronRight className="size-3.5 text-muted-foreground transition-transform group-open:rotate-90" />
+        O que cada motor tem no próprio CLI
+      </summary>
+      <div className="border-t border-border/40 px-3 py-2">
+        <p className="mb-2 text-[12px] leading-snug text-muted-foreground">
+          MCPs que já vivem no CLI ou no projeto. A Frota os mostra como estão;
+          quem decide como usar é o motor.
+        </p>
         <div className="divide-y divide-border/40">
-          {inventories.map((inventory) => {
+          {inventories.map(semCanaisDaFrota).map((inventory) => {
             const label = agentDef(inventory.agent)?.shortLabel ?? inventory.agent
             return (
               <div
@@ -89,7 +97,8 @@ export function ProviderMcpInventoryPanel({
             )
           })}
         </div>
-      </CardBody>
+      </div>
+    </details>
     </Card>
   )
 }

@@ -43,7 +43,7 @@ describe("ProviderResourcePanel", () => {
     expect(html).toContain("Controle do desktop")
     expect(html).toContain("agy via playwright")
     expect(html).toContain("agy via computer-use")
-    expect(html).toContain("depende do provider")
+    expect(html).toContain("o motor decide")
     expect(html).toContain("não consegue conceder ou revogar por run")
   })
 

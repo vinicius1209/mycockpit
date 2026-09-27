@@ -64,9 +64,11 @@ describe("lista de itens", () => {
     expect(items.find((i) => i.id === "project")?.target).toEqual({
       kind: "add-project",
     })
+    // Desde a ADR-268 os hooks moram na página do motor: o primeiro do
+    // registry que os tem.
     expect(items.find((i) => i.id === "hooks")?.target).toEqual({
       kind: "settings",
-      section: "hooks",
+      section: "motor:claude-code",
     })
   })
 

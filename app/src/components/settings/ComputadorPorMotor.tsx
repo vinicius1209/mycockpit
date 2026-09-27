@@ -23,10 +23,10 @@ import { desktopMcpLabel, desktopMcpStatus, setDesktopMcpEnabled } from "@/lib/w
 /** A frase de cada motor, derivada do escopo, nunca do nome. Puro. */
 export function comoOComputadorChega(agent: Pick<AgentDef, "mcpEscopo" | "workMcpGlobalEnv">): string {
   if (agent.mcpEscopo === "por-run") {
-    return "pelo frota-desktop em todo turno, quando as duas permissões acima estão concedidas"
+    return "automático em todo turno, quando as duas permissões do sistema estão concedidas"
   }
   if (agent.workMcpGlobalEnv) {
-    return "pelo frota-desktop cadastrado no CLI (vale para todos os projetos)"
+    return "cadastrado no CLI uma vez, vale para todos os projetos"
   }
   return "ainda sem caminho neste motor"
 }
@@ -95,16 +95,21 @@ function Terceiros({ agent, versao }: { agent: AgentDef; versao: number }) {
   )
 }
 
-function LinhaDoMotor({ agent }: { agent: AgentDef }) {
+/** A linha de UM motor. `soCorpo` tira o nome do motor da frente quando a
+ *  linha mora na página do próprio motor (ADR-268), onde o título é o canal. */
+export function LinhaDoMotor({ agent, soCorpo = false }: { agent: AgentDef; soCorpo?: boolean }) {
   // Cada leitura do CLI renova o que se sabe dos terceiros: o cadastro
   // global e o `computer-use` saem da MESMA tabela do motor.
   const [versao, setVersao] = useState(0)
   const reler = useCallback(() => setVersao((v) => v + 1), [])
   return (
-    <div className="py-1.5 first:pt-0 last:pb-0">
+    <div className={soCorpo ? undefined : "py-1.5 first:pt-0 last:pb-0"}>
       <p className="text-[12px] leading-snug">
-        <span className="font-medium text-foreground">{agent.shortLabel}</span>
-        <span className="text-muted-foreground"> · {comoOComputadorChega(agent)}</span>
+        {!soCorpo && <span className="font-medium text-foreground">{agent.shortLabel} · </span>}
+        <span className="text-muted-foreground">
+          {/* Sozinha, a frase abre a linha: começa em maiúscula. */}
+          {soCorpo ? comoOComputadorChega(agent).replace(/^./, (c) => c.toUpperCase()) : comoOComputadorChega(agent)}
+        </span>
       </p>
       {agent.workMcpGlobalEnv && (
         <CadastroGlobalDoMotor

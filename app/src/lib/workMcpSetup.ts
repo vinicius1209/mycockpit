@@ -34,32 +34,20 @@ export function workMcpAction(state: WorkMcpSetup["state"]): string | null {
   return null
 }
 
-export function browserMcpLabel(state: WorkMcpSetup["state"]): string {
-  return {
-    absent: "Navegador da Frota não conectado",
-    configured: "Cadastro confirmado no CLI",
-    disabled: "Cadastro desativado no CLI",
-    conflict: "Configuração diferente encontrada",
-    unavailable: "Não foi possível verificar o cadastro",
-  }[state] ?? "Estado desconhecido"
+// Os três canais têm os mesmos cinco estados, e a pessoa lê o mesmo idioma
+// nos três (ADR-268): o estado, não o mecanismo ("Conectado", nunca
+// "Cadastro confirmado no CLI"). O que o canal faz vem escrito na linha.
+const ROTULO_DO_ESTADO: Record<WorkMcpSetup["state"], string> = {
+  absent: "Não conectado",
+  configured: "Conectado",
+  disabled: "Desativado no CLI",
+  conflict: "Há outra entrada com o mesmo nome no CLI",
+  unavailable: "Não foi possível verificar",
 }
 
-export function desktopMcpLabel(state: WorkMcpSetup["state"]): string {
-  return {
-    absent: "Controle do computador da Frota não conectado",
-    configured: "Cadastro confirmado no CLI",
-    disabled: "Cadastro desativado no CLI",
-    conflict: "Configuração diferente encontrada",
-    unavailable: "Não foi possível verificar o cadastro",
-  }[state] ?? "Estado desconhecido"
-}
+const rotuloDoEstado = (state: WorkMcpSetup["state"]): string =>
+  ROTULO_DO_ESTADO[state] ?? "Estado desconhecido"
 
-export function workMcpLabel(state: WorkMcpSetup["state"]): string {
-  return {
-    absent: "Acompanhamento não conectado",
-    configured: "Cadastro confirmado no CLI",
-    disabled: "Cadastro desativado no CLI",
-    conflict: "Configuração diferente encontrada",
-    unavailable: "Não foi possível verificar o cadastro",
-  }[state] ?? "Estado desconhecido"
-}
+export const browserMcpLabel = rotuloDoEstado
+export const desktopMcpLabel = rotuloDoEstado
+export const workMcpLabel = rotuloDoEstado

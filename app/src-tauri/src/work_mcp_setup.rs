@@ -192,6 +192,40 @@ pub async fn desktop_mcp_status(agent: String) -> WorkMcpSetup {
     refresh(&agent, DESKTOP).await
 }
 
+/// Onde a pessoa resolve um canal da Frota ausente (ADR-268). Os três avisos
+/// do turno apontavam para três lugares diferentes ("MCPs", "Recursos
+/// locais", "Controle do desktop"), e o gesto do acompanhamento morava no
+/// rodapé de uma página onde ele nem era linha. Agora mora na página do motor.
+pub const ONDE_CONECTAR: &str = "Configurações › Motores, na página deste motor";
+
+/// Id estável do canal de trabalho no manifesto (`missingFrotaChannels`): o
+/// front decide a exceção do turno por ele, nunca pelo texto do aviso.
+pub const CANAL_TRABALHO: &str = "work";
+
+/// O aviso do acompanhamento no turno de um motor de cadastro global. Diz o
+/// que falta para a pessoa (título, plano, etapas), não o nome do MCP.
+pub fn aviso_do_acompanhamento(setup: Option<&WorkMcpSetup>) -> String {
+    match setup {
+        Some(setup) if setup.state == SetupState::Configured => format!(
+            "Ao iniciar este turno, o cadastro do acompanhamento havia sido verificado há {}s. Reverifique em {ONDE_CONECTAR} se alterou o CLI.",
+            setup.age_secs()
+        ),
+        _ => format!(
+            "Acompanhamento indisponível neste motor: a conversa não ganha título automático, e plano e etapas não aparecem. Conecte em {ONDE_CONECTAR}."
+        ),
+    }
+}
+
+/// Os canais da Frota que ESTE turno deveria ter e não tem. Só conta o que a
+/// pessoa pode resolver com um gesto: motor de cadastro global, fora do modo
+/// só leitura (que nunca recebe o canal), sem o gateway de trabalho de pé.
+pub fn canais_ausentes(global_env: bool, somente_leitura: bool, trabalho_presente: bool) -> Vec<String> {
+    if !global_env || somente_leitura || trabalho_presente {
+        return Vec::new();
+    }
+    vec![CANAL_TRABALHO.into()]
+}
+
 pub fn warm() {
     tauri::async_runtime::spawn(async {
         for agent in crate::adapters::registered_agents().filter(|agent| supports(agent)) {

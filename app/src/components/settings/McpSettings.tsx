@@ -1,22 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { Loader2, LockKeyhole, RefreshCcw } from "lucide-react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { invoke } from "@tauri-apps/api/core"
 import { Button } from "@/components/ui/button"
-import { PillSelect } from "@/components/ui/PillSelect"
-import { useApp } from "@/store/app"
 import {
   applyAgentPatch,
   checkMcpServer,
   discoverMcpServers,
-  initialMcpProjectId,
-  mcpBindingsSummary,
   mcpHealthLabel,
   mcpOauthLogin,
   mcpOauthLogout,
   mcpOauthStatus,
   mcpOfereceLogin,
-  mcpProjectOptionLabel,
   mcpResumo,
   optimisticBindingUpdate,
   setMcpBinding,
@@ -29,7 +24,7 @@ import {
 import { useProjectBrowser } from "@/components/settings/ProjectBrowserCard"
 import { McpServerRow } from "@/components/settings/McpServerRow"
 import { ProviderMcpInventoryPanel } from "@/components/settings/ProviderMcpInventoryPanel"
-import { WorkMcpSettings } from "@/components/settings/WorkMcpSettings"
+import { EscopoDoProjeto, useProjetoDasConfiguracoes } from "@/components/settings/projetoDasConfiguracoes"
 import { SectionHeader } from "@/components/settings/parts"
 import { cn } from "@/lib/utils"
 
@@ -45,28 +40,13 @@ function toggleKey(
 }
 
 export function McpSettings() {
-  const projects = useApp((s) => s.projects)
-  const activeProjectId = useApp((s) => s.activeProjectId)
-  // Escopo do PAINEL, não do app: trocar aqui nunca muda o projeto ativo da
-  // sidebar. null = seguir o default (projeto ativo).
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(
-    null,
-  )
-  const project = useMemo(() => {
-    const id =
-      selectedProjectId &&
-      projects.some((item) => item.id === selectedProjectId)
-        ? selectedProjectId
-        : initialMcpProjectId(projects, activeProjectId)
-    return projects.find((item) => item.id === id) ?? null
-  }, [activeProjectId, projects, selectedProjectId])
+  // Escopo do PAINEL, não do app: o projeto vem do seletor único do rail
+  // (ADR-268) e nunca muda o projeto ativo da sidebar.
+  const { project } = useProjetoDasConfiguracoes()
   const [servers, setServers] = useState<McpServer[]>([])
   const [providerInventories, setProviderInventories] = useState<
     ProviderMcpInventory[]
   >([])
-  const [bindingCounts, setBindingCounts] = useState<Record<string, number>>(
-    {},
-  )
   const [loading, setLoading] = useState(false)
   // Writes/checks em voo, por chave `serverId:agent` (e `check:` no teste
   // explícito). O ref é a fonte da guarda síncrona: nunca dois writes
@@ -103,19 +83,6 @@ export function McpSettings() {
   // descoberta atrasada do projeto anterior não sobrescreve a atual.
   const shownPathRef = useRef<string | null>(null)
 
-  const refreshCounts = useCallback(async () => {
-    try {
-      const summary = await mcpBindingsSummary()
-      setBindingCounts(
-        Object.fromEntries(
-          summary.map((entry) => [entry.projectId, entry.count]),
-        ),
-      )
-    } catch (cause) {
-      avisar.erro("Não consegui contar as integrações por projeto.", { detalhe: mensagemDe(cause) })
-    }
-  }, [])
-
   const load = useCallback(async (force = false) => {
     if (!project) {
       shownPathRef.current = null
@@ -150,10 +117,6 @@ export function McpSettings() {
   useEffect(() => {
     void load(false)
   }, [load])
-
-  useEffect(() => {
-    void refreshCounts()
-  }, [refreshCounts])
 
   // Navegador do projeto (B2.1): o app é dono do Chromium. O estado vem do hook
   // porque a linha de cada agent também precisa dele para dizer o que falta.
@@ -322,7 +285,6 @@ export function McpSettings() {
     })
     setKeyBusy(key, false)
     if (!confirmed) return
-    void refreshCounts()
     if (next.enabled && !state.enabled) {
       // Primeiro enable: health em segundo plano; a linha diz "verificando…"
       // até o resultado real, sem segurar o toggle.
@@ -436,7 +398,10 @@ export function McpSettings() {
     )
   }
 
-  const resumo = mcpResumo(servers, authByServer, servers.map((s) => s.id))
+  // Os MCPs internos da Frota (aprovação, contexto) não são da pessoa: são
+  // por turno e ninguém liga ou desliga. Saem da lista e do resumo (ADR-268).
+  const daPessoa = servers.filter((s) => s.managed)
+  const resumo = mcpResumo(daPessoa, authByServer, daPessoa.map((s) => s.id))
   const toggleAberto = (id: string) =>
     setAbertos((atual) => toggleKey(atual, id, !atual.has(id)))
 
@@ -444,19 +409,8 @@ export function McpSettings() {
     <div>
       <SectionHeader
         title="MCPs"
-        escopo={
-          <PillSelect
-            value={project.id}
-            onValueChange={setSelectedProjectId}
-            options={projects.map((item) => ({
-              value: item.id,
-              label: mcpProjectOptionLabel(item.name, bindingCounts[item.id] ?? 0),
-            }))}
-            triggerClassName="h-7 gap-1.5 px-2.5 text-[12px] text-foreground"
-            title="Escopo deste painel; não muda o projeto ativo do app"
-            aria-label="Projeto dos bindings MCP"
-          />
-        }
+        description="Os servidores MCP que você instalou, e em quais motores cada um vale neste projeto. As ferramentas da própria Frota ficam na página de cada motor."
+        escopo={<EscopoDoProjeto nome={project.name} />}
         action={
           <Button size="compacto" variant="ghost" onClick={() => void load(true)} disabled={loading}>
             <RefreshCcw className={cn("size-3.5", loading && "animate-spin")} />
@@ -471,7 +425,7 @@ export function McpSettings() {
         </div>
       )}
 
-      {loading && servers.length === 0 ? (
+      {loading && daPessoa.length === 0 ? (
         <div className="grid min-h-40 place-items-center text-muted-foreground">
           <div className="flex flex-col items-center gap-2 text-[12px]">
             <Loader2 className="size-5 animate-spin" />
@@ -480,7 +434,7 @@ export function McpSettings() {
             </span>
           </div>
         </div>
-      ) : servers.length === 0 ? (
+      ) : daPessoa.length === 0 ? (
         <div className="mt-4 rounded-lg border border-dashed p-5 text-center text-[12px] text-muted-foreground">
           Nenhum MCP foi encontrado nas fontes deste projeto.
         </div>
@@ -516,7 +470,7 @@ export function McpSettings() {
           </div>
 
           <div className="mt-2.5 overflow-hidden rounded-lg border">
-            {servers.map((server) => (
+            {daPessoa.map((server) => (
               <McpServerRow
                 key={server.id}
                 server={server}
@@ -539,9 +493,10 @@ export function McpSettings() {
         </>
       )}
 
-      {/* Contexto vem DEPOIS da lista: acompanhamento do Frota, o que já vive
-          nos CLIs, e a garantia do Keychain em uma linha. */}
-      <WorkMcpSettings onChanged={load} />
+      {/* Contexto vem DEPOIS da lista: o que cada motor tem no próprio CLI
+          (recolhido: repete a lista por outro ângulo) e a garantia do
+          Keychain em uma linha. O acompanhamento saiu daqui para a página do
+          motor (ADR-268). */}
       <ProviderMcpInventoryPanel inventories={providerInventories} />
       <p className="mt-3 flex items-start gap-1.5 text-[11px] leading-snug text-muted-foreground">
         <LockKeyhole className="mt-px size-3 shrink-0" />

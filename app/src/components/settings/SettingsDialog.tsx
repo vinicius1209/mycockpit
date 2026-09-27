@@ -28,7 +28,6 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useApp } from "@/store/app"
 import { usageWindowAgents } from "@/lib/agentRoster"
-import { lerGhStatus } from "@/lib/github"
 import {
   aplicarKeepAwake,
   KEEP_AWAKE_OPTIONS,
@@ -44,9 +43,18 @@ import { CostMaintenance } from "@/components/settings/CostMaintenance"
 import { CustoDaSessaoMaintenance } from "@/components/settings/CustoDaSessaoMaintenance"
 import { SessionCostLimit } from "@/components/settings/SessionCostLimit"
 import { UsageMeterSettings } from "@/components/settings/UsageMeterSettings"
-import { HooksSettings } from "@/components/settings/HooksSettings"
 import { HudSettings } from "@/components/settings/HudSettings"
 import { MachineAgents } from "@/components/settings/MachineAgents"
+import { ModeloAuxiliar } from "@/components/settings/ModeloAuxiliar"
+import { PaginaDoMotor } from "@/components/settings/PaginaDoMotor"
+import { PrecisaDeVoce } from "@/components/settings/PrecisaDeVoce"
+import { DesktopResourceCard } from "@/components/settings/DesktopResourceCard"
+import { useFatosDoRail } from "@/components/settings/useFatosDoRail"
+import {
+  ProjetoDasConfiguracoesProvider,
+  useProjetoEscolhido,
+} from "@/components/settings/projetoDasConfiguracoes"
+import { agentDef } from "@/lib/agents"
 import { NewChatDefaults } from "@/components/settings/NewChatDefaults"
 import { ServicosSettings } from "@/components/settings/ServicosSettings"
 import { ConfinamentoCard } from "@/components/settings/ConfinamentoCard"
@@ -64,6 +72,7 @@ import {
   SELECT_TRIGGER,
 } from "@/components/settings/parts"
 import {
+  motorDaSecao,
   resolveSection,
   sectionDef,
   secoesDisponiveis,
@@ -76,13 +85,6 @@ import {
   normalizeConversationScale,
   stepConversationScale,
 } from "@/lib/conversationScale"
-
-const HELPER_OPTIONS = [
-  { value: "off", label: "Desligado", description: "Sem sugestões automáticas" },
-  { value: "haiku", label: "Haiku", description: "Rápido e barato (recomendado)" },
-  { value: "sonnet", label: "Sonnet", description: "Mais capaz" },
-  { value: "opus", label: "Opus", description: "Máxima qualidade" },
-]
 
 /** Cabeçalho padrão de uma seção do registro (título + a pergunta dela). */
 function Header({ id }: { id: SectionId }) {
@@ -100,27 +102,15 @@ export function SettingsDialog() {
   const conversationScale = normalizeConversationScale(
     settings.conversationScale,
   )
-  // 1ª camada de esconder: build sem nenhum motor com hooks não mostra a seção
-  // (nem o toggle). A decisão vem do registry de capabilities, nunca de nome.
   // A MESMA lista que a paleta ⌘K usa (secoesDisponiveis): seção escondida no
   // rail e alcançável pela paleta seria um destino fantasma.
   const available = useMemo(() => secoesDisponiveis(), [])
-  // Fatos do rail. `gh` é lido ao ABRIR (dois comandos locais, ~ms) e começa
-  // como undefined, que significa "ainda não olhei" — e não olhar nunca pinta
-  // alarme. `detected` já mora no store, de graça.
-  const [ghDoRail, setGhDoRail] = useState<
-    { installed: boolean; contas: number } | undefined
-  >(undefined)
-  useEffect(() => {
-    if (!open) return
-    void lerGhStatus().then((g) =>
-      setGhDoRail({ installed: g.installed, contas: g.accounts.length }),
-    )
-  }, [open])
-  const fatosDoRail = useMemo(
-    () => ({ detected: settings.detected, gh: ghDoRail }),
-    [settings.detected, ghDoRail],
-  )
+  // O projeto da zona "No projeto" (ADR-268): um seletor só, no rail, e as
+  // seções do projeto leem o mesmo.
+  const projeto = useProjetoEscolhido()
+  // Fatos do rail e de "Precisa de você", lidos ao ABRIR: começam vazios, e
+  // vazio é "ainda não olhei", que nunca pinta alarme.
+  const { fatos: fatosDoRail, recarregar } = useFatosDoRail(open, projeto.project?.path ?? null)
   const hasUsageMeter = useMemo(() => usageWindowAgents().length > 0, [])
   const [section, setSection] = useState<SectionId>(() =>
     resolveSection(null, available),
@@ -135,6 +125,10 @@ export function SettingsDialog() {
   const railSection = open && requested
     ? resolveSection(requested, available)
     : section
+  // Página de motor: o id vem do registry (`motor:<id>`), e o motor que sumiu
+  // do registry não vira painel vazio (resolveSection já o teria trocado).
+  const motorId = motorDaSecao(section)
+  const motorDoPainel = motorId ? agentDef(motorId) : undefined
 
   useEffect(() => {
     getVersion().then(setVersion).catch(() => {})
@@ -187,6 +181,7 @@ export function SettingsDialog() {
           selected={railSection}
           facts={fatosDoRail}
           onSelect={setSection}
+          projeto={projeto}
         />
 
         {/* Painel: barra fixa (chrome único) + conteúdo que rola. Toda seção
@@ -204,7 +199,21 @@ export function SettingsDialog() {
             <DialogCloseX className="static shrink-0 border-transparent bg-transparent shadow-none backdrop-blur-none" />
           </header>
           <SettingsChromeProvider slot={chrome.slot}>
+          <ProjetoDasConfiguracoesProvider valor={projeto}>
           <div className="relative flex-1 overflow-y-auto px-5 pt-4 pb-5">
+          {section === "pending" && (
+            <PrecisaDeVoce fatos={fatosDoRail} onAbrir={setSection} onResolvido={recarregar} />
+          )}
+
+          {motorDoPainel && <PaginaDoMotor agent={motorDoPainel} onAbrir={setSection} />}
+
+          {section === "desktop" && (
+            <div>
+              <Header id="desktop" />
+              <DesktopResourceCard />
+            </div>
+          )}
+
           {section === "profile" && <ProfileSettings />}
 
           {section === "appearance" && (
@@ -449,27 +458,7 @@ export function SettingsDialog() {
             </div>
           )}
 
-          {section === "suggestions" && (
-            <div>
-              <Header id="suggestions" />
-              <div className="divide-y divide-border/50">
-                <Field
-                  label="Modelo helper (padrão)"
-                  hint="Usado quando o projeto não define um no .mycockpit/config.toml."
-                >
-                  <RichSelect
-                    value={settings.helperModel ?? "off"}
-                    onValueChange={(v) =>
-                      setSettings({ helperModel: v === "off" ? null : v })
-                    }
-                    options={HELPER_OPTIONS}
-                    triggerClassName={SELECT_TRIGGER}
-                    aria-label="Modelo helper"
-                  />
-                </Field>
-              </div>
-            </div>
-          )}
+          {section === "suggestions" && <ModeloAuxiliar />}
 
           {section === "dictation" && <DictationSettings />}
 
@@ -483,7 +472,7 @@ export function SettingsDialog() {
 
           {section === "extensions" && <ExtensionsSettings />}
 
-          {section === "machine" && <MachineAgents />}
+          {section === "machine" && <MachineAgents onAbrir={setSection} />}
 
           {section === "sandbox" && <ConfinamentoCard />}
 
@@ -491,10 +480,6 @@ export function SettingsDialog() {
 
           {section === "models" && <ModelsSettings />}
 
-
-          {/* Sessões abertas fora do app: capacidade própria, com o preview do
-              que será escrito no config de hooks (disclosure progressiva). */}
-          {section === "hooks" && <HooksSettings />}
 
           {section === "ledger" && (
             <div>
@@ -547,6 +532,7 @@ export function SettingsDialog() {
             </div>
           )}
           </div>
+          </ProjetoDasConfiguracoesProvider>
           </SettingsChromeProvider>
         </div>
       </DialogContent>

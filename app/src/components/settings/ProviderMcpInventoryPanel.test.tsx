@@ -1,7 +1,7 @@
 import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
-import { ProviderMcpInventoryPanel } from "./ProviderMcpInventoryPanel"
+import { ProviderMcpInventoryPanel, semCanaisDaFrota } from "./ProviderMcpInventoryPanel"
 import type { ProviderMcpInventory } from "@/lib/mcp"
 
 const inventories: ProviderMcpInventory[] = [
@@ -50,7 +50,25 @@ describe("ProviderMcpInventoryPanel", () => {
     expect(html).toContain("2 MCPs ativos")
     expect(html).toContain("computer-use · stdio · em toda a máquina")
     expect(html).toContain("nenhum MCP neste projeto")
-    expect(html).toContain("depende do provider")
+    expect(html).toContain("o motor decide")
     expect(html).not.toContain("Instalar")
+  })
+
+  it("os canais da Frota no CLI de um motor não aparecem como MCP da pessoa (ADR-268)", () => {
+    const comCanais: ProviderMcpInventory = {
+      ...inventories[0],
+      servers: [
+        ...inventories[0].servers,
+        { ...inventories[0].servers[0], name: "frota-work" },
+        { ...inventories[0].servers[0], name: "frota-browser" },
+        { ...inventories[0].servers[0], name: "frota-desktop" },
+      ],
+    }
+    expect(semCanaisDaFrota(comCanais).servers.map((s) => s.name)).toEqual(["computer-use", "playwright"])
+    const html = renderToStaticMarkup(
+      createElement(ProviderMcpInventoryPanel, { inventories: [comCanais] }),
+    )
+    expect(html).not.toContain("frota-work")
+    expect(html).toContain("2 MCPs ativos")
   })
 })
