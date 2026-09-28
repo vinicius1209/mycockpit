@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Protótipos do estudo do Maestri · F2, G1, G3, G7 e G8</title>
+<style>
+  /* Tema CLARO, tokens de :root do index.css (os mesmos de composer-vira-nota).
+     Escala fechada de fonte: 11, 12, 13, 14 (20 só no título do mock).
+     Controles: chip 24 · compacto 28 · padrão 32. Sem travessão na copy. */
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--popover:#ffffff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted-foreground:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);
+    --warning:#c1861f;--warning-soft:rgba(193,134,31,.10);--warning-line:rgba(193,134,31,.30);
+    --error:#cf4a3e;--running:#2f8fbf;--ok:#3f8f5a;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1040px}
+  .sub b,.nota b{color:var(--foreground);font-weight:500}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:20px 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:10px}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
+  svg.i{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  svg.i.s16{width:16px;height:16px}
+  .palco{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .col{display:flex;flex-direction:column;gap:10px}
+
+  /* ---- navegação do mock ---- */
+  .indice{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 6px;position:sticky;top:0;background:var(--rail);padding:10px 0;z-index:20;box-shadow:0 1px 0 var(--border)}
+  .indice a{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--card);box-shadow:0 0 0 1px var(--border);color:var(--foreground);text-decoration:none;font-size:12px}
+  .indice a span{font:11px var(--mono);color:var(--faint)}
+  section.bloco{margin-top:40px;padding-top:8px}
+  .cab{display:flex;align-items:baseline;gap:10px}
+  .cab .id{font:500 11px var(--mono);color:var(--faint);letter-spacing:.04em}
+  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:14px 0 12px;flex-wrap:wrap}
+  .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted-foreground);display:inline-flex;align-items:center}
+  .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
+  [data-estado]{display:none}
+  [data-estado].on{display:block}
+
+  /* ---- janela do app (fio + composer) ---- */
+  .janela{width:720px;background:var(--background);border-radius:12px;box-shadow:0 0 0 1px var(--border);padding:18px 20px 16px;position:relative}
+  .janela.estreita{width:640px}
+  .grupo{display:flex;gap:10px;margin-bottom:14px}
+  .av{width:24px;height:24px;border-radius:6px;flex:none;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .av.voce{background:#3a3f45;border-radius:50%}
+  .av.claude{background:#d97757}
+  .av.codex{background:#16181b}
+  .corpo{min-width:0;flex:1}
+  .quem{font-size:13px;font-weight:600;display:flex;align-items:baseline;gap:8px}
+  .quem span{font:11px var(--mono);color:var(--faint);font-weight:400}
+  .bolha{display:inline-block;max-width:100%;background:var(--secondary);border-radius:6px 16px 16px 16px;padding:9px 14px;font-size:14px;margin-top:4px}
+  .prosa{font-size:14px;line-height:1.6;margin-top:4px}
+  .prosa p+p{margin-top:8px}
+  .prosa ul{margin:6px 0 0 18px}
+  .acao{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground);margin:6px 0;min-height:22px}
+  .acao svg{color:var(--faint)}
+  .acao .obj{font:12px var(--mono);color:var(--foreground)}
+  .acao .ok{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+  .grupo-acoes{margin:6px 0 8px;padding-left:2px}
+  .recibo{display:flex;gap:10px;align-items:center;font:11px var(--mono);color:var(--faint);margin-top:10px}
+  .tabela-md{border-collapse:collapse;font-size:13px;margin-top:8px}
+  .tabela-md th,.tabela-md td{text-align:left;padding:5px 12px 5px 0;border-bottom:1px solid var(--divisor)}
+  .tabela-md th{font-weight:500}
+
+  /* ---- composer ---- */
+  .composer{background:var(--card);border-radius:14px;box-shadow:0 0 0 1px var(--border),var(--shadow-sm);padding:12px 12px 10px 14px}
+  .texto{font-size:14px;line-height:1.75;min-height:44px}
+  .caret{display:inline-block;width:1px;height:16px;background:var(--foreground);vertical-align:-3px}
+  .base{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted-foreground);font-size:12px}
+  .base .esp{flex:1}
+  .porta{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--foreground)}
+  .porta .lg{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .icone{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .enviar{display:inline-flex;height:28px;width:30px;border-radius:999px;background:var(--foreground);color:var(--background);align-items:center;justify-content:center}
+
+  /* ---- banner da continuidade (ContinuityBanner) ---- */
+  .banner{border-radius:10px;box-shadow:0 0 0 1px var(--border-strong),var(--shadow-sm);background:var(--card);margin-bottom:8px}
+  .banner .l1{display:flex;gap:10px;align-items:flex-start;padding:10px 12px}
+  .banner .l1 svg{margin-top:2px}
+  .banner .tit{font-size:13px;font-weight:500}
+  .banner .det{font-size:11px;line-height:1.5;color:var(--muted-foreground);margin-top:2px}
+  .banner .rodape{display:flex;align-items:center;gap:8px;border-top:1px solid var(--divisor);padding:7px 10px 7px 36px;flex-wrap:wrap}
+  .banner .rodape .rot{font-size:11px;color:var(--muted-foreground)}
+  .opcoes{display:flex;gap:2px;padding:2px;border-radius:7px;box-shadow:inset 0 0 0 1px var(--border);background:var(--background);flex-wrap:wrap}
+  .opcao{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:5px;font-size:12px;cursor:pointer}
+  .opcao:hover{background:var(--sel-hover)}
+  .opcao .folga{font:11px var(--mono);color:var(--muted-foreground)}
+  .opcao .folga.sem{color:var(--faint)}
+  .opcao.muda{color:var(--faint);cursor:default}
+  .opcao.muda:hover{background:none}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);white-space:nowrap;cursor:pointer;border:0;font-family:var(--sans)}
+  .btn.ghost{background:transparent;color:var(--muted-foreground)}
+  .btn.chip{height:24px;padding:0 8px;font-size:11px}
+  .esp{flex:1}
+  .ico-aviso{color:var(--warning)}
+  .ico-neutro{color:var(--muted-foreground)}
+  .medidor{display:flex;align-items:center;gap:8px;margin-top:8px;font:11px var(--mono);color:var(--muted-foreground)}
+  .medidor .barra{position:relative;width:180px;height:6px;border-radius:3px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);overflow:hidden}
+  .medidor .barra i{position:absolute;inset:0 auto 0 0;background:var(--warning);border-radius:3px}
+  .idade{font:11px var(--mono);color:var(--faint)}
+
+  /* ---- seletor de identidade (IdentityPicker) aberto ---- */
+  .menu{width:320px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px}
+  .menu .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:7px 8px 3px}
+  .menu .it{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px}
+  .menu .it.foco{background:var(--sel)}
+  .menu .it .lg{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .menu .it .dir{margin-left:auto;font:11px var(--mono);color:var(--muted-foreground)}
+  .menu .it .dir.sem{color:var(--faint)}
+  .menu .sep{height:1px;background:var(--divisor);margin:4px 2px}
+
+  /* ---- G1 cartões de arquivo (geometria do CartaoDeArquivo) ---- */
+  .cartoes{display:flex;flex-direction:column;gap:6px;margin-top:10px;align-items:flex-start}
+  .cartao{display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 6px;border-radius:10px;background:var(--card);box-shadow:0 0 0 1px var(--border);min-width:260px;max-width:340px;position:relative;cursor:pointer}
+  .cartao:hover{box-shadow:0 0 0 1px var(--border-strong)}
+  .cartao .q{width:40px;height:40px;border-radius:7px;background:var(--secondary);display:grid;place-items:center;color:var(--muted-foreground);flex:none;font:600 11px var(--mono)}
+  .cartao .q.img{background:linear-gradient(135deg,#dfe9f2,#f7fafc);box-shadow:inset 0 0 0 1px var(--border)}
+  .cartao .n{font-size:12px;font-weight:500;white-space:nowrap}
+  .cartao .m{font:11px var(--mono);color:var(--muted-foreground)}
+  .cartao .acs{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:none;gap:2px;background:var(--card);padding-left:6px}
+  .cartao:hover .acs{display:flex}
+  .cartao .acs span{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .cartao .acs span:hover{background:var(--sel)}
+  .cartao.sumiu{opacity:.62;cursor:default}
+  .cartao.sumiu .m{color:var(--error)}
+  .pilula-arq{font:12px var(--mono);background:var(--secondary);padding:1px 6px;border-radius:5px;color:var(--foreground)}
+
+  /* ---- G3 composer com imagem no texto ---- */
+  .tok{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 7px 0 2px;border-radius:6px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);vertical-align:-6px;font-size:12px;margin:0 2px;cursor:default}
+  .tok i{width:20px;height:20px;border-radius:4px;display:block;box-shadow:inset 0 0 0 1px var(--border)}
+  .tok i.a{background:linear-gradient(160deg,#eef1f4 0 38%,#cfd8e3 38% 42%,#eef1f4 42%)}
+  .tok i.b{background:linear-gradient(160deg,#8a05be 0 30%,#f2eaf7 30%)}
+  .tok b{font:500 11px var(--mono);color:var(--muted-foreground)}
+  .tok.foco{box-shadow:inset 0 0 0 1px var(--border-strong),0 0 0 3px var(--sel)}
+  .payload{width:560px;background:#16181b;color:#e7e9ec;border-radius:10px;padding:12px 14px;font:12px/1.6 var(--mono);white-space:pre-wrap}
+  .payload .c{color:#8a9099}
+  .payload .k{color:#e0b36a}
+  .payload .s{color:#9fd1a8}
+  .quadro{width:560px;background:var(--card);border-radius:10px;box-shadow:0 0 0 1px var(--border);padding:12px 14px;font-size:12px;color:var(--muted-foreground)}
+  .quadro b{color:var(--foreground);font-weight:500}
+
+  /* ---- G7 imagem gerada ---- */
+  .gerada{display:flex;gap:10px;align-items:flex-start;margin-top:8px}
+  .mini{width:120px;height:120px;border-radius:10px;box-shadow:0 0 0 1px var(--border);background:#fff;display:grid;place-items:center;flex:none;cursor:zoom-in}
+  .mini svg{width:72px;height:72px}
+  .gerada .info{font-size:12px;color:var(--muted-foreground);max-width:360px}
+  .gerada .info b{color:var(--foreground);font-weight:500}
+  .gerada .info .rp{margin-top:6px;font-size:12px;line-height:1.5;border-left:2px solid var(--divisor);padding-left:8px}
+  .falhou{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted-foreground);margin-top:8px}
+  .falhou svg{color:var(--error);margin-top:2px}
+
+  /* ---- G8 resposta com peso ---- */
+  .narra{font-size:13px;line-height:1.55;color:var(--muted-foreground);margin:4px 0}
+  .resposta{margin-top:10px;font-size:14px;line-height:1.6}
+  .resposta.trilho{border-left:2px solid var(--border-strong);padding-left:12px}
+  .resposta .rot{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .recolhido{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);cursor:pointer;height:24px;padding:0 6px;margin-left:-6px;border-radius:6px}
+  .recolhido:hover{background:var(--sel-hover)}
+
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1040px;margin-top:12px}
+  .tabela td,.tabela th{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted-foreground)}
+  .tabela th{color:var(--foreground);font-weight:500;width:190px}
+  .decisoes{max-width:1040px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin:18px 0 6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="troca" viewBox="0 0 24 24"><path d="M8 3 4 7l4 4M4 7h16M16 21l4-4-4-4M20 17H4"/></symbol>
+  <symbol id="relogio" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="gauge" viewBox="0 0 24 24"><path d="m12 14 4-4M3.34 19a10 10 0 1 1 17.32 0"/></symbol>
+  <symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="ler" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+  <symbol id="lapis" viewBox="0 0 24 24"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="pasta" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="abrir" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6"/></symbol>
+  <symbol id="imagem" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></symbol>
+  <symbol id="brilho" viewBox="0 0 24 24"><path d="M9.94 15.5A2 2 0 0 0 8.5 14.06l-6.14-1.58a.5.5 0 0 1 0-.96L8.5 9.94A2 2 0 0 0 9.94 8.5l1.58-6.14a.5.5 0 0 1 .96 0L14.06 8.5A2 2 0 0 0 15.5 9.94l6.14 1.58a.5.5 0 0 1 0 .96L15.5 14.06a2 2 0 0 0-1.44 1.44l-1.58 6.14a.5.5 0 0 1-.96 0z"/></symbol>
+  <symbol id="alerta" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="salvar" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></symbol>
+  <symbol id="seta" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+</svg>
+
+<h1>Protótipos do estudo do Maestri</h1>
+<p class="sub">Cinco frentes do estudo de 27/09 (<code>docs/competitors-maestri-2026-09-27.md</code>), para validar antes de planejar em definitivo: <b>F2</b> a Frota sugere onde gastar, <b>G1</b> cartão de arquivo entregue, <b>G3</b> imagem no meio do texto, <b>G7</b> imagem que o motor gera e <b>G8</b> a resposta final com peso próprio. Cada bloco tem os estados alternáveis nas abas, o que já existe no código que ele reaproveita, e o que falta você decidir.</p>
+
+<nav class="indice">
+  <a href="#f2"><span>F2</span> Onde gastar</a>
+  <a href="#g1"><span>G1</span> Cartão de arquivo</a>
+  <a href="#g7"><span>G7</span> Imagem gerada</a>
+  <a href="#g3"><span>G3</span> Imagem no texto</a>
+  <a href="#g8"><span>G8</span> Resposta com peso</a>
+  <a href="#decisoes"><span>?</span> Decisões</a>
+</nav>
+
+<!-- ======================================================= F2 -->
+<section class="bloco" id="f2">
+  <div class="cab"><span class="id">F2</span><h2>A Frota sugere onde gastar, e você escolhe</h2></div>
+  <p class="sub">Hoje o revezamento só aparece quando a cota <b>acabou</b> (ADR-165, <code>lib/quotaExhausted.ts</code>). A proposta é o mesmo cartão (<code>ContinuityBanner</code>) um passo antes: quando o motor da conversa passa do limiar e outro plano tem folga <b>medida</b>. Nada troca sozinho: escolher um motor só prepara o próximo envio, com o custo dito antes (ADR-206).</p>
+
+  <div class="abas" data-grupo="f2">
+    <button aria-pressed="true" data-alvo="f2-abaixo">Abaixo do limiar</button>
+    <button aria-pressed="false" data-alvo="f2-perto">Perto do limite</button>
+    <button aria-pressed="false" data-alvo="f2-ritmo">Acaba antes de voltar</button>
+    <button aria-pressed="false" data-alvo="f2-velha">Leitura velha</button>
+    <button aria-pressed="false" data-alvo="f2-escolhido">Escolhido</button>
+    <button aria-pressed="false" data-alvo="f2-seletor">No seletor de motor</button>
+  </div>
+
+  <div class="palco">
+    <div class="janela estreita">
+      <div class="grupo">
+        <div class="av claude">C</div>
+        <div class="corpo">
+          <div class="quem">Claude Code <span>14:32</span></div>
+          <div class="prosa"><p>Pronto: o parser das faturas do Itaú agora separa parcelamento de compra à vista, e os 41 testes passam. Falta o Nubank, que usa outro layout de PDF.</p></div>
+          <div class="recibo">4 arquivos · 41 testes · 3min 12s</div>
+        </div>
+      </div>
+
+      <!-- estado: abaixo do limiar -->
+      <div data-estado="f2-abaixo" class="on">
+        <p class="nota" style="margin:0 0 10px">Claude em 62% da sessão: <b>nada aparece</b>. A faixa de baixo continua mostrando os planos como hoje (ADR-262). O cartão não é lembrete permanente, é aviso de episódio.</p>
+      </div>
+
+      <!-- estado: perto do limite -->
+      <div data-estado="f2-perto">
+        <div class="banner">
+          <div class="l1">
+            <svg class="i s16 ico-aviso"><use href="#gauge"/></svg>
+            <div class="esp">
+              <div class="tit">Claude Code perto do limite da sessão</div>
+              <div class="det">91% da sessão de 5 horas usada · volta às 18:00 (em 2h 10min). Se preferir não esperar, o próximo pedido pode ir para um plano com folga. Nada muda até você escolher.</div>
+              <div class="medidor"><div class="barra"><i style="width:91%"></i></div>91% · leitura de 3 min atrás</div>
+            </div>
+          </div>
+          <div class="rodape">
+            <span class="rot">Próximo envio com:</span>
+            <div class="opcoes">
+              <span class="opcao"><span class="porta" style="padding:0;height:auto"><span class="lg" style="background:#16181b">X</span></span>Codex <span class="folga">70% livre na semana</span></span>
+              <span class="opcao"><span class="porta" style="padding:0;height:auto"><span class="lg" style="background:#6b4ce6">A</span></span>Antigravity <span class="folga">45% livre</span></span>
+              <span class="opcao"><span class="porta" style="padding:0;height:auto"><span class="lg" style="background:#5c6166">O</span></span>OpenCode <span class="folga sem">sem medidor · US$ 0,42 hoje</span></span>
+            </div>
+            <span class="esp"></span>
+            <button class="btn ghost chip">Agora não</button>
+          </div>
+        </div>
+        <p class="nota" style="margin:0 0 10px">Cada opção diz a folga que <b>foi lida</b>, e a idade dela aparece ao passar o mouse. OpenCode não tem janela de cota (<code>usageWindow: null</code>): aparece com o que a Frota sabe, o gasto de hoje, sem inventar folga. "Agora não" silencia até o fim deste episódio (a janela virar ou o uso cair abaixo do limiar).</p>
+      </div>
+
+      <!-- estado: projeção -->
+      <div data-estado="f2-ritmo">
+        <div class="banner">
+          <div class="l1">
+            <svg class="i s16 ico-aviso"><use href="#relogio"/></svg>
+            <div class="esp">
+              <div class="tit">No ritmo de hoje, a sessão do Claude acaba antes de voltar</div>
+              <div class="det">78% usada. Pelas duas últimas horas, chega a 100% por volta das 16:40; volta às 18:00. Estimativa pelo ritmo medido, não promessa.</div>
+              <div class="medidor"><div class="barra"><i style="width:78%"></i></div>78% agora · 100% por volta das 16:40</div>
+            </div>
+          </div>
+          <div class="rodape">
+            <span class="rot">Próximo envio com:</span>
+            <div class="opcoes">
+              <span class="opcao">Codex <span class="folga">70% livre</span></span>
+              <span class="opcao">Antigravity <span class="folga">45% livre</span></span>
+            </div>
+            <span class="esp"></span>
+            <button class="btn ghost chip">Agora não</button>
+          </div>
+        </div>
+        <p class="nota" style="margin:0 0 10px">Este gatilho só existe com <b>duas leituras reais</b> da mesma janela e ritmo positivo. Com uma leitura só, ou com o uso parado, a Frota não projeta nada. É a F1 do estudo aparecendo só onde vira decisão.</p>
+      </div>
+
+      <!-- estado: leitura velha -->
+      <div data-estado="f2-velha">
+        <div class="banner">
+          <div class="l1">
+            <svg class="i s16 ico-neutro"><use href="#gauge"/></svg>
+            <div class="esp">
+              <div class="tit">Claude Code perto do limite da sessão</div>
+              <div class="det">91% na última leitura, de 42 min atrás. Pode não valer mais: a janela anda sozinha.</div>
+            </div>
+          </div>
+          <div class="rodape">
+            <span class="rot">Próximo envio com:</span>
+            <div class="opcoes">
+              <span class="opcao">Codex <span class="folga">70% livre</span></span>
+              <span class="opcao muda">Antigravity <span class="folga sem">sem leitura recente</span></span>
+            </div>
+            <span class="esp"></span>
+            <button class="btn ghost chip">Agora não</button>
+          </div>
+        </div>
+        <p class="nota" style="margin:0 0 10px">A leitura velha não some (seria esconder), mas perde a cor de alerta e diz a idade. Destino sem leitura recente continua escolhível pelo seletor, só não é <b>sugerido</b> como folga. Um turno do Claude concluído depois da leitura a desmente, a mesma contraprova de <code>checkAgentQuota</code>.</p>
+      </div>
+
+      <!-- estado: escolhido -->
+      <div data-estado="f2-escolhido">
+        <div class="banner" style="display:flex;align-items:center;gap:10px;padding:8px 12px">
+          <svg class="i s16 ico-neutro"><use href="#troca"/></svg>
+          <div class="esp">
+            <div class="tit">Próximo envio: Codex</div>
+            <div class="det">Claude Code permanece nesta conversa até o Codex abrir a nova sessão. Sessão nova com a memória desta: ~6,2 mil tokens (estimativa).</div>
+          </div>
+          <button class="btn ghost chip">Desfazer</button>
+        </div>
+        <p class="nota" style="margin:0 0 10px">Daqui para frente é o revezamento que já existe, sem mudança: faixa "Próximo envio", estimativa pelo envelope real, desfazer.</p>
+      </div>
+
+      <!-- estado: seletor -->
+      <div data-estado="f2-seletor">
+        <div class="menu" style="margin:0 0 10px 0">
+          <div class="grp">Mesmo motor · mantém a sessão</div>
+          <div class="it"><span class="lg" style="background:#d97757">C</span>Claude Code<span class="dir" style="color:var(--warning)">91% da sessão</span></div>
+          <div class="sep"></div>
+          <div class="grp">Outro motor · sessão nova com a memória desta</div>
+          <div class="it foco"><span class="lg" style="background:#16181b">X</span>Codex<span class="dir">70% livre</span></div>
+          <div class="it"><span class="lg" style="background:#6b4ce6">A</span>Antigravity<span class="dir">45% livre</span></div>
+          <div class="it"><span class="lg" style="background:#5c6166">O</span>OpenCode<span class="dir sem">sem medidor</span></div>
+        </div>
+        <p class="nota" style="margin:0 0 10px">No seletor que já existe, cada motor ganha a folga à direita, sempre. Não depende do limiar: é informação, não aviso. Mesma fonte do cartão.</p>
+      </div>
+
+      <div class="composer">
+        <div class="texto">Agora faz o mesmo para o PDF do Nubank<span class="caret"></span></div>
+        <div class="base">
+          <span class="porta"><span class="lg" style="background:#d97757">C</span>Claude Code · Opus 5.5</span>
+          <span class="esp"></span>
+          <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+          <span class="icone"><svg class="i"><use href="#mic"/></svg></span>
+          <span class="enviar"><svg class="i"><use href="#up"/></svg></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="max-width:360px">
+      <div class="legenda">Regras do cartão</div>
+      <table class="tabela" style="margin-top:0">
+        <tr><th>Quando aparece</th><td>Motor da conversa a partir de <b>85%</b> numa janela lida, ou projeção de acabar antes do reset. E pelo menos um outro plano com folga lida.</td></tr>
+        <tr><th>Quantas vezes</th><td>Um por episódio, pelo watchdog (<code>Map</code> de módulo). "Agora não" encerra o episódio.</td></tr>
+        <tr><th>O que nunca faz</th><td>Trocar sozinho, afirmar folga sem leitura, prometer que outro motor usa outro plano quando não sabe.</td></tr>
+        <tr><th>De onde vem</th><td><code>checkAgentQuota</code> ganha o estado "perto"; <code>eligibleHandoffTargets</code> ganha a folga de cada destino.</td></tr>
+        <tr><th>Agnóstico</th><td>Pergunta ao registry quem tem janela (<code>usageWindow</code>), nunca o nome.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= G1 -->
+<section class="bloco" id="g1">
+  <div class="cab"><span class="id">G1</span><h2>Arquivo entregue vira cartão</h2></div>
+  <p class="sub">Hoje o arquivo citado vira pílula dentro do texto e abre na aba (ADR-193). Quando o agente <b>entrega</b> arquivos, eles ficam espalhados na prosa. O cartão é o mesmo do arquivo solto no composer (<code>CartaoDeArquivo</code>, ADR-252): quadro de 40px, nome em 12, meta em 11. Muda só o lugar: embaixo da mensagem final do turno.</p>
+
+  <div class="abas" data-grupo="g1">
+    <button aria-pressed="false" data-alvo="g1-hoje">Hoje</button>
+    <button aria-pressed="true" data-alvo="g1-proposta">Proposta</button>
+    <button aria-pressed="false" data-alvo="g1-sumiu">Arquivo que sumiu</button>
+  </div>
+
+  <div class="palco">
+    <div class="janela estreita">
+      <div class="grupo">
+        <div class="av claude">C</div>
+        <div class="corpo">
+          <div class="quem">Claude Code <span>15:04</span></div>
+
+          <div data-estado="g1-hoje">
+            <div class="prosa"><p>Consolidei setembro. Gerei <span class="pilula-arq">relatorios/faturas-2026-09-consolidado.csv</span> com as 312 compras, o PDF <span class="pilula-arq">relatorios/relatorio-cartoes-setembro-2026.pdf</span> para você e a Ana, e o gráfico <span class="pilula-arq">relatorios/gastos-por-categoria-setembro.png</span>.</p></div>
+          </div>
+
+          <div data-estado="g1-proposta" class="on">
+            <div class="prosa"><p>Consolidei setembro: 312 compras nos dois cartões, com parcelamentos separados. O relatório está pronto para você e a Ana.</p></div>
+            <div class="cartoes">
+              <div class="cartao">
+                <div class="q">PDF</div>
+                <div><div class="n">relatorio-cartoes-…-2026.pdf</div><div class="m">PDF · 184 KB · 6 páginas</div></div>
+                <div class="acs"><span title="Abrir"><svg class="i"><use href="#abrir"/></svg></span><span title="Mostrar na pasta"><svg class="i"><use href="#pasta"/></svg></span></div>
+              </div>
+              <div class="cartao">
+                <div class="q">CSV</div>
+                <div><div class="n">faturas-2026-09-consolidado.csv</div><div class="m">CSV · 41 KB · 312 linhas</div></div>
+                <div class="acs"><span title="Abrir"><svg class="i"><use href="#abrir"/></svg></span><span title="Mostrar na pasta"><svg class="i"><use href="#pasta"/></svg></span></div>
+              </div>
+              <div class="cartao">
+                <div class="q img"></div>
+                <div><div class="n">gastos-por-categoria-…mbro.png</div><div class="m">PNG · 96 KB · 1600×900</div></div>
+                <div class="acs"><span title="Abrir"><svg class="i"><use href="#abrir"/></svg></span><span title="Mostrar na pasta"><svg class="i"><use href="#pasta"/></svg></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div data-estado="g1-sumiu">
+            <div class="prosa"><p>Consolidei setembro: 312 compras nos dois cartões, com parcelamentos separados.</p></div>
+            <div class="cartoes">
+              <div class="cartao sumiu">
+                <div class="q">CSV</div>
+                <div><div class="n">faturas-2026-09-consolidado.csv</div><div class="m">não está mais no disco</div></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="recibo">3 arquivos criados · 1min 48s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="max-width:380px">
+      <div class="legenda">Como funciona</div>
+      <table class="tabela" style="margin-top:0">
+        <tr><th>O que vira cartão</th><td>Arquivo <b>criado</b> no turno (Write do agente, ou declarado pela ferramenta <code>deliver</code> do F5) que não é código-fonte do projeto. Edição de código continua no recibo e na aba Alterações.</td></tr>
+        <tr><th>Nome</th><td>Cortado <b>no meio</b>, a extensão sempre visível. Helper puro e único, usado também pelo composer.</td></tr>
+        <tr><th>Meta</th><td>Lida do disco na hora de mostrar: tipo, tamanho e o dado útil do tipo (páginas, linhas, dimensões).</td></tr>
+        <tr><th>Ações</th><td>Clique abre na aba do arquivo (ADR-240). Ao passar o mouse: Abrir e Mostrar na pasta. O cartão também é fonte de arrasto (ADR-214).</td></tr>
+        <tr><th>Estado real</th><td>Arquivo apagado depois diz "não está mais no disco" e não abre. Nunca esconde.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= G7 -->
+<section class="bloco" id="g7">
+  <div class="cab"><span class="id">G7</span><h2>Imagem que o motor gera aparece no fio</h2></div>
+  <p class="sub">Testado em 27/09. O Codex manda o item <code>imageGeneration</code> (<code>id</code>, <code>status</code>, <code>revisedPrompt</code>, <code>savedPath</code>, <code>failure</code> e <code>result</code>, que é a imagem inteira em base64). A Frota cai no <code>_ =&gt; vec![]</code> de <code>codex_appserver.rs:257</code>: <b>a imagem some</b>, e só sobra a frase do agente dizendo onde salvou. A proposta reaproveita o caminho da evidência de MCP, que já vira miniatura com lightbox e arrasto.</p>
+
+  <div class="abas" data-grupo="g7">
+    <button aria-pressed="false" data-alvo="g7-hoje">Hoje</button>
+    <button aria-pressed="true" data-alvo="g7-proposta">Proposta</button>
+    <button aria-pressed="false" data-alvo="g7-falha">Falhou</button>
+  </div>
+
+  <div class="palco">
+    <div class="janela estreita">
+      <div class="grupo">
+        <div class="av voce">V</div>
+        <div class="corpo"><div class="quem">Você <span>16:10</span></div><div class="bolha">Gera um ícone para o finance-monitor: um cofrinho azul, estilo plano, fundo branco.</div></div>
+      </div>
+      <div class="grupo">
+        <div class="av codex">X</div>
+        <div class="corpo">
+          <div class="quem">Codex <span>16:10</span></div>
+
+          <div data-estado="g7-hoje">
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">imagegen/SKILL.md</span></div></div>
+            <div class="prosa"><p>Gerei o ícone do cofrinho e copiei para <span class="pilula-arq">public/icone-cofrinho.png</span>.</p></div>
+            <p class="nota">Nenhuma imagem no fio. A geração em si não deixou rastro: nem ação, nem miniatura.</p>
+          </div>
+
+          <div data-estado="g7-proposta" class="on">
+            <div class="grupo-acoes">
+              <div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">imagegen/SKILL.md</span></div>
+              <div class="acao"><svg class="i"><use href="#brilho"/></svg>Gerou imagem <span class="obj">cofrinho azul, estilo plano</span><span class="ok">18s</span></div>
+            </div>
+            <div class="gerada">
+              <div class="mini" title="Abre no lightbox">
+                <svg viewBox="0 0 64 64"><ellipse cx="32" cy="36" rx="20" ry="16" fill="#3b82c4"/><circle cx="46" cy="30" r="2" fill="#fff"/><rect x="27" y="18" width="10" height="3" rx="1.5" fill="#2a5f8f"/><rect x="20" y="48" width="5" height="7" rx="2" fill="#2a5f8f"/><rect x="38" y="48" width="5" height="7" rx="2" fill="#2a5f8f"/><circle cx="52" cy="36" r="4" fill="#5b9bd5"/></svg>
+              </div>
+              <div class="info">
+                <b>imagem-gerada-01.png</b> · 1024×1024 · 1,1 MB
+                <div class="rp">Prompt que o motor usou: "Flat app icon of a blue piggy bank, centered, simple geometric shapes, solid white background, no text."</div>
+                <div style="display:flex;gap:4px;margin-top:8px"><button class="btn chip"><svg class="i"><use href="#salvar"/></svg>Salvar no projeto</button><button class="btn chip ghost"><svg class="i"><use href="#pasta"/></svg>Mostrar na pasta</button></div>
+              </div>
+            </div>
+            <div class="prosa" style="margin-top:10px"><p>Gerei o ícone do cofrinho e copiei para <span class="pilula-arq">public/icone-cofrinho.png</span>.</p></div>
+          </div>
+
+          <div data-estado="g7-falha">
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#brilho"/></svg>Gerar imagem <span class="obj">cofrinho azul, estilo plano</span></div></div>
+            <div class="falhou"><svg class="i"><use href="#alerta"/></svg><span>A geração falhou: <b style="color:var(--foreground);font-weight:500">o motor recusou o pedido</b> (motivo que veio no campo <code>failure</code>).</span></div>
+            <div class="prosa" style="margin-top:8px"><p>Não consegui gerar a imagem. Posso tentar com outra descrição?</p></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="max-width:380px">
+      <div class="legenda">O que o teste mostrou</div>
+      <table class="tabela" style="margin-top:0">
+        <tr><th>Contrato</th><td>Schema oficial do <code>codex app-server</code> 0.157.1 e payload real de 29/07 (Codex 0.144.6). Guardados em <code>docs/assets/maestri-chat/spike-g7/</code>.</td></tr>
+        <tr><th>O arquivo</th><td>O Codex já salva em <code>~/.codex/generated_images/&lt;thread&gt;/</code> (<code>savedPath</code>). A Frota copia para a pasta de evidência do turno e mostra de lá.</td></tr>
+        <tr><th>O base64</th><td>3,3 MB por imagem no evento. <b>Nunca</b> entra no fio, no banco nem no índice de busca. Só se usa se <code>savedPath</code> vier vazio.</td></tr>
+        <tr><th>Salvar no projeto</th><td>Gesto seu: copia para a pasta que você escolher. A Frota não escreve no projeto sozinha.</td></tr>
+        <tr><th>Limite do teste</th><td>A conta do Codex desta máquina está no plano "free" e a ferramenta não apareceu. A captura ao vivo pelo app-server fica para quando houver um plano com geração.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= G3 -->
+<section class="bloco" id="g3">
+  <div class="cab"><span class="id">G3</span><h2>Imagem no meio do texto do composer</h2></div>
+  <p class="sub">Hoje a imagem anexada vai numa fileira acima do texto, e a frase "compare esta com esta" depende de você dizer qual é qual. A proposta põe a imagem <b>no ponto do texto</b> onde você colou ou soltou, como uma ficha com miniatura e número. O número é a garantia: todo motor recebe "[imagem 1]" no mesmo ponto e as imagens na mesma ordem. Onde o motor aceita intercalar de verdade, ele recebe no lugar.</p>
+
+  <div class="palco">
+    <div class="col">
+      <div class="janela estreita" style="padding-top:14px">
+        <div class="composer">
+          <div class="texto">Compara o card de faturas de hoje <span class="tok foco"><i class="a"></i><b>1 · dashboard-atual.png</b></span> com a referência do Nubank <span class="tok"><i class="b"></i><b>2 · referencia-nubank.png</b></span> e me diz o que falta no nosso, principalmente na parte de parcelas.<span class="caret"></span></div>
+          <div class="base">
+            <span class="porta" id="g3-porta"><span class="lg" style="background:#16181b" id="g3-lg">X</span><span id="g3-nome">Codex</span></span>
+            <span class="esp"></span>
+            <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+            <span class="enviar"><svg class="i"><use href="#up"/></svg></span>
+          </div>
+        </div>
+        <p class="nota">A ficha se move com o texto, apaga com backspace e abre no lightbox com clique. Arrastar uma imagem do Finder ou de outra mensagem solta a ficha no ponto do cursor. Anexo que não é imagem continua como cartão acima (ADR-252).</p>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="legenda" style="margin-top:0">O que cada motor recebe</div>
+      <div class="abas" data-grupo="g3" style="margin:0 0 8px">
+        <button aria-pressed="true" data-alvo="g3-codex" data-motor="Codex" data-cor="#16181b" data-letra="X">Codex</button>
+        <button aria-pressed="false" data-alvo="g3-claude" data-motor="Claude Code" data-cor="#d97757" data-letra="C">Claude Code</button>
+        <button aria-pressed="false" data-alvo="g3-agy" data-motor="Antigravity" data-cor="#6b4ce6" data-letra="A">Antigravity</button>
+        <button aria-pressed="false" data-alvo="g3-opencode" data-motor="OpenCode" data-cor="#5c6166" data-letra="O">OpenCode</button>
+      </div>
+
+      <div data-estado="g3-codex" class="on">
+<div class="payload"><span class="c">// turn/start · input: intercalado de verdade</span>
+[
+  { <span class="k">"type"</span>: <span class="s">"text"</span>, <span class="k">"text"</span>: <span class="s">"Compara o card de faturas de hoje [imagem 1]"</span> },
+  { <span class="k">"type"</span>: <span class="s">"localImage"</span>, <span class="k">"path"</span>: <span class="s">".../dashboard-atual.png"</span> },
+  { <span class="k">"type"</span>: <span class="s">"text"</span>, <span class="k">"text"</span>: <span class="s">" com a referência do Nubank [imagem 2]"</span> },
+  { <span class="k">"type"</span>: <span class="s">"localImage"</span>, <span class="k">"path"</span>: <span class="s">".../referencia-nubank.png"</span> },
+  { <span class="k">"type"</span>: <span class="s">"text"</span>, <span class="k">"text"</span>: <span class="s">" e me diz o que falta no nosso..."</span> }
+]</div>
+        <div class="quadro" style="margin-top:8px">Capability <b>imagem intercalada</b>: sim. Conferido no schema do app-server 0.157.1 (<code>input</code> é lista de <code>text</code> e <code>localImage</code>). Hoje a Frota manda o texto inteiro e as imagens depois (<code>turn_params</code>).</div>
+      </div>
+
+      <div data-estado="g3-claude">
+<div class="payload"><span class="c">// prompt · o Claude abre cada caminho com o Read</span>
+Compara o card de faturas de hoje [imagem 1: `.../dashboard-atual.png`]
+com a referência do Nubank [imagem 2: `.../referencia-nubank.png`]
+e me diz o que falta no nosso, principalmente na parte de parcelas.
+
+<span class="c">// --add-dir com a pasta dos anexos, como hoje</span></div>
+        <div class="quadro" style="margin-top:8px">Capability: não (o Claude recebe caminho, não bloco). Mas o caminho vai <b>no ponto</b> do texto, em vez da lista no fim que existe hoje (<code>adapters.rs:2217</code>), então a posição chega igual.</div>
+      </div>
+
+      <div data-estado="g3-agy">
+<div class="payload"><span class="c">// prompt</span>
+Compara o card de faturas de hoje [imagem 1] com a referência
+do Nubank [imagem 2] e me diz o que falta no nosso...
+
+Imagens anexadas, na ordem: 1 = dashboard-atual.png, 2 = referencia-nubank.png
+
+<span class="c">// argv, na mesma ordem</span>
+-i .../dashboard-atual.png -i .../referencia-nubank.png</div>
+        <div class="quadro" style="margin-top:8px">Capability: não. O número no texto e a legenda no fim ligam cada "[imagem N]" ao arquivo certo.</div>
+      </div>
+
+      <div data-estado="g3-opencode">
+<div class="payload"><span class="c">// prompt</span>
+Compara o card de faturas de hoje [imagem 1] com a referência
+do Nubank [imagem 2] e me diz o que falta no nosso...
+
+Imagens anexadas, na ordem: 1 = dashboard-atual.png, 2 = referencia-nubank.png
+
+<span class="c">// argv, na mesma ordem (ADR-260)</span>
+-f .../dashboard-atual.png -f .../referencia-nubank.png</div>
+        <div class="quadro" style="margin-top:8px">Capability: não. Mesmo tratamento do Antigravity, pelo <code>-f</code> nativo.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= G8 -->
+<section class="bloco" id="g8">
+  <div class="cab"><span class="id">G8</span><h2>A resposta final com peso próprio</h2></div>
+  <p class="sub">Hoje a narração do meio do turno ("Vou olhar o parser...") e a conclusão têm o mesmo corpo de texto. Num turno longo, achar a conclusão é ler tudo. Achado do teste do G7: o Codex já marca cada fala com <code>phase: "commentary"</code> ou <code>"final_answer"</code>, e o schema avisa que nem todo modelo manda. Para quem não marca, a resposta é a última fala depois da última ação, <b>e só quando o turno terminou</b>. Durante o turno nada é marcado como final.</p>
+
+  <div class="abas" data-grupo="g8">
+    <button aria-pressed="false" data-alvo="g8-hoje">Hoje</button>
+    <button aria-pressed="true" data-alvo="g8-a">A · narração em voz baixa</button>
+    <button aria-pressed="false" data-alvo="g8-b">B · resposta com trilho</button>
+    <button aria-pressed="false" data-alvo="g8-c">C · narração recolhida</button>
+    <button aria-pressed="false" data-alvo="g8-vivo">Durante o turno</button>
+  </div>
+
+  <div class="palco">
+    <div class="janela estreita">
+      <div class="grupo">
+        <div class="av voce">V</div>
+        <div class="corpo"><div class="quem">Você <span>17:02</span></div><div class="bolha">Por que o total de setembro do Itaú está R$ 312 acima da fatura?</div></div>
+      </div>
+      <div class="grupo">
+        <div class="av codex">X</div>
+        <div class="corpo">
+          <div class="quem">Codex <span>17:02</span></div>
+
+          <!-- HOJE -->
+          <div data-estado="g8-hoje">
+            <div class="prosa"><p>Vou comparar o total calculado com a linha "Total da fatura" do PDF.</p></div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">bun test parser-itau</span><span class="ok">41 ok</span></div><div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">fixtures/itau-2026-09.pdf</span></div></div>
+            <div class="prosa"><p>O parser está somando as parcelas futuras. Vou conferir onde isso entra.</p></div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#lapis"/></svg>Editou <span class="obj">src/parsers/itau.ts</span><span class="ok">+9 −3</span></div></div>
+            <div class="prosa"><p>A diferença eram 4 compras parceladas: o parser lia a tabela "Compras parceladas, próximas faturas" como se fosse deste mês. Agora ele para no cabeçalho dessa tabela, e o total bate com a fatura (R$ 4.871,20).</p><ul><li>Adicionei um teste com o PDF de setembro.</li><li>Outubro e novembro continuam com as parcelas certas.</li></ul></div>
+          </div>
+
+          <!-- A -->
+          <div data-estado="g8-a" class="on">
+            <div class="narra">Vou comparar o total calculado com a linha "Total da fatura" do PDF.</div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">bun test parser-itau</span><span class="ok">41 ok</span></div><div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">fixtures/itau-2026-09.pdf</span></div></div>
+            <div class="narra">O parser está somando as parcelas futuras. Vou conferir onde isso entra.</div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#lapis"/></svg>Editou <span class="obj">src/parsers/itau.ts</span><span class="ok">+9 −3</span></div></div>
+            <div class="resposta"><p>A diferença eram 4 compras parceladas: o parser lia a tabela "Compras parceladas, próximas faturas" como se fosse deste mês. Agora ele para no cabeçalho dessa tabela, e o total bate com a fatura (R$ 4.871,20).</p><ul style="margin:6px 0 0 18px"><li>Adicionei um teste com o PDF de setembro.</li><li>Outubro e novembro continuam com as parcelas certas.</li></ul></div>
+          </div>
+
+          <!-- B -->
+          <div data-estado="g8-b">
+            <div class="prosa"><p>Vou comparar o total calculado com a linha "Total da fatura" do PDF.</p></div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">bun test parser-itau</span><span class="ok">41 ok</span></div><div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">fixtures/itau-2026-09.pdf</span></div></div>
+            <div class="prosa"><p>O parser está somando as parcelas futuras. Vou conferir onde isso entra.</p></div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#lapis"/></svg>Editou <span class="obj">src/parsers/itau.ts</span><span class="ok">+9 −3</span></div></div>
+            <div class="resposta trilho"><div class="rot">Resposta</div><p>A diferença eram 4 compras parceladas: o parser lia a tabela "Compras parceladas, próximas faturas" como se fosse deste mês. Agora ele para no cabeçalho dessa tabela, e o total bate com a fatura (R$ 4.871,20).</p><ul style="margin:6px 0 0 18px"><li>Adicionei um teste com o PDF de setembro.</li><li>Outubro e novembro continuam com as parcelas certas.</li></ul></div>
+          </div>
+
+          <!-- C -->
+          <div data-estado="g8-c">
+            <span class="recolhido"><svg class="i"><use href="#seta"/></svg>2 falas e 3 ações até a resposta</span>
+            <div class="resposta"><p>A diferença eram 4 compras parceladas: o parser lia a tabela "Compras parceladas, próximas faturas" como se fosse deste mês. Agora ele para no cabeçalho dessa tabela, e o total bate com a fatura (R$ 4.871,20).</p><ul style="margin:6px 0 0 18px"><li>Adicionei um teste com o PDF de setembro.</li><li>Outubro e novembro continuam com as parcelas certas.</li></ul></div>
+          </div>
+
+          <!-- VIVO -->
+          <div data-estado="g8-vivo">
+            <div class="prosa"><p>Vou comparar o total calculado com a linha "Total da fatura" do PDF.</p></div>
+            <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">bun test parser-itau</span><span class="ok">41 ok</span></div></div>
+            <div class="prosa"><p>O parser está somando as parcelas futuras. Vou conferir onde isso entra.</p></div>
+            <p class="nota">Com o turno rodando, tudo tem o peso normal: ainda não se sabe qual fala é a final (a não ser no Codex, que diz). A narração só desce de tom quando a resposta existe, para não piscar.</p>
+          </div>
+
+          <div class="recibo">1 arquivo · 41 testes · 2min 05s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col" style="max-width:380px">
+      <div class="legenda">As três leituras</div>
+      <table class="tabela" style="margin-top:0">
+        <tr><th>A · voz baixa</th><td>Narração em 13 e cor secundária; resposta em 14 e cor de texto. Mexe só em cor e tamanho de escala existente. É a mais leve.</td></tr>
+        <tr><th>B · trilho</th><td>Narração igual a hoje; a resposta ganha filete à esquerda e o rótulo "Resposta". Mais explícita, e um filete a mais no fio.</td></tr>
+        <tr><th>C · recolhida</th><td>Turno terminado recolhe a narração e as ações numa linha. Mais limpa, mas esconde o caminho, e o fio já tem regras de recolher (ADR-037).</td></tr>
+        <tr><th>Fonte</th><td>Capability nova (<b>fase da fala</b>): Codex sim. Os outros pela posição, depois do fim do turno. Sem nome de motor.</td></tr>
+        <tr><th>Não muda</th><td>Busca, cópia, citar trecho e o recibo. É só apresentação.</td></tr>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= DECISÕES -->
+<section class="bloco decisoes" id="decisoes">
+  <div class="cab"><span class="id">?</span><h2>O que falta você decidir</h2></div>
+  <h3>F2 · onde gastar</h3>
+  <ul>
+    <li><b>Limiar</b>: 85% fixo, ou configurável por plano em Configurações? A proposta é 85% fixo no começo.</li>
+    <li><b>Projeção</b> ("acaba antes de voltar") entra junto, ou fica para depois? Ela precisa de duas leituras reais e é o único trecho da F1 que o F2 usa.</li>
+    <li><b>OpenCode</b> aparece como opção sem folga ("sem medidor · US$ hoje"), ou só no seletor?</li>
+  </ul>
+  <h3>G1 · cartão</h3>
+  <ul>
+    <li>O cartão vale só para arquivo <b>fora</b> do código (relatório, imagem, planilha), ou para qualquer arquivo criado no turno?</li>
+  </ul>
+  <h3>G7 · imagem gerada</h3>
+  <ul>
+    <li>"Salvar no projeto" pergunta a pasta toda vez, ou lembra a última por projeto?</li>
+    <li>A captura ao vivo pelo app-server precisa de uma conta do Codex com geração de imagem. Até lá, a fixture sai do payload real de julho mais o schema oficial. Aceita assim?</li>
+  </ul>
+  <h3>G3 · imagem no texto</h3>
+  <ul>
+    <li>A ficha mostra nome do arquivo (como no mock) ou só miniatura e número?</li>
+    <li>Colar imagem no meio do texto vira ficha sempre, ou só quando já há texto antes e depois?</li>
+  </ul>
+  <h3>G8 · resposta com peso</h3>
+  <ul>
+    <li>A, B ou C? Minha leitura: <b>A</b>, por ser a que menos acrescenta ao fio e não esconde nada.</li>
+  </ul>
+  <h3>Ordem proposta</h3>
+  <ul>
+    <li><b>1. G7</b>: é conteúdo que some hoje, correção antes de feature, e é pequena.</li>
+    <li><b>2. G1</b>: o mesmo lugar do fio que o G7, com a mesma primitiva.</li>
+    <li><b>3. G8</b>: depois de escolhida a opção; usa a <code>phase</code> que o G7 já vai ler.</li>
+    <li><b>4. G3</b>: composer e os quatro adapters, com teste de contrato por motor.</li>
+    <li><b>5. F2</b>: a maior, com regra de quota, watchdog e dois componentes.</li>
+  </ul>
+</section>
+
+<script>
+  // Abas: cada grupo liga um estado por vez. Botão com data-motor também troca
+  // a porta de identidade do composer do G3.
+  document.querySelectorAll(".abas").forEach((abas) => {
+    const botoes = abas.querySelectorAll("button")
+    botoes.forEach((b) => b.addEventListener("click", () => {
+      botoes.forEach((o) => {
+        o.setAttribute("aria-pressed", String(o === b))
+        document.querySelectorAll(`[data-estado="${o.dataset.alvo}"]`).forEach((el) => el.classList.toggle("on", o === b))
+      })
+      if (b.dataset.motor) {
+        document.getElementById("g3-nome").textContent = b.dataset.motor
+        const lg = document.getElementById("g3-lg")
+        lg.textContent = b.dataset.letra
+        lg.style.background = b.dataset.cor
+      }
+    }))
+  })
+</script>
+</body>
+</html>

@@ -1,0 +1,265 @@
+# Plano · o que veio do estudo do Maestri (G7, G1, G8, G3, F2)
+
+## Status (27/09/2026)
+
+**Rascunho, esperando a validação do mock.** Nada implementado. Mock funcional
+de tudo: `docs/mocks/estudo-maestri-prototipos.html`. Estudo de origem:
+`docs/competitors-maestri-2026-09-27.md` (local), seções 4 e 4b. As decisões
+pendentes do §0 mudam histórias abaixo; quando forem respondidas, este bloco
+de status diz o que mudou, e ele manda sobre o texto original.
+
+Fora deste plano por decisão do dono (27/09): G2 (barra segmentada da cota),
+F1 isolada (a projeção só entra onde o F2 usa), F3 a F10, G4 a G6 e G9.
+
+## 0. Decisões pendentes
+
+| # | pergunta | proposta | afeta |
+|---|---|---|---|
+| D1 | G8: opção A (narração em voz baixa), B (resposta com trilho) ou C (narração recolhida)? | A | G8.3 |
+| D2 | G1: cartão só para arquivo fora do código (relatório, imagem, planilha) ou para todo arquivo criado? | fora do código | G1.2 |
+| D3 | G7: "Salvar no projeto" pergunta a pasta sempre ou lembra a última por projeto? | lembra | G7.3 |
+| D4 | G7: aceitar fixture montada do payload real de julho + schema oficial até haver captura ao vivo? | sim, marcada NEEDS-VERIFY | G7.1 |
+| D5 | G3: a ficha mostra nome do arquivo ou só miniatura e número? | nome, cortado no meio | G3.2 |
+| D6 | F2: limiar fixo (85%) ou configurável por plano? | fixo no começo | F2.2 |
+| D7 | F2: a projeção ("acaba antes de voltar") entra junto? | sim, se D6 fixo | F2.1 |
+| D8 | F2: OpenCode aparece no cartão sem folga ("sem medidor · US$ hoje") ou só no seletor? | nos dois | F2.4 |
+
+## 1. Ordem e por quê
+
+1. **G7 · imagem gerada** (P). É conteúdo que some hoje: o item
+   `imageGeneration` do Codex cai no `_ => vec![]` de
+   `app/src-tauri/src/codex_appserver.rs:257`. Correção antes de feature.
+2. **G1 · cartão de arquivo entregue** (M). Mesmo lugar do fio que o G7,
+   mesma primitiva do composer.
+3. **G8 · resposta com peso** (M). Usa a `phase` que o G7 já vai ler do mesmo
+   item `agentMessage`.
+4. **G3 · imagem no meio do texto** (G). Composer, rascunho, envio e quatro
+   adapters, com teste de contrato por motor.
+5. **F2 · onde gastar** (M/G). Regra de cota, memória de episódio e dois
+   componentes.
+
+## 2. Restrições que valem para todas as histórias
+
+- **Catraca de tamanho: quatro arquivos no teto.** Medido em 27/09:
+  `adapters.rs` 7515, `agent.rs` 2317, `codex_appserver.rs` 1963 e
+  `store/chat.ts` 2045, todos iguais à baseline. Qualquer linha a mais neles
+  quebra `bun run check`. A história que toca um deles **começa dividindo o
+  arquivo** (recorte fechado, com nome próprio), nunca subindo o teto. Perto
+  do limite por tipo: `LexicalComposer.tsx` 639 de 700 e `messageNodes.ts`
+  429 de 500.
+- **Número de ADR**: a máxima em 27/09 era a 271 (outra frente registrou
+  durante este estudo). Conferir de novo na hora de numerar; `bun run check`
+  cobra (`adrUnico.mjs`).
+- **Fixture real** (ADR-016). Já colhido e guardado em
+  `docs/assets/maestri-chat/spike-g7/` (pasta local, fora do git): stream real
+  do `codex app-server` 0.157.1 com `phase: commentary` e `final_answer`
+  (`app-server-codex-sem-image-gen.jsonl`), payload real de geração de imagem
+  de 29/07 (`rollout-2026-07-29-image-gen.jsonl`) e trecho do schema oficial.
+  O que virar fixture de teste entra em `app/src/test/` ou ao lado do código,
+  com o base64 cortado.
+- **Agnosticismo**: capability nova entra em `adapters.rs` e no espelho
+  `src/lib/agents.ts`, com teste-gêmeo e teste de contrato. Nenhum `if` por
+  nome de motor.
+- **Suítes antes de entregar**: `bun run test`, `bunx tsc -b --force`,
+  `cargo test`, `bun run check`.
+
+## 3. G7 · a imagem que o motor gera aparece no fio (P)
+
+**Evidência (27/09):** schema do app-server 0.157.1 define o item
+`imageGeneration` com `id`, `status`, `result` (obrigatório, a imagem inteira
+em base64), `revisedPrompt`, `savedPath`, `failure` e `transparentBackground`.
+O payload real de julho tinha `result` com 3,3 MB e `savedPath` em
+`~/.codex/generated_images/<thread>/<call>.png`. O item irmão `imageView`
+(o agente olhou uma imagem local) também cai no `_ => vec![]`.
+A captura ao vivo não saiu: a conta do Codex desta máquina está no plano
+"free" e a ferramenta `image_gen` não aparece nele.
+
+### G7.0 · dividir o mapeamento de itens do Codex
+`map_item_started` e `map_item_completed` saem de `codex_appserver.rs` para
+`codex_itens.rs`. Sem mudança de comportamento; os testes existentes passam
+sem alteração. Abre espaço para G7.1 e G8.1.
+
+### G7.1 · mapear `imageGeneration` e `imageView`
+- `item/started` com `imageGeneration` → `AgentEvent::Tool` com o nome do
+  vocabulário do contrato (ADR-253) para gerar imagem, input com o
+  `revisedPrompt` quando vier.
+- `item/completed` → `ToolResult` com `images` = cópia de `savedPath` para a
+  pasta de evidência do turno, pelo mesmo `EvidenceSink` da imagem de MCP
+  (`evidence::collect_images`, `evidence.rs:77`). Sem `savedPath`, decodifica
+  `result` direto para o arquivo de evidência.
+- `failure` presente → `ToolResult` com `ok: false` e o motivo.
+- **O base64 nunca atravessa o Channel.** Teste: o evento serializado de um
+  item com `result` de 3 MB tem menos de 10 KB.
+- `imageView` → ação de leitura com o caminho.
+- Testes: fixture montada com os valores reais de julho no formato do schema
+  (D4), marcada NEEDS-VERIFY até a captura ao vivo; caso de falha; caso sem
+  `savedPath`.
+
+### G7.2 · a ação e a miniatura no fio
+- `FraseDaAcao`: "Gerou imagem" + o prompt curto; falha diz "A geração
+  falhou" com o motivo.
+- A miniatura já aparece pelo caminho de evidência (`MiniaturasDoFio.tsx`),
+  com lightbox e arrasto (ADR-214). O prompt revisado vai no `HoverCard` da
+  miniatura.
+- Aceite: com a fixture, o fio mostra ação + miniatura; lightbox abre; a busca
+  do fio não indexa base64.
+
+### G7.3 · "Salvar no projeto"
+- Botão `chip` ao lado da miniatura: diálogo de salvar do sistema, com a
+  última pasta do projeto (D3), e comando Rust que copia a evidência.
+- Fail-closed: destino fora de pasta gravável aborta com o motivo; nome
+  existente não é sobrescrito sem confirmação.
+- ADR: "a imagem gerada vira evidência do turno; o base64 nunca entra no fio".
+
+## 4. G1 · o arquivo entregue vira cartão (M)
+
+### G1.1 · corte no meio, puro e único
+`nomeCortadoNoMeio(nome, max)` em `src/lib/`: a extensão sobrevive sempre,
+graphemes contados certo (acento, emoji). Usado pelo `CartaoDeArquivo` do
+composer (hoje corta no fim pelo CSS) e pelo cartão novo. Testes com nomes
+reais do fio.
+
+### G1.2 · quais arquivos o turno entregou
+`entregasDoTurno(items)` puro: arquivos **criados** no turno (não editados).
+Sinal de criação por motor, normalizado no adapter: Claude pelo resultado do
+Write, Codex pelo `fileChange` com tipo de inclusão, agy e OpenCode a
+conferir no stream real. Sem sinal claro, o arquivo não vira cartão e segue
+como pílula (fail-open no render). Com D2 = "fora do código", filtra por
+extensão de documento, dado e mídia. Imagem gerada (G7) não duplica: ela já
+tem miniatura.
+
+### G1.3 · o cartão
+- A geometria do `CartaoDeArquivo` (quadro 40px, nome 12, meta 11) sobe para
+  uma base compartilhada em `components/`, usada pelo composer e pelo fio.
+  Duas superfícies, um gesto, uma primitiva.
+- Meta lida do disco ao mostrar: tipo, tamanho e o dado do tipo (páginas,
+  linhas, dimensões) quando barato de ler. Arquivo ausente: "não está mais no
+  disco", sem ação de abrir.
+- Clique abre na aba do arquivo (ADR-240). Hover: Abrir e Mostrar na pasta.
+  Fonte de arrasto (ADR-214).
+- Lugar: logo abaixo da última fala do turno. Com G8 entregue, abaixo da
+  resposta.
+- Aceite: turno real do fixture `fio-real.json` que criou arquivos mostra os
+  cartões; apagar o arquivo muda o cartão sem recarregar a conversa.
+
+## 5. G8 · a resposta final com peso próprio (M, depende de D1)
+
+### G8.1 · a fase da fala, onde o motor diz
+- Capability nova `fase_da_fala` (Codex sim, os outros não).
+- `item/started` de `agentMessage` traz `phase` antes dos deltas (conferido
+  no stream real). O evento de texto passa a levar a fase opcional
+  (`AgentEvent` em `agent.rs` e a união em `src/lib/agent.ts:40`), e o item de
+  texto guarda (`store/chat.ts:594`). `null` quer dizer "não sei", como o
+  próprio schema manda tratar.
+- `agent.rs` e `store/chat.ts` estão no teto: dividir antes (§2).
+
+### G8.2 · qual fala é a resposta
+`respostaDoTurno(items, terminou)` puro, em módulo próprio:
+- com a fase: a fala marcada `final_answer`;
+- sem a fase: a última fala depois da última ação, **só com o turno
+  terminado**;
+- turno rodando sem fase: nenhuma. Nada é "final" antes de ser.
+Testes: `app-server-codex-sem-image-gen.jsonl` (Codex real, com as duas
+fases) e `src/test/fio-real.json` (Claude real). Turno interrompido: a última
+fala não vira resposta (a interrupção tem marco próprio, ADR-180).
+
+### G8.3 · o render
+Com D1 = A: narração em 13 e cor secundária, resposta em 14 e cor de texto,
+aplicado quando a resposta existe (sem piscar durante o turno, sem animação,
+ADR-179). Só apresentação: busca, cópia, citar trecho e recibo não mudam.
+Aceite: mesmo fio antes e depois, nenhum texto some; `messageNodes.ts` fica
+abaixo de 500 linhas.
+
+## 6. G3 · imagem no meio do texto do composer (G)
+
+**Evidência (27/09):** `turn/start` do Codex aceita `input` como lista de
+`text` e `localImage` intercalados (schema 0.157.1); a Frota hoje manda o
+texto inteiro e as imagens depois (`turn_params`, `codex_appserver.rs:128`).
+Claude recebe os caminhos numa lista no fim do prompt (`adapters.rs:2217`),
+Antigravity por `-i` e OpenCode por `-f` (ADR-260). O rascunho é uma string
+por conversa, com menção serializada como `@nome` (`lexicalDraft.ts`).
+
+### G3.0 · spike de 30 minutos
+Com uma conta que aceite o modelo: mandar ao Codex duas imagens intercaladas
+e perguntar "o que tem na imagem 1"; mandar ao Claude o caminho no ponto do
+texto. Confirma que a posição chega ao modelo. Resultado no topo deste plano.
+
+### G3.1 · o marcador, puro
+`anexoNoTexto.ts`: marcador privado na string do rascunho (formato que ninguém
+digita, com o id do anexo), numeração pela ordem de aparição, e as três
+saídas: intercalada (lista de partes), caminho no ponto (Claude) e "[imagem
+N]" com legenda da ordem (Antigravity, OpenCode). Anexo sem marcador segue
+como hoje. Testes de ida e volta e de cada saída.
+
+### G3.2 · a ficha no editor
+Nó decorador próprio em arquivo novo (o `LexicalComposer.tsx` está a 61
+linhas do teto), com `planDraft`/`serializePlan` estendidos. Colar e soltar
+imagem põem a ficha no cursor (`SolturaNoComposer.tsx`); backspace apaga;
+clique abre o lightbox. Nome cortado no meio (G1.1) conforme D5.
+
+### G3.3 · o envio
+O prompt com marcadores atravessa até o Rust. Capability nova
+`imagem_intercalada` (Codex sim): `turn_params` monta as partes intercaladas.
+Claude: o caminho vai no ponto, e a lista final só para anexo sem marcador.
+Antigravity e OpenCode: "[imagem N]" e legenda, argv na mesma ordem.
+`adapters.rs` no teto: o `render_attachments` de cada motor sai para módulo
+próprio antes. Teste de contrato por motor com o payload exato do mock.
+
+### G3.4 · onde mais o marcador aparece
+Nenhum marcador cru pode vazar: balão do fio (miniatura no ponto, em
+`UserMessageBubble.tsx`), envelope do revezamento (`lib/handoff.ts`), índice
+de busca, Companion (`companion/core.js`, fail-open para "[imagem N]") e a
+nota (ADR-270). Grep dos call sites do texto do rascunho antes de fechar.
+
+ADR: "a imagem entra no ponto do texto; o motor recebe pela capability".
+
+## 7. F2 · a Frota sugere onde gastar (M/G)
+
+**Base:** `checkAgentQuota` e `eligibleHandoffTargets`
+(`src/lib/quotaExhausted.ts`), `deriveComposerContinuity`
+(`src/lib/composerContinuity.ts:22`), `ContinuityBanner.tsx`, e o
+`useUsage` que guarda só a última leitura por motor (`store/usage.ts`).
+Motores com janela: Claude (statusline), Codex (rpc), Antigravity (print).
+OpenCode e Modelo direto: `usageWindow: null`.
+
+### F2.1 · ritmo, só com leitura real (D7)
+`useUsage` passa a guardar a leitura anterior de cada janela. `ritmoDaJanela`
+puro: exige duas leituras da **mesma** janela (mesmo `resetsAt`), ritmo
+positivo, e leitura recente (`snapshotUsable`). Fora disso, sem projeção.
+Testes com `now` injetável.
+
+### F2.2 · o estado "perto"
+`checkAgentQuota` vira `estadoDaCota`: `ok`, `perto` (a partir de 85% numa
+janela lida, D6, ou projeção de 100% antes do reset) e `esgotada`. A
+contraprova de hoje vale para os dois (turno concluído depois da leitura a
+desmente). Os chamadores atuais continuam lendo `esgotada` como antes.
+
+### F2.3 · a folga de cada destino
+`eligibleHandoffTargets` passa a devolver a folga lida de cada destino (qual
+janela, quanto livre, idade da leitura) ou "sem medidor" com o gasto de hoje
+(`turn_costs`). Só leitura recente conta como folga sugerida. Nada afirma que
+outro motor usa outro plano quando não sabe (ADR-165).
+
+### F2.4 · o cartão e o seletor
+- `ContinuityBanner` ganha o estado de aviso antecipado, com a copy do mock.
+  `deriveComposerContinuity` recebe o estado "perto".
+- "Agora não" encerra o episódio: `Map` de módulo por conversa, motor e
+  `resetsAt` (padrão do watchdog), sem persistir. Janela nova ou uso abaixo
+  do limiar abre episódio novo.
+- `IdentityPicker`: a folga à direita de cada motor, sempre, da mesma fonte.
+- Escolher prepara o próximo envio pelo revezamento que já existe (ADR-165,
+  ADR-206). Nada troca sozinho.
+- Aceite: com leituras reais gravadas (fixture de statusline e rpc), o cartão
+  aparece a 85%, some com "Agora não", volta na janela seguinte; leitura velha
+  perde a cor de alerta e diz a idade; OpenCode nunca mostra percentual.
+
+ADR: "a cota avisa antes de acabar, e quem escolhe o destino é a pessoa".
+
+## 8. Achado à parte (não é deste plano)
+
+No teste do G7, o `~/.codex/config.toml` desta máquina aponta para
+`gpt-6-astra`, que a conta atual recusa ("not supported when using Codex with
+a ChatGPT account"). Um turno do Codex pela Frota **sem modelo escolhido**
+herda esse padrão e falha. Vale conferir se a Frota sempre manda `model` no
+`thread/start` (`thread_params`, `codex_appserver.rs:112`, só manda quando há)
+e se o erro chega ao fio com o motivo.
