@@ -273,18 +273,22 @@ export function reduceItems(
     // resultado resumido de uma tool: anexa à linha correspondente (pelo toolId).
     case "tool_result":
       return {
-        items: c.items.map((it) =>
-          it.kind === "tool" && it.toolId === e.id && !it.result
-            ? {
-                ...it,
-                result: { ok: e.ok, text: e.text, lines: e.lines },
-                // evidência visual (B1): preserva os paths no item (persistem
-                // no snapshot). Sem imagem → campo ausente, render idêntico.
-                ...(e.images?.length ? { images: e.images } : {}),
-                activityAt: now,
-              }
-            : it,
-        ),
+        items: c.items.map((it) => {
+          if (it.kind !== "tool" || it.toolId !== e.id) return it
+          if (!it.result) {
+            return {
+              ...it,
+              result: { ok: e.ok, text: e.text, lines: e.lines },
+              // evidência visual (B1): preserva os paths no item (persistem
+              // no snapshot). Sem imagem → campo ausente, render idêntico.
+              ...(e.images?.length ? { images: e.images } : {}),
+              activityAt: now,
+            }
+          }
+          // Resultado tardio só com imagens (o agy registra a imagem gerada
+          // depois do passo, ADR-277): junta, sem tocar no resultado gravado.
+          return e.images?.length && !it.images?.length ? { ...it, images: e.images, activityAt: now } : it
+        }),
       }
     case "result": {
       // O CLI pode emitir results intermediários (fases, subagents), cada um com

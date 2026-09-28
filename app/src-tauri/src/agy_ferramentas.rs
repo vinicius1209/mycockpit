@@ -39,35 +39,67 @@ fn argumentos_do_mcp(bruto: &Value) -> Value {
     serde_json::from_str::<Value>(&pythonico).unwrap_or_else(|_| json!({ "arguments": s }))
 }
 
-/// As imagens do resultado de um passo: blocos `image` quando vierem, e, no
-/// `generate_image` concluído, o arquivo que o agy registrou no transcript do
-/// passo. O transcript pode chegar um instante depois do stream: poucas
-/// tentativas curtas, e sem imagem se ele não aparecer (nada é inventado).
-pub(crate) fn imagens_do_passo(
-    sink: Option<&crate::evidence::EvidenceSink>,
-    id: &str,
-    nome: &str,
-    info: Option<&Value>,
-    concluido: bool,
-    conversa: Option<&str>,
-    step: Option<u64>,
-) -> Vec<String> {
-    let blocos = info.and_then(|i| i.pointer("/result/content")).unwrap_or(&Value::Null);
-    let imagens = crate::evidence::collect_images(sink, id, blocos);
-    let (Some(conversa), Some(step)) = (conversa, step) else {
-        return imagens;
-    };
-    if !imagens.is_empty() || nome != "generate_image" || !concluido || sink.is_none() {
-        return imagens;
-    }
-    for _ in 0..5 {
-        let arquivos = crate::agy_recovery::midias_do_passo(conversa, step);
-        if !arquivos.is_empty() {
-            return crate::evidence::store_image_files(sink, id, &arquivos);
+/// Os arquivos do `media` de um step no transcript do agy desta conversa.
+pub(crate) fn midias(conversa: Option<&str>, step: u64) -> Vec<String> {
+    conversa.map(|c| crate::agy_recovery::midias_do_passo(c, step)).unwrap_or_default()
+}
+
+/// A imagem do `generate_image` vem do transcript do próprio agy (o `media`
+/// do step de mesmo índice; o stream não diz onde salvou). O transcript pode
+/// chegar um instante depois do stream: aí o passo fica pendente e a Frota
+/// tenta de novo nas linhas seguintes, SEM esperar (o leitor do stream é
+/// assíncrono). Não achou até o fim do turno: sem imagem, nada é inventado.
+#[derive(Default)]
+pub(crate) struct ImagensPendentes(Vec<(String, u64)>);
+
+impl ImagensPendentes {
+    /// As imagens do resultado de um passo: blocos `image` quando vierem, ou o
+    /// arquivo que o `generate_image` concluído registrou. `ler` devolve os
+    /// arquivos do `media` de um step.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn do_passo(
+        &mut self,
+        sink: Option<&crate::evidence::EvidenceSink>,
+        id: &str,
+        nome: &str,
+        info: Option<&Value>,
+        concluido: bool,
+        step: Option<u64>,
+        ler: impl Fn(u64) -> Vec<String>,
+    ) -> Vec<String> {
+        let blocos = info.and_then(|i| i.pointer("/result/content")).unwrap_or(&Value::Null);
+        let imagens = crate::evidence::collect_images(sink, id, blocos);
+        let Some(step) = step else { return imagens };
+        if !imagens.is_empty() || nome != "generate_image" || !concluido || sink.is_none() {
+            return imagens;
         }
-        std::thread::sleep(std::time::Duration::from_millis(100));
+        let arquivos = ler(step);
+        if arquivos.is_empty() {
+            self.0.push((id.to_string(), step));
+            return Vec::new();
+        }
+        crate::evidence::store_image_files(sink, id, &arquivos)
     }
-    imagens
+
+    /// Tenta as pendentes de novo; a que achou o arquivo vira um resultado
+    /// tardio só com as imagens (o redutor junta ao resultado já gravado).
+    pub(crate) fn tentar(
+        &mut self,
+        sink: Option<&crate::evidence::EvidenceSink>,
+        ler: impl Fn(u64) -> Vec<String>,
+    ) -> Vec<crate::agent::AgentEvent> {
+        let mut out = Vec::new();
+        self.0.retain(|(id, step)| {
+            let arquivos = ler(*step);
+            if arquivos.is_empty() {
+                return true;
+            }
+            let images = crate::evidence::store_image_files(sink, id, &arquivos);
+            out.push(crate::agent::AgentEvent::ToolResult { id: id.clone(), ok: true, text: String::new(), lines: 0, images });
+            false
+        });
+        out
+    }
 }
 
 /// O nome e a entrada no contrato. Puro.

@@ -49,6 +49,12 @@ export function semAImagem(texto: string, n: number): string {
   })
 }
 
+/** Várias imagens saindo de uma vez: da maior para a menor, para cada
+ *  renumeração não mexer no número das que ainda vão sair. Puro. */
+export function semReferencias(texto: string, numeros: readonly number[]): string {
+  return [...numeros].sort((a, b) => b - a).reduce((t, n) => semAImagem(t, n), texto)
+}
+
 /** Texto de uma referência. Puro. */
 export function referencia(n: number): string {
   return `[imagem ${n}]`

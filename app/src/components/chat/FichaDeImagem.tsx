@@ -98,10 +98,11 @@ export function FichaDeImagem({ n }: { n: number }) {
   }, [anexo])
 
   if (!anexo) {
-    // A referência aponta uma imagem que não está no envio: vai como texto.
+    // Só acontece enquanto a imagem colada ainda está sendo salva: a que não
+    // entra tem a referência retirada do texto (useAttachments.addFiles).
     return (
-      <span className="mx-0.5 inline-flex h-6 items-center rounded-md px-1.5 align-middle text-[12px] text-muted-foreground ring-1 ring-st-warning/30 ring-inset">
-        imagem {n} · não anexada
+      <span className="mx-0.5 inline-flex h-6 items-center rounded-md bg-secondary px-1.5 align-middle font-mono text-[11px] text-muted-foreground">
+        {n} · anexando…
       </span>
     )
   }

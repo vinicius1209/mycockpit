@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { Attachment } from "@/lib/attachments"
-import { imagensCitadas, referencias, semAImagem } from "./imagemNoTexto"
+import { imagensCitadas, referencias, semAImagem, semReferencias } from "./imagemNoTexto"
 
 // Gêmeo dos casos de `imagem_no_texto.rs`: a numeração tem que ser a mesma dos
 // dois lados, ou o composer mostra uma imagem e o motor recebe outra.
@@ -30,5 +30,11 @@ describe("[imagem N] no texto", () => {
 
   it("tirar a última não mexe nas anteriores", () => {
     expect(semAImagem(PEDIDO, 2)).toBe("Compare o card de faturas de hoje [imagem 1] com a referência e diga o que falta.")
+  })
+
+  it("colou três, a do meio não entrou: a referência dela sai e a terceira vira a segunda", () => {
+    const texto = "a [imagem 1] b [imagem 2] c [imagem 3]"
+    expect(semReferencias(texto, [2])).toBe("a [imagem 1] b c [imagem 2]")
+    expect(semReferencias(texto, [1, 3])).toBe("a b [imagem 1] c")
   })
 })

@@ -56,3 +56,28 @@ describe("fase da fala no fio", () => {
     expect(falas(c)[0].fase).toBeUndefined()
   })
 })
+
+describe("imagem que chega depois do resultado da ferramenta (ADR-277)", () => {
+  const tool: AgentEvent = { type: "tool", id: "agy-step-2", name: "GenerateImage", input: { prompt: "A blue piggy bank" } } as AgentEvent
+
+  it("junta a imagem ao resultado já gravado, sem mexer nele", () => {
+    const c = aplicar([
+      tool,
+      { type: "tool_result", id: "agy-step-2", ok: true, text: "", lines: 0 } as AgentEvent,
+      { type: "tool_result", id: "agy-step-2", ok: true, text: "", lines: 0, images: ["evidence/c/agy-step-2-0.jpg"] } as AgentEvent,
+    ])
+    const t = c.items.find((i) => i.kind === "tool") as Extract<ChatItem, { kind: "tool" }>
+    expect(t.images).toEqual(["evidence/c/agy-step-2-0.jpg"])
+    expect(t.result?.ok).toBe(true)
+  })
+
+  it("resultado repetido sem imagem não sobrescreve nada", () => {
+    const c = aplicar([
+      tool,
+      { type: "tool_result", id: "agy-step-2", ok: true, text: "primeiro", lines: 1 } as AgentEvent,
+      { type: "tool_result", id: "agy-step-2", ok: false, text: "segundo", lines: 1 } as AgentEvent,
+    ])
+    const t = c.items.find((i) => i.kind === "tool") as Extract<ChatItem, { kind: "tool" }>
+    expect(t.result).toEqual({ ok: true, text: "primeiro", lines: 1 })
+  })
+})

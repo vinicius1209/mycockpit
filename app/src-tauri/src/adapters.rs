@@ -3457,6 +3457,7 @@ pub struct AgyAdapter {
     last_tool_position: Option<u64>,
     /// Sink de evidência visual de tool_result (browser-plan B1).
     evidence: Option<crate::evidence::EvidenceSink>,
+    imagens: agy_ferramentas::ImagensPendentes,
     /// Tarefas em background que o `-p` avisou estar esperando (stderr). None =
     /// sem espera anunciada, ou a ponte já voltou a falar.
     esperando_tarefas: Option<u32>,
@@ -3673,7 +3674,7 @@ impl AgyAdapter {
             .and_then(|x| x.as_u64())
             .map(|i| format!("agy-step-{i}"))
             .unwrap_or_else(|| "agy-step".to_string());
-        let mut out = Vec::new();
+        let mut out = self.imagens.tentar(self.evidence.as_ref(), |i| agy_ferramentas::midias(self.conversation_id.as_deref(), i));
         match kind {
             "agent_response" => {
                 if self.response_step.as_deref() != Some(id.as_str()) {
@@ -3757,10 +3758,8 @@ impl AgyAdapter {
                         text,
                         lines,
                         // Blocos `image`, ou a imagem que o `generate_image` salvou.
-                        images: agy_ferramentas::imagens_do_passo(
-                            self.evidence.as_ref(), &id, &name, info, state == "DONE" && erro.is_none(),
-                            self.conversation_id.as_deref(), step_index,
-                        ),
+                        images: self.imagens.do_passo(self.evidence.as_ref(), &id, &name, info,
+                            state == "DONE" && erro.is_none(), step_index, |i| agy_ferramentas::midias(self.conversation_id.as_deref(), i)),
                     });
                     if let Some((task_id, output_file)) = bg_task {
                         out.push(AgentEvent::DeferredWork {

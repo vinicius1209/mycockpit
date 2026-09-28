@@ -254,12 +254,7 @@ export function CommandConsole({
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
   const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
-  // Imagem citada no texto mora no texto (ficha); a fileira mostra o resto.
   const imagensDoRascunho = useMemo(() => imagensDoEnvio(attachments), [attachments])
-  const anexosDaFileira = useMemo(() => {
-    const citadas = imagensCitadas(value, attachments)
-    return citadas.size ? attachments.filter((a) => !citadas.has(a.path)) : attachments
-  }, [value, attachments])
 
   // A persona mora na conversa (conv.presetId), que é de onde o envio lê. Ela
   // é o trio agent/modelo/esforço fechado: mexer num item desfaz a seleção.
@@ -305,6 +300,12 @@ export function CommandConsole({
   const convAgent = effectiveDest
   // trava de capacidade: o agent-alvo precisa suportar cada anexo (espelha o trait)
   const caps = agentCaps(effectiveDest)
+  // Imagem citada no texto mora no texto (ficha); a fileira mostra o resto.
+  // Motor que não lê imagem: tudo fica na fileira, onde o aviso dele mora.
+  const anexosDaFileira = useMemo(() => {
+    const citadas = caps.image ? imagensCitadas(value, attachments) : new Set<string>()
+    return citadas.size ? attachments.filter((a) => !citadas.has(a.path)) : attachments
+  }, [value, attachments, caps.image])
   const allSupported = attachments.every((a) =>
     a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
   )

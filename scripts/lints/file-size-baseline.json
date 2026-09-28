@@ -13,7 +13,7 @@
     "lib/fleet/derive.ts": 771,
     "lib/fleet/send.test.ts": 975,
     "lib/fleet/send.ts": 673,
-    "src-tauri/adapters.rs": 4321,
+    "src-tauri/adapters.rs": 4320,
     "src-tauri/agent.rs": 1914,
     "src-tauri/codex_appserver.rs": 1730,
     "src-tauri/companion.rs": 3065,

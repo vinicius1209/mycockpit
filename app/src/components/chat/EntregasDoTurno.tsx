@@ -17,6 +17,7 @@ import { useRaizEfetiva } from "@/components/layout/raizEfetiva"
 import { controle } from "@/components/ui/controle"
 import { avisar } from "@/lib/avisos"
 import { nomeDoCaminho } from "@/lib/arquivoCitado"
+import { isImagePath } from "@/lib/fileLink"
 import { isTauri } from "@/lib/db"
 import type { Entrega } from "@/lib/entregas"
 import { fmtBytes } from "@/lib/format"
@@ -77,6 +78,19 @@ function useNoDisco(caminhos: string[]): Map<string, number> | undefined {
   return lido
 }
 
+/** Dentro da raiz, abre na aba do arquivo; imagem de fora também. Outro
+ *  arquivo de fora a aba não lê (raízes permitidas, `sources.rs`) e abrir no
+ *  app padrão pede permissão que o app não tem: mostra na pasta. */
+function abrirEntrega(caminho: string, rel: string | null, projectPath: string | null): void {
+  if (rel) {
+    void abrirMencaoDeArquivo({ rel, abs: caminho, line: null }, projectPath)
+  } else if (isImagePath(caminho)) {
+    useApp.getState().openFileTab(caminho)
+  } else {
+    void revealItemInDir(caminho).catch(() => avisar.erro("Não encontrei o arquivo (ele ainda existe?)"))
+  }
+}
+
 export function EntregasDoTurno({ entregas }: { entregas: Entrega[] }) {
   const raiz = useRaizEfetiva()
   const projectPath = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId)?.path ?? null)
@@ -92,9 +106,7 @@ export function EntregasDoTurno({ entregas }: { entregas: Entrega[] }) {
             <button
               type="button"
               disabled={sumiu}
-              onClick={() =>
-                void abrirMencaoDeArquivo({ rel: rel ?? nomeDoCaminho(caminho), abs: caminho, line: null }, projectPath)
-              }
+              onClick={() => abrirEntrega(caminho, rel, projectPath)}
               onPointerDown={
                 rel && !sumiu
                   ? (event) =>

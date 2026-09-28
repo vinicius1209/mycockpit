@@ -1,4 +1,4 @@
-import { imagensDoEnvio, semAImagem } from "@/lib/imagemNoTexto"
+import { imagensDoEnvio, semAImagem, semReferencias } from "@/lib/imagemNoTexto"
 import { useEffect, useState, type SetStateAction } from "react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { open } from "@tauri-apps/plugin-dialog"
@@ -127,14 +127,29 @@ export function useAttachments({
   async function addFiles(files: File[]) {
     if (!isTauri() || !activeId) return
     let count = attachments.length
+    // A ficha da imagem colada no cursor já nasceu com o número que a imagem
+    // teria (G3). A que não entrar leva a referência dela, e as seguintes
+    // descem um, para nenhuma apontar a imagem errada.
+    let numero = imagensDoEnvio(attachments).length
+    const naoEntraram: number[] = []
+    let parou = false
     for (const f of files) {
+      const imagem = f.type.startsWith("image/")
+      if (imagem) numero++
+      if (parou) {
+        if (imagem) naoEntraram.push(numero)
+        continue
+      }
       if (f.size > MAX_ATTACH_BYTES) {
         avisar.erro(`"${f.name || "anexo"}" excede ${MAX_ATTACH_MB} MB`)
+        if (imagem) naoEntraram.push(numero)
         continue
       }
       if (count >= MAX_ATTACH_COUNT) {
         avisar.erro(`máx. ${MAX_ATTACH_COUNT} anexos por mensagem`)
-        break
+        parou = true
+        if (imagem) naoEntraram.push(numero)
+        continue
       }
       try {
         const buf = new Uint8Array(await f.arrayBuffer())
@@ -143,8 +158,10 @@ export function useAttachments({
         count++
       } catch (err) {
         avisar.erro("Não consegui anexar o arquivo.", { detalhe: mensagemDe(err) })
+        if (imagem) naoEntraram.push(numero)
       }
     }
+    if (naoEntraram.length) setValue((v) => semReferencias(v, naoEntraram))
   }
 
   // Colar imagem/PDF: captura os File SÍNCRONO antes de qualquer await (F21),
