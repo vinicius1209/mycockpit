@@ -50,7 +50,7 @@
   "app/src-tauri/src/hook_gateway.rs": 3,
   "app/src-tauri/src/hook_sessions.rs": 9,
   "app/src-tauri/src/hooks_install.rs": 25,
-  "app/src-tauri/src/lib.rs": 4,
+  "app/src-tauri/src/lib.rs": 2,
   "app/src-tauri/src/mcp_auth.rs": 1,
   "app/src-tauri/src/mcp_control.rs": 4,
   "app/src-tauri/src/mcp_proxy.rs": 1,

@@ -9898,3 +9898,36 @@ considerou.
 - **Pendente:** a bandeja ainda conta só disputas e pedidos, sem gate, card,
   proposta e CLI; as ideias B (resumo de volta), C (abrir o grupo, silenciar
   conversa) e D (recorte por projeto) do mock.
+
+### ADR-272 · A imagem que o motor gera vira evidência do turno, e o base64 nunca entra no fio ✅
+- **Contexto (27/09/2026):** o `codex app-server` manda a geração de imagem
+  como item `imageGeneration` (`id`, `status`, `revisedPrompt`, `savedPath`,
+  `failure` e `result`, que é a imagem inteira em base64: 3,3 MB na geração
+  real de 29/07). O mapeamento caía no `_ => vec![]` e a imagem sumia do fio;
+  sobrava a frase do agente dizendo onde salvou. O item irmão `imageView` (o
+  agente olhando uma imagem local) sumia do mesmo jeito. Spike e schema em
+  `docs/prototipos-maestri-plan.md` (G7); mock
+  `docs/mocks/estudo-maestri-prototipos.html`.
+- **Decisão:**
+  1. O mapeamento de item do app-server sai para `codex_itens.rs` (o
+     `codex_appserver.rs` estava no teto da catraca).
+  2. `imageGeneration` entra no vocabulário do contrato como `GenerateImage`,
+     com o prompt do motor no input. O resultado vira evidência pelo mesmo
+     sink da captura de MCP (`evidence::store_generated_image`): lê o arquivo
+     que o motor salvou e, sem ele, decodifica o base64 direto para o disco. O
+     tipo sai da assinatura dos bytes. O evento leva só o path relativo.
+  3. `failure` vira resultado com erro e motivo legível (o contrato só conhece
+     `usageLimitExceeded`; tipo novo sai pelo nome). A meta da linha mostra o
+     motivo em vez de "erro".
+  4. `imageView` é leitura de arquivo, no `Read` de sempre.
+  5. O lightbox ganha "Salvar no projeto" para toda imagem do fio (captura,
+     anexo, gerada): diálogo do sistema, começa na última pasta daquele
+     projeto nesta sessão, e o comando `save_conv_image` copia com a mesma
+     contenção dos irmãos. A Frota não escreve no projeto sozinha.
+- **Verificado:** schema do app-server 0.157.1 e os valores reais da geração
+  de julho na fixture (NEEDS-VERIFY até a captura ao vivo: a conta desta
+  máquina está no plano "free" e a ferramenta não aparece nele). Teste que um
+  `result` de 3,3 MB vira evento de menos de 10 KB.
+- **Fica de fora:** o transporte `codex exec` (modos que não são Padrão). O
+  formato do item de imagem nele não foi colhido; item desconhecido segue
+  aparecendo como `Unknown` no fio, sem sumir calado.

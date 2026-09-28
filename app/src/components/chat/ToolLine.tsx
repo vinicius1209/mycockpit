@@ -10,6 +10,7 @@ import {
   FilePen,
   FileText,
   Globe,
+  ImagePlus,
   MessageSquareQuote,
   RotateCcw,
   Search,
@@ -56,6 +57,7 @@ const KIND_ICON: Record<ToolKind, LucideIcon> = {
   search: Search,
   web: Globe,
   agent: Bot,
+  image: ImagePlus,
   generic: Wrench,
 }
 
@@ -166,7 +168,7 @@ export const ToolLine = memo(function ToolLine({
     processMeta,
     echoesOwner ? null : deferredMeta,
     res,
-    evidenceMeta(item.images),
+    evidenceMeta(item.images, item.name),
   ]
     .filter(Boolean)
     .join(" · ")

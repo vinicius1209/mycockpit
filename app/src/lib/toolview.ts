@@ -10,6 +10,7 @@ export type ToolKind =
   | "search"
   | "web"
   | "agent"
+  | "image"
   | "generic"
 
 export type ToolCategory =
@@ -274,6 +275,23 @@ function presentToolBase(name: string, input: unknown): ToolView {
         detail: safeJson(input),
       }
     }
+    // Imagem que o próprio motor gerou (contrato `GenerateImage`). O prompt é
+    // do motor, não da pessoa: vai para o hover e o expand, não para o rótulo.
+    case "GenerateImage": {
+      const prompt = str(i, "prompt")
+      const primeira = prompt?.split("\n").find((l) => l.trim()) ?? null
+      return {
+        kind: "image",
+        label: "Gerar imagem",
+        verb: "Gerar imagem",
+        object: texto(primeira, 60),
+        narration: prompt ? clip(prompt, 200) : null,
+        category: "execute",
+        emphasis: "normal",
+        meta: null,
+        detail: prompt,
+      }
+    }
     case "Task":
     case "Agent": {
       const d = str(i, "description") ?? str(i, "prompt")
@@ -397,7 +415,9 @@ export function resultMeta(
 ): string | null {
   if (!result) return null
   if (result.interrupted) return "parou"
-  if (!result.ok) return "erro"
+  // A geração de imagem diz por que falhou (limite, recusa): "erro" sozinho
+  // esconderia a única informação útil.
+  if (!result.ok) return name === "GenerateImage" && result.text ? clip(result.text, 64) : "erro"
   const linhas = (n: number) => `${n} ${n === 1 ? "linha" : "linhas"}`
   if (name === "Read") return result.lines > 0 ? linhas(result.lines) : null
   if (name === "Grep" || name === "Glob")
@@ -409,7 +429,8 @@ export function resultMeta(
 /** Meta da evidência VISUAL (browser-plan B1): quantas capturas o resultado
  *  trouxe, na régua da linha da tool. Sem imagem → null (linha idêntica à de
  *  sempre, fail-open). */
-export function evidenceMeta(images: string[] | undefined): string | null {
+export function evidenceMeta(images: string[] | undefined, name?: string): string | null {
   if (!images || images.length === 0) return null
+  if (name === "GenerateImage") return images.length === 1 ? "1 imagem" : `${images.length} imagens`
   return images.length === 1 ? "1 captura" : `${images.length} capturas`
 }

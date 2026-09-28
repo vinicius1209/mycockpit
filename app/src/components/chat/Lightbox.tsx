@@ -7,13 +7,17 @@
 // quebrada.
 
 import { useEffect, useState } from "react"
-import { ChevronLeft, ChevronRight, ExternalLink, X } from "lucide-react"
+import { ChevronLeft, ChevronRight, Download, ExternalLink, X } from "lucide-react"
 import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
+import { controle } from "@/components/ui/controle"
 import { ALTURA_DA_FAIXA, RECUO_DOS_BOTOES } from "@/components/layout/faixaDaJanela"
 import { attachmentUrl, type Attachment } from "@/lib/attachments"
 import { evidenceUrl, openConvImage } from "@/lib/evidence"
 import { imagemCitadaUrl } from "@/lib/imagemCitada"
+import { salvarImagemDoFio } from "@/lib/salvarImagem"
+import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 import { missingLabel, useLightbox, type LightboxImage } from "@/store/lightbox"
 
 /** Bytes → object URL pela origem (os DOIS caches por path já existem). */
@@ -27,6 +31,14 @@ async function imageUrl(img: LightboxImage): Promise<string> {
     mime: img.mime ?? "image/png",
     bytes: 0,
   } satisfies Attachment)
+}
+
+/** Pasta do projeto da conversa aberta: onde o "Salvar no projeto" começa. */
+function projetoDaConversaAtiva(): string | null {
+  const { activeId, byId } = useChat.getState()
+  const projectId = activeId ? byId[activeId]?.projectId : null
+  if (!projectId) return null
+  return useApp.getState().projects.find((p) => p.id === projectId)?.path ?? null
 }
 
 export function LightboxOverlay() {
@@ -104,6 +116,16 @@ export function LightboxOverlay() {
           </span>
         )}
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
+          {!missing && doFio && (
+            <button
+              type="button"
+              onClick={() => void salvarImagemDoFio(img.path, img.name, projetoDaConversaAtiva())}
+              className={cn(controle("compacto"), "inline-flex items-center gap-1.5 rounded-md border border-white/20 text-white/85 transition-colors hover:bg-white/10")}
+            >
+              <Download className="size-3.5" />
+              Salvar no projeto
+            </button>
+          )}
           {!missing && doFio && (
             <button
               type="button"

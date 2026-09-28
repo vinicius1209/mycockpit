@@ -284,3 +284,192 @@ pub(crate) fn preparar_no_boot(app: &tauri::AppHandle) {
         log::warn!("manutenção do banco falhou (seguindo sem): {e}");
     }
 }
+
+#[cfg(test)]
+mod testes_migracao_do_banco {
+    use super::{migrar_banco_entre, PARTES};
+    use crate::{BANCO, BANCO_LEGADO};
+    use std::path::PathBuf;
+
+    fn tmp(tag: &str) -> (PathBuf, PathBuf) {
+        let raiz = std::env::temp_dir().join(format!(
+            "frota-migra-{tag}-{}-{:?}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let novo = raiz.join("dev.vinicius.frota");
+        let legado = raiz.join(crate::ID_LEGADO);
+        std::fs::create_dir_all(&novo).unwrap();
+        std::fs::create_dir_all(&legado).unwrap();
+        (novo, legado)
+    }
+
+    /// Banco legado com as TRÊS partes do WAL, cada uma com conteúdo próprio.
+    fn semear(dir: &PathBuf) {
+        for (ext, corpo) in [("db", "pagina"), ("db-wal", "log"), ("db-shm", "mapa")] {
+            std::fs::write(dir.join(BANCO_LEGADO.replace(".db", &format!(".{ext}"))), corpo).unwrap();
+        }
+    }
+
+    #[test]
+    fn copia_as_tres_partes_do_wal() {
+        // Copiar só o .db deixaria para trás transação que ainda vive no log.
+        let (novo, legado) = tmp("tres");
+        semear(&legado);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        for (ext, corpo) in [("db", "pagina"), ("db-wal", "log"), ("db-shm", "mapa")] {
+            let f = novo.join(format!("frota.{ext}"));
+            assert!(f.exists(), "faltou frota.{ext}");
+            assert_eq!(std::fs::read_to_string(&f).unwrap(), corpo);
+        }
+    }
+
+    #[test]
+    fn copia_e_nunca_move() {
+        // O diretório antigo fica inteiro: é o rollback para a versão
+        // anterior do app, que procura o banco onde ele estava.
+        let (novo, legado) = tmp("copia");
+        semear(&legado);
+        migrar_banco_entre(&novo, &legado).unwrap();
+        for ext in PARTES {
+            assert!(
+                legado.join(BANCO_LEGADO.replace(".db", &format!(".{ext}"))).exists(),
+                "o banco antigo sumiu: {ext}"
+            );
+        }
+    }
+
+    #[test]
+    fn nao_sobrescreve_banco_novo_ja_existente() {
+        // Segundo boot. Sobrescrever aqui apagaria tudo que a pessoa fez desde
+        // a migração, que é a pior falha possível desta função.
+        let (novo, legado) = tmp("segundo");
+        semear(&legado);
+        std::fs::write(novo.join(BANCO), "trabalho novo").unwrap();
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(
+            std::fs::read_to_string(novo.join(BANCO)).unwrap(),
+            "trabalho novo"
+        );
+    }
+
+    #[test]
+    fn e_idempotente() {
+        let (novo, legado) = tmp("idem");
+        semear(&legado);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(std::fs::read_to_string(novo.join(BANCO)).unwrap(), "pagina");
+    }
+
+    #[test]
+    fn instalacao_nova_nao_inventa_banco() {
+        let (novo, legado) = tmp("nova");
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(!novo.join(BANCO).exists());
+    }
+
+    #[test]
+    fn banco_fechado_limpo_migra_sem_wal() {
+        // Sem WAL/SHM é estado NORMAL (banco fechado direito). Não é erro.
+        let (novo, legado) = tmp("semwal");
+        std::fs::write(legado.join(BANCO_LEGADO), "pagina").unwrap();
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert!(novo.join(BANCO).exists());
+        assert!(!novo.join("frota.db-wal").exists());
+    }
+
+    #[test]
+    fn nome_velho_no_diretorio_novo_tambem_migra() {
+        // Caso do identificador inalterado e só o arquivo renomeado.
+        let (novo, legado) = tmp("mesmodir");
+        semear(&novo);
+        assert!(migrar_banco_entre(&novo, &legado).unwrap());
+        assert_eq!(std::fs::read_to_string(novo.join(BANCO)).unwrap(), "pagina");
+    }
+
+    use crate::manutencao_do_banco::migrar_arvores_entre;
+
+    /// Anexo e evidência de uma conversa, no layout real
+    /// (`<arvore>/<convId>/<arquivo>`).
+    fn semear_arvores(dir: &PathBuf) {
+        for (arvore, arquivo, corpo) in [
+            ("attachments", "a1b2c3d4.png", "pixels"),
+            ("evidence", "tool-0.txt", "saida"),
+        ] {
+            let conv = dir.join(arvore).join("conv-1");
+            std::fs::create_dir_all(&conv).unwrap();
+            std::fs::write(conv.join(arquivo), corpo).unwrap();
+        }
+    }
+
+    #[test]
+    fn traz_anexos_e_evidencias_junto_com_o_banco() {
+        // O banco endereça os dois por caminho RELATIVO ao app_data_dir. Com o
+        // diretório novo vazio, todo anexo de conversa antiga vira arquivo
+        // faltando, com o banco inteiro e correto.
+        let (novo, legado) = tmp("arvores");
+        semear_arvores(&legado);
+        let trazidas = migrar_arvores_entre(&novo, &legado).unwrap();
+        assert_eq!(trazidas, vec!["attachments", "evidence"]);
+        assert_eq!(
+            std::fs::read_to_string(novo.join("attachments/conv-1/a1b2c3d4.png")).unwrap(),
+            "pixels"
+        );
+        assert_eq!(
+            std::fs::read_to_string(novo.join("evidence/conv-1/tool-0.txt")).unwrap(),
+            "saida"
+        );
+    }
+
+    #[test]
+    fn as_arvores_tem_gate_proprio_e_nao_dependem_do_banco() {
+        // Este é o estado real de 21/09/2026: o banco JÁ migrou num boot
+        // anterior, e as árvores ficaram para trás. Se o gate fosse o do
+        // banco, elas nunca viriam.
+        let (novo, legado) = tmp("gate");
+        semear(&legado);
+        semear_arvores(&legado);
+        migrar_banco_entre(&novo, &legado).unwrap();
+        assert!(!migrar_banco_entre(&novo, &legado).unwrap(), "banco já migrou");
+        assert_eq!(
+            migrar_arvores_entre(&novo, &legado).unwrap(),
+            vec!["attachments", "evidence"]
+        );
+    }
+
+    #[test]
+    fn nao_pisa_em_arvore_que_o_app_ja_criou() {
+        // Sobrescrever aqui apagaria anexo gravado depois do rename.
+        let (novo, legado) = tmp("pisa");
+        semear_arvores(&legado);
+        let conv = novo.join("attachments/conv-2");
+        std::fs::create_dir_all(&conv).unwrap();
+        std::fs::write(conv.join("novo.png"), "recente").unwrap();
+
+        assert_eq!(migrar_arvores_entre(&novo, &legado).unwrap(), vec!["evidence"]);
+        assert_eq!(
+            std::fs::read_to_string(conv.join("novo.png")).unwrap(),
+            "recente"
+        );
+    }
+
+    #[test]
+    fn arvores_copiam_e_nunca_movem() {
+        let (novo, legado) = tmp("arvcopia");
+        semear_arvores(&legado);
+        migrar_arvores_entre(&novo, &legado).unwrap();
+        assert!(legado.join("attachments/conv-1/a1b2c3d4.png").exists());
+        assert!(legado.join("evidence/conv-1/tool-0.txt").exists());
+    }
+
+    #[test]
+    fn instalacao_nova_nao_inventa_arvore() {
+        let (novo, legado) = tmp("arvnova");
+        assert!(migrar_arvores_entre(&novo, &legado).unwrap().is_empty());
+        assert!(!novo.join("attachments").exists());
+    }
+}

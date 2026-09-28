@@ -54,3 +54,10 @@ export async function openConvImage(path: string): Promise<void> {
 export async function revealConvImage(path: string): Promise<void> {
   await invoke("reveal_conv_image", { path })
 }
+
+/** Copia a imagem do fio para o caminho que o diálogo de salvar devolveu
+ *  ("Salvar no projeto" do lightbox). A origem segue relativa e contida no
+ *  Rust; o destino é escolha da pessoa. */
+export async function saveConvImage(path: string, destino: string): Promise<void> {
+  await invoke("save_conv_image", { path, destino })
+}

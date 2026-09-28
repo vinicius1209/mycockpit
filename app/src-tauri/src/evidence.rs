@@ -123,6 +123,59 @@ pub fn collect_images(
     out
 }
 
+/// Imagem que o próprio motor GEROU (item `imageGeneration` do codex app-server)
+/// vira evidência do turno, como a captura de um MCP. Prefere o arquivo que o
+/// motor já salvou (`saved_path`); sem ele, decodifica o base64 do `result`.
+/// Os bytes vão para o disco e o evento leva só o path relativo: a imagem
+/// inteira em base64 (megabytes) nunca atravessa o Channel.
+pub fn store_generated_image(
+    sink: Option<&EvidenceSink>,
+    tool_id: &str,
+    saved_path: Option<&str>,
+    base64: Option<&str>,
+) -> Vec<String> {
+    let Some(sink) = sink else {
+        return Vec::new();
+    };
+    let do_disco = saved_path
+        .filter(|p| !p.is_empty())
+        .and_then(|p| match std::fs::read(p) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                log::warn!("evidência: imagem gerada em {p} não abriu: {e}");
+                None
+            }
+        });
+    let bytes = match do_disco {
+        Some(b) => b,
+        None => match base64.filter(|s| !s.is_empty()).and_then(decode_base64) {
+            Some(b) => b,
+            None => return Vec::new(),
+        },
+    };
+    let Some(media_type) = media_type_by_magic(&bytes) else {
+        log::warn!("evidência: imagem gerada de {tool_id} em formato desconhecido");
+        return Vec::new();
+    };
+    sink.write(tool_id, 0, media_type, &bytes).into_iter().collect()
+}
+
+/// Tipo pela assinatura dos bytes, não pela extensão: o arquivo salvo pelo
+/// motor e o base64 do evento chegam sem media_type declarado.
+fn media_type_by_magic(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("image/jpeg")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if bytes.starts_with(b"GIF8") {
+        Some("image/gif")
+    } else {
+        None
+    }
+}
+
 /// Allowlist de media_type → extensão (mesma régua dos anexos). None = tipo
 /// não-imagem/desconhecido, pulado com honestidade (nunca grava .bin cego).
 fn ext_for_media_type(media_type: &str) -> Option<&'static str> {
@@ -257,6 +310,35 @@ pub async fn reveal_conv_image(app: tauri::AppHandle, path: String) -> Result<()
         .map_err(|e| format!("não consegui mostrar na pasta: {e}"))
 }
 
+/// Copia uma imagem do fio (evidência OU anexo) para onde a pessoa escolheu
+/// no diálogo de salvar: o gesto "Salvar no projeto" do lightbox. A origem
+/// passa pela mesma contenção dos irmãos; o destino é o caminho que o diálogo
+/// do sistema devolveu, e a pasta dele precisa existir (sem criar pasta às
+/// escondidas). A confirmação de sobrescrever é do próprio diálogo.
+#[tauri::command]
+pub async fn save_conv_image(app: tauri::AppHandle, path: String, destino: String) -> Result<(), String> {
+    let root = if path.starts_with("evidence/") {
+        "evidence"
+    } else {
+        "attachments"
+    };
+    let origem = contained(&app, root, &path)?;
+    copiar_para_destino(&origem, std::path::Path::new(&destino))
+}
+
+fn copiar_para_destino(origem: &std::path::Path, destino: &std::path::Path) -> Result<(), String> {
+    if !destino.is_absolute() {
+        return Err("destino inválido".to_string());
+    }
+    match destino.parent() {
+        Some(pasta) if pasta.is_dir() => {}
+        _ => return Err("a pasta de destino não existe".to_string()),
+    }
+    std::fs::copy(origem, destino)
+        .map(|_| ())
+        .map_err(|e| format!("não consegui salvar: {e}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -359,5 +441,25 @@ mod tests {
         let com_quebras = format!("{}\n{}", &PNG_1X1_B64[..40], &PNG_1X1_B64[40..]);
         assert_eq!(decode_base64(&com_quebras), decode_base64(PNG_1X1_B64));
         assert!(decode_base64("abc!").is_none());
+    }
+
+    #[test]
+    fn salvar_copia_para_pasta_que_existe() {
+        let dir = std::env::temp_dir().join(format!("frota-salvar-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let origem = dir.join("origem.png");
+        std::fs::write(&origem, b"png").unwrap();
+        let destino = dir.join("icone.png");
+        copiar_para_destino(&origem, &destino).unwrap();
+        assert_eq!(std::fs::read(&destino).unwrap(), b"png");
+    }
+
+    #[test]
+    fn salvar_recusa_pasta_que_nao_existe_e_caminho_relativo() {
+        let origem = std::env::temp_dir().join("frota-salvar-origem-inexistente.png");
+        let fantasma = std::env::temp_dir().join("frota-nao-existe-abc/x.png");
+        assert_eq!(copiar_para_destino(&origem, &fantasma).unwrap_err(), "a pasta de destino não existe");
+        assert_eq!(copiar_para_destino(&origem, std::path::Path::new("x.png")).unwrap_err(), "destino inválido");
     }
 }
