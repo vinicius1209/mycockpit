@@ -9931,3 +9931,32 @@ considerou.
 - **Fica de fora:** o transporte `codex exec` (modos que não são Padrão). O
   formato do item de imagem nele não foi colhido; item desconhecido segue
   aparecendo como `Unknown` no fio, sem sumir calado.
+
+### ADR-273 · O arquivo que o turno entrega vira cartão acima do recibo ✅
+- **Contexto (27/09/2026):** quando o agente produzia um relatório, uma
+  planilha ou uma imagem, o arquivo ficava espalhado como pílula no meio da
+  prosa, e o composer cortava nome de arquivo no fim, escondendo a extensão.
+  Mock `docs/mocks/estudo-maestri-prototipos.html` (G1), plano
+  `docs/prototipos-maestri-plan.md`.
+- **Decisão:**
+  1. Entrega é o arquivo que o motor **disse** que escreveu inteiro (`Write`)
+     ou criou (a mudança `add` do Codex, nos formatos texto e `{ type }`),
+     com resultado ok e extensão de entregável: documento, planilha, imagem,
+     vídeo, áudio, zip. html, md, json, svg e txt ficam de fora: num turno de
+     código apareceriam às dezenas. Arquivo gerado por shell não tem sinal
+     confiável e não é adivinhado (`lib/entregas.ts`).
+  2. Os cartões ficam acima do recibo do turno. O mapa "resultado → entregas"
+     reaproveita o array de turno fechado, para o `memo` do item do fio não
+     quebrar a cada token.
+  3. O cartão do composer (ADR-252) e o do fio usam a mesma peça
+     (`QuadroDeArquivo`), com o nome cortado no meio por graphemes
+     (`lib/nomeNoMeio.ts`). Clique abre; ao passar o mouse, "Mostrar na
+     pasta"; dentro da raiz, arrasta para o composer.
+  4. Tamanho e existência vêm do disco na hora de mostrar e quando a janela
+     volta ao foco, pelo `caminhos_soltos` que já existia. Arquivo apagado diz
+     "não está mais no disco" e não abre.
+- **Verificado:** o `fio-real.json` inteiro (90 escritas de código) não gera
+  nenhum cartão. As fixtures positivas usam a forma exata de itens reais do
+  banco com a extensão trocada: o banco não tinha nenhuma entrega de verdade.
+- **Não fizemos:** páginas do PDF, linhas do CSV e dimensões da imagem na meta
+  (o mock mostrava); ficam para quando houver leitura barata.

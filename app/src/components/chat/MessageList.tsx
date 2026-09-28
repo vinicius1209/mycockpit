@@ -18,6 +18,8 @@ import { taskPlansOf, type AgentPlan } from "@/lib/tasks"
 import { TurnNoteBlock } from "@/components/chat/TurnNote"
 import type { FeedbackApi } from "@/components/chat/TurnActions"
 import { TurnReceipt } from "@/components/chat/TurnReceipt"
+import { EntregasDoTurno } from "@/components/chat/EntregasDoTurno"
+import { entregasPorResultado, type Entrega } from "@/lib/entregas"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
 import { PlanMilestone } from "@/components/chat/PlanMilestone"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
@@ -212,6 +214,8 @@ interface NodeCtx {
   agent: string
   stalledSince?: number
   feedbackByResult: Map<string, string>
+  /** Arquivos que cada turno entregou, pelo id do `result` que o fecha (G1). */
+  entregasByResult: Map<string, Entrega[]>
   lastResultId: string | null
   onStop?: (tool: ToolItem) => void
   onRetry?: (tool: ToolItem) => void
@@ -281,17 +285,21 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
       />
     )
   }
+  const entregas = n.item.kind === "result" ? ctx.entregasByResult.get(n.item.id) : undefined
   return (
-    <MessageItem
-      item={n.item}
-      feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
-      feedbackText={ctx.feedbackByResult.get(n.item.id)}
-      final={ctx.feedbackByResult.has(n.item.id)}
-      lastTurn={n.item.id === ctx.lastResultId}
-      onApprovePlan={ctx.onApprovePlan}
-      onKeepPlanning={ctx.onKeepPlanning}
-      reads={ctx.attReads.get(n.item.id)}
-    />
+    <>
+      {entregas && entregas.length > 0 && <EntregasDoTurno entregas={entregas} />}
+      <MessageItem
+        item={n.item}
+        feedback={ctx.feedbackByResult.has(n.item.id) ? ctx.feedback : null}
+        feedbackText={ctx.feedbackByResult.get(n.item.id)}
+        final={ctx.feedbackByResult.has(n.item.id)}
+        lastTurn={n.item.id === ctx.lastResultId}
+        onApprovePlan={ctx.onApprovePlan}
+        onKeepPlanning={ctx.onKeepPlanning}
+        reads={ctx.attReads.get(n.item.id)}
+      />
+    </>
   )
 }
 
@@ -432,6 +440,13 @@ export function MessageList({
     () => feedbackTextByResult(threadItems, turnStartIndex(threadItems, windowStart)),
     [threadItems, windowStart],
   )
+  // Turno fechado reaproveita o array anterior: o `memo` do item não quebra por token.
+  const entregasAnteriores = useRef<Map<string, Entrega[]>>(new Map())
+  const entregasByResult = useMemo(() => {
+    const next = entregasPorResultado(threadItems, turnStartIndex(threadItems, windowStart), entregasAnteriores.current)
+    entregasAnteriores.current = next
+    return next
+  }, [threadItems, windowStart])
   const lastResultId = useMemo(
     () => threadItems.findLast((item) => item.kind === "result")?.id ?? null,
     [threadItems],
@@ -461,6 +476,7 @@ export function MessageList({
     agent,
     stalledSince,
     feedbackByResult,
+    entregasByResult,
     lastResultId,
     onStop: stableStop,
     onRetry: stableRetry,

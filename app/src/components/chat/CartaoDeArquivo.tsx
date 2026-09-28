@@ -12,7 +12,7 @@ import { FolderOpen, X } from "lucide-react"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
 import { avisar } from "@/lib/avisos"
 import { Button } from "@/components/ui/button"
-import { FileIcon } from "@/components/ui/file-icon"
+import { CASCA_DO_CARTAO_DE_ARQUIVO, QuadroDeArquivo } from "@/components/common/QuadroDeArquivo"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
 import { dentroDoProjeto, nomeDoCaminho, ondeMora, pastaDoCaminho } from "@/lib/arquivoCitado"
 import { fmtBytes } from "@/lib/format"
@@ -117,17 +117,12 @@ export function CartaoDeArquivo({
             type="button"
             aria-label={`${nome}${fora ? ", fora do projeto" : ""}`}
             className={cn(
-              "flex max-w-[260px] cursor-default items-center gap-2 rounded-lg bg-secondary/60 py-1 pr-2 pl-1 text-left transition-colors hover:bg-secondary",
+              CASCA_DO_CARTAO_DE_ARQUIVO,
+              "cursor-default",
               alerta && "ring-1 ring-st-warning/30 ring-inset",
             )}
           >
-            <span className="grid size-10 shrink-0 place-items-center rounded-md bg-background">
-              <FileIcon path={caminho} folder={pasta} size={16} />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-[12px] text-foreground">{nome}</span>
-              <span className="block truncate text-[11px] text-muted-foreground">{meta}</span>
-            </span>
+            <QuadroDeArquivo caminho={caminho} pasta={pasta} meta={meta} />
           </button>
         </HoverCardTrigger>
         <HoverCardContent side="top" align="start" className="w-[320px] p-0">
