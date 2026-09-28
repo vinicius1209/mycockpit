@@ -4,6 +4,7 @@
 // linha (docs/explorador-de-arquivos-prd.md, 5b).
 
 import { useState, type ComponentType, type ReactNode } from "react"
+import { createPortal } from "react-dom"
 import {
   AppWindow,
   ChevronsDownUp,
@@ -117,7 +118,10 @@ export function useMenuDaArvore(
       expandida: alvo.tipo === "pasta" && arvore.expandida(alvo.rel),
     })
 
-  const menu = pedido && (
+  // Portal: a âncora do menu é `fixed`, e o painel direito anima `transform`
+  // (`reveal-right`), o que o faz bloco contentor de todo `fixed` de dentro.
+  // Montado ali, o menu abria fora da tela.
+  const menu = pedido && createPortal(
     <PointMenu
       key={`${pedido.x}:${pedido.y}`}
       x={pedido.x}
@@ -136,7 +140,8 @@ export function useMenuDaArvore(
         Item={PointMenuItem}
         Separador={PointMenuSeparator}
       />
-    </PointMenu>
+    </PointMenu>,
+    document.body,
   )
 
   return {

@@ -5,6 +5,7 @@
 // por vinte linhas não dispara leitura nenhuma.
 
 import { useEffect, useRef, useState } from "react"
+import { createPortal } from "react-dom"
 import { Link2 } from "lucide-react"
 import { AgentLogo, agentLogoLabel } from "@/components/common/AgentLogo"
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card"
@@ -76,7 +77,9 @@ export function useCartaoDaArvore(root: string) {
       timer.current = setTimeout(() => setAberto(false), ATRASO_PARA_FECHAR)
     },
     fechar,
-    cartao: alvo && (
+    // Portal pelo mesmo motivo do menu da árvore: a âncora é `fixed`, e o
+    // painel direito, com `transform` animado, a prenderia a ele.
+    cartao: alvo && createPortal(
       <HoverCard open={aberto} onOpenChange={(v) => !v && fechar()}>
         <HoverCardTrigger asChild>
           {/* Âncora, não alvo: o cartão sai da linha, e a linha segue dona do mouse. */}
@@ -98,7 +101,8 @@ export function useCartaoDaArvore(root: string) {
         >
           {aberto && <ConteudoDoCartao root={root} linha={alvo.linha} />}
         </HoverCardContent>
-      </HoverCard>
+      </HoverCard>,
+      document.body,
     ),
   }
 }
