@@ -13,6 +13,9 @@ import type { UsageFailure, UsageSnapshot } from "@/lib/usageWindow"
 interface UsageStore {
   /** Último snapshot por agent (fonte única da pill/popover). */
   byAgent: Record<string, UsageSnapshot>
+  /** A leitura ANTERIOR à atual de cada agent: com ela o ritmo da janela vira
+   *  projeção (`lib/cotaAntecipada`). Uma leitura só não projeta nada. */
+  anterior: Record<string, UsageSnapshot>
   /** Episódio de falha de poll por agent ("falhando desde X"). Statusline
    *  (push) não gera falha — a idade do snapshot cobre o silêncio. */
   failures: Record<string, UsageFailure>
@@ -34,13 +37,16 @@ interface UsageStore {
 
 export const useUsage = create<UsageStore>((set) => ({
   byAgent: {},
+  anterior: {},
   failures: {},
   lastSuccessAt: {},
   ingest: (snap) =>
     set((s) => {
       const { [snap.agent]: _closed, ...rest } = s.failures
+      const antes = s.byAgent[snap.agent]
       return {
         byAgent: { ...s.byAgent, [snap.agent]: snap },
+        anterior: antes && antes.fetchedAt < snap.fetchedAt ? { ...s.anterior, [snap.agent]: antes } : s.anterior,
         failures: rest,
       }
     }),

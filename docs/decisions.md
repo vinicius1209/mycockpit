@@ -10026,3 +10026,32 @@ considerou.
 - **Para caber:** os testes do `adapters.rs` (3.200 linhas inline) foram para
   arquivos por motor, todos abaixo do teto, com os auxiliares num só; a
   catraca do `adapters.rs` desceu de 7515 para cerca de 4300.
+
+### ADR-276 · A cota avisa antes de acabar, e quem escolhe o destino é a pessoa ✅
+- **Contexto (27/09/2026):** o revezamento só aparecia com a cota ESGOTADA
+  (ADR-165). Nos vídeos estudados do Maestri, o motivo real de usar um
+  orquestrador é esticar a cota distribuindo o trabalho entre planos, com a
+  delegação decidida pelos agentes. Mock
+  `docs/mocks/estudo-maestri-prototipos.html` (F2).
+- **Decisão:**
+  1. **Perto do limite** é 85% numa janela lida e ainda válida, ou o ritmo de
+     duas leituras da MESMA janela levando a 100% antes do reset (a partir de
+     60%, o tom de alerta do medidor). Uma leitura só, uso parado ou leitura
+     velha não afirmam nada. Janela esgotada segue no caso de sempre
+     (`lib/cotaAntecipada.ts`).
+  2. **O store de uso guarda a leitura anterior** de cada motor; é a única
+     fonte do ritmo.
+  3. **Folga de cada destino** é a da pior janela lida, perguntando ao registry
+     quem tem medidor. Motor sem medidor aparece com o gasto de hoje, sem
+     percentual inventado; motor com medidor e sem leitura recente aparece,
+     mas não é sugerido. O cartão só nasce se algum destino tem 30% livre ou
+     mais.
+  4. **Mesma porta de continuidade:** o aviso usa a casca e as opções do
+     `ContinuityBanner`, só quando nenhuma outra porta está aberta, e escolher
+     prepara o próximo envio pelo revezamento que já existe (ADR-165,
+     ADR-206). Nada troca sozinho.
+  5. **"Agora não" encerra o episódio:** a mesma conversa, motor e janela até
+     ela virar, em memória de módulo, como os avisos do watchdog.
+  6. **Seletor de motor:** a dica de cada motor no trilho diz a folga lida.
+- **Não fizemos:** limiar configurável por plano, e barra segmentada com a
+  projeção desenhada (G2, fora por decisão do dono).

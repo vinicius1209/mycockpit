@@ -1,15 +1,38 @@
 # Plano · o que veio do estudo do Maestri (G7, G1, G8, G3, F2)
 
-## Status (27/09/2026)
+## Status (28/09/2026)
 
-**Rascunho, esperando a validação do mock.** Nada implementado. Mock funcional
-de tudo: `docs/mocks/estudo-maestri-prototipos.html`. Estudo de origem:
-`docs/competitors-maestri-2026-09-27.md` (local), seções 4 e 4b. As decisões
-pendentes do §0 mudam histórias abaixo; quando forem respondidas, este bloco
-de status diz o que mudou, e ele manda sobre o texto original.
+**Entregue, na ordem do plano:** G7 (ADR-272), G1 (ADR-273), G8 (ADR-274),
+G3 (ADR-275) e F2 (ADR-276). Decisões do §0 tomadas como propostas (o dono
+aprovou o mock). Este bloco manda sobre o texto abaixo onde divergirem:
+
+- **G7:** só o transporte `codex app-server` (modo Padrão). O `codex exec` não
+  teve o formato do item de imagem colhido e segue mostrando `Unknown`. O
+  "Salvar no projeto" ficou no lightbox, para toda imagem do fio, e lembra a
+  pasta por projeto só na sessão.
+- **G1:** a meta mostra tipo e tamanho; páginas, linhas e dimensões ficaram de
+  fora. html, md, json, svg e txt não viram cartão.
+- **G8:** sem capability. A decisão é pelo dado (`fase` no item), porque o
+  mesmo motor fala com fase no app-server e sem fase no `exec`.
+- **G3:** não houve marcador privado: o formato público é o próprio texto
+  `[imagem N]`, e isso tornou o G3.4 quase gratuito. Soltar do Finder segue
+  para a fileira (o evento do Tauri não tem cursor). Sem capability nova: a
+  costura é do transporte de cada motor. O `do_run` renumera o prompt quando
+  um anexo cai no caminho.
+- **F2:** o aviso é componente próprio com a casca do `ContinuityBanner`, e a
+  folga no seletor mora na dica do trilho de ícones (o seletor não é menu de
+  texto desde o PRD do revezamento).
+- **Estrutura:** para caber, os testes inline do `agent.rs` e do `adapters.rs`
+  foram para arquivos próprios (os do `adapters.rs` divididos por motor), o
+  redutor de itens saiu do `store/chat.ts`, e os testes da migração do banco
+  saíram do `lib.rs`. As catracas de tamanho e de marca só desceram.
+- **§8:** o `~/.codex/config.toml` desta máquina deixou de fixar modelo (o
+  Codex segue o padrão da conta). Na Frota, "Padrão" continua sem mandar
+  modelo; se um dia a conta recusar o padrão, o erro chega como falha do
+  turno. Fica como pendência à parte.
 
 Fora deste plano por decisão do dono (27/09): G2 (barra segmentada da cota),
-F1 isolada (a projeção só entra onde o F2 usa), F3 a F10, G4 a G6 e G9.
+F1 isolada, F3 a F10, G4 a G6 e G9.
 
 ## 0. Decisões pendentes
 

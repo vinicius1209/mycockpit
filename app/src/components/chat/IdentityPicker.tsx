@@ -25,6 +25,7 @@ import { estadoNaMaquina } from "@/lib/detect"
 import { eligibleHandoffTargets } from "@/lib/quotaExhausted"
 import { motoresDoTrilho, ROTULO_MESMO_MOTOR, ROTULO_OUTRO_MOTOR } from "@/lib/trilhoDeMotores"
 import { useUsage } from "@/store/usage"
+import { folgaDoMotor, type Folga } from "@/lib/cotaAntecipada"
 import { SELECTED_FILL } from "@/lib/selection"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
@@ -239,6 +240,7 @@ export function IdentityPicker({
                           : "limite de uso atingido"
                         : d.description,
                     ausente ? "não encontrado nesta máquina" : null,
+                    folgaNoTitulo(folgaDoMotor(d.id, usageByAgent[d.id], Date.now())),
                   ]
                     .filter(Boolean)
                     .join(" · ")}
@@ -350,4 +352,11 @@ export function IdentityPicker({
         ))}
     </div>
   )
+}
+
+/** A folga lida do plano, na dica do motor (F2). Sem medidor, nada se afirma. */
+function folgaNoTitulo(f: Folga): string | null {
+  if (f.tipo === "folga") return `${f.livre}% livre · ${f.janela}`
+  if (f.tipo === "sem-leitura") return "sem leitura recente do plano"
+  return null
 }
