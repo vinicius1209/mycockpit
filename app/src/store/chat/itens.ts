@@ -12,6 +12,9 @@ import type { DeferredWork, ManagedProcess } from "@/lib/work"
 
 /** Um parecer levado num pedido: o bastante para a linha "↳ parecer da Íris"
  *  achar o parecer no fio e dizer de quem é. */
+/** Papel de uma fala do agente no turno. */
+export type FaseDaFala = "narracao" | "resposta"
+
 export interface ParecerLevado {
   itemId: string
   personaId: string
@@ -38,7 +41,14 @@ type ChatItemBody =
        *  do rascunho no envio, e sem isto a mensagem enviada não dizia nada. */
       pareceres?: ParecerLevado[]
     }
-  | { kind: "text"; id: string; text: string }
+  | {
+      kind: "text"
+      id: string
+      text: string
+      /** O motor disse que esta fala é narração do meio do turno ou a resposta.
+       *  Ausente = não disse; o fio decide pela posição (`lib/vozDoTurno`). */
+      fase?: FaseDaFala
+    }
   | {
       kind: "tool"
       id: string

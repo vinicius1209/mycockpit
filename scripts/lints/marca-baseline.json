@@ -36,7 +36,6 @@
   "app/src-tauri/companion/index.html": 9,
   "app/src-tauri/src/AGENTS.md": 1,
   "app/src-tauri/src/adapters.rs": 13,
-  "app/src-tauri/src/agent.rs": 2,
   "app/src-tauri/src/agy_live_tests.rs": 2,
   "app/src-tauri/src/approval.rs": 2,
   "app/src-tauri/src/browser_orfaos.rs": 2,

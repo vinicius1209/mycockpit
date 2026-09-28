@@ -114,6 +114,14 @@ pub(crate) fn map_item_started(item: &Value) -> Vec<AgentEvent> {
         "contextCompaction" => vec![AgentEvent::Notice {
             message: "Contexto cheio: o Codex resumiu a conversa sozinho — o detalhe antigo virou resumo.".to_string(),
         }],
+        // A fala já nasce dizendo se é narração ou a resposta (`phase`, que o
+        // schema manda tratar como opcional). Valor desconhecido não vira fase.
+        "agentMessage" => match item.get("phase").and_then(|x| x.as_str()) {
+            Some(phase @ ("commentary" | "final_answer")) => vec![AgentEvent::TextPhase {
+                phase: phase.to_string(),
+            }],
+            _ => vec![],
+        },
         "imageGeneration" => vec![tool_de_imagem_gerada(id, item)],
         "imageView" => vec![tool_de_imagem_vista(id, item)],
         _ => vec![],
@@ -454,5 +462,57 @@ mod tests {
         let [AgentEvent::Tool { name, input, .. }] = &evs[..] else { panic!("sem Tool") };
         assert_eq!(name, "Read");
         assert_eq!(input["file_path"], "/tmp/dashboard.png");
+    }
+}
+
+/// Captura real do `codex app-server` 0.157.1 (27/09/2026, `gpt-6-luna`): um
+/// turno com uma fala `commentary`, uma leitura de arquivo e a fala
+/// `final_answer`. Linhas de MCP e hooks tiradas; saída longa cortada.
+#[cfg(test)]
+mod fases_da_fala {
+    use crate::agent::AgentEvent;
+    use crate::codex_appserver::{map_notification, StreamState};
+    use serde_json::Value;
+
+    fn eventos() -> Vec<AgentEvent> {
+        let captura = include_str!("../testdata/codex-0.157.1/fases-da-fala-appserver.jsonl");
+        let mut st = StreamState::new(None);
+        let mut out = Vec::new();
+        for linha in captura.lines() {
+            let Ok(v) = serde_json::from_str::<Value>(linha) else { continue };
+            let Some(method) = v.get("method").and_then(Value::as_str) else { continue };
+            let params = v.get("params").cloned().unwrap_or(Value::Null);
+            out.extend(map_notification(method, &params, &mut st));
+        }
+        out
+    }
+
+    #[test]
+    fn cada_fala_chega_precedida_da_propria_fase() {
+        let evs = eventos();
+        let mut fases = Vec::new();
+        let mut esperando_texto = false;
+        for ev in &evs {
+            match ev {
+                AgentEvent::TextPhase { phase } => {
+                    fases.push(phase.clone());
+                    esperando_texto = true;
+                }
+                AgentEvent::TextDelta { .. } | AgentEvent::Text { .. } => esperando_texto = false,
+                _ => {}
+            }
+        }
+        assert_eq!(fases, ["commentary", "final_answer"]);
+        assert!(!esperando_texto, "toda fase anunciada teve texto depois");
+    }
+
+    #[test]
+    fn a_resposta_final_e_a_ultima_fala_do_turno() {
+        let evs = eventos();
+        let ultima_fase = evs.iter().rev().find_map(|e| match e {
+            AgentEvent::TextPhase { phase } => Some(phase.as_str()),
+            _ => None,
+        });
+        assert_eq!(ultima_fase, Some("final_answer"));
     }
 }

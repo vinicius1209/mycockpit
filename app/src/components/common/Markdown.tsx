@@ -407,12 +407,23 @@ function MarkdownRico({ text }: { text: string }) {
  *
  *  A mensagem sai INTEIRA e na ordem. Quando um trecho é pesado demais para o
  *  parser (ADR-210), só ELE cai para texto cru, no lugar onde estava. */
-export const Markdown = memo(function Markdown({ text }: { text: string }) {
+export const Markdown = memo(function Markdown({
+  text,
+  voz,
+}: {
+  text: string
+  /** Narração do meio de um turno que já tem resposta (G8): um tom abaixo,
+   *  para a conclusão se achar sem ler o caminho inteiro. */
+  voz?: "narracao"
+}) {
   const fatias = fatiasDaMensagem(text)
   return (
     <div
       data-selectable
-      className="min-w-0 space-y-2 text-[14px] leading-relaxed break-words [overflow-wrap:anywhere] text-foreground"
+      className={cn(
+        "min-w-0 space-y-2 leading-relaxed break-words [overflow-wrap:anywhere]",
+        voz === "narracao" ? "text-[13px] text-muted-foreground" : "text-[14px] text-foreground",
+      )}
     >
       {fatias.map((fatia, indice) =>
         fatia.tipo === "rico" ? (

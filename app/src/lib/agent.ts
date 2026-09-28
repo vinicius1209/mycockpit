@@ -39,6 +39,8 @@ export type AgentEvent =
   | { type: "subagent_text"; parent_tool_id: string; text: string }
   | { type: "text_delta"; text: string }
   | { type: "text_stop" }
+  /** Papel da PRÓXIMA fala, quando o motor diz (hoje o Codex no app-server). */
+  | { type: "text_phase"; phase: string }
   | {
       type: "tool"
       id: string

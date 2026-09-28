@@ -20,6 +20,7 @@ import type { FeedbackApi } from "@/components/chat/TurnActions"
 import { TurnReceipt } from "@/components/chat/TurnReceipt"
 import { EntregasDoTurno } from "@/components/chat/EntregasDoTurno"
 import { entregasPorResultado, type Entrega } from "@/lib/entregas"
+import { vozDoNo, vozesPlanas, vozesPorTurno, type VozDaFala } from "@/lib/vozDoTurno"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
 import { PlanMilestone } from "@/components/chat/PlanMilestone"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
@@ -65,6 +66,7 @@ const MessageItem = memo(function MessageItem({
   final,
   lastTurn,
   reads,
+  voz,
   onApprovePlan,
   onKeepPlanning,
 }: {
@@ -83,6 +85,8 @@ const MessageItem = memo(function MessageItem({
    *  streaming. A referência é estável enquanto os rótulos deste item não
    *  mudam — é o que faz o `memo` acima valer alguma coisa. */
   reads?: ReadLabels
+  /** Narração de um turno que já tem resposta (G8). */
+  voz?: "narracao"
 }) {
   if (it.kind === "user") {
     // Slack-style: alinhado à esquerda sob o gutter "Você" (o autor está no
@@ -132,7 +136,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "text") {
-    return <div data-citavel={it.id} className="min-w-0"><Markdown text={it.text} /></div>
+    return <div data-citavel={it.id} className="min-w-0"><Markdown text={it.text} voz={voz} /></div>
   }
 
   // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
@@ -214,6 +218,8 @@ interface NodeCtx {
   agent: string
   stalledSince?: number
   feedbackByResult: Map<string, string>
+  /** Voz de cada fala de turno terminado: narração ou resposta (G8). */
+  vozes: Map<string, VozDaFala>
   /** Arquivos que cada turno entregou, pelo id do `result` que o fecha (G1). */
   entregasByResult: Map<string, Entrega[]>
   lastResultId: string | null
@@ -258,7 +264,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     const hasText = n.text.trim().length > 0
     return (
       <div className="group/msg flex flex-col gap-1.5" data-citavel={n.itemIds?.[0] ?? n.key}>
-        {hasText && <Markdown text={n.text} />}
+        {hasText && <Markdown text={n.text} voz={vozDoNo(n.itemIds ?? [n.key], ctx.vozes) === "narracao" ? "narracao" : undefined} />}
         {n.tools.length > 0 && (
           <ToolGroup
             tools={n.tools}
@@ -298,6 +304,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
         onApprovePlan={ctx.onApprovePlan}
         onKeepPlanning={ctx.onKeepPlanning}
         reads={ctx.attReads.get(n.item.id)}
+        voz={n.item.kind === "text" && ctx.vozes.get(n.item.id) === "narracao" ? "narracao" : undefined}
       />
     </>
   )
@@ -447,6 +454,12 @@ export function MessageList({
     entregasAnteriores.current = next
     return next
   }, [threadItems, windowStart])
+  const vozesAnteriores = useRef<Map<string, Map<string, VozDaFala>>>(new Map())
+  const vozes = useMemo(() => {
+    const porTurno = vozesPorTurno(threadItems, turnStartIndex(threadItems, windowStart), vozesAnteriores.current)
+    vozesAnteriores.current = porTurno
+    return vozesPlanas(porTurno)
+  }, [threadItems, windowStart])
   const lastResultId = useMemo(
     () => threadItems.findLast((item) => item.kind === "result")?.id ?? null,
     [threadItems],
@@ -477,6 +490,7 @@ export function MessageList({
     stalledSince,
     feedbackByResult,
     entregasByResult,
+    vozes,
     lastResultId,
     onStop: stableStop,
     onRetry: stableRetry,

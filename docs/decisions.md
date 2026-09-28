@@ -9960,3 +9960,34 @@ considerou.
   banco com a extensão trocada: o banco não tinha nenhuma entrega de verdade.
 - **Não fizemos:** páginas do PDF, linhas do CSV e dimensões da imagem na meta
   (o mock mostrava); ficam para quando houver leitura barata.
+
+### ADR-274 · A resposta do turno tem peso próprio, e a narração do caminho fala um tom abaixo ✅
+- **Contexto (27/09/2026):** a narração do meio do turno ("Vou olhar o
+  parser…") e a conclusão tinham o mesmo corpo de texto; num turno longo,
+  achar a resposta era ler tudo. O stream real do `codex app-server` 0.157.1
+  mostrou que o Codex marca cada fala com `phase: commentary | final_answer`,
+  e o schema avisa que nem todo modelo manda. Mock
+  `docs/mocks/estudo-maestri-prototipos.html` (G8, opção A escolhida).
+- **Decisão:**
+  1. O evento novo `TextPhase` leva a fase anunciada no `item/started` da
+     fala; o redutor guarda até a fala nascer, fecha o balão aberto e grava
+     `fase` no item. Valor desconhecido não vira fase.
+  2. Sem capability nova: a decisão é pelo DADO, porque o mesmo motor fala
+     com fase no app-server e sem fase no `exec`. Com fase, ela manda; sem
+     fase, a resposta é a última fala depois da última ação
+     (`lib/vozDoTurno.ts`).
+  3. Só turno que terminou bem ganha vozes. Rodando, nada é final; turno que
+     falhou fica como está. Turno sem fala depois da última ação não baixa o
+     tom de nada.
+  4. Opção A do mock: narração em 13 e cor secundária, resposta como sempre.
+     Nó que costura narração e resposta é resposta. Busca, cópia, citar
+     trecho e recibo não mudam.
+  5. Para caber: os testes do `agent.rs` foram para `agent_tests.rs` (o
+     padrão dos irmãos), e o redutor de itens saiu do `store/chat.ts` para
+     `store/chat/reduceItems.ts`, com o `uid` em módulo próprio para não
+     criar ciclo em tempo de execução.
+- **Verificado:** captura real do app-server em
+  `src-tauri/testdata/codex-0.157.1/fases-da-fala-appserver.jsonl` (cada fala
+  chega precedida da própria fase; a última é `final_answer`) e o
+  `fio-real.json` do Claude (o turno que termina em "Tudo pronto. Segue o
+  relatório" tem 1 resposta e 4 narrações).
