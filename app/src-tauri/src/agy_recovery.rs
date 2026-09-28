@@ -22,6 +22,28 @@ fn transcript_path(session_id: &str) -> Option<PathBuf> {
     )
 }
 
+/// Arquivos que o próprio agy registrou para um passo no transcript dele: a
+/// imagem do `generate_image` mora no `media` do step de MESMO índice que o
+/// stream mandou (o stream não diz onde salvou).
+pub(crate) fn midias_do_passo(session_id: &str, step: u64) -> Vec<String> {
+    std::fs::read_to_string(transcript_path(session_id).unwrap_or_default())
+        .map(|t| midias_do_passo_em(&t, step))
+        .unwrap_or_default()
+}
+
+/// Núcleo puro: `file://` do `media` do step → caminho local.
+pub(crate) fn midias_do_passo_em(transcript: &str, step: u64) -> Vec<String> {
+    transcript
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|item| item.get("step_index").and_then(|v| v.as_u64()) == Some(step))
+        .flat_map(|item| item.get("media").and_then(|m| m.as_array()).cloned().unwrap_or_default())
+        .filter_map(|m| m.get("uri").and_then(|u| u.as_str()).map(str::to_string))
+        .filter_map(|uri| url::Url::parse(&uri).ok()?.to_file_path().ok())
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
 /// Mesma busca, devolvendo também o `step_index` da resposta: quem mostra a
 /// resposta antes da ponte precisa reconhecer o mesmo step quando ele chegar.
 pub(crate) fn completed_answer_step(session_id: &str, after_step: u64) -> Option<(u64, String)> {

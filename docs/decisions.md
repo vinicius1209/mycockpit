@@ -10055,3 +10055,22 @@ considerou.
   6. **Seletor de motor:** a dica de cada motor no trilho diz a folga lida.
 - **Não fizemos:** limiar configurável por plano, e barra segmentada com a
   projeção desenhada (G2, fora por decisão do dono).
+
+### ADR-277 · A imagem que o Antigravity gera também aparece no fio, pelo registro do próprio motor ✅
+- **Contexto (28/09/2026):** a ADR-272 cobriu só o Codex. Levantamento nos
+  motores instalados: o Claude Code 2.1.283 anuncia 267 ferramentas e nenhuma
+  gera imagem (só por MCP, e imagem devolvida por MCP já vira miniatura pelo
+  caminho de evidência); o OpenCode 1.18.32 não tem ferramenta de imagem (o
+  `image_generation` no binário é do SDK do provedor); o Antigravity 1.2.12
+  tem `generate_image` e gerou de verdade no teste, mas a Frota mostrava
+  "Usar generate_image" sem imagem.
+- **Decisão:** `generate_image` entra no contrato como `GenerateImage`, com o
+  prompt. O stream do agy não diz onde salvou; o transcript do próprio agy
+  registra, no step de MESMO índice, o `media` com o arquivo. Ao fechar o passo
+  com sucesso, a Frota lê esse `media` (o mesmo transcript que já lê para
+  recuperação, `agy_recovery.rs`) e grava a imagem como evidência. O
+  transcript pode chegar um instante depois do stream: até 5 tentativas de
+  100 ms, e sem imagem se ele não aparecer. Nada vem da prosa do agente.
+- **Verificado:** stream e transcript reais em
+  `src-tauri/testdata/agy-1.2.12/`, e um teste ao vivo (ignorado na suíte)
+  que transformou o JPG real de 221 KB em evidência.

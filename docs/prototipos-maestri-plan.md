@@ -6,8 +6,10 @@
 G3 (ADR-275) e F2 (ADR-276). Decisões do §0 tomadas como propostas (o dono
 aprovou o mock). Este bloco manda sobre o texto abaixo onde divergirem:
 
-- **G7:** só o transporte `codex app-server` (modo Padrão). O `codex exec` não
-  teve o formato do item de imagem colhido e segue mostrando `Unknown`. O
+- **G7:** Codex no `app-server` (ADR-272) e Antigravity (ADR-277, pelo
+  `media` do transcript do próprio agy). Claude e OpenCode não geram imagem
+  nativamente; por MCP, a imagem devolvida já vira evidência. O `codex exec`
+  não teve o formato do item de imagem colhido e segue mostrando `Unknown`. O
   "Salvar no projeto" ficou no lightbox, para toda imagem do fio, e lembra a
   pasta por projeto só na sessão.
 - **G1:** a meta mostra tipo e tamanho; páginas, linhas e dimensões ficaram de

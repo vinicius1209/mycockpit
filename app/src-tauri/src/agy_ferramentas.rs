@@ -39,6 +39,37 @@ fn argumentos_do_mcp(bruto: &Value) -> Value {
     serde_json::from_str::<Value>(&pythonico).unwrap_or_else(|_| json!({ "arguments": s }))
 }
 
+/// As imagens do resultado de um passo: blocos `image` quando vierem, e, no
+/// `generate_image` concluído, o arquivo que o agy registrou no transcript do
+/// passo. O transcript pode chegar um instante depois do stream: poucas
+/// tentativas curtas, e sem imagem se ele não aparecer (nada é inventado).
+pub(crate) fn imagens_do_passo(
+    sink: Option<&crate::evidence::EvidenceSink>,
+    id: &str,
+    nome: &str,
+    info: Option<&Value>,
+    concluido: bool,
+    conversa: Option<&str>,
+    step: Option<u64>,
+) -> Vec<String> {
+    let blocos = info.and_then(|i| i.pointer("/result/content")).unwrap_or(&Value::Null);
+    let imagens = crate::evidence::collect_images(sink, id, blocos);
+    let (Some(conversa), Some(step)) = (conversa, step) else {
+        return imagens;
+    };
+    if !imagens.is_empty() || nome != "generate_image" || !concluido || sink.is_none() {
+        return imagens;
+    }
+    for _ in 0..5 {
+        let arquivos = crate::agy_recovery::midias_do_passo(conversa, step);
+        if !arquivos.is_empty() {
+            return crate::evidence::store_image_files(sink, id, &arquivos);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    imagens
+}
+
 /// O nome e a entrada no contrato. Puro.
 pub(crate) fn no_contrato(nome: &str, p: Value) -> (String, Value) {
     let caminho = |chave: &str| texto(&p, chave).map(str::to_string);
@@ -49,6 +80,7 @@ pub(crate) fn no_contrato(nome: &str, p: Value) -> (String, Value) {
             caminho("TargetFile").map(|f| ("Edit", json!({ "file_path": f })))
         }
         "write_to_file" => caminho("TargetFile").map(|f| ("Write", json!({ "file_path": f }))),
+        "generate_image" => Some(("GenerateImage", json!({ "prompt": texto(&p, "Prompt") }))),
         "grep_search" => texto(&p, "Query").map(|q| {
             let mut e = Map::new();
             e.insert("pattern".into(), json!(q));

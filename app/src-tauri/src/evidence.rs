@@ -160,6 +160,29 @@ pub fn store_generated_image(
     sink.write(tool_id, 0, media_type, &bytes).into_iter().collect()
 }
 
+/// Imagens que o motor salvou em disco e só indicou o caminho (o `media` do
+/// agy): viram evidência na ordem, pelo mesmo `write`. Arquivo que não abre ou
+/// não é imagem é pulado com rastro no log.
+pub fn store_image_files(sink: Option<&EvidenceSink>, tool_id: &str, paths: &[String]) -> Vec<String> {
+    let Some(sink) = sink else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for p in paths {
+        let bytes = match std::fs::read(p) {
+            Ok(b) => b,
+            Err(e) => {
+                log::warn!("evidência: imagem em {p} não abriu: {e}");
+                continue;
+            }
+        };
+        if let Some(media) = media_type_by_magic(&bytes) {
+            out.extend(sink.write(tool_id, out.len(), media, &bytes));
+        }
+    }
+    out
+}
+
 /// Tipo pela assinatura dos bytes, não pela extensão: o arquivo salvo pelo
 /// motor e o base64 do evento chegam sem media_type declarado.
 fn media_type_by_magic(bytes: &[u8]) -> Option<&'static str> {

@@ -3756,14 +3756,10 @@ impl AgyAdapter {
                         ok: (state == "DONE" || bg_task.is_some()) && erro.is_none(),
                         text,
                         lines,
-                        // B1: o agy não devolve CallToolResult com blocos
-                        // `image` no step (só string em `output`) — sem sink de
-                        // evidência visual, degradação honesta.
-                        images: crate::evidence::collect_images(
-                            self.evidence.as_ref(),
-                            &id,
-                            info.and_then(|i| i.pointer("/result/content"))
-                                .unwrap_or(&serde_json::Value::Null),
+                        // Blocos `image`, ou a imagem que o `generate_image` salvou.
+                        images: agy_ferramentas::imagens_do_passo(
+                            self.evidence.as_ref(), &id, &name, info, state == "DONE" && erro.is_none(),
+                            self.conversation_id.as_deref(), step_index,
                         ),
                     });
                     if let Some((task_id, output_file)) = bg_task {
@@ -4320,3 +4316,6 @@ mod agy_stream2_tests;
 #[cfg(test)]
 #[path = "adapters_imagem_tests.rs"]
 mod imagem_tests;
+#[cfg(test)]
+#[path = "adapters_agy_imagem_tests.rs"]
+mod agy_imagem_tests;
