@@ -104,7 +104,7 @@ export function CotaPertoBanner({
             <div
               role="group"
               aria-label="Escolher o plano do próximo envio"
-              className="flex shrink-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
+              className="flex max-w-full min-w-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
             >
               {destinos.map((d) => {
                 const escolhivel = d.folga.tipo !== "sem-leitura"

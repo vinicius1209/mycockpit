@@ -148,7 +148,7 @@ function ContinuityChoice({
               <div
                 role="group"
                 aria-label="Escolher agente de destino"
-                className="flex shrink-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
+                className="flex max-w-full min-w-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
               >
                 {alternatives.map((alternative) => {
                   const chosen = alternative.id === selected?.id
