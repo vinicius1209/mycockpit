@@ -12,6 +12,7 @@ import {
   type LeadProposalRecord,
 } from "@/lib/db"
 import type { Project } from "@/lib/types"
+import { orderQueue } from "@/lib/panel"
 
 export type Decision =
   | {
@@ -134,4 +135,35 @@ export async function scanDecisions(projects: Project[]): Promise<Decision[]> {
   // 2. propostas do lead esperando leitura/dispensa (S4.2, persistidas).
   out.push(...proposalDecisions(await listOpenProposals(), projects))
   return out
+}
+
+/** A fila na ordem de urgência: disputa ao vivo que a varredura ainda não viu,
+ *  as persistidas e os cards parados em revisão ou bloqueio. Pura. */
+export function montarFila(o: {
+  varridas: Decision[]
+  /** Conversas com disputa em `deciding` agora. */
+  decidindo: string[]
+  projects: Project[]
+  cards: Parameters<typeof cardDecisions>[0]
+  projetoDe: (convId: string) => string | undefined
+  promptDe: (convId: string) => string | undefined
+}): Decision[] {
+  const vistas = new Set(
+    o.varridas.filter((d) => d.kind === "fusion").map((d) => d.convId),
+  )
+  const nomeDe = new Map(o.projects.map((p) => [p.id, p.name]))
+  const aoVivo: Decision[] = []
+  for (const convId of o.decidindo) {
+    if (vistas.has(convId)) continue
+    const projectId = o.projetoDe(convId)
+    if (!projectId) continue
+    aoVivo.push({
+      kind: "fusion",
+      convId,
+      projectId,
+      projectName: nomeDe.get(projectId) ?? "projeto",
+      title: o.promptDe(convId) ?? "Disputa aguardando decisão",
+    })
+  }
+  return orderQueue([...aoVivo, ...o.varridas, ...cardDecisions(o.cards, o.projects)])
 }

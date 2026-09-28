@@ -27,6 +27,10 @@ export interface Notification {
   body?: string
   projectId: string
   convId?: string
+  /** O que gerou o aviso, quando ele fala de trabalho de uma conversa. É o que
+   *  o sino usa para agrupar e rotular (ADR-271); item sem origem é de antes
+   *  dela ou não é trabalho de conversa. */
+  origem?: "turno" | "missao" | "trabalho"
   ts: number
   read: boolean
 }
@@ -36,9 +40,13 @@ interface NotifState {
   push: (n: Omit<Notification, "id" | "ts" | "read">) => void
   markRead: (id: string) => void
   markAllRead: () => void
+  /** Tudo da conversa vira visto: ela está na sua frente (ADR-271). */
+  markConvRead: (convId: string) => void
   /** Remove UMA notificação do feed (dispensar individual). */
   remove: (id: string) => void
   clear: () => void
+  /** Devolve itens tirados (o desfazer do limpar), sem duplicar. */
+  restore: (items: Notification[]) => void
 }
 
 const MAX = 50 // guarda só os recentes (o feed não é histórico infinito).
@@ -60,8 +68,27 @@ export const useNotifs = create<NotifState>()(
         })),
       markAllRead: () =>
         set((s) => ({ items: s.items.map((x) => ({ ...x, read: true })) })),
+      markConvRead: (convId) =>
+        set((s) =>
+          s.items.some((x) => x.convId === convId && !x.read)
+            ? {
+                items: s.items.map((x) =>
+                  x.convId === convId && !x.read ? { ...x, read: true } : x,
+                ),
+              }
+            : s,
+        ),
       remove: (id) => set((s) => ({ items: s.items.filter((x) => x.id !== id) })),
       clear: () => set({ items: [] }),
+      restore: (items) =>
+        set((s) => {
+          const ids = new Set(s.items.map((x) => x.id))
+          return {
+            items: [...s.items, ...items.filter((x) => !ids.has(x.id))]
+              .sort((a, b) => b.ts - a.ts)
+              .slice(0, MAX),
+          }
+        }),
     }),
     { name: "mc.notifs", version: 1 },
   ),

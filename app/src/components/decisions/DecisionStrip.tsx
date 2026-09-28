@@ -15,102 +15,22 @@
 //  - A fila expandida é E2 (flutuante) e não empurra o conteúdo: abrir a fila
 //    não pode reflowar o fio da conversa que você estava lendo.
 //
-// A varredura (SQL) é a MESMA que morava no Painel, com a mesma cadência de
-// 30s; ela mudou de casa junto com a fila.
+// A varredura (SQL) mora em `store/filaDeDecisoes`, com a mesma cadência de
+// 30s, e o sino lê a mesma fila.
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect } from "react"
 import { avisar } from "@/lib/avisos"
 import { useApp } from "@/store/app"
-import { useChat } from "@/store/chat"
-import { useFusion } from "@/store/fusion"
-import { useCards } from "@/store/cards"
-import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
-import { orderQueue } from "@/lib/panel"
-import { dismissProposal } from "@/lib/db"
+import type { Decision } from "@/lib/inbox"
 import { stripSummary } from "@/lib/decisions"
+import { dispensarProposta, useFilaDeDecisoes } from "@/store/filaDeDecisoes"
 import { DecisionList } from "@/components/decisions/DecisionCards"
 
-const SEP = ","
-const split = (key: string) => (key ? key.split(SEP) : [])
-
 export function DecisionStrip() {
-  const projects = useApp((s) => s.projects)
   const open = useApp((s) => s.decisionsOpen)
   const setOpen = useApp((s) => s.setDecisionsOpen)
-
-  // disputas AO VIVO esperando decisão que a varredura ainda não viu (mesma
-  // regra do Painel antigo): string estável, só muda em transição de fase.
-  const decidingKey = useFusion((s) =>
-    Object.entries(s.byConv)
-      .filter(([, f]) => f.phase === "deciding")
-      .map(([id]) => id)
-      .sort()
-      .join(SEP),
-  )
-  const allCards = useCards((s) => s.all)
-
-  const [decisions, setDecisions] = useState<Decision[]>([])
-  const [refreshTick, setRefreshTick] = useState(0)
-  useEffect(() => {
-    let cancelled = false
-    const refresh = () => {
-      if (projects.length === 0) {
-        setDecisions([])
-        return
-      }
-      // janela escondida não varre: isto virou ticker global (antes só existia
-      // com o Painel montado), e ninguém olha a fila de uma janela escondida.
-      // Voltar a ficar visível dispara um refresh na hora (efeito abaixo).
-      if (typeof document !== "undefined" && document.hidden) return
-      void scanDecisions(projects)
-        .then((d) => {
-          if (!cancelled) setDecisions(d)
-        })
-        .catch((e) => {
-          // ADR-017: quem espera a fila merece saber que ela não veio.
-          console.warn("[faixa] varredura de decisões falhou", e)
-        })
-    }
-    refresh()
-    const timer = setInterval(refresh, 30_000)
-    const onVisible = () => {
-      if (!document.hidden) refresh()
-    }
-    document.addEventListener("visibilitychange", onVisible)
-    return () => {
-      cancelled = true
-      clearInterval(timer)
-      document.removeEventListener("visibilitychange", onVisible)
-    }
-  }, [projects, refreshTick])
-
-  const pending = useMemo<Decision[]>(() => {
-    const seen = new Set(
-      decisions.filter((d) => d.kind === "fusion").map((d) => d.convId),
-    )
-    const projName = new Map(projects.map((p) => [p.id, p.name]))
-    const byId = useChat.getState().byId
-    const extra: Decision[] = []
-    for (const convId of split(decidingKey)) {
-      if (seen.has(convId)) continue
-      const projectId = byId[convId]?.projectId
-      if (!projectId) continue
-      extra.push({
-        kind: "fusion",
-        convId,
-        projectId,
-        projectName: projName.get(projectId) ?? "projeto",
-        title:
-          useFusion.getState().byConv[convId]?.prompt ??
-          "Disputa aguardando decisão",
-      })
-    }
-    return orderQueue([
-      ...extra,
-      ...decisions,
-      ...cardDecisions(allCards, projects),
-    ])
-  }, [decisions, decidingKey, projects, allCards])
+  // A mesma fila que o sino lê (ADR-271): varredura e relógio de 30 s moram lá.
+  const pending = useFilaDeDecisoes()
 
   // A fila esvaziou com ela aberta: a faixa some, e o estado aberto não pode
   // sobreviver à faixa (senão a próxima decisão nasceria já expandida).
@@ -137,13 +57,7 @@ export function DecisionStrip() {
     d: Extract<Decision, { kind: "proposal" }>,
   ) {
     try {
-      await dismissProposal(d.proposalId)
-      setDecisions((prev) =>
-        prev.filter(
-          (x) => !(x.kind === "proposal" && x.proposalId === d.proposalId),
-        ),
-      )
-      setRefreshTick((t) => t + 1)
+      await dispensarProposta(d.proposalId)
     } catch {
       avisar.erro("Falha ao dispensar a proposta")
     }

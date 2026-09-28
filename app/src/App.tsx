@@ -23,6 +23,7 @@ import { startDictationHotkey } from "@/lib/dictationHotkey"
 import { AppShell } from "@/components/layout/AppShell"
 import { TelaDeEncerramento } from "@/components/layout/TelaDeEncerramento"
 import { aplicarKeepAwake } from "@/lib/keepAwake"
+import { iniciarVisto } from "@/lib/sino/visto"
 import { useApp } from "@/store/app"
 import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
@@ -129,6 +130,8 @@ export default function App() {
   useEffect(() => {
     void aplicarKeepAwake(useApp.getState().settings.keepAwake)
   }, [])
+
+  useEffect(iniciarVisto, [])
 
   // Zoom de leitura do fio com os atalhos de navegador. Em capture porque
   // ⌘+/⌘-/⌘0 são do chrome mesmo com o composer focado; `scaleFromShortcut`

@@ -9855,3 +9855,46 @@ considerou.
      para `inicio.rs`, e a baseline desceu de 1233 para 1190.
 - **Fica igual:** a fila, o Enter e o Tab; o escopo da nota não muda depois de
   criada; "Tarefa" e "regra" no cartão continuam desligados.
+
+### ADR-271 · O sino responde duas perguntas: o que espera você agora, e o que aconteceu enquanto você não olhava ✅
+- **Contexto (27/09/2026):** o sino dizia "Nada esperando você" e, três linhas
+  abaixo, "Pergunta pendente" em âmbar. A seção de cima só lia disputas, cards
+  e propostas; permissão e pergunta vivas ficavam de fora dela e do selo,
+  enquanto a bandeja e a sidebar as contavam. O feed é um log: o item
+  "pendente" nunca voltava para dizer que você respondeu. Todo fim de turno
+  virava uma linha, inclusive o que você assistiu, e só ficava lido o que se
+  clicava dentro do sino, então "Não-lidas (50)" era o teto do feed e não uma
+  contagem. Os avisos de ferramentas (modos com o id cru do motor) ocupavam o
+  topo, o sucesso era verde linha por linha, e o painel era um `DropdownMenu`
+  desarmado na mão. Mock `docs/mocks/sino-notificacoes.html` (ideia A).
+- **Decisão:**
+  1. **Esperando você é derivado, nunca guardado** (`lib/sino/esperando.ts`):
+     a fila de interações (permissão, pergunta, plano, recurso), gate e
+     recuperação de missão, a fila de decisões e CLI sem login. Some sozinho
+     quando você responde, onde quer que responda. A linha leva ao pedido, que
+     continua morando na conversa (ADR-261): o sino aponta, não responde.
+  2. **O selo conta por conversa**, a régua da bandeja
+     (`awaitingDecisionCount`): vinte pedidos numa conversa são uma espera.
+     Número âmbar só para isso; o resto é o ponto.
+  3. **Faixa e sino leem a mesma fila** (`store/filaDeDecisoes.ts`): uma
+     varredura e um relógio de 30 s, com a disputa ao vivo antes de a
+     varredura vê-la (`montarFila`).
+  4. **Visto quando você vê** (`lib/sino/visto.ts`): a conversa na tela, com a
+     janela em foco, marca os avisos dela, por qualquer caminho, inclusive o
+     aviso que nasce enquanto você olha.
+  5. **Atividade agrupada na hora de mostrar** (`lib/sino/agrupar.ts`): uma
+     linha por conversa por dia, com "N turnos", o recibo do desfecho mais
+     recente e os pedidos do caminho como rastro cinza. Falha, aviso e trabalho
+     em background ficam sozinhos. O feed guardado não muda de forma; ganha
+     `origem` ("turno", "missao", "trabalho") para o sino agrupar e rotular.
+     Bandeja e Companion seguem lendo item por item.
+  6. **Cinza é sucesso** (§1): âmbar só em Esperando você, vermelho só na
+     falha, ponto de não visto na tinta do texto.
+  7. **Ferramentas vira rodapé de uma linha** que abre a lista; "sem login"
+     sobe para Esperando você. A frase dos modos perde o id cru do motor.
+  8. **Popover, não menu** (§12). Limpar mora no "⋯", com Desfazer.
+- **Fica igual:** o que o feed guarda e o teto de 50; as nativas; a faixa
+  (ADR-040) e os cartões dela; bandeja e Companion.
+- **Pendente:** a bandeja ainda conta só disputas e pedidos, sem gate, card,
+  proposta e CLI; as ideias B (resumo de volta), C (abrir o grupo, silenciar
+  conversa) e D (recorte por projeto) do mock.

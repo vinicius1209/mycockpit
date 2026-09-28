@@ -28,16 +28,22 @@ export interface ContextualSplit {
 
 const EMPTY_SPLIT: ContextualSplit = { inline: [], inlineConvId: null, global: [] }
 
+/** A conversa que está na tela: modo linear, sem Agendado, planos de voo ou
+ *  Frota por cima. É a mesma régua para o card inline e para o sino marcar
+ *  como visto (ADR-271). */
+export function conversaVisivel(): string | null {
+  const app = useApp.getState()
+  return app.viewMode === "linear" && !app.scheduledOpen && !app.flightPlansOpen && !app.fleetOpen
+    ? useChat.getState().activeId
+    : null
+}
+
 /** Computa o split a partir dos stores (puro sobre getState; exportado p/
  *  teste). Painel/agendado ⇒ nenhuma conversa visível ⇒ tudo global. */
 export function computeContextualSplit(): ContextualSplit {
   const queue = useInteractions.getState().queue
   if (queue.length === 0) return EMPTY_SPLIT
-  const app = useApp.getState()
-  const visible =
-    app.viewMode === "linear" && !app.scheduledOpen && !app.flightPlansOpen && !app.fleetOpen
-      ? useChat.getState().activeId
-      : null
+  const visible = conversaVisivel()
   if (!visible) return { inline: [], inlineConvId: null, global: queue }
   const chat = useChat.getState()
   const missions = useMission.getState()

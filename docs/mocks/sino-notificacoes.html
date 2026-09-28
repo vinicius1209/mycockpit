@@ -1,0 +1,447 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>O sino, revisado · proposta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Tokens copiados de app/src/index.css (claro e escuro). */
+:root{
+  --page:#efefec;--bg:#fbfbfa;--rail:#f6f6f4;--fg:#16181b;--card:#fff;--pop:#fff;--muted:#5c6166;--accent:#f1f1ef;--faint:#8a9099;
+  --border:rgba(0,0,0,.09);--div:rgba(0,0,0,.036);--sel:rgba(0,0,0,.055);
+  --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);--warn:#c1861f;--warn-fg:#1a1306;--err:#cf4a3e;--ok:#1f9d6b;--run:#2f8fbf;
+  --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18);--shadow-sm:0 1px 2px rgba(20,22,25,.08);
+  --doc:#7c5cff;--doc-soft:rgba(124,92,255,.1);
+  --sans:"Geist",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace}
+html.dark{
+  --page:#050506;--bg:#0a0b0d;--rail:#0c0d10;--fg:#e7e8ea;--card:#141619;--pop:#191c20;--muted:#9aa0a7;--accent:#1e2126;--faint:#687078;
+  --border:rgba(255,255,255,.08);--div:rgba(255,255,255,.032);--sel:rgba(255,255,255,.065);
+  --brass:#e4a862;--brass-soft:rgba(228,168,98,.14);--warn:#d99138;--err:#f2766b;--ok:#5bd6a0;--run:#5bb8e8;
+  --shadow-pop:0 12px 40px -8px rgba(0,0,0,.55);--shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  --doc:#a48af0;--doc-soft:rgba(164,138,240,.12)}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--page);color:var(--fg);font-family:var(--sans);font-size:13px;-webkit-font-smoothing:antialiased;padding:32px 32px 96px}
+.wrap{max-width:1180px;margin:0 auto}
+h1{font-size:20px;font-weight:600}
+.sub{font-size:13px;color:var(--muted);margin:8px 0 0;max-width:820px;line-height:1.6}
+h2{font-size:14px;font-weight:600;margin:56px 0 4px;display:flex;align-items:baseline;gap:10px}
+h2 .tag{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--doc)}
+.q{font-size:13px;color:var(--muted);margin:0 0 20px;max-width:820px;line-height:1.6}
+.q b,.nota b,li b{color:var(--fg);font-weight:500}
+code{font:12px var(--mono);color:var(--fg);background:var(--sel);padding:1px 4px;border-radius:4px}
+.tema{position:fixed;top:16px;right:16px;height:28px;padding:0 10px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font:500 12px var(--sans);cursor:pointer;box-shadow:var(--shadow-sm);z-index:9}
+
+/* palco: um pedaço da janela, com o sino e o popover aberto */
+.lado{display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap}
+.palco{position:relative;width:432px;background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:0 20px 24px;overflow:hidden;flex:none}
+.barra{height:44px;display:flex;align-items:center;justify-content:flex-end;gap:4px;margin:0 -8px}
+.fundo{position:absolute;inset:44px 0 0 0;padding:20px;opacity:.5;pointer-events:none}
+.fundo i{display:block;height:8px;border-radius:4px;background:var(--sel);margin:12px 0}
+.ib{width:32px;height:32px;display:grid;place-items:center;border-radius:6px;color:var(--muted);position:relative}
+.ib.on{background:var(--accent);color:var(--fg)}
+.glifo{position:relative;width:16px;height:16px;display:grid;place-items:center}
+.selo-n{position:absolute;top:-8px;right:-8px;min-width:16px;height:16px;padding:0 3px;border-radius:8px;background:var(--warn);color:var(--warn-fg);font:600 11px/16px var(--sans);text-align:center;box-shadow:0 0 0 2px var(--bg)}
+.selo-p{position:absolute;top:-4px;right:-4px;width:8px;height:8px;border-radius:50%;background:var(--muted);box-shadow:0 0 0 2px var(--bg)}
+
+/* o popover (E2) */
+.pop{position:relative;width:384px;margin-left:auto;background:var(--pop);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow-pop);padding:4px;z-index:2}
+.pop.curto{max-height:640px;overflow:hidden}
+.pop.curto::after{content:"";position:absolute;left:0;right:0;bottom:0;height:56px;background:linear-gradient(transparent,var(--pop));border-radius:0 0 10px 10px}
+.cab{display:flex;align-items:center;gap:6px;padding:6px 6px 6px 8px}
+.cab .nome{font-size:13px;font-weight:600;flex:1}
+.lbl{display:flex;align-items:center;gap:6px;padding:12px 8px 4px;font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.lbl .esp{flex:1}
+.lbl .n{min-width:16px;height:16px;padding:0 4px;border-radius:8px;background:var(--warn);color:var(--warn-fg);font:600 11px/16px var(--sans);text-align:center;text-transform:none;letter-spacing:0}
+.sep{height:1px;background:var(--border);margin:4px -4px}
+.divi{height:1px;background:var(--div);margin:4px 8px}
+.vazio{padding:8px;text-align:center;font-size:12px;color:var(--muted)}
+
+.row{position:relative;display:grid;grid-template-columns:14px minmax(0,1fr) auto;column-gap:8px;row-gap:2px;padding:8px;border-radius:6px;align-items:center}
+.row.hover{background:var(--accent)}
+.row .ic{width:14px;height:14px;display:grid;place-items:center;color:var(--muted)}
+.row .ic svg{width:14px;height:14px}
+.row .t{font-size:13px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:6px;min-width:0}
+.row .t span.tt{overflow:hidden;text-overflow:ellipsis}
+.row .fim{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint);white-space:nowrap}
+.row .meta{grid-column:2/4;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .corpo{grid-column:2/4;font-size:11px;line-height:1.45;color:var(--fg);opacity:.75;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.row .extra{grid-column:2/4;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--faint);margin-top:2px}
+.row .extra svg{width:12px;height:12px}
+.row.lida .t{color:var(--muted)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--fg);flex:none}
+.dot.brass{background:var(--brass)}
+.qtd{height:18px;padding:0 6px;border-radius:9px;background:var(--sel);color:var(--muted);font:500 11px/18px var(--sans);flex:none}
+.warn{color:var(--warn)!important}.err{color:var(--err)!important}.ok{color:var(--ok)!important}
+.chip{height:24px;padding:0 8px;border-radius:6px;border:1px solid var(--border);background:var(--card);color:var(--fg);font:500 12px var(--sans);display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+.chip.pri{background:var(--brass);border-color:transparent;color:#fff}
+html.dark .chip.pri{color:#1a1306}
+.chip svg{width:12px;height:12px}
+.ib24{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;color:var(--muted)}
+.ib24 svg{width:14px;height:14px}
+.seg{display:flex;align-items:center;gap:2px}
+.seg span{height:24px;padding:0 8px;border-radius:6px;font-size:11px;line-height:24px;color:var(--muted)}
+.seg span.on{background:var(--sel);color:var(--fg)}
+.rod{display:flex;align-items:center;gap:8px;padding:8px;margin-top:4px;border-top:1px solid var(--border);margin-inline:-4px;padding-inline:12px;font-size:12px;color:var(--muted)}
+.rod svg{width:14px;height:14px;flex:none}
+.rod .esp{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rod a{color:var(--fg);text-decoration:none;white-space:nowrap}
+
+/* resumo de volta: superfície por cor e raio, sem filete (§4) */
+.volta{margin:4px;padding:12px;border-radius:8px;background:var(--rail)}
+html.dark .volta{background:var(--card)}
+.volta .h{display:flex;align-items:baseline;gap:8px}
+.volta .h b{font-size:13px;font-weight:600;flex:1}
+.volta .h span{font-size:11px;color:var(--faint)}
+.volta p{font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px}
+.volta ul{list-style:none;margin-top:10px;display:flex;flex-direction:column;gap:8px}
+.volta li{display:grid;grid-template-columns:14px 1fr;column-gap:8px;font-size:12px;line-height:1.45}
+.volta li svg{width:14px;height:14px;margin-top:1px}
+.volta li .r{color:var(--muted)}
+.volta .bts{display:flex;gap:8px;margin-top:12px}
+
+/* linha do tempo do grupo aberto */
+.tl{grid-column:2/4;margin-top:6px;display:flex;flex-direction:column}
+.tl div{display:grid;grid-template-columns:40px 14px 1fr;column-gap:8px;padding:4px 0;font-size:12px;align-items:start}
+.tl .hr{font:11px var(--mono);color:var(--faint);padding-top:1px}
+.tl svg{width:12px;height:12px;margin-top:2px}
+.tl .x{color:var(--muted);line-height:1.45}
+.tl .x b{color:var(--fg);font-weight:400}
+
+/* menu de contexto (E2) */
+.menu{position:absolute;width:248px;background:var(--pop);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow-pop);padding:4px;z-index:5}
+.menu div{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:4px;font-size:13px}
+.menu div svg{width:14px;height:14px;color:var(--muted)}
+.menu div.hv{background:var(--accent)}
+.menu hr{border:0;height:1px;background:var(--border);margin:4px -4px}
+
+/* anotações do mock (cor de documento, não do app) */
+.pin{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--doc);color:#fff;font:600 11px/20px var(--sans);text-align:center;z-index:4;box-shadow:0 0 0 3px var(--doc-soft)}
+.notas{flex:1;min-width:340px;max-width:640px;display:flex;flex-direction:column;gap:16px;padding-top:44px}
+.notas .it{display:grid;grid-template-columns:20px 1fr;column-gap:12px}
+.notas .it .pin{position:static;box-shadow:none}
+.notas .it .pin.l{background:transparent;color:var(--doc);border:1px solid var(--doc);line-height:18px}
+.notas h3{font-size:13px;font-weight:600;line-height:1.45}
+.notas p{font-size:13px;color:var(--muted);line-height:1.6;margin-top:2px}
+.nota{font-size:12px;color:var(--muted);line-height:1.6;margin-top:12px;max-width:432px}
+
+/* tabela das regras */
+table{border-collapse:separate;border-spacing:0;width:100%;max-width:1180px;font-size:12px;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--bg)}
+th,td{padding:10px 12px;text-align:left;vertical-align:top;line-height:1.5;border-top:1px solid var(--div)}
+th{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--faint);border-top:0;background:var(--rail)}
+td{color:var(--muted)}td:first-child{color:var(--fg);font-weight:500}
+td .novo{color:var(--fg)}
+.selos{display:flex;gap:24px;margin-top:4px;flex-wrap:wrap}
+.selos .s{display:flex;flex-direction:column;align-items:center;gap:10px;padding:16px 20px;background:var(--bg);border:1px solid var(--border);border-radius:12px;width:260px;text-align:center}
+.selos .s p{font-size:12px;color:var(--muted);line-height:1.5}
+.selos .s b{font-size:13px;font-weight:500;color:var(--fg)}
+.decide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;max-width:1180px}
+.decide .c{background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px}
+.decide h3{font-size:13px;font-weight:600}
+.decide p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:6px}
+.decide .rec{margin-top:10px;font-size:12px;color:var(--fg);line-height:1.6}
+.decide .rec span{font:500 11px var(--sans);text-transform:uppercase;letter-spacing:.05em;color:var(--doc);margin-right:6px}
+</style>
+</head>
+<body>
+<button class="tema" onclick="document.documentElement.classList.toggle('dark')">Alternar tema</button>
+<div class="wrap">
+
+<h1>O sino, revisado</h1>
+<p class="sub">O sino de hoje (print de 27/09) lido contra o código, os seis problemas que ele explica, e quatro ideias que se somam. A ideia A é a base; B, C e D são camadas que entram em cima dela, cada uma independente. No fim, as regras do que entra no sino e as decisões que são suas.</p>
+
+<!-- ============================================================ HOJE -->
+<h2><span class="tag">Hoje</span>O que a tela diz, e onde ela erra</h2>
+<p class="q">Reprodução fiel do print. Os números batem com a lista ao lado, e cada item aponta o arquivo que produz o comportamento.</p>
+
+<div class="lado">
+  <div class="palco">
+    <div class="fundo"><i style="width:70%"></i><i style="width:55%"></i><i style="width:80%"></i><i style="width:40%"></i></div>
+    <div class="barra">
+      <div class="ib on"><span class="glifo"><i data-i="bell"></i><span class="selo-p"></span></span></div>
+      <div class="ib"><i data-i="panel"></i></div>
+    </div>
+    <div style="position:relative">
+    <span class="pin" style="left:-2px;top:40px">1</span>
+    <span class="pin" style="left:-2px;top:80px">5</span>
+    <span class="pin" style="right:-12px;top:268px">3</span>
+    <span class="pin" style="left:-2px;top:310px">6</span>
+    <span class="pin" style="left:-2px;top:360px">2</span>
+    <span class="pin" style="left:-2px;top:480px">4</span>
+    <span class="pin" style="right:-12px;top:604px">8</span>
+    <div class="pop curto">
+      <div class="lbl">Precisam de você</div>
+      <div class="vazio">Nada esperando você.</div>
+      <div class="sep"></div>
+      <div class="lbl">Ferramentas</div>
+      <div class="row"><span class="ic"><i data-i="sliders"></i></span><span class="t"><span class="tt">Modos do Claude Code mudaram</span></span><span class="fim"></span><span class="meta">claude-code: o motor tem manual, dontAsk e o Frota ainda não sabe explicar.</span></div>
+      <div class="row"><span class="ic"><i data-i="sliders"></i></span><span class="t"><span class="tt">Modos do Antigravity mudaram</span></span><span class="fim"></span><span class="meta">agy: `accept-edits` foi recusado na versão 1.1.17 e o motor mudou de versão.</span></div>
+      <div class="row"><span class="ic"><i data-i="sliders"></i></span><span class="t"><span class="tt">Modos do Antigravity mudaram</span></span><span class="fim"></span><span class="meta">agy: `plan` foi recusado na versão 1.1.17 e o motor mudou de versão.</span></div>
+      <div class="sep"></div>
+      <div class="lbl" style="padding-top:8px"><span class="esp">Atividade</span>
+        <span class="seg" style="text-transform:none;letter-spacing:0"><span class="on">Tudo</span><span>Não-lidas (50)</span></span>
+        <span class="ib24"><i data-i="checkcheck"></i></span><span class="ib24"><i data-i="trash"></i></span>
+      </div>
+      <div class="row"><span class="ic ok"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 5 h <span class="dot brass"></span></span><span class="meta">Claude Code · frota · turno concluído</span></div>
+      <div class="row"><span class="ic warn"><i data-i="question"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Pergunta pendente · Comentários · frota · turno parado</span></div>
+      <div class="row"><span class="ic ok"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Claude Code · frota · turno concluído</span></div>
+      <div class="row"><span class="ic ok"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Claude Code · frota · turno concluído</span></div>
+      <div class="row"><span class="ic ok"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Claude Code · frota · turno concluído</span></div>
+      <div class="row"><span class="ic ok"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Claude Code · frota · turno concluído</span></div>
+      <div class="row"><span class="ic err"><i data-i="alert"></i></span><span class="t"><span class="tt">Trabalho em background parou</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">frota · turno falhou</span></div>
+      <div class="row"><span class="ic warn"><i data-i="question"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim">há 6 h <span class="dot brass"></span></span><span class="meta">Pergunta pendente · ADR · frota · turno parado</span></div>
+    </div>
+    </div>
+    <span class="pin" style="right:84px;top:12px">7</span>
+  </div>
+
+  <div class="notas">
+    <div class="it"><span class="pin">1</span><div><h3>"Nada esperando você", e três linhas abaixo, "Pergunta pendente".</h3><p>A seção de cima só lê disputas, cards e propostas (<code>lib/inbox.ts</code>). Permissão e pergunta vivas ficam de fora, e o selo também não as conta (<code>InboxBell.tsx:241</code>). Enquanto isso a bandeja conta (<code>App.tsx:303</code>) e a sidebar acende (<code>useAwaiting</code>). Três superfícies, três respostas para "tem algo esperando?".</p></div></div>
+    <div class="it"><span class="pin">2</span><div><h3>"Pendente" para sempre.</h3><p>O feed é um log: <code>notifyQuestion</code> e <code>notifyApproval</code> empilham "Pergunta pendente · turno parado" em âmbar (<code>lib/notify.ts:229</code>, <code>:283</code>) e nada volta para dizer que você respondeu. A pergunta de 6 h atrás continua pedindo você na tela.</p></div></div>
+    <div class="it"><span class="pin">3</span><div><h3>"Não-lidas (50)" é o teto, não uma contagem.</h3><p>Só fica lido o que você clica dentro do sino (<code>InboxBell.tsx:411</code>). Abrir a conversa pela sidebar não marca nada. O feed guarda 50 itens (<code>store/notifications.ts</code>), então o número trava em 50 e para de informar.</p></div></div>
+    <div class="it"><span class="pin">4</span><div><h3>Um item por turno, inclusive o que você assistiu.</h3><p>Seis "Revisão do PRD de edição" seguidos. <code>notifyTurnEnd</code> empilha todo fim de turno (<code>lib/notify.ts:57</code>); só a nativa olha se a conversa estava na sua frente. A conversa que mais trabalhou soterra o resto.</p></div></div>
+    <div class="it"><span class="pin">5</span><div><h3>Ferramentas no topo, em dialeto interno.</h3><p>"claude-code: o motor tem manual, dontAsk e o Frota ainda não sabe explicar" (<code>lib/agentModes.ts:336</code>): id cru do motor e nome de modo. É curadoria do app, não trabalho seu, não se dispensa por decisão, e empurra a atividade para baixo da dobra.</p></div></div>
+    <div class="it"><span class="pin">6</span><div><h3>Sucesso pintado de verde, linha por linha.</h3><p>O guia diz que o caso comum é cinza (§1, §2). Aqui o verde é o ruído, o vermelho perde força, e o ponto de não lida é brass, que é cor de gesto.</p></div></div>
+    <div class="it"><span class="pin">7</span><div><h3>Um menu fazendo papel de painel.</h3><p>O sino é <code>DropdownMenu</code> (<code>InboxBell.tsx:244</code>) com filtros, rolagem e botões dentro dos itens que desarmam o menu na mão (<code>stopPropagation</code> + <code>preventDefault</code>). Pelo §12 isso é conteúdo ancorado, ou seja <code>Popover</code>. E a lixeira apaga tudo sem desfazer.</p></div></div>
+    <div class="it"><span class="pin">8</span><div><h3>A segunda linha às vezes mente.</h3><p>"Trabalho em background parou" ganha "turno falhou": o rótulo sai do tipo (<code>run_error</code>), não do evento (<code>InboxBell.tsx:440</code>). E no caso comum ela só repete o ícone ("turno concluído" ao lado do check).</p></div></div>
+  </div>
+</div>
+
+<!-- ============================================================ A -->
+<h2><span class="tag">Ideia A · a base</span>Esperando você é vivo; atividade é uma linha por conversa</h2>
+<p class="q">O sino passa a responder duas perguntas, nesta ordem: <b>o que está parado esperando você agora</b> e <b>o que aconteceu enquanto você não olhava</b>. A primeira é derivada de estado vivo e some sozinha; a segunda é o feed, agrupado e com o recibo na frente.</p>
+
+<div class="lado">
+  <div class="palco">
+    <div class="fundo"><i style="width:70%"></i><i style="width:55%"></i><i style="width:80%"></i><i style="width:40%"></i></div>
+    <div class="barra">
+      <div class="ib on"><span class="glifo"><i data-i="bell"></i><span class="selo-n">3</span></span></div>
+      <div class="ib"><i data-i="panel"></i></div>
+    </div>
+    <div class="pop">
+      <span class="pin" style="left:-10px;top:8px">f</span>
+      <div class="cab"><span class="nome">Notificações</span>
+        <span class="seg"><span class="on">Tudo</span><span>Não lidas 3</span></span>
+        <span class="ib24" title="Marcar tudo como visto"><i data-i="checkcheck"></i></span>
+        <span class="ib24" title="Mais"><i data-i="more"></i></span>
+      </div>
+
+      <span class="pin" style="left:-10px;top:46px">a</span>
+      <span class="pin" style="right:112px;top:-14px">c</span>
+      <div class="lbl"><span>Esperando você</span><span class="n">3</span></div>
+      <div class="row hover"><span class="ic warn"><i data-i="shield"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span></span><span class="fim"><span class="chip">Ver pedido <i data-i="arrow"></i></span></span><span class="meta">Permissão · rodar bun run check · frota · há 12 min</span></div>
+      <div class="row"><span class="ic warn"><i data-i="question"></i></span><span class="t"><span class="tt">Especialista na conversa</span></span><span class="fim">há 40 min</span><span class="meta">Pergunta · qual ADR citar no aviso? (+1) · mypeople</span></div>
+      <div class="row"><span class="ic warn"><i data-i="login"></i></span><span class="t"><span class="tt">Codex sem login</span></span><span class="fim"></span><span class="meta">Bloqueia o envio · entre pela CLI e depois Verificar agora</span></div>
+
+      <span class="pin" style="left:-10px;top:232px">b</span>
+      <div class="lbl" style="padding-top:16px">Hoje</div>
+      <div class="row"><span class="ic"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span><span class="qtd">6 turnos</span></span><span class="fim">há 5 h <span class="dot"></span></span><span class="meta">Claude Code · frota</span>
+        <span class="corpo">Revisou o PRD, apontou três lacunas no aceite e sugeriu dividir o épico E2 em dois.</span>
+        <span class="extra"><i data-i="question"></i>2 perguntas respondidas por você</span></div>
+      <span class="pin" style="left:-10px;top:392px">d</span>
+      <div class="row"><span class="ic err"><i data-i="alert"></i></span><span class="t"><span class="tt">Trabalho em background parou</span></span><span class="fim">há 6 h <span class="dot"></span></span><span class="meta">vitest · Revisão do PRD de edição · frota</span>
+        <span class="corpo">O processo saiu com código 1 antes de concluir. O que ele escreveu até ali está no Fio Vivo.</span></div>
+      <div class="row"><span class="ic"><i data-i="check"></i></span><span class="t"><span class="tt">Especialista na conversa</span><span class="qtd">2 turnos</span></span><span class="fim">há 7 h <span class="dot"></span></span><span class="meta">Codex · mypeople</span>
+        <span class="corpo">Rodou a suíte do composer; 214 testes passaram.</span></div>
+
+      <div class="lbl" style="padding-top:16px">Ontem</div>
+      <div class="row lida"><span class="ic"><i data-i="check"></i></span><span class="t"><span class="tt">Configurações por motor</span><span class="qtd">3 turnos</span></span><span class="fim">18:40</span><span class="meta">Claude Code · frota</span></div>
+      <div class="row lida"><span class="ic"><i data-i="info"></i></span><span class="t"><span class="tt">Atualização do Frota instalada</span></span><span class="fim">09:12</span><span class="meta">aviso · a versão nova entra ao reabrir</span></div>
+
+      <span class="pin" style="left:-10px;bottom:6px">e</span>
+      <div class="rod"><i data-i="sliders"></i><span class="esp">2 avisos das ferramentas · modos do Claude Code e do Antigravity</span><a href="#">Ver →</a></div>
+    </div>
+  </div>
+
+  <div class="notas">
+    <div class="it"><span class="pin l">a</span><div><h3>Esperando você é derivado, não guardado.</h3><p>Lê a fila de interações (permissão, pergunta, gate de missão), a mesma fila da faixa (disputa, card, proposta) e CLI sem login. Some sozinho quando você responde, onde quer que responda: na conversa, no Companion ou no terminal. O selo conta exatamente isto, por conversa, com a mesma regra da bandeja (<code>awaitingDecisionCount</code>). A linha leva ao cartão do pedido; o pedido continua morando na conversa (ADR-261).</p></div></div>
+    <div class="it"><span class="pin l">b</span><div><h3>Uma linha por conversa por dia.</h3><p>O título é a conversa; "6 turnos" diz quanto ela trabalhou; o corpo é o recibo do último turno em background, que já existe (<code>turnReceipt</code>). Pergunta respondida deixa de ser âmbar e vira rastro cinza dentro do grupo. Falha nunca entra no grupo: ela fica sozinha, onde se vê.</p></div></div>
+    <div class="it"><span class="pin l">c</span><div><h3>Visto quando você vê.</h3><p>Abrir a conversa, por qualquer caminho, marca os itens dela como vistos. "Não lidas 3" volta a ser uma contagem, e o ponto no sino volta a querer dizer alguma coisa.</p></div></div>
+    <div class="it"><span class="pin l">d</span><div><h3>Cinza é sucesso.</h3><p>Âmbar só no que está vivo esperando você; vermelho só na falha; o resto é cinza. O ponto de não lida é neutro (tinta de texto), não brass. A segunda linha diz o que o ícone não diz: motor, projeto, objeto.</p></div></div>
+    <div class="it"><span class="pin l">e</span><div><h3>Ferramentas vira rodapé de uma linha.</h3><p>O que bloqueia (sem login) sobe para Esperando você, porque passa no mesmo teste. Rate limit, update, modelos e modos são o cardápio da ferramenta: uma linha no pé, que abre Configurações no motor certo. E a cópia usa o nome do motor, nunca o id.</p></div></div>
+    <div class="it"><span class="pin l">f</span><div><h3>Popover, não menu.</h3><p>Conteúdo ancorado que se lê e se filtra (§12). O "Limpar" sai da barra e mora no "⋯", com desfazer; "Marcar tudo como visto" fica à mão.</p></div></div>
+  </div>
+</div>
+
+<!-- ============================================================ B -->
+<h2><span class="tag">Ideia B</span>Enquanto você esteve fora</h2>
+<p class="q">Quando você volta depois de um tempo longe da janela e há atividade não vista em background, o topo da atividade ganha um resumo em frases. É montado com os recibos que o feed já tem (sem chamada nova de modelo) e conta só o que o feed conta. O mesmo texto serve à bandeja e ao Companion, que já leem o feed.</p>
+
+<div class="lado">
+  <div class="palco">
+    <div class="fundo"><i style="width:70%"></i><i style="width:55%"></i><i style="width:80%"></i></div>
+    <div class="barra">
+      <div class="ib on"><span class="glifo"><i data-i="bell"></i><span class="selo-n">1</span></span></div>
+      <div class="ib"><i data-i="panel"></i></div>
+    </div>
+    <div class="pop">
+      <div class="cab"><span class="nome">Notificações</span>
+        <span class="seg"><span class="on">Tudo</span><span>Não lidas 9</span></span>
+        <span class="ib24"><i data-i="checkcheck"></i></span><span class="ib24"><i data-i="more"></i></span>
+      </div>
+      <div class="lbl"><span>Esperando você</span><span class="n">1</span></div>
+      <div class="row"><span class="ic warn"><i data-i="question"></i></span><span class="t"><span class="tt">Especialista na conversa</span></span><span class="fim">há 40 min</span><span class="meta">Pergunta · qual ADR citar no aviso? (+1) · mypeople</span></div>
+
+      <div class="volta">
+        <div class="h"><b>Enquanto você esteve fora</b><span>desde 14:02</span></div>
+        <p>Três conversas trabalharam: 9 turnos terminaram e um trabalho em background parou.</p>
+        <ul>
+          <li><i data-i="check" style="color:var(--muted)"></i><div><b style="font-weight:500">Revisão do PRD de edição</b> <span class="r">· 6 turnos</span><div class="r">Revisou o PRD e apontou três lacunas no aceite.</div></div></li>
+          <li><i data-i="alert" style="color:var(--err)"></i><div><b style="font-weight:500">vitest parou</b> <span class="r">· Revisão do PRD de edição</span><div class="r">Saiu com código 1 antes de concluir.</div></div></li>
+          <li><i data-i="check" style="color:var(--muted)"></i><div><b style="font-weight:500">Especialista na conversa</b> <span class="r">· 2 turnos</span><div class="r">Rodou a suíte do composer; 214 testes passaram.</div></div></li>
+          <li><i data-i="check" style="color:var(--muted)"></i><div><b style="font-weight:500">Configurações por motor</b> <span class="r">· 1 turno</span><div class="r">Moveu os modos para a página do motor.</div></div></li>
+        </ul>
+        <div class="bts"><span class="chip">Marcar como visto</span></div>
+      </div>
+
+      <div class="lbl" style="padding-top:12px">Antes disso</div>
+      <div class="row lida"><span class="ic"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span><span class="qtd">4 turnos</span></span><span class="fim">13:40</span><span class="meta">Claude Code · frota</span></div>
+      <div class="rod"><i data-i="sliders"></i><span class="esp">2 avisos das ferramentas</span><a href="#">Ver →</a></div>
+    </div>
+  </div>
+  <div class="notas">
+    <div class="it"><span class="pin l">1</span><div><h3>Quando aparece.</h3><p>Janela sem foco por mais de um limiar (proposta: 30 min) e pelo menos dois itens novos de background. Voltar e achar um item só não precisa de resumo: a linha já é o resumo.</p></div></div>
+    <div class="it"><span class="pin l">2</span><div><h3>Honesto por construção.</h3><p>Cada frase vem de um item do feed; nenhum número é estimado. Recibo que não chegou a tempo vira só "1 turno", sem frase inventada. A falha entra no resumo com a mesma tinta de sempre.</p></div></div>
+    <div class="it"><span class="pin l">3</span><div><h3>Some quando cumpriu o papel.</h3><p>"Marcar como visto" recolhe o bloco e marca os itens dele. Abrir uma das conversas marca só a dela, e o resumo se refaz com o que sobrou.</p></div></div>
+    <div class="it"><span class="pin l">4</span><div><h3>Irmão das nativas agrupadas.</h3><p>Pela mesma regra, turnos da mesma conversa que terminam perto um do outro viram uma nativa só ("3 turnos terminaram em Revisão do PRD"), em vez de três.</p></div></div>
+  </div>
+</div>
+
+<!-- ============================================================ C -->
+<h2><span class="tag">Ideia C</span>Abrir o grupo, e silenciar uma conversa barulhenta</h2>
+<p class="q">O grupo abre no lugar e mostra os turnos da conversa em linha do tempo, com o recibo de cada um. O botão direito (ou o "⋯" da linha) dá os gestos da conversa, e um deles é silenciar: a conversa continua no sino, mas para de gerar nativa e som.</p>
+
+<div class="lado">
+  <div class="palco" style="padding-bottom:40px">
+    <div class="fundo"><i style="width:70%"></i><i style="width:55%"></i></div>
+    <div class="barra">
+      <div class="ib on"><span class="glifo"><i data-i="bell"></i><span class="selo-p"></span></span></div>
+      <div class="ib"><i data-i="panel"></i></div>
+    </div>
+    <div class="pop">
+      <div class="cab"><span class="nome">Notificações</span>
+        <span class="seg"><span class="on">Tudo</span><span>Não lidas 2</span></span>
+        <span class="ib24"><i data-i="checkcheck"></i></span><span class="ib24"><i data-i="more"></i></span>
+      </div>
+      <div class="lbl">Hoje</div>
+      <div class="row hover"><span class="ic"><i data-i="chevdown"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span><span class="qtd">6 turnos</span></span><span class="fim">há 5 h <span class="dot"></span></span><span class="meta">Claude Code · frota</span>
+        <div class="tl">
+          <div><span class="hr">16:20</span><i data-i="check" style="color:var(--muted)"></i><span class="x"><b>Revisou o PRD</b> e apontou três lacunas no aceite.</span></div>
+          <div><span class="hr">15:58</span><i data-i="check" style="color:var(--muted)"></i><span class="x"><b>Aplicou as correções</b> no bloco de requisitos.</span></div>
+          <div><span class="hr">15:31</span><i data-i="question" style="color:var(--muted)"></i><span class="x">Você respondeu <b>Comentários</b>: manter no rodapé.</span></div>
+          <div><span class="hr">15:30</span><i data-i="alert" style="color:var(--err)"></i><span class="x"><b>vitest parou</b> antes de concluir.</span></div>
+          <div><span class="hr">15:02</span><i data-i="question" style="color:var(--muted)"></i><span class="x">Você respondeu <b>ADR</b>: citar a 261.</span></div>
+          <div><span class="hr">14:40</span><i data-i="check" style="color:var(--muted)"></i><span class="x">Turno concluído (em primeiro plano, sem recibo).</span></div>
+        </div>
+      </div>
+      <div class="row"><span class="ic"><i data-i="chevright"></i></span><span class="t"><span class="tt">Especialista na conversa</span><span class="qtd">2 turnos</span><i data-i="belloff" style="width:12px;height:12px;color:var(--faint)" title="Silenciada"></i></span><span class="fim">há 7 h <span class="dot"></span></span><span class="meta">Codex · mypeople · silenciada</span></div>
+      <div class="row lida"><span class="ic"><i data-i="chevright"></i></span><span class="t"><span class="tt">Configurações por motor</span><span class="qtd">3 turnos</span></span><span class="fim">ontem</span><span class="meta">Claude Code · frota</span></div>
+    </div>
+    <div class="menu" style="left:196px;top:120px">
+      <div><i data-i="arrow"></i>Abrir a conversa</div>
+      <div><i data-i="checkcheck"></i>Marcar como vista</div>
+      <hr>
+      <div class="hv"><i data-i="belloff"></i>Silenciar esta conversa</div>
+      <hr>
+      <div><i data-i="x"></i>Tirar do sino</div>
+    </div>
+  </div>
+  <div class="notas">
+    <div class="it"><span class="pin l">1</span><div><h3>A linha do tempo é o feed desagrupado.</h3><p>Nada novo é guardado: são os mesmos itens de hoje, com o horário e o recibo. O que muda é que o grupo é o índice e a lista é o detalhe.</p></div></div>
+    <div class="it"><span class="pin l">2</span><div><h3>Silenciar tira o barulho, nunca o pedido.</h3><p>Conversa silenciada continua no sino, sem nativa e sem som, com o ícone na linha para você lembrar por quê. Pergunta e permissão <b>nunca</b> silenciam: o turno está parado esperando você, e calar isso seria prender o trabalho em silêncio.</p></div></div>
+    <div class="it"><span class="pin l">3</span><div><h3>O menu é o de sempre.</h3><p>Botão direito sai de <code>ui/context-menu</code> (§11), com os mesmos itens no "⋯" da linha para quem não usa o direito. "Tirar do sino" some com o grupo e desfaz por 6 s.</p></div></div>
+  </div>
+</div>
+
+<!-- ============================================================ D -->
+<h2><span class="tag">Ideia D</span>Escopo na cara</h2>
+<p class="q">Com dois ou mais projetos com atividade, o cabeçalho ganha o recorte por projeto. O padrão é "Todos"; o recorte vale para a atividade, nunca para Esperando você, que é sempre da frota inteira (um pedido de outro projeto não pode sumir porque você filtrou).</p>
+
+<div class="lado">
+  <div class="palco">
+    <div class="barra">
+      <div class="ib on"><span class="glifo"><i data-i="bell"></i><span class="selo-n">1</span></span></div>
+      <div class="ib"><i data-i="panel"></i></div>
+    </div>
+    <div class="pop">
+      <div class="cab"><span class="nome">Notificações</span>
+        <span class="ib24"><i data-i="checkcheck"></i></span><span class="ib24"><i data-i="more"></i></span>
+      </div>
+      <div style="display:flex;gap:4px;padding:0 8px 4px" class="seg"><span>Todos 9</span><span class="on">frota 7</span><span>mypeople 2</span><span style="margin-left:auto">Não lidas</span></div>
+      <div class="lbl"><span>Esperando você</span><span class="n">1</span><span class="esp"></span><span style="text-transform:none;letter-spacing:0;color:var(--faint)">todos os projetos</span></div>
+      <div class="row"><span class="ic warn"><i data-i="question"></i></span><span class="t"><span class="tt">Especialista na conversa</span></span><span class="fim">há 40 min</span><span class="meta">Pergunta · qual ADR citar no aviso? (+1) · mypeople</span></div>
+      <div class="lbl" style="padding-top:16px"><span>Hoje</span><span class="esp"></span><span style="text-transform:none;letter-spacing:0;color:var(--faint)">só frota</span></div>
+      <div class="row"><span class="ic"><i data-i="check"></i></span><span class="t"><span class="tt">Revisão do PRD de edição</span><span class="qtd">6 turnos</span></span><span class="fim">há 5 h <span class="dot"></span></span><span class="meta">Claude Code</span></div>
+      <div class="row"><span class="ic err"><i data-i="alert"></i></span><span class="t"><span class="tt">Trabalho em background parou</span></span><span class="fim">há 6 h <span class="dot"></span></span><span class="meta">vitest · Revisão do PRD de edição</span></div>
+    </div>
+  </div>
+  <div class="notas">
+    <div class="it"><span class="pin l">1</span><div><h3>O recorte se declara.</h3><p>Cada seção diz o escopo que está valendo ("todos os projetos", "só frota"), para o filtro nunca ser herdado em silêncio. Com o recorte ativo, o nome do projeto sai da segunda linha, porque virou redundante.</p></div></div>
+    <div class="it"><span class="pin l">2</span><div><h3>Só existe quando ajuda.</h3><p>Um projeto só com atividade, e a fileira não aparece (§5, camada 2). O filtro não persiste entre aberturas: o sino abre sempre em "Todos".</p></div></div>
+  </div>
+</div>
+
+<!-- ============================================================ SELO -->
+<h2><span class="tag">O selo</span>Três estados, uma conta só</h2>
+<p class="q">A régua de hoje continua (número âmbar só para o que bloqueia, ponto para o resto, nunca somados). Muda <b>o que</b> o número conta: passa a ser a mesma conta da bandeja e da sidebar.</p>
+<div class="selos">
+  <div class="s"><div class="ib"><span class="glifo"><i data-i="bell"></i></span></div><b>Nada novo</b><p>Nenhum pedido vivo e nada não visto.</p></div>
+  <div class="s"><div class="ib"><span class="glifo"><i data-i="bell"></i><span class="selo-p"></span></span></div><b>Há o que ver</b><p>Atividade não vista. Com a marcação automática da ideia A, isto apaga sozinho quando você visita as conversas.</p></div>
+  <div class="s"><div class="ib"><span class="glifo"><i data-i="bell"></i><span class="selo-n">3</span></span></div><b>3 esperando você</b><p>Conversas com pergunta ou permissão aberta, gates, disputas, cards, propostas e CLI sem login. Conta conversas, não pedidos.</p></div>
+</div>
+
+<!-- ============================================================ REGRAS -->
+<h2><span class="tag">As regras</span>O que entra, onde, e quanto grita</h2>
+<p class="q">Em negrito, o que muda em relação a hoje.</p>
+<table>
+  <tr><th style="width:22%">Evento</th><th style="width:24%">Hoje</th><th style="width:26%">Proposta no sino</th><th style="width:16%">Nativa</th><th style="width:12%">Selo</th></tr>
+  <tr><td>Turno terminou, você olhando</td><td>entra, não lido, verde</td><td class="novo"><b>não entra</b> (o fio já contou); se preferir, entra já visto</td><td>não</td><td>não</td></tr>
+  <tr><td>Turno terminou em background</td><td>um item por turno</td><td class="novo"><b>soma no grupo da conversa</b>, com o recibo do último</td><td><b>agrupada</b> quando vêm juntos</td><td>ponto</td></tr>
+  <tr><td>Turno ou trabalho falhou</td><td>vermelho, "turno falhou" até para trabalho em background</td><td class="novo">vermelho, sozinho, <b>com o rótulo do evento</b></td><td>sim</td><td>ponto</td></tr>
+  <tr><td>Pergunta ou permissão aberta</td><td>"pendente" âmbar para sempre; fora de "Precisam de você" e do selo</td><td class="novo"><b>Esperando você enquanto viva</b>; resolvida, vira rastro cinza no grupo</td><td>se não está na tela (igual)</td><td><b>número</b></td></tr>
+  <tr><td>Gate ou recuperação de missão</td><td>item de feed âmbar</td><td class="novo"><b>Esperando você</b>, derivado do estado da missão</td><td>sim</td><td><b>número</b></td></tr>
+  <tr><td>Disputa, card, proposta</td><td>Precisam de você</td><td>Esperando você (igual)</td><td>igual</td><td>número</td></tr>
+  <tr><td>CLI sem login</td><td>Ferramentas, conta no selo</td><td class="novo"><b>Esperando você</b></td><td>não</td><td>número</td></tr>
+  <tr><td>Rate limit, update, modelos, modos</td><td>Ferramentas, no topo</td><td class="novo"><b>rodapé de uma linha</b> que abre Configurações no motor</td><td>não</td><td>não</td></tr>
+  <tr><td>Evento (navegador caiu, atualização)</td><td>"aviso" no feed</td><td>atividade, cinza (igual)</td><td>toast, como hoje</td><td>ponto</td></tr>
+  <tr><td>Abrir a conversa por fora do sino</td><td>não marca nada</td><td class="novo"><b>marca os itens dela como vistos</b></td><td>n/a</td><td>apaga</td></tr>
+</table>
+
+<!-- ============================================================ DECISÕES -->
+<h2><span class="tag">Suas decisões</span>O que o mock não resolve sozinho</h2>
+<div class="decide">
+  <div class="c"><h3>1. Esperando você no sino e a faixa mostram a mesma fila</h3><p>Hoje já é assim para disputa, card e proposta, com componentes diferentes (<code>DecisionRow</code> no sino, <code>DecisionList</code> na faixa). Pela regra do repositório, duas superfícies para o mesmo gesto significam que uma está errada.</p><p class="rec"><span>Recomendo</span>as duas lerem a mesma derivação e a linha ser a mesma primitiva. O sino é onde se procura; a faixa é onde se é lembrado.</p></div>
+  <div class="c"><h3>2. Turno de primeiro plano</h3><p>Não entrar deixa o sino limpo. Entrar já visto preserva o histórico completo para a bandeja e o Companion, que leem o feed para "últimos turnos".</p><p class="rec"><span>Recomendo</span>entrar já visto e dentro do grupo: não soma ruído, e o Companion continua sabendo o que aconteceu.</p></div>
+  <div class="c"><h3>3. Responder direto do sino</h3><p>Dá para pôr "Permitir · Negar" na linha de permissão. Mas o cartão na conversa tem o comando inteiro, o diff e o "Aprovar todas"; a linha do sino tem uma frase.</p><p class="rec"><span>Recomendo</span>não. A linha leva ao cartão. O gesto humano merece o contexto inteiro.</p></div>
+  <div class="c"><h3>4. Por onde começar</h3><p>A ideia A sozinha resolve de 1 a 8. B, C e D são independentes e cabem depois, em qualquer ordem.</p><p class="rec"><span>Recomendo</span>A primeiro, em duas entregas: (1) Esperando você vivo + selo com a conta da bandeja + visto ao abrir; (2) agrupamento por conversa, cores e rodapé de ferramentas.</p></div>
+</div>
+
+</div>
+
+<script>
+const P={
+bell:'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/>',
+belloff:'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/>',
+panel:'<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/>',
+check:'<path d="M20 6 9 17l-5-5"/>',
+checkcheck:'<path d="M18 6 7 17l-5-5"/><path d="m22 10-7.5 7.5L13 16"/>',
+alert:'<circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="8" y2="12"/><line x1="12" x2="12.01" y1="16" y2="16"/>',
+question:'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+shield:'<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M9.1 9a3 3 0 0 1 5.82 1c0 2-2.91 3-2.91 3"/><path d="M12 17h.01"/>',
+sliders:'<line x1="21" x2="14" y1="4" y2="4"/><line x1="10" x2="3" y1="4" y2="4"/><line x1="21" x2="12" y1="12" y2="12"/><line x1="8" x2="3" y1="12" y2="12"/><line x1="21" x2="16" y1="20" y2="20"/><line x1="12" x2="3" y1="20" y2="20"/><line x1="14" x2="14" y1="2" y2="6"/><line x1="8" x2="8" y1="10" y2="14"/><line x1="16" x2="16" y1="18" y2="22"/>',
+trash:'<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
+x:'<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+more:'<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+arrow:'<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+chevright:'<path d="m9 18 6-6-6-6"/>',
+chevdown:'<path d="m6 9 6 6 6-6"/>',
+login:'<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/>',
+info:'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>'
+};
+document.querySelectorAll('i[data-i]').forEach(el=>{
+  const st=el.getAttribute('style')||'';
+  const size=/width/.test(st)?'':'width="16" height="16"';
+  el.outerHTML=`<svg ${size} style="${st}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${P[el.dataset.i]||''}</svg>`;
+});
+</script>
+</body>
+</html>

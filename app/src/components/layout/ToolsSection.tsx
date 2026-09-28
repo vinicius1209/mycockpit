@@ -1,11 +1,9 @@
-// A seção FERRAMENTAS do sino: saúde das CLIs desta máquina (sem login, rate
-// limit, update) e, desde o M3 do model-autonomy-plan, as notícias de MODELO.
+// As FERRAMENTAS no sino: saúde das CLIs desta máquina (sem login, rate limit,
+// update) e as notícias de modelo e de modos.
 //
-// Saiu do `InboxBell.tsx` porque aquele arquivo já estava no teto de tamanho e
-// esta seção é um assunto fechado: ela tem as próprias fontes (o snapshot da
-// detecção, os limites vivos, o ledger de modelos), as próprias dispensas e a
-// própria hierarquia. O sino continua dono do BADGE e do "tudo em dia" — por
-// isso o hook devolve `blockedTools` e `hasSection` pra ele.
+// Assunto fechado, com fontes próprias (o snapshot da detecção, os limites
+// vivos, o ledger de modelos) e dispensas próprias. "Sem login" sai daqui para
+// o Esperando você do sino (`authItems`); o resto vira o rodapé (ADR-271).
 //
 // A distinção que separa isto da faixa "precisa de você": lá o app pergunta O
 // QUE FAZER (adotar a proposta, escolher o vencedor) e o item some quando VOCÊ
@@ -14,12 +12,10 @@
 // muda. Por isso nada daqui entra na fila de decisões.
 
 import { useCallback, useEffect, useMemo, useState } from "react"
-import { Gauge } from "lucide-react"
-import {
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu"
+import { ChevronDown, Gauge, SlidersHorizontal } from "lucide-react"
+import { LinhaDeLista } from "@/components/ui/linha-de-lista"
 import { ToolHealthRow } from "@/components/layout/ToolHealthRow"
+import { cn } from "@/lib/utils"
 import { agentLabel } from "@/lib/agent"
 import { secaoDoMotor, type SectionId } from "@/components/settings/sections"
 import {
@@ -30,7 +26,6 @@ import {
 } from "@/lib/modelLedger"
 import { modelNews } from "@/lib/modelPromotion"
 import {
-  blockingToolCount,
   modeDriftItems,
   modelHealthItems,
   toolHealthItems,
@@ -56,9 +51,7 @@ export interface ToolsSectionState {
   /** agent → quando o limite volta (texto pronto do store). */
   limited: Record<string, string | null>
   limitedIds: string[]
-  /** O que a seção soma no badge do sino (só impedimento). */
-  blockedTools: number
-  /** Tem alguma coisa pra mostrar? (o "tudo em dia" do sino depende disto) */
+  /** O rodapé tem alguma coisa? (o "tudo em dia" do sino depende disto) */
   hasSection: boolean
   dismissUpdate: (item: ToolUpdateItem) => void
   dismissModelNews: (item: ToolModelNewsItem) => void
@@ -98,8 +91,8 @@ export function useToolsSection(): ToolsSectionState {
     () => toolHealthItems(detected, updateDismissed),
     [detected, updateDismissed],
   )
-  // Notícia de modelo: mesma seção, mesma linha, e ZERO no badge (é
-  // conveniência, não impedimento — a régua está em `blockingToolCount`).
+  // Notícia de modelo: mesmo rodapé, mesma linha, e fora do selo (é
+  // conveniência, não impedimento; no selo só entra "sem login").
   const modelItems = useMemo(
     () =>
       modelHealthItems(
@@ -172,10 +165,9 @@ export function useToolsSection(): ToolsSectionState {
     modeItems,
     limited,
     limitedIds,
-    blockedTools: blockingToolCount(items),
     hasSection:
-      items.length > 0 ||
       limitedIds.length > 0 ||
+      items.some((i) => i.kind === "update") ||
       modelItems.length > 0 ||
       modeItems.length > 0,
     dismissUpdate,
@@ -184,10 +176,11 @@ export function useToolsSection(): ToolsSectionState {
   }
 }
 
-/** A seção desenhada. Ordem = severidade: sem login (bloqueia, conta no badge)
- *  · rate limit (bloqueia, mas volta sozinho, nenhum gesto seu resolve) ·
- *  update (conveniência, cinza) · modelos (o cardápio mudou, a ferramenta está
- *  de pé). Cada linha leva pra Configurações, onde os gestos já existem. */
+/** O rodapé das ferramentas (ADR-271): uma linha que abre a lista. "Sem
+ *  login" não mora aqui, porque passa no teste do Esperando você (bloqueia e
+ *  some com um gesto seu); o que sobra é o cardápio da ferramenta, que não
+ *  segura trabalho nenhum e por isso não disputa o topo com a atividade.
+ *  Cada linha leva para Configurações, onde os gestos já existem. */
 export function ToolsSection({
   state,
   openSettings,
@@ -196,64 +189,74 @@ export function ToolsSection({
   /** A página do motor desde a ADR-268: cada linha abre onde o gesto dela mora. */
   openSettings: (secao: SectionId) => void
 }) {
-  if (!state.hasSection) return null
+  const [aberto, setAberto] = useState(false)
+  const assuntos = [
+    ...state.limitedIds.map((id) => `${agentLabel(id)} limitado`),
+    ...state.updateItems.map((i) => `Atualização do ${i.label}`),
+    ...state.modelItems.map((i) => i.title),
+    ...state.modeItems.map((i) => `Modos do ${i.label}`),
+  ]
+  const quantos = assuntos.length
+  if (quantos === 0) return null
+  const resumo = [...new Set(assuntos)].join(", ")
   return (
-    <>
-      <DropdownMenuSeparator />
-      <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
-        Ferramentas
-      </DropdownMenuLabel>
-      {state.authItems.map((item) => (
-        <ToolHealthRow
-          key={`${item.agent}:auth`}
-          item={item}
-          onOpen={() => openSettings(secaoDoMotor(item.agent))}
-        />
-      ))}
-      {state.limitedIds.map((id) => (
-        <div
-          key={id}
-          className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
-        >
-          <Gauge className="size-3.5 shrink-0" />
-          <span className="truncate">
-            {agentLabel(id)} limitado
-            {state.limited[id] ? `, volta ${state.limited[id]}` : ""}
-          </span>
-        </div>
-      ))}
-      {state.updateItems.map((item) => (
-        <ToolHealthRow
-          key={`${item.agent}:update`}
-          item={item}
-          onOpen={() => openSettings(secaoDoMotor(item.agent))}
-          onDismiss={() => state.dismissUpdate(item)}
-        />
-      ))}
-      {/* Modelos (M3): o que entrou sozinho, o que não passou e por quê, e o
-          que o fornecedor anunciou que vai aposentar. Fecha a seção porque é a
-          camada mais leve das três (a ferramenta está de pé; mudou o cardápio
-          dela). A procedência inteira mora em Configurações ▸ Modelos, que é
-          pra onde a linha leva. */}
-      {state.modelItems.map((item) => (
-        <ToolHealthRow
-          key={item.id}
-          item={item}
-          onOpen={() => openSettings("models")}
-          onDismiss={() => state.dismissModelNews(item)}
-        />
-      ))}
-      {/* Modos: SEM dispensar, de propósito. Dispensa é pra aviso que você já
-          resolveu; este só some quando a curadoria alcança o motor (ou o motor
-          volta atrás). Deixar dispensar seria o mesmo silêncio que deixou o
-          `manual`/`dontAsk` passarem batidos. */}
-      {state.modeItems.map((item) => (
-        <ToolHealthRow
-          key={item.id}
-          item={item}
-          onOpen={() => openSettings(secaoDoMotor(item.agent))}
-        />
-      ))}
-    </>
+    <div className="mt-1 border-t border-border/40 pt-1">
+      <LinhaDeLista
+        onClick={() => setAberto(!aberto)}
+        aria-expanded={aberto}
+        className="flex items-center gap-2 text-[12px] text-muted-foreground"
+      >
+        <SlidersHorizontal className="size-3.5 shrink-0" />
+        <span className="min-w-0 flex-1 truncate">
+          {quantos} {quantos === 1 ? "aviso das ferramentas" : "avisos das ferramentas"} · {resumo}
+        </span>
+        <ChevronDown className={cn("size-3.5 shrink-0 transition-transform", aberto && "rotate-180")} />
+      </LinhaDeLista>
+      {aberto && (
+        <>
+          {state.limitedIds.map((id) => (
+            <div
+              key={id}
+              className="flex items-center gap-2 px-2 py-1.5 text-[12px] text-st-warning/80"
+            >
+              <Gauge className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {agentLabel(id)} limitado
+                {state.limited[id] ? `, volta ${state.limited[id]}` : ""}
+              </span>
+            </div>
+          ))}
+          {state.updateItems.map((item) => (
+            <ToolHealthRow
+              key={`${item.agent}:update`}
+              item={item}
+              onOpen={() => openSettings(secaoDoMotor(item.agent))}
+              onDismiss={() => state.dismissUpdate(item)}
+            />
+          ))}
+          {/* Modelos: o que entrou sozinho, o que não passou e por quê, e o que
+              o fornecedor anunciou que vai aposentar. A procedência inteira
+              mora em Configurações ▸ Modelos. */}
+          {state.modelItems.map((item) => (
+            <ToolHealthRow
+              key={item.id}
+              item={item}
+              onOpen={() => openSettings("models")}
+              onDismiss={() => state.dismissModelNews(item)}
+            />
+          ))}
+          {/* Modos: SEM dispensar. Dispensa é pra aviso que você já resolveu;
+              este só some quando a curadoria alcança o motor (ou o motor volta
+              atrás). */}
+          {state.modeItems.map((item) => (
+            <ToolHealthRow
+              key={item.id}
+              item={item}
+              onOpen={() => openSettings(secaoDoMotor(item.agent))}
+            />
+          ))}
+        </>
+      )}
+    </div>
   )
 }

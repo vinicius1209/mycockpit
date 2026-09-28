@@ -1,479 +1,236 @@
-import { useCallback, useEffect, useState } from "react"
-import {
-  AlertCircle,
-  Check,
-  CheckCheck,
-  CircleHelp,
-  Gauge,
-  Bell,
-  Info,
-  Lightbulb,
-  MessageCircleQuestion,
-  ShieldQuestion,
-  SquareKanban,
-  Swords,
-  Trash2,
-  X,
-} from "lucide-react"
+// O sino (ADR-271) responde duas perguntas, nesta ordem: o que está parado
+// esperando você agora, e o que aconteceu enquanto você não olhava.
+//
+// A primeira é derivada de estado vivo (`lib/sino/esperando`) e some sozinha;
+// a segunda é o feed, agrupado por conversa e dia (`lib/sino/agrupar`). É um
+// painel de conteúdo, não uma lista de comandos, por isso `Popover` (§12).
+
+import { useState } from "react"
+import { Bell, CheckCheck, Ellipsis, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { controle } from "@/components/ui/controle"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { secaoDoMotor } from "@/components/settings/sections"
+import { ToolsSection, useToolsSection } from "@/components/layout/ToolsSection"
+import { SecaoEsperando } from "@/components/layout/sino/SecaoEsperando"
+import { SecaoAtividade, type AcoesDaAtividade } from "@/components/layout/sino/SecaoAtividade"
+import { useEsperandoVoce } from "@/components/layout/sino/useEsperandoVoce"
+import { abrirConversa, abrirEspera } from "@/components/layout/sino/navegar"
+import { avisar } from "@/lib/avisos"
+import { agruparAtividade, soNaoLidas } from "@/lib/sino/agrupar"
+import { conversationTitle } from "@/lib/traySnapshot"
+import { cn } from "@/lib/utils"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
-import { openCardConversation, useCards } from "@/store/cards"
-import { useNotifs, type Notification } from "@/store/notifications"
-import { dismissProposal } from "@/lib/db"
-import { cardDecisions, scanDecisions, type Decision } from "@/lib/inbox"
-import {
-  ToolsSection,
-  useToolsSection,
-} from "@/components/layout/ToolsSection"
-import { cn } from "@/lib/utils"
+import { dispensarProposta, varrerDecisoes } from "@/store/filaDeDecisoes"
+import { useNotifs } from "@/store/notifications"
 
-/** Navega direto pra ONDE a decisão mora: a conversa (Fusion) ou o card do
- *  board (E1). A proposta abre a fila da faixa. */
-async function goTo(d: Decision) {
-  const app = useApp.getState()
-  // "Ver proposta" do sino: o card completo (expansível) mora na fila da FAIXA
-  // do chrome (ADR-040 — antes morava no Painel). Abrir a fila é o gesto; ela
-  // está visível de qualquer superfície (projectId opcional: board inteiro).
-  if (d.kind === "proposal") {
-    if (d.projectId) app.setActiveProject(d.projectId)
-    app.setDecisionsOpen(true)
-    return
-  }
-  app.setActiveProject(d.projectId)
-  if (d.kind === "fusion") {
-    await useChat.getState().openProject(d.projectId)
-    await useChat.getState().switchConversation(d.convId)
-    app.setViewMode("linear")
-  } else {
-    // Sem conversa ligada o card não tem tela própria (o Board saiu do Painel,
-    // ADR-040): o lugar onde ele EXISTE é a fila da faixa. Abrir a fila é o
-    // destino honesto; trocar de superfície pra nada seria clique morto.
-    if (!(await openCardConversation(d.cardId))) app.setDecisionsOpen(true)
-  }
+function limparAtividade() {
+  const antes = useNotifs.getState().items
+  useNotifs.getState().clear()
+  avisar.feito("Atividade limpa.", {
+    acao: { rotulo: "Desfazer", fazer: () => useNotifs.getState().restore(antes) },
+  })
 }
 
-/** Abre a conversa de uma notificação. */
-async function goToConv(n: Notification) {
-  const app = useApp.getState()
-  app.setActiveProject(n.projectId)
-  await useChat.getState().openProject(n.projectId)
-  if (n.convId) await useChat.getState().switchConversation(n.convId)
-  app.setViewMode("linear")
-}
-
-function fmtRelative(ts: number): string {
-  const s = Math.floor((Date.now() - ts) / 1000)
-  if (s < 60) return "agora"
-  const m = Math.floor(s / 60)
-  if (m < 60) return `há ${m} min`
-  const h = Math.floor(m / 60)
-  if (h < 24) return `há ${h} h`
-  return `há ${Math.floor(h / 24)} d`
-}
-
-/** Chave estável por decisão (o índice do array mudaria de dono ao filtrar). */
-function decisionKey(d: Decision): string {
-  return d.kind === "fusion"
-    ? `fusion:${d.convId}`
-    : d.kind === "card"
-      ? `card:${d.cardId}`
-      : `proposal:${d.proposalId}`
-}
-
-function DecisionIcon({ d }: { d: Decision }) {
-  if (d.kind === "fusion") return <Swords className="size-3.5 shrink-0 text-brass" />
-  if (d.kind === "card")
-    return <SquareKanban className="size-3.5 shrink-0 text-st-warning" />
-  return <Lightbulb className="size-3.5 shrink-0 text-brass" />
-}
-
-function decisionTitle(d: Decision): string {
-  return d.kind === "fusion"
-    ? "Escolher o vencedor da disputa"
-    : d.kind === "card"
-      ? `Card ${d.state === "blocked" ? "bloqueado" : "em revisão"}: ${d.title}`
-      : "Ver proposta do lead"
-}
-
-/** Tooltip: mostra o que o truncamento come (disputa/card mostram o título
- *  cru; a proposta explica pra onde o clique leva). */
-function decisionHint(d: Decision): string {
-  return d.kind === "proposal" ? "Abrir a proposta do lead na fila" : d.title
-}
-
-/** 2ª linha: de qual projeto, e o que o título truncado não diz. */
-function decisionMeta(d: Decision): string {
-  if (d.kind === "fusion") return `${d.title} · ${d.projectName}`
-  if (d.kind === "proposal")
-    return `${d.projectName ?? "board inteiro"} · ${d.excerpt}`
-  return d.stalledSince != null
-    ? // S2.3: card estagnado (vigia) ganha o "parado há X min"
-      `${d.projectName} · parado há ${Math.max(1, Math.round((Date.now() - d.stalledSince) / 60_000))} min`
-    : d.projectName
-}
-
-/** Uma linha do inbox. `action` é o gesto discreto do hover (dispensar a
- *  proposta). */
-interface RowAction {
-  icon: typeof X
-  label: string
-  run: () => void
-}
-
-function DecisionRow({
-  d,
-  actions,
+function Segmento({
+  ativo,
+  onClick,
+  children,
 }: {
-  d: Decision
-  /** Ações da linha (aparecem no hover, sem navegar). */
-  actions?: RowAction[]
+  ativo: boolean
+  onClick: () => void
+  children: React.ReactNode
 }) {
   return (
-    <DropdownMenuItem
-      onSelect={() => void goTo(d)}
-      className="flex-col items-start gap-0.5 py-2"
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={ativo}
+      className={cn(
+        controle("chip"),
+        "transition-colors",
+        ativo ? "bg-sel text-foreground" : "text-muted-foreground hover:text-foreground",
+      )}
     >
-      <span
-        className="group/decision flex w-full items-center gap-2 text-[13px] text-foreground"
-        title={decisionHint(d)}
-      >
-        <DecisionIcon d={d} />
-        <span className="min-w-0 flex-1 truncate">{decisionTitle(d)}</span>
-        {actions?.map(({ icon: Icon, label, run }) => (
-          <button
-            key={label}
-            onClick={(e) => {
-              // age SEM navegar (o item some/volta na hora).
-              e.stopPropagation()
-              e.preventDefault()
-              run()
-            }}
-            title={label}
-            aria-label={label}
-            className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/decision:block hover:text-foreground"
-          >
-            <Icon className="size-3" />
-          </button>
-        ))}
-      </span>
-      <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-        {decisionMeta(d)}
-      </span>
-    </DropdownMenuItem>
+      {children}
+    </button>
   )
 }
 
-function NotifIcon({ kind }: { kind: Notification["kind"] }) {
-  if (kind === "run_error")
-    return <AlertCircle className="size-3.5 shrink-0 text-st-error" />
-  if (kind === "limit")
-    return <Gauge className="size-3.5 shrink-0 text-st-warning" />
-  if (kind === "gate")
-    return <CircleHelp className="size-3.5 shrink-0 text-st-warning" />
-  if (kind === "approval")
-    return <ShieldQuestion className="size-3.5 shrink-0 text-st-warning" />
-  // pergunta: mesma família âmbar do approval/gate (todos "esperam VOCÊ"), mas
-  // ícone de fala — é conteúdo que falta, não autorização.
-  if (kind === "question")
-    return <MessageCircleQuestion className="size-3.5 shrink-0 text-st-warning" />
-  if (kind === "evento") return <Info className="size-3.5 shrink-0 text-muted-foreground" />
-  return <Check className="size-3.5 shrink-0 text-st-success" />
-}
-
-/** Inbox do cockpit: decisões que esperam VOCÊ + feed de atividade (turnos
- *  concluídos, erros, limites), com lido/não-lido. */
 export function InboxBell() {
-  const projects = useApp((s) => s.projects)
+  const [aberto, setAberto] = useState(false)
+  const [filtro, setFiltro] = useState<"tudo" | "naoLidas">("tudo")
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
-  const [decisions, setDecisions] = useState<Decision[]>([])
+  const projects = useApp((s) => s.projects)
+  const titulos = useChat((s) => s.conversationsByProject)
   const notifs = useNotifs((s) => s.items)
-  const markRead = useNotifs((s) => s.markRead)
-  const markAllRead = useNotifs((s) => s.markAllRead)
-  const removeNotif = useNotifs((s) => s.remove)
-  const clearNotifs = useNotifs((s) => s.clear)
-  const [filter, setFilter] = useState<"all" | "unread">("all")
   const tools = useToolsSection()
-  const { reloadModels } = tools
+  const esperando = useEsperandoVoce(tools.authItems)
 
-  const refresh = useCallback(() => {
-    reloadModels()
-    // Sem projeto não sobra decisão de ninguém: limpar, e não congelar a lista
-    // do último projeto arquivado.
-    if (projects.length === 0) {
-      setDecisions([])
-      return
-    }
-    // E1 (S1.6): cards em review/blocked entram no sino também (D4) — o store
-    // é hidratado no boot, então getState() dentro do refresh basta (mesmo
-    // ritmo do scan: ao abrir o dropdown e na troca de projetos).
-    void scanDecisions(projects)
-      .then((d) =>
-        setDecisions([...d, ...cardDecisions(useCards.getState().all, projects)]),
-      )
-      .catch((err) => {
-        // ADR-017: mesma régua da faixa. A lista anterior fica, e o motivo vai
-        // pro console em vez de sumir numa promise sem dono.
-        console.warn("[inbox] varredura de decisões falhou", err)
-      })
-  }, [projects, reloadModels])
+  const naoLidas = notifs.filter((n) => !n.read).length
+  // A idade das linhas é lida a cada render, não um relógio que tica.
+  const now = Date.now()
+  const todosOsDias = aberto ? agruparAtividade(notifs, now) : []
+  const dias = filtro === "naoLidas" ? soNaoLidas(todosOsDias) : todosOsDias
 
-  useEffect(() => {
-    refresh()
-  }, [refresh])
+  const abrirMotor = (agent: string) => setSettingsOpen(true, secaoDoMotor(agent))
+  const fechar = () => setAberto(false)
 
-  const unread = notifs.filter((n) => !n.read).length
-  const feed = filter === "unread" ? notifs.filter((n) => !n.read) : notifs
+  const acoes: AcoesDaAtividade = {
+    tituloDe: (convId, projectId) => conversationTitle(titulos, convId, projectId),
+    projetoDe: (projectId) => projects.find((p) => p.id === projectId)?.name ?? null,
+    abrirGrupo: (g) => {
+      fechar()
+      useNotifs.getState().markConvRead(g.convId)
+      void abrirConversa(g.projectId, g.convId)
+    },
+    abrirItem: (n) => {
+      fechar()
+      useNotifs.getState().markRead(n.id)
+      void abrirConversa(n.projectId, n.convId)
+    },
+    tirar: (ids) => {
+      for (const id of ids) useNotifs.getState().remove(id)
+    },
+  }
 
-  // Ferramentas: saúde das CLIs + notícias de modelo (estado e regras em
-  // ToolsSection). O sino segue dono do badge e do "tudo em dia".
-  const blockedTools = tools.blockedTools
-  const hasToolSection = tools.hasSection
-  /** O que o badge conta: decisão pendente + ferramenta que bloqueia. */
-  const blocked = decisions.length + blockedTools
+  const nada = esperando.itens.length === 0 && notifs.length === 0 && !tools.hasSection
 
   return (
-    <DropdownMenu onOpenChange={(o) => o && refresh()}>
-      <DropdownMenuTrigger asChild>
+    <Popover
+      open={aberto}
+      onOpenChange={(v) => {
+        setAberto(v)
+        if (v) {
+          // Decisão tomada em outro lugar aparece certa na hora de abrir.
+          tools.reloadModels()
+          void varrerDecisoes()
+        }
+      }}
+    >
+      <PopoverTrigger asChild>
         <Button
           variant="ghost"
           size="icone-padrao"
           className="pointer-events-auto text-muted-foreground hover:text-foreground"
           title="Notificações"
-          aria-label="Notificações"
+          aria-label={
+            esperando.total > 0
+              ? `Notificações, ${esperando.total} esperando você`
+              : "Notificações"
+          }
         >
-          {/* O selo ancora no GLIFO, não no botão. `icon-sm` é 32px e o ícone
-              tem 16px: ancorado ao canto do BOTÃO, o selo caía a ~8px de
-              qualquer desenho, flutuando no vazio entre a caixa de entrada e a
-              engrenagem — ninguém sabia de quem ele era. Este wrapper tem
-              exatamente o tamanho do ícone, e a regra dos dois estados é uma
-              só: o CENTRO do selo fica no canto superior direito do glifo
-              (metade dentro, metade fora), então o offset é sempre metade do
-              tamanho do selo (size-2 → -1; size-4 → -2). O `ring-2 ring-rail`
-              recorta o selo do desenho por baixo, nos dois estados. */}
+          {/* O selo ancora no GLIFO, não no botão: o centro dele fica no canto
+              do desenho, e o offset é metade do tamanho (size-4 → -2, size-2
+              → -1). O anel na cor do trilho recorta o selo do desenho. */}
           <span className="relative flex size-4 items-center justify-center">
             <Bell className="size-4" />
-            {/* Decisões BLOQUEIAM você → contador ÂMBAR (§2: âmbar é "precisa
-                de você"; brass é gesto, e um contador não é um gesto). Era
-                brass, e isso partia a trilha no primeiro passo: o ponto do slot
-                da conversa e os ícones desta mesma lista logo abaixo já são
-                âmbar para os MESMOS pedidos. A tinta do texto é
-                `st-warning-foreground` porque no tema claro o âmbar é mais
-                claro que o brass, e o branco de antes cairia de 3,89:1 pra
-                3,03:1 num dígito de 11px. Só não-lidas
-                → ponto discreto (informativo). Não somar os dois: "3" seria
-                ambíguo entre "3 decisões esperando" e "3 turnos terminaram".
-                CLI sem login soma AQUI porque passa no mesmo teste das
-                decisões: bloqueia trabalho e some com um gesto seu. Update
-                disponível NÃO soma (fica na lista, sem gritar): dura dias e não
-                impede nada, e sino permanentemente aceso é o custo que o
-                ADR-040 recusou. */}
-            {blocked > 0 ? (
+            {/* Número âmbar só para o que espera você, com a conta da bandeja
+                (por conversa). Não visto é só um ponto: somar os dois faria
+                "3" ser ambíguo entre esperas e turnos. A tinta do dígito é
+                `st-warning-foreground` pelo contraste no tema claro. */}
+            {esperando.total > 0 ? (
               <span className="absolute -top-2 -right-2 grid size-4 place-items-center rounded-full bg-st-warning text-[11px] font-semibold text-st-warning-foreground ring-2 ring-rail">
-                {blocked > 9 ? "9+" : blocked}
+                {esperando.total > 9 ? "9+" : esperando.total}
               </span>
-            ) : unread > 0 ? (
+            ) : naoLidas > 0 ? (
               <span
                 className="absolute -top-1 -right-1 size-2 rounded-full bg-muted-foreground ring-2 ring-rail"
-                title={`${unread} não lidas`}
+                title={`${naoLidas} não vistas`}
               />
             ) : null}
           </span>
         </Button>
-      </DropdownMenuTrigger>
-      {/* sideOffset + z-[120]: mesmo clipping que a UsagePill tinha. O header
-          da TitleBar é z-[110], então no z-50 padrão do dropdown a borda de
-          cima do popover ficava ATRÁS da faixa de título. */}
-      <DropdownMenuContent
-        align="end"
-        sideOffset={8}
-        className="z-[120] max-h-[75vh] w-96 overflow-y-auto"
-      >
-        {/* Decisões — o que espera ação sua.
-            A seção inteira sai quando não há decisão E há ferramenta
-            bloqueando: com o badge aceso por causa de uma CLI deslogada, abrir
-            o sino e ler "Nada esperando você" seria mentira. Nesse caso a seção
-            Ferramentas lidera a lista, que é onde está a verdade. */}
-        {(decisions.length > 0 || blockedTools === 0) && (
-          <>
-            <DropdownMenuLabel className="text-[11px] tracking-wide text-muted-foreground uppercase">
-              Precisam de você
-            </DropdownMenuLabel>
-            {decisions.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
-                Nada esperando você.
-              </div>
-            ) : (
-              decisions.map((d) => (
-                <DecisionRow
-                  key={decisionKey(d)}
-                  d={d}
-                  actions={
-                    d.kind === "proposal"
-                      ? [
-                          {
-                            icon: X,
-                            label: "Dispensar a proposta",
-                            run: () =>
-                              void dismissProposal(d.proposalId)
-                                .then(refresh)
-                                .catch((err) => {
-                                  // falhou = o item FICA na fila (não some mentindo).
-                                  console.warn(
-                                    "[inbox] falha ao dispensar a proposta",
-                                    err,
-                                  )
-                                }),
-                          },
-                        ]
-                      : undefined
-                  }
-                />
-              ))
-            )}
-          </>
-        )}
+      </PopoverTrigger>
+      {/* z-[120]: o header da TitleBar é z-[110], e no z-50 padrão a borda de
+          cima do painel ficava atrás da faixa de título. */}
+      <PopoverContent align="end" className="z-[120] max-h-[75vh] w-96 overflow-y-auto p-1">
+        <div className="sticky top-0 z-10 -mx-1 -mt-1 flex items-center gap-1 bg-popover px-3 pt-2 pb-1">
+          <span className="flex-1 text-[13px] font-semibold">Notificações</span>
+          {notifs.length > 0 && (
+            <>
+              <Segmento ativo={filtro === "tudo"} onClick={() => setFiltro("tudo")}>
+                Tudo
+              </Segmento>
+              <Segmento ativo={filtro === "naoLidas"} onClick={() => setFiltro("naoLidas")}>
+                Não vistas{naoLidas > 0 ? ` ${naoLidas}` : ""}
+              </Segmento>
+              <button
+                type="button"
+                onClick={() => useNotifs.getState().markAllRead()}
+                disabled={naoLidas === 0}
+                title="Marcar tudo como visto"
+                aria-label="Marcar tudo como visto"
+                className={cn(
+                  controle("chip", { quadrado: true }),
+                  "text-muted-foreground transition-colors hover:bg-sel hover:text-foreground disabled:opacity-40",
+                )}
+              >
+                <CheckCheck className="size-3.5" />
+              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    type="button"
+                    title="Mais"
+                    aria-label="Mais ações da atividade"
+                    className={cn(
+                      controle("chip", { quadrado: true }),
+                      "text-muted-foreground transition-colors hover:bg-sel hover:text-foreground",
+                    )}
+                  >
+                    <Ellipsis className="size-3.5" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="z-[130]">
+                  <DropdownMenuItem onSelect={limparAtividade}>
+                    <Trash2 />
+                    Limpar a atividade
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </>
+          )}
+        </div>
 
-        {/* Ferramentas — SAÚDE das CLIs desta máquina e o cardápio de modelos
-            delas. Não é decisão de trabalho: nada daqui entra na fila. */}
-        <ToolsSection
-          state={tools}
-          openSettings={(secao) => setSettingsOpen(true, secao)}
+        <SecaoEsperando
+          esperando={esperando}
+          now={now}
+          onAbrir={(e) => {
+            fechar()
+            abrirEspera(e, abrirMotor)
+          }}
+          onDispensarProposta={(id) =>
+            void dispensarProposta(id).catch((err) => {
+              // Falhou = a proposta fica na fila, e o motivo não some.
+              console.warn("[sino] falha ao dispensar a proposta", err)
+              avisar.erro("Falha ao dispensar a proposta")
+            })
+          }
         />
 
-        {/* Atividade — feed de eventos (turnos, erros, limites) */}
-        {notifs.length > 0 && (
-          <>
-            <DropdownMenuSeparator />
-            <div className="flex items-center justify-between gap-2 px-2 py-1">
-              <span className="text-[11px] tracking-wide text-muted-foreground uppercase">
-                Atividade
-              </span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setFilter("all")}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 text-[11px] transition-colors",
-                    filter === "all"
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Tudo
-                </button>
-                <button
-                  onClick={() => setFilter("unread")}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 text-[11px] transition-colors",
-                    filter === "unread"
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  Não-lidas{unread > 0 ? ` (${unread})` : ""}
-                </button>
-                <button
-                  onClick={() => markAllRead()}
-                  disabled={unread === 0}
-                  title="Marcar todas como lidas"
-                  aria-label="Marcar todas como lidas"
-                  className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
-                >
-                  <CheckCheck className="size-3.5" />
-                </button>
-                <button
-                  onClick={() => clearNotifs()}
-                  title="Limpar a atividade"
-                  aria-label="Limpar a atividade"
-                  className="rounded p-1 text-muted-foreground transition-colors hover:text-st-error"
-                >
-                  <Trash2 className="size-3.5" />
-                </button>
-              </div>
-            </div>
-            {feed.length === 0 ? (
-              <div className="px-2 py-2 text-center text-[12px] text-muted-foreground">
-                Nada não-lido.
-              </div>
-            ) : (
-              feed.map((n) => (
-                <DropdownMenuItem
-                  key={n.id}
-                  onSelect={() => {
-                    markRead(n.id)
-                    void goToConv(n)
-                  }}
-                  className="flex-col items-start gap-0.5 py-2"
-                >
-                  <span className="group/notif flex w-full items-center gap-2 text-[13px] text-foreground">
-                    <NotifIcon kind={n.kind} />
-                    <span className="min-w-0 flex-1 truncate">{n.title}</span>
-                    <span className="shrink-0 text-[11px] text-muted-foreground/60">
-                      {fmtRelative(n.ts)}
-                    </span>
-                    {!n.read && (
-                      <span className="size-1.5 shrink-0 rounded-full bg-brass group-hover/notif:hidden" />
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        e.preventDefault()
-                        removeNotif(n.id)
-                      }}
-                      title="Dispensar"
-                      aria-label="Dispensar notificação"
-                      className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/notif:block hover:text-st-error"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                  <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-                    {n.subtitle} ·{" "}
-                    {n.kind === "run_error"
-                      ? "turno falhou"
-                      : n.kind === "limit"
-                        ? "limite atingido"
-                        : n.kind === "gate"
-                          ? "missão pausada"
-                          : n.kind === "approval" || n.kind === "question"
-                            ? "turno parado"
-                            : n.kind === "evento"
-                              ? "aviso"
-                              : "turno concluído"}
-                  </span>
-                  {/* (M2) O recibo: o que o turno FEZ. Linha própria porque é a
-                      única informação aqui que não é rótulo — e `line-clamp-2`
-                      em vez de truncar, senão a frase morre na terceira palavra
-                      e vira enfeite. Só existe em turno que rodou em background. */}
-                  {n.body && (
-                    <span className="line-clamp-2 w-full pl-[22px] text-[11px] text-foreground/75">
-                      {n.body}
-                    </span>
-                  )}
-                </DropdownMenuItem>
-              ))
-            )}
-          </>
-        )}
+        <SecaoAtividade
+          dias={dias}
+          now={now}
+          vazio={notifs.length > 0 && filtro === "naoLidas" ? "Nada por ver." : null}
+          acoes={acoes}
+        />
 
-        {/* "Tudo em dia" só quando NADA está listado. A seção Ferramentas entra
-            na conta: o sino já mostrava rate limit e agora mostra sem login e
-            update, e dizer "tudo em dia" logo abaixo de uma CLI deslogada seria
-            o mesmo teatro que esta frente veio corrigir. */}
-        {decisions.length === 0 && notifs.length === 0 && !hasToolSection && (
-          <div className="px-2 py-3 text-center text-[13px] text-muted-foreground">
+        <ToolsSection state={tools} openSettings={(secao) => setSettingsOpen(true, secao)} />
+
+        {nada && (
+          <div className="px-2 py-4 text-center text-[13px] text-muted-foreground">
             Tudo em dia. Nada por aqui.
           </div>
         )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverContent>
+    </Popover>
   )
 }

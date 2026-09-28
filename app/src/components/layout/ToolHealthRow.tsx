@@ -7,27 +7,22 @@ import {
   Sparkles,
   X,
 } from "lucide-react"
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { LinhaDoSino } from "@/components/layout/sino/LinhaDoSino"
 import type { ToolHealthItem } from "@/lib/toolHealth"
-import { cn } from "@/lib/utils"
 
 /** Uma linha de SAÚDE DE FERRAMENTA do sino: CLI sem login, CLI com update, e
- *  (desde o M3 do model-autonomy-plan) notícia de MODELO daquele motor.
+ *  notícia de MODELO ou de MODOS daquele motor.
  *
- *  Mora fora do `InboxBell.tsx` porque aquele arquivo passou do teto de
- *  tamanho e esta linha é folha: só recebe o item já decidido por
- *  `lib/toolHealth` e dois callbacks. Nenhum texto é escrito aqui — as frases
- *  das notícias de modelo vêm da regra pura, com o motivo do fornecedor junto.
+ *  Nenhum texto é escrito aqui: as frases vêm de `lib/toolHealth`, com o
+ *  motivo do fornecedor junto.
  *
  *  Tom, pela tabela do STYLEGUIDE §2: "sem login" é âmbar (precisa de você,
  *  bloqueia o envio) e aposentadoria anunciada também (é decisão sua trocar);
  *  "atualização disponível", "modelo novo" e "candidato reprovado" são CINZA
- *  (informação, nada quebrou). Duas cores de status no recorte, dentro do
- *  orçamento de tinta.
+ *  (informação, nada quebrou).
  *
- *  Ação: todas abrem a seção de Configurações onde o gesto JÁ existe (Agentes
- *  na máquina pro update/login; Modelos pra procedência e pro "Tirar do
- *  seletor"). O dropdown fecha no clique, então nenhum botão é duplicado aqui. */
+ *  Ação: todas abrem a seção de Configurações onde o gesto JÁ existe, então
+ *  nenhum botão é duplicado aqui. */
 export function ToolHealthRow({
   item,
   onOpen,
@@ -40,38 +35,14 @@ export function ToolHealthRow({
 }) {
   const { icon, alarme, title, detail } = linha(item)
   return (
-    <DropdownMenuItem
-      onSelect={onOpen}
-      className="flex-col items-start gap-0.5 py-2"
-    >
-      <span
-        className={cn(
-          "group/tool flex w-full items-center gap-2 text-[13px]",
-          alarme ? "text-foreground" : "text-muted-foreground",
-        )}
-      >
-        {icon}
-        <span className="min-w-0 flex-1 truncate">{title}</span>
-        {onDismiss && (
-          <button
-            onClick={(e) => {
-              // dispensa SEM navegar (a linha some na hora).
-              e.stopPropagation()
-              e.preventDefault()
-              onDismiss()
-            }}
-            title="Dispensar este aviso"
-            aria-label="Dispensar este aviso"
-            className="hidden shrink-0 rounded p-0.5 text-muted-foreground transition-colors group-hover/tool:block hover:text-foreground"
-          >
-            <X className="size-3" />
-          </button>
-        )}
-      </span>
-      <span className="w-full truncate pl-[22px] text-[11px] text-muted-foreground">
-        {detail}
-      </span>
-    </DropdownMenuItem>
+    <LinhaDoSino
+      icone={icon}
+      titulo={title}
+      meta={detail}
+      lida={!alarme}
+      onAbrir={onOpen}
+      acoes={onDismiss ? [{ icone: X, rotulo: "Dispensar este aviso", fazer: onDismiss }] : undefined}
+    />
   )
 }
 

@@ -321,19 +321,19 @@ export function frasesDoDrift(agent: string, drift: ModeDrift): string[] {
     const r = MODOS_CURADOS[agent]?.naoAdotado ?? {}
     for (const id of drift.revalidar) {
       out.push(
-        `${agent}: \`${id}\` foi recusado na versão ${r[id]?.validadoEm} e o motor mudou de versão. Vale testar de novo.`,
+        `O modo ${id} foi recusado na versão ${r[id]?.validadoEm}, e o motor mudou de versão. Vale testar de novo.`,
       )
     }
   }
   if (drift.sumidos.length > 0) {
     out.push(
-      `${agent}: o app ainda manda ${drift.sumidos.join(", ")}, que o motor não anuncia mais.`,
+      `O app ainda manda ${drift.sumidos.join(", ")}, que o motor não anuncia mais.`,
     )
   }
   if (drift.novos.length > 0) {
     const nota = MODOS_CURADOS[agent]?.nota
     out.push(
-      `${agent}: o motor tem ${drift.novos.join(", ")} e o Frota ainda não sabe explicar.` +
+      `O motor tem ${drift.novos.join(", ")} e o Frota ainda não sabe explicar.` +
         (nota ? ` ${nota}` : ""),
     )
   }

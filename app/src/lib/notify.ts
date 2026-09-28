@@ -61,6 +61,7 @@ export async function notifyTurnEnd(convId: string, agent: string) {
     body: recibo ?? undefined,
     projectId: c.projectId,
     convId,
+    origem: "turno",
   })
 
   // só incomoda com a nativa quando você NÃO estava olhando essa conversa.
@@ -170,6 +171,7 @@ export function notifyMissionEnd(o: {
     subtitle: feed[o.outcome].sub,
     projectId: c?.projectId ?? "",
     convId: o.convId,
+    origem: "missao",
   })
 
   const nativo: Record<MissionOutcome, { titulo: string; corpo: string }> = {
@@ -431,6 +433,7 @@ export function notifyDeferredEnd(o: {
     body: o.summary ?? undefined,
     projectId: c.projectId,
     convId: o.convId,
+    origem: "trabalho",
   })
 
   if (chat.activeId !== o.convId) {
