@@ -6,16 +6,21 @@ import {
   KEY_TAB_COMMAND,
 } from "lexical"
 import { $serializeDraft } from "@/components/chat/lexicalDraft"
+import { guardarRascunho } from "@/components/notes/notaGuardada"
 import { useApp } from "@/store/app"
+import { useChat } from "@/store/chat"
 
 type SendShortcut = "enter" | "cmd-enter"
-type EnterTarget = "submit" | "force" | null
+type EnterTarget = "submit" | "force" | "guardar" | null
 
 export function enterTarget(
   shortcut: SendShortcut,
-  modifiers: { command: boolean; shift: boolean },
+  modifiers: { command: boolean; shift: boolean; alt?: boolean },
   canForce: boolean,
 ): EnterTarget {
+  // ⌥↵ guarda como nota desta conversa (docs/composer-vira-nota-prd.md D6),
+  // nos dois atalhos de envio. Antes ele caía no Enter e enviava.
+  if (modifiers.alt && !modifiers.command && !modifiers.shift) return "guardar"
   const triggers =
     shortcut === "cmd-enter" ? modifiers.command : !modifiers.shift
   if (!triggers) return null
@@ -54,12 +59,18 @@ export function ComposerSubmitKeys({
             {
               command: !!(event?.metaKey || event?.ctrlKey),
               shift: !!event?.shiftKey,
+              alt: !!event?.altKey,
             },
             !!callbacks.current.onForceSubmit,
           )
           if (!target) return false
           event?.preventDefault()
           const text = serialize()
+          if (target === "guardar") {
+            const convId = useChat.getState().activeId
+            if (convId) void guardarRascunho(convId, "conversa", text)
+            return true
+          }
           if (target === "force") callbacks.current.onForceSubmit?.(text)
           else callbacks.current.onSubmit(text)
           return true

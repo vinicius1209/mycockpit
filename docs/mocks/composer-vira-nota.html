@@ -1,0 +1,307 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Guardar para depois · a mensagem do composer vira nota</title>
+<style>
+  /* Tema CLARO (o do print de 27/09), tokens de :root do index.css. Fontes só da
+     escala fechada: 11, 12, 13, 14 (20 no título do mock). Controles: chip 24 ·
+     compacto 28 · padrão 32. Texto e anexos REAIS do print. */
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--popover:#ffffff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted-foreground:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);
+    --queued:#c1861f;--error:#cf4a3e;--running:#2f8fbf;--note-sand:#ffb020;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 80px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:44px 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1040px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:18px 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:12px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  svg.i{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .palco{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .col{display:flex;flex-direction:column;gap:10px}
+
+  /* ---- fio (o que fica acima do composer) ---- */
+  .janela{width:700px;background:var(--background);border-radius:12px;box-shadow:0 0 0 1px var(--border);padding:18px 20px 16px;position:relative}
+  .trabalhando{font:12px var(--mono);color:var(--muted-foreground);margin:0 0 14px 4px}
+  .trabalhando b{font-family:var(--sans);font-weight:400;color:var(--foreground)}
+
+  /* ---- composer ---- */
+  .composer{background:var(--card);border-radius:14px;box-shadow:0 0 0 1px var(--border),var(--shadow-sm);padding:12px 12px 10px 14px}
+  .anexos{display:flex;gap:8px;margin-bottom:10px}
+  .anexo{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px 0 4px;border-radius:9px;background:var(--secondary)}
+  .anexo .th{width:36px;height:36px;border-radius:6px;background:linear-gradient(135deg,#eceae4,#fff);box-shadow:inset 0 0 0 1px var(--border)}
+  .anexo b{display:block;font-size:12px;font-weight:500}
+  .anexo span{display:block;font:11px var(--mono);color:var(--muted-foreground)}
+  .texto{font-size:13px;line-height:1.55;min-height:40px}
+  .texto.vazio{color:var(--faint)}
+  .caret{display:inline-block;width:1px;height:15px;background:var(--foreground);vertical-align:-3px}
+  .base{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted-foreground);font-size:12px}
+  .base .pilula{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:7px}
+  .base .esp{flex:1}
+  .icone{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .spin{width:14px;height:14px;border-radius:50%;border:1.6px solid var(--border);border-top-color:var(--muted-foreground)}
+  /* o par Enfileirar | ⚡ de hoje (ADR-240), âmbar da fila */
+  .par{display:inline-flex;height:28px;border-radius:999px;background:rgba(193,134,31,.10);box-shadow:inset 0 0 0 1px rgba(193,134,31,.32);overflow:hidden;color:var(--queued);font-size:12px}
+  .par span{display:inline-flex;align-items:center;gap:5px;padding:0 10px}
+  .par span+span{box-shadow:inset 1px 0 0 rgba(193,134,31,.32);padding:0 8px}
+  .par span.aberto{background:rgba(193,134,31,.16)}
+  .parar{width:28px;height:28px;border-radius:50%;background:var(--error);display:grid;place-items:center}
+  .parar i{width:9px;height:9px;border-radius:2px;background:#fff}
+  .enviar{display:inline-flex;height:28px;border-radius:999px;background:var(--foreground);color:var(--background);overflow:hidden}
+  .enviar span{display:grid;place-items:center;width:30px}
+  .enviar span+span{box-shadow:inset 1px 0 0 rgba(255,255,255,.2);width:22px}
+
+  /* ---- menu (dropdown-menu do app) ---- */
+  .menu{position:absolute;width:290px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px;z-index:3}
+  .menu .it{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px;color:var(--foreground)}
+  .menu .it svg{color:var(--muted-foreground)}
+  .menu .it.foco{background:var(--sel)}
+  .menu .it .atalho{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+  .menu .it .onde{margin-left:auto;font-size:11px;color:var(--faint)}
+  .menu .sep{height:1px;background:var(--divisor);margin:4px 2px}
+  .menu .grupo{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:7px 8px 3px}
+
+  /* ---- gatilho de notas + gaveta ---- */
+  .gatilho{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:7px;color:var(--muted-foreground);font-size:12px}
+  .gatilho .n{font:11px var(--mono);background:var(--secondary);border-radius:5px;padding:0 5px;color:var(--foreground)}
+  .gatilho.novo .n{box-shadow:0 0 0 2px rgba(22,24,27,.10)}
+  .gaveta{width:360px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);padding:10px}
+  .gaveta .topo{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font-size:13px;font-weight:600}
+  .gaveta .topo .esc{margin-left:auto;display:inline-flex;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;font-weight:400;color:var(--muted-foreground);align-items:center}
+  .post{border-radius:9px;background:var(--card);box-shadow:0 0 0 1px var(--border);padding:10px 12px;margin-top:8px;position:relative}
+  .post.recem{box-shadow:0 0 0 1px var(--border),0 0 0 4px var(--sel)}
+  .post .ponto{position:absolute;top:13px;left:12px;width:7px;height:7px;border-radius:50%;background:var(--note-sand)}
+  .post .tit{font-size:13px;font-weight:500;padding-left:14px}
+  .post .prev{font-size:12px;color:var(--muted-foreground);margin-top:2px;line-height:1.5}
+  .post .mini{display:flex;gap:6px;margin-top:8px}
+  .post .mini i{width:34px;height:26px;border-radius:5px;background:linear-gradient(135deg,#eceae4,#fff);box-shadow:inset 0 0 0 1px var(--border)}
+  .post .meta{display:flex;align-items:center;gap:6px;margin-top:8px;font:11px var(--mono);color:var(--faint)}
+  .post .acoes{display:flex;gap:4px;margin-top:8px}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);white-space:nowrap}
+  .btn.ghost{background:transparent;color:var(--muted-foreground)}
+  .btn.chip{height:24px;padding:0 8px;font-size:11px}
+  .post .velha .tit{color:var(--muted-foreground);font-weight:400}
+
+  /* ---- toast (sonner, canto superior direito) ---- */
+  .toast{width:340px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:11px 12px 11px 14px;display:flex;align-items:center;gap:10px}
+  .toast b{font-size:13px;font-weight:500;flex:1}
+
+  /* ---- fila ---- */
+  .fila{display:flex;flex-direction:column;gap:6px;margin-bottom:8px}
+  .item-fila{display:flex;align-items:center;gap:8px;height:34px;padding:0 6px 0 10px;border-radius:9px;background:var(--card);box-shadow:0 0 0 1px var(--border);font-size:12px}
+  .item-fila .num{font:11px var(--mono);color:var(--queued)}
+  .item-fila .t{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item-fila .ic{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .item-fila .ic.foco{background:var(--sel);color:var(--foreground)}
+  .dica{display:inline-block;background:var(--foreground);color:var(--background);font-size:11px;padding:4px 8px;border-radius:6px}
+
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1040px;margin-top:12px}
+  .tabela td,.tabela th{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted-foreground)}
+  .tabela th{color:var(--foreground);font-weight:500;width:170px}
+  .decisoes{margin-top:44px;max-width:1040px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin:18px 0 6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="fila" viewBox="0 0 24 24"><path d="M16 5H3M16 12H3M9 19H3M16 16l5 3-5 3z"/></symbol>
+  <symbol id="nota" viewBox="0 0 24 24"><path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/></symbol>
+  <symbol id="pasta" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="swords" viewBox="0 0 24 24"><path d="M14.5 17.5 3 6V3h3l11.5 11.5M13 19l6-6M16 16l4 4M19 21l2-2"/></symbol>
+  <symbol id="rocket" viewBox="0 0 24 24"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/></symbol>
+  <symbol id="grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+  <symbol id="lapis" viewBox="0 0 24 24"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="volta" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+</svg>
+
+<h1>Guardar para depois: a mensagem do composer vira nota</h1>
+<p class="sub">Hoje, com o agente trabalhando, o que você escreveu tem três saídas: <b>Enfileirar</b> (sai sozinha no próximo turno), <b>⚡</b> (entra agora, corrigindo) ou ficar parada no composer, ocupando o lugar da próxima mensagem. Falta a quarta: <b>não é para agora, e talvez nem seja para este agente</b>. A nota já existe, já guarda texto e anexos, e já chega a um turno pela menção <span class="kbd">@nota/…</span>. Falta a ida, e uma volta que devolva a mensagem como fala sua.</p>
+
+<!-- 1 -->
+<h2>1. Hoje: o rascunho não tem onde esperar</h2>
+<p class="legenda">O print de 27/09 · o agente trabalhando · texto e dois anexos prontos</p>
+<div class="janela">
+  <p class="trabalhando"><b>está trabalhando…</b> 27 ações · 2min 14s</p>
+  <div class="composer">
+    <div class="anexos">
+      <div class="anexo"><i class="th"></i><div><b>image.png</b><span>567.4 KB</span></div></div>
+      <div class="anexo"><i class="th"></i><div><b>image.png</b><span>301.2 KB</span></div></div>
+    </div>
+    <p class="texto">tentei ler o arquivo “agent.rs” que mostra aqui na sua conversa durante o seu trabalho, e veja o erro que houve<span class="caret"></span></p>
+    <div class="base">
+      <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+      <span class="pilula">Claude Code</span>
+      <span class="pilula">Liberado</span>
+      <span class="icone"><svg class="i"><use href="#mic"/></svg></span>
+      <span class="esp"></span>
+      <i class="spin"></i>
+      <span class="par"><span>Enfileirar →</span><span><svg class="i" style="width:13px;height:13px"><use href="#zap"/></svg></span></span>
+      <span class="parar"><i></i></span>
+    </div>
+  </div>
+</div>
+<p class="nota">A fila é <b>compromisso</b>: o que entra nela sai sem você no próximo turno. O rascunho é <b>uma vaga só</b>: guardado por conversa, mas enquanto ele está ali você não escreve outra coisa. Nenhum dos dois serve para "anotei, decido depois".</p>
+
+<!-- 2 -->
+<h2>2. Proposta: "Guardar como nota" é mais um destino do mesmo rascunho</h2>
+<p class="sub">O despacho já trata Enviar, Disputa e Missão como o mesmo rascunho com destinos diferentes (<span class="kbd">ComposerDispatch.tsx</span>). A nota é o quarto destino, e o único que não aciona motor nenhum. Ela mora onde o despacho já tem menu, nos dois estados do turno.</p>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">Com o agente trabalhando · o par ganha um chevron</p>
+    <div class="janela" style="width:520px;height:352px">
+      <div class="composer" style="position:absolute;left:20px;right:20px;bottom:16px">
+        <p class="texto">tentei ler o arquivo “agent.rs” que mostra aqui na sua conversa durante o seu trabalho, e veja o erro que houve</p>
+        <div class="base">
+          <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+          <span class="pilula">Claude Code</span>
+          <span class="esp"></span>
+          <span class="par"><span>Enfileirar →</span><span><svg class="i" style="width:13px;height:13px"><use href="#zap"/></svg></span><span class="aberto"><svg class="i" style="width:12px;height:12px"><use href="#down"/></svg></span></span>
+          <span class="parar"><i></i></span>
+        </div>
+      </div>
+      <div class="menu" style="right:40px;bottom:66px">
+        <div class="it"><svg class="i"><use href="#fila"/></svg>Enfileirar<span class="atalho">Tab</span></div>
+        <div class="it"><svg class="i"><use href="#zap"/></svg>Corrigir agora<span class="atalho">↵</span></div>
+        <div class="sep"></div>
+        <div class="grupo">Guardar para depois</div>
+        <div class="it foco"><svg class="i"><use href="#nota"/></svg>Nota desta conversa<span class="atalho">⌥↵</span></div>
+        <div class="it"><svg class="i"><use href="#pasta"/></svg>Nota do projeto<span class="onde">frota</span></div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Sem turno rodando · o menu do Enviar que já existe</p>
+    <div class="janela" style="width:420px;height:352px">
+      <div class="composer" style="position:absolute;left:20px;right:20px;bottom:16px">
+        <p class="texto">depois: revisar o texto do aviso de saída no Linux</p>
+        <div class="base">
+          <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+          <span class="pilula">Claude Code</span>
+          <span class="esp"></span>
+          <span class="enviar"><span><svg class="i" style="width:13px;height:13px"><use href="#up"/></svg></span><span><svg class="i" style="width:11px;height:11px"><use href="#down"/></svg></span></span>
+        </div>
+      </div>
+      <div class="menu" style="right:20px;bottom:66px;width:270px">
+        <div class="it"><svg class="i"><use href="#swords"/></svg>Disputa</div>
+        <div class="it"><svg class="i"><use href="#rocket"/></svg>Missão</div>
+        <div class="sep"></div>
+        <div class="grupo">Guardar para depois</div>
+        <div class="it foco"><svg class="i"><use href="#nota"/></svg>Nota desta conversa<span class="atalho">⌥↵</span></div>
+        <div class="it"><svg class="i"><use href="#pasta"/></svg>Nota do projeto<span class="onde">frota</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>O escopo está no rótulo</b>, nunca herdado em silêncio: "desta conversa" é onde a mensagem nasceu, "do projeto" diz qual projeto. Não existe "de todos os projetos" aqui: isso é decisão da gaveta, não do composer. <span class="kbd">⌥↵</span> é proposta (ver perguntas); sem atalho, o gesto continua a dois cliques.</p>
+
+<!-- 3 -->
+<h2>3. Depois de guardar: o composer fica livre, e o gesto diz onde foi parar</h2>
+<div class="palco" style="margin-top:14px">
+  <div class="col">
+    <p class="legenda">O composer · o gatilho de notas conta mais uma</p>
+    <div class="janela" style="width:520px">
+      <div class="composer">
+        <p class="texto vazio">Peça a próxima coisa…</p>
+        <div class="base">
+          <span class="icone"><svg class="i"><use href="#clip"/></svg></span>
+          <span class="pilula">Claude Code</span>
+          <span class="gatilho novo"><svg class="i"><use href="#nota"/></svg>Notas <span class="n">3</span></span>
+          <span class="esp"></span>
+          <i class="spin"></i>
+          <span class="parar"><i></i></span>
+        </div>
+      </div>
+    </div>
+    <p class="legenda" style="margin-top:14px">O toast · o lugar do texto sumiu, então o gesto se confirma</p>
+    <div class="toast"><b>Guardado nas notas desta conversa.</b><span class="btn chip">Desfazer</span></div>
+  </div>
+  <div>
+    <p class="legenda">A gaveta · a nota nova no topo, com os anexos</p>
+    <div class="gaveta">
+      <div class="topo">Notas<span class="esc">esta conversa</span></div>
+      <div class="post recem">
+        <i class="ponto"></i>
+        <p class="tit">tentei ler o arquivo “agent.rs” que mostra aqui…</p>
+        <p class="prev">na sua conversa durante o seu trabalho, e veja o erro que houve</p>
+        <div class="mini"><i></i><i></i></div>
+        <div class="meta">do composer · agora · 2 anexos</div>
+        <div class="acoes"><span class="btn chip"><svg class="i" style="width:12px;height:12px"><use href="#volta"/></svg>Levar ao composer</span><span class="btn chip ghost">Usar no prompt</span><span class="btn chip ghost">Editar</span></div>
+      </div>
+      <div class="post">
+        <i class="ponto" style="background:var(--faint)"></i>
+        <p class="tit" style="color:var(--muted-foreground);font-weight:400">revisar o aviso de sessão expirada</p>
+        <div class="meta">ontem</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>Toast com Desfazer</b> porque o texto saiu da frente de você (STYLEGUIDE §12: o "feito" usa toast quando o lugar some). "Desfazer" devolve texto e anexos ao composer e apaga a nota. O toast tem uma ação só; onde a nota foi parar, quem diz é o contador de notas. <b>"do composer"</b> no carimbo diz de onde a nota veio, o mesmo idioma do "do fio". Os anexos vão junto: são copiados para a pasta da nota e saem do rascunho.</p>
+
+<!-- 4 -->
+<h2>4. Já enfileirou e mudou de ideia: tirar da fila sem perder</h2>
+<p class="sub">"Às vezes não quero enviar para a fila": a mensagem que já está na fila ganha a mesma saída. Hoje ela só pode ser editada ou removida, e remover joga fora.</p>
+<div class="palco" style="margin-top:14px">
+  <div class="janela" style="width:560px">
+    <div class="fila">
+      <div class="item-fila">
+        <span class="num">1</span><span class="t">roda os testes do editor depois do seu turno</span>
+        <span class="ic"><svg class="i"><use href="#grip"/></svg></span><span class="ic"><svg class="i"><use href="#lapis"/></svg></span><span class="ic"><svg class="i"><use href="#x"/></svg></span>
+      </div>
+      <div class="item-fila">
+        <span class="num">2</span><span class="t">e aproveita para ver o texto do aviso de saída no Linux</span>
+        <span class="ic"><svg class="i"><use href="#grip"/></svg></span><span class="ic"><svg class="i"><use href="#lapis"/></svg></span><span class="ic foco"><svg class="i"><use href="#nota"/></svg></span><span class="ic"><svg class="i"><use href="#x"/></svg></span>
+      </div>
+    </div>
+    <div style="text-align:right;margin:-2px 30px 10px 0"><span class="dica">Tirar da fila e guardar como nota</span></div>
+    <div class="composer"><p class="texto vazio">Peça a próxima coisa…</p></div>
+  </div>
+</div>
+<p class="nota">O ícone de nota só aparece no hover do item, ao lado do ✕, e abre o mesmo menu de duas linhas do composer (nota desta conversa, nota do projeto): a nota não muda de escopo depois de criada, então a escolha é aqui. Tirar da fila e guardar é <b>um</b> gesto, com o mesmo toast e o mesmo Desfazer, que devolve o item à mesma posição.</p>
+
+<!-- 5 -->
+<h2>5. A volta: dois gestos diferentes</h2>
+<table class="tabela">
+  <tr><th>Levar ao composer</th><td><b>Novo.</b> Põe o texto e os anexos de volta no rascunho, como fala sua. É o caminho da mensagem guardada. Com o composer ocupado, acrescenta no fim. A nota fica: você apaga quando quiser.</td></tr>
+  <tr><th>Usar no prompt</th><td>Existe hoje, e <b>não</b> devolve o texto: insere <span class="kbd">@nota/slug</span>, e no envio a nota chega ao agente como anotação ("direção, não fala a responder"), com os anexos. Serve para citar a ideia em <b>outra</b> conversa ou outro motor, sem copiar e colar.</td></tr>
+</table>
+
+<div class="decisoes">
+  <h3>O que acho da ideia</h3>
+  <ul>
+    <li><b>É boa, e é barata.</b> O que falta é uma ponte de quatro peças: um item de menu, a cópia dos anexos, o toast com Desfazer e o ícone na fila. Modelo, gaveta, escopo, anexo em disco e menção já existem; faltam o gesto "Levar ao composer" e a cópia de anexo da conversa para a nota.</li>
+    <li><b>Ela fecha um buraco de verdade.</b> Fila é "vai sair sozinho", rascunho é "uma vaga só". Uma ideia que chega no meio de um turno longo não é nenhum dos dois: é um lembrete que não sai sem você. Hoje ela vira fila por falta de opção, e fila errada é pior que nenhuma (o agente recebe algo que você não queria mandar ainda).</li>
+    <li><b>Não é despacho, então não fere nenhuma lei.</b> Nada roda, nenhum motor é acionado, e é agnóstico por construção. A decisão continua sua na volta.</li>
+    <li><b>O risco é confundir com a fila.</b> Por isso o rótulo é "Guardar para depois", o ícone é o da nota (não o da fila), e a cor não é o âmbar da fila: âmbar é "precisa de você", e nota guardada não precisa de nada.</li>
+  </ul>
+  <h3>Decidido em 27/09</h3>
+  <ul>
+    <li><b>Atalho:</b> <span class="kbd">⌥↵</span> guarda como nota desta conversa, sem menu.</li>
+    <li><b>A nota não se apaga sozinha</b>, nem ao voltar ao composer, nem ao ser enviada: apagar é gesto seu.</li>
+    <li><b>Anexo sem texto também vira nota</b>, com título derivado ("2 imagens").</li>
+  </ul>
+  <p style="margin-top:10px">PRD: <span class="kbd">docs/composer-vira-nota-prd.md</span>.</p>
+</div>
+
+</body>
+</html>

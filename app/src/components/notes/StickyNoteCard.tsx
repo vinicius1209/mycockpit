@@ -7,6 +7,7 @@ import {
   Pencil,
   Trash2,
   ChevronDown,
+  Undo2,
 } from "lucide-react"
 import { avisar } from "@/lib/avisos"
 import { cn } from "@/lib/utils"
@@ -34,6 +35,9 @@ export interface StickyNoteCardProps {
    *  (só ele conhece as outras notas, e o endereço precisa ser único entre
    *  elas). */
   onInsertIntoPrompt?: (note: StickyNote) => void
+  /** Nota guardada do composer ou da fila: volta como fala sua, não como
+   *  anotação (o `@nota/…` do "Usar no prompt" chega como direção). */
+  onLevarAoComposer?: (note: StickyNote) => void
   onPromoteToTask?: (content: string) => void
   onPromoteToRule?: (content: string) => void
   readOnly?: boolean
@@ -118,6 +122,7 @@ export function StickyNoteCard({
   onUpdate,
   onDelete,
   onInsertIntoPrompt,
+  onLevarAoComposer,
   onPromoteToTask,
   onPromoteToRule,
   readOnly,
@@ -491,10 +496,31 @@ export function StickyNoteCard({
               <span>Editar</span>
             </button>
           )}
+          {note.origem && (
+            <span className="font-mono text-muted-foreground">
+              {note.origem === "composer" ? "do composer" : "da fila"}
+            </span>
+          )}
         </div>
 
         {/* Ações Inteligentes com 1 Clique */}
         <div className="flex items-center gap-1">
+          {/* 0. A mensagem guardada volta como mensagem */}
+          {note.origem && onLevarAoComposer && (
+            <button
+              type="button"
+              onClick={() => onLevarAoComposer(note)}
+              className={cn(
+                controle("compacto"),
+                "font-medium text-foreground transition-colors hover:bg-sel-hover",
+              )}
+              title="Devolver o texto e os anexos ao composer, como mensagem sua"
+            >
+              <Undo2 className="size-3.5" />
+              <span>Levar ao composer</span>
+            </button>
+          )}
+
           {/* 1. Inserir no Prompt */}
           {onInsertIntoPrompt && (
             <button

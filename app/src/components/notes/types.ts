@@ -24,6 +24,10 @@ export interface StickyNote {
    *  `localStorage`, que guarda string e tem cota de ~5 MB: base64 estouraria a
    *  cota e serializaria megabytes na thread principal a cada mudança. */
   attachments?: Attachment[]
+  /** De onde a nota veio, quando não foi escrita na gaveta: a mensagem que
+   *  estava no composer, ou o item tirado da fila (docs/composer-vira-nota-prd.md).
+   *  Ausente = escrita na gaveta, como toda nota antes deste campo. */
+  origem?: "composer" | "fila"
   collapsed?: boolean
   createdAt: number
   updatedAt: number

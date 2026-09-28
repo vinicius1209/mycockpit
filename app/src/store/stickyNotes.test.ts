@@ -118,3 +118,24 @@ describe("o alvo da nota vem do registry", () => {
     ).toEqual(["a"])
   })
 })
+
+describe("addNote de quem guarda do composer", () => {
+  it("respeita id, anexos e origem, e não abre a gaveta com abrir: false", () => {
+    useStickyNotes.setState({ notes: [], dockOpen: false })
+    const anexo = {
+      path: "attachments/notes/n-guardada/4df9cc61137de769.png",
+      name: "image.png",
+      kind: "image" as const,
+      mime: "image/png",
+      bytes: 581018,
+    }
+    const nota = useStickyNotes
+      .getState()
+      .addNote({ id: "n-guardada", content: "revisar o aviso", attachments: [anexo], origem: "composer" }, { abrir: false })
+    expect(nota).toMatchObject({ id: "n-guardada", attachments: [anexo], origem: "composer" })
+    expect(useStickyNotes.getState().dockOpen).toBe(false)
+    useStickyNotes.getState().addNote({ content: "da gaveta" })
+    expect(useStickyNotes.getState().dockOpen).toBe(true)
+    expect(useStickyNotes.getState().notes[0].origem).toBeUndefined()
+  })
+})

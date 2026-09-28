@@ -91,6 +91,15 @@ export async function saveNoteAttachment(
   })
 }
 
+/** Para onde um anexo é copiado (espelha `DonoDoAnexo` em anexo_entre_donos.rs). */
+export type DonoDoAnexo = { tipo: "conversa"; id: string } | { tipo: "nota"; id: string }
+
+/** Copia um anexo para outro dono, no disco: os bytes não passam pela ponte.
+ *  O rascunho que vira nota leva as imagens; a nota que volta as devolve. */
+export async function copiarAnexo(a: Attachment, para: DonoDoAnexo): Promise<Attachment> {
+  return invoke<Attachment>("copiar_anexo", { path: a.path, nome: a.name, para })
+}
+
 /** Apaga os blobs de uma nota (ao deletá-la). */
 export async function wipeNoteAttachments(noteId: string): Promise<void> {
   await invoke("wipe_note_attachments", { noteId })

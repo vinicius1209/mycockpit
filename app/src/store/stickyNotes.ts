@@ -15,7 +15,8 @@ interface StickyNotesState {
   activeFilter: StickyNoteTarget
   
   // Actions
-  addNote: (draft?: Partial<StickyNote>) => StickyNote
+  /** `abrir: false` cria sem abrir a gaveta (guardar do composer). */
+  addNote: (draft?: Partial<StickyNote>, opcoes?: { abrir?: boolean }) => StickyNote
   updateNote: (id: string, patch: Partial<StickyNote>) => void
   deleteNote: (id: string) => void
   toggleDock: () => void
@@ -31,23 +32,28 @@ export const useStickyNotes = create<StickyNotesState>()(
       dockOpen: false,
       activeFilter: ALVO_QUALQUER,
 
-      addNote: (draft = {}) => {
+      addNote: (draft = {}, opcoes = {}) => {
         const now = Date.now()
         const newNote: StickyNote = {
-          id: crypto.randomUUID(),
+          // O id pode vir pronto: quem copia anexos para a nota precisa da
+          // pasta dela ANTES de a nota existir.
+          id: draft.id ?? crypto.randomUUID(),
           projectId: draft.projectId,
           convId: draft.convId,
           title: draft.title,
           content: draft.content ?? "",
           color: draft.color ?? "sand",
           targetAgent: draft.targetAgent ?? "all",
+          ...(draft.attachments?.length ? { attachments: draft.attachments } : {}),
+          ...(draft.origem ? { origem: draft.origem } : {}),
           collapsed: false,
           createdAt: now,
           updatedAt: now,
         }
         set((s) => ({
           notes: [newNote, ...s.notes],
-          dockOpen: true, // Abre a gaveta ao adicionar nova nota
+          // Abre a gaveta ao adicionar nova nota, salvo quem pede para não abrir.
+          dockOpen: opcoes.abrir === false ? s.dockOpen : true,
         }))
         return newNote
       },

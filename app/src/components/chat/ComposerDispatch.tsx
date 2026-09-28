@@ -8,6 +8,7 @@
 
 import { ArrowUp, ChevronDown, ListEnd, Rocket, Square, Swords, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ItensDeGuardar } from "@/components/chat/ItensDeGuardar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,6 +95,35 @@ export function SendSplit({
                 <Zap className="size-3 fill-current" />
               </button>
             )}
+            {/* O terceiro destino, sem motor: guardar para depois (nota). */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  className="grid w-6 place-items-center border-l border-st-queued/25 text-st-queued transition-colors hover:bg-st-queued/15"
+                  title="Outras saídas: enfileirar, corrigir agora, guardar como nota"
+                  aria-label="Outras saídas para esta mensagem"
+                >
+                  <ChevronDown className="size-3" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" side="top" className="w-64">
+                <DropdownMenuItem onClick={onSubmit}>
+                  <ListEnd className="size-4 text-muted-foreground" />
+                  <span className="flex-1">Enfileirar</span>
+                  <span className="font-mono text-[11px] text-muted-foreground">⇥</span>
+                </DropdownMenuItem>
+                {running && onForceSendDraft && (
+                  <DropdownMenuItem onClick={onForceSendDraft}>
+                    <Zap className="size-4 text-muted-foreground" />
+                    <span className="flex-1">Corrigir agora</span>
+                    <span className="font-mono text-[11px] text-muted-foreground">⏎</span>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <ItensDeGuardar />
+              </DropdownMenuContent>
+            </DropdownMenu>
           </span>
         )}
         {running && (
@@ -124,7 +154,7 @@ export function SendSplit({
             variant="ghost"
             size="icone-padrao"
             aria-label="Outras formas de enviar"
-            title="Outras formas de enviar (disputa, missão)"
+            title="Outras formas de enviar (disputa, missão, guardar como nota)"
             className="rounded-full text-muted-foreground hover:text-foreground"
           >
             <ChevronDown className="size-4" />
@@ -166,6 +196,8 @@ export function SendSplit({
               </span>
             </DropdownMenuItem>
           )}
+          <DropdownMenuSeparator />
+          <ItensDeGuardar />
         </DropdownMenuContent>
       </DropdownMenu>
       {/* O primário: idêntico ao que sempre foi (mesma Button/size/raio). No

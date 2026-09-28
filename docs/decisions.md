@@ -9824,3 +9824,34 @@ considerou.
   sozinho em nenhuma circunstância; criar, renomear e apagar arquivo seguem
   fora; dono e grupo do arquivo não são preservados pelo `rename` (Mac de
   usuário único).
+
+### ADR-270 · A mensagem pronta pode esperar numa nota: fila é compromisso, nota é lembrete ✅
+- **Contexto (27/09/2026):** com o agente trabalhando, o texto pronto no
+  composer tinha três saídas: enfileirar (sai sozinho no próximo turno),
+  corrigir agora, ou ficar parado ocupando o composer. "Anotei, decido depois"
+  não tinha lugar, e a mensagem ia para a fila por falta de opção. PRD
+  `docs/composer-vira-nota-prd.md`, SPEC `docs/composer-vira-nota-spec.md`,
+  mock `docs/mocks/composer-vira-nota.html`.
+- **Decisão:**
+  1. **Guardar é mais um destino do mesmo rascunho**, no menu do Enviar e num
+     chevron novo no par Enfileirar | ⚡: "Nota desta conversa" e "Nota do
+     projeto X". O escopo vai no rótulo. Guardar não aciona motor.
+  2. **O rascunho inteiro vai junto**: o texto como iria ao motor
+     (`textoDoEnvio`, com citações, colagens e marcações) e os anexos, copiados
+     no disco por `copiar_anexo` (`anexo_entre_donos.rs`), sem bytes na ponte.
+     Se um anexo não copia, a nota não nasce e o rascunho fica.
+  3. **`⌥↵` guarda como nota desta conversa.** Antes ele caía no Enter e
+     enviava; a mudança é deliberada.
+  4. **Toast com Desfazer** (o texto sumiu da frente de você), que devolve o
+     rascunho e apaga a nota. O "Abrir" do mock saiu: o "feito" tem uma ação só,
+     e o contador de notas já diz onde ela foi parar.
+  5. **A fila ganha a mesma saída**: tirar o item e guardar, com Desfazer que o
+     devolve à mesma posição.
+  6. **A volta é "Levar ao composer"**, na nota que veio do composer ou da fila
+     (`origem`): texto e anexos voltam como fala sua. O "Usar no prompt" segue
+     para citar (`@nota/…` chega como anotação, não como pedido).
+  7. **A nota não se apaga sozinha**, nem ao voltar, nem ao ser enviada.
+  8. `lib.rs` precisava de duas linhas para o comando: o fecho `.setup` saiu
+     para `inicio.rs`, e a baseline desceu de 1233 para 1190.
+- **Fica igual:** a fila, o Enter e o Tab; o escopo da nota não muda depois de
+  criada; "Tarefa" e "regra" no cartão continuam desligados.

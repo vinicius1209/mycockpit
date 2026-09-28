@@ -10,8 +10,15 @@
 // "Enviar agora" uma vez só, no cabeçalho, que é o que ele faz.
 
 import { useRef, useState } from "react"
-import { GripVertical, Pencil, X, Zap } from "lucide-react"
+import { FolderClosed, GripVertical, Pencil, StickyNote, X, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import type { EscopoDoGuardar } from "@/components/notes/notaGuardada"
 import { MiniaturaDeAnexo } from "@/components/chat/MiniaturaDeAnexo"
 import type { QueuedMsg } from "@/store/chat"
 import { cn } from "@/lib/utils"
@@ -43,6 +50,7 @@ export function QueuedChips({
   onEdit,
   onForceSend,
   onMover,
+  onGuardar,
   turnState,
   embutida = false,
 }: {
@@ -52,6 +60,8 @@ export function QueuedChips({
   /** Interrompe o turno (se rodando) e envia a fila toda. */
   onForceSend?: (index: number) => void
   onMover?: (de: number, para: number) => void
+  /** Tira da fila e guarda como nota (docs/composer-vira-nota-prd.md D10). */
+  onGuardar?: (index: number, escopo: EscopoDoGuardar) => void
   turnState: "running" | "finalizing" | "idle"
   /** Dentro da gaveta da base do composer (ADR-247): sem moldura própria. */
   embutida?: boolean
@@ -174,6 +184,27 @@ export function QueuedChips({
                   <Button variant="ghost" size="icone-chip" onClick={() => onEdit(i)} title="Editar no composer" aria-label="Editar mensagem">
                     <Pencil />
                   </Button>
+                )}
+                {onGuardar && (
+                  // Mudou de ideia sobre a fila: guardar não perde a mensagem,
+                  // e o escopo se escolhe aqui (a nota não muda depois).
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icone-chip" title="Tirar da fila e guardar como nota" aria-label="Guardar como nota">
+                        <StickyNote />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                      <DropdownMenuItem onClick={() => onGuardar(i, "conversa")}>
+                        <StickyNote className="size-4 text-muted-foreground" />
+                        Nota desta conversa
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onGuardar(i, "projeto")}>
+                        <FolderClosed className="size-4 text-muted-foreground" />
+                        Nota do projeto
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )}
                 <Button
                   variant="ghost"

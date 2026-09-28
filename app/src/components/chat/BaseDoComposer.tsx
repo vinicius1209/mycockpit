@@ -22,6 +22,7 @@ import { useMemo, useState, type ReactNode } from "react"
 import { AlertTriangle, Check, ListChecks } from "lucide-react"
 import { CometaVivo } from "@/components/ui/cometa-vivo"
 import { QueuedChips } from "@/components/chat/FilaDoComposer"
+import { guardarDaFila } from "@/components/notes/notaGuardada"
 import { agirNaExcecao, ListaDeExcecoes } from "@/components/chat/ExcecoesDoTurno"
 import { MiniaturaDaTira } from "@/components/chat/MiniaturaDeAnexo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
@@ -215,6 +216,7 @@ export function BaseDoComposer({
               onForceSend={onForceSend}
               onRemove={(i) => useChat.getState().removeQueued(convId, i)}
               onMover={(de, para) => moverNaFila(convId, de, para)}
+              onGuardar={(i, escopo) => void guardarDaFila(convId, i, escopo)}
               turnState={turnState}
             />
           )}

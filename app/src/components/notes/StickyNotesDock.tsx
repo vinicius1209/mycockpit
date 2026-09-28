@@ -40,6 +40,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { StickyNote, StickyNoteTarget } from "@/components/notes/types"
+import { levarAoComposer } from "@/components/notes/notaGuardada"
 
 /** Carimbo compacto: contexto temporal, não título da nota. */
 const DATA_CURTA = new Intl.DateTimeFormat("pt-BR", {
@@ -300,6 +301,8 @@ export interface StickyNotesDockViewProps extends ComponentProps<"aside"> {
   onDelete?: (id: string) => void
   onFilterChange?: (filter: StickyNoteTarget | "all") => void
   onInsertIntoPrompt?: (note: StickyNote) => void
+  /** Devolve a nota ao composer como fala sua (nota guardada de lá). */
+  onLevarAoComposer?: (note: StickyNote) => void
   onPromoteToTask?: (text: string) => void
   onPromoteToRule?: (text: string) => void
 }
@@ -322,6 +325,7 @@ export function StickyNotesDockView({
   onDelete,
   onFilterChange,
   onInsertIntoPrompt,
+  onLevarAoComposer,
   onPromoteToTask,
   onPromoteToRule,
   className,
@@ -479,6 +483,7 @@ export function StickyNotesDockView({
               onUpdate={(patch) => onUpdate?.(selecionada.id, patch)}
               onDelete={() => onDelete?.(selecionada.id)}
               onInsertIntoPrompt={onInsertIntoPrompt}
+              onLevarAoComposer={onLevarAoComposer}
               onPromoteToTask={onPromoteToTask}
               onPromoteToRule={onPromoteToRule}
             />
@@ -577,6 +582,10 @@ export function StickyNotesDock(superficie: ComponentProps<"aside">) {
       onDelete={deleteNote}
       onFilterChange={setFilter}
       onInsertIntoPrompt={handleInsertIntoPrompt}
+      onLevarAoComposer={(nota) => {
+        if (activeId) void levarAoComposer(nota, activeId)
+        else avisar.erro("Nenhuma conversa ativa no momento.")
+      }}
     />
   )
 }

@@ -22,3 +22,16 @@ describe("gesto de envio do composer", () => {
     )
   })
 })
+
+describe("⌥↵ guarda como nota", () => {
+  it("vale nos dois atalhos de envio, e nunca envia", () => {
+    expect(enterTarget("enter", { command: false, shift: false, alt: true }, false)).toBe("guardar")
+    expect(enterTarget("enter", { command: false, shift: false, alt: true }, true)).toBe("guardar")
+    expect(enterTarget("cmd-enter", { command: false, shift: false, alt: true }, false)).toBe("guardar")
+  })
+
+  it("com ⌘ ou Shift junto, não é o gesto de guardar", () => {
+    expect(enterTarget("enter", { command: false, shift: true, alt: true }, false)).toBeNull()
+    expect(enterTarget("cmd-enter", { command: true, shift: false, alt: true }, false)).toBe("submit")
+  })
+})
