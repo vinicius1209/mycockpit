@@ -10182,3 +10182,19 @@ considerou.
 - **Achado:** as ferramentas do Antigravity anteriores à ADR-253 estão no
   banco com o nome cru (`replace_file_content`), e não entram no "quem
   alterou"; as de depois já chegam no vocabulário do contrato.
+
+### ADR-281 · O aviso de cota perto do limite mora na tira do composer, e se recolhe ou se dispensa ✅
+- **Contexto (28/09/2026):** o aviso da ADR-276 era cartão acima do composer.
+  Com um arquivo aberto ao lado ele ocupava a coluna, e o único gesto além de
+  escolher era "Agora não", que o fazia sumir sem rastro. Pedido da pessoa:
+  "poderia ser minimizado, igual a fila".
+- **Decisão:** pela régua da ADR-247, o que não bloqueia o envio é
+  informação, e o aviso não bloqueia (o motor ainda responde). Ele vira um
+  segmento da tira (`BaseDoComposer`): ícone âmbar e "Claude Code 98%", com o
+  título no hover. A gaveta traz o mesmo detalhe e os mesmos destinos. Nasce
+  ABERTA na primeira vez de cada episódio, porque é novidade; recolher é
+  clicar no segmento. "Dispensar" (no lugar de "Agora não") encerra o episódio
+  como antes: conversa, motor e janela, até ela virar. O segmento some quando
+  outra porta de continuidade abre (motor já escolhido, cota esgotada, turno
+  interrompido), para nunca haver duas ofertas de troca. A cota ESGOTADA
+  continua cartão: ela bloqueia o envio.

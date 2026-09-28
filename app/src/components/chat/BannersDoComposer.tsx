@@ -25,7 +25,6 @@ import {
   PreflightGateBanner,
 } from "@/components/chat/ComposerBanners"
 import { ContinuityBanner, type ContinuityMode } from "@/components/chat/ContinuityBanner"
-import { AvisoDeCotaPerto } from "@/components/chat/CotaPertoBanner"
 import { agentDef } from "@/lib/agents"
 import { estimativaDoHandoff, rotuloDaEstimativa } from "@/lib/handoff"
 import { resumeBannerLabel, retomadaAgendada } from "@/lib/autoResume"
@@ -192,10 +191,6 @@ export function BannersDoComposer({
               : (agent) => useChat.getState().stageAgent(activeId, agent)
           }
         />
-      ) : conv && activeId && !busy ? (
-        // Um passo antes da cota esgotada: só quando nenhuma outra porta de
-        // continuidade está aberta, para nunca haver dois cartões disputando.
-        <AvisoDeCotaPerto conv={conv} activeId={activeId} />
       ) : null}
 
       {conv?.preflightGate && (

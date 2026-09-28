@@ -18,12 +18,13 @@
 // "Próxima:" quando o agente ainda não disse qual; com a aba do painel aberta,
 // o detalhe é dela e a gaveta não abre.
 
-import { useMemo, useState, type ReactNode } from "react"
-import { AlertTriangle, Check, ListChecks } from "lucide-react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
+import { AlertTriangle, Check, Clock, Gauge, ListChecks } from "lucide-react"
 import { CometaVivo } from "@/components/ui/cometa-vivo"
 import { QueuedChips } from "@/components/chat/FilaDoComposer"
 import { guardarDaFila } from "@/components/notes/notaGuardada"
 import { agirNaExcecao, ListaDeExcecoes } from "@/components/chat/ExcecoesDoTurno"
+import { useCotaNaTira } from "@/components/chat/CotaPertoBanner"
 import { MiniaturaDaTira } from "@/components/chat/MiniaturaDeAnexo"
 import { TaskChecklist } from "@/components/chat/TaskChecklist"
 import { moverNaFila } from "@/components/chat/filaComposer"
@@ -35,7 +36,10 @@ import { controle } from "@/components/ui/controle"
 import { useApp } from "@/store/app"
 import { useChat, type ConvState } from "@/store/chat"
 
-type Gaveta = "plano" | "fila" | "aviso"
+type Gaveta = "plano" | "fila" | "aviso" | "cota"
+
+/** Episódios de cota já mostrados: a gaveta abre sozinha só na primeira vez. */
+const cotasJaAbertas = new Set<string>()
 
 /** O que a tira diz do plano, ou null quando não há plano vivo. Puro. */
 export function resumoDoPlano(
@@ -97,7 +101,7 @@ export function BaseDoComposer({
   onEdit,
   onForceSend,
 }: {
-  conv: Pick<ConvState, "items" | "running" | "finalizing" | "runManifest" | "agent" | "queued">
+  conv: Pick<ConvState, "items" | "running" | "finalizing" | "runManifest" | "agent" | "queued" | "stagedAgent">
   convId: string | null
   onEdit?: (index: number) => void
   onForceSend?: (index: number) => void
@@ -113,14 +117,23 @@ export function BaseDoComposer({
   const fila = conv.queued ?? []
   const excecoes = excecoesDoTurno(conv.runManifest, agentLabel(conv.agent))
   const anexos = fila.flatMap((m) => m.attachments)
+  const cota = useCotaNaTira(conv, convId)
+  // O aviso de cota é novidade: na primeira vez do episódio, a gaveta dele abre.
+  const episodio = cota?.chave ?? null
+  useEffect(() => {
+    if (!episodio || cotasJaAbertas.has(episodio)) return
+    cotasJaAbertas.add(episodio)
+    setGaveta("cota")
+  }, [episodio])
 
-  if (!plano && fila.length === 0 && excecoes.length === 0) return null
+  if (!plano && fila.length === 0 && excecoes.length === 0 && !cota) return null
   // A gaveta aberta de algo que sumiu (a fila esvaziou, o plano acabou) fecha.
   const pedida = gaveta === "auto" ? (fila.length > 0 ? "fila" : null) : gaveta
   const aberta =
     (pedida === "plano" && plano && !detalheNoPainel) ||
     (pedida === "fila" && fila.length > 0) ||
-    (pedida === "aviso" && excecoes.length > 0)
+    (pedida === "aviso" && excecoes.length > 0) ||
+    (pedida === "cota" && cota)
       ? pedida
       : null
   const alterna = (g: Gaveta) => setGaveta(aberta === g ? null : g)
@@ -195,6 +208,16 @@ export function BaseDoComposer({
             {excecoes.length} {excecoes.length === 1 ? "aviso" : "avisos"}
           </Segmento>
         )}
+        {cota && (
+          <Segmento aberto={aberta === "cota"} onClick={() => alterna("cota")} titulo={cota.titulo}>
+            {cota.motivo === "ritmo" ? (
+              <Clock className="size-3.5 text-st-warning" aria-hidden />
+            ) : (
+              <Gauge className="size-3.5 text-st-warning" aria-hidden />
+            )}
+            <span className="tabular-nums">{cota.resumo}</span>
+          </Segmento>
+        )}
       </div>
       {aberta && (
         <div className="max-h-64 overflow-y-auto border-t border-border/40">
@@ -220,6 +243,7 @@ export function BaseDoComposer({
               turnState={turnState}
             />
           )}
+          {aberta === "cota" && cota?.detalhe}
           {aberta === "aviso" && <ListaDeExcecoes embutida excecoes={excecoes} onAcao={(e) => agirNaExcecao(e, projectPath)} />}
         </div>
       )}

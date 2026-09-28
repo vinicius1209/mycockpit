@@ -1,10 +1,9 @@
-// O aviso ANTES de a cota acabar (F2, ADR-276), na mesma porta de
-// continuidade do composer (`ContinuityBanner`): a mesma casca, as mesmas
-// opções de motor e o mesmo gesto de preparar o próximo envio. O que muda é o
-// momento: o motor ainda responde, e cada destino diz a folga que foi LIDA.
+// O aviso ANTES de a cota acabar (ADR-276). Não bloqueia nada, o motor ainda
+// responde: é informação, e mora na tira presa ao composer (ADR-247, ADR-281),
+// não em cartão. A gaveta traz as mesmas opções de motor e o mesmo gesto de
+// preparar o próximo envio; cada destino diz a folga que foi LIDA.
 
-import { useEffect, useState } from "react"
-import { Clock, Gauge } from "lucide-react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Button } from "@/components/ui/button"
 import { agentDef } from "@/lib/agents"
 import {
@@ -20,7 +19,8 @@ import {
 import { loadLedger } from "@/lib/db"
 import { fmtAgo, fmtCost, fmtTime } from "@/lib/format"
 import { gastoDaFaixa } from "@/lib/gastoDaFaixa"
-import { eligibleHandoffTargets } from "@/lib/quotaExhausted"
+import { deriveComposerContinuity } from "@/lib/composerContinuity"
+import { checkAgentQuota, eligibleHandoffTargets } from "@/lib/quotaExhausted"
 import { useApp } from "@/store/app"
 import { useChat, type ConvState } from "@/store/chat"
 import { useUsage } from "@/store/usage"
@@ -68,79 +68,86 @@ export function textoDaFolga(d: DestinoComFolga): string {
   return d.gastoHoje != null && d.gastoHoje > 0 ? `sem medidor · ${fmtCost(d.gastoHoje)} hoje` : "sem medidor"
 }
 
-export function CotaPertoBanner({
+/** O que a tira do composer diz do aviso, numa linha: "Claude Code 98%". Puro. */
+export function resumoDaCota(sourceLabel: string, p: Perto): string {
+  return `${sourceLabel} ${Math.round(p.janela.usedPercent)}%`
+}
+
+/** O aviso aberto na gaveta da tira: o motivo, os destinos com a folga lida e
+ *  as duas saídas. Recolher é clicar no segmento de novo; "Dispensar" encerra
+ *  o episódio (até a janela virar). */
+export function DetalheDaCota({
   sourceLabel,
   perto,
   destinos,
   now,
   onSelect,
-  onDismiss,
+  onDispensar,
 }: {
   sourceLabel: string
   perto: Perto
   destinos: DestinoComFolga[]
   now: number
   onSelect: (agent: string) => void
-  onDismiss: () => void
+  onDispensar: () => void
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const selected = destinos.find((d) => d.id === selectedId) ?? null
   const { titulo, detalhe } = textoDoAviso(sourceLabel, perto, now)
-  const Icone = perto.motivo === "ritmo" ? Clock : Gauge
   return (
-    <section
-      data-continuity-state="perto"
-      className="mb-2 rounded-lg border border-border-strong bg-card shadow-[var(--shadow-sm)]"
-    >
-      <div className="flex items-start gap-2.5 px-3 py-2.5">
-        <Icone className="mt-0.5 size-4 shrink-0 text-st-warning" />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] font-medium text-foreground">{titulo}</p>
-          <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-            {detalhe} <span className="tabular-nums">Leitura {fmtAgo(now - perto.leituraEm)}.</span>
-          </p>
-          <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 border-t border-border/40 pt-2">
-            <span className="text-[11px] text-muted-foreground">Próximo envio com:</span>
-            <div
-              role="group"
-              aria-label="Escolher o plano do próximo envio"
-              className="flex max-w-full min-w-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
-            >
-              {destinos.map((d) => {
-                const escolhivel = d.folga.tipo !== "sem-leitura"
-                const chosen = d.id === selected?.id
-                return (
-                  <Button
-                    key={d.id}
-                    type="button"
-                    size="compacto"
-                    variant="ghost"
-                    disabled={!escolhivel}
-                    aria-pressed={chosen}
-                    title={escolhivel ? undefined : "Sem leitura recente do plano: escolha pelo seletor de motor, se quiser."}
-                    className={cn(chosen ? SELECTED_FILL : UNSELECTED)}
-                    onClick={() => setSelectedId(d.id)}
-                  >
-                    {d.label}
-                    <span className="text-muted-foreground tabular-nums">{textoDaFolga(d)}</span>
-                  </Button>
-                )
-              })}
-            </div>
+    <section data-continuity-state="perto" aria-label={titulo}>
+      <div className="px-3 pt-2 pb-2.5">
+        <p className="text-[12px] font-medium text-foreground">{titulo}</p>
+        <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+          {detalhe} <span className="tabular-nums">Leitura {fmtAgo(now - perto.leituraEm)}.</span>
+        </p>
+        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[11px] text-muted-foreground">Próximo envio com:</span>
+          <div
+            role="group"
+            aria-label="Escolher o plano do próximo envio"
+            // Cabe na largura: com a conversa estreita, os destinos descem de linha.
+            className="flex max-w-full min-w-0 flex-wrap gap-0.5 rounded-md border bg-background p-0.5"
+          >
+            {destinos.map((d) => {
+              const escolhivel = d.folga.tipo !== "sem-leitura"
+              const chosen = d.id === selected?.id
+              return (
+                <Button
+                  key={d.id}
+                  type="button"
+                  size="compacto"
+                  variant="ghost"
+                  disabled={!escolhivel}
+                  aria-pressed={chosen}
+                  title={escolhivel ? undefined : "Sem leitura recente do plano: escolha pelo seletor de motor, se quiser."}
+                  className={cn(chosen ? SELECTED_FILL : UNSELECTED)}
+                  onClick={() => setSelectedId(d.id)}
+                >
+                  {d.label}
+                  <span className="text-muted-foreground tabular-nums">{textoDaFolga(d)}</span>
+                </Button>
+              )
+            })}
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-2 border-t border-border/40 bg-background px-2 py-1.5 pl-10">
-        <div className="ml-auto flex items-center gap-1">
-          <Button type="button" size="compacto" variant="ghost" className="text-muted-foreground" onClick={onDismiss}>
-            Agora não
+      <div className="flex flex-wrap items-center justify-end gap-1 border-t border-border/40 px-2 py-1.5">
+        <Button
+          type="button"
+          size="compacto"
+          variant="ghost"
+          className="text-muted-foreground"
+          title={`Não avisa de novo nesta conversa até a janela de ${perto.janela.label} virar`}
+          onClick={onDispensar}
+        >
+          Dispensar
+        </Button>
+        {selected && (
+          <Button type="button" size="compacto" onClick={() => onSelect(selected.id)}>
+            Usar {selected.label} no próximo envio
           </Button>
-          {selected && (
-            <Button type="button" size="compacto" onClick={() => onSelect(selected.id)}>
-              Usar {selected.label} no próximo envio
-            </Button>
-          )}
-        </div>
+        )}
       </div>
     </section>
   )
@@ -167,9 +174,23 @@ function useGastoDeHoje(ativo: boolean): Map<string, number> | null {
 
 const DIA_MS = 24 * 60 * 60 * 1000
 
+export interface CotaNaTira {
+  /** O episódio: a gaveta nasce aberta na primeira vez que ele aparece. */
+  chave: string
+  resumo: string
+  titulo: string
+  motivo: Perto["motivo"]
+  detalhe: ReactNode
+}
+
 /** O aviso com o estado que ele lê: medidor, leitura anterior, destinos
- *  elegíveis (a mesma régua do revezamento) e o episódio já dispensado. */
-export function AvisoDeCotaPerto({ conv, activeId }: { conv: ConvState; activeId: string }) {
+ *  elegíveis (a mesma régua do revezamento) e o episódio já dispensado. Some
+ *  quando outra porta de continuidade está aberta (motor já escolhido, cota
+ *  esgotada, turno interrompido), para nunca haver duas ofertas de troca. */
+export function useCotaNaTira(
+  conv: Pick<ConvState, "agent" | "items" | "running" | "finalizing" | "stagedAgent">,
+  activeId: string | null,
+): CotaNaTira | null {
   const byAgent = useUsage((s) => s.byAgent)
   const anterior = useUsage((s) => s.anterior?.[conv.agent])
   const lastSuccessByAgent = useUsage((s) => s.lastSuccessAt)
@@ -177,9 +198,12 @@ export function AvisoDeCotaPerto({ conv, activeId }: { conv: ConvState; activeId
   const detectados = useApp((s) => s.settings.detected)
   const [, reler] = useState(0)
   const now = Date.now()
-  const perto = cotaPerto(byAgent[conv.agent], anterior, now)
-  const chave = perto ? chaveDoEpisodio(activeId, conv.agent, perto) : null
-  const aberto = !!chave && !episodioDispensado(chave)
+  const perto = activeId ? cotaPerto(byAgent[conv.agent], anterior, now) : null
+  const chave = perto && activeId ? chaveDoEpisodio(activeId, conv.agent, perto) : null
+  const quota = checkAgentQuota(conv.agent, limitedAgents, byAgent[conv.agent], undefined, lastSuccessByAgent[conv.agent])
+  const outraPorta =
+    !!conv.stagedAgent || !!deriveComposerContinuity(conv.items, conv.running || conv.finalizing, quota.exhausted)
+  const aberto = !!chave && !episodioDispensado(chave) && !outraPorta
   const destinos: DestinoComFolga[] = aberto
     ? eligibleHandoffTargets({
         currentAgent: conv.agent,
@@ -191,18 +215,25 @@ export function AvisoDeCotaPerto({ conv, activeId }: { conv: ConvState; activeId
       }).map((a) => ({ id: a.id, label: a.label, folga: folgaDoMotor(a.id, byAgent[a.id], now), gastoHoje: null }))
     : []
   const gasto = useGastoDeHoje(destinos.some((d) => d.folga.tipo === "sem-medidor"))
-  if (!perto || !chave || !aberto || !temPlanoComFolga(destinos.map((d) => d.folga))) return null
-  return (
-    <CotaPertoBanner
-      sourceLabel={agentDef(conv.agent)?.label ?? conv.agent}
-      perto={perto}
-      destinos={destinos.map((d) => ({ ...d, gastoHoje: gasto?.get(d.id) ?? null }))}
-      now={now}
-      onSelect={(agent) => useChat.getState().stageAgent(activeId, agent)}
-      onDismiss={() => {
-        dispensarEpisodio(chave)
-        reler((n) => n + 1)
-      }}
-    />
-  )
+  if (!perto || !chave || !activeId || !aberto || !temPlanoComFolga(destinos.map((d) => d.folga))) return null
+  const sourceLabel = agentDef(conv.agent)?.label ?? conv.agent
+  return {
+    chave,
+    resumo: resumoDaCota(sourceLabel, perto),
+    titulo: textoDoAviso(sourceLabel, perto, now).titulo,
+    motivo: perto.motivo,
+    detalhe: (
+      <DetalheDaCota
+        sourceLabel={sourceLabel}
+        perto={perto}
+        destinos={destinos.map((d) => ({ ...d, gastoHoje: gasto?.get(d.id) ?? null }))}
+        now={now}
+        onSelect={(agent) => useChat.getState().stageAgent(activeId, agent)}
+        onDispensar={() => {
+          dispensarEpisodio(chave)
+          reler((n) => n + 1)
+        }}
+      />
+    ),
+  }
 }

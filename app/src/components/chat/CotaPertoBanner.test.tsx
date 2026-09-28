@@ -2,7 +2,7 @@ import { createElement } from "react"
 import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import type { Perto } from "@/lib/cotaAntecipada"
-import { CotaPertoBanner, textoDaFolga, textoDoAviso, type DestinoComFolga } from "./CotaPertoBanner"
+import { DetalheDaCota, resumoDaCota, textoDaFolga, textoDoAviso, type DestinoComFolga } from "./CotaPertoBanner"
 
 // Janela na forma real do medidor (statusline do Claude), com o uso do cenário.
 const AGORA = new Date(2026, 8, 27, 15, 50).getTime()
@@ -37,20 +37,26 @@ describe("o aviso antes de a cota acabar", () => {
     expect(DESTINOS.map(textoDaFolga)).toEqual(["70% livre · 7 dias", "sem leitura recente", "sem medidor · US$ 0,420 hoje"])
   })
 
-  it("o cartão mostra os destinos, trava o sem leitura e oferece Agora não", () => {
+  it("a tira resume numa linha: o motor e quanto foi usado", () => {
+    expect(resumoDaCota("Claude Code", PERTO)).toBe("Claude Code 91%")
+  })
+
+  it("a gaveta mostra os destinos, trava o sem leitura e oferece Dispensar, não Agora não", () => {
     const html = renderToStaticMarkup(
-      createElement(CotaPertoBanner, {
+      createElement(DetalheDaCota, {
         sourceLabel: "Claude Code",
         perto: PERTO,
         destinos: DESTINOS,
         now: AGORA,
         onSelect: () => {},
-        onDismiss: () => {},
+        onDispensar: () => {},
       }),
     )
     expect(html).toContain("Próximo envio com:")
     expect(html).toContain("70% livre · 7 dias")
-    expect(html).toContain("Agora não")
+    expect(html).toContain(">Dispensar<")
+    expect(html).toContain("até a janela de 5 h virar")
+    expect(html).not.toContain("Agora não")
     expect(html).toContain("Leitura há 3 min.")
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>Antigravity/)
   })
