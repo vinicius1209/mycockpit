@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Composer: onde a gente digita, escolhe o motor, vê o contexto</title>
+<style>
+  /* Tokens de :root do index.css (tema claro). Escala 11/12/13/14 (20 no título).
+     Controles: chip 24 · compacto 28 · padrão 32. Sem travessão na copy. */
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --warning:#c1861f;--error:#cf4a3e;--claude:#d97757;
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px}
+  h1{font-size:20px;font-weight:600}
+  h2{font-size:14px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1040px}
+  .sub b,.nota b{color:var(--foreground);font-weight:500}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted);max-width:760px;margin-top:10px}
+  code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
+  svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  svg.i.s14{width:14px;height:14px}
+  section{margin-top:36px}
+  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:12px 0 14px;flex-wrap:wrap}
+  .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted);display:inline-flex;align-items:center}
+  .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
+  .lado{display:grid;grid-template-columns:repeat(2,minmax(0,640px));gap:28px;align-items:start}
+
+  /* ---- a casca do composer (ComposerShell) ---- */
+  .comp{background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow-pop)}
+  .comp.foco{border-color:rgba(22,24,27,.25)}
+  .campo{min-height:56px;padding:14px 16px 4px;font-size:14px;line-height:1.6;position:relative}
+  .caret{display:inline-block;width:1px;height:16px;background:var(--foreground);vertical-align:-3px}
+  .base{display:flex;align-items:center;gap:6px;padding:4px 10px 10px}
+  .esp{flex:1}
+  .ic{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;color:var(--muted)}
+  .ic.s28{width:28px;height:28px;border-radius:7px}
+
+  /* HOJE (fiel ao print de 28/09) */
+  .hoje .ph{color:var(--muted)}
+  .hoje .id{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:8px;color:var(--muted);font-size:12px;white-space:nowrap}
+  .hoje .modo{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;color:var(--muted);font-size:12px}
+  .caras{display:inline-flex;align-items:center;height:32px;padding:0 6px}
+  .caras i{width:20px;height:20px;border-radius:6px;display:inline-block;margin-left:-6px;box-shadow:0 0 0 2px var(--card)}
+  .caras i:first-child{margin-left:0}
+  .anel{width:18px;height:18px}
+  .parar{width:32px;height:32px;border-radius:50%;background:var(--error);display:grid;place-items:center}
+  .parar i{width:10px;height:10px;border-radius:2px;background:#fff;display:block}
+  .enviar{width:32px;height:32px;border-radius:50%;background:var(--foreground);color:#fff;display:grid;place-items:center}
+  .enviar.off{background:var(--secondary);color:var(--faint)}
+
+  /* PROPOSTA */
+  .prop .ph{color:var(--faint)}
+  .kbd{display:inline-flex;align-items:center;height:18px;padding:0 5px;border-radius:4px;font:11px var(--mono);color:var(--faint);box-shadow:inset 0 0 0 1px var(--border);vertical-align:1px;margin:0 2px}
+  .porta{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--foreground);white-space:nowrap}
+  .porta:hover{background:var(--sel-hover)}
+  .porta .lg{width:16px;height:16px;border-radius:4px;background:var(--claude);display:grid;place-items:center;color:#fff;font:600 11px var(--sans)}
+  .porta .fraco{color:var(--faint)}
+  .porta .trava{color:var(--faint)}
+  .modo-p{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--muted)}
+  .modo-p.risco{color:var(--warning);background:rgba(193,134,31,.08)}
+  .sep{width:1px;height:16px;background:var(--divisor);margin:0 2px}
+  .ctx{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 6px;border-radius:7px;font:11px var(--mono);color:var(--faint)}
+  .ctx.alto{color:var(--warning)}
+  .ctx svg{width:14px;height:14px}
+  .caras-p{display:inline-flex;align-items:center;height:28px;padding:0 6px;border-radius:7px}
+  .caras-p i{width:18px;height:18px;border-radius:5px;display:inline-block;margin-left:-5px;box-shadow:0 0 0 2px var(--card)}
+  .caras-p i:first-child{margin-left:0}
+  .dica{font-size:11px;color:var(--faint);white-space:nowrap}
+  .par{display:inline-flex;height:28px;border-radius:999px;background:rgba(193,134,31,.10);box-shadow:inset 0 0 0 1px rgba(193,134,31,.32);overflow:hidden;color:var(--warning);font-size:12px}
+  .par span{display:inline-flex;align-items:center;gap:5px;padding:0 10px}
+  .par span+span{box-shadow:inset 1px 0 0 rgba(193,134,31,.32);padding:0 8px}
+
+  [data-e]{display:none}
+  [data-e].on{display:block}
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1100px;margin-top:10px}
+  .tabela td,.tabela th{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
+  .tabela th{color:var(--foreground);font-weight:500}
+  .tabela td:first-child{color:var(--foreground);font-weight:500;width:160px}
+  ol.dec{max-width:1040px;margin:10px 0 0 18px;color:var(--muted)}
+  ol.dec li{margin:6px 0}
+  ol.dec b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="cad" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="escudo" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="escudo-ok" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="fila" viewBox="0 0 24 24"><path d="M16 5H3M16 12H3M9 19H3M16 16l5 3-5 3z"/></symbol>
+</svg>
+
+<h1>Composer: onde a gente digita, escolhe o motor e vê o contexto</h1>
+<p class="sub">Print de 28/09: o texto de instrução do campo ("Enter corrige agora · Tab envia no próximo turno…") tem o mesmo peso de um texto que você digitou, e a linha de baixo fala tudo no mesmo tom. À esquerda, como é hoje (fiel ao print e ao código); à direita, a proposta. As abas trocam o estado dos dois lados ao mesmo tempo.</p>
+
+<div class="abas" id="estados">
+  <button aria-pressed="true" data-alvo="vazio">Vazio, em repouso</button>
+  <button aria-pressed="false" data-alvo="rodando">Turno rodando</button>
+  <button aria-pressed="false" data-alvo="digitando">Digitando com o turno rodando</button>
+  <button aria-pressed="false" data-alvo="risco">Liberado e contexto alto</button>
+  <button aria-pressed="false" data-alvo="estreito">Coluna estreita</button>
+</div>
+
+<div class="lado">
+  <div>
+    <div class="legenda">Hoje</div>
+    <div class="comp hoje" id="hoje">
+      <div class="campo">
+        <span data-e="vazio" class="ph on">Peça algo…  ou / para comandos</span>
+        <span data-e="rodando" class="ph">Enter corrige agora · Tab envia no próximo turno…</span>
+        <span data-e="digitando">na verdade usa o parser novo das faturas<span class="caret"></span></span>
+        <span data-e="risco" class="ph">Peça algo…  ou / para comandos</span>
+        <span data-e="estreito" class="ph">Enter corrige agora · Tab envia no próximo turno…</span>
+      </div>
+      <div class="base">
+        <span class="ic"><svg class="i"><use href="#clip"/></svg></span>
+        <span class="id">Claude Code · Opus (alias) · high <svg class="i s14"><use href="#cad"/></svg><svg class="i s14"><use href="#down"/></svg></span>
+        <span class="modo"><svg class="i s14" style="color:var(--warning)"><use href="#escudo"/></svg>Liberado</span>
+        <span class="caras"><i style="background:#5b8def"></i><i style="background:#e0679b"></i><i style="background:#9b7be8"></i></span><span style="color:var(--muted);font-size:12px">6</span>
+        <span class="ic"><svg class="i"><use href="#mic"/></svg></span>
+        <span class="esp"></span>
+        <svg class="anel" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--warning)" stroke-width="2" stroke-dasharray="30 50" transform="rotate(-90 10 10)"/></svg>
+        <span data-e="vazio" class="enviar off on" style="display:none"></span>
+        <span class="parar"><i></i></span>
+      </div>
+    </div>
+    <table class="tabela">
+      <tr><td>Instrução no campo</td><td>Cinza <code>muted-foreground</code> (#5c6166, contraste ~6:1), o mesmo dos rótulos da linha de baixo e perto do texto digitado. Atalho explicado em prosa e "…" no fim, que parece continuação de frase.</td></tr>
+      <tr><td>Motor</td><td>"Opus (alias)" é termo interno (o CLI escolhe a versão mais nova). "high" é o valor cru do CLI. O cadeado diz "trocar aqui vira revezamento", mas só no hover.</td></tr>
+      <tr><td>Contexto</td><td>O anel sozinho, laranja, ao lado do Parar, lê como um spinner de carregando. O número só aparece no hover.</td></tr>
+      <tr><td>Especialistas</td><td>"6" é quantos existem no time, mas lê como "6 na conversa".</td></tr>
+      <tr><td>Peso</td><td>Sete controles com o mesmo cinza e o mesmo tamanho. O que é risco (Liberado) tem cor só no ícone.</td></tr>
+    </table>
+  </div>
+
+  <div>
+    <div class="legenda">Proposta</div>
+    <div class="comp prop foco" id="prop">
+      <div class="campo">
+        <span data-e="vazio" class="ph on">Peça algo ao seu time. <span class="kbd">/</span> para comandos, <span class="kbd">@</span> para chamar alguém</span>
+        <span data-e="rodando" class="ph">Corrija o rumo agora ou deixe para depois <span class="kbd">↵</span> agora <span class="kbd">⇥</span> depois</span>
+        <span data-e="digitando">na verdade usa o parser novo das faturas<span class="caret"></span></span>
+        <span data-e="risco" class="ph">Peça algo ao seu time. <span class="kbd">/</span> para comandos, <span class="kbd">@</span> para chamar alguém</span>
+        <span data-e="estreito" class="ph">Corrija o rumo ou deixe para depois</span>
+      </div>
+      <div class="base">
+        <span class="ic s28"><svg class="i"><use href="#clip"/></svg></span>
+        <span class="sep"></span>
+        <span class="porta" title="Trocar de motor nesta conversa vira revezamento, com sessão nova"><span class="lg">C</span>Opus <span class="fraco">mais recente · raciocínio alto</span><svg class="i s14 trava"><use href="#cad"/></svg></span>
+        <span data-e="vazio" class="modo-p on" style="display:none"></span>
+        <span class="modo-p" data-modo="padrao" title="Modo Padrão: pede antes de ações com efeito"><svg class="i s14"><use href="#escudo-ok"/></svg></span>
+        <span class="modo-p risco" data-modo="liberado" style="display:none"><svg class="i s14"><use href="#escudo"/></svg>Liberado</span>
+        <span class="caras-p" title="Especialistas: 6 no time. Chamar com @"><i style="background:#5b8def"></i><i style="background:#e0679b"></i><i style="background:#9b7be8"></i></span>
+        <span class="esp"></span>
+        <span class="dica" data-dica="digitando" style="display:none">o agente está trabalhando</span>
+        <span class="ctx" data-ctx="normal"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="19 50" transform="rotate(-90 10 10)"/></svg>38%</span>
+        <span class="ctx alto" data-ctx="alto" style="display:none"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="41 50" transform="rotate(-90 10 10)"/></svg>82% · compactar</span>
+        <span class="ic s28"><svg class="i"><use href="#mic"/></svg></span>
+        <span class="par" data-par style="display:none"><span><svg class="i s14"><use href="#fila"/></svg>Depois</span><span><svg class="i s14"><use href="#zap"/></svg></span></span>
+        <span class="enviar off" data-enviar style="display:none"><svg class="i s14"><use href="#up"/></svg></span>
+        <span class="parar" data-parar><i></i></span>
+      </div>
+    </div>
+    <table class="tabela">
+      <tr><td>Instrução no campo</td><td>Tom <code>faint</code> (#8a9099), o mesmo de metadado: lê como instrução, nunca como texto seu. Atalho vira tecla desenhada, não prosa. Sem "…". Na coluna estreita, só a frase.</td></tr>
+      <tr><td>Motor</td><td>Logo do motor + modelo em texto de gente ("Opus mais recente") + esforço em pt-BR ("raciocínio alto"), com o secundário em tom mais fraco. O cadeado fica, e o hover diz o que ele quer dizer.</td></tr>
+      <tr><td>Modo</td><td>Padrão e Só lê viram só o ícone (o estado seguro não precisa gritar). Liberado ganha texto e fundo âmbar: é o único que pede atenção.</td></tr>
+      <tr><td>Contexto</td><td>Anel com o número ao lado ("38%"), em tom fraco. A partir de 60% fica âmbar; perto de compactar, diz "compactar", que é o gesto. Deixa de parecer carregando.</td></tr>
+      <tr><td>Especialistas</td><td>Só as caras; o "6 no time" vai para o hover. Quem está NA conversa já aparece no fio.</td></tr>
+      <tr><td>Ditado e enviar</td><td>O microfone vai para perto do enviar: falar e mandar são o mesmo gesto de saída. O clipe fica à esquerda, junto do texto que ele alimenta.</td></tr>
+    </table>
+  </div>
+</div>
+
+<section>
+  <h2>O que não muda</h2>
+  <p class="sub">A casca E2, a altura mínima do campo, a tira presa ao topo (plano, fila, avisos e cota, ADR-247 e ADR-281), o par Depois | ⚡ com o turno rodando (ADR-240), o painel da identidade e o menu de modo por dentro. A proposta mexe em tom, texto e ordem, não em comportamento.</p>
+</section>
+
+<section>
+  <h2>Decisões para você</h2>
+  <ol class="dec">
+    <li><b>Microfone perto do enviar</b> (proposta) ou continua à esquerda, junto do clipe?</li>
+    <li><b>Modo seguro só com ícone</b> (proposta) ou continua com o nome sempre ("Padrão")?</li>
+    <li><b>Contexto com número sempre</b> (proposta) ou só a partir de 60%?</li>
+    <li><b>Nome do modelo</b>: "Opus mais recente" (proposta) ou "Opus 5.5" quando a versão for conhecida pela leitura do CLI?</li>
+    <li><b>Esforço</b>: "raciocínio alto" (proposta), "esforço alto", ou só "alto"?</li>
+  </ol>
+</section>
+
+<script>
+  const botoes = document.querySelectorAll("#estados button")
+  function aplicar(e) {
+    document.querySelectorAll("[data-e]").forEach((el) => el.classList.toggle("on", el.dataset.e === e))
+    const prop = document.getElementById("prop")
+    const rodando = e !== "vazio" && e !== "risco"
+    prop.querySelector("[data-parar]").style.display = rodando ? "grid" : "none"
+    prop.querySelector("[data-enviar]").style.display = rodando ? "none" : "grid"
+    prop.querySelector("[data-par]").style.display = e === "digitando" ? "inline-flex" : "none"
+    prop.querySelector("[data-modo=padrao]").style.display = e === "risco" ? "none" : "inline-flex"
+    prop.querySelector("[data-modo=liberado]").style.display = e === "risco" ? "inline-flex" : "none"
+    prop.querySelector("[data-ctx=normal]").style.display = e === "risco" ? "none" : "inline-flex"
+    prop.querySelector("[data-ctx=alto]").style.display = e === "risco" ? "inline-flex" : "none"
+    prop.querySelector(".porta").querySelector(".fraco").style.display = e === "estreito" ? "none" : "inline"
+    document.querySelectorAll(".comp").forEach((c) => (c.style.maxWidth = e === "estreito" ? "420px" : ""))
+    const hoje = document.getElementById("hoje")
+    hoje.querySelector(".parar").style.display = rodando ? "grid" : "none"
+  }
+  botoes.forEach((b) => b.addEventListener("click", () => {
+    botoes.forEach((o) => o.setAttribute("aria-pressed", String(o === b)))
+    aplicar(b.dataset.alvo)
+  }))
+  aplicar("vazio")
+</script>
+</body>
+</html>

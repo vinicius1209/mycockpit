@@ -288,3 +288,45 @@ a ChatGPT account"). Um turno do Codex pela Frota **sem modelo escolhido**
 herda esse padrão e falha. Vale conferir se a Frota sempre manda `model` no
 `thread/start` (`thread_params`, `codex_appserver.rs:112`, só manda quando há)
 e se o erro chega ao fio com o motivo.
+
+## 9. Revisão de 28/09
+
+Conferido no código depois de entregue. Corrigido no commit `d635dc1`:
+
+| # | achado | onde | correção |
+|---|---|---|---|
+| R1 | a espera pela imagem do agy (até 500 ms com `std::thread::sleep`) rodava dentro do leitor assíncrono do stream e travava o turno, inclusive o "parar" | `agy_ferramentas.rs`, laço de `agent.rs:1547` | uma tentativa ao fechar o passo; pendente é tentado de novo nas linhas seguintes e vira resultado tardio; o redutor junta imagem tardia |
+| R2 | imagem colada recusada (tamanho, limite, erro) deixava as fichas seguintes apontando a imagem errada | `hooks/useAttachments.ts` | o `addFiles` tira a referência da que não entrou e renumera |
+| R3 | com motor que não lê imagem, a imagem citada sumia da fileira e levava o aviso "não suportado" | `CommandConsole.tsx` | nesse caso tudo fica na fileira |
+| R4 | a ficha pendente piscava âmbar "não anexada" enquanto salvava | `FichaDeImagem.tsx` | "anexando…", neutra |
+| R5 | entrega fora do projeto que não é imagem abria no visualizador de Markdown | `EntregasDoTurno.tsx` | mostra na pasta |
+
+Achado que NÃO é desta frente, deixado para quem cuida:
+
+- **"Abrir no app padrão" do `ProjectFileViewer.tsx:373` não tem permissão.**
+  Ele chama `openPath` do plugin opener, e o `opener:default` do Tauri 2.5.4
+  só libera abrir URL e mostrar na pasta (conferido no `default.toml` do
+  plugin). O caminho certo é um comando Rust que abra só documento, nunca
+  executável; ele precisa de registro no `lib.rs`, que está no teto.
+
+Mudança de outra frente sobre esta: o aviso do F2 foi para a tira do composer,
+com recolher e dispensar (ADR-281, commits `0a47eba` e `22595b8`).
+
+## 10. O que falta, em ordem
+
+1. **Composer** (nova frente, pedido de 28/09). Mock
+   `docs/mocks/composer-refino.html`: instrução do campo no tom de metadado e
+   com teclas desenhadas; motor em texto de gente ("Opus mais recente",
+   "raciocínio alto"); modo seguro só com ícone e Liberado com texto âmbar;
+   contexto com número; microfone perto do enviar. Cinco decisões no fim do
+   mock. É ajuste de tom, texto e ordem, sem comportamento novo.
+2. **Pendências desta frente:** abrir no app padrão (acima); imagem gerada
+   pelo `codex exec` (colher o formato quando houver conta com geração); meta
+   extra do cartão de entrega (páginas, linhas, dimensões); soltar imagem do
+   Finder no ponto do texto; o "Padrão" do Codex sem modelo explícito (§8).
+3. **Do estudo, ainda não feitos** (`docs/competitors-maestri-2026-09-27.md`):
+   F7 atalho "próxima que pede você" (pequeno); G6 callouts `[!NOTE]` e tarefa
+   feita esmaecida (pequeno); G4 cor ANSI nos Bastidores; F3 worktree que
+   nasce pronto; F4 `@conversa`; F5 ferramenta `deliver`; F6 Mermaid; G5
+   aparelho no navegador; F8 segredos no Keychain; G9 números ao segurar ⌘.
+   G2 continua fora por decisão sua.
