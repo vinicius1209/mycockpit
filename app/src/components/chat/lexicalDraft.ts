@@ -19,6 +19,8 @@
 // `$` só constroem/leem os nós Lexical a partir desse plano e por isso só rodam
 // dentro de `editor.update()` / `editorState.read()`.
 
+import { $createImagemNoTexto } from "@/components/chat/FichaDeImagem"
+import { referencia, referencias } from "@/lib/imagemNoTexto"
 import {
   $createLineBreakNode,
   $createParagraphNode,
@@ -47,6 +49,8 @@ export type DraftToken =
   | { type: "text"; text: string }
   | { type: "mention"; name: string }
   | { type: "slash"; name: string }
+  /** "[imagem N]" com N entre as imagens do rascunho (G3). */
+  | { type: "imagem"; n: number }
 
 /** Uma linha do plano é uma sequência de tokens; `value` inteiro é a lista de
  *  linhas (separadas por `\n`, que vira LineBreakNode no editor). */
@@ -66,6 +70,7 @@ export function planDraft(
   value: string,
   mentionNames: string[],
   slashCommandNames?: readonly string[],
+  totalImagens = 0,
 ): DraftPlan {
   let slashName: string | null = null
   let rest = value
@@ -79,11 +84,24 @@ export function planDraft(
   const plan = rest.split("\n").map((line) =>
     splitMentions(line, mentionNames).flatMap((seg): DraftToken[] => {
       if (seg.type === "mention") return [{ type: "mention", name: seg.name }]
-      return seg.text ? [{ type: "text", text: seg.text }] : []
+      return seg.text ? comImagens(seg.text, totalImagens) : []
     }),
   )
   if (slashName) plan[0].unshift({ type: "slash", name: slashName })
   return plan
+}
+
+/** Texto → texto e fichas de imagem, pela mesma regra do Rust. Puro. */
+function comImagens(texto: string, total: number): DraftToken[] {
+  const out: DraftToken[] = []
+  let desde = 0
+  for (const r of referencias(texto, total)) {
+    if (r.inicio > desde) out.push({ type: "text", text: texto.slice(desde, r.inicio) })
+    out.push({ type: "imagem", n: r.n })
+    desde = r.fim
+  }
+  if (desde < texto.length) out.push({ type: "text", text: texto.slice(desde) })
+  return out
 }
 
 /** Lógica PURA inversa: plano → string (menção → `@nome`, linha → `\n`). É o que
@@ -97,7 +115,9 @@ export function serializePlan(plan: DraftPlan): string {
             ? `@${t.name}`
             : t.type === "slash"
               ? `/${t.name}`
-              : t.text,
+              : t.type === "imagem"
+                ? referencia(t.n)
+                : t.text,
         )
         .join(""),
     )
@@ -115,6 +135,7 @@ export function $setDraft(
   value: string,
   mentionNames: string[],
   slashCommands?: readonly SlashPillCommand[],
+  totalImagens = 0,
 ): void {
   const root = $getRoot()
   root.clear()
@@ -123,6 +144,7 @@ export function $setDraft(
     value,
     mentionNames,
     slashCommands?.map((c) => c.name),
+    totalImagens,
   )
   plan.forEach((line, i) => {
     if (i > 0) paragraph.append($createLineBreakNode())
@@ -136,6 +158,8 @@ export function $setDraft(
             source: cmd ? slashPillSourceLabel(cmd) : "",
           }),
         )
+      } else if (token.type === "imagem") {
+        paragraph.append($createImagemNoTexto(token.n))
       } else {
         paragraph.append($createTextNode(token.text))
       }

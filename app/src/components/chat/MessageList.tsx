@@ -21,6 +21,7 @@ import { TurnReceipt } from "@/components/chat/TurnReceipt"
 import { EntregasDoTurno } from "@/components/chat/EntregasDoTurno"
 import { entregasPorResultado, type Entrega } from "@/lib/entregas"
 import { vozDoNo, vozesPlanas, vozesPorTurno, type VozDaFala } from "@/lib/vozDoTurno"
+import { imagensCitadas, imagensDoEnvio } from "@/lib/imagemNoTexto"
 import { IncidentSequence } from "@/components/chat/IncidentSequence"
 import { PlanMilestone } from "@/components/chat/PlanMilestone"
 import { WorkingIndicator } from "@/components/chat/WorkingIndicator"
@@ -100,6 +101,10 @@ const MessageItem = memo(function MessageItem({
         source: "anexo" as const,
         mime: a.mime,
       }))
+    // Imagem citada no texto aparece no ponto dela (G3); a fileira mostra o resto.
+    const imagens = imagensDoEnvio(it.attachments ?? [])
+    const citadas = imagensCitadas(it.text ?? "", it.attachments ?? [])
+    const fileira = (it.attachments ?? []).filter((a) => !citadas.has(a.path))
     return (
       <div className={cn("flex flex-col gap-1.5", it.advisorTo ? "items-end" : "items-start")}>
         {/* Endereçamento (Especialistas E1): esta fala foi PARA um conselheiro,
@@ -108,9 +113,9 @@ const MessageItem = memo(function MessageItem({
         {it.advisorTo && <EnderecoDoConselheiro destinatario={it.advisorTo} />}
         {/* O rastro do parecer que este pedido levou (ADR-267). */}
         {it.pareceres?.map((p) => <LinhaDoParecerLevado key={p.itemId} levado={p} />)}
-        {it.attachments && it.attachments.length > 0 && (
+        {fileira.length > 0 && (
           <div className="flex max-w-full flex-wrap gap-1.5">
-            {it.attachments.map((a) => (
+            {fileira.map((a) => (
               <AttachmentThumb
                 key={a.path}
                 att={a}
@@ -130,7 +135,7 @@ const MessageItem = memo(function MessageItem({
             ))}
           </div>
         )}
-        {it.text && <UserMessageBubble itemId={it.id} text={it.text} aDireita={!!it.advisorTo} />}
+        {it.text && <UserMessageBubble itemId={it.id} text={it.text} aDireita={!!it.advisorTo} imagens={imagens} />}
       </div>
     )
   }

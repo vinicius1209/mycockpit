@@ -33,6 +33,13 @@ import {
   type LexicalNode,
 } from "lexical"
 import {
+  $createImagemNoTexto,
+  ImagemNoTextoNode,
+  ImagemNoTextoPlugin,
+  ImagensDoRascunho,
+} from "@/components/chat/FichaDeImagem"
+import type { Attachment } from "@/lib/attachments"
+import {
   BeautifulMentionsPlugin,
   $createBeautifulMentionNode,
   $isBeautifulMentionNode,
@@ -349,12 +356,16 @@ function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
  *  entra no caret. */
 function PasteAttachmentsPlugin({
   onPasteFiles,
+  totalImagens,
 }: {
   onPasteFiles?: (files: File[]) => void
+  totalImagens: number
 }) {
   const [editor] = useLexicalComposerContext()
   const handlerRef = useRef(onPasteFiles)
   handlerRef.current = onPasteFiles
+  const totalRef = useRef(totalImagens)
+  totalRef.current = totalImagens
   useEffect(() => {
     return editor.registerCommand(
       PASTE_COMMAND,
@@ -379,6 +390,14 @@ function PasteAttachmentsPlugin({
               if (line) selection.insertText(line)
             })
           }
+        }
+        // Imagem colada no meio de um texto vira ficha no cursor (G3), com o
+        // número que ela vai ter. Mistura com PDF ou tipo não declarado vai
+        // para a fileira: o número previsto poderia errar.
+        const soImagens = files.length > 0 && files.every((f) => f.type.startsWith("image/"))
+        const selection = $getSelection()
+        if (soImagens && $getRoot().getTextContent().trim() && $isRangeSelection(selection)) {
+          selection.insertNodes(files.map((_, i) => $createImagemNoTexto(totalRef.current + i + 1)))
         }
         if (files.length > 0) handlerRef.current?.(files)
         return true
@@ -411,11 +430,13 @@ function DraftSyncPlugin({
   mentionNames,
   slashCommands,
   lastText,
+  totalImagens,
 }: {
   value: string
   mentionNames: string[]
   slashCommands?: readonly SlashPillCommand[]
   lastText: React.RefObject<string | null>
+  totalImagens: number
 }) {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
@@ -423,7 +444,7 @@ function DraftSyncPlugin({
     lastText.current = value
     editor.update(
       () => {
-        $setDraft(value, mentionNames, slashCommands)
+        $setDraft(value, mentionNames, slashCommands, totalImagens)
         // Focado (recall, "/", sugestão): caret no fim. Sem foco, não mexe na
         // seleção, para não roubar o foco de quem só trocou de conversa.
         const rootEl = editor.getRootElement()
@@ -455,6 +476,8 @@ function FocusBridgePlugin({
   return null
 }
 
+const SEM_IMAGENS: readonly Attachment[] = []
+
 export function LexicalComposer({
   value,
   onChangeText,
@@ -475,6 +498,7 @@ export function LexicalComposer({
   onPasteFiles,
   slashCommands,
   onSlashPill,
+  imagens,
 }: {
   /** Draft da conversa ativa (string com `@nome`) — fonte da verdade externa. */
   value: string
@@ -515,7 +539,10 @@ export function LexicalComposer({
   /** Presença do pill "/" no editor → o dono suprime o popover de comandos
    *  (a gramática é UM comando por mensagem, sempre no início). */
   onSlashPill?: (present: boolean) => void
+  /** As imagens do rascunho, na ordem: "[imagem N]" vira ficha da N-ésima. */
+  imagens?: readonly Attachment[]
 }) {
+  const imgs = imagens ?? SEM_IMAGENS
   // último texto emitido/recebido — evita loop OnChange ↔ DraftSync.
   const lastText = useRef<string | null>(null)
   const lastMentions = useRef("")
@@ -544,7 +571,7 @@ export function LexicalComposer({
     theme: { beautifulMentions: mentionsTheme },
     // Pill "/" e menção "@" são a mesma classe de node; o
     // ComposerMentionComponent só muda o corpo do "/".
-    nodes: [ComposerMentionNode, composerMentionReplacement],
+    nodes: [ComposerMentionNode, composerMentionReplacement, ImagemNoTextoNode],
     onError(error: Error) {
       // não engolir em silêncio, mas também não derrubar a conversa.
       console.error("[LexicalComposer]", error)
@@ -553,6 +580,7 @@ export function LexicalComposer({
 
   return (
     <div className="relative">
+      <ImagensDoRascunho.Provider value={imgs}>
       <LexicalComposerBase initialConfig={initialConfig}>
         <RichTextPlugin
           contentEditable={
@@ -622,7 +650,7 @@ export function LexicalComposer({
         />
         <SlashMenuKeysPlugin slash={slash} />
         <HistoryRecallPlugin history={history} />
-        <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} />
+        <PasteAttachmentsPlugin onPasteFiles={onPasteFiles} totalImagens={imgs.length} />
         <PlainTextGuardPlugin />
         <SlashPillPlugin commands={slashCommands} />
         <SlashPillPresencePlugin onPresence={onSlashPill} />
@@ -631,9 +659,12 @@ export function LexicalComposer({
           mentionNames={mentionValues}
           slashCommands={slashCommands}
           lastText={lastText}
+          totalImagens={imgs.length}
         />
         <FocusBridgePlugin registerFocus={registerFocus} />
+        <ImagemNoTextoPlugin total={imgs.length} />
       </LexicalComposerBase>
+      </ImagensDoRascunho.Provider>
     </div>
   )
 }

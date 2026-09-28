@@ -9991,3 +9991,38 @@ considerou.
   chega precedida da própria fase; a última é `final_answer`) e o
   `fio-real.json` do Claude (o turno que termina em "Tudo pronto. Segue o
   relatório" tem 1 resposta e 4 narrações).
+
+### ADR-275 · A imagem entra no ponto do texto como "[imagem N]", e cada motor a recebe do jeito que sabe ✅
+- **Contexto (27/09/2026):** a imagem anexada ia numa fileira acima do texto,
+  e "compare esta com esta" dependia de você dizer qual era qual. Mock
+  `docs/mocks/estudo-maestri-prototipos.html` (G3). Spike com o Codex real:
+  mandadas intercaladas, a imagem 1 azul e a 2 vermelha, ele respondeu
+  "Imagem 1: azul; imagem 2: vermelho", pela posição.
+- **Decisão:**
+  1. **O formato público é o próprio texto `[imagem N]`**, com N a posição
+     entre as IMAGENS do envio. Não há marcador privado: fio, busca,
+     revezamento, Companion e notas leem a referência legível. A mesma regra
+     mora nos dois lados, com casos gêmeos (`lib/imagemNoTexto.ts` e
+     `attachments/imagem_no_texto.rs`).
+  2. **Composer:** `[imagem N]` vira ficha com miniatura, número e nome
+     cortado no meio (`FichaDeImagem`, nó decorador cujo texto continua
+     `[imagem N]`; o rascunho segue string). Imagem colada com texto no
+     composer entra no cursor com o número que vai ter; colagem com PDF ou
+     tipo não declarado vai para a fileira, porque o número previsto poderia
+     errar. Soltar do Finder segue para a fileira: o evento do Tauri não tem
+     cursor de texto. A fileira mostra só a imagem não citada; tirar uma
+     imagem apaga a referência dela e renumera as seguintes.
+  3. **Motores:** o Codex no app-server recebe texto e imagem intercalados no
+     ponto da referência (`entrada_do_codex`); Claude e Antigravity, que leem
+     caminho, ganham o número na lista; OpenCode e o Codex `exec`, que recebem
+     por flag, ganham uma legenda da ordem. O nome original nunca entra no
+     prompt. É o transporte de cada motor que costura; o código genérico não
+     compara nome, e não houve capability nova.
+  4. **O que cai no caminho não desloca o resto:** anexo expirado ou que o
+     motor não lê sai no `do_run`, e o prompt é renumerado contra o que de
+     fato vai; a imagem que caiu vira `[imagem N não enviada]`.
+  5. **Fio:** a mensagem enviada mostra a mesma ficha no lugar da referência,
+     e a fileira acima dela só o que não foi citado.
+- **Para caber:** os testes do `adapters.rs` (3.200 linhas inline) foram para
+  arquivos por motor, todos abaixo do teto, com os auxiliares num só; a
+  catraca do `adapters.rs` desceu de 7515 para cerca de 4300.

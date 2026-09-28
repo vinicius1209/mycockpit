@@ -131,10 +131,7 @@ pub fn thread_params(req: &RunRequest, resume: Option<&str>) -> Value {
 /// um item `localImage` (o app-server só recebe path — o `-i` do exec é o gêmeo).
 pub fn turn_params(thread_id: &str, req: &RunRequest, prompt: &str) -> Value {
     let (approval, sandbox) = policy(req.permission, &req.extra_dirs);
-    let mut input = vec![json!({ "type": "text", "text": prompt })];
-    for a in &req.attachments {
-        input.push(json!({ "type": "localImage", "path": a.path }));
-    }
+    let input = crate::attachments::imagem_no_texto::entrada_do_codex(prompt, &req.attachments);
     let mut p = json!({
         "threadId": thread_id,
         "cwd": req.cwd,

@@ -7,6 +7,9 @@
 //! Invariante de segurança: o NOME original do usuário é só display (chip), nunca
 //! vira caminho de disco (usamos o hash) nem é injetado no prompt.
 
+#[path = "imagem_no_texto.rs"]
+pub mod imagem_no_texto;
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -418,14 +421,17 @@ pub fn resolve_live(app: &AppHandle, atts: Vec<Attachment>) -> (Vec<Attachment>,
 
 /// Os anexos que chegam ao adapter neste run: rel→abs, descarta os sumidos e
 /// os que o motor não lê, avisando no fio de cada um (saiu de `agent.rs` pela
-/// catraca de tamanho; a regra é a mesma).
+/// catraca de tamanho; a regra é a mesma). Devolve também o prompt com as
+/// "[imagem N]" renumeradas contra o que de fato vai (ADR-275).
 pub fn do_run(
     app: &AppHandle,
     atts: Vec<Attachment>,
+    prompt: String,
     agent: &str,
     suporta: impl Fn(&AttachmentKind) -> bool,
     avisar: impl Fn(String),
-) -> Vec<Attachment> {
+) -> (Vec<Attachment>, String) {
+    let originais = atts.clone();
     let (live, missing) = resolve_live(app, atts);
     let (used, unsupported): (Vec<_>, Vec<_>) =
         live.into_iter().partition(|a| suporta(&a.kind));
@@ -438,7 +444,8 @@ pub fn do_run(
             a.name
         ));
     }
-    used
+    let prompt = crate::attachments::imagem_no_texto::ao_enviado(&prompt, &originais, &used);
+    (used, prompt)
 }
 
 /// Núcleo puro do `resolve_live`: `base` é o app_data, `root` a raiz de anexos.

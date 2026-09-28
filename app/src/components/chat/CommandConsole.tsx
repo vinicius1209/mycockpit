@@ -53,6 +53,7 @@ import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
 import { isTauri } from "@/lib/db"
 import { useComposerDrafts } from "@/store/composerDrafts"
+import { imagensCitadas, imagensDoEnvio } from "@/lib/imagemNoTexto"
 import { forceSendDraft, forceSendQueued, pullQueued } from "@/components/chat/filaComposer"
 import { BaseDoComposer } from "@/components/chat/BaseDoComposer"
 
@@ -253,6 +254,12 @@ export function CommandConsole({
   const { histIdx, setHistIdx, resetHistory, userPrompts, recallPrev, recallNext } =
     history
   const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
+  // Imagem citada no texto mora no texto (ficha); a fileira mostra o resto.
+  const imagensDoRascunho = useMemo(() => imagensDoEnvio(attachments), [attachments])
+  const anexosDaFileira = useMemo(() => {
+    const citadas = imagensCitadas(value, attachments)
+    return citadas.size ? attachments.filter((a) => !citadas.has(a.path)) : attachments
+  }, [value, attachments])
 
   // A persona mora na conversa (conv.presetId), que é de onde o envio lê. Ela
   // é o trio agent/modelo/esforço fechado: mexer num item desfaz a seleção.
@@ -474,6 +481,7 @@ export function CommandConsole({
         slash={slashBridge}
         history={historyBridge}
         onPasteFiles={addFiles}
+        imagens={imagensDoRascunho}
         slashCommands={commands}
         onSlashPill={setHasCommandPill}
       />
@@ -522,7 +530,7 @@ export function CommandConsole({
         footerClassName="p-2.5 pt-1"
         chips={
           <AttachmentChips
-            attachments={attachments}
+            attachments={anexosDaFileira}
             caps={caps}
             destLabel={dest.label}
             onRemove={removeAttachment}

@@ -468,19 +468,19 @@ pub async fn run_agent(
     // Com o run já no mapa: se o modo for "enquanto um agente trabalha", é
     // agora que a máquina para de poder dormir.
     registry.2.reavalia(registry.ativos());
-    // anexos: rel→abs + descarta sumidos; particiona por capacidade do agent.
-    let used = attachments::do_run(
+    // anexos: rel→abs, descarta sumidos, particiona por capacidade, renumera as imagens.
+    let (used, prompt) = attachments::do_run(
         &app,
         attachments,
+        prompt,
         &agent,
         |k| adapter.supports_attachment(k),
         |message| {
             let _ = on_event.send(AgentEvent::Notice { message });
         },
     );
-    // A UI permite turno só com anexo: texto vazio é legítimo quando ao menos
-    // um arquivo vivo e suportado chega ao adapter. Sem nenhum conteúdo útil,
-    // aborta antes do spawn; stdin é null e omitir o prompt mudaria o modo da CLI.
+    // Turno só com anexo é legítimo se um arquivo vivo e suportado chega ao adapter.
+    // Sem conteúdo útil, aborta antes do spawn: omitir o prompt mudaria o modo da CLI.
     validate_run_content(&prompt, used.len())?;
     let instruction_sources = match crate::plugin_contributions::verify_instruction_sources(
         &app,

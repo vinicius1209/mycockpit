@@ -24,6 +24,9 @@ import {
 } from "@/lib/marcacao"
 import { useApp } from "@/store/app"
 import { cn } from "@/lib/utils"
+import { FichaDeImagem, ImagensDoRascunho } from "@/components/chat/FichaDeImagem"
+import type { Attachment } from "@/lib/attachments"
+import { referencias } from "@/lib/imagemNoTexto"
 
 export function MentionText({ text }: { text: string }) {
   const list = usePresets((s) => s.list)
@@ -63,15 +66,33 @@ export function MentionText({ text }: { text: string }) {
   )
 }
 
+/** "[imagem N]" da mensagem vira a mesma ficha do composer (G3). */
+function TextoComImagens({ text, imagens }: { text: string; imagens: readonly Attachment[] }) {
+  const refs = referencias(text, imagens.length)
+  if (refs.length === 0) return <MentionText text={text} />
+  const partes: React.ReactNode[] = []
+  let desde = 0
+  for (const r of refs) {
+    if (r.inicio > desde) partes.push(<MentionText key={`t${desde}`} text={text.slice(desde, r.inicio)} />)
+    partes.push(<FichaDeImagem key={`i${r.inicio}`} n={r.n} />)
+    desde = r.fim
+  }
+  if (desde < text.length) partes.push(<MentionText key={`t${desde}`} text={text.slice(desde)} />)
+  return <ImagensDoRascunho.Provider value={imagens}>{partes}</ImagensDoRascunho.Provider>
+}
+
 export function UserMessageBubble({
   itemId,
   text,
   aDireita,
+  imagens = [],
 }: {
   itemId: string
   text: string
   /** Pedido a um especialista (ADR-267): a bolha vai à direita, o bico também. */
   aDireita?: boolean
+  /** As imagens enviadas com a mensagem, na ordem (as "[imagem N]" do texto). */
+  imagens?: readonly Attachment[]
 }) {
   const [copied, setCopied] = useState(false)
   const [forking, setForking] = useState(false)
@@ -181,7 +202,7 @@ export function UserMessageBubble({
         data-selectable
         className={cn("max-w-full rounded-2xl bg-secondary px-4 py-2.5 text-[14px] break-words whitespace-pre-wrap [overflow-wrap:anywhere] text-foreground", aDireita ? "rounded-tr-md" : "rounded-tl-md")}
       >
-        <MentionText text={corpo} />
+        <TextoComImagens text={corpo} imagens={imagens} />
       </div>
       {marcacoes.map((descricao, i) => (
         <details key={`marcacao:${i}`} className="mt-1 max-w-full">

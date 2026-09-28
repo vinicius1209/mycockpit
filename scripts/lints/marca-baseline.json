@@ -24,7 +24,8 @@
     "app/src-tauri/src/mcp_auth.rs": "KEYCHAIN_SERVICE_LEGADO: o login OAuth de cada MCP está guardado sob o serviço antigo.",
     "app/src-tauri/src/statusline_install.rs": "SCRIPT_NAME_LEGADO e ORIGINAL_MARKER_LEGADO: o marcador guarda A STATUSLINE ORIGINAL DO USUARIO dentro do script instalado.",
     "app/src-tauri/src/frota_dir.rs": "Resolvedor Rust: declara PASTA_LEGADA e testa a leitura dupla.",
-    "docs/frota-rename-plan.md": "O plano DO rename: ele cita o nome antigo porque o assunto dele é esse. Sai quando o plano for arquivado, no passo 8."
+    "docs/frota-rename-plan.md": "O plano DO rename: ele cita o nome antigo porque o assunto dele é esse. Sai quando o plano for arquivado, no passo 8.",
+    "app/src-tauri/src/adapters_claude_tests.rs": "Payload REAL do incidente do build test (ADR-016): o caminho que o Claude escreveu contém a pasta do repositório no disco, que ainda tem o nome antigo. Sai quando a fixture for recolhida de novo ou a pasta mudar de nome."
   },
   ".claude/skills/build/SKILL.md": 3,
   "AGENTS.md": 1,
@@ -35,7 +36,7 @@
   "app/src-tauri/Cargo.toml": 1,
   "app/src-tauri/companion/index.html": 9,
   "app/src-tauri/src/AGENTS.md": 1,
-  "app/src-tauri/src/adapters.rs": 13,
+  "app/src-tauri/src/adapters_claude_tests.rs": 2,
   "app/src-tauri/src/agy_live_tests.rs": 2,
   "app/src-tauri/src/approval.rs": 2,
   "app/src-tauri/src/browser_orfaos.rs": 2,

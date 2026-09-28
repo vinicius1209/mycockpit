@@ -1,3 +1,4 @@
+import { imagensDoEnvio, semAImagem } from "@/lib/imagemNoTexto"
 import { useEffect, useState, type SetStateAction } from "react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { open } from "@tauri-apps/plugin-dialog"
@@ -100,6 +101,10 @@ export function useAttachments({
   }, [activeId, conversationDraft, loadDraft])
 
   function removeAttachment(path: string) {
+    // A imagem que sai leva a referência dela do texto, e as seguintes descem
+    // um número para continuarem apontando a mesma imagem (G3).
+    const n = imagensDoEnvio(attachments).findIndex((x) => x.path === path) + 1
+    if (n > 0) setValue((v) => semAImagem(v, n))
     setAttachments((a) => a.filter((x) => x.path !== path))
     revokeAttachmentUrl(path) // libera o object URL junto do blob (ciclo de vida)
     void deleteAttachment(path)
