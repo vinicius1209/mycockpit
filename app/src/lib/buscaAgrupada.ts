@@ -130,8 +130,12 @@ export function linhasDaBusca<E extends EntradaDaBusca>(
 
 /** Onde a busca casou no nome, para marcar o trecho. Sem casar, tudo liso. */
 export function trechosDoNome(nome: string, busca: string): { texto: string; casou: boolean }[] {
-  const q = busca.trim().toLocaleLowerCase("pt-BR")
-  const i = q ? nome.toLocaleLowerCase("pt-BR").indexOf(q) : -1
+  // A busca casa termos separados por espaço, e "/pasta/" é escopo, não nome:
+  // destaca o primeiro termo que aparece no nome.
+  const minusculo = nome.toLocaleLowerCase("pt-BR")
+  const termos = busca.toLocaleLowerCase("pt-BR").split(/\s+/).filter((t) => t && !t.startsWith("/"))
+  const q = termos.find((t) => minusculo.includes(t)) ?? ""
+  const i = q ? minusculo.indexOf(q) : -1
   if (i < 0) return [{ texto: nome, casou: false }]
   return [
     { texto: nome.slice(0, i), casou: false },

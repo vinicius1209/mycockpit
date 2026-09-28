@@ -56,3 +56,27 @@ pub(crate) fn ao_evento(window: &tauri::Window, event: &tauri::WindowEvent) {
         }
     }
 }
+
+/// Os eventos do app como um todo: o Dock e os pedidos de saída.
+pub(crate) fn ao_evento_do_app(app_handle: &tauri::AppHandle, event: tauri::RunEvent) {
+    // No macOS, o AppKit também considera o HUD auxiliar uma janela
+    // visível. Clicar no Dock sempre expressa a intenção de restaurar
+    // `main`, mesmo quando `has_visible_windows` vier verdadeiro.
+    #[cfg(target_os = "macos")]
+    if let tauri::RunEvent::Reopen {
+        has_visible_windows,
+        ..
+    } = &event
+    {
+        tray::handle_reopen(app_handle, *has_visible_windows);
+    }
+    // Saídas programáticas passam por este evento. Cmd+Q, o menu do
+    // app e o Dock são interceptados antes pelo delegate do AppKit em
+    // quit.rs, pois o item Quit nativo chama terminate: diretamente.
+    if let tauri::RunEvent::ExitRequested { api, .. } = &event {
+        if !quit::allows_exit(app_handle) {
+            api.prevent_exit();
+            quit::request_quit(app_handle, quit::QuitOrigin::Native);
+        }
+    }
+}

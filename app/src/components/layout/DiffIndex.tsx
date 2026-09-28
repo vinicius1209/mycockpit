@@ -12,7 +12,6 @@ import {
   Check,
   CheckCheck,
   FolderTree,
-  GitBranch,
   GitPullRequest,
   List,
   Loader2,
@@ -23,6 +22,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react"
+import { publicarStatus } from "@/lib/statusCompartilhado"
 import {
   loadGitStatus,
   stageAll,
@@ -32,6 +32,13 @@ import {
 } from "@/lib/git"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
 import { CommitComposer } from "./DiffPanel/CommitComposer"
+import { BotaoDeSincronia } from "./DiffPanel/BotaoDeSincronia"
+import { ConflitoDoGit } from "./DiffPanel/ConflitoDoGit"
+import { FaixaDoGit } from "./DiffPanel/FaixaDoGit"
+import { HistoricoGit } from "./DiffPanel/HistoricoGit"
+import { SeletorDeBranch } from "./DiffPanel/SeletorDeBranch"
+import { estadoDoRepo, idadeDaBusca, type EstadoDoRepo } from "@/lib/gitSync"
+import { useGitSync } from "@/store/gitSync"
 import { useAlteracoesVivas } from "./DiffPanel/useAlteracoesVivas"
 import { GitSection, GitFileList } from "./DiffPanel/GitSection"
 import { PrComposer } from "./DiffPanel/shipBar"
@@ -46,19 +53,26 @@ import { cn } from "@/lib/utils"
  *  (sem spinner) e relê por trás. Antes cada troca desmontava a aba, zerava o
  *  estado e rodava ~6 comandos git com a tela vazia. */
 const ultimaLeitura = new Map<string, GitStatus>()
+const ultimoEstado = new Map<string, EstadoDoRepo>()
 
 export function DiffIndex({
   cwd,
   delivery,
   onRequestFix,
   onCloseDelivery,
+  onPedirAoAgente,
 }: {
   cwd: string
   delivery?: { text: string } | null
   onRequestFix?: () => void
   onCloseDelivery?: () => void
+  /** Escreve no composer da conversa ativa, sem enviar. */
+  onPedirAoAgente?: (texto: string) => void
 }) {
   const [status, setStatus] = useState<GitStatus | null>(() => ultimaLeitura.get(cwd) ?? null)
+  const [estado, setEstado] = useState<EstadoDoRepo | null>(() => ultimoEstado.get(cwd) ?? null)
+  const faixa = useGitSync((s) => s.faixa[cwd])
+  const executar = useGitSync((s) => s.executar)
   const [loading, setLoading] = useState(true)
   // Uma leitura por vez: pedido que chega no meio vira UMA releitura no fim,
   // em vez de empilhar processos git (cliques rápidos, rajada de sinais).
@@ -85,11 +99,16 @@ export function DiffIndex({
     const pasta = cwd
     setLoading(true)
     setLoadError(null)
-    void loadGitStatus(pasta)
-      .then((next) => {
+    // O estado do repositório (remoto, busca, conflito) é acessório: sem ele
+    // a aba segue mostrando as alterações, só sem os gestos de sincronia.
+    void Promise.all([loadGitStatus(pasta), estadoDoRepo(pasta).catch(() => null)])
+      .then(([next, repo]) => {
         ultimaLeitura.set(pasta, next)
+        publicarStatus(pasta, next)
+        if (repo) ultimoEstado.set(pasta, repo)
         if (loadEpoch.current !== epoch) return
         setStatus(next)
+        setEstado(repo)
       })
       .catch((error) => {
         if (loadEpoch.current !== epoch) return
@@ -113,6 +132,7 @@ export function DiffIndex({
   useEffect(() => {
     // Pasta nova: mostra a última lista conhecida dela (ou nada) e relê.
     setStatus(ultimaLeitura.get(cwd) ?? null)
+    setEstado(ultimoEstado.get(cwd) ?? null)
     pendente.current = false
     lendo.current = false
     reload()
@@ -256,16 +276,7 @@ export function DiffIndex({
           {/* Barra STICKY: Branch, Sync, Totais e Controles Globais */}
           <div className="sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b bg-card px-3 py-1.5 text-[11px]">
             {status.branch ? (
-              <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground">
-                <GitBranch className="size-3 shrink-0" />
-                <span className="truncate">{status.branch}</span>
-                {status.upstream && (status.ahead > 0 || status.behind > 0) && (
-                  <span className="ml-1 text-[11px] tabular-nums text-foreground/80">
-                    {status.ahead > 0 && `↑${status.ahead}`}
-                    {status.behind > 0 && `↓${status.behind}`}
-                  </span>
-                )}
-              </span>
+              <SeletorDeBranch cwd={cwd} branch={status.branch} alteracoes={totalChanges} />
             ) : (
               <span className="text-muted-foreground/60">Alterações</span>
             )}
@@ -307,15 +318,37 @@ export function DiffIndex({
             >
               <RefreshCw className={cn("size-3.5", loading && "animate-spin")} />
             </button>
+
+            <BotaoDeSincronia cwd={cwd} status={status} estado={estado} now={Date.now()} />
           </div>
 
-          {/* Composer de Commit no topo */}
-          <CommitComposer
-            cwd={cwd}
-            stagedCount={staged.length}
-            totalChanges={totalChanges}
-            onCommitted={reload}
-          />
+          {status.upstream && status.behind > 0 && estado && (
+            <p className="shrink-0 px-3 pt-1.5 text-[11px] text-muted-foreground">
+              ↓{status.behind} desde a busca {idadeDaBusca(estado.ultimaBusca, Date.now())}
+            </p>
+          )}
+
+          {faixa && <FaixaDoGit cwd={cwd} faixa={faixa} status={status} />}
+
+          {estado?.operacao ? (
+            <ConflitoDoGit
+              cwd={cwd}
+              estado={{ ...estado, operacao: estado.operacao }}
+              onPedirAoAgente={onPedirAoAgente}
+            />
+          ) : (
+            <CommitComposer
+              cwd={cwd}
+              stagedCount={staged.length}
+              totalChanges={totalChanges}
+              onCommitted={reload}
+              onEnviar={
+                estado?.temRemoto
+                  ? () => void executar(cwd, status.upstream ? "enviar" : "publicar")
+                  : undefined
+              }
+            />
+          )}
 
           {/* Área com rolagem contendo as seções de arquivos */}
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -423,6 +456,10 @@ export function DiffIndex({
                 )}
               </div>
             )}
+            <HistoricoGit
+              cwd={cwd}
+              versao={`${status.branch}:${status.ahead}:${status.behind}:${totalChanges}`}
+            />
           </div>
 
           {/* Rodapé: Abrir Pull Request ou link de PR aberto */}

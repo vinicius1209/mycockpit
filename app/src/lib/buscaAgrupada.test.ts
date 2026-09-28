@@ -107,5 +107,10 @@ describe("busca agrupada: nomes", () => {
       { texto: ".json", casou: false },
     ])
     expect(trechosDoNome("README.md", "config")).toEqual([{ texto: "README.md", casou: false }])
+    // Com escopo e mais de um termo, destaca o termo que está no nome.
+    expect(trechosDoNome("PLAN.md", "/docs/ plan")).toEqual([
+      { texto: "PLAN", casou: true },
+      { texto: ".md", casou: false },
+    ])
   })
 })

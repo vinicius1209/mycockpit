@@ -117,6 +117,7 @@ export function ContextPanel() {
             delivery={delivery}
             onRequestFix={requestDeliveryFix}
             onCloseDelivery={closeDeliveryDiff}
+            onPedirAoAgente={activeConvId ? (texto) => prefillComposer(activeConvId, texto) : undefined}
           />
         ) : (
           <ContextoDoProjeto project={project} readerAgent={readerAgent} />

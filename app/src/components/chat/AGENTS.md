@@ -215,9 +215,14 @@ nesses gestos que apagava o que a pessoa estava digitando (K1).
   no marcador. Bloco novo segue o mesmo caminho: tipo em `BlocoDoRascunho`,
   `parseBlocos`, chip em `BlocosDoRascunho.tsx`, formato + moldura em `lib/`.
 - Arquivo do sistema chega pelo evento do Tauri (`SolturaNoComposer`), nunca
-  pelo `drop` do HTML5; o alvo é o `[data-composer-card]` do `ComposerShell`.
-- Arquivo solto que não é anexo (imagem e PDF seguem anexo) vira CARTÃO, bloco
-  `arquivo` do rascunho (ADR-252), venha do Finder ou da árvore. Nunca volte a
+  pelo `drop` do HTML5. O alvo de ARQUIVO é a coluna da conversa inteira
+  (`[data-coluna-da-conversa]` no `ChatPanel`, fio e composer), com o mesmo
+  véu (`VeuDeSoltura`) para o Finder e a árvore; texto e imagem do fio seguem
+  soltando só no `[data-composer-card]` (ADR-280).
+- Os dois caminhos de arquivo acabam em `soltarCaminhos`: não crie uma terceira
+  soltura. O que não é anexo (imagem e PDF seguem anexo) vira CARTÃO, bloco
+  `arquivo` do rascunho (ADR-252), venha do Finder ou da árvore, e o rótulo do
+  véu diz o verbo do resultado (`rotuloDosCaminhos`). Nunca volte a
   despejar `@caminho` no texto. No envio ele é o ÚLTIMO envelope
   (`textoDoEnvio`), então é o primeiro a sair na bolha e na moldura do prompt
   (`emoldurarArquivos` em `withNotasDoTurno`). A pasta do arquivo de fora do

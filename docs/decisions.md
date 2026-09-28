@@ -10074,3 +10074,111 @@ considerou.
 - **Verificado:** stream e transcript reais em
   `src-tauri/testdata/agy-1.2.12/`, e um teste ao vivo (ignorado na suíte)
   que transformou o JPG real de 221 KB em evidência.
+
+### ADR-278 · A aba Alterações envia, traz, troca de branch e guarda, e nada sai da máquina sem o seu gesto ✅
+- **Contexto (28/09/2026):** a aba fazia status, preparo, descarte, commit e
+  pull request, mas o único push morava dentro do pull request, o `↑3` era
+  texto e a branch não trocava (docs/explorador-de-arquivos-prd.md, Parte B,
+  e o mock `docs/mocks/alteracoes-git.html`).
+- **Decisão:**
+  1. **Módulo próprio:** os comandos novos moram em `git_sync.rs` (o `git.rs`
+     está congelado acima do teto), todos `async` com `spawn_blocking`. O
+     `lib.rs` abriu espaço levando o fecho de `RunEvent` para
+     `janela_eventos.rs`.
+  2. **Rede sem prompt e com prazo:** `GIT_TERMINAL_PROMPT=0`, SSH em
+     `BatchMode`, `LC_ALL=C` e 2 minutos. Credencial que falta vira erro, e o
+     erro vem classificado (`acesso`, `recusado`, `divergiu`, `conflito`,
+     `alteracoes-locais`, `sem-rede`, `prazo`) pelas frases do git, com as
+     saídas reais nos testes.
+  3. **Só ícone e contagem no botão** (`↑3`, `↓2`, `↓2 ↑3`, nuvem para
+     publicar), o nome do gesto no `ui/tooltip` e no `aria-label`. Em dia, o
+     botão busca. O `↓` diz a idade da última busca, lida do `FETCH_HEAD`.
+  4. **Trazer só avança** (`--ff-only`); rebase é gesto explícito na faixa.
+     **Nunca `--force`**, e "Criar commit e enviar" some com o retificar.
+  5. **Conta certa:** acesso negado num remoto do GitHub mostra a conta ativa e
+     oferece o dono do repositório (pela URL) quando ele está logado no gh;
+     troca e repete o gesto.
+  6. **Turno rodando na pasta barra** trocar de branch e trazer commits: são os
+     gestos que mudam os arquivos debaixo do agente. Enviar e buscar seguem.
+  7. **Conflito é estado, não aviso:** rebase ou merge parado vira o modo
+     conflito da aba, lido do repositório (`rebase-merge`, `MERGE_HEAD`,
+     `diff --diff-filter=U`). "Pedir ao agente" só escreve no composer.
+  8. **Estado por pasta numa store** (`store/gitSync.ts`): push leva segundos
+     e a aba pode desmontar no meio; ao voltar, o botão ainda gira e a faixa
+     ainda está lá. Depois de cada gesto, a aba relê pelo `avisarGravacao`.
+- **Não fizemos:** busca automática ao voltar o foco (fica para quando a
+  pessoa pedir; hoje a busca é gesto e a idade aparece), abrir o diff de um
+  commit do histórico (a aba de diff não lê commit), e o menu por arquivo
+  (BD7, que espera o catálogo da Parte A).
+
+### ADR-279 · Arquivo e pasta têm um catálogo só de gestos, na árvore, na aba e no fio ✅
+- **Contexto (28/09/2026):** a árvore de arquivos não tinha botão direito, a
+  aba de arquivo tinha um menu próprio ("Copiar caminho") e o chip do fio
+  outro, com rótulos diferentes para o mesmo gesto
+  (docs/explorador-de-arquivos-prd.md, Parte A, D1 e R1).
+- **Decisão:**
+  1. **Catálogo puro** em `lib/acoesDeArquivo.ts` (alvo → itens, com rótulo e
+     atalho), e os efeitos num lugar só,
+     `components/common/executarAcaoDeArquivo.ts`. A aba e a árvore montam as
+     linhas por `LinhasDoMenuDeArquivo`; o chip do fio (ADR-042) toma os
+     rótulos do catálogo.
+  2. **Item que não faz não existe:** sem conversa não há citar, fora do app
+     não há "Mostrar na pasta", sem mudança no git não há "Ver alterações",
+     arquivo de fora da raiz perde o caminho relativo e "Mostrar na árvore".
+  3. **Um menu para a árvore inteira** (`PointMenu` no ponto do clique), nada
+     por linha. Teclado: tecla de menu ou Shift+F10 abrem, ⌘↵ (Ctrl ↵) cita a
+     linha focada.
+  4. **Citar é o mesmo cartão do arrasto** (ADR-252), e a conversa volta à
+     vista com o cursor no composer.
+  5. **"Abrir no app padrão"** é comando Rust (`abrir_no_sistema.rs`) com o
+     caminho contido na raiz e lista fechada de extensões: abrir `.sh`,
+     `.command` ou `.app` no app padrão é executar, e isso não sai de menu.
+  6. **Busca com escopo:** a busca da árvore passou a casar termos separados
+     por espaço, e termo que começa com `/` ancora na raiz. "Buscar nesta
+     pasta" escreve `/docs/ ` na busca, à vista e apagável.
+  7. **O `git status` é lido por uma fonte compartilhada por pasta**
+     (`lib/statusCompartilhado.ts`): na árvore e nas abas de arquivo, pedidos
+     simultâneos viram uma chamada, relida só pelos sinais de
+     `lib/sinaisDoDisco`. A aba Alterações NÃO pega carona: ela relê logo
+     depois de uma ação sua, e uma leitura de antes da ação a deixaria velha;
+     ela lê por conta própria e publica o resultado no cache.
+- **Não fizemos:** criar, renomear, mover e apagar (PRD seguinte), e a seleção
+  múltipla na árvore (F4); o catálogo já sabe o alvo com vários itens.
+
+### ADR-280 · A árvore mostra o que importa no hover, diz qual motor alterou cada arquivo, e arrasta e seleciona como o Finder ✅
+- **Contexto (28/09/2026):** Parte A do docs/explorador-de-arquivos-prd.md
+  (F2 a F4). O hover era o `title` do sistema; nada dizia quem tinha mexido
+  num arquivo, e item de tool não guardava o motor que o fez (uma conversa que
+  trocou de Claude para Codex atribuiria tudo ao Codex); arrastar da árvore não
+  acendia nada e dizia "anexar" para o que vira cartão; não havia seleção.
+- **Decisão:**
+  1. **Cartão de hover único** para a árvore (`CartaoDaArvore`), reposicionado
+     na linha, abrindo em ~500 ms. Nada é lido antes; o lido fica em cache por
+     caminho. Dados de `detalhe_do_caminho` (stat, linhas até 1 MB, destino do
+     link, contido na raiz). Sem contagem de diff.
+  2. **Letra de git na linha** (M, A, U, D, em cinza) e ponto na pasta com filho
+     mudado, do `git status` compartilhado por pasta (ADR-279); o conjunto de
+     pastas sai uma vez por status.
+  3. **Quem alterou**, de qualquer conversa do projeto, pelo FTS dos itens
+     (`quem_alterou`, só leitura, 2 a 4 ms no banco real). O Rust devolve só os
+     campos curtos da entrada e exige o caminho na ENTRADA (não no resultado);
+     a régua alteração × leitura é a do fio (`classificarAcao`), no front.
+     "Fora de uma conversa" quando o `mtime` passa do fim da última ação.
+  4. **O motor é rastreado:** o item de tool nasce com `agent` (o motor do
+     turno). O passado se reconstrói pela primeira linha de `turn_costs` depois
+     da ação e antes da próxima fala; sem ela, o turno vizinho se os dois lados
+     concordam; por fim, o motor atual da conversa. Migração 63:
+     `idx_turn_costs_conv_time`.
+  5. **Arrasto com um idioma só:** o arquivo da árvore vira caminho absoluto e
+     passa pela MESMA soltura do Finder (`soltarCaminhos`): imagem e PDF viram
+     anexo, o resto cartão. O alvo de arquivo é a coluna da conversa inteira,
+     com um véu só (`VeuDeSoltura`) e o verbo do resultado ("citar",
+     "anexar"); o fantasma mostra ícone, nome e "+N".
+  6. **Seleção múltipla** neutra: ⌘/Ctrl+clique, Shift+clique, Esc; menu, ⌘↵ e
+     arrasto agem na seleção. O ⌘↵ da árvore deixa o foco na linha.
+- **Não fizemos:** arrastar da árvore para fora do app (o arrasto por ponteiro
+  não fala com o sistema), e alteração feita por fase de missão ou candidato
+  de disputa no "quem alterou" (não moram em `conversation_items`).
+- **Achado:** as ferramentas do Antigravity anteriores à ADR-253 estão no
+  banco com o nome cru (`replace_file_content`), e não entram no "quem
+  alterou"; as de depois já chegam no vocabulário do contrato.

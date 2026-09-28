@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Check, ChevronDown, FileText, Loader2, Sparkles } from "lucide-react"
+import { ArrowUp, Check, ChevronDown, FileText, Loader2, Sparkles } from "lucide-react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { gitCommit } from "@/lib/git"
 import { generateCommitMessage } from "@/lib/commitAi"
@@ -11,6 +11,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -23,11 +24,14 @@ export function CommitComposer({
   stagedCount,
   totalChanges,
   onCommitted,
+  onEnviar,
 }: {
   cwd: string
   stagedCount: number
   totalChanges: number
   onCommitted: () => void
+  /** Envia depois do commit. Ausente quando não há remoto para onde enviar. */
+  onEnviar?: () => void
 }) {
   const [title, setTitle] = useState("")
   const [body, setBody] = useState("")
@@ -65,7 +69,7 @@ export function CommitComposer({
     }
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(enviarDepois = false) {
     if (busy || !hasChanges) return
     const cleanTitle = title.trim()
     if (!cleanTitle) {
@@ -87,6 +91,7 @@ export function CommitComposer({
       setShowBody(false)
       setAmend(false)
       onCommitted()
+      if (enviarDepois) onEnviar?.()
     } catch (e) {
       avisar.erro("Não consegui fazer o commit.", { detalhe: mensagemDe(e) })
     } finally {
@@ -226,6 +231,19 @@ export function CommitComposer({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-56">
+              {onEnviar && (
+                <>
+                  <DropdownMenuItem
+                    // Retificar o que já foi enviado pediria --force, que este gesto não faz.
+                    disabled={amend || busy || !title.trim()}
+                    onSelect={() => void handleSubmit(true)}
+                  >
+                    <ArrowUp />
+                    Criar commit e enviar
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </>
+              )}
               <DropdownMenuItem
                 onSelect={() => {
                   if (showBody) setBody("")

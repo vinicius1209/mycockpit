@@ -56,6 +56,9 @@ type ChatItemBody =
       input: unknown
       /** tool_use_id do CLI (liga o tool_result à linha). */
       toolId?: string
+      /** O motor do turno que fez a ação: é quem aparece em "quem alterou"
+       *  mesmo depois de a conversa trocar de motor (ADR-280). */
+      agent?: string
       /** Tool `Task`/agent que originou esta ação. Preservado do provider para
        *  reconstruir a árvore do Fio Vivo após restart. */
       parentToolId?: string

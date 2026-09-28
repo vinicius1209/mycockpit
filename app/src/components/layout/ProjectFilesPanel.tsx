@@ -39,6 +39,12 @@ import {
 } from "@/lib/buscaAgrupada"
 import { chaveDaLinha, LinhaDeGrupoDaBusca, nomeDoCaminhoRaiz } from "@/components/layout/LinhaDeGrupoDaBusca"
 import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
+import { useMenuDaArvore } from "@/components/layout/MenuDeArquivo"
+import { SinalDaLinha, useCartaoDaArvore } from "@/components/layout/CartaoDaArvore"
+import { useAlteradosNoGit } from "@/components/layout/useAlteradosNoGit"
+import { alvoDosItens, RodapeDaPasta, useSelecaoDaArvore } from "@/components/layout/useSelecaoDaArvore"
+import { pastasComMudanca } from "@/lib/statusCompartilhado"
+import type { AlvoDeArquivo } from "@/lib/acoesDeArquivo"
 import { useApp } from "@/store/app"
 import { abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { useChat } from "@/store/chat"
@@ -94,6 +100,20 @@ export function ProjectFilesPanel({ root }: { root: string }) {
   const ladoCabe = useAbasDeArquivo((state) => state.ladoCabe)
   const revelar = useAbasDeArquivo((state) => state.revelar)
   const aRevelar = useRef<string | null>(null)
+  const buscaRef = useRef<HTMLInputElement>(null)
+  const alterados = useAlteradosNoGit(root)
+  const pastasMudadas = useMemo(() => pastasComMudanca(alterados), [alterados])
+  const cartao = useCartaoDaArvore(root)
+  const menuDaArvore = useMenuDaArvore(root, {
+    alterados,
+    expandida: (rel) => expanded.has(rel),
+    // O escopo é um termo da busca ("/docs/"), à vista e apagável.
+    aoBuscarNaPasta: (rel) => {
+      setQuery(`/${rel}/ `)
+      requestAnimationFrame(() => buscaRef.current?.focus())
+    },
+    aoRecolher: (rel) => setExpanded((atual) => new Set([...atual].filter((p) => !p.startsWith(`${rel}/`)))),
+  })
 
   const loadDirectory = useCallback(
     async (relPath: string, cursor: string | null = null, expected = localGeneration.current) => {
@@ -243,6 +263,12 @@ export function ProjectFilesPanel({ root }: { root: string }) {
     [normalizedQuery, linhasBusca, agrupada, treeRows],
   )
   const indiceNaBusca = useMemo(() => new Map(rows.map((r, i) => [r.node.relPath, i])), [rows])
+  const ordem = useMemo(() => rows.map((r) => r.node.relPath), [rows])
+  const selecao = useSelecaoDaArvore(ordem, `${root}\0${normalizedQuery}`)
+  const ehPasta = (rel: string) => rows[indiceNaBusca.get(rel) ?? -1]?.node.kind === "directory"
+  /** O gesto age na seleção quando a linha faz parte dela; senão, na linha. */
+  const alvoDoGesto = (node: LazyProjectFileEntry): AlvoDeArquivo =>
+    alvoDosItens(selecao.itens(node.relPath), (rel) => (rel === node.relPath ? node.kind === "directory" : ehPasta(rel)))
   const alternarNaBusca = (linha: Exclude<LinhaDaBusca<LazyProjectFileEntry>, { tipo: "arquivo" }>) =>
     setEstadoBusca((e) =>
       linha.tipo === "grupo"
@@ -339,6 +365,22 @@ export function ProjectFilesPanel({ root }: { root: string }) {
       }
       return
     }
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault()
+      menuDaArvore.citar(alvoDoGesto(node))
+      return
+    }
+    if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
+      event.preventDefault()
+      const r = event.currentTarget.getBoundingClientRect()
+      menuDaArvore.abrir(r.left + 24, r.bottom, alvoDoGesto(node))
+      return
+    }
+    if (event.key === "Escape" && !selecao.vazia) {
+      event.preventDefault()
+      selecao.limpar()
+      return
+    }
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault()
       activate(node)
@@ -412,29 +454,56 @@ export function ProjectFilesPanel({ root }: { root: string }) {
           aria-level={depth + 1}
           aria-expanded={isDirectory && !node.isSymlink ? isExpanded : undefined}
           aria-selected={isSelected}
-          title={`${node.relPath}${node.isSymlink ? " (link)" : ""}${node.ignored ? " · ignorado pelo git" : ""}`}
+          onPointerEnter={(event) =>
+            cartao.pairar(
+              {
+                rel: node.relPath,
+                pasta: isDirectory,
+                ignorado: node.ignored === true,
+                aberto: abas.abertas.includes(node.relPath),
+                itens: childState?.status === "ready" ? childState.entries.length : null,
+              },
+              event.currentTarget,
+            )
+          }
+          onPointerLeave={cartao.sair}
           onFocus={() => setFocusedPath(node.relPath)}
-          onClick={() => activate(node)}
+          onClick={(event) => {
+            if (!selecao.clicar(node.relPath, event)) activate(node)
+          }}
           // R8: arrastar a linha até o composer vira `@caminho`. Por
           // ponteiro (ADR-214). Equivalente sem arrastar: o `@` do
           // próprio composer.
-          onPointerDown={(event) =>
+          onPointerDown={(event) => {
+            cartao.fechar()
+            // Absoluto: a raiz da árvore pode ser o worktree da conversa.
+            const itens = selecao.itens(node.relPath).map((rel) => ({
+              caminho: `${root.replace(/\/+$/, "")}/${rel}`,
+              pasta: rel === node.relPath ? isDirectory : ehPasta(rel),
+            }))
             iniciarArrasto(
               event,
-              {
-                tipo: "arquivo",
-                id: `arquivo:${node.relPath}`,
-                caminho: node.relPath,
-                pasta: isDirectory,
-              },
+              itens.length > 1
+                ? { tipo: "arquivos", id: `arquivos:${node.relPath}`, itens }
+                : { tipo: "arquivo", id: `arquivo:${node.relPath}`, ...itens[0] },
               node.relPath,
             )
-          }
+          }}
           onKeyDown={(event) => handleKeyDown(event, index)}
+          onContextMenu={(event) => {
+            // Cancelado aqui, o menu do app (ADR-042) sabe que este clique tem dono.
+            event.preventDefault()
+            cartao.fechar()
+            setFocusedPath(node.relPath)
+            if (!selecao.selecionados.has(node.relPath)) selecao.limpar()
+            menuDaArvore.abrir(event.clientX, event.clientY, alvoDoGesto(node))
+          }}
           style={{ paddingLeft: 8 + depth * 12 }}
           className={cn(
             "flex w-full justify-start gap-1 rounded-md pr-2 text-left font-normal",
-            isSelected ? "bg-sel text-foreground" : "text-foreground/80 hover:bg-sel-hover",
+            isSelected || selecao.selecionados.has(node.relPath)
+              ? "bg-sel text-foreground"
+              : "text-foreground/80 hover:bg-sel-hover",
             // Ignorado pelo git (ADR-254): aparece, apagado, como no VS Code.
             node.ignored && !isSelected && "opacity-50",
           )}
@@ -467,40 +536,22 @@ export function ProjectFilesPanel({ root }: { root: string }) {
           </span>
           {/* Na busca, de onde o arquivo é (ADR-254): o nome sozinho não diz. */}
           {onde && <span className="max-w-[45%] min-w-0 truncate text-[11px] text-muted-foreground/60">{onde}</span>}
-          {!isDirectory && abas.abertas.includes(node.relPath) && (
-            <span
-              aria-label="Aberto numa aba"
-              title="Aberto numa aba"
-              className={cn("size-1.5 shrink-0 rounded-full", isSelected ? "bg-foreground" : "bg-muted-foreground/70")}
-            />
-          )}
+          <SinalDaLinha
+            letra={isDirectory ? undefined : alterados.get(node.relPath)}
+            aberto={!isDirectory && abas.abertas.includes(node.relPath)}
+            selecionada={isSelected}
+            pastaMudada={isDirectory && pastasMudadas.has(node.relPath)}
+          />
         </Button>
-        {isExpanded && childState?.status === "error" && (
-          <div className="flex items-center gap-2 py-1 pr-2 text-[11px] text-destructive" style={{ paddingLeft: 28 + depth * 12 }}>
-            <span className="min-w-0 flex-1 truncate">{childState.error}</span>
-            <Button variant="ghost" size="chip" onClick={() => void loadDirectory(node.relPath)}>
-              Tentar novamente
-            </Button>
-          </div>
-        )}
-        {isExpanded && childState?.nextCursor && (
-          <Button
-            variant="ghost"
-            size="compacto"
-            className="w-full justify-start text-muted-foreground"
-            style={{ paddingLeft: 28 + depth * 12 }}
-            onClick={() => void loadDirectory(node.relPath, childState.nextCursor)}
-          >
-            Carregar mais nesta pasta
-          </Button>
-        )}
-        {isExpanded && childState?.truncated && !childState.nextCursor && (
-          <p
-            className="py-1 pr-2 text-[11px] text-muted-foreground"
-            style={{ paddingLeft: 28 + depth * 12 }}
-          >
-            Leitura parcial nesta pasta
-          </p>
+        {isExpanded && childState && (
+          <RodapeDaPasta
+            recuo={28 + depth * 12}
+            erro={childState.status === "error" ? childState.error : null}
+            temMais={Boolean(childState.nextCursor)}
+            parcial={childState.truncated}
+            aoTentar={() => void loadDirectory(node.relPath)}
+            aoCarregarMais={() => void loadDirectory(node.relPath, childState.nextCursor)}
+          />
         )}
       </div>
     )
@@ -512,6 +563,7 @@ export function ProjectFilesPanel({ root }: { root: string }) {
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute top-2 left-2 size-3.5 text-muted-foreground/65" />
           <Input
+            ref={buscaRef}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Buscar arquivo"
@@ -636,6 +688,8 @@ export function ProjectFilesPanel({ root }: { root: string }) {
           </div>
         </ScrollArea>
       )}
+      {menuDaArvore.menu}
+      {cartao.cartao}
     </div>
   )
 }

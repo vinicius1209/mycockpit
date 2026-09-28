@@ -14,7 +14,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { cancelarArrasto, cargaArrastada } from "@/lib/arrastoInterno"
 import { reorderByIds } from "@/lib/reorder"
-import { iniciarArrasto, ladoDoDestino, LIMIAR_DE_ARRASTO } from "./CamadaDeArrasto"
+import { fantasmaDoArquivo, iniciarArrasto, ladoDoDestino, LIMIAR_DE_ARRASTO } from "./CamadaDeArrasto"
 
 function fonteFalsa() {
   const setPointerCapture = vi.fn()
@@ -98,5 +98,21 @@ describe("de que lado o item vai cair", () => {
     expect(ladoDoDestino(mesmo, mesmo)).toBeNull()
     // e o helper puro concorda: mesma referência, sem re-render
     expect(reorderByIds(lista, "b", "b")).toBe(lista)
+  })
+})
+
+describe("o fantasma do arrasto de arquivo (D5)", () => {
+  it("mostra o nome e quantos mais, nunca o caminho inteiro", () => {
+    const tres = {
+      tipo: "arquivos" as const,
+      id: "v",
+      itens: [
+        { caminho: "/Users/v/projetos/frota/docs/edicao-de-arquivos-prd.md", pasta: false },
+        { caminho: "/Users/v/projetos/frota/docs/decisions.md", pasta: false },
+        { caminho: "/Users/v/projetos/frota/docs", pasta: true },
+      ],
+    }
+    expect(fantasmaDoArquivo(tres)).toEqual({ ...tres.itens[0], mais: 2 })
+    expect(fantasmaDoArquivo({ tipo: "texto", id: "t", texto: "oi" })).toBeNull()
   })
 })

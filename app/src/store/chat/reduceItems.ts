@@ -174,6 +174,7 @@ export function reduceItems(
             input: e.input,
             toolId: e.id,
             parentToolId: e.parent_tool_id ?? undefined,
+            ...(ctx?.agent ? { agent: ctx.agent } : {}),
             ts: now,
             activityAt: now,
           },

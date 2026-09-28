@@ -23,7 +23,6 @@
     "src-tauri/hook_sessions.rs": 1131,
     "src-tauri/hooks_install.rs": 2090,
     "src-tauri/hud.rs": 1242,
-    "src-tauri/lib.rs": 1003,
     "src-tauri/mcp_auth.rs": 1873,
     "src-tauri/mcp_control.rs": 4647,
     "src-tauri/sandbox.rs": 1056,

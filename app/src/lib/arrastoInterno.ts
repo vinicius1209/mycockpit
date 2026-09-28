@@ -29,6 +29,8 @@ export type CargaArrastada =
   | { tipo: "conversa"; projectId: string; id: string }
   /** Arquivo ou pasta da árvore do projeto, caminho RELATIVO à raiz. */
   | { tipo: "arquivo"; id: string; caminho: string; pasta: boolean }
+  /** Vários itens da árvore selecionados, com o caminho ABSOLUTO. */
+  | { tipo: "arquivos"; id: string; itens: readonly { caminho: string; pasta: boolean }[] }
   /** Texto selecionado em qualquer lugar do app (fio, diff, Bastidores). */
   | { tipo: "texto"; id: string; texto: string }
   /** Imagem que já está no fio (anexo de uma mensagem): volta ao rascunho como
@@ -51,6 +53,8 @@ export interface AnexoArrastado {
 export type AlvoDoArrasto =
   | { tipo: "reordenar"; id: string }
   | { tipo: "composer" }
+  /** A coluna da conversa inteira (fio e composer): só arquivo solta aí. */
+  | { tipo: "conversa" }
 
 export interface ArrastoConcluido {
   carga: CargaArrastada
@@ -98,6 +102,7 @@ export function concluirArrasto(
 export function alvoDoAtributo(valor: string | null | undefined): AlvoDoArrasto | null {
   if (!valor) return null
   if (valor === "composer") return { tipo: "composer" }
+  if (valor === "conversa") return { tipo: "conversa" }
   const [tipo, ...resto] = valor.split(":")
   const id = resto.join(":")
   return tipo === "reordenar" && id ? { tipo: "reordenar", id } : null

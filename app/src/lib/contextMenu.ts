@@ -14,6 +14,7 @@
 // item aqui tem execução real; o que não tem implementação ficou de fora em
 // vez de virar item morto.
 
+import { ROTULOS_DE_ARQUIVO } from "./acoesDeArquivo"
 import type { TabelaCopiavel } from "./tabelaClipboard"
 
 /** O que estava embaixo do cursor quando o usuário clicou com o direito. */
@@ -123,10 +124,11 @@ export const ROTULOS: Record<ItemId, string> = {
   // Neutro de propósito: o produto é Mac E Linux, e "Finder" mentiria no
   // segundo. "Pasta" vale nos dois.
   "revelar-imagem": "Mostrar na pasta",
-  "abrir-arquivo": "Abrir no editor",
-  "copiar-caminho-relativo": "Copiar caminho relativo",
-  "copiar-caminho-absoluto": "Copiar caminho completo",
-  "revelar-arquivo": "Mostrar na pasta",
+  // O chip de arquivo do fio fala como a árvore e a aba: o catálogo é um só.
+  "abrir-arquivo": ROTULOS_DE_ARQUIVO["abrir-no-editor"],
+  "copiar-caminho-relativo": ROTULOS_DE_ARQUIVO["copiar-caminho-relativo"],
+  "copiar-caminho-absoluto": ROTULOS_DE_ARQUIVO["copiar-caminho-completo"],
+  "revelar-arquivo": ROTULOS_DE_ARQUIVO["mostrar-na-pasta"],
 }
 
 /** Tira divisor das pontas e colapsa divisor repetido. */

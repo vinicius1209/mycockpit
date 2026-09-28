@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { readText } from "@tauri-apps/plugin-clipboard-manager"
 import { revealItemInDir } from "@tauri-apps/plugin-opener"
-import { avisar, mensagemDe } from "@/lib/avisos"
+import { avisar } from "@/lib/avisos"
 
 import {
   PointMenu,
@@ -23,8 +23,7 @@ import { copyRich, copyText } from "@/lib/clipboard"
 import { conteudoDaTabela, lerTabela } from "@/lib/tabelaClipboard"
 import { citarTrecho } from "@/lib/citarTrecho"
 import { openConvImage, revealConvImage } from "@/lib/evidence"
-import { openInEditor, pickEditor } from "@/lib/editors"
-import { useEditors } from "@/store/editors"
+import { abrirNoEditor } from "@/components/common/executarAcaoDeArquivo"
 import { useApp } from "@/store/app"
 import { isTauri } from "@/lib/db"
 
@@ -335,29 +334,8 @@ async function executar(
     case "abrir-arquivo": {
       if (alvo.tipo !== "arquivo") return
       const state = useApp.getState()
-      const project = state.projects.find((p) => p.id === state.activeProjectId)
-      const projectPath = project?.path ?? ""
-      // O menu pode ser a PRIMEIRA superfície a precisar de editor nesta
-      // sessão (clique direito num chip sem nunca ter passado o mouse por um).
-      // Sem o `ensure`, `detected` seria `null` e o usuário levava um "nenhum
-      // editor detectado" que só dizia que ninguém tinha perguntado ainda.
-      useEditors.getState().ensure()
-      const detected = useEditors.getState().detected ?? []
-      const preferred = state.settings.preferredEditor
-      const escolhido = pickEditor(detected, preferred)
-      if (!escolhido) {
-        avisar.erro("Nenhum editor de código detectado nesta máquina")
-        return
-      }
-      await openInEditor({
-        editor: escolhido.id,
-        projectPath,
-        rel: alvo.rel,
-        line: alvo.line,
-      }).catch((err) => {
-        console.error("[menu] não consegui abrir no editor", err)
-        avisar.erro("Não consegui abrir no editor.", { detalhe: mensagemDe(err) })
-      })
+      const projectPath = state.projects.find((p) => p.id === state.activeProjectId)?.path ?? ""
+      await abrirNoEditor(projectPath, alvo.rel, alvo.line)
       return
     }
 

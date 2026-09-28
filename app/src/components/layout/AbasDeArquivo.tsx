@@ -6,8 +6,7 @@
 // ao lado da conversa leva o ícone de "lado" em vez do de tipo.
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Columns2, Copy, FileDiff, FolderTree, PanelRightClose, RotateCcw, X } from "lucide-react"
-import { avisar } from "@/lib/avisos"
+import { ChevronDown, Columns2, FileDiff, PanelRightClose, RotateCcw, X } from "lucide-react"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -31,12 +30,10 @@ import {
   fecharArquivos,
   fecharOLado,
   mostrar,
-  mostrarNaArvore,
   reabrirUltima,
 } from "@/components/layout/abasNoPrincipal"
 import { rotuloDoAtalho } from "@/components/layout/atalhosDasAbas"
 import { aDireitaDe, lerChave, outrasAlemDe, rotulosDasAbas } from "@/lib/abasDeArquivo"
-import { copyText } from "@/lib/clipboard"
 import { currentPlatform } from "@/lib/commandMenu"
 import { cn } from "@/lib/utils"
 import { abasDo, chaveDoSumido, useAbasDeArquivo } from "@/store/abasDeArquivo"
@@ -45,6 +42,11 @@ import { useChat } from "@/store/chat"
 import { useEdicao } from "@/store/edicao"
 import { caminhoDaAba } from "@/lib/edicao/buffers"
 import { useRaizEfetiva } from "@/components/layout/raizEfetiva"
+import { LinhasDoMenuDeArquivo } from "@/components/layout/MenuDeArquivo"
+import { useAlteradosNoGit } from "@/components/layout/useAlteradosNoGit"
+import { executarAcaoDeArquivo } from "@/components/common/executarAcaoDeArquivo"
+import { itensDoArquivo, type AlvoDeArquivo } from "@/lib/acoesDeArquivo"
+import { isTauri } from "@/lib/db"
 
 const ATALHO = "ml-auto pl-4 font-mono text-[11px] text-muted-foreground/60"
 
@@ -67,6 +69,7 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
   // O ponto de "não salvo": o buffer é por arquivo, e a aba chega nele pela raiz.
   const sujos = useEdicao((s) => s.sujos)
   const raiz = useRaizEfetiva()
+  const alterados = useAlteradosNoGit(raiz)
 
   // A aba à vista entra na área visível da tira. À mão, e não com
   // `scrollIntoView`, que rolaria também os ancestrais (ADR-122).
@@ -105,6 +108,7 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
         const sumiu = Boolean(sumidos[chaveDoSumido(convId, chave)])
         const suja = !diff && raiz !== null && Boolean(sujos[caminhoDaAba(raiz, chave) ?? ""])
         const alvo = arrasto?.ativo && arrasto.para === i && arrasto.de !== i
+        const doMenu: AlvoDeArquivo = { tipo: "arquivo", rel: caminho, fora: caminho.startsWith("/") }
         return (
           <ContextMenu key={chave}>
             <ContextMenuTrigger asChild>
@@ -213,18 +217,19 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                   <Columns2 /> Abrir ao lado da conversa
                 </ContextMenuItem>
               )}
-              <ContextMenuItem disabled={caminho.startsWith("/")} onSelect={() => mostrarNaArvore(caminho)}>
-                <FolderTree /> Mostrar na árvore
-              </ContextMenuItem>
-              <ContextMenuItem
-                onSelect={() =>
-                  void copyText(caminho).then((ok) => {
-                    if (ok) avisar.feito(`Caminho de ${caminho.split("/").pop() || caminho} copiado.`)
-                  })
-                }
-              >
-                <Copy /> Copiar caminho
-              </ContextMenuItem>
+              {!diff && <ContextMenuSeparator />}
+              {/* O resto vem do catálogo de arquivo, o mesmo da árvore e do fio. */}
+              <LinhasDoMenuDeArquivo
+                linhas={itensDoArquivo(
+                  doMenu,
+                  { noApp: isTauri(), conversa: true, ladoCabe, alterado: !diff && alterados.has(caminho), expandida: false },
+                  "aba",
+                )}
+                alvo={doMenu}
+                aoEscolher={(acao) => setTimeout(() => void executarAcaoDeArquivo(acao, doMenu, { root: raiz ?? "" }), 0)}
+                Item={ContextMenuItem}
+                Separador={ContextMenuSeparator}
+              />
               <ContextMenuSeparator />
               <ContextMenuItem onSelect={() => fecharArquivos([chave])}>
                 Fechar

@@ -303,6 +303,20 @@ async fn is_git_repository(root: &Path) -> Result<bool, String> {
     Ok(output.status.success() && String::from_utf8_lossy(&output.stdout).trim() == "true")
 }
 
+/// Os termos da busca da árvore: separados por espaço, todos precisam casar.
+/// Termo que começa com `/` ancora na raiz ("/docs/" = dentro de docs), que é
+/// como "Buscar nesta pasta" escreve o escopo.
+pub(crate) fn termos_da_busca(query: &str) -> Vec<String> {
+    query.split_whitespace().map(str::to_lowercase).collect()
+}
+
+pub(crate) fn casa_busca(caminho: &str, termos: &[String]) -> bool {
+    termos.iter().all(|t| match t.strip_prefix('/') {
+        Some(inicio) => caminho.starts_with(inicio),
+        None => caminho.contains(t.as_str()),
+    })
+}
+
 async fn search_git(
     root: &Path,
     query: &str,
@@ -332,7 +346,7 @@ async fn search_git(
         .ok_or_else(|| "o Git não abriu a saída de arquivos".to_string())?;
     let mut lines = BufReader::new(stdout).lines();
     let deadline = tokio::time::Instant::now() + SEARCH_DEADLINE;
-    let normalized = query.to_lowercase();
+    let termos = termos_da_busca(query);
     let mut matches_seen = 0usize;
     let mut visited = 0usize;
     let mut entries = Vec::new();
@@ -357,7 +371,7 @@ async fn search_git(
             break;
         }
         let path = line.replace('\\', "/");
-        if !path.to_lowercase().contains(&normalized) {
+        if !casa_busca(&path.to_lowercase(), &termos) {
             continue;
         }
         if matches_seen < offset {
@@ -409,7 +423,7 @@ fn search_non_git_blocking(
     offset: usize,
     limit: usize,
 ) -> Result<(Vec<ProjectDirEntry>, Option<String>, bool), String> {
-    let normalized = query.to_lowercase();
+    let termos = termos_da_busca(query);
     let started = Instant::now();
     let mut builder = WalkBuilder::new(root);
     builder
@@ -449,7 +463,7 @@ fn search_non_git_blocking(
             truncated = true;
             continue;
         };
-        if !entry.rel_path.to_lowercase().contains(&normalized) {
+        if !casa_busca(&entry.rel_path.to_lowercase(), &termos) {
             continue;
         }
         if matches_seen < offset {
@@ -518,6 +532,17 @@ pub async fn search_project_files(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_busca_casa_todos_os_termos_e_a_barra_ancora_na_raiz() {
+        let t = termos_da_busca("/docs/ PLAN");
+        assert!(casa_busca("docs/plan.md", &t));
+        assert!(casa_busca("docs/sub/plano.md", &t));
+        assert!(!casa_busca("app/docs/plan.md", &t), "a barra ancora na raiz");
+        assert!(!casa_busca("mydocs/plan.md", &t));
+        assert!(!casa_busca("docs/readme.md", &t), "todos os termos casam");
+        assert!(casa_busca("app/src/lib.rs", &termos_da_busca("lib.rs")));
+    }
 
     fn fixture(tag: &str) -> PathBuf {
         let root =

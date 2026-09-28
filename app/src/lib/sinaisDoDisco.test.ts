@@ -2,7 +2,7 @@
 // Os sinais de "a pasta pode ter mudado", agora compartilhados pela aba
 // Alterações e pelo editor. O que é novo aqui é a gravação feita pelo app.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import { assinarMudancasNaPasta, avisarGravacao } from "@/lib/sinaisDoDisco"
+import { assinarMudancasNaPasta, avisarGravacao, turnosNaPasta } from "@/lib/sinaisDoDisco"
 
 const PASTA = "/Users/viniciusmachado/projetos/frota"
 
@@ -59,5 +59,29 @@ describe("uma assinatura por pasta", () => {
     expect(assinar).toHaveBeenCalledTimes(2)
     c()
     assinar.mockRestore()
+  })
+})
+
+describe("turno na pasta", () => {
+  const conversa = (projectId: string, worktreePath: string | null, running: boolean) => ({
+    projectId,
+    worktreePath,
+    running,
+    finalizing: false,
+    items: [],
+  })
+  const pasta = (id: string) => (id === "p1" ? PASTA : null)
+
+  it("conta só as conversas em voo desta pasta, e a de worktree fica fora", () => {
+    const n = turnosNaPasta(
+      {
+        a: conversa("p1", null, true),
+        b: conversa("p1", null, false),
+        c: conversa("p1", `${PASTA}/.frota/worktrees/c`, true),
+      },
+      PASTA,
+      pasta,
+    )
+    expect(n).toBe(1)
   })
 })

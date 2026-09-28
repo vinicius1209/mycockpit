@@ -8,7 +8,7 @@ use std::path::{Component, Path};
 use std::process::Command;
 
 /// git -C <cwd> <args>, stdout no sucesso (None se falhar/git ausente).
-fn git(cwd: &str, args: &[&str]) -> Option<String> {
+pub(crate) fn git(cwd: &str, args: &[&str]) -> Option<String> {
     let mut full: Vec<&str> = vec!["-C", cwd];
     full.extend_from_slice(args);
     crate::proc::run_ok("git", &full, None)
@@ -112,7 +112,7 @@ pub async fn git_diff(cwd: String) -> GitDiff {
 // (gitignored → não suja a main tree), num branch `mycockpit/<slug>`.
 
 /// git -C <cwd> <args> com a MENSAGEM de erro (stderr) no Err (p/ o front mostrar).
-fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
     let mut full: Vec<&str> = vec!["-C", cwd];
     full.extend_from_slice(args);
     crate::proc::run("git", &full, None)
@@ -560,7 +560,7 @@ fn git_cwd_state(cwd: &str) -> Result<(String, bool), String> {
 /// próprio `git status`, mas comando Tauri é uma fronteira pública e valida de
 /// novo: nenhuma mutação pode escapar do projeto por `..`, absoluto ou cwd
 /// amplo demais.
-fn validated_git_cwd(cwd: &str) -> Result<String, String> {
+pub(crate) fn validated_git_cwd(cwd: &str) -> Result<String, String> {
     let (root, is_repo) = git_cwd_state(cwd)?;
     if !is_repo {
         return Err("este projeto não é um repositório Git".into());
@@ -789,7 +789,7 @@ pub struct PrContext {
 }
 
 /// Contas gh autenticadas + a ativa (parse best-effort do `gh auth status`).
-fn gh_accounts() -> (Vec<String>, Option<String>) {
+pub(crate) fn gh_accounts() -> (Vec<String>, Option<String>) {
     let out = match Command::new("gh").args(["auth", "status"]).output() {
         Ok(o) => o,
         Err(_) => return (vec![], None),

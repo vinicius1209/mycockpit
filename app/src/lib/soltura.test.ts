@@ -5,7 +5,9 @@ import {
   dentroDoRetangulo,
   planoDaSoltura,
   planoDoArrasto,
-  rotuloDaSoltura,
+  rotuloDosCaminhos,
+  caminhosDaCarga,
+  aceitaNaConversa,
   rotuloDoArrasto,
 } from "./soltura"
 
@@ -65,8 +67,8 @@ describe("soltar arquivos no composer", () => {
     const composer = { left: 100, top: 500, right: 700, bottom: 640 }
     expect(dentroDoRetangulo({ x: 800, y: 1100 }, 2, composer)).toBe(true)
     expect(dentroDoRetangulo({ x: 800, y: 1100 }, 1, composer)).toBe(false)
-    expect(rotuloDaSoltura(1)).toBe("Solte para anexar · 1 item")
-    expect(rotuloDaSoltura(3)).toBe("Solte para anexar · 3 itens")
+    expect(rotuloDosCaminhos([{ caminho: `${PROJETO}/print.png` }])).toBe("Solte para anexar print.png")
+    expect(rotuloDosCaminhos([{ caminho: `${PROJETO}/a.png` }, { caminho: `${PROJETO}/b.pdf` }])).toBe("Solte para anexar 2 itens")
   })
 })
 
@@ -82,7 +84,8 @@ describe("soltar de DENTRO do app no composer (R8)", () => {
       acao: "arquivo",
       bloco: { tipo: "arquivo", id: `arquivo:${PROJETO}/src/lib/soltura.ts`, caminho: `${PROJETO}/src/lib/soltura.ts`, pasta: false, bytes: 0 },
     })
-    expect(rotuloDoArrasto(carga)).toBe("Solte para anexar soltura.ts")
+    // O verbo diz o resultado (D5): arquivo vira cartão, então é "citar".
+    expect(rotuloDoArrasto(carga)).toBe("Solte para citar soltura.ts")
   })
 
   it("pasta da árvore vira cartão de pasta, com espaço no nome intacto", () => {
@@ -134,5 +137,31 @@ describe("imagem do fio arrastada para o composer (R8)", () => {
     const resultado = anexosComOutro(cheio, { path: "novo.png" })
     expect(resultado.coube).toBe(false)
     expect(resultado.anexos).toHaveLength(MAX_ATTACH_COUNT)
+  })
+})
+
+describe("arrastar da árvore: o verbo, os caminhos e o alvo (D5)", () => {
+  it("pasta, vários itens e imagem dizem o que vai acontecer", () => {
+    expect(rotuloDoArrasto({ tipo: "arquivo", id: "a", caminho: "docs", pasta: true })).toBe("Solte para citar a pasta docs")
+    expect(rotuloDoArrasto({ tipo: "arquivo", id: "a", caminho: "docs/print.png", pasta: false })).toBe("Solte para anexar print.png")
+    const tres = {
+      tipo: "arquivos" as const,
+      id: "v",
+      itens: [
+        { caminho: `${PROJETO}/docs/a.md`, pasta: false },
+        { caminho: `${PROJETO}/docs/print.png`, pasta: false },
+        { caminho: `${PROJETO}/docs`, pasta: true },
+      ],
+    }
+    expect(rotuloDoArrasto(tres)).toBe("Solte para citar 3 itens")
+    expect(caminhosDaCarga(tres, "/outra/raiz").map((c) => c.caminho)).toEqual(tres.itens.map((i) => i.caminho))
+  })
+
+  it("o relativo da árvore vira absoluto pela raiz, e só arquivo solta na coluna inteira", () => {
+    expect(caminhosDaCarga({ tipo: "arquivo", id: "a", caminho: "src/x.ts", pasta: false }, `${PROJETO}/`)).toEqual([
+      { caminho: `${PROJETO}/src/x.ts`, pasta: false },
+    ])
+    expect(aceitaNaConversa({ tipo: "arquivo", id: "a", caminho: "x", pasta: false })).toBe(true)
+    expect(aceitaNaConversa({ tipo: "texto", id: "t", texto: "oi" })).toBe(false)
   })
 })

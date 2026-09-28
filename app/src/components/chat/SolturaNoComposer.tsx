@@ -1,39 +1,36 @@
-// Soltar no composer, pelos dois caminhos que existem.
+// Soltar arquivos na conversa, pelos dois caminhos que existem.
 //
-// De FORA (capricho PRD R6): o arquivo chega pelo evento do Tauri, com caminho
-// real (o `drop` do HTML5 não recebe arquivo com `dragDropEnabled`, e ele não
-// se desliga). Sobre o composer aparece "Solte para anexar · N itens".
+// De FORA: o arquivo chega pelo evento do Tauri, com caminho real (o `drop` do
+// HTML5 não recebe arquivo com `dragDropEnabled`, e ele não se desliga).
 //
-// De DENTRO (R8): é outro mecanismo, por ponteiro, e mora em
-// `components/common/CamadaDeArrasto.tsx` — o webview engole o arrasto do
-// sistema antes do DOM (ADR-214). O cartão do composer é o alvo dos dois, e
-// soltar fora dele não faz nada.
+// De DENTRO: é outro mecanismo, por ponteiro, e mora em
+// `components/common/CamadaDeArrasto.tsx` (ADR-214). Os dois acabam aqui, em
+// `soltarCaminhos`, com o mesmo véu sobre a coluna da conversa (fio e
+// composer) e o verbo do resultado (docs/explorador-de-arquivos-prd.md, D5).
 //
 // Todo gesto tem equivalente sem arrastar: "Anexar" e colar imagem, `@` para
 // mencionar arquivo, "Citar trecho" para a seleção.
 
 import { useEffect, useState } from "react"
-import { createPortal } from "react-dom"
 import { invoke } from "@tauri-apps/api/core"
 import { getCurrentWebview } from "@tauri-apps/api/webview"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { attachPath, type Attachment } from "@/lib/attachments"
 import { blocosComArquivos } from "@/lib/arquivoCitado"
 import { isTauri } from "@/lib/db"
-import { dentroDoRetangulo, planoDaSoltura, rotuloDaSoltura, type CaminhoSolto } from "@/lib/soltura"
+import { dentroDoRetangulo, planoDaSoltura, rotuloDosCaminhos, type CaminhoSolto } from "@/lib/soltura"
+import { alvoDoVeu, VeuDeSoltura, type RetanguloDoVeu } from "@/components/chat/VeuDeSoltura"
 import { useChat } from "@/store/chat"
 import { useComposerDrafts } from "@/store/composerDrafts"
 
 interface Pairando {
-  quantos: number
-  ret: { left: number; top: number; width: number; height: number }
+  rotulo: string
+  ret: RetanguloDoVeu
 }
 
-function cartaoDoComposer(): HTMLElement | null {
-  return document.querySelector<HTMLElement>("[data-composer-card]")
-}
-
-async function soltar(paths: string[]): Promise<void> {
+/** Leva caminhos absolutos ao rascunho da conversa ativa: imagem e PDF viram
+ *  anexo, o resto cartão. É a soltura do Finder E a da árvore. */
+export async function soltarCaminhos(paths: string[]): Promise<void> {
   const convId = useChat.getState().activeId
   if (!convId || paths.length === 0) return
   const drafts = useComposerDrafts.getState()
@@ -68,7 +65,7 @@ export function SolturaNoComposer() {
 
   useEffect(() => {
     if (!isTauri()) return
-    let quantos = 0
+    let caminhos: string[] = []
     let desfazer: (() => void) | null = null
     let cancelado = false
     void getCurrentWebview()
@@ -78,18 +75,20 @@ export function SolturaNoComposer() {
           setPairando(null)
           return
         }
-        if (p.type === "enter") quantos = p.paths.length
-        const cartao = cartaoDoComposer()
-        const r = cartao?.getBoundingClientRect()
+        if (p.type === "enter") caminhos = p.paths
+        const r = alvoDoVeu()?.getBoundingClientRect()
         const dentro = Boolean(r && dentroDoRetangulo(p.position, window.devicePixelRatio, r))
         if (p.type === "drop") {
           setPairando(null)
-          if (dentro) void soltar(p.paths).catch(() => avisar.erro("Não consegui usar os arquivos soltos."))
+          if (dentro) void soltarCaminhos(p.paths).catch(() => avisar.erro("Não consegui usar os arquivos soltos."))
           return
         }
         setPairando(
-          dentro && r && quantos > 0
-            ? { quantos, ret: { left: r.left, top: r.top, width: r.width, height: r.height } }
+          dentro && r && caminhos.length > 0
+            ? {
+                rotulo: rotuloDosCaminhos(caminhos.map((caminho) => ({ caminho }))),
+                ret: { left: r.left, top: r.top, width: r.width, height: r.height },
+              }
             : null,
         )
       })
@@ -104,18 +103,5 @@ export function SolturaNoComposer() {
   }, [])
 
   if (!pairando) return null
-  return createPortal(
-    // Cartão opaco por baixo (o rascunho não vaza pelo estado) e a superfície de
-    // seleção por cima, com a aresta do cartão.
-    <div
-      aria-live="polite"
-      style={pairando.ret}
-      className="pointer-events-none fixed z-40 rounded-2xl border bg-card"
-    >
-      <div className="grid h-full place-items-center rounded-2xl bg-sel text-[13px] font-medium text-foreground">
-        {rotuloDaSoltura(pairando.quantos)}
-      </div>
-    </div>,
-    document.body,
-  )
+  return <VeuDeSoltura ret={pairando.ret} rotulo={pairando.rotulo} />
 }

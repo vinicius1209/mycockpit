@@ -23,8 +23,11 @@ import {
   type AlvoDoArrasto,
   type CargaArrastada,
 } from "@/lib/arrastoInterno"
-import { blocosComArquivos } from "@/lib/arquivoCitado"
-import { anexosComOutro, planoDoArrasto, rotuloDoArrasto } from "@/lib/soltura"
+import { nomeDoCaminho } from "@/lib/arquivoCitado"
+import { aceitaNaConversa, anexosComOutro, caminhosDaCarga, planoDoArrasto, rotuloDoArrasto } from "@/lib/soltura"
+import { soltarCaminhos } from "@/components/chat/SolturaNoComposer"
+import { alvoDoVeu, VeuDeSoltura, type RetanguloDoVeu } from "@/components/chat/VeuDeSoltura"
+import { FileIcon } from "@/components/ui/file-icon"
 import { MAX_ATTACH_COUNT, type Attachment } from "@/lib/attachments"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -122,13 +125,15 @@ function soltarNoComposer(carga: CargaArrastada): void {
   }
   const app = useApp.getState()
   const projectPath = app.projects.find((p) => p.id === app.activeProjectId)?.path ?? null
-  const plano = planoDoArrasto(carga, projectPath)
-  const drafts = useComposerDrafts.getState()
-  if (plano.acao === "arquivo") {
-    // O arquivo da árvore vira o mesmo cartão do arquivo solto do Finder (ADR-252).
-    drafts.setBlocos(convId, blocosComArquivos(drafts.byConv[convId]?.blocos ?? [], [plano.bloco]))
+  if (aceitaNaConversa(carga)) {
+    // O arquivo da árvore segue o caminho do arquivo do Finder: imagem e PDF
+    // viram anexo, o resto cartão (ADR-252).
+    const caminhos = caminhosDaCarga(carga, projectPath).map((c) => c.caminho)
+    void soltarCaminhos(caminhos).catch(() => avisar.erro("Não consegui usar os arquivos soltos."))
     return
   }
+  const plano = planoDoArrasto(carga, projectPath)
+  const drafts = useComposerDrafts.getState()
   if (plano.acao === "colagem") {
     drafts.addColagem(convId, plano.texto)
     return
@@ -168,9 +173,17 @@ function pontoNaSelecao(selecao: Selection, x: number, y: number): boolean {
   return false
 }
 
+/** O fantasma de arquivo: ícone, nome e "+N", não o caminho inteiro. Puro. */
+export function fantasmaDoArquivo(carga: CargaArrastada): { caminho: string; pasta: boolean; mais: number } | null {
+  const itens = caminhosDaCarga(carga, null)
+  return itens.length > 0 ? { ...itens[0], mais: itens.length - 1 } : null
+}
+
 export function CamadaDeArrasto() {
-  const [fantasma, setFantasma] = useState<{ x: number; y: number; rotulo: string } | null>(null)
+  const [fantasma, setFantasma] = useState<{ x: number; y: number; rotulo: string; carga: CargaArrastada } | null>(null)
+  const [veu, setVeu] = useState<{ ret: RetanguloDoVeu; rotulo: string } | null>(null)
   const realcadoRef = useRef<Element | null>(null)
+  const veuRef = useRef<string>("")
 
   useEffect(() => {
     function realcar(el: Element | null, lado: "antes" | "depois" | "" = "") {
@@ -183,8 +196,16 @@ export function CamadaDeArrasto() {
       // o atributo é reescrito mesmo quando o elemento é o mesmo.
       if (el) el.setAttribute("data-arrasto-sobre", lado)
     }
+    /** O véu liga e desliga ao entrar e sair do alvo, não a cada movimento. */
+    function mostrarVeu(proximo: { ret: RetanguloDoVeu; rotulo: string } | null) {
+      const chave = proximo ? `${proximo.rotulo}|${proximo.ret.left}|${proximo.ret.top}|${proximo.ret.width}` : ""
+      if (chave === veuRef.current) return
+      veuRef.current = chave
+      setVeu(proximo)
+    }
     function limpar() {
       realcar(null)
+      mostrarVeu(null)
       setFantasma(null)
       document.body.style.userSelect = ""
       const p = pendente
@@ -235,8 +256,12 @@ export function CamadaDeArrasto() {
         document.body.style.userSelect = "none"
       }
       const sob = alvoSob(ev.clientX, ev.clientY)
-      const rotulo =
-        sob?.alvo.tipo === "composer" ? (rotuloDoArrasto(p.carga) ?? null) : p.rotulo
+      const naConversa = sob?.alvo.tipo === "composer" || sob?.alvo.tipo === "conversa"
+      const rotulo = naConversa
+        ? sob?.alvo.tipo === "conversa" && !aceitaNaConversa(p.carga)
+          ? null
+          : (rotuloDoArrasto(p.carga) ?? null)
+        : p.rotulo
       const valido = Boolean(sob && rotulo)
       pairarSobre(valido && sob ? sob.alvo : null)
       const lado =
@@ -244,7 +269,11 @@ export function CamadaDeArrasto() {
           ? (ladoDoDestino(p.captor, sob.el) ?? "")
           : ""
       realcar(valido && sob ? sob.el : null, lado)
-      setFantasma({ x: ev.clientX, y: ev.clientY, rotulo: rotulo ?? p.rotulo })
+      // Arquivo acende a coluna inteira; texto e imagem, o composer.
+      const cobre = valido && naConversa && sob ? (aceitaNaConversa(p.carga) ? (alvoDoVeu() ?? sob.el) : sob.el) : null
+      const r = cobre?.getBoundingClientRect()
+      mostrarVeu(r && rotulo ? { ret: { left: r.left, top: r.top, width: r.width, height: r.height }, rotulo } : null)
+      setFantasma({ x: ev.clientX, y: ev.clientY, rotulo: rotulo ?? p.rotulo, carga: p.carga })
     }
     function soltar(ev: PointerEvent) {
       if (!pendente) return
@@ -255,7 +284,7 @@ export function CamadaDeArrasto() {
       const feito = concluirArrasto(sob?.alvo ?? null)
       engolirProximoClique()
       if (!feito) return
-      if (feito.alvo.tipo === "composer") soltarNoComposer(feito.carga)
+      if (feito.alvo.tipo === "composer" || feito.alvo.tipo === "conversa") soltarNoComposer(feito.carga)
       else soltarNaLinha(feito.carga, feito.alvo.id)
     }
     function desistir(ev: KeyboardEvent) {
@@ -280,14 +309,28 @@ export function CamadaDeArrasto() {
   }, [])
 
   if (!fantasma) return null
-  return createPortal(
-    <div
-      aria-live="polite"
-      style={{ left: fantasma.x + 12, top: fantasma.y + 12 }}
-      className="pointer-events-none fixed z-[200] max-w-72 truncate rounded-md border bg-popover px-2 py-1 text-[12px] text-foreground shadow-[var(--shadow-pop)]"
-    >
-      {fantasma.rotulo}
-    </div>,
-    document.body,
+  const arquivo = fantasmaDoArquivo(fantasma.carga)
+  return (
+    <>
+      {veu && <VeuDeSoltura ret={veu.ret} rotulo={veu.rotulo} />}
+      {createPortal(
+        <div
+          aria-live="polite"
+          style={{ left: fantasma.x + 12, top: fantasma.y + 12 }}
+          className="pointer-events-none fixed z-[200] flex max-w-72 items-center gap-1.5 rounded-md border bg-popover px-2 py-1 text-[12px] text-foreground shadow-[var(--shadow-pop)]"
+        >
+          {arquivo ? (
+            <>
+              <FileIcon path={arquivo.caminho} folder={arquivo.pasta} />
+              <span className="truncate">{nomeDoCaminho(arquivo.caminho)}</span>
+              {arquivo.mais > 0 && <span className="shrink-0 text-muted-foreground">+{arquivo.mais}</span>}
+            </>
+          ) : (
+            <span className="truncate">{fantasma.rotulo}</span>
+          )}
+        </div>,
+        document.body,
+      )}
+    </>
   )
 }

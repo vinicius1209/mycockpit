@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>A aba Alterações: as ações de git que faltam</title>
+<style>
+  /* Tema CLARO, tokens de :root do index.css, e a aba do print de 27/09
+     (main ↑3, +247 −232, três arquivos). Fontes: 11, 12, 13, 14 (20 no título).
+     Controles: chip 24 · compacto 28 · padrão 32. Verde e vermelho só no
+     domínio git (+N −N, letra do arquivo), como hoje. */
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--popover:#ffffff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted-foreground:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --add:#2f8a57;--del:#cf4a3e;--mod:#c1861f;--warn:#c1861f;
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 80px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:44px 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1040px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:18px 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:12px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  svg.i{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .palco{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+
+  .aba{width:380px;background:var(--card);border-radius:12px;box-shadow:0 0 0 1px var(--border);position:relative;overflow:visible}
+  .cab{display:flex;align-items:center;gap:6px;height:40px;padding:0 10px;border-bottom:1px solid var(--border);font:11px var(--mono);color:var(--muted-foreground)}
+  .cab .branch{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 6px;border-radius:6px;color:var(--foreground)}
+  .cab .branch.aberto,.cab .branch:hover{background:var(--sel-hover)}
+  .cab .esp{flex:1}
+  .add{color:var(--add)} .del{color:var(--del)}
+  .icone{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .sync{display:inline-flex;align-items:center;height:24px;border-radius:6px;box-shadow:inset 0 0 0 1px var(--border);overflow:hidden;font:500 11px var(--sans);color:var(--foreground)}
+  .sync span{display:inline-flex;align-items:center;gap:5px;padding:0 8px;height:24px}
+  .sync span+span{box-shadow:inset 1px 0 0 var(--border);padding:0 5px;color:var(--muted-foreground)}
+  .sync.busy span:first-child{color:var(--muted-foreground)}
+  .sync span{font:500 11px var(--mono);font-variant-numeric:tabular-nums}
+  .tip{position:absolute;background:var(--foreground);color:var(--background);font-size:11px;padding:4px 8px;border-radius:6px;white-space:nowrap;z-index:5}
+  .spin{width:11px;height:11px;border-radius:50%;border:1.5px solid var(--border);border-top-color:var(--muted-foreground)}
+  .idade{font:11px var(--mono);color:var(--faint);padding:6px 12px 0}
+  .commit{padding:10px 12px 10px}
+  .campo{height:32px;border-radius:8px;box-shadow:inset 0 0 0 1px var(--border);display:flex;align-items:center;padding:0 10px;font-size:13px;color:var(--faint)}
+  .campo.cheio{color:var(--foreground)}
+  .botoes{display:flex;margin-top:8px}
+  .botoes .b{flex:1;height:32px;border-radius:8px 0 0 8px;background:var(--foreground);color:var(--background);display:grid;place-items:center;font-size:13px;font-weight:500}
+  .botoes .b.fraco{background:var(--secondary);color:var(--muted-foreground)}
+  .botoes .c{width:32px;height:32px;border-radius:0 8px 8px 0;background:var(--foreground);color:var(--background);display:grid;place-items:center;box-shadow:inset 1px 0 0 rgba(255,255,255,.2)}
+  .botoes .c.fraco{background:var(--secondary);color:var(--muted-foreground);box-shadow:inset 1px 0 0 var(--border)}
+  .secao{display:flex;align-items:center;gap:6px;padding:10px 12px 4px;font-size:12px;color:var(--muted-foreground);border-top:1px solid var(--divisor)}
+  .secao .n{font:11px var(--mono);background:var(--secondary);border-radius:5px;padding:0 5px;color:var(--foreground)}
+  .arq{display:flex;align-items:center;gap:8px;height:28px;padding:0 12px;font:12px var(--mono)}
+  .arq .l{font-weight:600;width:10px}
+  .arq .l.m{color:var(--mod)} .arq .l.u{color:var(--add)}
+  .arq .p{color:var(--faint);flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .arq.conf .l{color:var(--del)}
+  .commitrow{display:flex;align-items:center;gap:8px;height:30px;padding:0 12px;font-size:12px}
+  .commitrow .h{font:11px var(--mono);color:var(--faint)}
+  .commitrow .m{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .commitrow .q{font:11px var(--mono);color:var(--faint)}
+  .commitrow .nao{font:11px var(--mono);color:var(--muted-foreground);background:var(--secondary);border-radius:5px;padding:0 5px}
+  .rodape{display:flex;justify-content:flex-end;padding:10px 12px;border-top:1px solid var(--divisor)}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);white-space:nowrap}
+  .btn.ghost{background:transparent;color:var(--muted-foreground)}
+  .btn.prim{background:var(--foreground);color:var(--background);font-weight:500}
+  .btn.chip{height:24px;padding:0 8px;font-size:11px}
+
+  .menu{position:absolute;width:280px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px;z-index:3}
+  .menu .it{display:flex;align-items:center;gap:10px;height:30px;padding:0 8px;border-radius:6px;color:var(--foreground)}
+  .menu .it svg{color:var(--muted-foreground)}
+  .menu .it.foco{background:var(--sel)}
+  .menu .it .d{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+  .menu .sep{height:1px;background:var(--divisor);margin:4px 2px}
+  .menu .busca{height:28px;margin:2px 2px 4px;border-radius:7px;box-shadow:inset 0 0 0 1px var(--border);display:flex;align-items:center;gap:6px;padding:0 8px;font-size:12px;color:var(--faint)}
+  .menu .grupo{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 3px}
+  .menu .nota2{font-size:11px;color:var(--faint);padding:2px 8px 6px;line-height:1.45}
+
+  .faixa{margin:10px 12px 0;border-radius:9px;background:var(--sel-hover);padding:10px 12px;font-size:12px;line-height:1.5}
+  .faixa b{font-weight:500}
+  .faixa .acoes{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .faixa .ic{color:var(--warn)}
+
+  .dialogo{width:380px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);padding:20px}
+  .dialogo h4{font-size:14px;font-weight:600}
+  .dialogo p{font-size:13px;color:var(--muted-foreground);margin-top:6px;line-height:1.5}
+  .dialogo .op{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+  .dialogo .op .o{border-radius:9px;box-shadow:inset 0 0 0 1px var(--border);padding:9px 12px;font-size:13px}
+  .dialogo .op .o span{display:block;font-size:12px;color:var(--muted-foreground)}
+  .dialogo .op .o.foco{box-shadow:inset 0 0 0 1.5px rgba(22,24,27,.45)}
+  .dialogo .rodape2{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+
+  .decisoes{margin-top:44px;max-width:1040px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin:18px 0 6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 6"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="down" viewBox="0 0 24 24"><path d="m19 12-7 7-7-7M12 5v14"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="chevr" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="busca" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="caixa" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></symbol>
+  <symbol id="voltar" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></symbol>
+  <symbol id="alerta" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="pr" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V9a3 3 0 0 0-3-3h-4"/></symbol>
+  <symbol id="nuvem" viewBox="0 0 24 24"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/><path d="M12 17v-6M9.5 13.5 12 11l2.5 2.5"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+</svg>
+
+<h1>A aba Alterações: as ações de git que faltam</h1>
+<p class="sub">Hoje a aba prepara, descarta, commita e abre pull request, mas o único push mora dentro do pull request, o <span class="kbd">↑3</span> é texto, e a branch não troca. A proposta põe as ações do dia a dia no lugar de onde o olho já está, com uma regra: <b>o que sai da máquina ou reescreve histórico é gesto seu, e diz o que vai fazer antes</b>. Parte B do PRD <span class="kbd">docs/explorador-de-arquivos-prd.md</span>.</p>
+
+<!-- 1 -->
+<h2>1. Sincronizar: ícone e contagem, o nome no tooltip</h2>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">À frente · o print de hoje, com o gesto</p>
+    <div class="aba">
+      <div class="cab">
+        <span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main<svg class="i" style="width:10px"><use href="#chev"/></svg></span>
+        <span class="esp"></span>
+        <span class="add">+247</span><span class="del">−232</span>
+        <span class="sync" style="position:relative"><span><svg class="i" style="width:11px"><use href="#up"/></svg>3</span><span><svg class="i" style="width:10px"><use href="#chev"/></svg></span><span class="tip" style="right:0;top:30px">Enviar 3 commits</span></span>
+      </div>
+      <div class="commit"><div class="campo">Mensagem do commit</div><div class="botoes"><span class="b fraco">✓ Criar commit</span><span class="c fraco"><svg class="i" style="width:12px"><use href="#chev"/></svg></span></div></div>
+      <div class="secao"><svg class="i" style="width:10px"><use href="#chev"/></svg>Alterações <span class="n">3</span></div>
+      <div class="arq"><span class="l m">M</span>codex_appserver.rs <span class="p">app/src-tauri/src/</span><span class="add">+3</span> <span class="del">−232</span></div>
+      <div class="arq"><span class="l m">M</span>lib.rs <span class="p">app/src-tauri/src/</span><span class="add">+1</span></div>
+      <div class="arq"><span class="l u">U</span>codex_itens.rs <span class="p">app/src-tauri/src/</span><span class="add">+243</span></div>
+      <div class="rodape"><span class="btn"><svg class="i" style="width:12px"><use href="#pr"/></svg>Abrir pull request</span></div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Os outros estados do mesmo botão</p>
+    <div style="display:flex;flex-direction:column;gap:22px">
+      <div class="aba" style="width:380px"><div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main</span><span class="esp"></span><span class="sync"><span><svg class="i" style="width:11px"><use href="#down"/></svg>2</span><span><svg class="i" style="width:10px"><use href="#chev"/></svg></span></span></div><div class="idade">↓2 desde a busca de há 3 h</div><div style="height:8px"></div></div>
+      <div class="aba" style="width:380px"><div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main</span><span class="esp"></span><span class="sync"><span><svg class="i" style="width:11px"><use href="#down"/></svg>2 <svg class="i" style="width:11px"><use href="#up"/></svg>3</span><span><svg class="i" style="width:10px"><use href="#chev"/></svg></span></span></div></div>
+      <div class="aba" style="width:380px"><div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>explorador-hover</span><span class="esp"></span><span class="sync" style="position:relative"><span><svg class="i" style="width:12px"><use href="#nuvem"/></svg></span><span class="tip" style="right:0;top:30px">Publicar branch</span></span></div></div>
+      <div class="aba" style="width:380px"><div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main</span><span class="esp"></span><span class="sync busy" style="position:relative"><span><i class="spin"></i>3</span><span class="tip" style="right:0;top:30px">Enviando 3 commits…</span></span></div></div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">O menu do botão e o do commit</p>
+    <div style="position:relative;width:300px;height:360px">
+      <div class="menu" style="left:0;top:0">
+        <div class="it foco"><svg class="i"><use href="#up"/></svg>Enviar 3 commits</div>
+        <div class="it"><svg class="i"><use href="#down"/></svg>Trazer (só avança)</div>
+        <div class="it"><svg class="i"><use href="#refresh"/></svg>Buscar do remoto<span class="d">há 3 h</span></div>
+      </div>
+      <div class="menu" style="left:0;top:132px">
+        <div class="it"><svg class="i"><use href="#check"/></svg>Criar commit</div>
+        <div class="it foco"><svg class="i"><use href="#up"/></svg>Criar commit e enviar</div>
+        <div class="sep"></div>
+        <div class="it">Escrever mensagem longa</div>
+        <div class="it">Emendar o último commit</div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>Só ícone e contagem</b>: <span class="kbd">↑3</span> envia, <span class="kbd">↓2</span> traz, <span class="kbd">↓2 ↑3</span> traz e envia, a mesma linguagem de toda IDE. O nome do gesto fica no tooltip e no <span class="kbd">aria-label</span>. A exceção é "Publicar branch": sem número, uma seta sozinha se confundiria com o ↑, então ele ganha a nuvem com seta. <b>Trazer só avança</b> (<span class="kbd">--ff-only</span>): se os dois lados divergiram, o app para e explica, em vez de mesclar sozinho. <b>Nunca --force</b>: push recusado vira "Trazer primeiro". O <b>↓ mostra de quando é</b>, porque sem busca ele envelhece em silêncio; a busca automática ao voltar o foco é opção sua nas Configurações, desligada por padrão.</p>
+
+<!-- 2 -->
+<h2>2. Quando algo dá errado, o motivo e a saída</h2>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">Conta errada do GitHub (já aconteceu aqui)</p>
+    <div class="aba">
+      <div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main</span><span class="esp"></span><span class="sync"><span><svg class="i" style="width:11px"><use href="#up"/></svg>3</span></span></div>
+      <div class="faixa"><b>O GitHub recusou o envio: a conta ativa não tem acesso a este repositório.</b> O dono é vinicius1209, uma conta que também está no gh.<div class="acoes"><span class="btn chip prim"><svg class="i" style="width:11px"><use href="#user"/></svg>Trocar para vinicius1209 e enviar</span><span class="btn chip ghost">Detalhes</span></div></div>
+      <div style="height:12px"></div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Os dois lados divergiram</p>
+    <div class="aba">
+      <div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main</span><span class="esp"></span><span class="sync"><span><svg class="i" style="width:11px"><use href="#down"/></svg>2 <svg class="i" style="width:11px"><use href="#up"/></svg>3</span></span></div>
+      <div class="faixa"><svg class="i ic" style="width:12px;vertical-align:-2px"><use href="#alerta"/></svg> <b>O remoto tem 2 commits que você não tem, e você tem 3 que ele não tem.</b> Trazer sem mesclar não dá.<div class="acoes"><span class="btn chip">Trazer com rebase</span><span class="btn chip ghost">Agora não</span></div></div>
+      <div style="height:12px"></div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Rebase parou em conflito</p>
+    <div class="aba">
+      <div class="cab"><span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>main · rebase 2 de 3</span></div>
+      <div class="secao" style="border-top:0"><svg class="i" style="width:10px;color:var(--del)"><use href="#alerta"/></svg>Em conflito <span class="n">2</span></div>
+      <div class="arq conf"><span class="l">!</span>lib.rs <span class="p">app/src-tauri/src/</span><span class="btn chip ghost">Abrir</span></div>
+      <div class="arq conf"><span class="l">!</span>chat.ts <span class="p">app/src/store/</span><span class="btn chip ghost">Abrir</span></div>
+      <div class="faixa" style="margin-top:6px">Resolva nos arquivos e continue, ou peça ao agente.<div class="acoes"><span class="btn chip">Pedir ao agente para resolver</span><span class="btn chip ghost">Continuar</span><span class="btn chip ghost">Abortar o rebase</span></div></div>
+      <div style="height:12px"></div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>"Pedir ao agente para resolver"</b> escreve o pedido no composer da conversa com os arquivos em conflito, e para aí: quem envia é você. A faixa é neutra; âmbar só no ícone do que pede decisão.</p>
+
+<!-- 3 -->
+<h2>3. Branches, stash e histórico</h2>
+<div class="palco" style="margin-top:14px">
+  <div>
+    <p class="legenda">O nome da branch vira seletor</p>
+    <div class="aba" style="height:380px">
+      <div class="cab"><span class="branch aberto"><svg class="i" style="width:12px"><use href="#branch"/></svg>main<svg class="i" style="width:10px"><use href="#chev"/></svg></span></div>
+      <div class="menu" style="left:8px;top:36px;width:300px">
+        <div class="busca"><svg class="i" style="width:12px"><use href="#busca"/></svg>Buscar branch</div>
+        <div class="it"><svg class="i"><use href="#plus"/></svg>Nova branch a partir daqui</div>
+        <div class="sep"></div>
+        <div class="grupo">Recentes</div>
+        <div class="it foco"><svg class="i"><use href="#branch"/></svg>explorador-hover<span class="d">ontem</span></div>
+        <div class="it"><svg class="i"><use href="#branch"/></svg>edicao-de-arquivos<span class="d">3 dias</span></div>
+        <div class="it"><svg class="i"><use href="#check"/></svg>main<span class="d">atual</span></div>
+        <div class="sep"></div>
+        <div class="it"><svg class="i"><use href="#caixa"/></svg>Guardar alterações (stash)</div>
+        <div class="it"><svg class="i"><use href="#caixa"/></svg>Recuperar guardadas<span class="d">2</span></div>
+        <div class="nota2">Conversas em worktree não são afetadas pela troca.</div>
+      </div>
+    </div>
+  </div>
+  <div>
+    <p class="legenda">Trocar com alterações não commitadas</p>
+    <div class="dialogo">
+      <h4>Trocar para explorador-hover</h4>
+      <p>Há 3 arquivos alterados em main.</p>
+      <div class="op">
+        <div class="o foco">Levar as alterações<span>Elas continuam na área de trabalho, na nova branch.</span></div>
+        <div class="o">Guardar (stash) e trocar<span>Você recupera depois, pela lista de guardadas.</span></div>
+      </div>
+      <div class="rodape2"><span class="btn ghost">Cancelar</span><span class="btn prim">Trocar</span></div>
+    </div>
+    <p class="nota" style="max-width:380px">Com um turno rodando nesta pasta, a troca é barrada com o motivo: mudar os arquivos debaixo de um agente trabalhando é o pior caso.</p>
+  </div>
+  <div>
+    <p class="legenda">Histórico, recolhido no fim da aba</p>
+    <div class="aba">
+      <div class="secao" style="border-top:0"><svg class="i" style="width:10px"><use href="#chev"/></svg>Histórico</div>
+      <div class="commitrow"><span class="h">1179fa7</span><span class="m">docs(codigo): comentário diz o porquê que ainda vale</span><span class="nao">não enviado</span></div>
+      <div class="commitrow"><span class="h">ba6bff3</span><span class="m">feat(notas): a mensagem pronta vira nota</span><span class="nao">não enviado</span></div>
+      <div class="commitrow"><span class="h">53c4701</span><span class="m">fix(citar): o botão da seleção</span><span class="nao">não enviado</span></div>
+      <div class="commitrow"><span class="h">67465d0</span><span class="m">feat(arquivos): o arquivo se edita ali</span><span class="q">ontem</span></div>
+      <div class="commitrow"><span class="h">d533df5</span><span class="m">feat(configuracoes): um lugar por motor</span><span class="q">ontem</span></div>
+      <div class="rodape" style="justify-content:space-between"><span class="btn ghost chip"><svg class="i" style="width:11px"><use href="#voltar"/></svg>Desfazer último commit</span><span class="btn ghost chip">Ver mais</span></div>
+    </div>
+  </div>
+</div>
+<p class="nota"><b>"Desfazer último commit"</b> devolve as alterações à área de trabalho e só existe enquanto o commit não foi enviado. Clicar num commit abre o diff dele na aba de diff que já existe.</p>
+
+<div class="decisoes">
+  <h3>Fatiamento</h3>
+  <ul>
+    <li><b>BF1</b> enviar, trazer, publicar, buscar, "commit e enviar" e a conta certa (o pedido direto) · <b>BF2</b> branches e stash · <b>BF3</b> histórico e desfazer · <b>BF4</b> conflitos e o menu por arquivo.</li>
+  </ul>
+  <h3>Perguntas para você</h3>
+  <ul>
+    <li><b>Busca automática</b> ao voltar o foco (no máximo a cada 5 min): ligada ou desligada por padrão? A proposta é desligada.</li>
+    <li><b>"Sincronizar"</b> com os dois lados: trazer e enviar num gesto só, ou sempre em dois passos?</li>
+    <li><b>Ficam de fora</b> <span class="kbd">--force</span>, cherry-pick, blame, tags e merge linha a linha. Algum deles faz falta no seu dia a dia?</li>
+  </ul>
+</div>
+
+</body>
+</html>

@@ -5,6 +5,7 @@ use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 #[cfg(target_os = "macos")]
 pub(crate) const TRAFFIC_LIGHTS_Y: f32 = 37.0;
 
+mod abrir_no_sistema;
 mod acp;
 mod adapters;
 mod agent;
@@ -50,6 +51,7 @@ mod desktop_broker;
 mod desktop_driver;
 mod desktop_gateway;
 mod despertador;
+mod detalhe_do_caminho;
 mod detect;
 mod edicao;
 mod editor;
@@ -57,6 +59,7 @@ mod evidence;
 mod experience_broker;
 mod fsx;
 mod git;
+mod git_sync;
 mod github;
 mod hook_gateway;
 mod hook_sessions;
@@ -89,6 +92,7 @@ mod proc;
 mod processos;
 mod project_files;
 mod provider_mcp_inventory;
+mod quem_alterou;
 mod quit;
 mod resource_broker;
 mod run_manifest;
@@ -118,11 +122,8 @@ pub use subcomandos::run_subcomando;
 /// Nome do arquivo do banco.
 pub const BANCO: &str = "frota.db";
 
-/// O nome LEGADO do banco, e o identificador LEGADO do bundle. Os dois mudaram
-/// em 21/09/2026 (ADR-222), e o identificador É o diretório de dados: trocar
-/// sem migrar faria o app abrir num diretório vazio, criar banco novo e rodar
-/// as migrações do zero, com as conversas, custos e lições da pessoa intactas
-/// no diretório antigo e invisíveis.
+/// O nome e o identificador LEGADOS (ADR-222). O identificador É o diretório
+/// de dados: trocar sem migrar abriria o app num banco vazio.
 pub const BANCO_LEGADO: &str = "mycockpit.db";
 pub const ID_LEGADO: &str = "dev.vinicius.mycockpit";
 
@@ -725,6 +726,12 @@ pub fn run() {
             sql: "DROP TABLE IF EXISTS conversation_map_pins",
             kind: MigrationKind::Up,
         },
+        Migration {
+            version: 63,
+            description: "idx_turn_costs_conv_time",
+            sql: "CREATE INDEX IF NOT EXISTS idx_turn_costs_conv_time ON turn_costs(conv_id, created_at)",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -747,12 +754,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        // Só pra LER a área de transferência no "Colar" do nosso menu de
-        // contexto (ADR-042). No WKWebView, `navigator.clipboard.readText()`
-        // devolve NotAllowedError pra conteúdo que a página não escreveu, e
-        // `execCommand("paste")` devolve false — sem isto aqui, "Colar" seria
-        // item morto. Escrita continua pelo `navigator.clipboard`, que
-        // funciona: a capability libera SÓ `allow-read-text`.
+        // Só para LER no "Colar" do menu (ADR-042): o WKWebView nega a leitura
+        // pelo `navigator.clipboard`. A capability libera só `allow-read-text`.
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(
             SqlBuilder::default()
@@ -882,6 +885,21 @@ pub fn run() {
             git::git_diff_staged,
             git::git_create_pr,
             git::pr_context,
+            abrir_no_sistema::abrir_no_app_padrao,
+            detalhe_do_caminho::detalhe_do_caminho,
+            quem_alterou::quem_alterou,
+            git_sync::git_estado_do_repo,
+            git_sync::git_enviar,
+            git_sync::git_trazer,
+            git_sync::git_buscar,
+            git_sync::git_branches,
+            git_sync::git_trocar_branch,
+            git_sync::git_guardadas,
+            git_sync::git_guardar,
+            git_sync::git_recuperar_guardada,
+            git_sync::git_historico,
+            git_sync::git_desfazer_ultimo_commit,
+            git_sync::git_operacao,
             github::gh_status,
             github::gh_switch_account,
             mcp_control::discover_mcp_servers,
@@ -978,26 +996,5 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            // No macOS, o AppKit também considera o HUD auxiliar uma janela
-            // visível. Clicar no Dock sempre expressa a intenção de restaurar
-            // `main`, mesmo quando `has_visible_windows` vier verdadeiro.
-            #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen {
-                has_visible_windows,
-                ..
-            } = &event
-            {
-                tray::handle_reopen(app_handle, *has_visible_windows);
-            }
-            // Saídas programáticas passam por este evento. Cmd+Q, o menu do
-            // app e o Dock são interceptados antes pelo delegate do AppKit em
-            // quit.rs, pois o item Quit nativo chama terminate: diretamente.
-            if let tauri::RunEvent::ExitRequested { api, .. } = &event {
-                if !quit::allows_exit(app_handle) {
-                    api.prevent_exit();
-                    quit::request_quit(app_handle, quit::QuitOrigin::Native);
-                }
-            }
-        });
+        .run(janela_eventos::ao_evento_do_app);
 }

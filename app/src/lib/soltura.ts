@@ -86,9 +86,38 @@ export function dentroDoRetangulo(
   return x >= ret.left && x <= ret.right && y >= ret.top && y <= ret.bottom
 }
 
-/** Rótulo do estado de arrasto. */
-export function rotuloDaSoltura(quantos: number): string {
-  return quantos === 1 ? "Solte para anexar · 1 item" : `Solte para anexar · ${quantos} itens`
+/** O verbo diz o resultado (docs/explorador-de-arquivos-prd.md, D5): "anexar"
+ *  só para o que vira anexo de verdade (imagem, PDF); o resto é citado, como
+ *  cartão. Vale para o que vem do Finder e da árvore. `pasta` desconhecida
+ *  (o Finder só dá o caminho) não inventa "a pasta". Puro. */
+export function rotuloDosCaminhos(itens: readonly { caminho: string; pasta?: boolean }[]): string {
+  const anexa = (i: { caminho: string; pasta?: boolean }) => !i.pasta && ANEXAVEIS.has(extensao(i.caminho))
+  if (itens.length !== 1) {
+    return `Solte para ${itens.every(anexa) ? "anexar" : "citar"} ${itens.length} itens`
+  }
+  const [item] = itens
+  if (anexa(item)) return `Solte para anexar ${nomeDe(item.caminho)}`
+  return item.pasta ? `Solte para citar a pasta ${nomeDe(item.caminho)}` : `Solte para citar ${nomeDe(item.caminho)}`
+}
+
+/** Os caminhos absolutos de uma carga de arquivo: a árvore manda relativo à
+ *  raiz (um item) ou já absoluto (vários). Puro. */
+export function caminhosDaCarga(
+  carga: CargaArrastada,
+  projectPath: string | null,
+): { caminho: string; pasta: boolean }[] {
+  const raiz = projectPath?.replace(/\/+$/, "")
+  const absoluto = (c: string) => (raiz && !c.startsWith("/") ? `${raiz}/${c}` : c)
+  if (carga.tipo === "arquivo") return [{ caminho: absoluto(carga.caminho), pasta: carga.pasta }]
+  if (carga.tipo === "arquivos") return carga.itens.map((i) => ({ caminho: absoluto(i.caminho), pasta: i.pasta }))
+  return []
+}
+
+/** A coluna da conversa inteira só aceita arquivo: texto e imagem do fio
+ *  continuam indo para o composer, senão arrastar uma seleção no próprio fio
+ *  já acenderia o alvo. Puro. */
+export function aceitaNaConversa(carga: CargaArrastada): boolean {
+  return carga.tipo === "arquivo" || carga.tipo === "arquivos"
 }
 
 /** Um anexo a mais no rascunho: o mesmo arquivo não entra duas vezes e o teto
@@ -134,6 +163,7 @@ export function planoDoArrasto(carga: CargaArrastada, projectPath: string | null
 
 /** O rótulo do alvo aceso, que diz o que vai acontecer ANTES de soltar. */
 export function rotuloDoArrasto(carga: CargaArrastada): string | null {
+  if (aceitaNaConversa(carga)) return rotuloDosCaminhos(caminhosDaCarga(carga, null))
   const plano = planoDoArrasto(carga)
   if (plano.acao === "nada") return null
   if (plano.acao === "anexo") return `Solte para anexar ${plano.anexo.name}`

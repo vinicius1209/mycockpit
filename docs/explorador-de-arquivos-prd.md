@@ -1,8 +1,12 @@
-# PRD, o explorador de arquivos: botão direito, hover e arrastar
+# PRD, o explorador de arquivos e a aba Alterações
 
-> Status: **aprovada na direção (27/09), sem código.** Decisões da conversa
-> na seção 7. Mock em
-> `docs/mocks/explorador-de-arquivos.html`.
+> Parte A: a árvore (botão direito, hover, arrastar). Parte B: as ações de git
+> na aba Alterações (push, pull, branches, histórico), acrescentada em 27/09.
+
+> Status (28/09): Parte A implementada, F1 (ADR-279) e F2 a F4 (ADR-280).
+> Parte B implementada (ADR-278). Decisões da conversa na seção 7. Mocks:
+> `docs/mocks/explorador-de-arquivos.html` (Parte A) e
+> `docs/mocks/alteracoes-git.html` (Parte B).
 > Origem: pedido de 27/09/2026, com print da árvore.
 > ADR: abre na implementação; **confira o máximo real** em `docs/decisions.md`.
 
@@ -277,3 +281,145 @@ conversas, 11.625 itens, 1.719 turnos):
 - **Decisão humana:** citar e soltar são gestos; nada é enviado sozinho.
 - **Guia:** um catálogo e uma primitiva por gesto (regra 1), `HoverCard` e
   `ContextMenu` de `components/ui`, seleção neutra, controles nos degraus.
+
+---
+
+# Parte B, a aba Alterações: as ações de git que faltam
+
+> **Status (28/09/2026):** BF1 a BF4 implementadas (ADR-278), com três
+> correções ao texto abaixo: a busca automática ao voltar o foco ficou de fora
+> deste corte (a busca é gesto, e o `↓` diz a idade); clicar num commit do
+> Histórico não abre o diff, porque a aba de diff ainda não lê commit; e o menu
+> por arquivo (BD7) espera o catálogo da Parte A. Trazer commits também é
+> barrado com turno rodando na pasta, pelo mesmo motivo da troca de branch.
+
+## B1. O pedido
+
+> "acrescente no plano a possibilidade de fazer push e quem sabe outras ações
+> úteis do git na nossa aba de alterações, semelhante a muitas IDEs e ADEs no
+> mercado"
+
+O print mostra a aba: `main ↑3`, `+247 −232`, a mensagem de commit com gerador,
+"Criar commit" com um menu ao lado, três arquivos e "Abrir pull request".
+
+## B2. Evidência
+
+| # | achado | onde |
+|---|---|---|
+| B-E1 | O app faz status, stage e unstage (arquivo e tudo), descartar (arquivo e tudo, com confirmação), diff, commit (com `amend`), pull request e worktrees. **Não faz** push avulso, pull, fetch, troca ou criação de branch, histórico, stash nem desfazer commit. | `app/src/lib/git.ts:184-280`, `app/src-tauri/src/git.rs` |
+| B-E2 | O único push do app mora dentro do pull request: troca a conta do `gh` e faz `git push -u origin <branch>`. Quem só quer enviar os commits não tem botão. | `git.rs:995-998` |
+| B-E3 | O `↑3` do cabeçalho é texto, não gesto; o `↓N` depende do último fetch, que o app nunca faz, então pode estar velho sem dizer. | `app/src/components/layout/DiffIndex.tsx:262-266` |
+| B-E4 | O nome da branch também é só texto: não troca nem cria branch. | `DiffIndex.tsx:258-261` |
+| B-E5 | O menu ao lado de "Criar commit" tem mensagem longa e `amend`, mas não "commit e enviar". | `DiffPanel/CommitComposer.tsx:229-240` |
+| B-E6 | `git.rs` tem 1312 linhas, congelado acima do teto de 1000: comando novo de git vai para módulo próprio. | `scripts/lints/file-size-baseline.json` |
+| B-E7 | Push com a conta errada do GitHub ativa falha com "repository not found", e já aconteceu neste repo. O app sabe trocar a conta (`gh_switch_account`), mas só o fluxo de pull request usa isso. | `github.rs:196`, `git.rs:995` |
+
+## B3. Princípio
+
+**Toda ação que sai da máquina ou reescreve histórico é gesto seu, e diz o que
+vai fazer antes.** Nada de push automático, nada de `--force`, e o estado mostra
+de quando é ("↓2 desde a busca de há 3 h").
+
+## B4. Decisões propostas
+
+### BD1. Sincronizar com o remoto
+- **O `↑3` de texto vira o botão**, só ícone e contagem (decidido em 28/09: "os
+  próprios ícones já dizem isso"): `↑3` quando só está à frente, `↓2` quando só
+  está atrás, `↓2 ↑3` quando os dois (traz e depois envia). O texto mora no
+  tooltip do app (`ui/tooltip`, o do §12 para o nome do que o ícone diz) e no
+  `aria-label`: "Enviar 3 commits", "Trazer 2 commits", "Trazer 2 e enviar 3".
+  Sem upstream, não há número para carregar o sentido, e uma seta sozinha se
+  confundiria com o `↑`: "Publicar branch" (`push -u`) ganha ícone próprio,
+  nuvem com seta, com o mesmo tooltip. Enviando, o ícone vira o spinner e o
+  tooltip diz "Enviando 3 commits…".
+- **Pull só avança** (`--ff-only`) por padrão. Se os dois lados divergiram, o
+  app não mescla em silêncio: diz que divergiu e oferece "Trazer com rebase"
+  como gesto explícito, ou parar.
+- **Nunca `--force`.** Push recusado por histórico divergente vira a mesma
+  explicação, com "Trazer primeiro".
+- **Buscar (fetch)** no menu do botão, e o `↓` ganha a idade: "desde a busca de
+  há 3 h". Busca automática só ao voltar o foco à janela, no máximo a cada 5
+  min, e só se você ligar nas Configurações (desligada por padrão: rede e
+  credencial são suas).
+- **"Criar commit e enviar"** entra no menu do "Criar commit".
+- Tudo que usa a rede roda fora da tela, com "Enviando 3 commits…" no próprio
+  botão, e o erro do git no detalhe do aviso.
+
+### BD2. A conta certa do GitHub
+- Push, pull e fetch que falham com "repository not found" ou 403 num remoto do
+  GitHub mostram **qual conta está ativa** e oferecem "Trocar para <conta>"
+  (as contas vêm do `pr_context`, que já as lista), repetindo o gesto depois.
+  É o caso que já custou tempo aqui.
+
+### BD3. Branches
+- O nome da branch vira um seletor: as branches locais (as recentes primeiro),
+  "Nova branch a partir daqui" e a busca.
+- **Trocar com alterações não commitadas** não perde nada: o app pergunta
+  "Levar as alterações para <branch>", "Guardar (stash) e trocar" ou
+  "Cancelar".
+- **Trocar com um turno rodando nesta pasta é barrado**, com o motivo: mudar os
+  arquivos debaixo de um agente trabalhando é o pior caso. Conversas em
+  worktree não são afetadas, e o seletor diz isso.
+
+### BD4. Histórico e desfazer
+- Uma seção "Histórico" recolhida no fim da aba: os últimos 20 commits da
+  branch, com mensagem, autor e quando, e os ainda não enviados marcados.
+- **"Desfazer último commit"** (volta as alterações para a área de trabalho,
+  `reset --soft HEAD~1`) só aparece enquanto o commit não foi enviado; depois de
+  enviado, reescrever é trabalho de outro gesto, que não entra aqui.
+- Clicar num commit abre o diff dele na aba de diff que já existe.
+
+### BD5. Stash
+- "Guardar alterações" (stash com mensagem) e a lista para "Recuperar" ou
+  "Apagar" (esta com confirmação). Também é o caminho da BD3.
+
+### BD6. Conflitos
+- Rebase ou pull que para em conflito deixa a aba em modo conflito: a lista dos
+  arquivos em conflito, "Abrir" cada um no editor da Frota, e **"Pedir ao
+  agente para resolver"**, que escreve o pedido no composer da conversa (não
+  envia: o gesto é seu). "Continuar" e "Abortar" o rebase ficam visíveis.
+
+### BD7. Ações por arquivo
+- A linha de arquivo da aba ganha o mesmo menu de contexto da Parte A (catálogo
+  único), mais o que é de git: preparar, tirar do preparo, descartar (com a
+  confirmação de hoje) e "Adicionar ao .gitignore".
+
+## B5. Requisitos com aceite
+
+- **BR1 Sincronizar:** à frente mostra `↑N`, atrás `↓N`, divergido `↓N ↑N`,
+  cada um com o tooltip e o `aria-label` do que faz; pull divergido não mescla sozinho; push recusado não
+  força; o `↓` mostra a idade da busca. *Double check:* teste Rust com
+  repositórios temporários (remoto local `file://`): avançar, divergir, recusar.
+- **BR2 Conta:** falha de acesso num remoto do GitHub mostra a conta ativa e o
+  "Trocar para"; repete o gesto depois de trocar. *Double check:* teste puro da
+  classificação da mensagem de erro com saídas reais do git.
+- **BR3 Branches:** trocar com alteração pergunta as três saídas; turno rodando
+  na pasta barra; nova branch nasce do HEAD atual.
+- **BR4 Histórico:** 20 commits, os não enviados marcados; "Desfazer último
+  commit" só em commit não enviado e devolve as alterações.
+- **BR5 Stash, BR6 Conflitos, BR7 Menu por arquivo:** conforme BD5 a BD7.
+
+## B6. Orçamento de desempenho
+
+- Nada de rede sem gesto (ou sem a busca automática que você ligar).
+- Histórico e branches são lidos só quando a seção ou o seletor abrem, com teto
+  (20 commits, 50 branches).
+- Depois de cada ação, o status relê pelo mesmo sinal da aba
+  (`lib/sinaisDoDisco`), uma vez.
+- Os comandos novos vão para um módulo Rust próprio (`git.rs` está congelado) e
+  rodam em `spawn_blocking`, nunca na thread da tela.
+
+## B7. Fora do escopo
+
+- `--force`, reescrever histórico enviado, cherry-pick, blame, tags e
+  submódulos.
+- Resolver conflito linha a linha dentro da Frota (o editor abre o arquivo; a
+  ferramenta de merge é outra frente).
+
+## B8. Fatiamento
+
+1. **BF1:** enviar, trazer, publicar e buscar, "Commit e enviar", conta certa
+   (BD1, BD2). É o pedido direto.
+2. **BF2:** branches e stash (BD3, BD5).
+3. **BF3:** histórico e desfazer último commit (BD4).
+4. **BF4:** conflitos e menu por arquivo (BD6, BD7).

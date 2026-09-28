@@ -49,6 +49,27 @@ export function assinaturaDasMudancas(
   return partes.sort().join("|")
 }
 
+/** Quantas conversas desta pasta têm um turno em voo. Puro. */
+export function turnosNaPasta(
+  conversas: Record<string, ConversaVista>,
+  cwd: string,
+  pastaDoProjeto: (projectId: string) => string | null,
+): number {
+  let n = 0
+  for (const conversa of Object.values(conversas)) {
+    const pasta = conversa.worktreePath ?? pastaDoProjeto(conversa.projectId)
+    if (pasta === cwd && (conversa.running || conversa.finalizing)) n += 1
+  }
+  return n
+}
+
+/** Há agente trabalhando em `cwd` agora? Quem vai mudar os arquivos debaixo
+ *  dele (trocar de branch, trazer commits) pergunta antes. */
+export function haTurnoNaPasta(cwd: string): boolean {
+  const projetos = useApp.getState().projects
+  return turnosNaPasta(useChat.getState().byId, cwd, (id) => projetos.find((p) => p.id === id)?.path ?? null) > 0
+}
+
 /** UMA assinatura do chat por pasta, por mais que sejam os ouvintes: a
  *  assinatura varre os itens de todas as conversas, e o chat muda a cada token.
  *  A aba Alterações e dois editores abertos não podem virar três varreduras. */

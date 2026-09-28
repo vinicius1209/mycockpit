@@ -32,7 +32,8 @@ export function GitSection({
   children,
 }: {
   title: string
-  count: number
+  /** Sem contagem, o cabeçalho mostra só o título (o Histórico). */
+  count?: number
   isOpen: boolean
   onToggle: () => void
   actions?: ReactNode
@@ -55,9 +56,11 @@ export function GitSection({
             <ChevronRight className="size-3 shrink-0 opacity-70" />
           )}
           <span className="truncate">{title}</span>
-          <span className="rounded-full bg-secondary px-1.5 py-0.2 font-mono text-[11px] tabular-nums text-foreground/80">
-            {count}
-          </span>
+          {count !== undefined && (
+            <span className="rounded-full bg-secondary px-1.5 py-0.2 font-mono text-[11px] tabular-nums text-foreground/80">
+              {count}
+            </span>
+          )}
         </button>
 
         {actions && (

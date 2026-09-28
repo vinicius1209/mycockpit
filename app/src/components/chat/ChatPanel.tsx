@@ -709,7 +709,7 @@ export function ChatPanel() {
   const vista = vistaDaConversa({ temConversa: hasConversation, missao: missionStatus })
 
   return (
-    <section className="relative flex h-full w-full min-w-0 flex-col bg-background">
+    <section data-coluna-da-conversa="" data-arrasto-alvo="conversa" className="relative flex h-full w-full min-w-0 flex-col bg-background">
       {vista.boasVindas && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-96 bg-[radial-gradient(62%_80%_at_50%_100%,var(--brass-soft),transparent_72%)] opacity-70" />
       )}
