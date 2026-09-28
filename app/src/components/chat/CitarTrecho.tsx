@@ -1,4 +1,4 @@
-// A pílula "❝ Citar" que aparece ao soltar uma seleção dentro de UMA mensagem
+// O botão "❝ Citar" que aparece ao soltar uma seleção dentro de UMA mensagem
 // do agente (capricho PRD R3). Seleção que cruza duas mensagens não mostra;
 // Esc, rolar ou desfazer a seleção escondem. O mesmo gesto existe no menu do
 // botão direito ("Citar trecho"), para quem usa teclado.
@@ -73,12 +73,9 @@ export function CitarTrecho() {
           citarTrecho(alvo.itemId, alvo.selecao)
           setAlvo(null)
         }}
-        className={cn(
-          controle("chip"),
-          "rounded-full bg-foreground text-background hover:bg-foreground/90",
-        )}
+        className={cn(controle("chip"), "text-foreground transition-colors hover:bg-sel-hover")}
       >
-        <Quote className="size-3" />
+        <Quote className="size-3 text-muted-foreground" />
         Citar
       </button>
     </BarraDeSelecao>
