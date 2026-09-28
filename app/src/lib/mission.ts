@@ -1,7 +1,5 @@
-// MOTOR do modo Mission (docs/mission-mode.md §3): orquestração PURA de UMA
-// fase do pipeline heterogêneo. Modelado nos padrões do Fusion (reduceItems + soma de
-// cost_usd dos results). O store (store/mission.ts) encadeia as fases; aqui
-// mora só a lógica de uma fase + montagem de prompt por persona.
+// O motor de uma fase de missão (docs/mission-mode.md §3), puro: roda a fase e
+// monta o prompt por persona. O store (store/mission.ts) encadeia as fases.
 
 import { cancelAgent, runAgent, type AgentEvent, type CostSource } from "@/lib/agent"
 import type { Attachment } from "@/lib/attachments"
@@ -28,12 +26,10 @@ function emptyReducible(): ItemReducible {
   }
 }
 
-// ── Prompts por persona (templates curtos, pt-BR) ──
-//
-// Handoff = blackboard tipado (lib/missionHandoff): o contexto entre fases
-// carrega INTENÇÃO/decisões/pendências, não o código. Os arquivos alterados já
-// estão no worktree (mesmo cwd) — passamos só a lista como referência e o
-// agente roda `git diff` se precisar do conteúdo.
+// ── Prompts por persona ──
+// O handoff entre fases é o blackboard (lib/missionHandoff): intenção,
+// decisões e pendências, não código. Os arquivos já estão no worktree; vai só
+// a lista, e o agente roda `git diff` se precisar.
 
 const PERSONA_HEADER: Record<MissionPersona, string> = {
   planner:
@@ -125,8 +121,8 @@ export function phasePrompt(input: PhasePromptInput): string {
     parts.push("", input.doctrineBlock.trim())
   }
 
-  // Auto-aprendizado (M1/M2): recall de entregas similares (só planner) e
-  // lições do projeto. Vêm ANTES do handoff pra ancorar o raciocínio da fase.
+  // Recall de entregas similares (só o planner) e lições do projeto, antes do
+  // handoff, para ancorar a fase.
   if (input.recallBlock && input.recallBlock.trim()) {
     parts.push("", input.recallBlock.trim())
   }
@@ -134,8 +130,7 @@ export function phasePrompt(input: PhasePromptInput): string {
     parts.push("", input.lessonsBlock.trim())
   }
 
-  // Gate humano: as decisões do usuário vêm ANTES do handoff — são a diretriz
-  // mais forte da fase (respondem exatamente às open_questions anteriores).
+  // As suas decisões do gate vêm antes do handoff: são a diretriz mais forte.
   if (input.userDecisions && input.userDecisions.trim()) {
     parts.push("", input.userDecisions.trim())
   }
@@ -193,13 +188,12 @@ export interface GateOutcome {
   questions: string[]
 }
 
-/** Aplica a política de gate do preset (MH3.3). `policy` ausente = "agente"
- *  (fail-open: presets salvos antes do campo mantêm o comportamento clássico).
- *  - "agente": gate quando a fase deixou open_questions E há próxima fase.
- *  - "nunca": nunca abre gate; perguntas que abririam viram notice.
- *  - "sempre-apos-planejar": além da regra do "agente", a fase 1 SEMPRE abre
- *    gate (sem perguntas próprias entra a pergunta padrão PLAN_GATE_QUESTION).
- *  Sem próxima fase nunca há gate (as pendências vão pro resumo final). */
+/** Aplica a política de gate do preset (ausente = "agente"):
+ *  - "agente": gate quando a fase deixou open_questions e há próxima fase;
+ *  - "nunca": nunca pausa, as perguntas viram notice;
+ *  - "sempre-apos-planejar": também pausa depois da fase 1, com a pergunta
+ *    padrão se ela não fez nenhuma.
+ *  Sem próxima fase, nunca há gate (as pendências vão para o resumo). */
 export function gateOutcome(input: {
   policy: MissionGatePolicy | null | undefined
   openQuestions: string[] | undefined
@@ -275,21 +269,16 @@ export function splitGateAttachments(
   return { kept, dropped }
 }
 
-/** O reviewer aprovou? Varre o texto final da fase por "APROVADO" (o template
- *  pede essa palavra). ENDURECIDO (MH1.1): aprovação qualificada NÃO conta —
- *  "aprovado com ressalvas", "ainda não está aprovado", "não totalmente
- *  aprovado" e "NÃO APROVADO" são reprovação. Na dúvida, fail-closed: contar
- *  como reprovado dispara correção/ressalva; contar como aprovado esconde o
- *  problema. Usado pelo loop de correção do M2 e pelo desfecho com ressalva. */
+/** O reviewer aprovou? Procura "APROVADO" no texto final. Aprovação qualificada
+ *  ("com ressalvas", "ainda não", "NÃO APROVADO") é reprovação: na dúvida,
+ *  fail-closed, porque aprovar à toa esconde o problema. */
 export function reviewerApproved(items: ChatItem[]): boolean {
   const text = items
     .filter((i) => i.kind === "text")
     .map((i) => (i as Extract<ChatItem, { kind: "text" }>).text)
     .join("\n")
     .toUpperCase()
-  // fronteira de PALAVRA, não substring: "DESAPROVADO"/"REPROVADO" contêm
-  // "APROVADO" e passariam como aprovação (o bug do gate). Vale a ocorrência
-  // no início do texto ou precedida de não-letra (espaço, pontuação, hífen).
+  // Fronteira de palavra: "DESAPROVADO" e "REPROVADO" contêm "APROVADO".
   if (!/(^|[^A-ZÀ-Ü])APROVADO/.test(text)) return false
   // negação com até 3 palavras no meio: "NÃO APROVADO", "NÃO-APROVADO" (hífen
   // conta como separador), "NÃO ESTÁ APROVADO", "NÃO FOI TOTALMENTE APROVADO"…
@@ -324,20 +313,13 @@ export interface PhaseResult {
   budgetExceeded?: boolean
 }
 
-/** Roda UMA fase com retry até maxRetries. Reduz os AgentEvent num array de
- *  ChatItem (como o chat/Fusion) e devolve o resultado. Sucesso = o último
- *  result teve ok=true e não houve error/cancelled.
- *
- *  CUSTO (MH2.1): dentro de UMA tentativa o último result VENCE (o CLI pode
- *  emitir 2 results no mesmo run e o custo do segundo é CUMULATIVO, ver
- *  docs/stream-json-notes.md — somar os dois contaria em dobro, mesma razão do
- *  REPLACE por run_id no ledger do chat); ENTRE tentativas o custo SOMA
- *  (cada tentativa é um run novo, gasto próprio — inclusive as descartadas).
- *
- *  TETO (MH2.2): com stopAtCostUsd, cruzou o teto num result → cancela o run
- *  corrente (o gasto para de crescer) e nunca re-tenta. Se mesmo assim a
- *  tentativa terminou ok (o result era o último suspiro do run, corrida
- *  benigna), a fase volta ok e o check entre fases dá o desfecho de teto. */
+/** Roda uma fase com retry até maxRetries e reduz os eventos a ChatItem.
+ *  Sucesso = o último result ok, sem error nem cancelled.
+ *  Custo: numa tentativa o último result vence (o segundo é cumulativo);
+ *  entre tentativas soma, porque cada uma é um run.
+ *  Teto: com stopAtCostUsd, cruzar o teto num result cancela o run e nunca
+ *  re-tenta. Se a tentativa ainda terminou ok, volta ok e o check entre fases
+ *  dá o desfecho de teto. */
 export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
   const run = args.run ?? runAgent
   const cancel = args.cancel ?? cancelAgent
@@ -376,10 +358,9 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
         })
         costSource = e.cost_source
         resultOk = e.ok
-        // MH2.2 — corte intra-fase: o parcial cruzou o teto → cancela o run
-        // corrente (best-effort: se ele já saiu, o cancel é no-op) e marca pra
-        // nunca re-tentar. Só dispara quando um result com custo CHEGA antes do
-        // fim — sem custo incremental, degrada pro check entre fases.
+        // Corte intra-fase: o parcial cruzou o teto, então cancela o run (no-op
+        // se já saiu) e não re-tenta. Sem custo incremental, o check entre
+        // fases cobre.
         if (
           !budgetExceeded &&
           args.stopAtCostUsd != null &&
@@ -423,8 +404,8 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
     doneCost += attemptCost // tentativa encerrada: consolida o gasto dela
     const ok = sawError == null && resultOk !== false
     if (ok) {
-      // corrida benigna do corte: o run terminou ok antes do cancel morder —
-      // devolve ok (trabalho REAL entregue) e o checkBudget entre fases morde.
+      // O run terminou ok antes do cancel: trabalho real entregue, e o
+      // checkBudget entre fases corta.
       return { ok: true, items: lastItems, costUsd: doneCost, costSource }
     }
     if (budgetExceeded) {
@@ -450,14 +431,12 @@ export async function runPhase(args: RunPhaseArgs): Promise<PhaseResult> {
   }
 }
 
-// ── Recuperação de fase (onda 2): a fase falhou por LIMITE, não por bug ──
+// ── Recuperação de fase: falhou por LIMITE, não por bug ──
 
-/** A falha de uma fase é RECUPERÁVEL (trocar de agent/modelo resolve)? Sinais:
- *  - FORTE: um item kind:"limit" no transcript da fase (limite da CLI durante o
- *    run — o mesmo cartão acionável do chat).
- *  - HEURÍSTICO: a mensagem de erro casa os padrões de rate-limit/espera/crédito
- *    (reuso de lib/autoResume — mesmo detector do auto-resume).
- *  Falha recuperável → a missão PAUSA em recovery em vez de morrer. */
+/** A falha é recuperável (trocar de agent resolve)? Sinal forte: item
+ *  `limit` no transcript; heurístico: o erro casa os padrões de
+ *  rate-limit/espera/crédito (lib/autoResume). Recuperável pausa em recovery
+ *  em vez de morrer. */
 export function isRecoverableFailure(result: PhaseResult): boolean {
   if (result.ok) return false
   if (result.items.some((it) => it.kind === "limit")) return true

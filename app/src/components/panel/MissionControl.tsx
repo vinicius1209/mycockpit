@@ -1,25 +1,14 @@
-// Painel — a RETROSPECTIVA (ADR-040, direção E dos mocks).
+// Painel: a RETROSPECTIVA (ADR-040). Auditoria: poucos números e o mapa de onde
+// o dinheiro queimou. A fila de decisões mora no chrome (DecisionStrip).
 //
-// O que esta tela é: auditoria. Poucos números, muito ar, e um mapa de onde o
-// dinheiro queimou. O que ela NÃO é mais: a fila de decisões (foi pro chrome,
-// em components/decisions/DecisionStrip — uma aba não compra visibilidade) e o
-// Board de intenção (zero card em uso real; a intenção de trabalho já existe
-// como conversa, entrega e plano de voo).
+// De cima para baixo: o gasto da janela (o 30px é o dinheiro, a manchete de
+// uma tela de auditoria); três derivados em 20px com a ressalva de método em
+// 11px; o mapa de calor de US$ por hora (CostHeatmap.tsx); custo por agente
+// cruzado com as entregas; as entregas e o diagnóstico do denominador; a
+// gaveta; e a Frota (CLIs, sessões no terminal, agendadas).
 //
-// Anatomia, de cima pra baixo:
-//  1. hero do gasto da janela (o 30px volta a ser o dinheiro, e aqui está
-//     certo: numa tela de auditoria o gasto É a manchete);
-//  2. três derivados em 20px, cada um com a RESSALVA DE MÉTODO em 11px;
-//  3. mapa de calor de US$ por hora (14 dias × hora) — medidor, régua do §2;
-//     mora em CostHeatmap.tsx desde que esta tela passou do teto de tamanho;
-//  4. custo por agente cruzado com as entregas do mesmo agente;
-//  5. as entregas da janela + o diagnóstico do denominador;
-//  6. gaveta (aprendizados, auditoria por turno, projetos);
-//  7. Frota (detalhe) — CLIs, sessões observadas no terminal e agendadas.
-//
-// Regras que a tela obedece: só número MEDIDO (nada de gráfico de tendência
-// com n=5, nada de streak — o app não mede isso); seção sem conteúdo não
-// renderiza título nem moldura; e todo derivado imprime o denominador.
+// Só número MEDIDO (nada de tendência com n=5), seção vazia não renderiza, e
+// todo derivado imprime o denominador.
 import { useEffect, useMemo, useState } from "react"
 import { Clock } from "lucide-react"
 import { ScrollArea } from "@/components/ui/scroll-area"

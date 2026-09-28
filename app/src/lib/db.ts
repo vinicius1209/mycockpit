@@ -20,10 +20,8 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window
 }
 
-/** A conexão única do app (fora do Tauri, `null`: o front roda sem banco).
- *  Exportada pra que um domínio que ficou grande demais possa morar em arquivo
- *  próprio (`lib/modelLedger.ts`) sem abrir uma SEGUNDA conexão, que é o único
- *  jeito de errar isto. */
+/** A conexão única do app (`null` fora do Tauri). Exportada para domínios que
+ *  moram em arquivo próprio (`lib/modelLedger.ts`) não abrirem uma segunda. */
 export async function getDb(): Promise<Database | null> {
   if (!isTauri()) return null
   if (!dbPromise) dbPromise = Database.load(DB_URL)
@@ -55,10 +53,7 @@ function toProject(r: ProjectRow): Project {
   }
 }
 
-// S1.2 — ordem do USUÁRIO (sort_order), não de ordenação automática. O guard
-// `sort_order IS NOT NULL` é defensivo: linha sem ordem (inserida por caminho
-// que esqueceu a coluna) cai no topo por created_at DESC, o mesmo lugar em que
-// o comportamento antigo a colocaria.
+// Ordem do usuário (sort_order). Linha sem ordem cai no topo por created_at.
 export async function listProjects(): Promise<Project[] | null> {
   const db = await getDb()
   if (!db) return null
@@ -68,9 +63,8 @@ export async function listProjects(): Promise<Project[] | null> {
   return rows.map(toProject)
 }
 
-/** S1.3 — projetos ARQUIVADOS (deleted_at setado), mais recentes primeiro.
- *  Alimenta a seção "Arquivados (N)" da sidebar — antes o arquivamento era um
- *  buraco negro: sem lista, sem desarquivar. */
+/** Projetos arquivados (deleted_at), mais recentes primeiro: a seção
+ *  "Arquivados (N)" da sidebar. */
 export async function listArchivedProjects(): Promise<Project[] | null> {
   const db = await getDb()
   if (!db) return null
@@ -176,14 +170,11 @@ export async function restoreProject(id: string): Promise<void> {
   await db.execute("UPDATE projects SET deleted_at = NULL WHERE id = $1", [id])
 }
 
-/** S1.3 — "Excluir de vez" um projeto JÁ ARQUIVADO: apaga a linha do projeto,
- *  as conversas e os agendamentos dele (um schedule apontando pra projeto morto
- *  seguiria disparando automação fantasma). Cards do projeto morrem junto (o
- *  board é por projeto; linha órfã seria lixo invisível). Métricas históricas
- *  (stage_runs, turn_costs, deliveries, lessons) FICAM: são registro do que
- *  aconteceu. A tabela inerte `sdd_plan_marks` (da aba Features, removida) não
- *  é mais criada nem tocada: banco novo nem a tem. Blobs de anexo órfãos caem no GC
- *  (gcAttachments via listConvRefs). Irreversível — o caller SEMPRE confirma. */
+/** Exclui de vez um projeto já arquivado: a linha, as conversas, os
+ *  agendamentos (senão disparariam automação para projeto morto) e os cards.
+ *  Métricas históricas (stage_runs, turn_costs, deliveries, lessons) ficam:
+ *  são registro do que aconteceu. Blobs órfãos caem no GC. Irreversível; o
+ *  caller sempre confirma. */
 export async function hardDeleteProject(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -224,12 +215,10 @@ export async function loadFusionRuns(convId: string): Promise<unknown[]> {
   }
 }
 
-/** Disputas arquivadas desde `sinceMs`, reduzidas ao que a retrospectiva
- *  precisa (quem venceu e o custo de cada candidato). O `created_at` da linha é
- *  o instante em que a disputa foi ARQUIVADA, não o do lançamento: pra uma
- *  janela de 30 dias a diferença é irrelevante, e é o único carimbo que a
- *  tabela tem. JSON com shape inesperado é descartado (fail-open na leitura:
- *  uma linha ilegível não pode derrubar a tela inteira). */
+/** Disputas arquivadas desde `sinceMs`, reduzidas a vencedor e custo por
+ *  candidato. `created_at` é o arquivamento, não o lançamento (irrelevante
+ *  para 30 dias, e é o único carimbo). JSON inesperado é descartado: uma
+ *  linha ilegível não derruba a tela. */
 export async function listFusionOutcomes(
   sinceMs: number,
 ): Promise<FusionOutcome[]> {
@@ -328,10 +317,9 @@ export async function clearPendingFusion(convId: string): Promise<void> {
   )
 }
 
-// ---------------- Auto-aprendizado: deliveries + lessons (M1/M2) ----------------
-// Tabelas criadas do FRONTEND via CREATE TABLE IF NOT EXISTS (idempotente, sem
-// migration no lib.rs — decisão do M1/M2). `ensureLearningTables` roda uma vez
-// por processo (guarda de promessa) antes de qualquer leitura/escrita.
+// ---------------- Auto-aprendizado: deliveries + lessons ----------------
+// Tabelas do frontend (CREATE IF NOT EXISTS, sem migração no lib.rs);
+// `ensureLearningTables` roda uma vez por processo antes de ler ou escrever.
 
 let learningReady: Promise<void> | null = null
 
@@ -407,12 +395,10 @@ async function ensureLearningTables(db: Database): Promise<void> {
   return learningReady
 }
 
-// ── Índice de MISSÕES (histórico navegável) ──────────────────────────────
-// A missão grava seus artefatos em disco (.frota/missions/<slug>/ — pasta
-// isolada, ver lib/missionPaths). Este é o ÍNDICE durável: sobrevive a mover/
-// apagar pasta, lista o histórico sem varrer o FS e guarda o `dir` de cada
-// missão pro viewer no app. Frontend-created (idempotente), como as tabelas de
-// aprendizado/board — sem migração no lib.rs.
+// ── Índice de MISSÕES ──
+// Os artefatos moram em .frota/missions/<slug>/ (lib/missionPaths); este é o
+// índice durável: sobrevive a mover a pasta, lista sem varrer o disco e
+// guarda o `dir` de cada missão. Tabela do frontend, sem migração no lib.rs.
 let missionsReady: Promise<void> | null = null
 async function ensureMissionsTable(db: Database): Promise<void> {
   if (!missionsReady) {
@@ -436,9 +422,8 @@ async function ensureMissionsTable(db: Database): Promise<void> {
          )`,
       )
       .then(() =>
-        // MH1.1 — audit trail do "done com ressalva" no histórico: coluna nova
-        // entra via addColumn (idempotente, padrão lessons.scope) pra bancos
-        // criados antes dela. JSON {rounds, feedback} ou NULL.
+        // Audit trail do "done com ressalva": JSON {rounds, feedback} ou NULL,
+        // por addColumn para bancos anteriores.
         addColumn(db, `ALTER TABLE missions ADD COLUMN review_caveat TEXT`),
       )
       .then(() =>
@@ -755,11 +740,10 @@ export async function listRecentDeliveries(
   }
 }
 
-// ---------------- Lead propositor (S4.2): lead_proposals ----------------
-// A proposta do lead é TEXTO persistido (nunca ação): vira Decision
-// { kind: "proposal" } na fila "Precisam de você" + sino até o humano
-// dispensar. O lead não despacha nada — aprovar um item da proposta é o
-// gesto humano normal de despachar o card no board.
+// ---------------- Lead propositor: lead_proposals ----------------
+// A proposta do lead é TEXTO, nunca ação: vira Decision na fila "Precisam de
+// você" até ser dispensada. Aprovar um item é o gesto humano normal de
+// despachar o card.
 
 let leadReady: Promise<void> | null = null
 
@@ -793,14 +777,10 @@ export interface LeadProposalRecord {
   createdAt: number
 }
 
-/** Grava UMA proposta do lead. Retorna o id gerado (fora do Tauri o id volta
- *  mas nada persiste — fail-soft, padrão do módulo).
- *  SUPERSEDE (D4 da revisão): a proposta nova soft-dismissa as ABERTAS do
- *  MESMO escopo (mesmo project_id; ou todas as sem-projeto quando a nova é do
- *  board inteiro) — um schedule diário ignorado por uma semana não vira 7
- *  itens quase iguais na fila/sino; vale sempre a triagem mais fresca.
- *  Escopos diferentes coexistem (a proposta do projeto A não apaga a do B nem
- *  a do board inteiro). */
+/** Grava uma proposta do lead e devolve o id (fora do Tauri, nada persiste).
+ *  A nova dispensa as abertas do MESMO escopo (mesmo projeto, ou o board
+ *  inteiro), para um agendamento ignorado não empilhar propostas quase iguais.
+ *  Escopos diferentes coexistem. */
 export async function insertProposal(p: {
   projectId: string | null
   body: string
@@ -876,12 +856,9 @@ export interface LedgerEntry {
   createdAt: number
 }
 
-/** Grava o custo de UM run: turno de chat linear, candidato de disputa OU
- *  tentativa de fase de missão (MH2.1 — o store/mission gera um run_id por
- *  tentativa). `INSERT OR REPLACE` por run_id: results parciais do mesmo run
- *  colapsam no total final (o último vence, o custo dos parciais é cumulativo).
- *  O que VIRA linha se decide AQUI: entra tudo que consumiu, com preço ou com
- *  `costUsd` NULL (ADR-047). Best-effort: perder linha não derruba o turno. */
+/** Grava o custo de um run (turno, candidato de disputa ou tentativa de fase
+ *  de missão). REPLACE por run_id colapsa os results parciais no total. Entra
+ *  tudo que consumiu, com preço ou com `costUsd` NULL (ADR-047). Best-effort. */
 export async function recordTurnCost(r: {
   runId: string
   projectId: string
@@ -922,12 +899,10 @@ export async function recordTurnCost(r: {
   }
 }
 
-// ---- ADR-033: usage ACUMULADO por thread (baseline + reconstrução) ----
-//
-// O `codex exec` reporta no fim do turno o total da THREAD, não do turno. O
-// runner (Rust) normaliza pra delta, mas o adapter morre com o run e a thread
-// não: o acumulado conhecido precisa de PERSISTÊNCIA, e ela mora aqui — o
-// mesmo lugar que já guarda o session_id da conversa.
+// ---- Usage acumulado por thread (ADR-033) ----
+// O `codex exec` reporta o total da THREAD, não do turno. O runner normaliza
+// para delta, mas a thread sobrevive ao run: o acumulado conhecido persiste
+// aqui, junto do session_id da conversa.
 
 /** Carimbo de base de uma linha de turn_costs (coluna `usage_basis`). */
 export const USAGE_BASIS_DELTA = "delta"
@@ -935,10 +910,9 @@ export const USAGE_BASIS_RECOMPUTED = "recomputed"
 
 let usageBaselineReady: Promise<void> | null = null
 
-/** Tabelas frontend-created (idempotentes, como as de aprendizado/board):
- *  - `usage_baselines`: acumulado já contabilizado POR THREAD;
- *  - `turn_costs_usage_raw`: valores ORIGINAIS das linhas reconstruídas
- *    (nada é apagado — a reconstrução é auditável e reversível). */
+/** Tabelas do frontend: `usage_baselines` (acumulado já contabilizado por
+ *  thread) e `turn_costs_usage_raw` (valores originais das linhas
+ *  reconstruídas: a reconstrução é auditável e reversível). */
 export async function ensureUsageTables(db: Database): Promise<void> {
   if (!usageBaselineReady) {
     const run = (async () => {
@@ -971,15 +945,11 @@ export async function ensureUsageTables(db: Database): Promise<void> {
   return usageBaselineReady
 }
 
-/** Quanto a thread `threadId` JÁ acumulou (o que o próximo run manda como
- *  baseline). null = thread nova/desconhecida → o turno vale inteiro.
- *
- *  SEMEADURA (uma vez por thread): sem linha de baseline, a última linha de
- *  turn_costs da conversa gravada ANTES da correção ainda guarda o acumulado
- *  cru — usá-la evita que o primeiro turno pós-atualização de uma thread
- *  antiga cobre a thread inteira de novo (era US$ 160 num turno). Se a
- *  conversa trocou de thread nesse meio-tempo, o baseline sai alto e o turno
- *  seguinte é subcontado (uma vez): honesto na direção segura. */
+/** Quanto a thread já acumulou (o baseline do próximo run). null = thread nova,
+ *  o turno vale inteiro. Sem linha de baseline, semeia uma vez com a última
+ *  linha de turn_costs da conversa, que ainda guarda o acumulado cru: evita
+ *  cobrar a thread inteira de novo. Se a thread mudou nesse meio-tempo, o
+ *  turno seguinte sai subcontado uma vez, na direção segura. */
 export async function loadUsageBaseline(
   threadId: string,
   convId: string,
@@ -1040,11 +1010,8 @@ export async function loadUsageBaseline(
   }
 }
 
-/** Guarda o acumulado que o provider reportou nesta thread.
- *
- *  `mode: "seed"` só preenche o que está FALTANDO (`DO NOTHING`): é o que a
- *  reconstrução usa pra re-basear threads antigas sem atropelar um baseline
- *  mais novo, vindo de um turno já corrigido. */
+/** Guarda o acumulado reportado nesta thread. `mode: "seed"` só preenche o que
+ *  falta, para a reconstrução não atropelar um baseline mais novo. */
 export async function saveUsageBaseline(
   threadId: string,
   convId: string | null,
@@ -1082,9 +1049,8 @@ export async function saveUsageBaseline(
   }
 }
 
-/** Quantas linhas do ledger ainda estão na base ANTIGA (acumulado lido como
- *  turno) para estes motores, e quanto elas somam. Só leitura — é o que a tela
- *  de manutenção mostra antes de qualquer escrita. */
+/** Quantas linhas do ledger ainda estão na base antiga, e quanto somam. Só
+ *  leitura: é o que a manutenção mostra antes de escrever. */
 export async function countCumulativeLedgerRows(
   agentIds: string[],
 ): Promise<{ rows: number; total: number }> {
@@ -1099,12 +1065,10 @@ export async function countCumulativeLedgerRows(
   return { rows: r[0]?.n ?? 0, total: r[0]?.total ?? 0 }
 }
 
-/** Reconstrói o gasto POR TURNO das linhas gravadas como acumulado (ADR-033).
- *
- *  Ação EXPLÍCITA do usuário (Configurações), nunca automática. Não apaga
- *  nada: os valores originais vão pra `turn_costs_usage_raw` antes do UPDATE e
- *  a linha fica carimbada `recomputed`. Idempotente (linha carimbada sai do
- *  filtro) e retomável (o carimbo é por linha). */
+/** Reconstrói o gasto por turno das linhas gravadas como acumulado (ADR-033).
+ *  Só por gesto em Configurações. Não apaga nada (originais vão para
+ *  `turn_costs_usage_raw`, a linha fica carimbada `recomputed`); idempotente e
+ *  retomável. */
 export async function recomputeCumulativeLedger(
   agentIds: string[],
 ): Promise<{ rows: number; before: number; after: number }> {
@@ -1141,9 +1105,8 @@ export async function recomputeCumulativeLedger(
       createdAt: r.created_at,
     })),
   )
-  // Semeia o baseline das threads VIVAS antes de reescrever: depois do UPDATE
-  // o acumulado cru só existe no backup, e sem baseline o próximo turno dessas
-  // conversas cobraria a thread inteira outra vez.
+  // Semeia o baseline das threads vivas antes do UPDATE: depois dele o
+  // acumulado cru só existe no backup.
   const lastByConv = new Map<string, (typeof plan)[number]>()
   for (const row of plan) lastByConv.set(row.convId, row)
   for (const [convId, row] of lastByConv) {
@@ -1197,23 +1160,11 @@ export async function recomputeCumulativeLedger(
   return recomputeSummary(plan)
 }
 
-/** Ledger unificado desde `sinceMs`: turnos de chat + candidatos de disputa +
- *  fases de missão (todos em turn_costs) + etapas SDD (stage_runs). São
- *  caminhos DISJUNTOS de execução, então a união NÃO conta em dobro.
- *
- *  `stage_runs` é HISTÓRICO SOMENTE-LEITURA desde a remoção da aba Features
- *  (remocao-features-prd D2): ninguém grava mais nela, mas o dinheiro que ela
- *  registra foi gasto de verdade. Tirar do UNION derrubaria os totais de quem
- *  usou o SDD sem aviso nenhum.
- *
- *  DIVISÃO (mudou no MH2.1): missão passou a gravar CADA fase em turn_costs
- *  (fonte única de CUSTO — inclusive missão abortada/estourada/falhada, que
- *  nunca chega a deliveries). `deliveries` segue existindo como registro de
- *  ENTREGA (recall/histórico, entrega ≠ custo), mas saiu desta união: mantê-la
- *  contaria as missões novas em DOBRO. Custo de missões concluídas ANTES do
- *  MH2.1 (que só viviam em deliveries) deixa de aparecer nestas somas — perda
- *  transitória e honesta, preferível à dupla contagem permanente.
- *  (stage_runs não guarda tokens → 0.) */
+/** Ledger unificado desde `sinceMs`: turn_costs (chat, disputa, fases de
+ *  missão) e stage_runs, caminhos disjuntos que não contam em dobro.
+ *  stage_runs é histórico só-leitura (a aba Features saiu), mas o dinheiro foi
+ *  gasto e segue nos totais. `deliveries` é registro de entrega, não de custo,
+ *  e fica fora: contaria as missões em dobro. stage_runs não guarda tokens. */
 export async function loadLedger(sinceMs: number): Promise<LedgerEntry[]> {
   const db = await getDb()
   if (!db) return []
@@ -1427,13 +1378,11 @@ export async function reinforceLessons(ids: string[]): Promise<void> {
   }
 }
 
-// ---------------- agent_presets: LEGADO, só leitura para migrar ----------------
-// As personas viviam aqui (Sprint 3 · E2) e desde jul/2026 moram em arquivo —
-// `.frota/agents/*.md`, ver lib/agentDefs e ADR-025. Sobrou a LEITURA, que
-// alimenta a migração uma vez por sessão; não há mais caminho de escrita, então
-// esta tabela é histórico, não estado. O CREATE IF NOT EXISTS fica porque numa
-// instalação nova a tabela não existe e o SELECT precisa devolver vazio, não
-// estourar. O tipo AgentPreset segue sendo o formato compartilhado da persona.
+// ---------------- agent_presets: legado, só leitura para migrar ----------------
+// As personas moram em `.frota/agents/*.md` (ADR-025); esta tabela só alimenta
+// a migração, uma vez por sessão. O CREATE IF NOT EXISTS fica para o SELECT
+// devolver vazio numa instalação nova. AgentPreset segue sendo o formato da
+// persona.
 
 let presetsReady: Promise<void> | null = null
 
@@ -1563,10 +1512,8 @@ function toPreset(r: PresetRow): AgentPreset {
 const PRESET_COLUMNS =
   "id, name, personality_md, skills_json, policy, backend, model, effort, digest, version, created_at, updated_at"
 
-/** LEGADO: a única leitura que sobrou da tabela agent_presets. As personas
- *  moram em arquivo desde jul/2026 (.frota/agents — lib/agentDefs); esta
- *  função existe só como ORIGEM DA MIGRAÇÃO (store/presets.migrarLegado). Não
- *  há mais caminho de escrita: a tabela é histórico, não estado. */
+/** Legado: a leitura de agent_presets que alimenta a migração
+ *  (store/presets.migrarLegado). Sem caminho de escrita. */
 export async function listPresets(): Promise<AgentPreset[]> {
   const db = await getDb()
   if (!db) return []
@@ -1577,11 +1524,10 @@ export async function listPresets(): Promise<AgentPreset[]> {
   return rows.map(toPreset)
 }
 
-// ---------------- F6: automações agendadas (schedules + schedule_runs) ----------------
-// A implementação MUDOU DE ARQUIVO (lib/db/schedules.ts) pela catraca de
-// tamanho; a PORTA continua aqui, e é de propósito: os call sites e os mocks
-// de teste (`vi.mock("@/lib/db")`) apontam pra este módulo desde o F6, e
-// mover a porta junto com a fatia quebraria os dois sem ganho nenhum.
+// ---------------- Automações agendadas (schedules + schedule_runs) ----------------
+// A implementação mora em lib/db/schedules.ts; a porta fica aqui porque os
+// call sites e os mocks de teste (`vi.mock("@/lib/db")`) apontam para este
+// módulo.
 export type {
   ScheduleEdit,
   ScheduleKind,
@@ -1606,12 +1552,10 @@ export {
 } from "@/lib/db/schedules"
 
 
-// ---------------- E1: Board de intenção (cards) ----------------
-// O CARD é a unidade durável de intenção, ligada à conversa que a executa.
-// Mesmo padrão idempotente das tabelas de aprendizado: CREATE TABLE IF NOT
-// EXISTS do frontend (`ensureBoardTables`), cache de promessa que RESETA em
-// falha. SEM migração no lib.rs (board não é tabela núcleo; v25/v26 ficam
-// reservadas pros presets do Sprint 3).
+// ---------------- Board de intenção (cards) ----------------
+// O card é a unidade durável de intenção, ligada à conversa que a executa.
+// Tabela do frontend (`ensureBoardTables`, cache de promessa que reseta em
+// falha), sem migração no lib.rs.
 
 export type CardState =
   | "backlog"
@@ -1621,16 +1565,11 @@ export type CardState =
   | "done"
   | "cancelled"
 
-/** Máquina de estados EXPLÍCITA do card: backlog → working → review|blocked →
- *  done|cancelled. Regressões honestas (review→working = retrabalho,
- *  blocked→working = desbloqueou, working→backlog = recuar) são permitidas;
- *  `cancelled` é alcançável de qualquer estado não-terminal (abandonar uma
- *  intenção é sempre direito do humano). done/cancelled são TERMINAIS e só
- *  entram via `closeCard` (gate humano-only — `setCardState` recusa).
- *  EXCEÇÃO DE SISTEMA (documentada, não escondida): a limpeza do
- *  `deleteConversation` devolve card ligado não-terminal pro backlog via SQL
- *  direto — um bypass working|review|blocked→backlog fora da máquina, porque
- *  ali não há gesto de board: a conversa sumiu e o card volta pra fila. */
+/** Máquina de estados do card: backlog → working → review|blocked →
+ *  done|cancelled. Regressões honestas são permitidas; `cancelled` vale de
+ *  qualquer não-terminal. done/cancelled só entram por `closeCard` (gate
+ *  humano). Exceção de sistema: apagar a conversa devolve o card ligado ao
+ *  backlog por SQL direto, porque ali não há gesto de board. */
 export const CARD_STATE_MACHINE: Record<CardState, readonly CardState[]> = {
   backlog: ["working", "cancelled"],
   working: ["review", "blocked", "backlog", "cancelled"],
@@ -1832,10 +1771,8 @@ async function loadCardState(db: Database, id: string): Promise<CardState> {
   return toCardState(rows[0].state)
 }
 
-/** Patch parcial (campo `undefined` = mantém; não há como limpar pra NULL no
- *  v1 — se precisar, ganha função própria). Estado NÃO passa por aqui.
- *  `now`: mesmo contrato de relógio único do setCardState (o store passa o
- *  MESMO timestamp que carimba no patch local — sem drift de ms no vigia). */
+/** Patch parcial (`undefined` mantém; limpar para NULL pede função própria).
+ *  Estado não passa por aqui. `now` é o mesmo timestamp do patch local. */
 export async function updateCard(
   id: string,
   patch: {
@@ -1862,11 +1799,9 @@ export async function updateCard(
   )
 }
 
-/** Move o card validando a máquina de estados. done/cancelled NUNCA entram por
- *  aqui (gate humano-only): só via `closeCard`. Lança em transição inválida.
- *  `now` (S2.2/F1): UM relógio por mutação — o store passa o MESMO timestamp
- *  que carimba no patch local, senão um reload do banco chega com updated_at
- *  diferente por ms e o vigia lê drift como "atividade" (episódio duplicado). */
+/** Move o card validando a máquina; done/cancelled só via `closeCard`. Lança em
+ *  transição inválida. `now` é o mesmo timestamp do patch local: um reload com
+ *  updated_at diferente por ms o vigia leria como atividade. */
 export async function setCardState(
   id: string,
   state: CardState,
@@ -1960,10 +1895,8 @@ export async function setCardArchived(
   )
 }
 
-/** Apaga o card DE VEZ (destrutivo, sem volta). Só o gesto humano confirmado
- *  chega aqui (dialog de confirmação no padrão blocks.so). Não deixa lixo:
- *  o card some do banco; a conversa ligada (se houver) NÃO é tocada — ela é
- *  entidade própria e pode ter histórico que o usuário ainda quer. */
+/** Apaga o card de vez, só por gesto confirmado. A conversa ligada não é
+ *  tocada: é entidade própria. */
 export async function deleteCard(id: string): Promise<void> {
   const db = await getDb()
   if (!db) return
@@ -1971,12 +1904,10 @@ export async function deleteCard(id: string): Promise<void> {
   await db.execute("DELETE FROM cards WHERE id = $1", [id])
 }
 
-/** Custo por card v1 = soma de turn_costs por conv_id (cobre chat + disputas
- *  e, desde o MH2.1, também fases de missão — elas gravam turn_costs com o
- *  conv_id da conversa; o histórico de stage_runs fica FORA, não tem conv_id).
- *  `estimated` = custo sem proveniência 'reported' (COALESCE: NULL conta, o
- *  "~" honesto). `total: null` = tem turno e NENHUM com preço (ADR-047: 0 ali
- *  carimbava "US$ 0,00" medido). Erro PROPAGA: o caller mantém o last-known. */
+/** Custo por card = soma de turn_costs por conv_id (chat, disputas, fases de
+ *  missão; stage_runs fica fora, não tem conv_id). `estimated` = sem
+ *  proveniência 'reported'. `total: null` = tem turno e nenhum com preço
+ *  (ADR-047). Erro propaga: o caller mantém o último valor. */
 export async function listCardCosts(
   convIds: string[],
 ): Promise<Record<string, { total: number | null; estimated: boolean }>> {

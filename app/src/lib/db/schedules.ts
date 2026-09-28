@@ -1,12 +1,8 @@
-// F6 — automações agendadas (`schedules` + `schedule_runs`), extraído de
-// lib/db.ts pela catraca de tamanho. Fatia coesa: tudo aqui gira em torno das
-// duas tabelas; `lib/db.ts` re-exporta a porta pública, então os call sites e
-// os mocks de teste (`vi.mock("@/lib/db")`) continuam apontando pro mesmo lugar.
-//
-// Mesmo padrão idempotente das tabelas de aprendizado: CREATE TABLE IF NOT
-// EXISTS do frontend, cache de promessa que RESETA em falha (erro transitório
-// não envenena o processo). A recorrência é um JSON string discriminado
-// (lib/schedules.Recurrence); o DB não interpreta.
+// Automações agendadas (`schedules` + `schedule_runs`). `lib/db.ts` re-exporta
+// a porta pública, para call sites e mocks (`vi.mock("@/lib/db")`) seguirem no
+// mesmo lugar. Tabelas do frontend, idempotentes, com cache de promessa que
+// reseta em falha. A recorrência é JSON (lib/schedules.Recurrence); o banco
+// não a interpreta.
 
 import type Database from "@tauri-apps/plugin-sql"
 import { getDb } from "@/lib/db"
@@ -20,12 +16,10 @@ import {
 export type { SchedulePermission }
 
 /** Fluxo do disparo:
- *  - "agent"   → um prompt num agent de código, numa conversa nova (o F6 original);
- *  - "mission" → um PLANO DE VOO (missão multi-fase) na conversa nova: o loop
- *    agêntico completo, com handoff entre fases, teto de custo e worktree;
- *  - "lead"    → LEGADO (ADR-078): o produtor saiu, o leitor fica pra que a
- *    linha antiga possa ser desligada com a causa escrita.
- *  Valor estranho no banco degrada pra "agent". */
+ *  - "agent": um prompt num agent, numa conversa nova;
+ *  - "mission": um plano de voo multi-fase na conversa nova;
+ *  - "lead": legado (ADR-078), lido só para a linha antiga poder ser desligada.
+ *  Valor estranho degrada para "agent". */
 export type ScheduleKind = "agent" | "mission" | "lead"
 
 export interface ScheduleRecord {
@@ -68,9 +62,8 @@ export interface ScheduleRunRecord {
   status: string
   cost: number | null
   convId: string | null
-  /** O MOTIVO real da falha, uma linha, colhido do turno (nunca inventado).
-   *  null = deu certo, ou o desfecho veio mudo. Sem isto a lista dizia só
-   *  "falhou" e o usuário tinha que abrir a conversa pra descobrir o quê. */
+  /** O motivo real da falha, uma linha, colhido do turno (nunca inventado).
+   *  null = deu certo, ou o desfecho veio mudo. */
   error: string | null
 }
 
@@ -237,11 +230,9 @@ export async function insertSchedule(s: ScheduleRecord): Promise<void> {
   )
 }
 
-/** Campos EDITÁVEIS de uma automação já criada. O que fica de fora é
- *  deliberado: `id`/`createdAt` são identidade, e o histórico (`lastRun*`,
- *  `completedAt`) é fato consumado — reescrever passado é o teatro que o §
- *  "estado real" proíbe. O `nextRun` vem calculado pelo store a partir da
- *  recorrência nova, nunca digitado. */
+/** Campos editáveis. `id` e `createdAt` são identidade, e o histórico
+ *  (`lastRun*`, `completedAt`) é fato consumado. `nextRun` vem da recorrência,
+ *  nunca digitado. */
 export interface ScheduleEdit {
   name: string
   projectId: string
@@ -256,11 +247,8 @@ export interface ScheduleEdit {
   nextRun: number | null
 }
 
-/** Edita uma automação existente. Gesto humano explícito, então a falha SOBE
- *  (a view mostra o erro em vez de fingir que salvou) — mesma régua do
- *  `rescheduleSchedule`. Editar LIMPA a marca de concluída: mudar o que a
- *  automação faz e reagendá-la é justamente o caminho de dar vida nova a uma
- *  "uma vez" que já rodou. */
+/** Edita uma automação: gesto humano, então a falha sobe. Editar limpa a marca
+ *  de concluída, que é como uma "uma vez" que já rodou ganha vida nova. */
 export async function updateSchedule(
   id: string,
   e: ScheduleEdit,
@@ -342,11 +330,9 @@ export async function markScheduleRun(
   }
 }
 
-/** ENCERRA a automação de uma vez: desabilita, zera o next_run e carimba a
- *  marca de concluída. Não apaga nada — o registro fica na lista com o
- *  histórico do que rodou (apagar não deixaria rastro nem do disparo nem da
- *  conversa que ele produziu). Best-effort com aviso no console: o motor não
- *  pode cair aqui, mas uma falha silenciosa deixaria a automação re-disparável. */
+/** Encerra a automação: desabilita, zera next_run e marca concluída, sem apagar
+ *  o histórico. Best-effort com aviso no console: o motor não pode cair aqui,
+ *  mas falha silenciosa deixaria a automação re-disparável. */
 export async function markScheduleCompleted(
   id: string,
   completedAt: number,
@@ -381,10 +367,8 @@ export async function rescheduleSchedule(
   )
 }
 
-/** Apaga as automações DE UM PROJETO (e o histórico delas) — o projeto sumiu,
- *  a automação seguiria disparando fantasma. As linhas de `schedule_runs` vão
- *  junto: antes ficavam órfãs de um schedule_id que não existe mais, lixo
- *  invisível que nada nunca mais leria nem limparia. */
+/** Apaga as automações de um projeto que sumiu (seguiriam disparando), com as
+ *  linhas de `schedule_runs`, que ficariam órfãs. */
 export async function deleteSchedulesOfProject(projectId: string): Promise<void> {
   const db = await getDb()
   if (!db) return

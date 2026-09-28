@@ -1,10 +1,7 @@
-// lib/fleet/send.ts (ex-office/bridge/send.ts, movido no R1 do
-// office-removal-plan) — coreografia COMPLETA de envio da mesa (§5.6 e §9 do
-// docs/agent-office.md, decisão O7). Compõe as APIs exportadas do app —
-// ChatPanel intocado — replicando a paridade do handleSend: guardas, lições
-// injetadas, peças de continuidade por agent e o finally (finish + persist +
-// fila + auto-resume + notify + sugestões). A duplicação é um risco ACEITO
-// (§10), coberta pela lista fechada de testes de paridade em send.test.ts.
+// Envio da mesa: a coreografia completa, em paridade com o handleSend do
+// ChatPanel (guardas, lições, continuidade por agent e o finally com persist,
+// fila, auto-resume, notify e sugestões). A duplicação é risco aceito,
+// coberto pelos testes de paridade em send.test.ts.
 
 import { avisar } from "@/lib/avisos"
 import { agentLabel, runAgent } from "@/lib/agent"
@@ -102,13 +99,10 @@ export const DESK_TITLE_PREFIX = "Mesa · "
  *  o mapa criava DUAS conversas). Limpo no settle. */
 const ensureInFlight = new Map<string, Promise<string>>()
 
-/** Conversa da mesa (§5.3): a mesa reusa apenas conversas DELA — meta.agent
- *  igual ao agent da mesa E título começando com "Mesa · " — e senão registra
- *  uma nova em background já carimbada com o agent, SEM roubar a seleção da UI
- *  principal. NUNCA adota threads do usuário: a coluna `agent` é NOT NULL
- *  DEFAULT claude-code (migração v10), então "agent null = livre" não existe —
- *  uma conversa em branco pareceria livre e a mesa a sequestraria.
- *  Sempre garante metas do projeto + conversa carregadas antes de retornar. */
+/** Conversa da mesa: reusa só conversas DELA (mesmo agent e título "Mesa · "),
+ *  senão cria uma em background já carimbada, sem roubar a seleção. Nunca
+ *  adota conversa sua: `agent` nasce claude-code, então "sem agent = livre" não
+ *  existe. Retorna com metas e conversa carregadas. */
 export function ensureDeskConversation(
   projectId: string,
   agent: OfficeAgentId,
@@ -140,9 +134,8 @@ async function resolveDeskConversation(
     ),
   )
   if (found) {
-    // metas do projeto carregadas ANTES do 1º persist: sem elas o persist não
-    // acha meta.title e re-deriva do 1º prompt — o título fixo "Mesa · …"
-    // sumiria (loadProjectConversations não rouba seleção; no-op se carregado).
+    // Metas antes do 1º persist, senão ele re-deriva o título do prompt e o
+    // "Mesa · …" some.
     await chat.loadProjectConversations(projectId)
     await chat.ensureConversationLoaded(projectId, found.id)
     return found.id
@@ -161,12 +154,10 @@ async function resolveDeskConversation(
   return id
 }
 
-/** Envio da mesa — paridade com o handleSend do ChatPanel (lista fechada §9):
- *  guardas (corrupt/missão/fila/agent travado) → cancelAutoResume →
- *  invalidateSuggestions → start → lições injetadas no prompt → runAgent
- *  (sessionId, planFirst, permissão do projeto, continuidade por agent) →
- *  handleEvent por evento → finally com finish + persist + drenagem coalescida
- *  da fila + auto-resume em rate limit + notify + sugestões. */
+/** Envio da mesa, na lista fechada de paridade com o handleSend: guardas,
+ *  cancelAutoResume, invalidateSuggestions, start, lições no prompt, runAgent,
+ *  handleEvent e o finally (finish, persist, fila, auto-resume, notify,
+ *  sugestões). */
 export async function sendFromDesk(args: DeskSendArgs): Promise<void> {
   await runDeskPreparation(args, sendFromDeskPrepared)
 }
@@ -193,8 +184,8 @@ async function sendFromDeskPrepared(
   await useChat.getState().ensureConversationLoaded(projectId, convId)
   if (!appCommand) useChat.getState().beginPreparation(convId, runId)
   const conv = useChat.getState().byId[convId]
-  // janela do load: enviar agora criaria estado vazio e o persist (UPSERT de
-  // linha inteira) apagaria o histórico — mesma guarda do ChatPanel.
+  // Conversa carregando: enviar criaria estado vazio, e o persist apagaria o
+  // histórico.
   if (!conv) {
     avisar.nota("Conversa ainda carregando. Tenta de novo.")
     return
@@ -226,9 +217,8 @@ async function sendFromDeskPrepared(
   if (!args.fromAutoResume) useChat.getState().cancelAutoResume(convId)
   // novo run → invalida geração de sugestão pendente/em-voo
   useChat.getState().invalidateSuggestions(convId)
-  // Comando BUILTIN do app — MESMA interceptação do handleSend do ChatPanel:
-  // AÇÃO de primeira classe, antes da expansão de .md. O /compactar nunca vira
-  // texto pro fluxo normal (decisão por capability em lib/compact).
+  // Comando builtin do app é ação, interceptada antes da expansão de .md
+  // (decisão por capability em lib/compact).
   if (appCommand) {
     await runCompactTurn({
       convId,
@@ -242,32 +232,26 @@ async function sendFromDeskPrepared(
     })
     return
   }
-  // conversa estabelecida trava no agent/modelo/effort do 1º run: o agent
-  // TRAVADO da conversa vence o da mesa. Destravada (1º run), o modelo vem do
-  // seletor do cabeçalho do dock (args.model), senão o default do agent.
-  // pareceres de conselheiro (advice) NÃO travam o 1º turno (Especialistas E1).
+  // Conversa estabelecida trava no agent do 1º run, que vence o da mesa;
+  // destravada, o modelo vem do seletor do dock ou do default. Pareceres de
+  // especialista não travam.
   const locked = hasExecutorTurn(conv.items)
   let agent: string = locked ? conv.agent : args.agent
   let model = locked ? conv.reqModel : (args.model ?? null)
   let effort = locked ? conv.effort : (args.effort ?? null)
-  // S3.3 — persona do preset SÓ no 1º turno (!locked), MESMO padrão do
-  // handleSend do ChatPanel. FAIL-CLOSED: preset quebrado aborta ANTES do
-  // start/onAccepted — o run não inicia.
+  // Persona só no 1º turno. Fail-closed: preset quebrado aborta antes do start.
   let personaBlock: string | null = null
   let personaStamp: { presetId: string; digest: string; name: string } | null =
     null
   // régua do "1º prompt chegou no CLI", compartilhada com a doutrina.
   const hasReply = hasAssistantReply(conv.items)
-  // S3.2 — passar o volante: força a re-injeção da nova doutrina NESTE turno
-  // (paridade com o handleSend). DERIVADO de estado persistido
-  // (needsPersonaReinject), então re-injeta mesmo se o próximo turno sair da
-  // mesa depois de um restart.
+  // Passar o volante força a re-injeção neste turno (derivado de estado
+  // persistido, sobrevive a restart).
   const reinject = needsPersonaReinject(conv)
   const persona = await resolveFirstTurnPersona({
     locked,
     presetId: conv.presetId ?? null,
-    // D1: travada SEM resposta de assistant = 1º run morreu antes da doutrina
-    // chegar → re-injeta e re-carimba.
+    // Travada sem resposta de assistant: o 1º run morreu antes da doutrina.
     hasReply,
     projectPath,
     forceReinject: reinject,
@@ -300,10 +284,8 @@ async function sendFromDeskPrepared(
   if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
     void warnPresetDrift(convId, conv.presetId, conv.presetDigest, projectPath)
   }
-  // F-A (follow-up S0) — guarda de availability ANTES do start: CLI ausente/
-  // deslogada só renderia erro cru no fim do run. Guarda o agent EFETIVO (o
-  // travado da conversa ou o do preset vence o da mesa). Auth incerta segue
-  // (degradação honesta). onAccepted NÃO dispara: a UI preserva o rascunho.
+  // Motor ausente ou deslogado barra antes do start (vale o agent efetivo;
+  // auth incerta segue). onAccepted não dispara: o rascunho fica.
   const dispatchBlock = dispatchBlockReason(
     agent,
     useApp.getState().settings.detected ?? {},
@@ -329,14 +311,10 @@ async function sendFromDeskPrepared(
   const permission =
     useApp.getState().projects.find((p) => p.id === projectId)
       ?.permissionMode ?? "padrao"
-  // A mensagem permanece no rascunho da mesa até o run_manifest aceitar o
-  // envio. Gate de preflight não cria turno nem transplante.
-  // M2: lições no PROMPT, não na bolha (mesma injeção do handleSend).
-  // Best-effort; os ids vão pro registro por conversa (recordInjectedLessons),
-  // e o 👍 do dock/companion reforça pelo MESMO caminho do ChatPanel.
-  // Comandos "/" por fonte×motor (mesma regra do handleSend): só claude-code
-  // com comando de fonte claude viaja cru; o resto expande aqui. A bolha
-  // mostra o que você digitou; a expansão entra só no prompt.
+  // A mensagem fica no rascunho da mesa até o run_manifest aceitar o envio.
+  // Lições no prompt, nunca na bolha; os ids vão para recordInjectedLessons.
+  // Comandos "/": só claude-code com fonte claude viaja cru, o resto expande
+  // aqui; a bolha mostra o que você digitou.
   const slashExpansion = await expandDraftWithSources(text, projectPath, agent)
   const sendText = slashExpansion.text
   let lessonsBlock: string | null = null
@@ -432,15 +410,12 @@ async function sendFromDeskPrepared(
     })
     promptText = prepared.prompt
   } else if (personaBlock) {
-    // persona vem ANTES de tudo no prompt (identidade primeiro, depois a doutrina,
-    // as lições e o pedido) — paridade com o handleSend do ChatPanel.
+    // Persona primeiro no prompt, depois doutrina, lições e o pedido.
     promptText = `${personaBlock}\n\n${promptText}`
   }
-  // Motor SEM resume nativo (capability `sessionResume` false — H5, nunca por
-  // nome): todo turno é sessão fresca → injeta a memória da conversa no prompt
-  // (recap + export do transcript pleno + ponteiro). Best-effort de ponta a
-  // ponta: falha no export → só o recap.
-  // Regra única em lib/transcript (vivia duplicada aqui e no ChatPanel).
+  // Motor sem resume nativo (capability `sessionResume`): todo turno é sessão
+  // fresca, então a memória da conversa vai no prompt (recap, transcript,
+  // ponteiro). Falha no export deixa só o recap. Regra em lib/transcript.
   if (
     shouldInlineMemory({ agent, items: conv.items, sessionId, hasReply, wheelSwitch })
   ) {
@@ -528,19 +503,16 @@ async function sendFromDeskPrepared(
       useChat.getState().finish(convId)
       void useChat.getState().persist(convId)
     }
-    // Gate de plano: turno plan_first terminou BEM → grava o plano NO FIO
-    // esperando decisão (mesma captura do ChatPanel; o cartão renderiza em
-    // qualquer superfície que desenhe o fio, e agora sobrevive ao restart).
+    // Turno plan_first terminou bem: grava o plano no fio esperando decisão
+    // (sobrevive ao restart e renderiza em qualquer superfície do fio).
     if (acceptance.accepted() && planFirst) {
       const after = useChat.getState().byId[convId]
       const planText =
         after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
       if (planText) useChat.getState().pushPlanGate(convId, planText)
     }
-    // Fila: junta as mensagens digitadas durante o turno num ÚNICO reenvio —
-    // em LOTES (drainDeskQueued): um builtin do app no meio quebra o
-    // coalescimento. Se há fila, o próximo turno já começa; senão, auto-resume
-    // em rate limit; senão notifica + agenda as sugestões.
+    // A fila vira um reenvio só, em lotes (builtin no meio quebra). Sem fila,
+    // auto-resume em rate limit; senão, notifica e agenda as sugestões.
     if (!acceptance.accepted()) {
       // Nenhum turno nasceu, portanto não há conclusão para encadear.
     } else if (await drainDeskQueued(args, agent)) {
@@ -556,12 +528,9 @@ async function sendFromDeskPrepared(
   }
 }
 
-/** Drena a fila da conversa da mesa em LOTES — paridade com o drainQueued do
- *  ChatPanel: um builtin do app (ex.: /compactar) no meio da fila quebra o
- *  coalescimento (é AÇÃO — no join "\n\n" viraria texto morto que a
- *  interceptação nunca alcança). O lote vai até o builtin (ou é o builtin
- *  sozinho); o resto VOLTA pra fila, drenada de novo no próximo fim de turno.
- *  true = despachou algo. `agent` default = o agent atual da conversa. */
+/** Drena a fila da mesa em lotes, como o drainQueued do ChatPanel: builtin no
+ *  meio é ação, o lote vai até ele e o resto volta para a fila. `true` =
+ *  despachou algo. `agent` padrão = o da conversa. */
 async function drainDeskQueued(
   args: DeskSendArgs,
   agent?: string,
@@ -575,9 +544,8 @@ async function drainDeskQueued(
   for (const m of rest) {
     useChat.getState().enqueue(convId, m.text, m.attachments, HUMANO)
   }
-  // G2.2 — mesma disciplina do ChatPanel: expande CADA pendente ANTES do
-  // join (`/comando` no meio do coalescido era barra morta). Com 1 item o
-  // reenvio normal expande com a semântica plena. Fail-open.
+  // Expande cada pendente antes do join: `/comando` no meio do coalescido
+  // ficaria morto. Com um item só, o reenvio normal expande.
   let texts = batch.map((q) => q.text).filter(Boolean)
   if (texts.length > 1 && texts.some((t) => parseSlashInvocation(t.trim()))) {
     try {
@@ -606,12 +574,10 @@ async function drainDeskQueued(
   return true
 }
 
-/** Revezamento da mesa (espelha ChatPanel.handleContinueWith): continua a MESMA
- *  conversa em OUTRO agent (limite/erro do atual). O contexto viaja por preâmbulo
- *  determinístico (handoff, tail-biased); o disco (cwd/worktree) o novo agent
- *  herda de graça; o pedido pendente (o último prompt do usuário) volta destacado
- *  sem redigitar. Guardas iguais ao sendFromDesk (não-Tauri / load / corrupt /
- *  missão rodando / turno em andamento). Sessão FRESCA no novo agent (null). */
+/** Revezamento da mesa (espelha handleContinueWith): a mesma conversa em outro
+ *  agent, com o contexto num preâmbulo determinístico e o último pedido
+ *  destacado. O disco o novo agent herda. Sessão fresca; guardas iguais às do
+ *  sendFromDesk. */
 export async function continueInAgent(
   args: DeskSendArgs,
   targetAgent: string,
@@ -637,8 +603,7 @@ export async function continueInAgent(
     avisar.nota("Missão em andamento. Pare a missão para revezar.")
     return
   }
-  // turno em andamento: revezar agora atropelaria o run corrente (o transplante
-  // reinicia running/runId). Bloqueia — o usuário para primeiro.
+  // Turno em andamento: revezar atropelaria o run. Você para primeiro.
   if (conv.running || conv.finalizing) {
     avisar.nota("Turno em andamento. Espere terminar para revezar.")
     return
@@ -657,12 +622,9 @@ export async function continueInAgent(
   })
 }
 
-/** Auto-revive da mesa — MESMA política do maybeScheduleAutoResume do
- *  ChatPanel: o turno recém-encerrado pede resume (limite da CLI OU o texto
- *  final combina padrões de retry/espera) E a opção está ligada ⇒ agenda um
- *  reenvio automático via sendFromDesk (handoff do fio + "continue"), com o
- *  cap de tentativas (autoResumeMaxTries) protegendo o bolso. Retorna true se
- *  agendou — o caller pula as sugestões; a notificação sai daqui. */
+/** Auto-revive da mesa, com a política do maybeScheduleAutoResume: turno que
+ *  pede resume e opção ligada agenda um reenvio (handoff e "continue"), com o
+ *  teto de tentativas. `true` se agendou; a notificação sai daqui. */
 function maybeScheduleDeskAutoResume(args: DeskSendArgs, agent: string): boolean {
   const { convId } = args
   const settings = useApp.getState().settings

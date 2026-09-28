@@ -133,13 +133,10 @@ export function ChatPanel() {
   const missionInline = useMission((s) =>
     missionHostsInline(activeId ? s.byConv[activeId] : null),
   )
-  // P1 confiabilidade: missão interrompida por restart — o boot da conversa
-  // detecta o run-state.json `running` no cwd da missão e oferece o card de
-  // retomada. MH4.3: também SEM worktree — o caso residual é missão antiga
-  // rodada na pasta do projeto (pré-MH1.4, ou fallback confirmado); o ponteiro
-  // por conversa mora lá e o readInterruptedFor já filtra pelo convId (sem
-  // oferta cruzada entre conversas do mesmo cwd). A retomada re-roda no cwd
-  // verdadeiro (ensureMissionCwd com resume nunca cria worktree novo).
+  // Missão interrompida por restart: o boot da conversa acha o run-state
+  // `running` no cwd da missão (com ou sem worktree) e oferece a retomada. O
+  // ponteiro é por conversa, então não há oferta cruzada no mesmo cwd; a
+  // retomada re-roda no cwd verdadeiro, sem criar worktree novo.
   const missionInterrupted = useMission((s) =>
     activeId ? !!s.interrupted[activeId] : false,
   )
@@ -178,12 +175,9 @@ export function ChatPanel() {
     void useFusion.getState().restorePending(activeId)
   }, [activeId])
 
-  // destinationId = o agent escolhido no seletor (v0.2-α: o seam que descartava
-  // o destino agora é threadado até o runAgent). Default 'claude-code'.
-  // Phase 3 do extra_dirs: libera a pasta detectada (persiste no config.toml +
-  // memória) e, SÓ com a conversa parada, reenvia o último pedido — o novo
-  // turno nasce com --add-dir (o gate de diretório é fixo no spawn). A decisão
-  // inteira, com o prazo de cada metade, mora em `lib/dirGate` (ADR-046).
+  // Libera a pasta detectada (config.toml e memória) e, só com a conversa
+  // parada, reenvia o último pedido: o `--add-dir` é fixo no spawn. A decisão
+  // e o prazo de cada metade moram em `lib/dirGate` (ADR-046).
   function handleAllowBlockedDir(dir: string) {
     if (!project) return
     void allowBlockedDir({
@@ -244,10 +238,7 @@ export function ChatPanel() {
     )
   }
 
-  /**
-   * O envio de verdade. Ver `handleSend` (logo abaixo) pro porquê de existir um
-   * invólucro: ele é a rede de segurança do carimbo de preparo.
-   */
+  /** O envio de verdade; `handleSend`, abaixo, é a rede do carimbo de preparo. */
   async function despacharEnvio(
     /** Id DESTE turno. Nasce no invólucro, e não aqui, porque é ele quem
      *  precisa saber o que apagar se este preparo estourar no meio. */
@@ -255,15 +246,12 @@ export function ChatPanel() {
     text: string,
     cfg: AgentRunConfig | undefined,
     attachments: Attachment[],
-    /** QUEM pediu este envio (ADR-046). Obrigatório de propósito, e por isso os
-     *  dois anteriores perderam o default: era um `fromAutoResume` booleano, e
-     *  o caminho que não se declarava (o botão de liberar pasta) enfileirou uma
-     *  retomada do app na fila do humano. Quem envia agora diz quem é. */
+    /** QUEM pediu este envio (ADR-046). Obrigatório: um caminho que não se
+     *  declarava pôs retomada do app na fila do humano. */
     origem: OrigemDoEnvio,
-    /** Conversa de ORIGEM. Quem RE-ENTRA (drenagem da fila, auto-resume) passa o
-     *  convId do turno que terminou: esses envios disparam tempo depois e, lendo
-     *  o foco, a fila digitada no projeto X ia parar na conversa aberta do
-     *  projeto Y. Sem alvo = envio manual, vale a conversa em foco AGORA. */
+    /** Conversa de ORIGEM. Quem re-entra tempo depois (drenagem da fila,
+     *  auto-resume) passa o convId do turno que terminou, senão o envio cairia
+     *  na conversa em foco. Sem alvo = envio manual, vale a de agora. */
     originConvId?: string,
     /** O composer só limpa texto e anexos quando o backend aceita o envio. */
     onAccepted?: () => void,
@@ -281,8 +269,8 @@ export function ChatPanel() {
       useChat.getState().byId,
       useApp.getState().projects,
     )
-    // conversa ainda carregando do disco (janela do switch): enviar agora
-    // criaria um estado vazio e o persist apagaria o histórico (achado 1 do aval).
+    // Conversa ainda carregando do disco: enviar criaria estado vazio, e o
+    // persist apagaria o histórico.
     if (target.status === "loading") {
       avisar.nota("Conversa ainda carregando. Tenta de novo.")
       return
@@ -314,26 +302,22 @@ export function ChatPanel() {
       })
       if (consultou) return
     }
-    // Rodando/finalizando: mensagem SUA vai pra fila (o CLI precisa sair de fato
-    // antes do próximo run; ao terminar, o finally junta as pendentes num envio
-    // só). Retomada de SISTEMA não entra na fila do humano — a decisão e o porquê
-    // moram em `lib/sendGate` (ADR-046).
+    // Turno em voo: a mensagem SUA vai para a fila (o CLI precisa sair antes do
+    // próximo run, e o fim do turno junta as pendentes num envio só). Retomada
+    // de sistema não entra na fila do humano (`lib/sendGate`, ADR-046).
     if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
       onAccepted?.()
       return
     }
-    // Um envio MANUAL (digitado/⌘K/fila) supersede um auto-resume agendado: cancela
-    // o timer pra não disparar um resume redundante em cima do run que começa agora.
-    // Se ESTE send É o próprio resume, não cancela (o loop já limpou/regravou o estado).
+    // Envio manual cancela o auto-resume agendado, que viraria resume
+    // redundante; o próprio resume não se cancela.
     const fromAutoResume = ehAutoResume(origem)
     if (!fromAutoResume) useChat.getState().cancelAutoResume(convId)
     // novo run → invalida geração de sugestão pendente/em-voo desta conversa
     useChat.getState().invalidateSuggestions(convId)
-    // Comando BUILTIN do app (source "app", lib/slashCommands): AÇÃO de
-    // primeira classe, interceptada ANTES da expansão de .md — o /compactar
-    // nunca segue como texto pro fluxo normal (em motor com nativeCompact o
-    // que viaja é o literal "/compact"; sem, a sessão renova com recap — a
-    // decisão por capability mora em lib/compact).
+    // Comando builtin do app é AÇÃO, interceptada antes da expansão de .md:
+    // `/compactar` nunca segue como texto. Nativo ou recap é decisão por
+    // capability em lib/compact.
     if (findAppCommand(text)) {
       await runCompactTurn({
         convId,
@@ -347,28 +331,17 @@ export function ChatPanel() {
       })
       return
     }
-    // ── DAQUI PRA BAIXO ESTE ENVIO É UM TURNO DESTA CONVERSA ────────────────
-    // O `runId` nasce aqui, e com ele o carimbo de "existe um envio em preparo"
-    // (ADR-169). Antes o `beginPreparation` só acontecia depois de ~10 `await`
-    // (persona, doutrina, lições, export do transcript) e do preflight do Rust:
-    // a conversa não sabia que havia um envio, então a tela não tinha o que
-    // mostrar, e uma espera de segundos com a interface imóvel lê como
-    // TRAVAMENTO, não como lentidão. O §6 do STYLEGUIDE já mandava spinner a
-    // partir de 1s; sem o carimbo, não havia sequer de onde derivá-lo.
-    //
-    // O lugar é este e não antes: acima ainda se decide se o texto vira PARECER
-    // (`@persona`), FILA (turno em voo) ou COMANDO BUILTIN, e nenhum desses é um
-    // turno desta conversa. Carimbar antes acenderia preparo para gesto que
-    // nunca vai virar run.
-    //
-    // Toda saída daqui pra frente que NÃO nasce turno precisa apagar o carimbo.
-    // São três, e cada uma chama `clearPreparation` explicitamente; o `finally`
-    // do `runAgent` cobre o resto.
+    // ── Daqui para baixo este envio é um turno desta conversa ──
+    // O `runId` e o carimbo de preparo nascem aqui (ADR-169): sem ele, os
+    // segundos de persona, doutrina, lições e preflight passavam com a tela
+    // imóvel, que lê como travamento. Não antes: acima o texto ainda pode virar
+    // parecer, fila ou builtin, que não são turno. Toda saída daqui que não
+    // nasce turno chama `clearPreparation`; o `finally` do `runAgent` cobre o
+    // resto.
     useChat.getState().beginPreparation(convId, runId)
-    // conversa estabelecida trava no agent/modelo/effort do 1º run; nova usa o
-    // seletor. Pareceres de conselheiro (advice) são laterais e NÃO contam como
-    // turno de executor — senão uma consulta antes do 1º envio "travaria" a
-    // conversa e roubaria a injeção de persona/doutrina do turno inicial (E1).
+    // Conversa estabelecida trava no agent/modelo/esforço do 1º run. Pareceres
+    // de especialista não contam como turno de executor: senão uma consulta
+    // antes do 1º envio roubaria a injeção de persona e doutrina.
     const execItems = executorItems(conv.items)
     const locked = execItems.length > 0
     // agent/modelo/esforço do turno e as linhas de troca no fio: regra pura em
@@ -376,25 +349,22 @@ export function ChatPanel() {
     const despacho = identidadeDoDespacho({ locked, conv, cfg })
     const { isAgentSwitch, agentChangeNotice, modelChangeNotice, effortChangeNotice } = despacho
     let { agent, model, effort } = despacho
-    // S3.3 — persona do preset SÓ no 1º turno (!locked). FAIL-CLOSED: preset
-    // quebrado (apagado, sem personality, skill fora do inventário do projeto)
-    // ABORTA aqui, ANTES do start — o run não inicia nem gasta turno.
+    // Persona do preset só no 1º turno. Fail-closed: preset quebrado aborta
+    // antes do start, sem gastar turno.
     let personaBlock: string | null = null
     let personaStamp: { presetId: string; digest: string; name: string } | null =
       null
     // "o 1º prompt CHEGOU no CLI" — régua compartilhada pela persona e pela
     // doutrina (as duas só entram no turno inicial).
     const hasReply = hasAssistantReply(execItems)
-    // S3.2 — passar o volante: força a re-injeção NESTE turno (mesma máquina do
-    // turno-1, sem duplicar a lógica). DERIVADO de estado persistido
-    // (needsPersonaReinject: persona carimbada + digest zerado + turno de
-    // executor), então sobrevive a restart entre a troca e o envio.
+    // Passar o volante força a re-injeção neste turno. Derivado de estado
+    // persistido (needsPersonaReinject), então sobrevive a restart.
     const reinject = needsPersonaReinject(conv)
     const persona = await resolveFirstTurnPersona({
       locked,
       presetId: conv.presetId ?? null,
-      // D1: conversa travada SEM resposta de assistant = o 1º run morreu antes
-      // da doutrina chegar → re-injeta e re-carimba em vez de perder a persona.
+      // Travada sem resposta de assistant: o 1º run morreu antes da doutrina
+      // chegar. Re-injeta em vez de perder a persona.
       hasReply,
       projectPath: project.path,
       forceReinject: reinject,
@@ -417,28 +387,22 @@ export function ChatPanel() {
         name: persona.name,
       }
     }
-    // S3.2 — passar o volante trocou o BACKEND junto (a nova persona roda noutro
-    // agent que o do fio): a sessão nativa do agent anterior não serve pro novo →
-    // sessão fresca + o contexto do fio viaja no envelope híbrido do
-    // revezamento. Piloto de MESMO backend mantém o resume nativo:
-    // só a nova doutrina é prependida na sessão que continua.
+    // O volante passou para outro backend: a sessão nativa anterior não serve,
+    // então sessão fresca com o contexto no envelope do revezamento. Mesmo
+    // backend mantém o resume e só prepende a nova doutrina.
     const wheelSwitch =
       (reinject &&
         persona.status === "ready" &&
         agent !== conv.agent &&
         conv.sessionId != null) ||
       isAgentSwitch
-    // S3.4 — resume de conversa com preset carimbado: verifica o drift do
-    // digest (aviso obrigatório; o turno segue — recusa dura é maturação).
-    // Só quando NÃO estamos re-injetando (a re-injeção re-carimba a versão
-    // atual, drift não se aplica).
+    // Resume com preset carimbado: avisa o drift do digest (o turno segue).
+    // Não se aplica na re-injeção, que re-carimba a versão atual.
     if (persona.status === "none" && locked && conv.presetId && conv.presetDigest) {
       void warnPresetDrift(convId, conv.presetId, conv.presetDigest, project.path)
     }
-    // F-A (follow-up S0) — guarda de availability ANTES do start: mandar turno
-    // pra CLI ausente/deslogada só rende erro cru no fim do run. Guarda o agent
-    // EFETIVO (o travado da conversa ou o do preset vence o do seletor); auth
-    // incerta segue (degradação honesta).
+    // Motor ausente ou deslogado barra antes do start, em vez de erro cru no
+    // fim. Vale o agent efetivo; auth incerta segue.
     const dispatchBlock = dispatchBlockReason(
       agent,
       useApp.getState().settings.detected ?? {},
@@ -448,10 +412,8 @@ export function ChatPanel() {
       avisar.erro(dispatchBlock)
       return
     }
-    // D2 — corrida do await acima: outro envio pode ter passado pelas guardas
-    // e iniciado um run enquanto o preflight rodava. Re-checa com estado
-    // FRESCO pelo MESMO gate da guarda lá em cima (era código gêmeo, e o gêmeo
-    // enfileirava retomada de sistema), nunca um segundo run concorrente.
+    // Outro envio pode ter começado um run durante o preflight: re-checa com
+    // estado fresco pelo mesmo gate lá de cima. Nunca dois runs concorrentes.
     if (retidoPorTurnoEmVoo(convId, text, attachments, origem)) {
       useChat.getState().clearPreparation(convId, runId)
       onAccepted?.()
@@ -461,10 +423,8 @@ export function ChatPanel() {
     // existe. Auto-resume nunca planeja (é continuação de execução).
     const planFirst =
       !fromAutoResume && (cfg?.planFirst ?? conv.sessionMode === "plan")
-    // M3, o ÚLTIMO METRO: o modo da conversa tem que chegar no PROCESSO.
-    // Até 23/08/2026 daqui saía `project.permissionMode` e o chip da conversa
-    // não alcançava o spawn — conversa nova em "Liberado" pedia permissão, e
-    // "Só lê" não confinava (o sandbox decide pelo mesmo valor).
+    // O modo da CONVERSA tem que chegar ao processo, e o sandbox decide pelo
+    // mesmo valor (não o `project.permissionMode`).
     const permissaoDoTurno = permissaoDoSpawn(
       modoEfetivoDoSpawn(conv.sessionMode, project.permissionMode),
     )
@@ -473,20 +433,12 @@ export function ChatPanel() {
     const sessionId = wheelSwitch ? sessaoDeVolta(conv, agent) : (conv.sessionId ?? null)
     // cwd = worktree isolado da conversa (v2.5), senão a pasta compartilhada do projeto.
     const cwd = conv.worktreePath ?? project.path
-    // A mensagem ainda não pertence ao fio. Ela só entra quando o backend
-    // emitir run_manifest, a fronteira de aceite deste envio.
-    // M2: injeta as lições relevantes (projeto + globais) no PROMPT, não na
-    // bolha visível. Best-effort: qualquer falha envia sem o bloco.
-    //
-    // NÃO condicionar a `viewMode`: este handleSend É o turno linear, então o
-    // viewMode era proxy ERRADO (valor de TELA capturado no closure) — deixar
-    // o turno terminar em outra superfície drenava a fila SEM as lições. O
-    // `sendFromDesk` já injetava sem condição; agora os dois concordam.
-    // Comandos "/" honestos por fonte×motor: só conversa claude-code com
-    // comando de fonte claude viaja CRU (o CLI interpreta nativamente); o
-    // resto expande AQUI — em codex/agy o /nome literal era texto que o motor
-    // ignorava. A BOLHA mostra o que você digitou (text, já gravado no start);
-    // a expansão entra só no prompt. Sem match → segue como texto (fail-open).
+    // A mensagem só entra no fio quando o backend emitir run_manifest (o aceite
+    // deste envio). Lições vão no PROMPT, nunca na bolha, sem depender de
+    // `viewMode` (o turno pode terminar em outra superfície).
+    // Comandos "/" por fonte e motor: só claude-code com comando de fonte claude
+    // viaja cru; o resto expande aqui. A bolha mostra o que você digitou; sem
+    // match, segue texto.
     const slashExpansion = await expandDraftWithSources(text, project.path, agent)
     const sendText = slashExpansion.text
     let lessonsBlock: string | null = null
@@ -500,10 +452,9 @@ export function ChatPanel() {
         }
       } catch {}
     }
-    // Especialistas E1 — "Trazer pro Executor": o parecer que você trouxe entra
-    // como CONTEXTO deste turno (bloco no prompt, não bolha), acima do pedido.
-    // Só é consumido quando o envio é aceito; gate de preflight preserva tudo.
-    // Vem do RASCUNHO (a pílula), onde é visível e removível; o aceite consome.
+    // "Trazer pro Executor": o parecer entra como contexto do turno (bloco no
+    // prompt, acima do pedido). Vem do rascunho, onde é visível e removível, e
+    // só é consumido quando o envio é aceito.
     const broughtAdvice = pareceresDoRascunho(convId)
     // Por qual CANAL a instrução viaja (capability `systemChannel`). A regra e
     // o porquê moram em `canalDoTurno.ts`.
@@ -521,11 +472,9 @@ export function ChatPanel() {
     personaBlock = canal.personaBlock
     const doctrineBlock = canal.doctrineBlock
     const systemPrompt = canal.systemPrompt
-    // Review gate G2 — os blocos são decididos ANTES da composição: se
-    // qualquer um vai prepender, o pedido deixa de ser o prompt INTEIRO e um
-    // comando nativo que sobreviveu CRU acima viraria barra morta atrás do
-    // bloco (ex.: doutrina + /review em conversa claude). Nesse caso o pedido
-    // re-expande com `embedded`; sem blocos, o cru nativo segue valendo.
+    // Os blocos se decidem ANTES da composição: se algum vai prepender, o
+    // comando nativo cru ficaria morto atrás dele (doutrina + /review), então
+    // o pedido re-expande com `embedded`.
     const hasPromptEnvelope = !!lessonsBlock || !!broughtAdvice || !!doctrineBlock || !!personaBlock
     const embeddedExpansion = await finalizeSlashExpansion(slashExpansion, text, project.path, agent, hasPromptEnvelope)
     let promptText = embeddedExpansion.text
@@ -656,12 +605,9 @@ export function ChatPanel() {
           after && turnEndedOk(after.items) ? extractPlanText(after.items) : null
         if (planText) useChat.getState().pushPlanGate(convId, planText)
       }
-      // Fila: junta as mensagens digitadas durante o turno num ÚNICO envio
-      // (resume) — em LOTES: um builtin do app no meio quebra o coalescimento
-      // (drainQueued). Se há fila, o próximo turno já começa; senão, agenda as
-      // sugestões. `convId` explícito: a fila é DESTA conversa e o turno pode
-      // terminar com o usuário já noutro projeto — sem o alvo, o envio caía no
-      // fio em foco.
+      // A fila deste turno vira um envio só (em lotes: builtin no meio quebra o
+      // coalescimento). `convId` explícito porque o turno pode terminar com
+      // você em outro projeto. Sem fila, agenda as sugestões.
       if (!acceptance.accepted()) {
         // Nenhum turno nasceu: não drena fila, não agenda retomada, não
         // notifica conclusão e não fabrica sugestões.
@@ -679,10 +625,8 @@ export function ChatPanel() {
     }
   }
 
-  /** Invólucro do envio: cria o `runId` e passa o despacho pela rede que garante
-   *  que nenhum carimbo de preparo sobreviva a uma exceção (`redeDePreparo.ts`,
-   *  ADR-169). O `runId` nasce AQUI porque é a rede que precisa saber o que
-   *  apagar. */
+  /** Invólucro do envio: cria o `runId` e passa pela rede que garante que
+   *  nenhum carimbo de preparo sobrevive a uma exceção (ADR-169). */
   async function handleSend(
     text: string,
     cfg: AgentRunConfig | undefined,
@@ -715,17 +659,13 @@ export function ChatPanel() {
     }
   }
 
-  /** Drena a fila da conversa em LOTES. Um builtin do app (ex.: /compactar) no
-   *  meio da fila quebra o coalescimento: ele é AÇÃO — no join "\n\n" viraria
-   *  texto morto que a interceptação nunca alcança. O lote vai até o builtin
-   *  (ou é o builtin sozinho); o resto VOLTA pra fila e o próximo fim de turno
-   *  drena de novo, na ordem digitada. Sem builtin: um lote só, com anexos de
-   *  todos os itens (dedup por path — o dedup por hash do backend pode repetir
-   *  o mesmo blob). true = despachou algo. */
+  /** Drena a fila em lotes. Builtin no meio é AÇÃO, e no join viraria texto
+   *  morto: o lote vai até ele, o resto volta para a fila e drena no próximo
+   *  fim de turno, na ordem. Sem builtin, um lote só com os anexos de todos
+   *  (dedup por path). `true` = despachou algo. */
 
-  // Revezamento imediato: a decisão mora acima do composer; o transcript só
-  // registra o incidente. Continua a MESMA conversa em OUTRO agent e reenvia
-  // o último pedido do executor sem exigir que a pessoa o redigite.
+  // Revezamento imediato: continua a mesma conversa em outro agent e reenvia o
+  // último pedido, sem exigir que você o redigite.
   async function handleContinueWith(target: string) {
     if (!project || !isTauri()) return
     const convId = useChat.getState().activeId
@@ -743,12 +683,9 @@ export function ChatPanel() {
     })
   }
 
-  // "Planejar primeiro": plano aprovado → dispara o turno de EXECUÇÃO (turno
-  // normal, SEM plan_first; o toggle da conversa desliga sozinho). claude/codex
-  // continuam via resume (o contexto do plano já está na sessão); agy não tem
-  // resume → o prompt embute o texto do plano aprovado.
-  // As duas decisões do gate de plano: a regra mora em lib/planGate (carimbar,
-  // tirar da fila, sair ou não do modo plano); daqui vai só o envio.
+  // Plano aprovado dispara o turno de execução (sem plan_first). claude/codex
+  // seguem por resume; agy não tem resume, então o prompt leva o plano. A regra
+  // do gate mora em lib/planGate; daqui vai só o envio.
   function decidirPlano(id: string, decision: "approve" | "keepPlanning") {
     const convId = useChat.getState().activeId
     if (!convId) return
@@ -946,7 +883,5 @@ export function ChatPanel() {
   )
 }
 
-/** Card do "Planejar primeiro" (abaixo do último turno, acima do composer):
- *  o turno plan_first terminou e o plano proposto está logo acima no fio.
- *  Aprovar dispara o turno de execução; Descartar só limpa o estado (a conversa
- *  segue normal). Visual no padrão dos cards de decisão (InteractionHost). */
+/** Card do "Planejar primeiro": aprovar dispara o turno de execução,
+ *  descartar só limpa o estado. */

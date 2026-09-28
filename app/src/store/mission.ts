@@ -116,13 +116,10 @@ export interface MissionState {
     /** Anexos do launcher (imagem/PDF): só a FASE 1 recebe, junto da task —
      *  mesmo caminho frontend do handleSend (nenhuma mudança em Rust). */
     attachments?: Attachment[],
-    /** INTERNO (retomada P1): snapshot do run-state.json — o launch começa em
-     *  `startPhase = state.current`, com as fases anteriores entrando como
-     *  done (custos do arquivo) e o costTotal retomado somando ao teto. O
-     *  prompt da fase corrente se reconstrói NATURALMENTE dos handoffs
-     *  da pasta da missão já no disco (mesmo caminho do loop). Gate/recovery
-     *  pendentes no crash NÃO sobrevivem: a fase corrente re-roda do zero e
-     *  re-pergunta se precisar. */
+    /** Interno (retomada): snapshot do run-state.json. O launch começa na fase
+     *  corrente, com as anteriores como done e o custo somando ao teto; o
+     *  prompt se reconstrói dos handoffs em disco. Gate ou recovery pendentes
+     *  no crash não sobrevivem: a fase re-roda e re-pergunta. */
     resume?: MissionRunState,
   ) => Promise<void>
 
@@ -148,20 +145,17 @@ export interface MissionState {
 
   clear: (convId: string) => void
 
-  /** Gate humano: entrega as respostas do usuário e RETOMA a missão pausada.
-   *  answers[i] corresponde a gate.questions[i] (em branco = agente decide).
-   *  Aceita GateAnswer[] (rico: texto + anexos) OU string[] legado — a UI atual
-   *  segue funcionando; anexos vão pro runPhase da PRÓXIMA fase (filtrados pelo
-   *  agentCaps do agent dela; não suportado ⇒ notice, nunca erro). */
+  /** Gate humano: entrega as respostas e retoma. answers[i] responde
+   *  gate.questions[i] (em branco = o agente decide). Aceita GateAnswer[]
+   *  (texto e anexos) ou string[]; anexos vão para a próxima fase, filtrados
+   *  pelas capacidades do agent dela (sem suporte vira notice). */
   answerGate: (convId: string, answers: GateAnswer[] | string[]) => void
 
-  /** Recuperação: o usuário escolheu outro agent/modelo/effort → troca a def da
-   *  fase corrente e RE-RODA a MESMA fase (sem avançar). No-op se não há
-   *  recovery pendente. */
+  /** Recuperação: troca a def da fase corrente e re-roda a mesma fase. No-op
+   *  sem recovery pendente. */
   resolveRecovery: (convId: string, choice: RecoveryChoice) => void
 
-  /** Recuperação: o usuário desistiu → a missão vai a error (resolve com null,
-   *  mesmo efeito de não escolher agent). No-op se não há recovery pendente. */
+  /** Recuperação: desistiu, a missão vai a error. No-op sem recovery. */
   abortRecovery: (convId: string) => void
 
   /** R7 — SEGURAR NO FIM DESTA FASE (reversível): a fase corrente termina
@@ -169,9 +163,9 @@ export interface MissionState {
    *  desligar deixa de existir e vira `releaseHold`. */
   holdAfterPhase: (convId: string, on: boolean) => void
 
-  /** R7 — INTERROMPER ESTA FASE (irreversível): mata o processo AGORA. O que
-   *  já foi escrito fica no worktree, a fase fica `aborted` e a missão SEGURA
-   *  (não morre — matar tudo é o Parar). Preço por motor: missionGestures. */
+  /** Interromper esta fase (irreversível): mata o processo agora, o que foi
+   *  escrito fica no worktree, a fase fica `aborted` e a missão segura (matar
+   *  tudo é o Parar). */
   interruptPhase: (convId: string) => void
 
   /** Solta a missão que segurava. No-op sem hold. */
@@ -193,10 +187,8 @@ function phaseRunId(missionId: string, phaseIdx: number): string {
  *  p/ GateAnswer[]), abort com null. */
 const gateWaiters = new Map<string, (answers: GateAnswer[] | null) => void>()
 
-/** Recuperação: resolvedores das missões pausadas numa falha recuperável (por
- *  missionId). MESMO padrão do gate — o while da fase aguarda; resolveRecovery
- *  resolve com a escolha (re-roda), abortRecovery/abort resolvem com null
- *  (desiste). */
+/** Resolvedores das missões pausadas numa falha recuperável, por missionId, no
+ *  padrão do gate: resolver com a escolha re-roda, com null desiste. */
 const recoveryWaiters = new Map<string, (choice: RecoveryChoice | null) => void>()
 
 export const useMission = create<MissionState>((set, get) => {
@@ -260,9 +252,8 @@ export const useMission = create<MissionState>((set, get) => {
     )
   }
 
-  /** Marco terminal de ERRO no fio + aviso do ADR-013 (a composição é pura,
-   *  em lib/missionDelivery). Abort do usuário NÃO passa por aqui: gesto seu
-   *  não precisa de aviso. */
+  /** Marco terminal de erro no fio e o aviso (ADR-013; composição pura em
+   *  lib/missionDelivery). Abort seu não passa por aqui. */
   const recordError = (
     convId: string,
     reason: string,
@@ -417,9 +408,8 @@ export const useMission = create<MissionState>((set, get) => {
         ])
       }
       missionCwd.set(convId, cwd)
-      // memória do loop de revisão ANTES do primeiro marco: o persist da
-      // largada já grava os loops re-hidratados (um crash logo após a
-      // retomada não pode zerar o clamp de novo).
+      // Memória do loop de revisão antes do primeiro marco: um crash logo após
+      // a retomada não pode zerar o clamp.
       missionReview.set(convId, {
         loops: engine.reviewLoops,
         last: engine.lastReview,
@@ -429,10 +419,9 @@ export const useMission = create<MissionState>((set, get) => {
       // desligada. Mesma régua das sugestões e do recibo de turno.
       const helperModel = helperDoProjeto(projectId)
 
-      // Doutrina do projeto (.frota/instructions.md) — lida UMA vez e
-      // injetada em TODAS as fases: cada fase é um run novo de CLI e a maioria
-      // roda em codex/agy, que não leem CLAUDE.md. Lê da RAIZ do projeto, não do
-      // worktree (o worktree só teria o arquivo depois do 1º commit dele).
+      // Doutrina do projeto lida uma vez e injetada em todas as fases: cada fase
+      // é um CLI novo, e codex/agy não leem CLAUDE.md. Lê da raiz, não do
+      // worktree, que só teria o arquivo depois do 1º commit.
       const doctrineBlock = blocoDaDoutrina(await readDoctrine(projectPath))
 
       // garante que os artefatos fiquem FORA do git mesmo num worktree fresco
@@ -462,7 +451,7 @@ export const useMission = create<MissionState>((set, get) => {
               ),
             ],
       )
-      // marco em disco: início (ou retomada) — o pipeline agora sobrevive.
+      // Marco em disco do início ou da retomada.
       persist(convId, resume?.gateDecisions ?? null)
 
       // Estado efêmero dos handoffs entre visitas.
@@ -546,10 +535,9 @@ export const useMission = create<MissionState>((set, get) => {
         const def = engine.phases[i]
         const handoffPath = handoffFileName(dir, i, def.persona)
 
-        // fase 1 = task pura; fases seguintes = blackboard tipado (.mission/*.json
-        // que os agentes escreveram) + lista LEVE de arquivos mudados. O código
-        // não viaja no prompt — está no worktree. Se ninguém emitiu JSON, cai no
-        // fallback do tail do transcript (buildHandoff).
+        // Fase 1 = a task; as seguintes = o blackboard (.mission/*.json) e a
+        // lista de arquivos mudados. O código fica no worktree, não no prompt.
+        // Sem JSON, cai no tail do transcript (buildHandoff).
         let priorHandoffs: string | null = null
         let changedFiles: string | null = null
         let fallbackContext: string | null = null
@@ -575,11 +563,9 @@ export const useMission = create<MissionState>((set, get) => {
         )
         if (learn.lessonIds.length) void markLessonsUsed(learn.lessonIds)
 
-        // G2.1 — `/comando` digitado no campo de tarefa expande pro MOTOR
-        // DESTA fase (inventário do agent da fase, lido do worktree). A task
-        // vai EMBUTIDA no prompt da fase, então até comando nativo precisa do
-        // corpo. Fail-open: sem match/inventário, a task segue como texto. O
-        // fio e a entrega guardam a task DIGITADA (a expansão é só do prompt).
+        // `/comando` na task expande para o motor DESTA fase: a task vai
+        // embutida no prompt, então até comando nativo precisa do corpo. Sem
+        // match, segue texto. O fio guarda a task digitada.
         const phaseExpansion = await expandEmbeddedDraft(task, cwd, def.agent)
         const phaseTask = phaseExpansion.text
 
@@ -598,8 +584,8 @@ export const useMission = create<MissionState>((set, get) => {
           lessonsBlock: learn.lessons,
           userDecisions: gateDecisions,
         })
-        // marco em disco leva o gate consumido POR esta fase: um crash no meio
-        // dela retoma re-rodando a fase com as MESMAS decisões do usuário.
+        // O marco leva o gate consumido por esta fase: um crash retoma com as
+        // mesmas decisões suas.
         const gateBlockForPhase = gateDecisions
         gateDecisions = null // só a fase imediatamente após o gate recebe
         // anexos do gate: consumidos aqui (fase seguinte ao gate) e zerados —
@@ -701,9 +687,8 @@ export const useMission = create<MissionState>((set, get) => {
             break
           }
 
-          // transição de falha (motor): teto intra-fase (MH2.2) vem ANTES do
-          // recuperável — o cancel do corte pode deixar rastro de "limite" no
-          // transcript e teto estourado nunca vira card de recuperação.
+          // Teto intra-fase vem antes do recuperável: o cancel do corte pode
+          // deixar rastro de "limite", e teto estourado não vira recuperação.
           const fail = failureTransition(result, i, after.maxCostUsd, engine.phases[i])
           if (fail.kind === "teto-fase") {
             // MESMO desfecho do check entre fases (error de teto), com o
@@ -782,7 +767,7 @@ export const useMission = create<MissionState>((set, get) => {
             break
           }
 
-          // falha RECUPERÁVEL → PAUSA em recovery e aguarda a escolha do usuário.
+          // Falha recuperável: pausa em recovery e espera a sua escolha.
           patchPhase(convId, i, (ph) => ({
             ...ph,
             status: "error",
@@ -803,11 +788,9 @@ export const useMission = create<MissionState>((set, get) => {
           // marco em disco: recovery aberto (a pausa não sobrevive a restart —
           // retomar re-roda a fase corrente do zero, que re-falha se preciso).
           persist(convId, gateBlockForPhase)
-          // MH2.3 — recovery pendente AVISA (sino/feed + SO): a missão está
-          // parada esperando você trocar de agent, em qualquer modo/app em
-          // background. 1 por episódio POR CONSTRUÇÃO: este é o único ponto
-          // que abre recovery, e um re-run que re-falha é episódio novo
-          // (mesma regra do notifyGate — sem memória extra).
+          // Recovery pendente avisa (sino e SO): a missão espera você trocar de
+          // agent. Um aviso por episódio por construção: este é o único ponto
+          // que abre recovery.
           {
             const projName =
               useApp.getState().projects.find((p) => p.id === projectId)?.name ??
@@ -824,17 +807,15 @@ export const useMission = create<MissionState>((set, get) => {
           if (!still || still.status !== "running") return
           patchConv(convId, { recovery: null })
           if (choice === null) {
-            // desistiu (abortRecovery) → a missão vai a error, como antes.
+            // Desistiu: a missão vai a error.
             patchConv(convId, { status: "error", current: i })
             await recordError(convId, fail.abandonReason, "falha")
             persist(convId)
             return
           }
-          // budget HARD também no re-run (motor: o nextTransition do topo só
-          // roda ao ENTRAR numa fase nova; sem isto o teto seria furado ao
-          // retomar — o caminho mais caro é justamente re-rodar a fase que
-          // falhou). Recusa a recuperação já estourada em vez de gastar e só
-          // então morrer.
+          // Teto também no re-run: o do topo só roda ao entrar numa fase nova, e
+          // re-rodar a fase que falhou é o caminho mais caro. Recusa a
+          // recuperação já estourada em vez de gastar e morrer.
           const rebud = rerunBudget(still.costTotal, still.maxCostUsd)
           if (!rebud.ok) {
             patchPhase(convId, i, (ph) => ({
@@ -960,13 +941,10 @@ export const useMission = create<MissionState>((set, get) => {
           await persist(convId)
         }
 
-        // ── GATE HUMANO: a fase deixou perguntas em aberto e HÁ próxima fase →
-        // PAUSA a missão até o usuário responder (answerGate). As respostas
-        // viram diretriz no prompt da próxima fase. Abortar resolve com null.
-        // MH3.3 — a POLÍTICA do preset decide: "agente" = clássico; "nunca" =
-        // não pausa (as perguntas viram notice, informação nunca some);
-        // "sempre-apos-planejar" = gate obrigatório após a fase 1 mesmo sem
-        // perguntas (pergunta padrão de revisão do plano).
+        // Gate humano: a fase deixou perguntas e há próxima fase, então pausa
+        // até você responder; as respostas viram diretriz da próxima. A
+        // política do preset decide: "agente" (clássico), "nunca" (as perguntas
+        // viram notice) ou "sempre-apos-planejar" (gate após a fase 1).
         const handoffDoc = await readHandoff(cwd, handoffPath)
         const gateResult = gateTransition(
           engine,
@@ -994,8 +972,8 @@ export const useMission = create<MissionState>((set, get) => {
               ""
             notifyGate(convId, projName, engine.phases[i].label)
           }
-          // waiter registrado ANTES do record: o await do marco não pode abrir
-          // janela pro answerGate resolver no vazio.
+          // Waiter antes do record: o await do marco não pode deixar o
+          // answerGate resolver no vazio.
           const waiter = new Promise<GateAnswer[] | null>((resolve) => {
             gateWaiters.set(missionId, resolve)
           })
@@ -1018,8 +996,7 @@ export const useMission = create<MissionState>((set, get) => {
           const nextAgent = engine.phases[i + 1]?.agent ?? ""
           const split = splitGateAttachments(answers, agentCaps(nextAgent))
           gateAttachments = split.kept
-          // marco: respostas do usuário no fio (em branco = agente decide;
-          // resposta com anexos ganha o sufixo "+ N anexos").
+          // Marco com as suas respostas (anexos viram "+ N anexos").
           const answered = questions.map((_q, k) => {
             const a = answers[k]
             const text =
@@ -1062,11 +1039,9 @@ export const useMission = create<MissionState>((set, get) => {
         engine = advance(engine)
       }
 
-      // todas as fases passaram → done, current aponta além do fim.
-      // MH1.1 — desfecho HONESTO (motor): a última revisão reprovou e as
-      // rodadas de correção esgotaram ⇒ done COM RESSALVA explícita
-      // (status/timeline, notice no fio, resumo final). A entrega aconteceu
-      // (worktree, delivery, lição), só não foi aprovada — dizer isso é o mínimo.
+      // Todas as fases passaram. Se a última revisão reprovou e as rodadas
+      // esgotaram, é done COM RESSALVA: a entrega aconteceu, só não foi
+      // aprovada, e isso aparece no status, no fio e no resumo.
       const reviewCaveat = finalCaveat(engine)
       const finalCost = get().byConv[convId]?.costTotal ?? 0
       patchConv(convId, {
@@ -1077,9 +1052,8 @@ export const useMission = create<MissionState>((set, get) => {
       // marco em disco: fim normal — o arquivo vira `done` (terminal; a
       // detecção do boot nunca oferece retomada de done).
       persist(convId)
-      // MH2.3 — desfecho AVISA (sino/feed + SO, dedupe por missão no notify):
-      // fim ok e fim com ressalva têm copy distinta — a ressalva pede que você
-      // revise o parecer antes de confiar (mesmo idioma do notice acima).
+      // O desfecho avisa (sino e SO, dedupe por missão). A ressalva pede que
+      // você revise o parecer antes de confiar.
       notifyMissionEnd({
         missionId,
         convId,
@@ -1199,8 +1173,7 @@ export const useMission = create<MissionState>((set, get) => {
           releaseWaiter(run.id, null)
           forgetInterrupt(run.id)
         }
-        // plumbing por conversa sai junto do run (sem entrada órfã): um launch
-        // futuro re-semeia os dois antes do primeiro persist.
+        // O plumbing por conversa sai junto do run; um launch futuro re-semeia.
         missionCwd.delete(convId)
         missionReview.delete(convId)
         const rest = { ...s.byConv }

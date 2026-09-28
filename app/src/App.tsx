@@ -28,9 +28,8 @@ import { pendingDeferred, useChat } from "@/store/chat"
 import { useFusion } from "@/store/fusion"
 import { useMission } from "@/store/mission"
 import { useNotifs } from "@/store/notifications"
-// Side-effect: registra os listeners globais de interação (interaction://
-// request/resolved) no BOOT — approvals disparados antes de qualquer superfície
-// montar já entram na fila única (store) que host e derive compartilham.
+// Registra os listeners globais de interação no boot: approvals que chegam
+// antes de qualquer superfície montar já entram na fila única.
 import {
   awaitingDecisionCount,
   useInteractions,
@@ -41,9 +40,8 @@ import "@/store/cards"
 // Side-effect: liga a ponte do Companion Web (push de estado coalescido +
 // executor de companion://action) no boot — no-op fora do Tauri.
 import "@/lib/companion"
-// Side-effect: assina update://event no BOOT — o job de update de CLI é do
-// APP, não do modal de Configurações (toast estável + estado sobrevive ao
-// fechar/reabrir o modal). No-op fora do Tauri.
+// Assina update://event no boot: o job de update é do app, não do modal de
+// Configurações (sobrevive a fechar e reabrir o modal).
 import "@/lib/updates"
 import { useSchedules } from "@/store/schedules"
 import { tickSchedules } from "@/lib/scheduleEngine"
@@ -111,12 +109,9 @@ export default function App() {
   const hudScreenId = useApp((s) => s.settings.hudScreenId)
   const activeProjectId = useApp((s) => s.activeProjectId)
 
-  // Atalho de ditado (estilo Wispr): tap alterna, hold é push-to-talk. O combo
-  // vem de settings.dictationHotkey (lido por evento — trocar vale na hora;
-  // null = desativado). O alvo é o registro fino de lib/dictationHotkey
-  // (MicButton do composer); não dispara com modal aberto (⌘K e afins:
-  // dialog Radix com data-state=open) e respeita o MESMO gate do MicButton
-  // (settings.dictationEnabled).
+  // Atalho de ditado: tap alterna, hold é push-to-talk. O combo vem de
+  // settings.dictationHotkey (null = desligado), não dispara com modal aberto
+  // e respeita o mesmo gate do MicButton (settings.dictationEnabled).
   useEffect(
     () =>
       startDictationHotkey({
@@ -129,17 +124,15 @@ export default function App() {
     [],
   )
 
-  // A preferência de sono é do FRONT (persistida) mas quem segura é o Rust, que
-  // nasce no default a cada boot. Sem reaplicar aqui, quem escolheu "Nunca"
-  // voltaria a segurar o sono no próximo reinício sem ter mudado nada.
+  // A preferência de sono é do front, mas quem segura é o Rust, que nasce no
+  // default a cada boot: sem reaplicar aqui, "Nunca" voltaria a segurar.
   useEffect(() => {
     void aplicarKeepAwake(useApp.getState().settings.keepAwake)
   }, [])
 
-  // Zoom de LEITURA do fio, com os atalhos de navegador. Listener em capture:
-  // o composer pode estar focado, mas ⌘+/⌘-/⌘0 pertencem ao chrome, nunca ao
-  // texto. `scaleFromShortcut` consome o default do WebView para ele não ampliar
-  // sidebar, composer e dialogs junto com a conversa.
+  // Zoom de leitura do fio com os atalhos de navegador. Em capture porque
+  // ⌘+/⌘-/⌘0 são do chrome mesmo com o composer focado; `scaleFromShortcut`
+  // consome o default do WebView para não ampliar o app inteiro.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const app = useApp.getState()
@@ -165,10 +158,8 @@ export default function App() {
       }
       const existing = await listProjects()
       if (cancelled) return
-      // Banco vazio → tela vazia, INCLUSIVE em dev. Antes o dev semeava
-      // projetos de exemplo, e eles eram os projetos reais de uma máquina
-      // específica: isso não pertence ao código-fonte nem a uma captura de
-      // marketing. O onboarding (docs/onboarding.md) guia a adição do primeiro.
+      // Banco vazio → tela vazia, inclusive em dev: projeto de exemplo não
+      // pertence ao código. O onboarding guia a adição do primeiro.
       setProjects(existing ?? [])
     }
     load()
@@ -184,24 +175,20 @@ export default function App() {
     }
   }, [setProjects, setReady])
 
-  // Verificador de update dos agents: a DETECÇÃO roda em TODO boot (probes
-  // locais + latest, tudo paralelo e best-effort — o snapshot persistido nunca
-  // fica mentindo depois de um `npm i -g`/`brew upgrade` feito fora do app; foi
-  // um bug real: badges de update pra versões já instaladas). O que fica no
-  // gate diário é só o trabalho de rede não-essencial (catálogo de preços,
-  // curador semanal, rodada de modelos); a NOTIFICAÇÃO segue com dedupe.
+  // Update dos agents: a detecção roda em todo boot (local e paralela), para o
+  // snapshot não mentir depois de um upgrade feito fora do app. Só a rede
+  // não essencial (preços, curador, rodada de modelos) fica no gate diário; a
+  // notificação tem dedupe.
   useEffect(() => {
     if (!isTauri()) return
-    // Modelos reais dos CLIs. Duas etapas, nesta ordem: a última lista de
-    // cada motor sai do BANCO na hora (o seletor abre certo já no primeiro
-    // frame) e a sonda confirma logo atrás. Barato, todo boot — e o OpenCode
-    // depende disso, que a lista dele muda quando uma credencial muda.
+    // Modelos dos CLIs: a última lista de cada motor sai do banco na hora (o
+    // seletor abre certo no primeiro frame) e a sonda confirma logo atrás. Todo
+    // boot, porque a lista do OpenCode muda com a credencial.
     void hydrateModelListings().then(() => refreshModelLists())
     // modelos aprovados do curador → cache do picker (barato, todo boot).
     void reloadActiveProposals()
-    // Catálogo em disco → janela de contexto por modelo (anel do composer).
-    // Leitura local, sem rede: NÃO pode ficar atrás do portão de 24h da
-    // manutenção, senão o anel passa o dia inteiro no palpite escrito à mão.
+    // Catálogo em disco → janela de contexto por modelo. Leitura local: fica
+    // fora do portão de 24h, senão o anel do composer passa o dia no palpite.
     void getModelsCatalog()
     const last = useApp.getState().settings.lastUpdateCheck ?? 0
     // Catálogo de preços, curador semanal e rodada de modelos (M3): a
@@ -249,28 +236,24 @@ export default function App() {
     })()
   }, [])
 
-  // P2 — vigia de turno mudo: avisa quando um turno running fica sem produzir.
-  // O anel de foco só acende quando você TABULA (docs/STYLEGUIDE.md §2.1).
-  // Sem isto, o Radix devolvendo o foco por código acende o contorno dourado
-  // depois de um clique — medido, e é o que faz o app parecer web.
+  // O anel de foco só acende quando você tabula (STYLEGUIDE §2.1): sem isto, o
+  // foco que o Radix devolve por código acende o contorno depois de um clique.
   useEffect(() => rastrearModalidade(), [])
 
   useEffect(() => startTurnWatchdog(), [])
   // B6: queda do navegador do projeto e navegador que sobrou de sessão anterior.
   useEffect(() => startVigiaDoNavegador(), [])
 
-  // Medidor de janela de uso: hidrata os snapshots vivos do backend e assina
-  // o push da statusline (usage://snapshot). O poll (codex) roda na passada
-  // do vigia acima — nenhum ticker novo.
+  // Medidor de janela de uso: hidrata os snapshots e assina o push da
+  // statusline. O poll do codex roda na passada do vigia, sem ticker novo.
   useEffect(() => startUsageWindow(), [])
 
   // H1 (hooks-plan) — sessões EXTERNAS: hidrata do backend e assina o push
   // dos hooks (hooks://sessions). Presença em memória, nada persistido.
   useEffect(() => startExternalSessions(), [])
 
-  // F6 — motor das automações agendadas: tick IMEDIATO no boot (que também faz
-  // o catch-up explícito dos perdidos >5min) + a cada 60s. O reload após cada
-  // tick mantém o espelho (badge da sidebar / view / tray) fresco. Só no Tauri.
+  // Automações agendadas: tick imediato no boot (com o catch-up dos perdidos
+  // >5min) e a cada 60s; o reload mantém badge, view e tray frescos. Só Tauri.
   useEffect(() => {
     if (!isTauri()) return
     const run = () => {
@@ -285,9 +268,8 @@ export default function App() {
     return () => clearInterval(t)
   }, [])
 
-  // Tray (frente paralela no Rust): status da frota + próxima agendada, best-
-  // effort (o comando pode não existir). Selectors devolvem PRIMITIVOS (contagens
-  // /números) — só mudam em transição de estado, nunca a cada delta de stream.
+  // Tray: status da frota e próxima agendada. Os seletores devolvem
+  // primitivos, que só mudam em transição de estado, nunca a cada delta.
   const runningConvs = useChat((s) => {
     let n = 0
     for (const c of Object.values(s.byId)) if (c.running) n++
@@ -314,16 +296,10 @@ export default function App() {
     for (const f of Object.values(s.byConv)) if (f.phase === "deciding") n++
     return n
   })
-  // Pedidos bloqueantes (permissão/pergunta) entram na contagem de "decisões" da
-  // tray: é o sinal que alcança você com a janela fechada, sem depender do SO.
-  //
-  // Conta CONVERSAS, não pedidos: um turno pode pedir 20 `Bash` idênticos, e um
-  // clique em "Aprovar todas" zera os 20 — anunciar "20 decisões" para uma
-  // decisão só é inflar o número que deveria te dizer quanto trabalho te espera.
-  // É a mesma colapsagem que o aviso já faz por episódio (announceArrival dedupa
-  // por conversa) e que o card faz por assinatura.
-  // Primitivo no seletor ⇒ estável durante o streaming. A regra é pura e testada
-  // em store/interactions (awaitingDecisionCount).
+  // Pedidos bloqueantes entram nas "decisões" da tray, que é o sinal que te
+  // alcança com a janela fechada. Conta CONVERSAS, não pedidos: 20 `Bash`
+  // idênticos são uma decisão só ("Aprovar todas"). Regra pura em
+  // store/interactions (awaitingDecisionCount).
   const pendingInteractions = useInteractions((s) =>
     awaitingDecisionCount(s.queue, useChat.getState(), useMission.getState()),
   )
@@ -506,8 +482,7 @@ export default function App() {
             : `${enabled.length} automações pausadas`,
         )
       }
-      // "confirm-quit" morreu: a confirmação de saída virou diálogo NATIVO no
-      // Rust (request_quit) — não depende deste webview estar vivo/visível.
+      // A confirmação de saída é diálogo nativo no Rust (request_quit).
     })
       .then((u) => {
         if (disposed) u()
@@ -533,14 +508,9 @@ export default function App() {
     }
   }, [])
 
-  // Frota resume: o motor avisa quando o resume NATIVO falhou e o run
-  // reiniciou fresh. Zera a sessão morta da conversa (o novo run emite
-  // `session` e grava a nova). O aviso pro usuário (com ou sem memória do
-  // Frota) já vem como Notice do próprio motor (agent.rs/codex_appserver.rs)
-  // — este listener só cuida do estado, não duplica o aviso (antes mandava um
-  // segundo notice + toast dizendo quase a mesma coisa, empilhado em cima do
-  // que o motor já tinha avisado — achado real do usuário, 18/08/2026).
-  // Listener global: cobre runs em background também.
+  // Resume nativo falhou e o run reiniciou do zero: zera a sessão morta (o
+  // run novo grava a dele). O aviso já vem do motor; aqui é só estado.
+  // Global: cobre runs em background.
   useEffect(() => {
     if (!isTauri()) return
     let un: UnlistenFn | null = null
@@ -565,11 +535,10 @@ export default function App() {
     }
   }, [])
 
-  // H2 (prompt-hygiene-plan): o Rust anunciou o plano de MCPs no corpo do
-  // prompt deste run → carimba o fingerprint no ledger efêmero da conversa
-  // (mesmo mecanismo do frescor da doutrina, H4). É ele que volta como
-  // `mcpFingerprint` no próximo envio: motor 1º-turno-só re-anuncia SÓ quando
-  // o plano muda mid-conversa. Listener global: cobre runs em background.
+  // O Rust anunciou o plano de MCPs no prompt deste run: carimba o
+  // fingerprint no ledger da conversa. Ele volta como `mcpFingerprint` no
+  // próximo envio, e o motor que anuncia só no 1º turno re-anuncia apenas
+  // quando o plano muda. Global: cobre runs em background.
   useEffect(() => {
     if (!isTauri()) return
     let un: UnlistenFn | null = null

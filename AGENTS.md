@@ -92,6 +92,12 @@ de correção/status no topo, depois confira `docs/decisions.md` e os call sites
   comportamento, `now` injetável, reset de módulo no `beforeEach` (padrão de
   `watchdog.test.ts`). **Fixture com payload REAL**, colhido de stream ou
   incidente: fixture inventada esconde bug, e já escondeu (ADR-016).
+- **Comentários**: dizem o **porquê que ainda vale hoje**, em poucas linhas. A
+  história ("antes era", a data, o incidente, "achado real") vai para a
+  mensagem de commit e a ADR; o comentário cita a ADR se precisar. Não
+  descreva o que o código já diz. Arquivo em volta cheio de narrativa não é
+  padrão a seguir: é dívida. Medido em 27/09/2026: comentário era 18% do
+  `app/src`, e 30% dele era história.
 
 ## Antes de escrever UI
 

@@ -29,11 +29,9 @@ export type {
 } from "@/store/appTypes"
 
 
-/** Destinos históricos persistidos. A navegação visível mora em Geral;
- * preservar estes valores mantém a última tela no boot (ADR-187). */
-// O conjunto fechado de modos e a migração do estado persistido moram em
-// `appMigracao.ts` (a catraca de tamanho pediu a divisão); a porta continua
-// sendo `@/store/app` para todo mundo que já importava daqui.
+/** Destinos históricos persistidos: a navegação visível mora em Geral, e
+ * preservá-los mantém a última tela no boot (ADR-187). Os modos e a migração
+ * moram em `appMigracao.ts`. */
 export { VIEW_MODES, migratePersistedApp } from "@/store/appMigracao"
 export type { ViewMode } from "@/store/appMigracao"
 
@@ -48,20 +46,12 @@ export interface AppState {
   /** Aba do painel direito. Efêmera, mas compartilhada porque o card de plano
    *  junto ao composer precisa saber quando a checklist já está aberta ali. */
   contextPanelTab: ContextPanelTab
-  /** Superfície do centro (F4): Painel (home cross-projeto) ou Trabalho (chat
-   *  Linear). A disputa Fusion vive dentro da conversa via ⚔️ do composer, não
-   *  é um modo. Valores persistidos de modos que já saíram do produto
-   *  ("fusion", "office", "sdd") migram para "linear" no persist (v3/v4/v5):
-   *  nunca abrimos num modo que não existe. */
+  /** Superfície do centro: Painel (cross-projeto) ou Trabalho (chat Linear).
+   *  Modos que saíram do produto migram para "linear" no persist. */
   viewMode: ViewMode
-  /** A VISTA dentro da superfície Trabalho (docs/abas-no-principal-plan.md).
-   *  União discriminada, igual à do Paseo, porque ela aguenta ganhar variante
-   *  (terminal, PR) sem retrabalho.
-   *
-   *  Não persiste aqui, e é só o que está na tela AGORA. A tira de cada
-   *  conversa (arquivos abertos, Navegador, o que estava à vista) mora em
-   *  `store/abasDeArquivo.ts`, e trocar de conversa troca esta vista pela
-   *  guardada nela (`components/layout/abasNoPrincipal.ts`, ADR-244). */
+  /** A vista dentro de Trabalho (docs/abas-no-principal-plan.md), só o que está
+   *  na tela agora. A tira de cada conversa mora em `store/abasDeArquivo.ts`,
+   *  e trocar de conversa troca esta vista pela guardada nela (ADR-244). */
   mainTab: MainTab
   /** Pedido efêmero para revelar uma fonte do mapa no fio. O nonce permite
    *  repetir o gesto para o mesmo item sem depender de limpar estado. */
@@ -301,10 +291,8 @@ export const useApp = create<AppState>()(
           flightPlansOpen: false,
           fleetOpen: false,
         }),
-      // Cada pedido ganha um selo próprio (`focusSeq`). Sem ele, clicar DE
-      // NOVO no mesmo arquivo era no-op: o efeito que rola até ele depende do
-      // `focusPath`, a string não mudava, e quem tinha rolado pra longe não
-      // voltava. Pedir a mesma coisa duas vezes é pedido, não repetição.
+      // Cada pedido ganha um selo (`focusSeq`): pedir o mesmo arquivo de novo
+      // tem que rolar até ele, mesmo com o `focusPath` igual.
       openDiffTab: (focusPath) =>
         set((s) => ({
           branchSplitOpen: false,

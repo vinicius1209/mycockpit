@@ -1,15 +1,8 @@
-// Derivação DISCRETA da atividade real → snapshot da cena (docs/agent-office.md
-// §4). Fonte: stores zustand (useChat/useMission/useApp/useInteractions — a
-// fila de interações pendentes é a do store, fonte ÚNICA compartilhada com o
-// InteractionHost). Nada aqui roda por frame: startDeriving assina os stores
-// com coalescing ≤10Hz (trailing edge) e dedupe por igualdade estrutural — a
-// cena só recebe TRANSIÇÕES. E o office oculto DESLIGA a derivação
-// (handle.setActive) — senão cada tecla digitada no chat (drafts no useChat)
-// pagaria um derive completo cujo resultado o dedupe descarta.
-//
-// Camadas: lib/fleet/ importa types/perf daqui + stores/lib do app. NUNCA
-// engine/sim, scene/ ou ui/ do office. (Ex-office/bridge/derive.ts, movido no
-// R1 do office-removal-plan.)
+// Derivação discreta da atividade real → snapshot da cena (docs/agent-office.md
+// §4). Lê os stores (useChat, useMission, useApp, useInteractions); nada roda
+// por frame: startDeriving coalesce em ≤10Hz com dedupe estrutural, e desligado
+// (setActive) não deriva, senão cada tecla no chat pagaria um derive inútil.
+// Camadas: importa stores e lib do app, nunca engine, scene ou ui.
 
 import { retomadaAgendada } from "@/lib/autoResume"
 import {
@@ -222,11 +215,9 @@ function upgrade(
   desk.hand = patch.hand
 }
 
-/** Estado-BASE honesto da mesa, antes de qualquer atividade (Sprint 0 · E4):
- *  presença de binário não é prontidão. CLI deslogada e agent em rate limit
- *  apagam a mesa COM o motivo — nunca acendem "Disponível". Auth incerta
- *  (unknown/na, inclui o agy que não tem comando de auth) segue usável:
- *  degradação honesta, não bloqueio. Pura e exportada p/ teste. */
+/** Estado-base da mesa antes de qualquer atividade: binário presente não é
+ *  prontidão. CLI deslogada e rate limit apagam a mesa com o motivo; auth
+ *  incerta (inclui o agy, sem comando de auth) segue usável. Pura. */
 export function deskBaseState(
   avail: Availability,
   limited: boolean,
@@ -256,11 +247,8 @@ export function deskBaseState(
   }
 }
 
-/** Nome ATUAL do preset da conversa, resolvido no RENDER via o store de
- *  presets (follow-up S3.5: renomear o preset atualiza a label da mesa sem
- *  recarregar a conversa). Cai no carimbo `presetName` da conversa quando o
- *  store não tem o preset (lista ainda não carregada, ou preset apagado — o
- *  carimbo é o último nome conhecido, honesto como fallback). */
+/** Nome atual do preset, resolvido no render (renomear atualiza a mesa). Sem o
+ *  preset no store, cai no carimbo `presetName`, o último nome conhecido. */
 function currentPresetName(
   presetId: string | null | undefined,
   stamped: string | null | undefined,
@@ -291,10 +279,9 @@ export function isRateLimitLabel(label: string | null | undefined): boolean {
   return label === RATE_LIMIT_LABEL
 }
 
-/** Instrução de UI por motivo de mesa apagada. Mora AQUI, colada nos labels que
- *  deskBaseState produz, pra copy e motivo não divergirem: "Verifique nos
- *  Ajustes" só vale pra ausência de binário; login é no terminal; rate limit
- *  não tem nada pra verificar em lugar nenhum, é esperar a janela. */
+/** Instrução por motivo de mesa apagada, colada aos labels de deskBaseState
+ *  para não divergirem: "Verifique nos Ajustes" só vale para binário ausente;
+ *  login é no terminal; rate limit é esperar a janela. */
 export function offInstruction(label: string): string {
   if (label === "Instalado, sem login") return "Faça login pelo terminal da CLI."
   if (isRateLimitLabel(label)) return "Aguarde a janela liberar."
@@ -304,11 +291,9 @@ export function offInstruction(label: string): string {
 // agregado da sala: fonte única em engine/types.roomAggregate (compartilhada
 // com a fixture sim-data — mesma régua no Tauri e no browser)
 
-// mapeamento request→conversa (run_id → turno linear / fase de missão):
-// fonte única em store/interactions — aqui usamos o recorte approval-only
-// (convIdForInteraction), porque a mão da mesa é de APROVAÇÃO; o split
-// contextual dos cards e o índice de espera da sidebar usam a mesma régua sem
-// filtro de kind (pergunta também tem dono).
+// run_id → conversa: fonte única em store/interactions. A mesa usa o recorte
+// só de approval (a mão da mesa é de aprovação); cards e sidebar usam a mesma
+// régua sem filtro de kind.
 
 // ---------------------------------------------------------------------------
 // A derivação
@@ -322,13 +307,10 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
   const app = useApp.getState()
   const detected = app.settings.detected
 
-  // 1) Base: uma sala por projeto, 3 mesas; CLI não detectado, DESLOGADA ou em
-  //    rate limit ⇒ mesa apagada com o motivo (deskBaseState — auth honesta).
-  //    Atividade REAL (turno rodando) ainda sobe o estado via upgrade(): estado
-  //    real vence rótulo. (Fonte da detecção: settings.detected — snapshot de
-  //    detect_agents/toProbeMap gravado no boot do App e no "Verificar agora"
-  //    das Settings. Fonte do rate limit: app.limitedAgents, marcado por
-  //    limit_reached e curado por result ok.)
+  // 1) Base: uma sala por projeto, 3 mesas. CLI ausente, deslogado ou em rate
+  //    limit apaga a mesa com o motivo; turno rodando ainda sobe o estado
+  //    (estado real vence rótulo). Detecção: settings.detected; rate limit:
+  //    app.limitedAgents.
   const limitedAgents = app.limitedAgents
   const deskByKey = new Map<string, DeskSnapshot>()
   const roomsBase = app.projects.map((p) => {
@@ -348,10 +330,8 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
         label: base.label,
         detail: base.detail,
       }
-      // Chegada: a mesa estava "off" no último derive e voltou a ficar usável
-      // (CLI detectado, login feito ou rate limit curado) ⇒ o avatar entra
-      // pela porta. Primeiro derive só memoriza (mesa que já nasce disponível
-      // não é "chegada").
+      // Chegada: a mesa estava "off" e voltou a ser usável, e o avatar entra
+      // pela porta. O primeiro derive só memoriza.
       const prevOff = lastOffByDesk.get(desk.id)
       if (prevOff === true && !off) arrivals.push({ deskId: desk.id, at: now })
       lastOffByDesk.set(desk.id, off)
@@ -403,10 +383,8 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
       celebrations.push({ projectId, at: now })
     }
     missionStatusSeen.set(convId, run.status)
-    // Handoff físico: a fase avançou desde o último derive, a anterior está
-    // done e o agent MUDOU ⇒ courier mesa→mesa (mesma sala: mesmo projectId
-    // dos dois lados por construção). Primeiro derive só memoriza (missão
-    // histórica não vira courier).
+    // Handoff físico: a fase avançou, a anterior está done e o agent mudou, então
+    // courier mesa→mesa. O primeiro derive só memoriza.
     const seen = missionPhaseSeen.get(convId)
     if (seen !== undefined && run.current > seen) {
       // origem = a fase IMEDIATAMENTE anterior à corrente (não a última vista):
@@ -492,11 +470,9 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     })
   }
 
-  // 3b) Revezamento + descanso, por conversa conhecida: (a) o agent MUDOU
-  //     desde o último derive numa conv COM items ⇒ bastão mesa→mesa no mesmo
-  //     projeto (memória lastAgentByConv; conv vazia não memoriza — sem
-  //     trabalho, sem bastão); (b) auto-resume agendado ⇒ a mesa "descansa"
-  //     até nextAt (sinal do sofá).
+  // 3b) Revezamento: agent mudou numa conversa com itens → bastão mesa→mesa
+  //     (conversa vazia não memoriza). Auto-resume agendado → a mesa descansa
+  //     até nextAt.
   for (const [convId, c] of Object.entries(chat.byId)) {
     // conv só com pareceres de conselheiro (advice) não é "trabalho" de executor
     // → não memoriza agent nem gera bastão espúrio (Especialistas E1).
@@ -572,14 +548,10 @@ export function deriveOfficeSnapshot(now: number = Date.now()): OfficeSnapshot {
     if (!deskByKey.has(deskId)) lastOffByDesk.delete(deskId)
   }
 
-  // 5) Approvals pendentes (fila do useInteractions) mapeáveis ⇒ mão levantada.
-  //    Só APPROVAL sobe mão aqui, e isso é uma escolha de copy, não falta de
-  //    dado: a pergunta TEM run_id (o backend anexa em todo pedido) e já acende
-  //    a conversa na sidebar + o card inline, mas a mesa só sabe dizer
-  //    "Aguardando aprovação" — levantar essa mão por uma pergunta seria mentir
-  //    sobre o que o agente pediu. Responder pelo card remove da fila NA HORA ⇒
-  //    a mão abaixa no mesmo derive (o backend não emite resolved pra respostas
-  //    do usuário).
+  // 5) Approval pendente mapeável → mão levantada. Só approval: a mesa só sabe
+  //    dizer "Aguardando aprovação", e levantar a mão por uma pergunta mentiria
+  //    sobre o pedido. Responder pelo card tira da fila na hora, e a mão abaixa
+  //    no mesmo derive.
   for (const req of useInteractions.getState().queue) {
     // dono do pedido: recorte approval-only (question / sem run_id ⇒ null).
     const home = convIdForInteraction(req, chat, missions)
@@ -703,19 +675,14 @@ async function refreshLedger(): Promise<void> {
 export type DeriveHandle = {
   /** Encerra de vez: unsubscribe dos stores + timers. */
   stop(): void
-  /** Liga/desliga a derivação (office visível/oculto). INATIVO: nenhum derive
-   *  roda — nem por mudança de store, nem pelo tick de decaimento, nem pelo
-   *  ledger. Isso importa porque CADA TECLA digitada no chat escreve `drafts`
-   *  no useChat e notificaria os assinantes; o snapshot não lê drafts, então o
-   *  trabalho inteiro (projetos × mesas, missões, fusões, JSON.stringify)
-   *  morreria no dedupe. Religar emite NA HORA: a cena nunca volta atrasada. */
+  /** Liga ou desliga a derivação. Desligada, nada deriva (store, decaimento,
+   *  ledger): cada tecla no chat notificaria os assinantes por um trabalho que
+   *  o dedupe descartaria. Religar emite na hora. */
   setActive(active: boolean): void
 }
 
-/** Assina os stores (incluindo a fila de interações) e entrega snapshots ao
- *  `cb` com coalescing ≤10Hz (trailing edge) e dedupe estrutural (JSON):
- *  transições discretas, nunca por frame. `opts.active` começa desligado quando
- *  o office monta oculto (nem a primeira foto sai — ela vem no setActive). */
+/** Assina os stores e entrega snapshots a `cb` (≤10Hz, dedupe estrutural).
+ *  `opts.active` começa desligado quando a cena monta oculta. */
 export function startDeriving(
   cb: (s: OfficeSnapshot) => void,
   opts: { active?: boolean } = {},
@@ -750,9 +717,8 @@ export function startDeriving(
     }, COALESCE_MS)
   }
 
-  // useInteractions entra na lista: a fila é alimentada no import do store
-  // (App.tsx importa no boot), então approvals de ANTES da 1ª visita ao
-  // office já estão nela — nenhum listener próprio aqui.
+  // A fila de interações é alimentada no import do store (boot), então
+  // approvals de antes da 1ª visita já estão nela.
   const unsubs = [
     useChat.subscribe(schedule),
     useMission.subscribe(schedule),

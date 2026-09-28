@@ -1,35 +1,18 @@
-// O LEDGER DE MODELOS: o que aconteceu com cada par (agent, slug), quem
-// decidiu e por quê. Saiu do `lib/db.ts` quando o M3 (docs/model-autonomy-plan)
-// dobrou o tamanho do assunto: é um domínio inteiro, com duas tabelas e uma
-// leitura de conversas, e o db.ts já era o arquivo mais gordo da casa.
-//
-// Não abre banco novo: usa o `getDb()` do db.ts, que é a conexão única do app.
+// O ledger de modelos: o que aconteceu com cada par (agent, slug), quem decidiu
+// e por quê. Usa a conexão única do `lib/db.ts` (`getDb()`).
 
 import type Database from "@tauri-apps/plugin-sql"
 import { addColumn, getDb } from "@/lib/db"
 
-// ---------------- Modelos: o LEDGER de decisões (model_proposals) ----------------
-// Nasceu como fila de propostas do curador LLM (modelos novos do catálogo que
-// ainda não estão nos pickers, esperando aprovação humana). Com o M3 do
-// `model-autonomy-plan` a tabela virou o LEDGER de decisões sobre modelos: cada
-// linha diz o que aconteceu com um par (agent, slug), QUEM decidiu e POR QUÊ.
-// A tabela manteve o nome porque renomear tabela é migração sem ganho.
-//
-//   proposed  — pendente: falta alguma perna pra decidir (o motivo está em
-//               `reason`). Não entra no picker.
-//   active    — está no picker (merge em agentModels). Pode ter entrado pelo
-//               gate humano OU sozinho pela regra das três pernas (`decidedBy`).
-//   dismissed — VOCÊ mandou sumir. A rodada nunca ressuscita.
-//   rejected  — a regra reprovou, com o motivo escrito. Fica visível em
-//               Configurações ▸ Modelos: reprovado não é desaparecido.
-//
-// A APOSENTADORIA não é status daqui, e isso é deliberado: ela mora na tabela
-// `model_retirements` justamente para NÃO poder mexer no picker. Um modelo em
-// vias de aposentadoria continua funcionando, e tirá-lo do seletor por causa do
-// aviso quebraria a conversa de quem está com ele escolhido.
-//
-// Mesmo padrão idempotente das tabelas de aprendizado (CREATE IF NOT EXISTS +
-// addColumn, cache de promessa que RESETA em falha).
+// ---------------- O ledger de decisões (model_proposals) ----------------
+// Cada linha diz o que aconteceu com um par (agent, slug), QUEM decidiu e POR
+// QUÊ (o nome da tabela é da época das propostas do curador):
+//   proposed  — pendente, falta alguma perna (motivo em `reason`); fora do picker.
+//   active    — no picker, pelo gate humano ou pela regra (`decidedBy`).
+//   dismissed — VOCÊ mandou sumir; a rodada nunca ressuscita.
+//   rejected  — a regra reprovou, com motivo; visível em Configurações ▸ Modelos.
+// Aposentadoria não é status daqui: mora em `model_retirements` para não poder
+// mexer no picker (o modelo ainda funciona). Tabela do frontend, idempotente.
 
 export type ModelProposalStatus =
   | "proposed"
@@ -87,9 +70,8 @@ async function ensureProposalTable(db: Database): Promise<void> {
       await db.execute(
         `CREATE INDEX IF NOT EXISTS idx_model_proposals_status ON model_proposals(status)`,
       )
-      // M3: a linha passou a carregar procedência e motivo. Os defaults contam
-      // a verdade das linhas ANTIGAS: elas nasceram do curador e, se estão
-      // ativas, foi um humano que aprovou.
+      // Procedência e motivo: os defaults contam a verdade das linhas antigas
+      // (nasceram do curador e, se ativas, um humano aprovou).
       await addColumn(
         db,
         "ALTER TABLE model_proposals ADD COLUMN origin TEXT NOT NULL DEFAULT 'curator'",
@@ -246,14 +228,9 @@ export async function setModelProposalStatus(
   }
 }
 
-/** Uma decisão da RODADA (M3), por par (agent, value): insere ou atualiza a
- *  linha existente. Devolve `true` quando algo MUDOU de fato — linha nova ou
- *  status/motivo diferente. Decisão idêntica à que já estava gravada não
- *  reescreve nada, e é isso que impede o sino de reanunciar todo dia o mesmo
- *  modelo (a chave do aviso carrega o `decidedAt`).
- *
- *  NUNCA sobrescreve uma linha decidida por VOCÊ: aprovar e dispensar são
- *  gestos humanos, e a regra não desfaz gesto humano. */
+/** Uma decisão da rodada por par (agent, value), inserindo ou atualizando.
+ *  `true` só quando algo mudou: decisão idêntica não reescreve, e o sino não
+ *  reanuncia. Nunca sobrescreve uma linha decidida por VOCÊ. */
 export async function upsertModelDecision(row: {
   agent: string
   value: string
@@ -319,18 +296,12 @@ export async function upsertModelDecision(row: {
   }
 }
 
-// ---------------- Modelos: aposentadoria anunciada (model_retirements) ----------------
-// O achado do M2 que o plano não previa: o CLI ANUNCIA a aposentadoria de um
-// slug, com sucessor e com o texto do próprio fornecedor. Isto aqui é só a
-// memória desse anúncio, para o aviso sobreviver ao fechar do app.
-//
-// POR QUE UMA TABELA SÓ DELA: aposentadoria NÃO pode virar status no ledger.
-// Modelo em vias de aposentadoria continua funcionando; se o anúncio mexesse no
-// status, o slug sairia do picker e quebraria a conversa de quem está com ele
-// escolhido. Aqui ele só ganha uma frase.
-//
-// A linha vale enquanto o CLI anuncia: a rodada REESCREVE o conjunto do motor
-// que respondeu. Motor que não respondeu não perde nada ("não sei" nunca apaga).
+// ---------------- Aposentadoria anunciada (model_retirements) ----------------
+// A memória do anúncio do CLI (sucessor e texto do fornecedor), para o aviso
+// sobreviver ao restart. Tabela própria porque aposentadoria não pode virar
+// status: o modelo ainda funciona, e sair do picker quebraria conversas. A
+// rodada reescreve o conjunto do motor que respondeu; quem não respondeu não
+// perde nada.
 
 export interface ModelRetirement {
   agent: string
@@ -401,12 +372,9 @@ export async function listModelRetirements(): Promise<ModelRetirement[]> {
   }
 }
 
-/** Substitui o conjunto de aposentadorias anunciadas de UM motor.
- *
- *  Só quem RESPONDEU chama isto: motor que não deu para consultar mantém o que
- *  já se sabia. `seen_at` só muda quando o TEXTO muda, senão o sino
- *  reanunciaria todo dia a mesma aposentadoria (a chave do aviso carrega o
- *  carimbo). Devolve os slugs cujo anúncio é NOVO ou mudou. */
+/** Substitui as aposentadorias anunciadas de UM motor (só quem respondeu).
+ *  `seen_at` só muda quando o texto muda, para o sino não reanunciar. Devolve
+ *  os slugs novos ou mudados. */
 export async function replaceModelRetirements(
   agent: string,
   rows: {
@@ -450,12 +418,9 @@ export async function replaceModelRetirements(
   }
 }
 
-/** Onde um modelo está ESCOLHIDO nas conversas (M3: o aviso de aposentadoria
- *  precisa dizer que VOCÊ usa o modelo que vai sair).
- *
- *  Lê o `req_model`, que é o que você PEDIU, não o `model`, que é o que o CLI
- *  resolveu: quem vai ter que trocar de escolha é o pedido. Conversa sem
- *  modelo explícito (sentinela "default") não conta como escolha de ninguém. */
+/** Onde um modelo está escolhido nas conversas, para o aviso de aposentadoria
+ *  dizer que VOCÊ o usa. Lê o `req_model` (o que você pediu), não o resolvido;
+ *  "default" não é escolha. */
 export async function listConversationModelChoices(): Promise<
   { agent: string; model: string; title: string }[]
 > {

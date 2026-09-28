@@ -1,11 +1,7 @@
-// Fila ÚNICA de interações pendentes (§6.1 item 4 do docs/agent-office.md,
-// doc histórico). Fonte de verdade compartilhada entre o InteractionHost
-// (card na UI) e o lib/fleet/derive. Antes cada um mantinha a
-// própria cópia (useState local + Map de módulo) e elas divergiam:
-// answer_interaction NÃO emite interaction://resolved (o backend só emite no
-// Drop, e só para pendentes), então quem esperava o evento ficava com a mão
-// levantada o resto do turno. Aqui `answer` REMOVE da fila imediatamente
-// (fail-closed local); o resolved do Drop cobre o resto (run morto/cancelado).
+// Fila ÚNICA de interações pendentes, compartilhada pelo InteractionHost e
+// por lib/fleet/derive. `answer` remove da fila na hora: o backend só emite
+// interaction://resolved no Drop (run morto ou cancelado), nunca para uma
+// resposta sua.
 
 import { useSyncExternalStore } from "react"
 import { avisar } from "@/lib/avisos"
@@ -46,25 +42,21 @@ interface InteractionsState {
   push: (req: InteractionRequest) => void
   /** Backend resolveu (fail-closed no fim/cancel do run) → some da fila. */
   resolve: (id: string) => void
-  /** Responde o backend E remove da fila NA HORA: o backend não emite resolved
-   *  para respostas do usuário (só o Drop emite), então esperar confirmação
-   *  deixava card/mão pendurados. Envio best-effort — se falhar, o run já
-   *  morreu e o Drop fail-closed cobre o lado de lá. */
+  /** Responde o backend e remove da fila na hora (o backend não emite resolved
+   *  para respostas suas). */
   answer: (id: string, answer: InteractionAnswer) => void
   /** Dispensar manual (escape hatch): responde fail-closed e remove. */
   dismiss: (req: InteractionRequest) => void
-  /** Aprovações em LOTE: responde TODAS as pendentes com esta assinatura
-   *  (approvalSignature), uma a uma via answer() — o guard síncrono garante um
-   *  envio por pedido. Recomputa o grupo NA HORA da chamada: quem sumiu da
-   *  fila entre o clique e a confirmação (resolved do Drop) NÃO é respondido. */
+  /** Aprovação em lote: responde todas as pendentes com esta assinatura, uma a
+   *  uma via answer(). O grupo é recalculado na hora: quem saiu da fila entre o
+   *  clique e a confirmação não é respondido. */
   answerGroup: (signature: string, allow: boolean) => void
 }
 
 export const useInteractions = create<InteractionsState>()((set, get) => ({
   queue: [],
   push: (req) => {
-    // pergunta VAZIA (modelo mandou lixo): sem guard o card habilitava
-    // "Responder" vacuamente (achado M4) → responde fail-closed e nem enfileira.
+    // Pergunta vazia (lixo do modelo): responde fail-closed e nem enfileira.
     if (req.kind === "question") {
       const d = req.data as QuestionData | null | undefined
       if (!d?.questions?.length) {
@@ -98,12 +90,9 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
       void responderRecurso(req, (answer as ApprovalAnswer).allow === true, (r) => get().push(r))
       return
     }
-    // Isto NÃO é best-effort: é a ÚNICA entrega da sua decisão. O comentário
-    // antigo supunha "se falhou, o run já morreu e o Drop do backend cobre" —
-    // suposição, não fato: o invoke pode falhar com o run VIVO, e aí o card já
-    // saiu da tela (a linha acima removeu) e o turno fica pendurado sem que
-    // ninguém saiba. Mesmo desenho que deixou a notificação nativa morta por
-    // meses atrás de um catch vazio.
+    // Não é best-effort: é a única entrega da sua decisão. O invoke pode falhar
+    // com o run vivo, e o card já saiu da tela; sem o aviso, o turno ficaria
+    // pendurado sem ninguém saber.
     void answerInteraction(id, answer).catch((e) => {
       console.error("[interações] resposta não entregue", id, e)
       // devolve o pedido pra fila: o card volta e você pode tentar de novo,
@@ -122,9 +111,9 @@ export const useInteractions = create<InteractionsState>()((set, get) => ({
       ? get().answer(req.id, { decision: "keepPlanning" })
       : get().answer(req.id, failClosedAnswer(req.kind)),
   answerGroup: (signature, allow) => {
-    // snapshot dos ids AGORA (não do momento do clique): o grupo pode ter
-    // encolhido enquanto a confirmação estava aberta. O loop é síncrono e
-    // answer() guarda por id — sem resposta dupla nem resposta a fantasma.
+    // Ids de agora, não do clique: o grupo pode ter encolhido com a confirmação
+    // aberta. answer() guarda por id, então não há resposta dupla nem a
+    // fantasma.
     const ids = get()
       .queue.filter((r) => approvalSignature(r) === signature)
       .map((r) => r.id)
@@ -143,9 +132,8 @@ export {
 } from "@/store/interactions/lote"
 
 // ---------------------------------------------------------------------------
-// Aprovações CONTEXTUAIS (docs/agent-office.md §8, doc histórico): mapeamento
-// request→conversa + split por visibilidade. O mesmo helper alimenta o
-// lib/fleet/derive e os hosts de card (inline no fluxo vs toast global).
+// Aprovações contextuais: pedido → conversa e o split por visibilidade, para
+// lib/fleet/derive e os hosts de card (inline no fluxo ou toast global).
 // ---------------------------------------------------------------------------
 
 /** Dono de um pedido pendente: a conversa + (missão) a fase resolvida do
@@ -155,31 +143,18 @@ export type InteractionTarget =
   | { convId: string; kind: "linear" }
   | { convId: string; kind: "mission"; phase: number | null }
 
-/** Run de um pedido. O backend serializa `run_id` IRMÃO de `data` (approval.rs);
- *  o canal de compat legado (`approval://request`) o replica dentro de `data`.
- *  Ler só um dos dois deixava o roteamento cego: com o topo vazio TODO approval
- *  caía no host global, mesmo com a conversa dona aberta na tela. */
+/** Run de um pedido. O backend manda `run_id` irmão de `data` (approval.rs); o
+ *  canal legado o replica dentro de `data`. Lê os dois. */
 export function runIdOf(req: InteractionRequest): string | null {
   if (typeof req.run_id === "string" && req.run_id) return req.run_id
   const data = req.data as Partial<ApprovalData> | null | undefined
   return typeof data?.run_id === "string" && data.run_id ? data.run_id : null
 }
 
-/** Conversa DONA de um pedido de APROVAÇÃO (extraído do lib/fleet/derive):
- *  - linear: run_id === runId corrente da conversa (turno pausado);
- *  - missão: run_id tem prefixo `missionId::` e casa com byConv; a fase vem do
- *    sufixo `phase-N` (fallback: fase corrente).
- *
- *  Restrito a `approval` de propósito, mas o MOTIVO não é "pergunta não tem dono"
- *  (tem: o backend anexa run_id em todo pedido — ver `ownerByRunId`). É que o
- *  ÚNICO consumidor que sobrou fala só de permissão: o snapshot da frota
- *  levanta a mão com o rótulo "Aguardando aprovação" (lib/fleet/derive), e
- *  levantá-la por uma pergunta seria mentir sobre o que o agente pediu.
- *
- *  ⚠️ Se você precisa do dono para QUALQUER kind, use `ownerByRunId`. Foi essa
- *  confusão que deixou o companion mostrando pergunta pendente sem conversa, sem
- *  projeto e sem agent: ele resolvia o alvo UMA vez com esta régua e reusava no
- *  ramo `question`, onde ela devolve null. */
+/** Conversa dona de um pedido de APROVAÇÃO: linear (run_id = runId corrente)
+ *  ou missão (prefixo `missionId::`, fase pelo sufixo `phase-N`). Só approval
+ *  porque o consumidor que sobrou é a mão da mesa, que só sabe dizer
+ *  "Aguardando aprovação". Para o dono de qualquer kind, use `ownerByRunId`. */
 export function convIdForInteraction(
   req: InteractionRequest,
   chat: { byId: Record<string, { runId: string | null }> },
@@ -196,13 +171,9 @@ export function convIdForInteraction(
   return ownerByRunId(req, chat, missions)
 }
 
-/** Conversa dona por run_id, SEM filtro de kind. O `handle_conn` do backend
- *  anexa `run_id` em TODO pedido (approval e question — approval.rs, onde o campo
- *  é `String`, não Option), então o dono de uma pergunta é tão resolvível quanto
- *  o de uma permissão. É a régua de "quem está esperando você": notificação
- *  (sino/nativa), split contextual (card inline na conversa dona) e índice de
- *  espera da sidebar. O `convIdForInteraction` fica com o recorte approval-only
- *  das superfícies que só sabem falar de permissão. */
+/** Conversa dona por run_id, sem filtro de kind: o backend anexa `run_id` em
+ *  todo pedido (approval.rs). É a régua de "quem está esperando você":
+ *  notificação, card inline e índice de espera da sidebar. */
 export function ownerByRunId(
   req: InteractionRequest,
   chat: { byId: Record<string, { runId: string | null }> },
@@ -244,10 +215,8 @@ export function ownerByRunId(
 
 
 // ---------------------------------------------------------------------------
-// ORIGEM (projeto · conversa) e ÍNDICE de espera. Um pedido pendente (permissão
-// ou pergunta) é do PROJETO, não do app: o card precisa dizer de onde veio e a
-// sidebar precisa acender onde a resposta é esperada — senão o turno fica
-// pausado num canto que você não está olhando.
+// Origem (projeto · conversa) e índice de espera: o pedido é do projeto, e a
+// sidebar acende onde a resposta é esperada.
 // ---------------------------------------------------------------------------
 
 // A porta de entrada continua sendo `@/store/interactions`: quem já importava
@@ -276,10 +245,9 @@ interface ConvMetaLike {
   title?: string | null
 }
 
-/** Resolve projeto+conversa de um pedido de APROVAÇÃO (usa a régua approval-only
- *  do `convIdForInteraction` — é o cabeçalho "projeto · conversa" do card de
- *  permissão). null quando o dono é irresolvível (run órfão) ou o kind não é
- *  approval; p/ qualquer kind existe `currentOriginAnyKind`. */
+/** Projeto e conversa de um pedido de aprovação, para o cabeçalho do card.
+ *  null quando o dono é irresolvível ou o kind não é approval; para qualquer
+ *  kind, `currentOriginAnyKind`. */
 export function originForInteraction(
   req: InteractionRequest,
   chat: {
@@ -361,15 +329,11 @@ const EMPTY_AWAITING: AwaitingIndex = {
   projectIds: new Set(),
 }
 
-/** Chave estável do índice (mesmo idioma dos seletores da Sidebar: string
- *  ordenada ⇒ streaming não re-renderiza a árvore inteira). */
-/** Quantas DECISÕES esperam por você — CONVERSAS distintas, não pedidos.
- *
- *  É o número da bandeja. Um turno pode pedir 20 `Bash` idênticos e um clique em
- *  "Aprovar todas" zerar os 20: anunciar "20 decisões" infla justamente o número
- *  que deveria dizer quanto trabalho te espera. Mesma colapsagem que o aviso já
- *  faz por episódio (`announceArrival` dedupa por conversa) e o card por
- *  assinatura. Pedido órfão conta como um (não pode sumir do total). PURA. */
+/** Chave estável do índice (string ordenada: streaming não re-renderiza a
+ *  árvore). */
+/** Quantas decisões esperam por você: CONVERSAS distintas, não pedidos (20
+ *  `Bash` idênticos são uma decisão, "Aprovar todas"). Pedido órfão conta
+ *  como um. Pura. */
 export function awaitingDecisionCount(
   queue: InteractionRequest[],
   chat: { byId: Record<string, { runId: string | null }> },
@@ -402,11 +366,8 @@ export function awaitingKey(
 ): string {
   const pairs = new Set<string>()
   for (const req of queue) {
-    // `ownerByRunId` (sem filtro de kind): uma PERGUNTA da tool ask_user deixa o
-    // turno tão parado quanto uma permissão, e o backend manda run_id nela também
-    // (approval.rs) — o dono é resolvível. Com o filtro de approval aqui, pergunta
-    // pendente não acendia NADA na sidebar: o turno esperava numa conversa que
-    // você não tinha como saber qual era.
+    // Sem filtro de kind: uma pergunta deixa o turno tão parado quanto uma
+    // permissão, e precisa acender a conversa na sidebar.
     const target = ownerByRunId(req, chat, missions)
     if (!target) continue
     // `convId|projectId`, pares separados por vírgula: os ids são uuid e nunca
@@ -470,13 +431,10 @@ export function questionHeadline(data: QuestionData | undefined): string {
   return q.length > 60 ? `${q.slice(0, 60)}…` : q
 }
 
-/** Avisa que chegou interação pendente BLOQUEANTE (feed do sino + nativa quando
- *  você não está olhando). Exportada só p/ teste (em runtime quem chama é o
- *  listener de `interaction://request`, no fim deste módulo).
- *  Cobre os dois kinds: `approval` (autorização) e
- *  `question` (conteúdo) — os dois deixam o turno literalmente parado, então os
- *  dois avisam. `before` é a fila ANTES do push: se a conversa dona já tinha
- *  pedido pendente, este é continuação de rajada e não avisa de novo. */
+/** Avisa que chegou interação bloqueante (sino e nativa fora da vista), para
+ *  approval e question: as duas param o turno. `before` é a fila antes do
+ *  push: conversa que já tinha pedido pendente não avisa de novo. Exportada
+ *  para teste. */
 export function announceArrival(
   req: InteractionRequest,
   before: InteractionRequest[],
@@ -553,10 +511,9 @@ export function announceArrival(
   })
 }
 
-// Alimentação ÚNICA da fila: assina os eventos globais no IMPORT do módulo —
-// o App.tsx importa cedo (side-effect), então approvals disparados no boot já
-// entram na fila antes de qualquer superfície montar. Listeners vivem a vida
-// inteira do app (sem unlisten, de propósito). Fora do Tauri não há eventos.
+// A fila se alimenta no import do módulo (o App.tsx importa cedo), então
+// approvals do boot entram antes de qualquer superfície montar. Os listeners
+// vivem a vida inteira do app. Fora do Tauri não há eventos.
 if (isTauri()) {
   void onInteractionRequest((req) => {
     const before = useInteractions.getState().queue

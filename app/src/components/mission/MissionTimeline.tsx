@@ -1,8 +1,6 @@
-// Modo Missão — "plano de voo" (mock A aprovado). A missão TOMA a área (o
-// ChatPanel suprime o empty state quando há missão), não é mais um card solto.
-// 3 estados: rodando (fase corrente expande com atividade AO VIVO), concluída
-// (resumo + custos, card recolhível), erro/abortada. O gate humano
-// ("precisa de você") entra na onda 2 (precisa pausar o runner).
+// Missão como plano de voo: toma a área do fio (o ChatPanel suprime o empty
+// state). Três estados: rodando (a fase corrente mostra a atividade ao vivo),
+// concluída (resumo e custos, recolhível) e erro ou abortada.
 import { useEffect, useState, type ReactNode } from "react"
 import { FolderOpen, Rocket, X } from "lucide-react"
 import { useMission } from "@/store/mission"
@@ -260,12 +258,9 @@ function PhaseNode({
   )
 }
 
-/** Card de RETOMADA (P1): o app fechou com uma missão em voo — o
- *  run-state.json do worktree ficou `running` e o boot detectou
- *  (useMission.detectInterrupted). Retomar relança da fase corrente (os
- *  handoffs .mission/ do disco reconstroem o contexto); Descartar marca o
- *  arquivo como abandoned (não re-oferece) e grava o marco na conversa.
- *  Renderiza null sem entrada detectada (o ChatPanel pode montar à vontade). */
+/** Retomada: o app fechou com uma missão em voo (run-state `running`). Retomar
+ *  relança da fase corrente com os handoffs do disco; Descartar marca o
+ *  arquivo como abandoned e grava o marco na conversa. null sem entrada. */
 export function MissionResumeCard({ convId }: { convId: string }) {
   const entry = useMission((s) => s.interrupted[convId])
   const resumeInterrupted = useMission((s) => s.resumeInterrupted)
@@ -351,12 +346,9 @@ export function MissionTimeline({ convId }: { convId: string }) {
   const [manuallyOpen, setManuallyOpen] = useState<ReadonlySet<number>>(
     () => new Set(),
   )
-  // Interações contextuais: pedidos pendentes DESTA conversa (a visível), de
-  // permissão ou de pergunta — renderizam dentro do bloco da fase corrente (o
-  // toast global os suprime).
-  // UM relógio vivo na tela (B2.2): ele nasce aqui e desce por prop pra fase
-  // corrente. Nenhum filho monta interval próprio, e o interval só existe
-  // enquanto a missão roda (missão fechada não tica nada).
+  // Pedidos pendentes desta conversa renderizam dentro da fase corrente (o
+  // toast global os suprime). Um relógio vivo só, daqui para a fase corrente
+  // por prop, e só enquanto a missão roda.
   const now = useNow(
     useMission((s) => s.byConv[convId]?.status === "running") ?? false,
   )
@@ -372,8 +364,8 @@ export function MissionTimeline({ convId }: { convId: string }) {
 
   const gated = mission.status === "running" && mission.gate != null
   const running = mission.status === "running"
-  // MH1.3 — a pausa por limite recuperável agora tem cara no Trabalho (antes
-  // só o Escritório mostrava; aqui a missão parecia rodando pra sempre).
+  // A pausa por limite recuperável tem cara aqui; sem ela a missão pareceria
+  // rodando para sempre.
   const inRecovery = running && mission.recovery != null
   // segurando: nada roda agora, e "em voo" mentiria (estado real, nunca teatro).
   const held = running && mission.hold != null

@@ -1,8 +1,6 @@
-// F6/F7 — view global "Agendado": a coleção cross-projeto de automações
-// estilo CRON (docs/automation-evolution.md). Abre no lugar do conteúdo
-// principal via useApp.scheduledOpen (estado próprio — o switcher
-// Painel|Trabalho não a conhece). Tudo fail-soft: fora do Tauri a
-// lista fica vazia e as ações degradam em silêncio.
+// A view "Agendado": a coleção cross-projeto de automações
+// (docs/automation-evolution.md), aberta por useApp.scheduledOpen. Fail-soft:
+// fora do Tauri a lista fica vazia.
 
 import { useEffect, useMemo, useState } from "react"
 import {
@@ -89,13 +87,9 @@ function ScheduleRow({
   // estado de vida DERIVADO dos campos reais (lib/schedules): concluída ≠
   // pausada ≠ sem próxima execução.
   const life = scheduleLifecycle(s)
-  // só a automação de uma vez pode ser reagendada: o botão troca o instante,
-  // não a recorrência (um cron quebrado vira outro assunto). Vale em QUALQUER
-  // estado dela — restringir a "concluída/sem próxima" criava dois becos sem
-  // saída: (a) marquei 18:30 e quero 19:00, mas ela ainda está ativa e não há
-  // como mexer; (b) pausei uma que já perdeu o horário e ela vira "pausada",
-  // sem botão nenhum — ligar o switch não recria disparo, então a linha ficava
-  // morta na lista.
+  // Só a automação "uma vez" reagenda (troca o instante, não a recorrência), em
+  // qualquer estado: ativa e com horário errado, ou pausada depois de perder o
+  // horário, que ligar o switch não recria.
   const canReschedule = rec?.kind === "once"
   // custo médio das últimas 5 execuções COM custo reportado.
   const avgCost = useMemo(() => {

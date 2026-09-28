@@ -86,22 +86,17 @@ export type { ChatItem, ParecerLevado } from "@/store/chat/itens"
 import type { ChatItem } from "@/store/chat/itens"
 import type { Consultado } from "@/lib/parecerAoVivo"
 
-/** Um processo marcado como vivo no snapshot anterior não pertence ao registry
- * desta nova instância. Não finge "rodando": preserva PID/tail e marca órfão,
- * deixando repetição explícita como caminho de recuperação. O mesmo vale pro
- * trabalho DIFERIDO do provider (deferred-work-plan D1.5): ele vivia DENTRO do
- * processo do CLI que morreu junto com a instância anterior — `running` vindo
- * do disco vira `interrupted`, nunca "rodando" falso após restart. */
+/** Processo marcado vivo no snapshot anterior não é desta instância: vira
+ * órfão (PID e tail preservados), nunca "rodando". O mesmo com o trabalho
+ * DIFERIDO do provider, que morreu junto com o CLI: `running` do disco vira
+ * `interrupted` (deferred-work-plan D1.5). */
 export const markOrphanedProcesses = (items: ChatItem[]): ChatItem[] =>
   items.map((item) => settleOrphanedTool(item, Date.now()))
 
-/** Itens de EXECUTOR de uma conversa: exclui a CONSULTA a um conselheiro — o
- *  parecer (kind "advice") E a fala que o pediu (`user` com `advisorTo`) —, que
- *  são laterais e NÃO contam como turno do executor (Especialistas E1). FONTE
- *  ÚNICA do "1º turno / já iniciada / travar identidade": sem isto, uma consulta
- *  ANTES do 1º envio travaria a escolha de agent/preset e roubaria a injeção de
- *  persona/doutrina do turno inicial. Usar em TODO lugar que hoje deriva
- *  "locked" de items.length. */
+/** Itens de EXECUTOR: exclui a consulta a um especialista (o parecer e a fala
+ *  que o pediu). Fonte única de "1º turno / já iniciada / identidade travada":
+ *  sem isto, uma consulta antes do 1º envio travaria agent e persona e
+ *  roubaria a injeção inicial. Use em todo lugar que derivaria de items.length. */
 export const executorItems = (items: ChatItem[]): ChatItem[] =>
   items.filter((it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo))
 
@@ -136,9 +131,8 @@ export interface ConvState extends ContextSnapshotState {
   effort: string | null
   /** Worktree isolado desta conversa (null = compartilha a pasta do projeto). */
   worktreePath: string | null
-  /** Preset (persona) da conversa (S3): escolhido no composer antes do 1º run;
-   *  o digest é carimbado NO 1º run (persona injetada). Opcionais p/ não
-   *  quebrar factories — ausente = sem preset (camada crua). */
+  /** Persona da conversa: escolhida antes do 1º run, digest carimbado nele.
+   *  Ausente = sem persona. */
   presetId?: string | null
   presetDigest?: string | null
   /** Nome do preset resolvido na hidratação (rótulo da mesa no snapshot da
@@ -153,9 +147,8 @@ export interface ConvState extends ContextSnapshotState {
   /** Id da bolha de texto em streaming (H2). null = nenhuma aberta. */
   streamingTextId: string | null
   running: boolean
-  /** Turno terminou (Result) mas o processo do CLI ainda finaliza, ex. flush da
-   *  sessão do Codex. Bloqueia o próximo send p/ o resume não cair em "session
-   *  not found" (corrida: liberar no Result dispara o resume antes do flush). */
+  /** O turno terminou mas o CLI ainda finaliza (flush da sessão do Codex).
+   *  Bloqueia o próximo envio, senão o resume cai em "session not found". */
   finalizing: boolean
   /** runId do run em andamento (p/ cancelar). */
   runId: string | null
@@ -167,10 +160,9 @@ export interface ConvState extends ContextSnapshotState {
     runId: string
     gate: import("@/lib/tooling").McpPreflightGate
   }
-  /** Revezamento em duas fases: o target está iniciando, mas ainda NÃO assumiu
-   *  a conversa. O agent/sessão de origem só são trocados quando o novo CLI
-   *  emite `session`; falha antes disso deixa a origem integralmente retomável.
-   *  Efêmero (não persiste). */
+  /** Revezamento em duas fases: o target inicia sem assumir a conversa. A
+   *  origem só é trocada quando o novo CLI emite `session`; falha antes disso
+   *  deixa a origem retomável. Efêmero. */
   pendingTransplant?: {
     runId: string
     targetAgent: string
@@ -191,10 +183,8 @@ export interface ConvState extends ContextSnapshotState {
   /** Sugestões dinâmicas pós-turno (Sprint 3). */
   suggestions: string[]
   suggesting: boolean
-  /** Mensagens digitadas ENQUANTO o turno roda: enfileiradas e coalescidas num
-   *  único envio quando o turno atual termina (Done). Cada item leva os anexos
-   *  do composer no momento do Enter — sem isso a imagem "enviada" fica órfã
-   *  no composer e nunca acompanha a mensagem. Efêmero (não persiste). */
+  /** Mensagens digitadas durante o turno, cada uma com os anexos do momento;
+   *  viram um envio só quando o turno termina. Efêmero. */
   queued?: QueuedMsg[]
   /** Pasta que o agent tentou acessar e foi barrada pelo gate de diretório
    *  (detecção heurística em tool_result falho). Alimenta o banner "Liberar e
@@ -215,35 +205,23 @@ export interface ConvState extends ContextSnapshotState {
   /** Auto-revive em andamento nesta conversa (efêmero, NÃO persiste). Ver
    *  `EstadoDaRetomada`: existir NÃO quer dizer agendada (`retomadaAgendada`). */
   autoResume?: EstadoDaRetomada
-  /** Turno TERMINOU e você não viu (o fio não estava na sua frente). Vira o
-   *  selo de concluído/falhou na linha da conversa no sidebar — o spinner some
-   *  quando acaba e, sem isto, o fim do turno não deixava sinal NENHUM na
-   *  navegação. Limpo ao abrir a conversa. Efêmero (não persiste). */
+  /** O turno terminou fora da sua vista: vira o selo de concluído/falhou na
+   *  linha da conversa, que some ao abri-la. Efêmero. */
   finishedUnseen?: "ok" | "error"
-  /** S1.1 — id do PRIMEIRO item não-visto, capturado ao ABRIR uma conversa que
-   *  estava com finishedUnseen: vira o divisor "novas mensagens" no fio. Vive
-   *  durante a visita; sai ao trocar de conversa ou enviar um turno novo.
-   *  Efêmero (não persiste). */
+  /** Primeiro item não visto, capturado ao abrir uma conversa com
+   *  finishedUnseen: vira o divisor "novas mensagens" durante a visita. */
   unseenDividerId?: string
   /** Turno MUDO (watchdog P2): epoch ms da ÚLTIMA atividade quando o episódio
    *  foi notificado. Presente = já avisado neste episódio (1 aviso por
    *  episódio); atividade nova/fim do turno limpa. Efêmero (não persiste). */
   stalledSince?: number
-  /** Especialistas E1: um conselheiro está sendo consultado nesta conversa
-   *  (id + nome da persona) — a "linha de chegada" no fim do fio enquanto o
-   *  parecer não chega resolve o AgentDef por esse id (fallback: nome). NÃO é
-   *  `running` (não trava o envio nem finge turno de executor). Efêmero. */
+  /** Especialista sendo consultado (id e nome da persona) para a linha de
+   *  chegada no fim do fio. Não é `running`: não trava envio nem finge turno. */
   advising?: Consultado | null
-  /** Higiene de injeção (H2/H4 do prompt-hygiene-plan) — ledger POR CONVERSA
-   *  do último fingerprint injetado, por chave: `doctrine` = hash do bloco de
-   *  doutrina considerado no envio (H4, re-injeta só quando o arquivo muda);
-   *  `mcp` = fingerprint do plano de MCPs anunciado pelo Rust (H2, evento
-   *  `mcp://announced`; volta como `mcpFingerprint` no próximo run pra
-   *  re-anunciar só quando o plano muda). Efêmero (não persiste), padrão
-   *  unseenDividerId: após restart o custo é UM re-anúncio de MCP e UMA
-   *  re-injeção de doutrina com "(doutrina atualizada)" por conversa (edição
-   *  offline nunca se perde) — nunca migração na tabela `conversations` (que
-   *  só evolui via Migration no Rust). */
+  /** Último fingerprint injetado por chave: `doctrine` (re-injeta só quando o
+   *  arquivo muda) e `mcp` (volta como `mcpFingerprint` para re-anunciar só
+   *  quando o plano muda). Efêmero de propósito: depois de um restart custa um
+   *  re-anúncio e uma re-injeção por conversa, e dispensa migração. */
   injected?: Record<string, string>
 }
 
@@ -273,12 +251,10 @@ export interface ChatState {
    *  callers que precisam do id (ex.: dispatch de card) usam o retorno, nunca
    *  inferem via activeId (corrida com outra navegação). */
   newConversation: (projectId: string) => Promise<string>
-  /** F6 — cria uma conversa em BACKGROUND (automação agendada): grava no DB com
-   *  título fixo e registra no store SEM roubar a seleção do usuário (não mexe
-   *  em activeId/projectId ativo). O run escreve nela via start/handleEvent.
-   *  `agent` (opcional) carimba o agent já na criação — meta,
-   *  byId E banco (a coluna nasce NOT NULL DEFAULT claude-code; sem o carimbo
-   *  a mesa de outro agent adotaria a conversa recém-criada). */
+  /** Cria conversa em BACKGROUND (automação): grava no banco e registra no
+   *  store sem roubar a seleção. `agent` carimba o motor já na criação (a
+   *  coluna nasce com claude-code, e a mesa de outro agent adotaria a
+   *  conversa). */
   registerConversation: (
     projectId: string,
     id: string,
@@ -307,8 +283,7 @@ export interface ChatState {
   reorderConversations: (projectId: string, dragId: string, overId: string) => void
   /** S1.2 — teclado/context menu: move a conversa uma posição (cima/baixo). */
   moveConversation: (projectId: string, id: string, delta: -1 | 1) => void
-  /** S3.6 — marca a conversa com um preset (seleção no composer, ANTES do 1º
-   *  run; null = volta pra camada crua). O digest fica null até o 1º run. */
+  /** Marca a persona escolhida antes do 1º run (null = sem persona). */
   setConversationPreset: (
     convId: string,
     preset: { id: string; name: string } | null,
@@ -322,36 +297,24 @@ export interface ChatState {
     digest: string,
     name: string,
   ) => Promise<void>
-  /** S3.2 — "passar o volante": troca o preset-executor da conversa por outra
-   *  persona (ex.: a de um parecer) por GESTO HUMANO. Re-carimba presetId e
-   *  ZERA o digest — o próximo turno re-injeta a doutrina e re-carimba a versão
-   *  atual (a necessidade de re-injeção é DERIVADA de needsPersonaReinject, que
-   *  sobrevive a restart). NÃO dispara run — só muda quem pilota o PRÓXIMO
-   *  turno. Um piloto por vez. Retorna `true` se a troca foi aplicada, `false`
-   *  no no-op (turno em voo, já pilota, conversa sumiu) — o caller só anuncia
-   *  quando efetivou. */
+  /** Passar o volante: troca a persona que pilota por gesto humano. Zera o
+   *  digest, então o próximo turno re-injeta a doutrina (derivado de
+   *  needsPersonaReinject, que sobrevive a restart). Não dispara run. `false`
+   *  no no-op (turno em voo, já pilota, conversa sumiu). */
   passWheel: (
     convId: string,
     personaId: string,
     name: string,
   ) => Promise<boolean>
-  /** Especialistas E3 — "retomar o volante": devolve a direção ao EXECUTOR-BASE
-   *  (o code agent, sem persona-piloto). Zera presetId/presetName/presetDigest e
-   *  persiste via dbSetPreset(convId, null, null), mesma disciplina do passWheel
-   *  mas pra null. Os próximos turnos rodam o agent base; NÃO precisa re-injeção
-   *  (needsPersonaReinject volta false com presetId null). Não mexe em sessão.
-   *  Retorna `true` se aplicou, `false` no no-op (já sem piloto, turno em voo,
-   *  conversa sumiu) — o caller só anuncia quando efetivou. */
+  /** Retomar o volante: devolve a direção ao agent base, sem persona, e
+   *  persiste null. Não re-injeta nem mexe em sessão. `false` no no-op. */
   returnWheel: (convId: string) => Promise<boolean>
-  /** Zera a sessão nativa da conversa (resume falhou → a sessão antiga está
-   *  morta; o run em fallback vai emitir `session` e gravar a nova). Some
-   *  também com a sessão GUARDADA do motor que falhou, e registra a nota
-   *  honesta quando a volta do R5 virou transplante. */
+  /** Resume falhou: zera a sessão morta (o run novo grava a dele), apaga a
+   *  sessão guardada do motor que falhou e anota quando a volta virou
+   *  transplante. */
   clearSession: (convId: string) => void
-  /** S3.2 — higiene de transplante (achado #3): zera sessão nativa E o resolvido
-   *  (model) E o anel (contextTokens) juntos. Sem zerar model/contextTokens, um
-   *  transplante que falha antes do novo `session` deixa o modelo/anel do
-   *  backend ANTIGO colado numa conversa cujo agent já é o novo. */
+  /** Transplante: zera sessão, modelo e anel juntos, senão uma falha antes do
+   *  novo `session` deixa o modelo do backend antigo colado no novo agent. */
   dropNativeSession: (convId: string) => void
   /** Duplica a conversa (copia o histórico; sessão nova, sem resume). */
   duplicateConversation: (id: string) => Promise<void>
@@ -360,11 +323,9 @@ export interface ChatState {
   persist: (convId: string) => Promise<void>
   /** Confirma somente a cauda incremental pendente antes de um novo envio. */
   flushItems: (convId: string) => Promise<void>
-  /** Anexa itens PRONTOS ao fio da conversa e persiste (marcos da missão, M2).
-   *  EXIGE a conversa carregada em byId (ensureConversationLoaded antes) —
-   *  no-op com aviso se não, pra nunca fabricar estado vazio que o persist
-   *  (UPSERT de linha inteira) gravaria por cima do histórico real. NUNCA
-   *  mexe em running/runId — é só conteúdo, não controle de turno. */
+  /** Anexa itens prontos ao fio e persiste (marcos da missão). Exige a
+   *  conversa carregada: sem ela é no-op com aviso, porque o persist grava a
+   *  linha inteira e apagaria o histórico. Não mexe em running/runId. */
   appendItems: (convId: string, items: ChatItem[]) => Promise<void>
   beginPreparation: (convId: string, runId: string) => void
   blockPreparation: (
@@ -419,10 +380,8 @@ export interface ChatState {
   markStalled: (convId: string, since: number) => void
   /** Watchdog: atividade voltou / turno acabou — fecha o episódio de mudez. */
   clearStalled: (convId: string) => void
-  /** Revezamento: prepara OUTRO agent na MESMA conversa. A origem continua
-   *  intacta até o primeiro `session`. No revezamento explícito o pedido já
-   *  está no fio; na troca de piloto `user` registra o novo pedido sem assumir
-   *  prematuramente o backend de destino. */
+  /** Revezamento: prepara outro agent na mesma conversa, com a origem intacta
+   *  até o primeiro `session`. */
   beginTransplant: (
     convId: string,
     runId: string,
@@ -437,8 +396,7 @@ export interface ChatState {
   finish: (convId: string) => void
   setSuggestions: (convId: string, s: string[]) => void
   setSuggesting: (convId: string, v: boolean) => void
-  /** Novo run desta conversa → invalida a geração de sugestão pendente/em-voo
-   *  (bumpa o token + cancela o timer). Chamar ANTES de iniciar o run. */
+  /** Invalida a sugestão pendente ou em voo. Chame antes de iniciar o run. */
   invalidateSuggestions: (convId: string) => void
   /** Agenda a geração ~700ms após o turno (debounce contra rajadas). */
   scheduleSuggestions: (convId: string) => void
@@ -638,11 +596,9 @@ export function reduceItems(
     // H2, delta em streaming: acumula na bolha corrente (cria se não houver).
     case "text_delta": {
       if (c.streamingTextId) {
-        // Reducer mais quente do app (roda por token): o `items.map` de antes
-        // varria o fio inteiro pra trocar UM item. Busca de trás pra frente
-        // (acha na 1ª iteração no caso normal) e troca só o índice alvo.
-        // Imutabilidade igual (array novo, item novo) e identidade dos OUTROS
-        // itens preservada — vários memos a jusante dependem disso.
+        // O reducer mais quente do app (roda por token): busca de trás para
+        // frente e troca só o índice, preservando a identidade dos outros itens
+        // (os memos a jusante dependem disso).
         let alvo = -1
         for (let i = c.items.length - 1; i >= 0; i--) {
           if (c.items[i].id === c.streamingTextId) {
@@ -651,10 +607,8 @@ export function reduceItems(
           }
         }
         const it = alvo >= 0 ? c.items[alvo] : null
-        // Bolha apontada mas ausente (ou de outro kind): nada a atualizar, e
-        // devolver o fio intocado é exatamente o que o `map` já fazia — ele
-        // reconstruía um array de conteúdo idêntico. Sem array novo, ninguém a
-        // jusante recalcula à toa.
+        // Bolha ausente: devolve o fio intocado, para ninguém a jusante
+        // recalcular.
         if (!it || it.kind !== "text") return {}
         const items = c.items.slice()
         items[alvo] = { ...it, text: it.text + e.text }
@@ -701,11 +655,9 @@ export function reduceItems(
         streamingTextId: null,
       }
     }
-    // Trabalho DIFERIDO do provider (deferred-work-plan D1.2): vira/atualiza um
-    // item tool sintético "DeferredWork" com ciclo de vida PRÓPRIO, pendurado
-    // no tool_use `Workflow` de origem via parentToolId (Fio Vivo). O `stopped`
-    // do provider vira `interrupted`; item terminal nunca é rebaixado a
-    // "rodando" (o background_tasks_changed re-lista as tasks vivas).
+    // Trabalho diferido do provider vira um item "DeferredWork" com ciclo de
+    // vida próprio, pendurado no `Workflow` de origem (parentToolId). `stopped`
+    // vira `interrupted`, e item terminal nunca volta a "rodando".
     case "deferred_work": {
       const terminal = e.status === "completed" || e.status === "stopped"
       const status: DeferredWork["status"] =
@@ -808,11 +760,9 @@ export function reduceItems(
         ),
       }
     case "result": {
-      // O CLI pode emitir results INTERMEDIÁRIOS na mesma invocação (fases/
-      // subagents), cada um com o total-até-ali: o ÚLTIMO carrega o total real
-      // do turno. Colapsa consecutivos (senão o custo da sessão soma os
-      // parciais e infla, visto no uso real: 5 results = US$120 "somados"
-      // num turno que custou US$31).
+      // O CLI pode emitir results intermediários (fases, subagents), cada um com
+      // o total até ali: o último é o total real. Colapsa consecutivos, senão o
+      // custo da sessão soma parciais.
       const prev = c.items[c.items.length - 1]
       const base =
         prev && prev.kind === "result" ? c.items.slice(0, -1) : c.items
@@ -990,10 +940,8 @@ export const useChat = create<ChatState>((set, get) => {
           worktreePath: null,
           agent: null,
         }
-        // append na lista DAQUELE projeto (não do ativo antigo). Criar uma
-        // conversa também torna o projeto o ativo (abre no painel). Fallback
-        // `[]` (nunca s.conversations: o espelho pode ser a lista de OUTRO
-        // projeto e poluiria o mapa com conversas de owner errado).
+        // Anexa na lista do projeto DONO. O fallback é `[]`, nunca
+        // s.conversations, que pode ser a lista de outro projeto.
         const prev = s.conversationsByProject[projectId] ?? []
         const nextList = [...prev, meta]
         return {
@@ -1013,9 +961,8 @@ export const useChat = create<ChatState>((set, get) => {
     registerConversation: async (projectId, id, title, agent) => {
       await dbCreate(projectId, id)
       await dbRename(id, title) // título fixo ("⏰ …") — o persist preserva
-      // garante a lista do projeto carregada ANTES de anexar a meta: criar um
-      // array só com esta conversa esconderia as demais (loadProjectConversations
-      // é no-op quando a chave existe).
+      // Carrega a lista do projeto antes de anexar: um array só com esta
+      // conversa esconderia as demais (o load é no-op se a chave existe).
       await get().loadProjectConversations(projectId)
       set((s) => {
         const list = s.conversationsByProject[projectId] ?? []
@@ -1061,18 +1008,13 @@ export const useChat = create<ChatState>((set, get) => {
     switchConversation: async (id) => {
       const s = get()
       if (s.activeId === id) return
-      // Descobre o projeto DONO desta conversa pelo id único. Se for outro
-      // projeto (clique numa conversa de projeto não-ativo no sidebar), sincroniza
-      // projectId + o espelho `conversations` na hora — não espera o openProject
-      // (que roda via efeito do ChatPanel) e não deixa a UI num estado misto.
+      // Conversa de outro projeto: sincroniza projectId e o espelho na hora,
+      // sem esperar o openProject e sem deixar a UI num estado misto.
       const owner = projectOfConv(s.conversationsByProject, id) ?? s.projectId
-      // invalida qualquer openProject em voo: o clique do usuário é a escolha
-      // mais recente e não pode ser sobrescrito quando o dbList atrasado chegar.
+      // Invalida openProject em voo: o clique é a escolha mais recente.
       navigation.invalidate()
-      // S1.1 — a conversa estava marcada "terminou e você não viu"? Captura a
-      // fronteira ANTES do markSeen apagar o selo: ela vira o divisor "novas
-      // mensagens" desta visita. Derivada dos items já carregados (o selo só
-      // existe em conversa carregada — o turno rodou nela).
+      // Captura a fronteira do "não visto" antes do markSeen apagar o selo: ela
+      // vira o divisor "novas mensagens".
       const opened = s.byId[id]
       const divider = opened?.finishedUnseen
         ? (unseenBoundary(opened.items) ?? undefined)
@@ -1114,14 +1056,9 @@ export const useChat = create<ChatState>((set, get) => {
       set((s) => patchConvMeta(s, id, (c) => ({ ...c, color })))
     },
 
-    /** Agent escolhido no composer de uma conversa AINDA VAZIA. Sem isto, o
-     *  seletor era estado local do CommandConsole até o 1º envio, e a sidebar
-     *  mostrava o logo do default (Claude Code) mesmo com Antigravity escolhido
-     *  — você via uma coisa e a linha dizia outra. Também faz a mesa certa
-     *  adotar a conversa desde já (lib/fleet/derive usa conv.agent).
-     *
-     *  NO-OP em conversa com itens: aí o agent está TRAVADO no 1º run e mexer
-     *  aqui mentiria sobre quem produziu o histórico. */
+    /** Agent escolhido numa conversa ainda vazia, para a sidebar e a mesa
+     *  certa refletirem a escolha antes do 1º envio. No-op com itens: o agent
+     *  está travado no 1º run, e mudar mentiria sobre quem fez o histórico. */
     setConversationAgent: (convId, agent) => {
       const s0 = get()
       const cur = s0.byId[convId]
@@ -1175,11 +1112,8 @@ export const useChat = create<ChatState>((set, get) => {
       await dbSetPreset(convId, preset?.id ?? null, null)
     },
 
-    // S3.3 — carimbo do 1º run: a persona foi injetada NESTA versão do preset.
-    // D4: AWAIT + tratamento (padrão setConversationColor). Se o write falha,
-    // o restart perderia o digest e o drift check morreria em silêncio — avisa.
-    // A memória fica carimbada mesmo assim (o turno corrente segue correto) e
-    // a re-injeção do D1 cobre o caso "sem resposta" após restart.
+    // Carimbo do 1º run: a persona foi injetada nesta versão. Espera a escrita
+    // e avisa se falhar (sem o digest, o drift check morreria em silêncio).
     stampPreset: async (convId, presetId, digest, name) => {
       patch(convId, { presetId, presetDigest: digest, presetName: name })
       try {
@@ -1192,13 +1126,9 @@ export const useChat = create<ChatState>((set, get) => {
       }
     },
 
-    // S3.2 — passar o volante: gesto humano que troca o piloto. Reusa o mesmo
-    // par presetId/presetDigest do carimbo; a INJEÇÃO da nova doutrina é
-    // reaproveitada de resolveFirstTurnPersona no próximo envio (a condição
-    // forceReinject é DERIVADA de needsPersonaReinject, que lê estado
-    // persistido). Zera o digest → o próximo turno re-carimba a versão ATUAL da
-    // nova persona (drift honesto: não avisa erro, reflete a troca). Retorna
-    // `false` no no-op pra o caller não anunciar um gesto sem efeito.
+    // Passar o volante reusa o par presetId/presetDigest; a injeção vem de
+    // resolveFirstTurnPersona no próximo envio. `false` no no-op, para o
+    // caller não anunciar gesto sem efeito.
     passWheel: async (convId, personaId, name) => {
       const cur = get().byId[convId]
       if (!cur || cur.corrupt) return false
@@ -1217,11 +1147,8 @@ export const useChat = create<ChatState>((set, get) => {
       return true
     },
 
-    // S3 (E3) — retomar o volante: devolve a direção ao executor-base (sem
-    // persona). Zera presetId/presetName/presetDigest e persiste pra null (mesma
-    // disciplina do passWheel). needsPersonaReinject volta false com presetId
-    // null → nenhuma re-injeção; não toca em sessão. No-op (false) se já não há
-    // piloto, turno em voo, ou a conversa sumiu.
+    // Retomar o volante: presetId, nome e digest para null, persistido. Sem
+    // re-injeção e sem tocar em sessão.
     returnWheel: async (convId) => {
       const cur = get().byId[convId]
       if (!cur || cur.corrupt) return false
@@ -1338,9 +1265,8 @@ export const useChat = create<ChatState>((set, get) => {
         return
       }
       if (cur.corrupt) return // linha corrompida: persist bloqueado, nada a anexar
-      // metas do projeto carregadas ANTES do persist: sem elas o persist não acha
-      // meta.title e re-derivaria o título do 1º prompt (clobraria o título fixo
-      // "Missão · …") — mesmo padrão do ensureDeskConversation (lib/fleet/send.ts).
+      // Metas do projeto antes do persist: sem elas ele re-derivaria o título
+      // do 1º prompt e apagaria o "Missão · …".
       await get().loadProjectConversations(cur.projectId)
       const endSpan = perfSpan("appendItems") // S1 (no-op sem mc.office.perf)
       set((s) => {
@@ -1389,9 +1315,8 @@ export const useChat = create<ChatState>((set, get) => {
             ts: Date.now(),
           },
         ]
-        // título + carimbo do agent na lista do projeto DONO (id único), espelhados
-        // no ativo. O agent vai JUNTO: o ícone da linha é de quem ESTÁ rodando, e
-        // antes só o persist (FIM do turno) espelhava.
+        // Título e agent na lista do projeto dono: o ícone da linha é de quem
+        // está rodando.
         const titled = patchConvMeta(s, convId, (c) => ({ ...c, agent, title: c.title || deriveTitle(items) }))
         return {
           ...titled,
@@ -1461,10 +1386,9 @@ export const useChat = create<ChatState>((set, get) => {
       // …e o sinal FORTE p/ o auto-resume ler no fim do turno (+ guarda o hint).
       if (e.type === "limit_reached")
         patch(convId, { limitHitThisTurn: true, resetHint: e.reset_hint ?? null })
-      // Ledger de custo por turno (F: "hoje/7d" só via missões). Grava CADA
-      // result que CONSUMIU, com preço ou sem (ADR-047: quem decide é o
-      // recordTurnCost) — chat linear é caminho disjunto de missão/disputa, sem
-      // dupla contagem. REPLACE por run_id colapsa os parciais no total final.
+      // Ledger de custo por turno: grava todo result que consumiu (ADR-047).
+      // Chat linear não se sobrepõe a missão e disputa; REPLACE por run_id
+      // colapsa parciais no total.
       if (e.type === "result") {
         const cur = get().byId[convId]
         if (cur?.runId) {
@@ -1484,10 +1408,9 @@ export const useChat = create<ChatState>((set, get) => {
           })
         }
       }
-      // Modelo resolvido ANTERIOR da conversa (PRÉ-reduce): testemunha do
-      // alias-shift desta conversa. O ledger global não basta — outra conversa
-      // (ou lane do Fusion) pode já ter "aprendido" a resolução nova e
-      // mascarar o aviso exatamente na conversa retomada que mais precisa dele.
+      // Modelo resolvido ANTERIOR desta conversa: é a testemunha do alias-shift
+      // dela. O ledger global não basta, outra conversa pode já ter aprendido
+      // a resolução nova e mascarar o aviso aqui.
       const committingTransplant = e.type === "session" && pendingTarget != null
       const prevModel =
         e.type === "session" && !committingTransplant
@@ -1524,9 +1447,8 @@ export const useChat = create<ChatState>((set, get) => {
         const base = committingTransplant
           ? commitTransplantState(cur, pending!)
           : cur
-        // Result/telemetria pode chegar antes do `session` (por exemplo, um
-        // limite no startup). O item deve refletir o pedido do destino — ou
-        // modelo desconhecido — sem contaminar o modelo resolvido da origem.
+        // Result pode chegar antes do `session` (limite no startup): o item
+        // reflete o pedido do destino sem contaminar o modelo da origem.
         const eventView =
           !committingTransplant && pending && e.type === "result"
             ? { ...base, model: pending.targetModel ?? null }
@@ -1568,10 +1490,9 @@ export const useChat = create<ChatState>((set, get) => {
       const itemCountChanged = beforeEvent?.items.length !== afterEvent?.items.length
       // Persistência incremental (sobrevive a interrupção mid-run):
       if (e.type === "session") {
-        // Ledger de resoluções observadas (P2): o app aprende o que o CLI
-        // resolve pra cada pedido a cada run real. Quando um ALIAS muda de
-        // resolução entre sessões (ex.: opus 4.7→4.8), injeta um notice —
-        // o momento exato em que preço/comportamento derivariam em silêncio.
+        // O app aprende o que o CLI resolve para cada pedido. Alias que muda de
+        // resolução entre sessões vira notice: é quando preço e comportamento
+        // derivariam em silêncio.
         const cur = get().byId[convId]
         if (cur) {
           const ledgerPrev = useApp
@@ -1948,11 +1869,9 @@ export const useChat = create<ChatState>((set, get) => {
     },
 
     finish: (convId) => {
-      // Marca SEMPRE que o turno termina — inclusive na conversa que você está
-      // olhando. A 1ª versão suprimia esse caso ("o conteúdo é o feedback"), e a
-      // teoria tem furo: o texto chega em STREAMING, sem momento nítido de fim.
-      // O spinner desaparecendo é sinal por AUSÊNCIA, que é justamente o que
-      // faltava. O selo sai quando você age na conversa (abre ou envia de novo).
+      // Marca sempre que o turno termina, inclusive na conversa à vista: o
+      // texto chega em streaming, e sem o selo o fim só se nota pela ausência
+      // do spinner. Sai quando você abre ou envia.
       const c = get().byId[convId]
       const last = c?.items[c.items.length - 1]
       const unseen: ConvState["finishedUnseen"] =

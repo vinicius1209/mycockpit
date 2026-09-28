@@ -1,16 +1,10 @@
-// PONTE do Companion Web no FRONT (docs/agent-office.md §8, doc histórico;
-// backlog COMPANION — onda 1): o cérebro vive NESTA webview (stores useChat/useMission/
-// useInteractions); o Rust é camada fina (servidor HTTP+WS). Este módulo escala
-// o padrão provado da tray (set_tray_snapshot / tray://action):
-//   OUT — push de estado coalescido (≤2Hz) via invoke("set_companion_snapshot")
-//         + ping "companion_conv_updated" (throttled 1s) p/ o celular refetchar
-//         o histórico da conversa com turno vivo;
-//   IN  — listen("companion://action") com switch FECHADO de ações, TODAS
-//         executando pelos stores/bridges existentes (answerGate, answer,
-//         abort, cancelDeskTurn, ensureDeskConversation+sendFromDesk) — as
-//         guardas ficam intactas, nada de bypass.
-// Import sancionado do lib/fleet/send (ex-office/bridge/send, §6.1 item 5 do
-// doc). NÃO depende de nenhuma superfície montada: tudo sai dos stores direto.
+// Ponte do Companion no front: o cérebro vive nesta webview (os stores); o Rust
+// é o servidor HTTP e WS. No padrão da tray:
+//   OUT: snapshot coalescido (≤2Hz) por set_companion_snapshot, e um ping
+//        "companion_conv_updated" (1s) para o celular refetchar a conversa viva;
+//   IN:  companion://action com switch fechado, executando pelos stores e
+//        bridges existentes, com as guardas intactas.
+// Não depende de superfície montada: tudo sai dos stores.
 
 import { invoke } from "@tauri-apps/api/core"
 import { avisarNoCelular } from "@/lib/companionAviso"
@@ -139,16 +133,12 @@ export function buildCompanionSnapshot(
     })
   }
 
-  // O Board NÃO viaja pro celular (ADR-041): nem seção de card, nem card
-  // estagnado em attention. O board saiu do desktop no ADR-040 por uso zero e
-  // manter a única superfície viva no celular era assimetria — e fazia do
-  // celular o único lugar do produto capaz de registrar uma entrega. O store
-  // de cards segue vivo (fila da faixa, vigia), só não sai daqui.
+  // O board não viaja para o celular (ADR-041): saiu do desktop por uso zero, e
+  // o celular não pode ser o único lugar capaz de registrar uma entrega.
 
-  // ── execução: turnos lineares rodando OU finalizando + missões running ──
-  // C2 — finalizando ENTRA no running[] com a marca honesta: o turno ainda
-  // não acabou (o CLI está fechando), mas já não é interrompível (runId foi
-  // embora no result). Antes ele simplesmente SUMIA do celular.
+  // ── Execução: turnos rodando ou finalizando, e missões running ──
+  // Finalizando entra com a marca honesta: ainda não acabou, mas já não é
+  // interrompível.
   const running: CompanionRunning[] = []
   for (const [convId, c] of Object.entries(chat.byId)) {
     if (!c.running && !c.finalizing) continue
@@ -219,14 +209,10 @@ export function buildCompanionSnapshot(
     if (pid) byProject[pid] = (byProject[pid] ?? 0) + m.costTotal
   }
 
-  // ── projetos + agents utilizáveis (registry × detecção runtime) + a conversa
-  // de MESA de cada agent (mesma regra do ensureDeskConversation: meta.agent
-  // igual E título "Mesa · …", a mais recente). As metas vêm de
-  // conversationsByProject — a ponte as carrega lazy (maybeLoadDeskMetas). ──
-  // Allowlist EXPLÍCITA de prontidão (Sprint 0): "ready" e "installed-auth-
-  // unknown" (auth incerta é usável com aviso — inclui o agy, sem comando de
-  // auth). "installed-not-authenticated" (CLI deslogada) fica FORA: deslogado
-  // não é usável, e o companion não finge que é.
+  // ── Projetos, agents utilizáveis e a conversa de mesa de cada um (a mesma
+  // regra do ensureDeskConversation). As metas carregam lazy. ──
+  // Prontidão por allowlist: "ready" e "installed-auth-unknown" (auth incerta
+  // é usável com aviso, inclui o agy). CLI deslogado fica fora.
   const usableAgents = AGENTS.filter(
     (a) =>
       a.kind === "agent" &&
@@ -477,10 +463,8 @@ function syncCompanionWithSetting(enabled: boolean): void {
   }
 }
 
-// Gate no import (o App.tsx importa este módulo por efeito, padrão do
-// store/interactions): só liga se o usuário OPT-IN nas Settings — boot com o
-// setting ligado religa sozinho; o watcher reage ao toggle ao vivo. Fora do
-// Tauri não há ponte — o dev no browser segue limpo.
+// Liga no import (o App.tsx importa por efeito) só com o opt-in das
+// Configurações; o watcher reage ao toggle. Fora do Tauri não há ponte.
 if (isTauri()) {
   syncCompanionWithSetting(useApp.getState().settings.companionEnabled)
   useApp.subscribe((s, prev) => {

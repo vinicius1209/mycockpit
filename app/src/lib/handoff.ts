@@ -16,9 +16,8 @@ import { conteudoDaMoldura, frameHistory } from "@/lib/trust"
 import type { ChatItem } from "@/store/chat"
 import { caminhoNaPasta } from "@/lib/frotaDir"
 
-/** Piso do que o revezamento leva do fio (~2k tokens). Era o orçamento inteiro
- *  do contrato v1; no v2 é o mínimo, para janela desconhecida não levar MENOS
- *  do que já levava. O restante fica no transcript/SQLite. */
+/** Piso do que o revezamento leva do fio (~2k tokens), para janela desconhecida
+ *  não levar menos; o resto fica no transcript e no SQLite. */
 export const HANDOFF_RECENT_BUDGET_CHARS = 6_000
 /** Parte do orçamento que vai para as últimas mensagens literais; o resto é a
  *  memória por significado (a mesma do `/compactar`). */
@@ -394,9 +393,8 @@ export async function prepareHybridHandoff(
       description: "Transcrição completa do fio",
     },
   ]
-  // H5 — a referência de SQLite via frota-context só é prometida a motor com a
-  // capability (antes: `targetAgent !== "agy"`, que mentiria pra um motor novo
-  // sem MCP). Fail-closed: desconhecido não ganha ponteiro que não alcança.
+  // O ponteiro para o SQLite via frota-context só vai a motor com a
+  // capability: desconhecido não ganha ponteiro que não alcança.
   if (agentDef(input.targetAgent)?.contextMcp) {
     durableRefs.push({
       kind: "conversation",

@@ -1,13 +1,7 @@
-// A metade de ESCRITA do Companion: o que o celular MANDA fazer.
-//
-// Saiu de lib/companion.ts pela catraca de tamanho, e a fronteira não foi
-// arbitrária — o arquivo já a tinha desenhado com os próprios banners. O que
-// ficou lá é LEITURA (montar o snapshot que o aparelho renderiza); o que veio
-// pra cá é ESCRITA (lançar tarefa, responder interação, parar turno), que é
-// justamente a metade onde o fail-closed do §9 precisa valer: uma ação vinda
-// de fora da máquina não pode ser aceita em silêncio nem respondida com
-// otimismo. Por isso o veredito (`CompanionActionResult`) mora junto do
-// executor, e não do lado que só lê.
+// A metade de ESCRITA do Companion: o que o celular manda fazer (a leitura mora
+// em lib/companion.ts). É aqui que vale o fail-closed: ação vinda de fora da
+// máquina não é aceita em silêncio nem respondida com otimismo, e o veredito
+// (`CompanionActionResult`) mora junto do executor.
 
 import { invoke } from "@tauri-apps/api/core"
 import { pingConvUpdated } from "@/lib/companionPing"
@@ -32,10 +26,8 @@ import {
 
 // ───────────────────────────────────────────────── executor (companion://action)
 
-/** Anexos vindos do celular: o upload multipart JÁ salvou os blobs via a mesma
- *  rotina do save_attachment (Rust) e devolveu os metadados — aqui só validamos
- *  o SHAPE e o path relativo esperado ("attachments/…"); nada de path absoluto
- *  ou fora do cache de anexos passa. */
+/** Anexos do celular: o upload já salvou os blobs no Rust; aqui só se valida o
+ *  shape e o path relativo ("attachments/…"). */
 function sanitizeAttachments(v: unknown): Attachment[] {
   if (!Array.isArray(v)) return []
   const out: Attachment[] = []
@@ -105,9 +97,8 @@ function pushActionResult(result: CompanionActionResult): void {
   })
 }
 
-/** Veredito HONESTO do stop_turn, computado ANTES do cancelamento: espelha a
- *  semântica do Stop do app (ChatPanel/tray) — disputa Fusion aborta; turno
- *  FINALIZANDO não é interrompível (runId já foi embora); turno morto idem. */
+/** Veredito do stop_turn, antes do cancelamento, com a semântica do Stop do
+ *  app: disputa aborta; turno finalizando ou morto não é interrompível. */
 function stopTurnVerdict(convId: string): { ok: boolean; message: string } {
   const fusion = useFusion.getState().byConv[convId]
   if (fusion && (fusion.phase === "running" || fusion.phase === "judging")) {
@@ -139,13 +130,10 @@ function stopTurnVerdict(convId: string): { ok: boolean; message: string } {
   return { ok: false, message: "O turno já não estava em execução." }
 }
 
-/** Executa UMA ação vinda do celular (payload do evento `companion://action`).
- *  O Rust já RECONSTRUIU o payload (whitelist fechada, campos extras nunca
- *  passam) com o discriminador `kind` — o mesmo vocabulário do POST /api/action.
- *  Switch FECHADO — ação desconhecida é ignorada com aviso; toda ação passa
- *  pelos stores/bridges existentes (guardas intactas: answerGate no-opa sem
- *  gate, answer no-opa se o id já saiu da fila, sendFromDesk tem TODAS as
- *  guardas de envio). Exportada p/ teste. */
+/** Executa uma ação do celular (`companion://action`). O Rust já reconstruiu o
+ *  payload por whitelist, com `kind`. Switch fechado (desconhecida é ignorada
+ *  com aviso), e toda ação passa pelas guardas dos stores existentes.
+ *  Exportada para teste. */
 export async function handleCompanionAction(payload: unknown): Promise<void> {
   const p =
     typeof payload === "object" && payload !== null
@@ -196,8 +184,7 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
     case "stop_mission": {
       const convId = str(p.convId)
       if (!convId) return
-      // veredito ANTES do abort (depois o status já mudou); o abort continua
-      // incondicional — parar é sempre gesto seguro (no-op se nada roda).
+      // Veredito antes do abort; parar segue incondicional (no-op sem run).
       const wasRunning =
         useMission.getState().byConv[convId]?.status === "running"
       useMission.getState().abort(convId)
@@ -218,10 +205,8 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
     case "stop_turn": {
       const convId = str(p.convId)
       if (!convId) return
-      // C2 — mesma semântica/copy do Stop do app, inclusive "finalizando não
-      // é interrompível". O veredito sai ANTES (cancelDeskTurn muda o estado);
-      // o cancel continua incondicional (comportamento de sempre, é no-op
-      // seguro quando não há o que parar).
+      // Mesma semântica do Stop do app, inclusive "finalizando não é
+      // interrompível". Veredito antes; o cancel é no-op seguro.
       const verdict = stopTurnVerdict(convId)
       await cancelDeskTurn(convId)
       const actionId = str(p.actionId)
@@ -231,12 +216,9 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       return
     }
     case "send_message": {
-      // C3 — veredito honesto de volta pro celular (fecha o furo registrado na
-      // revisão C2): com actionId, TODO desfecho vira action-result — recusa
-      // com motivo legível, aceite com o convId REAL (a página sem conversa
-      // resolvida adota o fio na hora). Sem actionId (página antiga), o
-      // comportamento pré-existente segue intacto (rejeição sobe pro catch do
-      // listener → aviso nativo no desktop).
+      // Com actionId, todo desfecho volta ao celular como action-result (recusa
+      // com motivo, aceite com o convId real). Sem actionId (página antiga), a
+      // rejeição sobe para o aviso nativo do desktop.
       const actionId = str(p.actionId)
       const fail = (message: string): void => {
         console.warn("[companion] send_message recusado:", message)
@@ -257,27 +239,18 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         return
       }
       const fleetAgent = agent as OfficeAgentId
-      // P5: convId explícito ("abrir conversa" não-mesa no celular) SÓ vale se
-      // a conversa pertence às metas do projeto — qualquer outro id cai na
-      // conversa de MESA (nunca escreve numa conversa alheia/fantasma). As
-      // guardas do sendFromDesk cuidam do resto: ensureConversationLoaded,
-      // corrupt, missão rodando, e o agent TRAVADO da conversa VENCE o da ação.
+      // convId explícito só vale se a conversa é do projeto; qualquer outro id
+      // cai na conversa de mesa. O sendFromDesk faz o resto, e o agent travado
+      // da conversa vence o da ação.
       const wanted = str(p.convId)
       const metas = useChat.getState().conversationsByProject[projectId] ?? []
       const useWanted = !!wanted && metas.some((m) => m.id === wanted)
       const convId = useWanted
         ? wanted
         : await ensureDeskConversation(projectId, fleetAgent)
-      // F-A (follow-up S0) — guarda de availability ANTES de despachar: CLI
-      // ausente/deslogada não recebe turno. O POST /api/action já devolveu 202
-      // (fire-and-forget), então a resposta honesta volta pro celular pelo
-      // MESMO envelope do histórico: notice persistido na conversa + ping de
-      // conv atualizada (a página refetcha e mostra o motivo). D3: a guarda
-      // vale pro agent EFETIVO da conversa resolvida — numa conversa travada o
-      // agent DELA vence o da ação (regra do sendFromDesk), e sem essa
-      // resolução o toast do desktop fechado seria a única resposta. A mesa já
-      // saiu carregada do ensureDeskConversation; o alvo explícito carrega
-      // aqui antes de ler o estado.
+      // Motor ausente ou deslogado não recebe turno. O POST já devolveu 202,
+      // então a resposta volta pelo histórico: notice na conversa e ping de
+      // atualização. Vale o agent efetivo da conversa resolvida.
       if (useWanted) {
         await useChat.getState().ensureConversationLoaded(projectId, convId)
       }
@@ -318,10 +291,8 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         fail(dispatchBlock)
         return
       }
-      // C3 — mesmo padrão do launch_task: o aceite (start/queued) responde o
-      // celular na hora; rejeição interna do sendFromDesk NÃO pode escapar
-      // quando há actionId (o celular está esperando o veredito). Sem
-      // actionId, a exceção sobe como sempre (aviso nativo no desktop).
+      // O aceite responde o celular na hora; com actionId, a rejeição do
+      // sendFromDesk não pode escapar (o celular espera o veredito).
       let accepted = false
       try {
         await sendFromDesk({
@@ -362,11 +333,9 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       return
     }
     case "launch_task": {
-      // C2 — lançar tarefa do celular: conversa NOVA pelos MESMOS stores do
-      // composer (registerConversation → preset opcional → sendFromDesk; a
-      // persona do Especialista entra pelo resolveFirstTurnPersona de sempre).
-      // Fail-closed com motivo legível: o veredito volta pro aparelho pelo
-      // action-result — o 202 do POST nunca vira sucesso fingido.
+      // Lançar tarefa: conversa nova pelos mesmos stores do composer (a persona
+      // do especialista entra pelo resolveFirstTurnPersona). Fail-closed com
+      // motivo: o 202 do POST nunca vira sucesso fingido.
       const actionId = str(p.actionId)
       const fail = (message: string): void => {
         console.warn("[companion] launch_task recusado:", message)
@@ -407,8 +376,8 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
           return
         }
       }
-      // F-A — guarda de availability ANTES de criar qualquer coisa: o agent
-      // EFETIVO é o backend do Especialista quando há um.
+      // Disponibilidade antes de criar qualquer coisa: vale o backend do
+      // especialista, se houver.
       const effectiveAgent = preset?.backend ?? agent
       const block = dispatchBlockReason(
         effectiveAgent,
@@ -437,12 +406,9 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
         fail("Não consegui criar a conversa no app.")
         return
       }
-      // O aceite (start/queued) responde o celular NA HORA; o await segura o
-      // turno inteiro (mesmo padrão do send_message). Se o sendFromDesk
-      // abortar numa guarda interna (preset quebrado, corrida), o onAccepted
-      // nunca dispara e o fracasso volta honesto. Rejeição (ex.: DB falhou no
-      // ensureConversationLoaded interno) NÃO pode escapar: sem o catch, o
-      // fail() nunca rodaria e o celular só veria o timeout — revisão C2 §1.
+      // O aceite responde na hora; o await segura o turno. Guarda interna que
+      // aborta não dispara onAccepted, e o fracasso volta; rejeição não pode
+      // escapar, senão o celular só veria o timeout.
       let accepted = false
       try {
         await sendFromDesk({
@@ -477,9 +443,8 @@ export async function handleCompanionAction(payload: unknown): Promise<void> {
       }
       return
     }
-    // dispatch_card/close_card SAÍRAM (ADR-041): o Board não existe mais no
-    // celular, e a whitelist do Rust já as rejeita antes de chegar aqui — se
-    // um cliente velho mandar uma delas, cai no default (aviso, sem efeito).
+    // dispatch_card e close_card saíram (ADR-041); a whitelist do Rust já as
+    // barra, e cliente velho cai no default.
     case "feedback_lesson": {
       // P6: 👍/👎 do item de turno concluído no celular — MESMO caminho do
       // ChatPanel (feedbackLesson → reinforceLessons das lições injetadas).

@@ -56,10 +56,8 @@ import { useComposerDrafts } from "@/store/composerDrafts"
 import { forceSendDraft, forceSendQueued, pullQueued } from "@/components/chat/filaComposer"
 import { BaseDoComposer } from "@/components/chat/BaseDoComposer"
 
-// O editor Lexical (+lexical +beautiful-mentions, ~82 kB gzip) segue LAZY
-// mesmo sendo o único composer: o chunk baixa em paralelo ao boot e o main
-// fica enxuto. Nada além deste arquivo importa o LexicalComposer, então o
-// grafo do Lexical inteiro sai do chunk main.
+// O Lexical (~82 kB gzip) segue lazy: baixa em paralelo ao boot, e como só
+// este arquivo o importa, o grafo inteiro fica fora do chunk main.
 const LexicalComposer = lazy(() =>
   import("@/components/chat/LexicalComposer").then((m) => ({
     default: m.LexicalComposer,
@@ -124,8 +122,6 @@ export function CommandConsole({
   }, [])
   // defaults de novas conversas vêm das configurações globais (Settings).
   const settings = useApp((s) => s.settings)
-  // A permissão agora é um controle de três posições no rodapé do composer,
-  // junto do envio que ela afeta.
   const [destination, setDestination] = useState(settings.defaultAgent)
   // normaliza o default persistido: um id que saiu do CLI (gpt-5.3-codex, o3)
   // não pode virar 400 em todo envio novo com a UI fingindo normalidade.
@@ -139,20 +135,16 @@ export function CommandConsole({
   const [confinamento, setConfinamento] = useState(SEM_CONFINAMENTO)
   // foco programático do editor Lexical (preenchido pelo FocusBridgePlugin).
   const lexicalFocus = useRef<(() => void) | null>(null)
-  // pill de comando "/" presente no editor (SlashPillPresencePlugin): com ele,
-  // o popover de comandos não reabre — a gramática é UM comando por mensagem,
-  // e o pill já é ele. (Digitar "/" no meio nunca abriu o popover; isto cobre
-  // a borda em que o texto serializado volta a ser só "/nome".)
+  // Pill de comando "/" no editor: com ele o popover não reabre, porque a
+  // gramática é um comando por mensagem e o pill já é ele.
   const [hasCommandPill, setHasCommandPill] = useState(false)
   const conv = useConvDoComposer()
   const suggestions = conv.suggestions
   const suggesting = conv.suggesting
   const project = useActiveProject()
-  // A PERMISSÃO é do projeto DONO do fio, não do que está em foco — mesma regra
-  // que o despacho já segue (`resolveSendTarget`: "cwd, permissão e lições são
-  // os do fio, não os da tela"). O resto do composer (comandos "/", arquivos
-  // "@", personas) continua no foco, que é o inventário que você está olhando.
-  // Sem conversa hidratada, o foco é a melhor aproximação que existe.
+  // A permissão é do projeto DONO do fio, não do que está em foco (a mesma
+  // regra do `resolveSendTarget`). Comandos, arquivos e personas seguem o
+  // foco. Sem conversa hidratada, o foco é a melhor aproximação.
   const permProjectId = useChat((s) =>
     s.activeId ? (s.byId[s.activeId]?.projectId ?? null) : null,
   )
@@ -167,24 +159,18 @@ export function CommandConsole({
       : "padrao",
   )
 
-  // conversa estabelecida trava no agent/modelo/effort dela; o seletor reflete.
-  // Pareceres de conselheiro (advice) NÃO travam a identidade (Especialistas E1).
-  // (Computado ANTES dos hooks: o popover "/" descobre comandos POR AGENT.)
+  // Conversa estabelecida trava no agent/modelo/esforço dela; pareceres de
+  // especialista não travam. Calculado antes dos hooks: o "/" descobre
+  // comandos por agent.
   const locked = hasExecutorTurn(conv.items)
-  // O MODELO destrava sempre que a conversa não está em voo. Trocar de modelo
-  // dentro do mesmo agent PRESERVA a sessão (o `--resume` segue valendo), e é o
-  // que os três motores permitem no meio da conversa (`/model`). O que não
-  // destrava é o AGENT: ali a troca é handoff, não seletor.
-  //
-  // `!running && !finalizing` porque o modelo é flag de SPAWN, igual à
-  // permissão: o processo já subiu com ela. Vale do próximo envio.
+  // O modelo destrava fora de voo: trocá-lo no mesmo agent preserva a sessão
+  // (é o `/model` dos três motores). O agent não destrava: ali é handoff.
+  // Fora de voo porque o modelo é flag de spawn e vale do próximo envio.
   const modelUnlocked = !conv.running && !conv.finalizing
-  // A escolha de emergência tem estado PRÓPRIO (o `model` cru sobra de outra
-  // conversa). Zera ao trocar de conversa ou de agent: modelo de um motor não
-  // vale no outro.
+  // A escolha de emergência tem estado próprio e zera ao trocar de conversa ou
+  // de agent: modelo de um motor não vale no outro.
   const [retryModel, setRetryModel] = useState<string | null>(null)
-  // O esforço segue a mesma regra do modelo (11/09/2026): estado próprio,
-  // zerado nos mesmos gatilhos.
+  // O esforço segue a mesma regra do modelo.
   const [retryEffort, setRetryEffort] = useState<string | null>(null)
   useEffect(() => {
     setRetryModel(null)
@@ -205,11 +191,9 @@ export function CommandConsole({
   const effectiveModel = identidade.model
   const effectiveEffort = identidade.effort
 
-  // O selo depende do MOTOR desde a rota B (11/09/2026): quem confina sozinho
-  // não recebe o envelope da Frota, então dizer "o sistema barra escrita no
-  // projeto" ali descreveria um perfil que nem foi aplicado. Relê quando o
-  // destino muda; o `lerConfinamento` cacheia por motor, então trocar de
-  // destino e voltar não refaz o invoke.
+  // O selo depende do motor: quem confina sozinho não recebe o envelope da
+  // Frota, e o selo não pode descrever um perfil que não foi aplicado. O
+  // `lerConfinamento` cacheia por motor.
   useEffect(() => {
     let vivo = true
     void lerConfinamento(effectiveDest).then((v) => {
@@ -220,14 +204,10 @@ export function CommandConsole({
     }
   }, [effectiveDest])
 
-  // Carimbo do agent numa conversa que ainda NÃO tem um. O destino é estado
-  // deste componente e SOBREVIVE à troca de conversa: escolher Antigravity e
-  // depois criar uma conversa nova deixava a linha sem carimbo, e a sidebar
-  // caía no default GLOBAL (ícone do Claude Code numa conversa que ia rodar,
-  // e rodava, Antigravity). O `onDestChange` só cobria a troca explícita.
-  // Preenche o VAZIO e nada além: conversa já carimbada (escolha anterior,
-  // mesa de um agent, linha vinda do banco) e conversa com turno de executor
-  // ficam intocadas — o carimbo diz quem VAI rodar, não um padrão.
+  // Carimba o agent na conversa que ainda não tem um: o destino é estado deste
+  // componente e sobrevive à troca de conversa, e sem carimbo a sidebar cai no
+  // default global. Só preenche o vazio: conversa já carimbada ou com turno de
+  // executor fica intocada.
   const convStamp = useChat((s) =>
     s.activeId
       ? (s.conversations.find((c) => c.id === s.activeId)?.agent ?? null)
@@ -238,9 +218,8 @@ export function CommandConsole({
     useChat.getState().setConversationAgent(activeId, destination)
   }, [activeId, locked, convStamp, destination])
 
-  // Popover "/", busca do "@", histórico ↑/↓ e anexos, cada
-  // feature num hook. O teclado chega pelos plugins do editor (slashBridge/
-  // historyBridge/PASTE_COMMAND); a lógica mora aqui fora.
+  // "/", "@", histórico ↑/↓ e anexos: cada um num hook; o teclado chega pelos
+  // plugins do editor.
   const slash = useSlashCommands({
     project,
     agent: effectiveDest,
@@ -248,9 +227,7 @@ export function CommandConsole({
     setValue,
     focus: focusComposer,
   })
-  // N5 — as notas do escopo visível viram endereço `@nota/slug`. A leitura é
-  // por seletor (só o array de notas), então mudar o rascunho não re-renderiza
-  // por causa daqui.
+  // As notas do escopo visível viram endereço `@nota/slug`.
   const notasDaStore = useStickyNotes((s) => s.notes)
   const notasVisiveis = useMemo(
     () => selectNotesFor(notasDaStore, { projectId: project?.id, convId: activeId ?? undefined }),
@@ -277,10 +254,8 @@ export function CommandConsole({
     history
   const { attachments, setAttachments, removeAttachment, addFiles, attach } = att
 
-  // S3.6 — presets (personas): a seleção mora na CONVERSA (conv.presetId), não
-  // em estado local — o handleSend e a mesa leem de lá. Escolher um preset
-  // seta agent/modelo/esforço de uma vez; mexer na camada crua desfaz a
-  // seleção (o preset é o trio inteiro, não um item avulso).
+  // A persona mora na conversa (conv.presetId), que é de onde o envio lê. Ela
+  // é o trio agent/modelo/esforço fechado: mexer num item desfaz a seleção.
   const presets = usePresets((s) => s.list)
   // As personas viraram ARQUIVO e ganharam escopo: recarrega ao trocar de
   // projeto, senão a lista mostraria as personas do projeto anterior.
@@ -326,9 +301,8 @@ export function CommandConsole({
   const allSupported = attachments.every((a) =>
     a.kind === "image" ? caps.image : a.kind === "pdf" ? caps.pdf : false,
   )
-  // aceita um texto explícito porque o submit do editor chega com o texto
-  // recém-serializado (que pode estar 1 tick à frente do draft). A REGRA mora
-  // em composerSend (pura, testada); aqui só se junta o estado.
+  // Aceita texto explícito porque o Enter do editor chega com o recém-
+  // serializado, um tique à frente do draft. A regra é pura, em composerSend.
   const estadoDoComposer = (text: string): EstadoDoComposer => ({
     texto: text,
     anexos: attachments.length,
@@ -340,10 +314,9 @@ export function CommandConsole({
   })
   const canSend = podeEnviar(estadoDoComposer(value.trim()))
 
-  // "Planejar primeiro" (por conversa, na store): NÃO trava com a conversa — é
-  // um modo do PRÓXIMO envio, não config fixa do 1º run. Fica ligado até o
-  // usuário desligar (ou até aprovar um plano, que desliga sozinho).
-  // M3: o modo é da CONVERSA; o projeto dá o default de quem não decidiu.
+  // "Planejar primeiro" é modo do próximo envio, não config do 1º run: fica
+  // até você desligar ou aprovar um plano. O modo é da conversa; o projeto dá
+  // o default.
   const modoDaConversa = conv.sessionMode ?? null
   const modoAtual = modoDaConversa ?? permissionMode
   const planFirst = modoAtual === "plan"
@@ -368,9 +341,8 @@ export function CommandConsole({
     model: effectiveModel === "default" ? null : effectiveModel,
     effort: effectiveEffort === "default" ? null : effectiveEffort,
     planFirst,
-    // Só é true quando o humano ESCOLHEU outro modelo numa conversa travada
-    // cuja última tentativa falhou. Sem a flag o despacho segue usando o modelo
-    // do 1º run, como sempre (ver AgentRunConfig).
+    // Só é true quando você escolheu outro modelo numa conversa travada cuja
+    // última tentativa falhou (ver AgentRunConfig).
     modelSwitched: identidade.trocouDeModelo,
     effortSwitched: identidade.trocouDeEsforco ?? false,
   }
@@ -380,18 +352,14 @@ export function CommandConsole({
     lexicalFocus.current?.()
   }
 
-  /** Envio único: o botão chama sem argumento (lê o draft); o Enter do editor
-   *  passa o texto que acabou de serializar (MESMA string `@nome`). */
-  // `unknown` de propósito: o botão é `onClick={onSubmit}`, então o React passa
-  // o MouseEvent aqui. Quem separa string de evento é `textoDoEnvio` (ADR-092),
-  // e não a memória de quem escreve o próximo call site.
+  /** Envio único: o botão chama sem argumento (lê o draft); o Enter passa o
+   *  texto recém-serializado. `unknown` porque o botão recebe o MouseEvent, e
+   *  quem separa string de evento é `textoDoEnvio` (ADR-092). */
   function submit(overrideText?: unknown) {
     const text = textoDoEnvio(overrideText, value, useComposerDrafts.getState().byConv[activeId ?? ""]?.blocos)
     if (destinoDoComposer(estadoDoComposer(text)) === "barrado") return
-    // UM caminho só para enviar e para ENFILEIRAR (turno em andamento): texto e
-    // anexos viajam sempre juntos, e o handleSend é quem detecta o turno em voo
-    // e empilha na fila. Eram dois ramos gêmeos aqui — e ramo gêmeo é como o
-    // anexo ficava pra trás, órfão no composer depois de a mensagem "sair".
+    // Um caminho só para enviar e enfileirar: texto e anexos viajam juntos, e o
+    // handleSend decide se empilha na fila. Dois ramos deixavam anexo órfão.
     const submittedId = activeId
     onSend(text, effCfg, attachments, () => {
       if (submittedId) useComposerDrafts.getState().clear(submittedId)
@@ -443,18 +411,8 @@ export function CommandConsole({
     hasCommands: commands.length > 0,
   })
 
-  // Comandos "/", paste → anexo e histórico ↑/↓ estilo shell: o LexicalComposer
-  // recebe pontes pros hooks (a lógica mora aqui fora, os gestos de teclado nos
-  // plugins do editor). O menu "/" é o próprio SlashPopover (renderizado
-  // abaixo, gateado só por showSlash). Arquivos do "@" vêm por busca sob demanda.
-  // popover "/" efetivo: o showSlash do hook, suprimido com pill presente.
-  // N5 — endereços mencionáveis das notas do escopo visível. `itensDeNota` é
-  // puro e a lista é pequena (dezenas), então o memo aqui é sobre a store, não
-  // sobre trabalho pesado: o que ele evita é remontar array a cada tecla.
-  // N7 — o que ESTA conversa tocou. A dep é o TAMANHO do fio, não o array: uma
-  // tool call é sempre um item novo, então o conjunto só pode mudar quando o
-  // fio cresce. Com o array como dep, cada token do streaming remontaria o Set
-  // varrendo a conversa inteira.
+  // A dep é o TAMANHO do fio: tool call é sempre item novo, e com o array como
+  // dep cada token do streaming refaria o Set varrendo a conversa.
   const arquivosDaConversa = useMemo(
     () => arquivosTocados(conv?.items ?? [], project?.path ?? ""),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -491,9 +449,8 @@ export function CommandConsole({
         value={value}
         onChangeText={(t) => {
           setValue(t)
-          // edição REAL do usuário (mudanças externas são suprimidas pelo
-          // lastText do editor): reabre o "/" dispensado com Esc e sai da
-          // navegação do histórico — mesma disciplina do antigo onChange.
+          // Edição real (as externas o editor suprime): reabre o "/"
+          // dispensado com Esc e sai do histórico.
           setSlashDismissed(false)
           setHistIdx(null)
         }}
@@ -602,10 +559,8 @@ export function CommandConsole({
             canEnqueue={canEnqueue}
             onForceSendDraft={canEnqueue ? () => handleForceSendDraft() : undefined}
             contextRing={<ContextRing />}
-            // M3: escolher o modo mexe NESTA conversa. O projeto virou o
-            // DEFAULT de quem nasce, e definir esse default é um gesto próprio
-            // dentro do mesmo menu — os dois escopos existiam antes, escondidos
-            // atrás de um controle que mudava o projeto sem dizer.
+            // O modo mexe nesta conversa; definir o default do projeto é um
+            // gesto próprio no mesmo menu.
             permissionControls={
               <ModeSelect
                 modes={modosDoMotor}
@@ -650,9 +605,8 @@ export function CommandConsole({
                     setModel(defaultModelFor(v))
                     setEffort("default")
                     clearPresetOnManualChange()
-                    // carimba na conversa VAZIA: sem isto a escolha ficava só
-                    // neste estado local até o 1º envio, e a sidebar mostrava o
-                    // logo do default. No-op se já tem itens (agent travado).
+                    // Carimba a conversa vazia para a sidebar mostrar o motor
+                    // certo antes do 1º envio. No-op com agent travado.
                     if (activeId) useChat.getState().setConversationAgent(activeId, v)
                   }}
                   effectiveModel={effectiveModel}

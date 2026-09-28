@@ -17,17 +17,10 @@ import { nomearConversa } from "@/store/chat/titulo"
 export { nativeNotify } from "@/lib/notify/native"
 
 /**
- * Chamado no fim de UM turno (finally do run). Empilha no feed e, se a conversa
- * não é a ativa (rodou em background), dispara a notificação nativa.
- *
- * (M2) Turno em background ganha RECIBO: uma frase do que o agente fez, no
- * corpo da nativa e do item do feed. É async por causa disso, e os chamadores
- * seguem sem esperar — nada no fim do run depende deste retorno.
- *
- * O feed é empilhado DEPOIS do recibo, não antes: empilhar cedo e remendar
- * depois exigiria um patch no store e deixaria a janela em que o sino diz uma
- * coisa e a nativa diz outra. O atraso é o do prazo (≤3s) e o feed é durável,
- * então ninguém percebe. No primeiro plano não há recibo nem espera nenhuma.
+ * Fim de UM turno: empilha no feed e, se a conversa não é a ativa, dispara a
+ * nativa. Turno em background ganha recibo (uma frase do que o agente fez); o
+ * feed espera o recibo (≤3s) para o sino e a nativa não divergirem. No
+ * primeiro plano não há recibo nem espera.
  */
 export async function notifyTurnEnd(convId: string, agent: string) {
   const chat = useChat.getState()
@@ -36,10 +29,9 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   const last = c.items[c.items.length - 1]
   if (last?.kind === "cancelled") return // cancelamento do usuário não notifica
 
-  // Fim de turno é onde a conversa ganha nome de gente, e este é o ÚNICO funil
-  // que os cinco caminhos de fim de turno já atravessam (ChatPanel, mesa, fila,
-  // auto-resume, handoff). Fire-and-forget: a notificação não espera pelo nome,
-  // e quando ele cai, HUD e bandeja o resolvem pelo convId (ADR-142).
+  // Fim de turno é onde a conversa ganha nome, e este é o funil único dos cinco
+  // caminhos de fim de turno. Não espera: HUD e bandeja resolvem o nome pelo
+  // convId quando ele chega (ADR-142).
   void nomearConversa(convId)
 
   // usa o array do projeto DONO (c.projectId) — o turno pode ter rodado em
@@ -81,11 +73,8 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   }
 }
 
-/** Chamado UMA vez quando um GATE humano abre (a missão pausou aguardando as
- *  suas decisões). Empilha no feed e dispara a nativa SEMPRE — diferente do
- *  notifyTurnEnd, o gate segura a missão inteira, então avisa em qualquer
- *  modo (Painel/Trabalho) e com o app em background. Sem spam: o store só
- *  chama no momento em que o gate abre (1 por gate). */
+/** Gate humano abriu (a missão pausou esperando você): feed e nativa sempre,
+ *  porque o gate segura a missão inteira. O store chama uma vez por gate. */
 export function notifyGate(
   convId: string,
   projectName: string,
@@ -129,12 +118,9 @@ export function _resetMissionEndNotified(): void {
   missionEndNotified.clear()
 }
 
-/** Chamado no DESFECHO de uma missão (MH2.3, canais do ADR-013): feed do sino
- *  SEMPRE + nativa SEMPRE — missão é trabalho longo que roda com o app em
- *  background; diferente do turno de chat, não há "você estava olhando" barato
- *  de detectar e o desfecho é raro (1 por missão, dedupado aqui). Abort do
- *  usuário NÃO notifica (gesto seu; o chamador não chama). Copy alinhada com
- *  os marcos do fio (notifyGate/recordError): mesma língua, outro canal. */
+/** Desfecho de missão: feed e nativa sempre (trabalho longo, com o app em
+ *  background, e raro). Abort seu não notifica. Copy alinhada aos marcos do
+ *  fio. */
 export function notifyMissionEnd(o: {
   missionId: string
   convId: string
@@ -207,11 +193,8 @@ export function notifyMissionEnd(o: {
   void nativeNotify(nativo[o.outcome].titulo, nativo[o.outcome].corpo)
 }
 
-/** Chamado UMA vez quando a missão PAUSA em RECOVERY (fase falhou por limite e
- *  espera você trocar de agent ou abortar). Irmão do notifyGate: a missão
- *  inteira está parada esperando VOCÊ, então feed + nativa SEMPRE. Sem spam:
- *  o store só chama no ponto único que abre o recovery (1 por episódio por
- *  construção — um re-run que re-falha é episódio novo, como no gate). */
+/** A missão pausou em recovery esperando você trocar de agent: feed e nativa
+ *  sempre. Uma vez por episódio, por construção do store. */
 export function notifyMissionRecovery(
   convId: string,
   projectName: string,
@@ -240,14 +223,9 @@ export function notifyMissionRecovery(
   )
 }
 
-/** Chamado quando chega um pedido de PERMISSÃO. O approval é o único evento que
- *  deixa o turno literalmente parado esperando você — antes ele era o único que
- *  NÃO avisava (gate, turno mudo e card parado avisavam). Empilha no feed
- *  sempre; a nativa só quando você não está com o card na frente (`seen`),
- *  porque com ele visível a notificação seria só barulho.
- *
- *  Sem spam: o chamador (store/interactions) só chama no PRIMEIRO pedido
- *  pendente de cada conversa — uma rajada de 20 idênticos avisa uma vez. */
+/** Pedido de permissão: o turno parado esperando você. Feed sempre; a nativa
+ *  só quando o card não está na sua frente (`seen`). O chamador só chama no
+ *  primeiro pendente de cada conversa. */
 export function notifyApproval(o: {
   projectId: string
   convId: string
@@ -274,12 +252,9 @@ export function notifyApproval(o: {
   )
 }
 
-/** Permissão vinda de HOOK (H2 do hooks-plan): sessão EXTERNA no terminal
- *  pediu permissão e a pendência é respondível no app/Companion por até 30s.
- *  Não tem conversa dona (não somos donos da sessão) — o feed aponta pro
- *  projeto quando o cwd é de projeto conhecido ("" = desconhecido, o clique
- *  não navega). A nativa avisa sempre: o pedido nasceu FORA do app, então
- *  nunca há card "na sua frente" garantido. */
+/** Permissão vinda de HOOK: sessão externa no terminal, respondível no app ou
+ *  no Companion por até 30s. Sem conversa dona; o feed aponta o projeto quando
+ *  o cwd é conhecido. A nativa avisa sempre: o pedido nasceu fora do app. */
 export function notifyHookPermission(o: {
   /** Rótulo do motor ("Claude", "Codex", "agy"). */
   engine: string
@@ -302,17 +277,9 @@ export function notifyHookPermission(o: {
   )
 }
 
-/** Chamado quando chega uma PERGUNTA (`ask_user`). Irmão do notifyApproval: o
- *  turno também fica literalmente parado, mas esperando CONTEÚDO em vez de
- *  autorização — então a cópia é outra ("perguntou", não "pediu permissão").
- *
- *  Este era o último evento bloqueante que NÃO avisava: o `announceArrival` do
- *  store/interactions filtrava só `approval`, então uma pergunta ficava esperando
- *  em silêncio até você olhar a tela por acaso.
- *
- *  Mesmo contrato do approval: feed SEMPRE; nativa só quando você não está com o
- *  card na frente (`seen`). Sem spam — o chamador só chama no PRIMEIRO pendente
- *  de cada conversa. */
+/** Pergunta (`ask_user`): o turno parado esperando conteúdo. Mesmo contrato da
+ *  permissão (feed sempre, nativa se não `seen`, só o primeiro pendente), com
+ *  a cópia "perguntou". */
 export function notifyQuestion(o: {
   projectId: string
   convId: string
@@ -341,16 +308,10 @@ export function notifyQuestion(o: {
   )
 }
 
-/** Chamado quando um pedido bloqueante de um run DESASSISTIDO (automação)
- *  estoura o limiar e o app responde fail-closed no seu lugar (lib/watchdog).
- *
- *  DECISÃO (2 superfícies, nenhuma nativa): o rastro que fica pra sempre é o
- *  `notice` NO FIO da conversa (o watchdog injeta) — é lá que você vai olhar
- *  quando abrir a conversa da automação amanhã, e ele é persistido junto com o
- *  turno. O feed do sino entra porque a conversa da automação nasce em
- *  background: sem ele o desfecho só existiria numa tela que você não abriu.
- *  Nativa NÃO: ela já saiu na CHEGADA do pedido (notifyApproval/notifyQuestion);
- *  repetir na expiração seria cutucar de novo justamente quem não estava lá. */
+/** Pedido de run desassistido estourou o limiar e o app respondeu
+ *  fail-closed (lib/watchdog). Feed sim (a conversa da automação nasce em
+ *  background); nativa não, porque já saiu na chegada do pedido. O rastro
+ *  permanente é o notice no fio, que o watchdog injeta. */
 export function notifyUnattendedTimeout(o: {
   projectId: string
   convId?: string
@@ -376,11 +337,9 @@ export function notifyUnattendedTimeout(o: {
   })
 }
 
-/** Chamado UMA vez por episódio quando um turno RUNNING fica sem progresso
- *  item novo) além do limiar (settings.stalledAfterMin). Dispara a nativa
- *  SEMPRE — turno travado é exatamente o caso "ninguém está olhando" (app em
- *  background/tray). O toast acionável in-app fica com o watchdog (chamador);
- *  aqui é só o aviso de SO. Sem spam: o watchdog só chama 1x por episódio. */
+/** Turno running sem item novo além do limiar: a nativa sempre (é o caso de
+ *  ninguém olhando). O toast acionável fica com o watchdog, que chama uma vez
+ *  por episódio. */
 export function notifyTurnStalled(
   convId: string,
   agent: string,
@@ -400,11 +359,8 @@ export function notifyTurnStalled(
   )
 }
 
-/** Chamado UMA vez por episódio quando uma FASE DE MISSÃO running fica MUDA
- *  (sem nenhum item novo) além do limiar (settings.stalledAfterMin, o mesmo
- *  knob dos turnos). A missão não seta `running` na conversa, então o vigia de
- *  turno não a enxerga — este é o espelho pro pipeline (MH1.2). Aqui é só o
- *  aviso de SO; o toast acionável fica com o watchdog. Sem spam: 1x/episódio. */
+/** Fase de missão muda além do limiar (a missão não seta `running`, então
+ *  o vigia de turno não a vê). Só o aviso de SO; uma vez por episódio. */
 export function notifyMissionStalled(
   convId: string,
   agent: string,
@@ -425,11 +381,8 @@ export function notifyMissionStalled(
   )
 }
 
-/** Chamado UMA vez por episódio quando um CARD do board em review/blocked
- *  (esperando VOCÊ, não um agent) fica parado além do limiar
- *  (settings.stalledAfterMin, o mesmo knob dos turnos). Espelho do
- *  notifyTurnStalled: aqui é só o aviso de SO; o toast acionável fica com o
- *  watchdog. Sem spam: o vigia só chama 1x por episódio. */
+/** Card em review/blocked parado além do limiar, esperando você. Só o aviso de
+ *  SO; uma vez por episódio. */
 export function notifyCardStalled(
   title: string,
   state: "review" | "blocked",

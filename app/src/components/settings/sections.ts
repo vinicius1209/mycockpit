@@ -1,22 +1,15 @@
-// Registro das seções de Configurações — ORDEM, AGRUPAMENTO e RESOLUÇÃO DE
-// ID viram DADO puro (sem JSX, sem store), pelo mesmo motivo do Orca: o rail
-// e qualquer deep link (tray, UsagePill, paleta) leem a mesma lista e não
-// podem divergir.
+// Registro das seções de Configurações: ordem, agrupamento e resolução de id
+// como dado puro, para o rail e todo deep link (tray, pill, paleta) lerem a
+// mesma lista.
 //
-// Regra de organização: cada seção responde UMA pergunta do usuário. Se um
-// bloco não responde a pergunta do título, ele está na seção errada — foi o
-// que aconteceu com "CLIs instaladas" (virou depósito de medidor, hooks e
-// curador de modelos).
+// Cada seção responde UMA pergunta de quem usa; bloco que não responde à do
+// título está na seção errada. A árvore segue as perguntas (ADR-268): "tem
+// algo esperando por mim?", "este motor está pronto?", e as preferências. O
+// escopo fica na cara: "Neste Mac" vale para a máquina, "No projeto" para o
+// projeto escolhido no rail.
 //
-// ADR-268 acrescentou duas regras. A árvore segue as perguntas de quem usa, não
-// as camadas do código: primeiro "tem algo esperando por mim?" (Precisa de
-// você), depois "este motor está pronto?" (uma página por motor), por último
-// as preferências. E o escopo fica na cara: a zona "Neste Mac" vale para a
-// máquina inteira, a zona "No projeto" vale para o projeto escolhido no rail.
-//
-// Id órfão (seção que sumiu/renomeou) NUNCA vira tela branca: `resolveSection`
-// traduz pelo mapa de legado ou cai na primeira seção válida — mesma
-// disciplina do migrate de viewMode (ADR-035).
+// Id órfão nunca vira tela branca: `resolveSection` traduz pelo legado ou cai
+// na primeira seção válida (ADR-035).
 
 import {
   Bell,
@@ -104,13 +97,10 @@ export interface SettingsSection {
    *  "Missões (beta)" carregava o estado dentro do texto, e aí ele não podia
    *  ser estilizado nem lido como estado. */
   badge?: string
-  /** O que o usuário pode DIGITAR pra chegar aqui — nomes concretos do que a
-   *  seção contém, não sinônimos do título.
-   *
-   *  Obrigatório de propósito: é o que transforma a regra editorial "cada seção
-   *  responde UMA pergunta" em algo verificável. Seção que não consegue listar
-   *  o que tem dentro é seção que virou depósito, e foi assim que "CLIs
-   *  instaladas" acumulou medidor, hooks e curador de modelos. */
+  /** O que você pode DIGITAR para chegar aqui: nomes concretos do conteúdo, não
+   *  sinônimos do título. Obrigatório porque é o que torna verificável "cada
+   *  seção responde uma pergunta": seção que não lista o que tem virou
+   *  depósito. */
   busca: string[]
 }
 
@@ -415,12 +405,9 @@ export function zonaDaSecao(id: SectionId): Zona {
   return SETTINGS_GROUPS.find((g) => g.id === group)?.zona ?? "mac"
 }
 
-/** As seções que ESTE BUILD tem, já filtradas por capability.
- *
- *  Mora aqui e não no dialog porque existem DOIS consumidores — o rail e a
- *  paleta ⌘K — e a regra tem que ser a mesma nos dois. Seção escondida no
- *  rail e alcançável pela paleta seria um destino fantasma. As páginas de
- *  motor já nascem filtradas pelo registry (`motoresDaMaquina`). */
+/** As seções que este build tem, filtradas por capability. Aqui porque o rail
+ *  e a paleta ⌘K precisam da mesma regra: escondida num e alcançável no outro
+ *  seria destino fantasma. */
 export function secoesDisponiveis(): SectionId[] {
   return SETTINGS_SECTIONS.map((s) => s.id)
 }

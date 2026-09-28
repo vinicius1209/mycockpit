@@ -165,11 +165,10 @@ function terminalIncidentAt(
   }
 }
 
-/** Continuação de prosa: o corte entre `prev` e `next` foi ARTIFICIAL — o modelo
- *  interrompeu a narração (às vezes no meio da palavra) pra chamar uma tool e
- *  retomou depois. Curamos SÓ esses; frase fechada ou parágrafo/sentença nova
- *  seguem separados (é o ritmo natural, não um corte). Como o modelo parte o
- *  fluxo de caracteres cru, concatenar direto restaura o texto original. */
+/** Continuação de prosa: o modelo cortou a narração (às vezes no meio da
+ *  palavra) para chamar uma tool e retomou. Só esses cortes artificiais se
+ *  curam, concatenando o texto cru; frase fechada ou parágrafo novo seguem
+ *  separados. */
 export function continuesProse(prev: string, next: string): boolean {
   const p = prev.replace(/\s+$/u, "")
   const n = next.replace(/^\s+/u, "")
@@ -197,22 +196,11 @@ export interface Restart {
   readonly planShownInTurn: boolean
 }
 
-/** Tools filhos indexados por `parentToolId`.
- *
- *  O stream do Claude entrega tools dos subagentes separadas, mas com
- *  `parentToolId`. Reunir os descendentes antes da dobra faz o nó raiz viajar
- *  com todo o galho, sem os filhos reaparecerem como bursts soltos.
- *
- *  Fica FORA do fold porque é a única dependência dele que olha para FRENTE no
- *  fio (um filho nasce depois do pai, e envelhece o nó do pai): a reconstrução
- *  incremental precisa tratá-la à parte.
- *
- *  Filho ÓRFÃO (aponta pra um `toolId` que não está no fio: histórico cortado,
- *  provider que reporta `tool_use_id` de um bloco que o adapter não emitiu)
- *  fica FORA do mapa de propósito. O fold pula o filho porque o pai vai
- *  desenhá-lo; sem pai, pular significaria sumir com uma ação que aconteceu.
- *  Fora do mapa ele vira raiz, na mesma regra do `buildToolForest`
- *  (fail-open no render).
+/** Tools filhos indexados por `parentToolId`: o nó raiz viaja com o galho
+ *  inteiro, sem os filhos reaparecerem soltos. Fica fora do fold porque é a
+ *  única dependência que olha para frente no fio. Filho órfão (pai fora do
+ *  fio) fica fora do mapa e vira raiz: pular sumiria com uma ação que
+ *  aconteceu (fail-open, como `buildToolForest`).
  *  @internal */
 export function childrenByParentOf(items: ChatItem[]): Map<string, ToolItem[]> {
   const known = new Set<string>()
@@ -406,27 +394,14 @@ function sameNode(prev: Node, next: Node): boolean {
   }
 }
 
-/** Reaproveita a IDENTIDADE dos nós que NÃO mudaram entre dois `buildNodes`.
- *
- *  `buildNodes` é puro e reconstrói tudo; sem isto, um único `text_delta` (que
- *  altera UMA bolha) devolve 394 nós inéditos e a árvore inteira perde a
- *  memoização por identidade de prop — o `memo` de `ToolLine` e o `useMemo` de
- *  `buildToolForest` viravam decoração. Aqui o nó assentado volta com a MESMA
- *  referência do frame anterior, e mesmo o nó que mudou (a bolha viva, cujo
- *  texto cresceu) reaproveita o ARRAY de tools quando as tools não mudaram — é
- *  esse array que alimenta o `ToolGroup`.
- *
- *  Puro em relação a `next`: só troca membros do array por objetos de `prev`
- *  idênticos em conteúdo. `next` é recém-construído por `buildNodes`, então
- *  ajustar `tools` nele não vaza para ninguém.
- *
- *  `from` é o 1º nó que a reconstrução incremental REFEZ (ver `nodesMemo.ts`):
- *  abaixo dele `next[i]` já É o objeto de `prev[i]`, não há o que reaproveitar.
- *  Restringir também o índice por chave é seguro porque as keys são monótonas
- *  no índice do item (invariante do fold): um nó refeito nasce de um item em
- *  `restart.item` ou depois, e os nós de `prev` abaixo de `from` cobrem só
- *  itens ANTES desse ponto — que é justamente o prefixo idêntico dos dois fios.
- *  Logo a contraparte de um nó refeito, se existir, está em `prev[from..]`. */
+/** Reaproveita a identidade dos nós que não mudaram entre dois `buildNodes`:
+ *  sem isto, um `text_delta` devolve centenas de nós novos e a memoização por
+ *  prop (`ToolLine`, `buildToolForest`) vira decoração. O nó que mudou ainda
+ *  reaproveita o array de tools quando elas não mudaram.
+ *  Puro em relação a `next` (recém-construído). `from` é o 1º nó refeito pela
+ *  reconstrução incremental (`nodesMemo.ts`): abaixo dele já é o objeto de
+ *  `prev`, e como as keys são monótonas no índice, a contraparte de um nó
+ *  refeito só pode estar em `prev[from..]`. */
 export function reuseNodes(prev: Node[], next: Node[], from = 0): Node[] {
   if (!prev.length || from >= next.length) return next
   const byKey = new Map<string, Node>()

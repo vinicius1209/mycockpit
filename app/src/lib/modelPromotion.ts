@@ -1,32 +1,16 @@
-// M3 do docs/model-autonomy-plan.md — O PORTÃO VIRA AVISO.
+// A regra de promoção de modelo (docs/model-autonomy-plan.md, M3), pura: dado o
+// que o CLI lista, o que a fumaça carimbou e o que o app sabe cobrar, diz se o
+// candidato entra sozinho no seletor, fica pendente ou é reprovado, sempre com
+// o motivo escrito.
 //
-// Este arquivo é a REGRA, pura e sem I/O: dado o que o CLI lista (M1), o que a
-// fumaça carimbou (M2) e o que o app sabe cobrar (pricing.rs), ele diz se um
-// candidato entra sozinho no seletor, fica pendente ou é reprovado — e, em
-// qualquer caso, COM O MOTIVO ESCRITO.
+// Três pernas: o CLI lista o slug (existe hoje), a fumaça deu `ok` (funciona
+// com a SUA autenticação) e há preço (o turno não sai sem custo). Passou nas
+// três, entra. `unverified` e `unreachable` são "não sei": deixam pendente,
+// nunca reprovam; só veredito reprova. Por isso o claude-code, que não lista
+// modelos, não perde candidatos.
 //
-// As três pernas, e por que são três:
-//   1. o CLI LISTA o slug        → ele existe no motor, hoje, nesta versão
-//   2. a FUMAÇA deu `ok`         → ele funciona com a SUA autenticação
-//   3. o app sabe o PREÇO        → o turno com ele não sai sem custo
-// Passou nas três, entra sozinho. Falhou em qualquer uma, não entra e vira item
-// pro humano com o motivo ("o CLI não conhece este slug", "a sua autenticação
-// não o alcança", "sem preço"), que é infinitamente mais útil que um par
-// aprovar/dispensar às cegas.
-//
-// A ASSIMETRIA que sustenta a honestidade: `unverified` (não há lista viva) e
-// `unreachable` (a fumaça não concluiu) são "NÃO SEI". Não promovem e não
-// rebaixam: o candidato fica PENDENTE, nunca descartado. Só um veredito de
-// verdade reprova. É por isso que o claude-code, que não sabe listar modelos
-// (M1), não perde nada: os candidatos dele seguem no gate humano de sempre, em
-// vez de serem reprovados por uma pergunta que ninguém pôde fazer.
-//
-// GUARDA DO §5 DO PLANO, mecânica e aqui: promover é ADICIONAR UMA OPÇÃO. Nada
-// neste arquivo escreve default de agent, de projeto ou de conversa — entrar
-// como opção é reversível, trocar o motor das suas tarefas não é.
-//
-// Agnosticismo: nenhuma comparação por nome de motor. Tudo o que este módulo
-// sabe sobre um agent vem do registry (`lib/agents`) e das duas réguas de M1/M2.
+// Promover é ADICIONAR uma opção: nada aqui escreve default de agent, projeto
+// ou conversa. Tudo sobre um agent vem do registry, nunca do nome.
 
 import type { ModelProposal, ModelRetirement } from "@/lib/modelLedger"
 import { agentDef } from "@/lib/agents"
@@ -201,16 +185,10 @@ export function promotionCall(input: PromotionInput): PromotionCall {
 // Quem vai pra fumaça (a peça que gasta dinheiro)
 // ---------------------------------------------------------------------------
 
-/** Candidatos que MERECEM uma fumaça nesta rodada, na ordem recebida e no teto.
- *
- *  A fumaça é a única coisa que gasta quota de propósito, então:
- *  - candidato com veredito CARIMBADO não é re-testado (ele já respondeu);
- *  - a exceção é a VERSÃO DO CLI ter mudado desde o carimbo: aí o veredito é
- *    sobre outro binário e vale perguntar de novo;
- *  - `unreachable` não é veredito, então ele volta pra fila (a pergunta segue
- *    sem resposta);
- *  - `cliVersion` nulo (motor sem lista viva, nada com que comparar) NÃO
- *    re-testa: na dúvida, não gastar. */
+/** Candidatos que merecem fumaça nesta rodada, na ordem e no teto. A fumaça
+ *  gasta quota, então veredito carimbado não é re-testado, salvo se a versão
+ *  do CLI mudou; `unreachable` volta para a fila; `cliVersion` nulo não
+ *  re-testa (na dúvida, não gastar). */
 export function pickSmokeCandidates(
   values: string[],
   history: SmokeResult[],
@@ -234,7 +212,7 @@ export function pickSmokeCandidates(
 }
 
 // ---------------------------------------------------------------------------
-// Aposentadoria explicada (o achado do M2 que o plano não previa)
+// Aposentadoria explicada
 // ---------------------------------------------------------------------------
 
 /** Onde um modelo está ESCOLHIDO hoje. `where` é a frase pronta ("conversa
@@ -259,31 +237,15 @@ export interface RetirementNotice {
   usedIn: string[]
 }
 
-/** Modelos que o CLI ANUNCIA como aposentados e que importam pra você: os que
- *  estão no seu seletor ou escolhidos em algum lugar.
- *
- *  A guarda do plano ("nada some do seletor sem aviso") não precisa de
- *  heurística aqui: o motivo vem escrito pelo fornecedor no `retirementNote`,
- *  e o sucessor também. O que este módulo acrescenta é a parte que só o app
- *  sabe: que VOCÊ está usando aquele modelo, e onde.
- *
- *  Slug aposentado que não está no seu seletor nem escolhido em lugar nenhum
- *  não vira aviso: nunca foi seu, não há o que explicar.
- *
- *  DOIS jeitos de um modelo sair de cena, e os dois passam por aqui:
- *
- *   1. **anunciado** — o CLI diz `upgrade: <sucessor>` e ainda oferece o slug.
- *      Ele CONTINUA no seletor, só ganha a frase: tirar um modelo que funciona
- *      por causa de um aviso quebraria a conversa de quem está com ele.
- *   2. **sumido** — o slug não está mais na lista, sem anúncio nenhum. É o
- *      caso que faltava, e ele é pior justamente por ser mudo: em 09/09/2026 o
- *      seletor ainda oferecia `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.6` e
- *      `gpt-realtime-2.1`, que o `model/list` do codex já não conhecia. Aqui
- *      ele vira aviso; quem decide não oferecer mais é `agentModels`, contra a
- *      lista viva, e nunca este módulo.
- *
- *  `listing` nulo é "não deu pra perguntar" e não gera aviso nenhum: a mesma
- *  assimetria do resto do M3, onde só veredito rebaixa. */
+/** Modelos aposentados que importam para você: os que estão no seu seletor ou
+ *  escolhidos em algum lugar (os outros nunca foram seus). Dois jeitos de sair
+ *  de cena:
+ *   1. **anunciado**: o CLI diz `upgrade: <sucessor>` e ainda oferece o slug.
+ *      Continua no seletor, com a frase: tirar um modelo que funciona
+ *      quebraria a conversa de quem está nele.
+ *   2. **sumido**: o slug saiu da lista sem anúncio, e é pior por ser mudo.
+ *      Aqui vira aviso; quem deixa de oferecer é `agentModels`.
+ *  `listing` nulo é "não deu para perguntar" e não gera aviso. */
 export function retirementNotices(
   listing: ModelListing | null,
   /** Os values que o seletor daquele agent oferece hoje. */
@@ -388,12 +350,8 @@ export interface ModelNewsItem {
   detail: string
 }
 
-/** O que o sino conta sobre modelos: o ledger de decisões + as aposentadorias
- *  anunciadas pelo fornecedor.
- *
- *  Hierarquia (a mesma do resto do sino: o que mexe com você primeiro):
- *  aposentadoria → reprovado → novidade. E NADA daqui conta no badge: ver
- *  `blockingToolCount` em lib/toolHealth. */
+/** O que o sino conta sobre modelos, na ordem aposentadoria → reprovado →
+ *  novidade. Nada daqui conta no badge (`blockingToolCount`). */
 export function modelNews(
   rows: readonly ModelProposal[],
   retirements: readonly ModelRetirement[],

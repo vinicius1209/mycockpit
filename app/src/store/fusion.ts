@@ -99,13 +99,9 @@ export interface LeagueConfig {
   candidates: AgentRunConfig[]
 }
 
-/** Liga default do botão "Disputar": o agent EFETIVO + o complementar
- *  DERIVADO do registry (G1.3 do capability-registry-plan): o primeiro OUTRO
- *  motor disponível com capacidade de disputa (`disputes`) — nunca um par fixo
- *  de fornecedores. Com os dois disputantes de hoje instalados o resultado é o
- *  de sempre (claude↔codex); um motor novo com a capability entra sozinho.
- *  Read-only, juiz sonnet. Política de orquestração, fica ao lado de `launch`
- *  p/ todo caller herdar a mesma default. */
+/** Default do "Disputar": o agent efetivo e o primeiro OUTRO motor disponível
+ *  com a capability `disputes` (nunca um par fixo). Read-only, juiz sonnet.
+ *  Fica ao lado de `launch` para todo caller herdar a mesma política. */
 export function defaultLeague(run: AgentRunConfig): LeagueConfig {
   const complementary =
     LEAGUE_AGENTS.find((a) => a.disputes && a.id !== run.agent)?.id ??
@@ -317,10 +313,9 @@ export const useFusion = create<FusionState>((set, get) => {
 
   // T2.2, fan-out de N candidatos read-only em paralelo (concorrência limitada=3).
   launch: async (convId, cfg, prompt, attachments, projectPath, permission) => {
-    // UMA disputa por vez: relançar por cima de uma "deciding" criava zumbi
-    // (pending=1 órfão no DB que o restorePending ressuscitava do nada). Em
-    // voo → ignora o pedido; esperando decisão → descarta a antiga (marca
-    // resolvida no disco) antes de abrir a nova.
+    // Uma disputa por vez: em voo, ignora; esperando decisão, resolve a antiga
+    // no disco antes de abrir a nova (senão o restorePending ressuscitaria um
+    // zumbi).
     const existing = get().byConv[convId]
     if (existing) {
       if (
@@ -364,11 +359,9 @@ export const useFusion = create<FusionState>((set, get) => {
       const block = blocoDaDoutrina(await readDoctrine(projectPath))
       if (block) doctrinePrefix = `${block}\n\n`
     }
-    // G2.1 — `/comando` no campo da disputa expande POR CANDIDATO: cada lane
-    // pode rodar num motor diferente, e o inventário/semântica de expansão é
-    // do agent EFETIVO da lane (registry decide quem tem native_slash). Com
-    // preâmbulo/doutrina o pedido vai EMBUTIDO no prompt — aí nem o comando
-    // nativo pode viajar cru. Fail-open: sem match, o texto segue.
+    // `/comando` expande por candidato: cada lane pode ser outro motor, e a
+    // expansão é do agent dela. Com preâmbulo ou doutrina, o pedido vai
+    // embutido e nem comando nativo viaja cru. Sem match, segue texto.
     const embedded = preamblePrefix !== "" || doctrinePrefix !== ""
     const promptFor = (agent: string) =>
       expandPrefixedDraft(prompt, projectPath, agent, embedded, `${doctrinePrefix}${preamblePrefix}`)
@@ -424,9 +417,8 @@ export const useFusion = create<FusionState>((set, get) => {
     await get().runJudgePhase(convId)
   },
 
-  // Stop de verdade no Fusion (achado 3 do aval): cancela cada candidato em voo
-  // via cancel_agent, zera o spinner da conversa e descarta o board. O juiz
-  // one-shot não é cancelável; o guard do launch impede que ele sequer comece.
+  // Stop: cancela cada candidato em voo, zera o spinner e descarta o board. O
+  // juiz one-shot não é cancelável; o guard do launch impede que comece.
   abort: (convId) => {
     const f = get().byConv[convId]
     if (!f || (f.phase !== "running" && f.phase !== "judging")) return
@@ -448,8 +440,7 @@ export const useFusion = create<FusionState>((set, get) => {
     const cwd = f.candidates[0]?.cwd ?? ""
     const cands = get().byConv[convId]?.candidates ?? []
     const { judge, cost } = await runJudge(f.prompt, f.judgeModel, cwd, cands)
-    // custo ÚNICO da disputa: candidatos + juiz (antes eram dois totais parciais,
-    // liveCostOf só lanes e costTotal só juiz, e nenhum era o gasto real).
+    // Custo único da disputa: candidatos e juiz.
     const candCost = cands.reduce((s, c) => s + (c.costUsd ?? 0), 0)
     patchConv(convId, (cur) => ({
       phase: "deciding",
@@ -460,8 +451,7 @@ export const useFusion = create<FusionState>((set, get) => {
     // Caso 2: persiste a disputa pendente (sobrevive ao restart até você decidir).
     const pending = get().byConv[convId]
     if (pending && pending.phase === "deciding") {
-      // disputa concluída → some o spinner/Stop da conversa (agora espera SUA decisão,
-      // não um processo). beginFusion marcou running=true; aqui zera.
+      // Disputa concluída espera a SUA decisão, não um processo: zera o running.
       useChat.getState().finish(convId)
       void saveFusionRun(pending.id, convId, pending, true)
       void useChat.getState().persist(convId) // garante o prompt do usuário no DB

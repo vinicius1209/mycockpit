@@ -1,6 +1,5 @@
-// Composer Lexical da conversa — desde o cutover, o ÚNICO composer do console.
-// Entrega Enter=envia/corrige, Tab=fila, Shift+Enter=quebra linha, menções "@",
-// comandos "/" e histórico ↑/↓.
+// O composer da conversa: Enter envia ou corrige, Tab enfileira, Shift+Enter
+// quebra linha, "@" menciona, "/" comanda, ↑/↓ percorre o histórico.
 
 import { virouPilula } from "@/components/chat/colagemGrande"
 import { useEffect, useMemo, useRef } from "react"
@@ -65,17 +64,13 @@ import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
 import { cn } from "@/lib/utils"
 import { ComposerSubmitKeys } from "@/components/chat/composerSubmitKeys"
 
-// Tema da menção: chip brass no tema do app. As chaves casam o trigger (`@`);
-// `Focused` aplica o estado selecionado do pill.
-// Pontuação do matcher do "@" (FASE 3): o default da lib trata `.` `/` `_`
-// como fim de token, o que cortaria a busca de caminho no primeiro separador
-// (`@src/` pararia a query em "src"). Tira só esses três do conjunto — o resto
-// segue delimitando, e o token do textarea (\S*) já aceitava os três.
+// Tema da menção: chip brass; `Focused` é o pill selecionado.
+// O matcher do "@" não termina token em `.` `/` `_`: `@src/lib` é um caminho
+// só, e o default da lib cortaria a busca no primeiro separador.
 const AT_PUNCTUATION = ",\\*\\?\\$\\|#{}\\(\\)\\^\\[\\]\\\\!%'\"~=<>:;"
 
-// Node de menção com o NOSSO componente (pattern da lib): substitui o
-// BeautifulMentionNode via node replacement — o $createBeautifulMentionNode
-// (inclusive o do lexicalDraft) passa a instanciar esta classe.
+// O node de menção usa o NOSSO componente (node replacement da lib): todo
+// $createBeautifulMentionNode passa a instanciar esta classe.
 const [ComposerMentionNode, composerMentionReplacement] =
   createBeautifulMentionNode(ComposerMentionComponent)
 
@@ -88,9 +83,8 @@ function $hasLeadingSlashPill(): boolean {
   return $isBeautifulMentionNode(child) && child.getTrigger() === SLASH_TRIGGER
 }
 
-/** Ponte do menu "/" de comandos: a LÓGICA (lista, filtro, inserção) mora no
- *  useSlashCommands do CommandConsole e o menu é o MESMO SlashPopover do
- *  textarea — aqui só chegam os gestos do teclado. */
+/** Ponte do menu "/": lista, filtro e inserção moram no useSlashCommands;
+ *  aqui só chegam os gestos do teclado. */
 export type SlashMenuBridge = {
   /** Popover visível (showSlash) → as teclas navegam o menu, não o texto. */
   active: boolean
@@ -112,10 +106,9 @@ export type HistoryBridge = {
   recallNext: () => void
 }
 
-/** Teclas do menu "/" — prioridade CRITICAL de propósito: com o popover aberto
- *  elas vencem o Enter-envia (HIGH) e a navegação normal do editor. Quando o
- *  menu está fechado, tudo devolve false e o fluxo segue intacto. As props
- *  entram por ref pra não re-registrar comandos a cada render do console. */
+/** Teclas do menu "/" em prioridade CRITICAL: com o popover aberto elas vencem
+ *  o Enter-envia (HIGH); fechado, tudo devolve false. Props por ref para não
+ *  re-registrar comandos a cada render. */
 function SlashMenuKeysPlugin({ slash }: { slash?: SlashMenuBridge }) {
   const [editor] = useLexicalComposerContext()
   const slashRef = useRef(slash)
@@ -176,22 +169,12 @@ function $isAtComposerStart(node: LexicalNode): boolean {
   return parent.getPreviousSibling() === null && $isRootNode(parent.getParent())
 }
 
-/** Pill de comando "/" — as duas transforms que mantêm o editor honesto:
- *
- *  1. CONVERSÃO no gatilho (TextNode): o texto na posição-início que vira
- *     "/nome<espaço>…" com match EXATO no inventário troca o prefixo pelo pill
- *     atômico (mesma conversão-no-espaço das menções). Cobre digitação manual,
- *     paste e o inventário que chega DEPOIS do draft (re-registrar a transform
- *     marca os nós como dirty e ela revarre o conteúdo existente). Sem match,
- *     texto segue texto (fail-open). Só a posição-início converte — "/" no
- *     meio nunca vira pill (a gramática é comando único no começo).
- *
- *  2. DEMOÇÃO (node do pill): pill que deixou de estar no início (usuário
- *     digitou/colou texto antes dele) volta a ser texto literal `/nome` —
- *     pill fora do início seria teatro: o pipeline trataria como texto.
- *
- *  As duas são mutuamente exclusivas (conversão exige início, demoção exige
- *  não-início), então não há loop. */
+/** Pill de comando "/": duas transforms, mutuamente exclusivas (sem loop).
+ *  1. Conversão: "/nome<espaço>" NO INÍCIO com match exato no inventário vira
+ *     pill atômico; sem match, fica texto. Re-registrar a transform revarre o
+ *     conteúdo, então inventário que chega depois do draft também converte.
+ *  2. Demoção: pill que deixou de estar no início volta a ser `/nome` literal,
+ *     porque o pipeline só trata como comando o que está no começo. */
 function SlashPillPlugin({
   commands,
 }: {
@@ -200,9 +183,8 @@ function SlashPillPlugin({
   const [editor] = useLexicalComposerContext()
   const commandsRef = useRef(commands)
   commandsRef.current = commands
-  // re-registra quando o INVENTÁRIO muda (nomes): registerNodeTransform marca
-  // os TextNodes como dirty, então um draft "/nome " restaurado antes do
-  // inventário carregar materializa o pill assim que os comandos chegam.
+  // Re-registra quando os nomes do inventário mudam: a transform revarre, e
+  // um "/nome " restaurado antes do inventário vira pill quando ele chega.
   const namesKey = (commands ?? []).map((c) => c.name).join("\n")
   useEffect(() => {
     return editor.registerNodeTransform(TextNode, (node) => {
@@ -216,8 +198,7 @@ function SlashPillPlugin({
       if (!match) return
       const cmd = cmds.find((c) => c.name === match.name)
       if (!cmd) return
-      // caret ANTES da mutação: se estava neste nó, remapeia pro texto restante
-      // (o prefixo "/nome" sai do nó de texto e vira o pill).
+      // Caret antes da mutação: se estava neste nó, vai para o texto restante.
       const selection = $getSelection()
       const oldOffset =
         $isRangeSelection(selection) &&
@@ -239,9 +220,8 @@ function SlashPillPlugin({
         node.select(off, off)
       }
     })
-    // namesKey de propósito nas deps (e commands via ref): é a MUDANÇA do
-    // inventário que justifica revarrer; o objeto commands muda de identidade
-    // a cada render do console.
+    // namesKey nas deps (e commands por ref): o objeto muda de identidade a
+    // cada render; o que justifica revarrer é mudar o inventário.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, namesKey])
   useEffect(() => {
@@ -254,11 +234,9 @@ function SlashPillPlugin({
   return null
 }
 
-/** Sinal de presença do pill "/" pro dono (CommandConsole): com pill presente
- *  o popover de comandos não reabre (a mensagem já TEM o seu comando — a
- *  gramática é um por envio). Vai por update listener, não pelo OnChange: a
- *  conversão texto→pill não muda o texto serializado, então o OnChange (que
- *  deduplica por texto) não veria a transição. */
+/** Avisa o dono se há pill "/" (com ele, o popover não reabre). Por update
+ *  listener porque a conversão texto→pill não muda o texto serializado, e o
+ *  OnChange deduplica por texto. */
 function SlashPillPresencePlugin({
   onPresence,
 }: {
@@ -279,10 +257,9 @@ function SlashPillPresencePlugin({
   return null
 }
 
-/** Texto antes/depois do caret (selection colapsada), pra decisão de borda do
- *  histórico. O conteúdo normal é UM parágrafo com LineBreakNode por "\n"
- *  (contrato do $setDraft), então basta varrer os irmãos do nó do anchor; se um
- *  paste criou mais parágrafos, os vizinhos contam como "\n" do lado deles. */
+/** Texto antes e depois do caret, para a borda do histórico. O conteúdo é um
+ *  parágrafo com LineBreakNode por "\n" (contrato do $setDraft); parágrafos
+ *  extras de um paste contam como "\n". */
 function $textAroundCaret(): { before: string; after: string } | null {
   const selection = $getSelection()
   if (!$isRangeSelection(selection) || !selection.isCollapsed()) return null
@@ -320,11 +297,9 @@ function $textAroundCaret(): { before: string; after: string } | null {
   return { before, after }
 }
 
-/** Histórico ↑/↓ estilo shell: recall SÓ nas bordas (↑ com o caret na 1ª
- *  linha, ↓ na última) pra não atrapalhar a navegação normal de multi-linha —
- *  a decisão é a `historyRecallIntent` pura do usePromptHistory. Prioridade
- *  HIGH: perde pro menu "/" (CRITICAL) e cede a vez ao menu de menção aberto
- *  (guarda explícita, as setas dele navegam o menu). */
+/** Histórico ↑/↓: só nas bordas (↑ na 1ª linha, ↓ na última), para não roubar
+ *  a navegação multilinha (`historyRecallIntent`). Prioridade HIGH: perde para
+ *  o menu "/" e cede ao menu de menção aberto. */
 function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
   const [editor] = useLexicalComposerContext()
   const historyRef = useRef(history)
@@ -368,16 +343,10 @@ function HistoryRecallPlugin({ history }: { history?: HistoryBridge }) {
   return null
 }
 
-/** Paste do console. Duas responsabilidades, um só handler:
- *  1. TEXTO PURO SEMPRE — o composer serializa pra string, então formatação
- *     (negrito/itálico que vêm no `text/html` de um copy rico) NÃO tem lugar
- *     aqui. O default do RichText importaria o HTML e o `bold` "grudaria" no
- *     cursor (todo texto novo sairia negrito). Colamos só o `text/plain` e
- *     zeramos o formato da seleção antes, então nada de formatação entra.
- *  2. Anexo — clipboard com File anexável (imagem/PDF, filtro compartilhado
- *     `collectPaste`) roteia pro fluxo de anexos do console (addFiles →
- *     chip); o texto que veio JUNTO entra no caret. Sem handler de arquivo
- *     (fora do Tauri / sem conversa), o texto ainda cola puro. */
+/** Paste: sempre texto puro (o composer serializa para string, e o HTML de um
+ *  copy rico deixaria o negrito grudado no cursor). Arquivo anexável no
+ *  clipboard vai para os anexos (`collectPaste`), e o texto que veio junto
+ *  entra no caret. */
 function PasteAttachmentsPlugin({
   onPasteFiles,
 }: {
@@ -392,8 +361,8 @@ function PasteAttachmentsPlugin({
       (event) => {
         if (!(event instanceof ClipboardEvent) || !event.clipboardData)
           return false
-        // captura SÍNCRONA antes de qualquer await (F21). O texto já vem
-        // filtrado: o endereço `blob:` do recurso que virou anexo não é prompt.
+        // Captura síncrona antes de qualquer await (F21). O endereço `blob:` do
+        // recurso que virou anexo já vem filtrado.
         const { files, text } = collectPaste(event.clipboardData)
         // nada aproveitável (nem texto, nem arquivo) → deixa o pipeline seguir.
         if (files.length === 0 && !text) return false
@@ -402,8 +371,7 @@ function PasteAttachmentsPlugin({
         if (text) {
           const selection = $getSelection()
           if ($isRangeSelection(selection)) {
-            // zera negrito/itálico eventualmente grudado na seleção antes de
-            // inserir — o texto colado sai sempre limpo.
+            // Zera a formatação da seleção antes de inserir.
             selection.format = 0
             // "\n" vira LineBreakNode no MESMO parágrafo (contrato do draft).
             text.split("\n").forEach((line, i) => {
@@ -421,9 +389,7 @@ function PasteAttachmentsPlugin({
   return null
 }
 
-/** O composer é TEXTO PURO — não há negrito/itálico/sublinhado. Engole o
- *  FORMAT_TEXT_COMMAND (⌘B/⌘I/⌘U) em prioridade ALTA pra vencer o RichText, então
- *  nem atalho de teclado consegue introduzir formatação (que o paste já barra). */
+/** Texto puro: engole ⌘B/⌘I/⌘U em prioridade alta para vencer o RichText. */
 function PlainTextGuardPlugin() {
   const [editor] = useLexicalComposerContext()
   useEffect(() => {
@@ -436,11 +402,10 @@ function PlainTextGuardPlugin() {
   return null
 }
 
-/** Mantém o editor espelhando o draft externo. `lastText` guarda o último
- *  texto que SAIU do editor (via OnChange) — se o valor externo divergir, foi
- *  mudança de fora (troca de conversa, sugestão, limpeza pós-envio) e o
- *  conteúdo é reconstruído, com o histórico de undo zerado (senão o ⌘Z traria
- *  de volta o texto de OUTRA conversa). */
+/** Espelha o draft externo. `lastText` é o último texto que saiu do editor:
+ *  valor diferente veio de fora (troca de conversa, sugestão, limpeza pós-
+ *  envio) e reconstrói o conteúdo com o undo zerado, senão o ⌘Z traria texto
+ *  de outra conversa. */
 function DraftSyncPlugin({
   value,
   mentionNames,
@@ -459,10 +424,8 @@ function DraftSyncPlugin({
     editor.update(
       () => {
         $setDraft(value, mentionNames, slashCommands)
-        // Reconstrução com o editor FOCADO (recall ↑/↓, escolha de "/",
-        // sugestão): caret vai pro fim, como o setSelectionRange(len, len) do
-        // textarea. Sem foco, não mexe na seleção (não roubar o foco de quem
-        // só trocou de conversa).
+        // Focado (recall, "/", sugestão): caret no fim. Sem foco, não mexe na
+        // seleção, para não roubar o foco de quem só trocou de conversa.
         const rootEl = editor.getRootElement()
         if (rootEl && rootEl.contains(document.activeElement)) {
           $getRoot().selectEnd()
@@ -471,11 +434,8 @@ function DraftSyncPlugin({
       { discrete: true },
     )
     editor.dispatchCommand(CLEAR_HISTORY_COMMAND, undefined)
-    // mentionNames e slashCommands de propósito FORA das deps: as listas só
-    // importam na hora de reconstruir; mudar uma lista sozinha não deve
-    // reescrever o que o usuário está digitando. (O inventário "/" que chega
-    // depois do draft é coberto pela transform do SlashPillPlugin, que revarre
-    // no re-registro.)
+    // As listas ficam fora das deps: só importam ao reconstruir, e mudar uma
+    // lista não pode reescrever o que você está digitando.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor, value, lastText])
   return null
@@ -564,10 +524,9 @@ export function LexicalComposer({
     () => [...new Set([...(mentionPersisted ?? []), ...(mentionTouched ?? [])])],
     [mentionPersisted, mentionTouched],
   )
-  // Nomes por CONTEÚDO: o dono recria a lista a cada render, e ele re-renderiza
-  // por delta de texto. Por identidade, `onSearch` mudava, a lib zerava os
-  // resultados num efeito e cada delta ganhava um commit extra; no 51º o React
-  // desistia (#185) e congelava o canal do run (ADR-190).
+  // Nomes por CONTEÚDO: por identidade, cada delta de texto recriava
+  // `onSearch`, a lib zerava os resultados num efeito, e o commit extra por
+  // delta acabava estourando o limite de updates do React (ADR-190).
   const nomesChave = mentionNames.join("\n")
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nomes = useMemo(() => mentionNames, [nomesChave])
@@ -583,9 +542,8 @@ export function LexicalComposer({
   const initialConfig = {
     namespace: "ChatComposer",
     theme: { beautifulMentions: mentionsTheme },
-    // node custom + replacement (pattern da lib): o pill de comando "/" e o de
-    // menção "@" são a MESMA classe de node, renderizada pelo
-    // ComposerMentionComponent (que só muda o corpo do "/").
+    // Pill "/" e menção "@" são a mesma classe de node; o
+    // ComposerMentionComponent só muda o corpo do "/".
     nodes: [ComposerMentionNode, composerMentionReplacement],
     onError(error: Error) {
       // não engolir em silêncio, mas também não derrubar a conversa.
@@ -635,9 +593,8 @@ export function LexicalComposer({
           menuItemLimit={MAX_POPOVER_ITEMS}
           // …e query que atravessa `/` `.` `_` (caminhos de arquivo).
           punctuation={AT_PUNCTUATION}
-          // o menu mostra as DUAS listas canônicas (personas + arquivos), não
-          // pills soltos do editor — que entrariam sem `kind` e cairiam na
-          // seção errada (o textarea tampouco sugere o que já está no texto).
+          // O menu mostra as duas listas canônicas (personas e arquivos), não
+          // pills soltos do editor, que cairiam na seção errada sem `kind`.
           showCurrentMentionsAsSuggestions={false}
         />
         <OnChangePlugin

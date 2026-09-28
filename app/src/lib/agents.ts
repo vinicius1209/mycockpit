@@ -1,13 +1,7 @@
-// Registry ÚNICO dos agents (fonte de verdade da UI: ids, rótulos, modelos,
-// efforts, default e capacidade de anexo). Antes isto vivia espalhado em 5 lugares
-// (lib/agent.ts AGENT_LABELS, store/fusion.ts AGENT_LABEL, FusionArena AGENTS,
-// CommandConsole DESTINATIONS/MODELS/EFFORTS/DEFAULT_MODEL, attachments.ts AGENT_CAPS)
-// e divergia em silêncio. Os limites de tamanho/contagem de anexo continuam em
-// lib/attachments.ts (espelham o backend), aqui é só a IDENTIDADE do agent.
-//
-// As LISTAS CURADAS de modelo/effort e os remaps de valor legado moraram aqui
-// até o arquivo estourar a guarda de tamanho; hoje vivem em lib/curatedModels.ts
-// e são RE-EXPORTADAS daqui (quem já importava de "@/lib/agents" não mudou).
+// Registry ÚNICO dos agents: ids, rótulos, modelos, esforços, default e
+// capacidade de anexo. Os limites de anexo moram em lib/attachments.ts
+// (espelham o backend), e as listas curadas de modelo em lib/curatedModels.ts,
+// re-exportadas daqui.
 
 import type { Destination } from "@/lib/types"
 import {
@@ -46,9 +40,8 @@ export const AGENTS: AgentDef[] = [
     systemChannel: true,
     sessionResume: true,
     contextMcp: true,
-    // claude 2.1.266: não expõe sandbox de SO. Conviveu com o envelope da
-    // denylist sem colidir (fase 0). Se ganhar sandbox de bash no macOS, é
-    // ESTE valor que muda — uma linha, não um bug novo.
+    // claude 2.1.266: não expõe sandbox de SO. Se ganhar sandbox de bash no
+    // macOS, é este valor que muda.
     sandboxProprio: "nenhum",
     workMcp: true,
     workMcpGlobalEnv: false,
@@ -71,9 +64,8 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
     // real capturado 12/08/2026).
     usageWindow: "statusline",
-    // …mas a statusline NÃO roda em `-p` (empírico 12/08/2026) e o app roda
-    // tudo headless: quem sustenta o medidor do claude é a conta
-    // (GET /api/oauth/usage com o bearer do próprio CLI).
+    // …mas a statusline não roda em `-p`, e o app roda headless: o medidor do
+    // claude vem da conta (GET /api/oauth/usage com o bearer do CLI).
     usagePoll: "oauth",
     // claude 2.1.220: hooks maduros, payloads reais capturados 12/08/2026
     // (fixtures em hook_sessions.rs).
@@ -81,9 +73,8 @@ export const AGENTS: AgentDef[] = [
     // claude 2.1.220: PermissionRequest síncrono (docs 12/08/2026 + Xirp).
     hooksPermission: true,
     hookDialect: "claude-settings",
-    // claude 2.1.220: não há subcomando de modelos nem lista oficial em disco
-    // (`claude --help` verificado 14/08/2026). Sem fonte viva ⇒ null, e o
-    // catálogo models.dev segue mandando (§M1 do plano previu exatamente isso).
+    // claude 2.1.220: sem subcomando nem lista de modelos em disco. Sem fonte
+    // viva ⇒ null, e o catálogo models.dev manda.
     listsModels: null,
     // claude 2.1.220: `-p --output-format json` classifica sozinho (404 real
     // no slug inválido, contextWindow no sucesso — capturado 14/08/2026).
@@ -100,11 +91,8 @@ export const AGENTS: AgentDef[] = [
     caps: { image: true, pdf: false },
     models: CODEX_MODELS,
     efforts: CODEX_EFFORTS,
-    // "default" e não um pin: o Codex sabe qual é o modelo dele da vez, e
-    // pinar aqui é assinar um nome que envelhece — este campo dizia
-    // `gpt-5.6-sol` no dia em que o CLI já abria em `gpt-6-astra`. Quem quer um
-    // modelo fixo escolhe no seletor (e a escolha trava na conversa); quem não
-    // escolhe herda o default do CLI, que é o comportamento honesto.
+    // "default", não um pin: o Codex sabe o modelo dele da vez, e pinar é
+    // assinar um nome que envelhece. Quem quer modelo fixo escolhe no seletor.
     defaultModel: "default",
     // `codex exec` NÃO interpreta /prompt (a expansão é nossa, app-side) —
     // mas a convenção de descoberta ~/.codex/prompts existe e entra no "/".
@@ -116,10 +104,10 @@ export const AGENTS: AgentDef[] = [
     systemChannel: false,
     sessionResume: true,
     contextMcp: true,
-    // codex 0.153.2 (medido 10/09/2026): `-s read-only` barra escrita no cwd,
-    // fora dele, em `--add-dir`, pela via nativa `apply_patch`, por
-    // python3/perl/cp e por processo destacado. Mais apertado que a nossa
-    // denylist, então dispensar o envelope APERTA em vez de afrouxar.
+    // codex 0.153.2: `-s read-only` barra escrita no cwd, fora dele, em
+    // `--add-dir`, pelo `apply_patch`, por python3/perl/cp e por processo
+    // destacado. Mais apertado que a nossa denylist: dispensar o envelope
+    // aperta em vez de afrouxar.
     sandboxProprio: "sistemaOperacional",
     workMcp: true,
     workMcpGlobalEnv: false,
@@ -149,12 +137,9 @@ export const AGENTS: AgentDef[] = [
     // codex 0.146: mesmo protocolo (wire schema no binário).
     hooksPermission: true,
     hookDialect: "codex-hooks-json",
-    // codex 0.147: `model/list` no app-server read-only devolveu os 6 visíveis
-    // (+2 hidden) e marcou gpt-5.4/gpt-5.4-mini com `upgrade` — aposentadoria
-    // anunciada pelo próprio CLI (capturado 14/08/2026). Em 0.153.4 a mesma
-    // chamada trouxe 8 slugs com `gpt-6-astra` como default e a régua de
-    // esforço POR modelo (fixture em src-tauri/fixtures) — é esta lista, e não
-    // o bundle, que monta o seletor do Codex.
+    // codex 0.147+: `model/list` no app-server devolve os slugs visíveis e
+    // escondidos, com `upgrade` nos aposentados e a régua de esforço por
+    // modelo. É esta lista, não o bundle, que monta o seletor do Codex.
     listsModels: "codex-app-server",
     // codex 0.147: `exec --json` distingue "o CLI não conhece o slug" (aviso
     // de metadata) de recusa do servidor (capturado 14/08/2026).
@@ -334,27 +319,22 @@ export const LEAGUE_DESTINATIONS: Destination[] = DESTINATIONS.filter(
   (d) => d.available && d.kind === "agent",
 )
 
-/** O que a LISTA VIVA de um motor rendeu: os modelos que ele conhece agora e,
- *  quando o dialeto fala disso, os esforços que cada modelo aceita.
- *
- *  As duas metades andam JUNTAS de propósito. São derivadas da mesma resposta,
- *  e guardá-las em dois caches independentes é convidar o seletor a oferecer o
- *  esforço de um modelo que não está mais na lista do outro. */
+/** O que a lista viva de um motor rendeu: os modelos que ele conhece e, quando
+ *  o dialeto diz, os esforços de cada um. Juntos porque vêm da mesma resposta:
+ *  caches separados ofereceriam o esforço de um modelo que saiu da lista. */
 export interface LiveModels {
   models: AgentModelOption[]
   /** Esforços POR modelo. Slug ausente = o dialeto não fala de esforço para
    *  ele, e a régua estática do registry continua valendo. */
   efforts: Map<string, AgentModelOption[]>
-  /** TUDO que o CLI declarou conhecer, inclusive o que ele esconde do picker
-   *  dele. "Conhecer" é mais largo que "oferecer" de propósito: um slug
-   *  escondido funciona quando você o escolhe, e não pode ser tratado como
+  /** Tudo que o CLI conhece, inclusive o que ele esconde do picker: slug
+   *  escondido funciona quando escolhido e não pode ser tratado como
    *  inexistente. */
   known: Set<string>
 }
 
-// Cache module-level da lista VIVA (o que o CLI respondeu em runtime). Quando
-// presente pra um agent, ganha do registry estático em agentModels(). Setado só
-// em effects/handlers (boot do App, "Verificar agora"), nunca em render.
+// Cache da lista viva (o que o CLI respondeu). Presente, vence o registry
+// estático em agentModels(). Setado só em effects e handlers, nunca em render.
 const LIVE = new Map<string, LiveModels>()
 
 /** Registra (ou limpa, com `null`) a lista viva de um agent. */
@@ -363,15 +343,12 @@ export function setLiveModels(id: string, live: LiveModels | null) {
   else LIVE.set(id, live)
 }
 
-// (A DERIVAÇÃO mora em `lib/modelList.ts`: converter a lista viva de um CLI em
-// opções do picker é trabalho do módulo da lista viva, não do registry. A
-// dependência é só num sentido — registry → catálogo — e é por isso que aqui só
-// mora o cache, nunca o parse.)
+// A derivação da lista viva mora em `lib/modelList.ts`; aqui só o cache, e a
+// dependência vai num sentido só (registry → catálogo).
 
-// Cache module-level de modelos PROPOSTOS pelo curador e APROVADOS pelo humano
-// (model_proposals status='active'). Entram DEPOIS das opções estáticas/
-// dinâmicas, sem duplicar value. Mesmo padrão do DYNAMIC_MODELS: carregado no
-// boot (reloadActiveProposals) e recarregado após aprovar — só em effects/handlers.
+// Cache dos modelos que o curador propôs e você aprovou
+// (model_proposals status='active'). Entram depois das opções estáticas e
+// dinâmicas, sem duplicar value. Carregado no boot e após aprovar.
 const APPROVED_MODELS = new Map<string, AgentModelOption[]>()
 
 /** Registra (ou limpa, com []) os modelos aprovados do curador p/ um agent. */
@@ -414,15 +391,10 @@ export function dedupeModelOptions(options: AgentModelOption[]): AgentModelOptio
 export function agentModels(id: string): AgentModelOption[] {
   const live = LIVE.get(id)
   const aprovados = APPROVED_MODELS.get(id) ?? []
-  // Slug que a lista viva NÃO conhece deixa de ser oferecido, venha ele de onde
-  // vier. Foi assim que `gpt-5.6` e `gpt-realtime-2.1` (propostos pelo curador
-  // a partir do catálogo de API, aprovados no gate) ficaram meses no seletor
-  // sem o CLI aceitar nenhum dos dois: oferecer o que só produz "model … is not
-  // recognized" é teatro, não oferta.
-  //
-  // A decisão da pessoa NÃO é apagada: a linha segue no ledger com o motivo, e
-  // o aviso do sumiço sai por `retirementNotices`. Sem lista viva (motor sem
-  // fonte, ou sonda que falhou) nada é filtrado — "não sei" nunca rebaixa.
+  // Slug que a lista viva não conhece deixa de ser oferecido, venha de onde
+  // vier: oferecer o que só produz "model … is not recognized" é teatro. A
+  // decisão da pessoa não é apagada (fica no ledger, e `retirementNotices`
+  // avisa). Sem lista viva nada é filtrado: "não sei" nunca rebaixa.
   const ofertaveis = live
     ? aprovados.filter((o) => live.known.has(o.value))
     : aprovados
@@ -433,12 +405,8 @@ export function agentModels(id: string): AgentModelOption[] {
 }
 
 /** A régua de esforço, do modelo quando o CLI a declara e do registry quando
- *  não. O `model` é opcional porque nem toda superfície tem um escolhido (e
- *  "Padrão" não é modelo): sem ele, a régua é a do motor, como sempre foi.
- *
- *  Por que POR MODELO: em 09/09/2026 o mesmo codex aceitava `ultra` no
- *  gpt-6-astra e recusava acima de `xhigh` no gpt-5.5. Uma régua só por motor
- *  não podia estar certa nos dois, e o erro só aparecia quando o turno morria. */
+ *  não; sem `model`, a do motor. Por modelo porque o mesmo codex aceita
+ *  `ultra` num modelo e recusa acima de `xhigh` em outro. */
 export function agentEfforts(id: string, model?: string | null): AgentModelOption[] {
   const vivos = model ? LIVE.get(id)?.efforts.get(model) : undefined
   return vivos ?? agentDef(id)?.efforts ?? []
