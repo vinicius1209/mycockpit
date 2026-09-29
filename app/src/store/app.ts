@@ -271,7 +271,7 @@ export const useApp = create<AppState>()(
         }),
       setTheme: (themePreference) => {
         const theme = currentTheme(themePreference)
-        applyTheme(theme)
+        applyTheme(theme, themePreference)
         set({ theme, themePreference })
       },
       toggleTheme: () =>

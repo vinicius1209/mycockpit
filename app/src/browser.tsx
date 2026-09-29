@@ -1,4 +1,5 @@
 import { StrictMode } from "react"
+import { currentTheme, preferenciaPersistida, temaNativo } from "@/lib/theme"
 import { createRoot } from "react-dom/client"
 import { getCurrentWindow } from "@tauri-apps/api/window"
 import "@fontsource-variable/geist"
@@ -10,17 +11,16 @@ import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 
 instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 
-const dark = (() => {
+const preferencia = (() => {
   try {
-    const persisted = lerEstadoPersistido() as { state?: Record<string, unknown> } | null
-    return persisted?.state?.theme !== "light"
+    return preferenciaPersistida(lerEstadoPersistido() as { state?: Record<string, unknown> } | null)
   } catch {
-    return true
+    return "dark" as const
   }
 })()
-document.documentElement.classList.toggle("dark", dark)
+document.documentElement.classList.toggle("dark", currentTheme(preferencia) === "dark")
 void getCurrentWindow()
-  .setTheme(dark ? "dark" : "light")
+  .setTheme(temaNativo(preferencia))
   .catch((cause) => console.warn("Tema nativo do painel indisponível:", cause))
 
 createRoot(document.getElementById("root")!).render(

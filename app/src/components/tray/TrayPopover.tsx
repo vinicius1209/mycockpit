@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react"
+import { temaNativo, type TemaDoApp } from "@/lib/theme"
 import { fraseDoTurno } from "@/lib/turnReceipt"
 import { invoke } from "@tauri-apps/api/core"
 import { listen, type UnlistenFn } from "@tauri-apps/api/event"
@@ -187,11 +188,10 @@ export function TrayPopover() {
     // setTheme também ajusta o NSWindow appearance — o vibrancy nativo
     // (blur atrás da janela) escurece/clareia junto com o app.
     track(
-      listen<string>("app://theme", (event) => {
-        const dark = event.payload === "dark"
-        document.documentElement.classList.toggle("dark", dark)
+      listen<TemaDoApp>("app://theme", (event) => {
+        document.documentElement.classList.toggle("dark", event.payload.tema === "dark")
         void getCurrentWindow()
-          .setTheme(dark ? "dark" : "light")
+          .setTheme(temaNativo(event.payload.preferencia))
           .catch(() => {})
       }),
     )

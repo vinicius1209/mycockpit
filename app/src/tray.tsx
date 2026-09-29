@@ -1,6 +1,7 @@
 // Entry SEPARADO do instrumento da barra. O backend decide a geometria efetiva;
 // este webview apenas roteia entre o popover clássico e o HUD flutuante.
 
+import { currentTheme, preferenciaPersistida, temaNativo } from "@/lib/theme"
 import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
@@ -19,20 +20,18 @@ import { lerEstadoPersistido } from "@/lib/chaveDoApp"
 instalarGuardaDoMenuNativo({ dev: import.meta.env.DEV })
 
 // Tema persistido (frota.app via zustand persist) aplicado antes do React.
-const dark = (() => {
+const preferencia = (() => {
   try {
-    const persisted = lerEstadoPersistido() as { state?: Record<string, unknown> } | null
-    if (persisted?.state?.themePreference === "system") return matchMedia("(prefers-color-scheme: dark)").matches
-    return persisted?.state?.theme !== "light"
+    return preferenciaPersistida(lerEstadoPersistido() as { state?: Record<string, unknown> } | null)
   } catch {
-    return true
+    return "dark" as const
   }
 })()
-document.documentElement.classList.toggle("dark", dark)
+document.documentElement.classList.toggle("dark", currentTheme(preferencia) === "dark")
 
 // O vibrancy nativo segue o appearance do NSWindow — alinha os dois no boot.
 void import("@tauri-apps/api/window")
-  .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(dark ? "dark" : "light"))
+  .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(temaNativo(preferencia)))
   .catch(() => {})
 
 createRoot(document.getElementById("root")!).render(

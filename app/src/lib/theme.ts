@@ -19,10 +19,38 @@ export function currentTheme(preference: ThemePreference): Theme {
   )
 }
 
-export function applyTheme(theme: Theme) {
+/** O que viaja em `app://theme` para as outras janelas (bandeja, HUD). */
+export interface TemaDoApp {
+  tema: Theme
+  preferencia: ThemePreference
+}
+
+/**
+ * O tema a pedir ao `setTheme` da janela nativa. No macOS esse pedido vale
+ * para o APP inteiro, não só para a janela: fixar "claro" numa janela trava o
+ * `prefers-color-scheme` de todas, e "Sistema" deixa de seguir o macOS.
+ * `null` devolve a aparência ao sistema.
+ */
+export function temaNativo(preferencia: ThemePreference): Theme | null {
+  return preferencia === "system" ? null : preferencia
+}
+
+/** Lê a preferência persistida antes do React (entradas da bandeja e do
+ *  painel do navegador). Sem nada salvo, escuro. */
+export function preferenciaPersistida(estado: { state?: Record<string, unknown> } | null): ThemePreference {
+  const p = estado?.state?.themePreference
+  if (p === "system" || p === "light" || p === "dark") return p
+  return estado?.state?.theme === "light" ? "light" : "dark"
+}
+
+export function applyTheme(theme: Theme, preferencia: ThemePreference = theme) {
   document.documentElement.classList.toggle("dark", theme === "dark")
-  if (isTauri())
-    void emit("app://theme", theme).catch((error) =>
-      console.error("Falha ao sincronizar tema da bandeja", error),
-    )
+  if (!isTauri()) return
+  const payload: TemaDoApp = { tema: theme, preferencia }
+  void emit("app://theme", payload).catch((error) =>
+    console.error("Falha ao sincronizar tema da bandeja", error),
+  )
+  void import("@tauri-apps/api/window")
+    .then(({ getCurrentWindow }) => getCurrentWindow().setTheme(temaNativo(preferencia)))
+    .catch((error) => console.error("Falha ao aplicar o tema nativo", error))
 }
