@@ -4,6 +4,7 @@ import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { fatiasDaMensagem } from "./markdownBudget"
+import { Alerta, CaixaDeTarefa, ItemDeLista, ehTipoDeAlerta, remarkAlertas } from "./markdownAlertas"
 import { TextoCru } from "./TextoCru"
 import { Check, Copy } from "lucide-react"
 import {
@@ -343,9 +344,19 @@ function customUrlTransform(url: string): string {
 
 const mdComponents: Components = {
   p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-  ul: ({ children }) => (
-    <ul className="mb-2 ml-4 list-disc space-y-1">{children}</ul>
+  ul: ({ children, className }) => (
+    <ul
+      className={cn(
+        "mb-2 space-y-1",
+        className === "contains-task-list" ? "ml-0" : "ml-4 list-disc",
+      )}
+    >
+      {children}
+    </ul>
   ),
+  li: ItemDeLista,
+  input: ({ type, checked }) =>
+    type === "checkbox" ? <CaixaDeTarefa checked={checked} /> : null,
   ol: ({ children }) => (
     <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>
   ),
@@ -370,7 +381,14 @@ const mdComponents: Components = {
     if (block) return <code className={cn("font-mono", className)}>{children}</code>
     return <MarkdownInlineCode className={className}>{children}</MarkdownInlineCode>
   },
-  blockquote: ({ children }) => <QuoteBlock>{children}</QuoteBlock>,
+  blockquote: ({ children, ...props }) => {
+    const tipo = (props as { "data-alerta"?: unknown })["data-alerta"]
+    return ehTipoDeAlerta(tipo) ? (
+      <Alerta tipo={tipo}>{children}</Alerta>
+    ) : (
+      <QuoteBlock>{children}</QuoteBlock>
+    )
+  },
   hr: () => <hr className="my-3 border-border/60" />,
   table: ({ children }) => <TableBlock>{children}</TableBlock>,
   thead: ({ children }) => <thead className="bg-secondary/40">{children}</thead>,
@@ -390,7 +408,7 @@ const mdComponents: Components = {
 function MarkdownRico({ text }: { text: string }) {
   return (
     <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
+      remarkPlugins={[remarkGfm, remarkAlertas]}
       urlTransform={customUrlTransform}
       // detect: highlight também blocos SEM linguagem (```) — agents muitas
       // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
