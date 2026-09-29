@@ -144,3 +144,14 @@ describe("ContextRing", () => {
   })
 })
 
+
+describe("o medidor na linha do enviar (ADR-282)", () => {
+  it("cinza fraco até 79%, âmbar a partir de 80%, nunca vermelho", async () => {
+    const { tomDoMedidor } = await import("./ContextRing")
+    expect(tomDoMedidor(38)).toBe("text-faint")
+    expect(tomDoMedidor(79.9)).toBe("text-faint")
+    expect(tomDoMedidor(80)).toBe("text-st-warning")
+    expect(tomDoMedidor(99)).toBe("text-st-warning")
+    expect(tomDoMedidor(null)).toBe("text-faint")
+  })
+})

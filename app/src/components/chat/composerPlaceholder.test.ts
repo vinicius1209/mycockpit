@@ -11,7 +11,7 @@ describe("composerPlaceholder", () => {
         finalizing: true,
         hasCommands: true,
       }),
-    ).toBe("Missão em andamento; pare a missão para enviar manualmente…")
+    ).toBe("Missão em andamento; pare a missão para enviar")
   })
 
   it("indica preparação quando preparando", () => {
@@ -23,10 +23,10 @@ describe("composerPlaceholder", () => {
         finalizing: false,
         hasCommands: true,
       }),
-    ).toBe("Verificando capacidades…")
+    ).toBe("Verificando capacidades")
   })
 
-  it("orienta atalhos de envio durante execução", () => {
+  it("durante a execução, diz as duas saídas sem atalho em prosa", () => {
     expect(
       composerPlaceholder({
         missionRunning: false,
@@ -35,7 +35,7 @@ describe("composerPlaceholder", () => {
         finalizing: false,
         hasCommands: false,
       }),
-    ).toBe("Enter corrige agora · Tab envia no próximo turno…")
+    ).toBe("Corrigir agora ou deixar para depois")
   })
 
   it("orienta finalização do turno", () => {
@@ -47,7 +47,7 @@ describe("composerPlaceholder", () => {
         finalizing: true,
         hasCommands: false,
       }),
-    ).toBe("Turno terminando · Tab envia assim que fechar…")
+    ).toBe("Turno terminando; o que você escrever vai quando fechar")
   })
 
   it("mostra dica de comandos quando houver comandos disponíveis", () => {
@@ -59,7 +59,7 @@ describe("composerPlaceholder", () => {
         finalizing: false,
         hasCommands: true,
       }),
-    ).toBe("Peça algo…  ou / para comandos")
+    ).toBe("Peça algo ao seu time")
   })
 
   it("retorna texto padrão quando ocioso sem comandos", () => {
@@ -71,6 +71,6 @@ describe("composerPlaceholder", () => {
         finalizing: false,
         hasCommands: false,
       }),
-    ).toBe("Peça algo ao seu time de agents…")
+    ).toBe("Peça algo ao seu time")
   })
 })

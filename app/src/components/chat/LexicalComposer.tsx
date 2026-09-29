@@ -598,10 +598,10 @@ export function LexicalComposer({
           placeholder={
             <div
               aria-hidden
-              className={cn(
-                "pointer-events-none absolute inset-0 overflow-hidden text-muted-foreground",
-                className,
-              )}
+              // A cor vem DEPOIS do `className` do campo: ele traz o
+              // `text-foreground` do texto digitado, e o cn deixa a última cor
+              // vencer, o que punha a instrução no tom de texto seu (ADR-282).
+              className={cn("pointer-events-none absolute inset-0 overflow-hidden", className, "text-faint")}
             >
               {placeholder}
             </div>

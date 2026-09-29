@@ -10198,3 +10198,32 @@ considerou.
   outra porta de continuidade abre (motor já escolhido, cota esgotada, turno
   interrompido), para nunca haver duas ofertas de troca. A cota ESGOTADA
   continua cartão: ela bloqueia o envio.
+
+### ADR-282 · O composer fala no tom certo: instrução em tom de metadado, só o motor à direita, contexto na linha sem texto e sem vermelho, esforço em deslizador ✅
+- **Contexto (28/09/2026):** a pessoa comparou o composer com o do Codex e o
+  do ChatGPT: o placeholder tinha o mesmo peso do texto digitado (o
+  `text-foreground` do `CONSOLE_INPUT_CLASS` vencia a cor do placeholder no
+  `cn`), a linha de baixo trazia motor, modelo, esforço e um "contexto 84%"
+  vermelho, e o seletor de esforço era uma faixa de botões. Mock aprovado em
+  `docs/mocks/composer-refino.html` (v3, com o print real de hoje).
+- **Decisão:**
+  1. **Placeholder em `text-faint`**, aplicado DEPOIS do `className` do
+     chamador, e textos curtos de instrução ("Peça algo ao seu time",
+     "Corrigir agora ou deixar para depois"), sem repetir atalhos.
+  2. **A porta da identidade mostra só logo e nome do motor, à direita**,
+     junto do ditado e do enviar; modelo e esforço vão para a dica e para o
+     seletor, que não muda. Isto reverte a Decisão 2 da ADR-052: com o modelo
+     fora da pílula, o logo é o que distingue o motor sem ler, e o revezamento
+     entre motores tornou a pergunta "quem responde" frequente. O cadeado sai;
+     "trocar de motor vira revezamento" passa para a dica.
+  3. **O medidor de contexto fica na linha, sem texto e sem vermelho:** pizza
+     cinza fraca (um arco parcial cinza lia como "carregando"), âmbar a partir
+     de 80%, quando compactar passa a valer a pena (`tomDoMedidor`). O número
+     e a régua completa (`meterTone`) continuam no painel do clique. É a única
+     exceção à régua de medidores do STYLEGUIDE §2, e vale só para esse ponto.
+  4. **Esforço em deslizador por etapas** (`DeslizadorDeEtapas` em
+     `components/ui/`, `EsforcoDoMotor` no pé do seletor), com rótulos pt-BR
+     (`rotuloDoEsforco`) e "Padrão" como voltar no canto. As etapas vêm do
+     registry de cada motor; o valor enviado ao CLI não muda.
+- **Não mudou:** especialistas, modo (sempre visível, ADR-167), "Planejar", o
+  chevron de disputa e missão, e o seletor de motor e modelo.

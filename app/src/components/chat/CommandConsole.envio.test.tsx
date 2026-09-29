@@ -69,7 +69,7 @@ describe("o botão primário acende só quando há o que enviar", () => {
     const html = await montar({ missionRunning: true })
     expect(desabilitado(html, "Enviar")).toBe(true)
     expect(html).toContain(
-      "Missão em andamento; pare a missão para enviar manualmente…",
+      "Missão em andamento; pare a missão para enviar",
     )
   })
 })
@@ -84,9 +84,9 @@ describe("com turno em voo há correção imediata, fila e PARAR", () => {
     expect(desabilitado(html, "Parar")).toBe(false)
   })
 
-  it("o composer avisa que Enter corrige e Tab enfileira", async () => {
+  it("com o turno rodando, o composer diz que dá para corrigir agora ou deixar para depois", async () => {
     expect(await montar({ running: true })).toContain(
-      "Enter corrige agora · Tab envia no próximo turno…",
+      "Corrigir agora ou deixar para depois",
     )
   })
 
@@ -94,7 +94,7 @@ describe("com turno em voo há correção imediata, fila e PARAR", () => {
     rascunho("roda os testes")
     const html = await montar({ finalizing: true })
     expect(await montar({ finalizing: true })).toContain(
-      "Turno terminando · Tab envia assim que fechar…",
+      "Turno terminando; o que você escrever vai quando fechar",
     )
     expect(desabilitado(html, "Enfileirar")).toBe(false)
     expect(desabilitado(html, "Interromper e enviar")).toBeNull()
@@ -199,7 +199,7 @@ describe("com texto digitado durante o turno, o composer oferece fila e correç�
 
 describe("o placeholder conta o estado certo", () => {
   it("em repouso, convida a pedir algo", async () => {
-    expect(await montar()).toContain("Peça algo ao seu time de agents…")
+    expect(await montar()).toContain("Peça algo ao seu time")
   })
 
   it("missão ganha de turno em voo, e o gate concorda com o que está escrito", async () => {

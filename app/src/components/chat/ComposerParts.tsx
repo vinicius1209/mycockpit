@@ -267,16 +267,17 @@ export function ComposerActions({
         >
           <Paperclip className="size-4" />
         </Button>
-        {identityControls}
         {permissionControls}
         {planFirstControls}
         {onEspecialistas && <EspecialistasTrigger onOpen={onEspecialistas} />}
-        {/* overlay="composer": o pill de gravação ancora na raiz relative do CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
-        <MicButton overlay="composer" />
       </div>
 
+      {/* Quem responde, a voz e o enviar moram juntos à direita (ADR-282). */}
       <div className="ml-auto flex items-center gap-1.5 shrink-0">
         {contextRing}
+        {identityControls}
+        {/* overlay="composer": o pill de gravação ancora na raiz relative do CommandConsole e paira ACIMA do composer — a fileira não mexe. */}
+        <MicButton overlay="composer" />
         <SendSplit
           running={running}
           finalizing={finalizing}

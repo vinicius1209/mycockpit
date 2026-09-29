@@ -10,15 +10,15 @@
 // ficou: renomear obrigaria a mexer nos call sites por estética.
 
 import { useEffect, useRef, useState } from "react"
-import { ArrowRightLeft, ChevronDown, Lock } from "lucide-react"
+import { ArrowRightLeft, ChevronDown } from "lucide-react"
+import { AgentLogo } from "@/components/common/AgentLogo"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 
-/** A porta pra agent/modelo/esforço (e preset, quando existe): UMA pílula de
- *  TEXTO puro (`resumoDaIdentidade`, sem "(alias)" — usa o `pill` curto, não o
- *  `label` de menu), sem ícone de fornecedor (você já está DENTRO da
- *  conversa; o ícone era redundância decorativa que só competia com o pixel
- *  que decide, a permissão). Clique revela um cartão ANCORADO no botão, sem
+/** A porta pra agent/modelo/esforço (e preset, quando existe): logo e NOME do
+ *  motor, à direita, perto do enviar (ADR-282). Modelo e esforço ficam no
+ *  `title` e no seletor: a linha de baixo só diz quem responde, e o cadeado
+ *  saiu para a dica ("trocar vira revezamento"). Clique revela um cartão ANCORADO no botão, sem
  *  portal: `IdentityPicker` usa `cmdk` (não Radix `Select`), então não briga
  *  por foco dentro de outro popover — o mesmo motivo que ADR-049 documentou
  *  pra identidade nunca ter ficado atrás de um `DropdownMenu`/`Popover`
@@ -28,11 +28,18 @@ import { cn } from "@/lib/utils"
  *  `ContextRing.tsx`, mesma linha do rodapé. */
 export function IdentityDoor({
   label,
+  agent,
+  detalhe,
   locked,
   staged,
   children,
 }: {
+  /** O nome do motor ("Claude Code"). */
   label: string
+  /** Id do motor, para o logo. Sem ele, só o nome. */
+  agent?: string
+  /** Motor · modelo · esforço, para a dica. */
+  detalhe?: string
   locked?: boolean
   staged?: boolean
   children: React.ReactNode
@@ -69,25 +76,24 @@ export function IdentityDoor({
         title={
           staged
             ? "Revezamento preparado para o próximo envio"
-            : "Agent, modelo e esforço"
+            : [detalhe ?? label, locked ? "trocar de motor vira revezamento, com sessão nova" : null]
+                .filter(Boolean)
+                .join(" · ")
         }
         className={cn(
           "h-8 max-w-full min-w-0 gap-1.5 px-2.5 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
           staged && "text-foreground",
         )}
       >
+        {agent && <AgentLogo agent={agent} className="size-4 shrink-0" />}
         <span className="max-w-[220px] min-w-0 truncate">{label}</span>
-        {staged ? (
-          <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground" />
-        ) : locked ? (
-          <Lock className="size-3 shrink-0 opacity-70" />
-        ) : null}
+        {staged && <ArrowRightLeft className="size-3 shrink-0 text-muted-foreground" />}
         <ChevronDown
           className={cn("size-3 shrink-0 transition-transform", open && "rotate-180")}
         />
       </Button>
       {open && (
-        <div className="absolute bottom-full left-0 z-20 mb-2 overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
+        <div className="absolute right-0 bottom-full z-20 mb-2 overflow-hidden rounded-xl border bg-popover shadow-[var(--shadow-pop)]">
           {children}
         </div>
       )}

@@ -12,10 +12,19 @@ import {
   useEngineContext,
   type EngineContextEntry,
 } from "@/lib/engineContext"
-import { METER_TEXT, meterIsLoud, meterTone } from "@/lib/meter"
+import { METER_TEXT, meterTone } from "@/lib/meter"
 import { cn } from "@/lib/utils"
 
-const C = 2 * Math.PI * 8
+/** Circunferência do raio 4: com traço 8, o círculo vira fatia de pizza. */
+const C_FATIA = 2 * Math.PI * 4
+/** A partir daqui o medidor da linha fica âmbar (ADR-282). */
+export const LIMIAR_DO_AVISO = 80
+
+/** O tom do medidor da linha: cinza fraco, âmbar a partir do limiar, nunca
+ *  vermelho. Sem percentual confiável, cinza. Puro. */
+export function tomDoMedidor(pct100: number | null): "text-faint" | "text-st-warning" {
+  return pct100 != null && pct100 >= LIMIAR_DO_AVISO ? "text-st-warning" : "text-faint"
+}
 const exactTokens = (value: number) => value.toLocaleString("pt-BR")
 
 /** Medidor da última chamada ao modelo. Percentual só existe quando tokens e
@@ -100,8 +109,10 @@ export function ContextRingView({
   if (meter.kind === "hidden") return null
   const ratio = meter.kind === "ratio" ? meter : null
   const pct100 = ratio ? ratio.pct * 100 : null
-  const color = ratio ? METER_TEXT[meterTone(pct100!)] : "text-muted-foreground"
-  const loud = pct100 != null && meterIsLoud(pct100)
+  // Na linha do enviar, sem texto e sem vermelho (ADR-282): cinza fraco, e
+  // âmbar a partir de 80%, quando compactar passa a valer a pena. O número e
+  // a régua completa ficam no painel do clique.
+  const tom = tomDoMedidor(pct100)
   const title = ratio?.ceiling?.kind === "autocompact"
     ? `contexto: ${Math.round(pct100!)}% até a compactação automática (${exactTokens(ratio.tokens)} de ${exactTokens(ratio.ceiling.tokens)} tokens)`
     : ratio
@@ -112,11 +123,6 @@ export function ContextRingView({
 
   return (
     <div ref={wrapRef} className="relative flex items-center gap-1">
-      {loud && (
-        <span className={cn("font-mono text-[11px] tabular-nums", color)}>
-          contexto {Math.round(pct100!)}%
-        </span>
-      )}
       <button
         onClick={() => {
           if (!open) onOpen?.()
@@ -127,18 +133,18 @@ export function ContextRingView({
         aria-expanded={open}
         className="grid size-6 place-items-center rounded-full hover:bg-accent"
       >
-        <svg viewBox="0 0 20 20" className="col-start-1 row-start-1 size-4 -rotate-90">
-          <circle cx="10" cy="10" r="8" fill="none" strokeWidth="2.5" className="stroke-border" />
+        {/* Pizza, não arco: um arco parcial cinza lê como "carregando". */}
+        <svg viewBox="0 0 20 20" className={cn("col-start-1 row-start-1 size-4 -rotate-90", tom)}>
+          <circle cx="10" cy="10" r="8" fill="none" strokeWidth="1.5" className="stroke-current opacity-55" />
           {ratio && (
             <circle
               cx="10"
               cy="10"
-              r="8"
+              r="4"
               fill="none"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeDasharray={`${Math.min(ratio.pct, 1) * C} ${C}`}
-              className={cn("stroke-current transition-all duration-500", color)}
+              strokeWidth="8"
+              strokeDasharray={`${Math.min(ratio.pct, 1) * C_FATIA} ${C_FATIA}`}
+              className="stroke-current transition-all duration-500"
             />
           )}
         </svg>

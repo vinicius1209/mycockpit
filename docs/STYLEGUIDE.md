@@ -269,6 +269,9 @@ Regras de aplicação:
   Medidor saudável NUNCA é brass nem verde. A régua é UMA e é código:
   `meterTone`/`METER_TEXT`/`METER_FILL` em `lib/meter.ts` (o `usageTone` do
   medidor de plano delega pra lá). Medidor novo importa, não recalcula.
+  Exceção única: o medidor de contexto na linha do enviar fica mudo e nunca
+  vermelho (cinza fraco, âmbar ≥ 80%); o número e a régua moram no painel do
+  clique (ADR-282).
 - **Valor absoluto (sem teto natural) é CINZA até o usuário dar um teto.**
   Percentual tem 100% pra todo mundo; US$, MB e contagem não têm. Escolher o
   valor em que o número vira âmbar/vermelho seria opinião nossa disfarçada de

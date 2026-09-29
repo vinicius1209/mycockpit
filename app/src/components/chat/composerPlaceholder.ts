@@ -3,18 +3,19 @@ export function composerPlaceholder({
   preparing,
   running,
   finalizing,
-  hasCommands,
 }: {
   missionRunning?: boolean
   preparing?: boolean
   running?: boolean
   finalizing?: boolean
+  /** Sem efeito no texto desde a ADR-282; segue na assinatura dos chamadores. */
   hasCommands: boolean
 }): string {
-  if (missionRunning) return "Missão em andamento; pare a missão para enviar manualmente…"
-  if (preparing) return "Verificando capacidades…"
-  if (running) return "Enter corrige agora · Tab envia no próximo turno…"
-  if (finalizing) return "Turno terminando · Tab envia assim que fechar…"
-  if (hasCommands) return "Peça algo…  ou / para comandos"
-  return "Peça algo ao seu time de agents…"
+  // Instrução, não texto seu: curta, sem "…" e sem atalho em prosa (ADR-282).
+  // As duas saídas do turno rodando aparecem no par Enfileirar | ⚡.
+  if (missionRunning) return "Missão em andamento; pare a missão para enviar"
+  if (preparing) return "Verificando capacidades"
+  if (running) return "Corrigir agora ou deixar para depois"
+  if (finalizing) return "Turno terminando; o que você escrever vai quando fechar"
+  return "Peça algo ao seu time"
 }

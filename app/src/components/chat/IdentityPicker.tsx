@@ -25,6 +25,7 @@ import { estadoNaMaquina } from "@/lib/detect"
 import { eligibleHandoffTargets } from "@/lib/quotaExhausted"
 import { motoresDoTrilho, ROTULO_MESMO_MOTOR, ROTULO_OUTRO_MOTOR } from "@/lib/trilhoDeMotores"
 import { useUsage } from "@/store/usage"
+import { EsforcoDoMotor } from "@/components/chat/EsforcoDoMotor"
 import { folgaDoMotor, type Folga } from "@/lib/cotaAntecipada"
 import { SELECTED_FILL } from "@/lib/selection"
 import { useApp } from "@/store/app"
@@ -313,38 +314,13 @@ export function IdentityPicker({
 
       {!customEditing &&
         (efforts.length > 0 ? (
-          <div
-            role="radiogroup"
-            aria-label="Esforço de raciocínio"
-            title={effortTitle}
-            className="flex flex-wrap items-center gap-1 border-t bg-secondary/30 p-2"
-          >
-            <span className="mr-1 font-mono text-[11px] tracking-wide text-muted-foreground/70 uppercase">
-              esforço
-            </span>
-            {efforts.map((e) => {
-              const active = e.value === effectiveEffort
-              return (
-                <button
-                  key={e.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  aria-label={e.label}
-                  disabled={effortLocked}
-                  onClick={() => onEffortChange(e.value)}
-                  className={cn(
-                    "rounded-md px-2 py-1 text-[12px] transition-colors",
-                    active
-                      ? "bg-brass font-medium text-brass-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                >
-                  {e.label}
-                </button>
-              )
-            })}
-          </div>
+          <EsforcoDoMotor
+            efforts={efforts}
+            valor={effectiveEffort}
+            travado={effortLocked}
+            titulo={effortTitle}
+            onChange={onEffortChange}
+          />
         ) : (
           <p className="border-t bg-secondary/30 p-2 text-[11px] text-muted-foreground italic">
             {agentLogoLabel(effectiveDest)} não tem esforço configurável

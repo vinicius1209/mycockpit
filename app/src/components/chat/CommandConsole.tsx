@@ -47,7 +47,7 @@ import { modosOferecidos, wireDoModo } from "@/lib/agentModes"
 import { useAgentModes } from "@/store/agentModes"
 import { useApp, useActiveProject } from "@/store/app"
 import type { Attachment } from "@/lib/attachments"
-import { DESTINATIONS, defaultModelFor, agentCaps, normalizeModelValue } from "@/lib/agents"
+import { DESTINATIONS, agentDef, defaultModelFor, agentCaps, normalizeModelValue } from "@/lib/agents"
 import { ComposerLaunchers } from "@/components/chat/ComposerLaunchers"
 import type { AgentRunConfig } from "@/lib/types"
 import { usePresets } from "@/store/presets"
@@ -592,7 +592,9 @@ export function CommandConsole({
             }
             identityControls={
               <IdentityDoor
-                label={resumoDaIdentidade(identidade)}
+                label={agentDef(identidade.agent)?.label ?? identidade.agent}
+                agent={identidade.agent}
+                detalhe={resumoDaIdentidade(identidade)}
                 locked={locked}
                 staged={identidade.revezando}
               >
