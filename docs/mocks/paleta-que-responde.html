@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>F10 · A paleta ⌘K responde sobre o estado da Frota</title>
+<style>
+  /* Fidelidade: a MESMA fonte do app (Geist variável, dos arquivos do projeto)
+     e as classes reais do CommandMenu convertidas em px: diálogo sm:max-w-lg
+     (512), rounded-xl, cabeça h-12 com lupa e "esc", lista max-h 420 py-2,
+     cabeçalho de grupo 11px caixa-alta, item mx-2 rounded-lg py-2.5. */
+  @font-face{font-family:"Geist";src:url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
+  @font-face{font-family:"Geist Mono";src:url("../../app/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#fff;--popover:#fff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--accent:rgba(0,0,0,.045);
+    --warning:#c1861f;--running:#2f8fbf;--error:#cf4a3e;
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist",ui-sans-serif,system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px;-webkit-font-smoothing:antialiased}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1000px}
+  .sub b{color:var(--foreground);font-weight:500}
+  code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
+  svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  svg.i.s14{width:14px;height:14px}
+  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:18px 0 14px;flex-wrap:wrap}
+  .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted);display:inline-flex;align-items:center}
+  .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
+  .palco{display:flex;gap:32px;align-items:flex-start;flex-wrap:wrap}
+  .nota{font-size:12px;line-height:1.6;color:var(--muted);max-width:380px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .nota p+p{margin-top:8px}
+
+  /* diálogo */
+  .dlg{width:512px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);overflow:hidden}
+  .cab{height:48px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid rgba(0,0,0,.055)}
+  .cab svg{color:var(--faint)}
+  .campo{flex:1;font-size:14px;color:var(--foreground);white-space:nowrap;overflow:hidden}
+  .campo .ph{color:var(--faint)}
+  .caret{display:inline-block;width:1px;height:17px;background:var(--foreground);vertical-align:-3px;margin-left:1px}
+  .kbd{font:11px var(--mono);padding:1px 6px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted);background:var(--card)}
+  .lista{max-height:560px;overflow:hidden;padding:8px 0}
+  .grp{padding:6px 12px 6px 20px;font-size:11px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:rgba(92,97,102,.7)}
+  .it{margin:0 8px;border-radius:8px;padding:10px 12px;display:flex;align-items:center;gap:10px;font-size:13px;color:var(--foreground)}
+  .it svg{color:var(--muted)}
+  .it.foco{background:var(--sel)}
+  .it .dir{margin-left:auto;display:flex;gap:4px;align-items:center;font:11px var(--mono);color:var(--faint)}
+  .sep{height:1px;background:var(--divisor);margin:6px 0}
+
+  /* linha de estado do campo vazio */
+  .estado{margin:2px 8px 4px;padding:8px 12px;border-radius:8px;display:flex;align-items:center;gap:8px;font:12px var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+  .estado:hover{background:var(--accent)}
+  .ponto{width:6px;height:6px;border-radius:9px;flex:none}
+  .p-roda{background:var(--running)}.p-pede{background:var(--warning)}
+  .estado .am{color:var(--warning)}
+  .estado .dir{margin-left:auto;font-family:var(--sans);font-size:11px;color:var(--faint)}
+
+  /* resposta, no idioma da paleta: sem cartão, manchete limpa, linhas = itens */
+  .grp.com-fonte{display:flex;align-items:baseline;gap:8px}
+  .grp .fonte{margin-left:auto;padding-right:8px;font-size:11px;font-weight:400;letter-spacing:0;text-transform:none;color:var(--faint)}
+  .manchete{padding:2px 20px 8px;font-size:14px;line-height:1.45;color:var(--muted)}
+  .manchete b{color:var(--foreground);font-weight:600}
+  .manchete .am{color:var(--warning);font-weight:600}
+  .it .logo{width:16px;height:16px;flex:none}
+  .it .tit{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .it .sub{color:var(--faint);font-size:12px;white-space:nowrap}
+  .it .meta{margin-left:auto;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--faint);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .it .meta .forte{color:var(--foreground)}
+  .it .meta .am{color:var(--warning)}
+  .it .meta .erro{color:var(--error)}
+  .bar{width:44px;height:4px;border-radius:2px;background:rgba(0,0,0,.07);position:relative;overflow:hidden;flex:none}
+  .bar i{position:absolute;inset:0 auto 0 0;border-radius:2px;background:#8a9099}
+  .bar i.amb{background:var(--warning)}
+  .pe{border-top:1px solid rgba(0,0,0,.055);padding:8px 16px;display:flex;gap:12px;font-size:11px;color:var(--faint)}
+  .pe span{display:inline-flex;gap:4px;align-items:center}
+
+  [data-e]:not(.on){display:none!important}
+  .decisoes{max-width:1000px;margin-top:44px;font-size:13px;line-height:1.6;color:var(--muted)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin:18px 0 6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+  .tabela{border-collapse:collapse;font-size:12px;margin-top:8px}
+  .tabela td,.tabela th{text-align:left;padding:6px 14px 6px 0;border-bottom:1px solid var(--divisor);vertical-align:top}
+  .tabela th{color:var(--foreground);font-weight:500}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="lupa" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="mais" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="nota" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6M8 13h8M8 17h5"/></symbol>
+  <symbol id="play" viewBox="0 0 24 24"><path d="m6 3 14 9-14 9V3z"/></symbol>
+  <symbol id="branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="8" r="2"/><circle cx="6" cy="18" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 7"/></symbol>
+  <symbol id="balao" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="pergunta" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></symbol>
+  <symbol id="enter" viewBox="0 0 24 24"><path d="M9 10 4 15l5 5"/><path d="M20 4v7a4 4 0 0 1-4 4H4"/></symbol>
+  <symbol id="setas" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5M7 9l5-5 5 5"/></symbol>
+  <symbol id="lg-claude" viewBox="0 0 24 24"><path fill="#D97757" stroke="none" fill-rule="evenodd" d="M20.998 10.949H24v3.102h-3v3.028h-1.487V20H18v-2.921h-1.487V20H15v-2.921H9V20H7.488v-2.921H6V20H4.487v-2.921H3V14.05H0V10.95h3V5h17.998v5.949zM6 10.949h1.488V8.102H6v2.847zm10.51 0H18V8.102h-1.49v2.847z"/></symbol>
+  <symbol id="lg-codex" viewBox="0 0 24 24"><path fill="#16181b" stroke="none" fill-rule="evenodd" d="M8.086.457a6.105 6.105 0 013.046-.415c1.333.153 2.521.72 3.564 1.7a.117.117 0 00.107.029c1.408-.346 2.762-.224 4.061.366l.063.03.154.076c1.357.703 2.33 1.77 2.918 3.198.278.679.418 1.388.421 2.126a5.655 5.655 0 01-.18 1.631.167.167 0 00.04.155 5.982 5.982 0 011.578 2.891c.385 1.901-.01 3.615-1.183 5.14l-.182.22a6.063 6.063 0 01-2.934 1.851.162.162 0 00-.108.102c-.255.736-.511 1.364-.987 1.992-1.199 1.582-2.962 2.462-4.948 2.451-1.583-.008-2.986-.587-4.21-1.736a.145.145 0 00-.14-.032c-.518.167-1.04.191-1.604.185a5.924 5.924 0 01-2.595-.622 6.058 6.058 0 01-2.146-1.781c-.203-.269-.404-.522-.551-.821a7.74 7.74 0 01-.495-1.283 6.11 6.11 0 01-.017-3.064.166.166 0 00.008-.074.115.115 0 00-.037-.064 5.958 5.958 0 01-1.38-2.202 5.196 5.196 0 01-.333-1.589 6.915 6.915 0 01.188-2.132c.45-1.484 1.309-2.648 2.577-3.493.282-.188.55-.334.802-.438.286-.12.573-.22.861-.304a.129.129 0 00.087-.087A6.016 6.016 0 015.635 2.31C6.315 1.464 7.132.846 8.086.457zm-.804 7.85a.848.848 0 00-1.473.842l1.694 2.965-1.688 2.848a.849.849 0 001.46.864l1.94-3.272a.849.849 0 00.007-.854l-1.94-3.393zm5.446 6.24a.849.849 0 000 1.695h4.848a.849.849 0 000-1.696h-4.848z"/></symbol>
+  <symbol id="lg-agy" viewBox="0 0 24 24"><path fill="#16181b" stroke="none" d="M21.751 22.607c1.34 1.005 3.35.335 1.508-1.508C17.73 15.74 18.904 1 12.037 1 5.17 1 6.342 15.74.815 21.1c-2.01 2.009.167 2.511 1.507 1.506 5.192-3.517 4.857-9.714 9.715-9.714 4.857 0 4.522 6.197 9.714 9.715z"/></symbol>
+</svg>
+
+<h1>F10 · A paleta ⌘K responde sobre o estado da Frota</h1>
+<p class="sub"><b>Revisão 2:</b> a resposta sem cartão, no idioma da paleta (manchete limpa, linhas iguais aos outros itens, logos reais, a fonte no cabeçalho). A mesma paleta de hoje, com uma seção <b>Resposta</b> no topo quando o que você digita é uma pergunta que o <b>estado</b> do app responde. Sem modelo de linguagem: a frase é montada do que os stores já sabem, com a fonte embaixo. Pergunta que não é reconhecida não ganha resposta inventada; a paleta segue como hoje.</p>
+
+<div class="abas">
+  <button aria-pressed="true" data-alvo="vazio">Campo vazio</button>
+  <button aria-pressed="false" data-alvo="rodando">quem está rodando</button>
+  <button aria-pressed="false" data-alvo="pede">o que pede você</button>
+  <button aria-pressed="false" data-alvo="gasto">quanto gastei hoje</button>
+  <button aria-pressed="false" data-alvo="cota">quando a cota volta</button>
+  <button aria-pressed="false" data-alvo="terminou">o que terminou sem eu ver</button>
+  <button aria-pressed="false" data-alvo="nada">não reconhecida</button>
+</div>
+
+<!-- CAMPO VAZIO -->
+<div data-e="vazio" class="on"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo"><span class="caret"></span><span class="ph">O que você quer fazer? (3+ letras busca no histórico)</span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="estado"><span class="ponto p-roda"></span>2 rodando<span>·</span><span class="ponto p-pede"></span><span class="am">1 pede você</span><span>·</span>US$ 217,02 hoje<span class="dir">Abrir a Frota</span></div>
+      <div class="grp">Ações</div>
+      <div class="it"><svg class="i"><use href="#mais"/></svg>Nova tarefa<span class="dir"><span class="kbd">⌘</span><span class="kbd">N</span></span></div>
+      <div class="it"><svg class="i"><use href="#pergunta"/></svg>Próxima que pede você<span class="dir">1 <span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">A</span></span></div>
+      <div class="it"><svg class="i"><use href="#nota"/></svg>Bloco de notas</div>
+      <div class="it foco"><svg class="i"><use href="#doc"/></svg>Explicar o projeto</div>
+      <div class="it"><svg class="i"><use href="#play"/></svg>Rodar os testes</div>
+      <div class="it"><svg class="i"><use href="#branch"/></svg>Criar uma branch</div>
+      <div class="grp">Conversas</div>
+      <div class="it"><svg class="i"><use href="#balao"/></svg>Maestri</div>
+      <div class="it"><svg class="i"><use href="#balao"/></svg>Estudo do Maestri e propostas</div>
+    </div>
+  </div>
+  <div class="nota"><p><b>A linha de estado</b> só aparece com algo a dizer: sem nada rodando nem pedindo, ela some. É o mesmo pulso da Frota e da barra de baixo, numa linha. O clique abre a Frota.</p><p>O resto da paleta não muda. As perguntas aparecem quando você digita.</p></div>
+</div></div>
+
+<!-- RODANDO -->
+<div data-e="rodando"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">quem está rodando<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp com-fonte">Resposta<span class="fonte">estado dos turnos, agora</span></div>
+      <div class="manchete"><b>2 conversas</b> rodando agora</div>
+      <div class="it foco"><svg class="logo"><use href="#lg-claude"/></svg><span class="tit">Estudo do Maestri e propostas</span><span class="meta">há 12 min</span></div>
+      <div class="it"><svg class="logo"><use href="#lg-codex"/></svg><span class="tit">Migração 63, índice de custo</span><span class="meta">há 3 min</span></div>
+      <div class="grp">Busca no histórico</div>
+      <div class="it"><svg class="i"><use href="#balao"/></svg>Status de processos no sidebar<span class="dir">"rodando"</span></div>
+    </div>
+    <div class="pe"><span><svg class="i s14"><use href="#setas"/></svg>escolher</span><span><svg class="i s14"><use href="#enter"/></svg>abrir a conversa</span></div>
+  </div>
+  <div class="nota"><p><b>Cada linha é navegável</b>: setas escolhem, Enter abre a conversa. Missão e disputa aparecem com a fase ("Revisor, fase 3 de 3").</p><p>O "há 12 min" é o do turno, o mesmo relógio da tabela da Frota. A busca no histórico continua embaixo, porque "rodando" também pode ser uma palavra que você procura.</p></div>
+</div></div>
+
+<!-- PEDE -->
+<div data-e="pede"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">o que pede você<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp com-fonte">Resposta<span class="fonte">fila de pedidos, agora</span></div>
+      <div class="manchete"><span class="am">1 conversa</span> espera você</div>
+      <div class="it foco"><svg class="logo"><use href="#lg-codex"/></svg><span class="tit">Parcelas duplicadas na fatura</span><span class="meta"><span class="am">aprovar bun test</span><span>há 4 min</span></span></div>
+      <div class="grp">Ações</div>
+      <div class="it"><svg class="i"><use href="#pergunta"/></svg>Próxima que pede você<span class="dir"><span class="kbd">⌘</span><span class="kbd">⇧</span><span class="kbd">A</span></span></div>
+    </div>
+    <div class="pe"><span><svg class="i s14"><use href="#enter"/></svg>ir até o pedido</span></div>
+  </div>
+  <div class="nota"><p><b>Âmbar só aqui</b>, porque é decisão pendente (a régua do §2). A linha diz o pedido com o mesmo resumo do sino ("aprovar bun test", "responder: qual branch?").</p><p>A resposta não aprova nada: leva até a conversa, onde o cartão do pedido está com o contexto.</p></div>
+</div></div>
+
+<!-- GASTO -->
+<div data-e="gasto"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">quanto gastei hoje<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp com-fonte">Resposta<span class="fonte">livro de custos, até o último turno</span></div>
+      <div class="manchete"><b>US$ 217,02</b> hoje, em 41 turnos</div>
+      <div class="it"><svg class="logo"><use href="#lg-claude"/></svg><span class="tit">Claude Code</span><span class="meta"><span class="forte">US$ 190,40</span><span>33 turnos</span></span></div>
+      <div class="it"><svg class="logo"><use href="#lg-codex"/></svg><span class="tit">Codex</span><span class="meta"><span class="forte">US$ 26,62</span><span>8 turnos</span></span></div>
+      <div class="it"><svg class="logo"><use href="#lg-agy"/></svg><span class="tit">Antigravity</span><span class="meta"><span>sem preço</span><span>3 turnos</span></span></div>
+      <div class="grp">Ações</div>
+      <div class="it"><svg class="i"><use href="#doc"/></svg>Abrir Uso e custo</div>
+    </div>
+  </div>
+  <div class="nota"><p><b>O mesmo número da barra de baixo</b> ("hoje US$ 217,02"), da mesma fonte. Motor que não reporta custo aparece com "sem preço", nunca com zero.</p><p>Variações reconhecidas: "gasto de ontem", "gasto da semana", "quanto no codex".</p></div>
+</div></div>
+
+<!-- COTA -->
+<div data-e="cota"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">quando a cota volta<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp com-fonte">Resposta<span class="fonte">leitura dos planos de 2 min atrás</span></div>
+      <div class="manchete">A mais apertada é a do <b>Claude Code</b>, que volta às 18:00</div>
+      <div class="it"><svg class="logo"><use href="#lg-claude"/></svg><span class="tit">Claude Code</span><span class="sub">sessão de 5h</span><span class="meta"><span class="bar"><i class="amb" style="width:72%"></i></span><span class="am">72%</span><span>volta 18:00</span></span></div>
+      <div class="it"><svg class="logo"><use href="#lg-codex"/></svg><span class="tit">Codex</span><span class="sub">semanal</span><span class="meta"><span class="bar"><i style="width:35%"></i></span><span class="forte">35%</span><span>volta dia 2, 09:00</span></span></div>
+      <div class="it"><svg class="logo"><use href="#lg-agy"/></svg><span class="tit">Antigravity</span><span class="sub">semanal</span><span class="meta"><span class="bar"><i style="width:38%"></i></span><span class="forte">38%</span><span>volta dia 3, 14:00</span></span></div>
+    </div>
+  </div>
+  <div class="nota"><p><b>A mesma regra da faixa e do Companion</b> (a pior janela de cada motor), e a cor é a régua de severidade. Leitura velha não entra; sem leitura de nenhum motor, a resposta diz "ainda não li a cota de nenhum motor" e oferece abrir Uso e custo.</p><p>"cota do codex" responde só o Codex.</p></div>
+</div></div>
+
+<!-- TERMINOU -->
+<div data-e="terminou"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">o que terminou sem eu ver<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp com-fonte">Resposta<span class="fonte">desde a última vez que você abriu cada uma</span></div>
+      <div class="manchete"><b>3 conversas</b> terminaram sem você abrir</div>
+      <div class="it foco"><svg class="logo"><use href="#lg-claude"/></svg><span class="tit">Status de processos no sidebar</span><span class="meta">concluída · há 25 min</span></div>
+      <div class="it"><svg class="logo"><use href="#lg-codex"/></svg><span class="tit">Landing, formulário de contato</span><span class="meta">concluída · há 1h</span></div>
+      <div class="it"><svg class="logo"><use href="#lg-claude"/></svg><span class="tit">Enciclopédia Gescomex</span><span class="meta"><span class="erro">falhou</span><span>há 2h</span></span></div>
+    </div>
+    <div class="pe"><span><svg class="i s14"><use href="#enter"/></svg>abrir a conversa</span></div>
+  </div>
+  <div class="nota"><p><b>A seção "Mais cedo" da Frota</b>, a mesma lista. Abrir a conversa tira ela daqui, como já acontece lá. Falha em vermelho, porque é falha consumada.</p></div>
+</div></div>
+
+<!-- NÃO RECONHECIDA -->
+<div data-e="nada"><div class="palco">
+  <div class="dlg">
+    <div class="cab"><svg class="i"><use href="#lupa"/></svg><span class="campo">por que o build quebrou<span class="caret"></span></span><span class="kbd">esc</span></div>
+    <div class="lista">
+      <div class="grp">Busca no histórico</div>
+      <div class="it foco"><svg class="i"><use href="#balao"/></svg>Build de teste falhou no tsc<span class="dir">"build quebrou"</span></div>
+      <div class="it"><svg class="i"><use href="#balao"/></svg>Catraca de tamanho no lib.rs<span class="dir">"build"</span></div>
+    </div>
+  </div>
+  <div class="nota"><p><b>Sem resposta inventada.</b> A pergunta não é sobre o estado que o app mede, então a paleta faz o que faz hoje: busca no histórico.</p><p>Perguntar a um modelo fica para depois, e só como gesto explícito ("Perguntar ao modelo auxiliar"), com a fonte citada. Não entra agora.</p></div>
+</div></div>
+
+<section class="decisoes">
+  <h2>O que a paleta reconhece</h2>
+  <table class="tabela">
+    <tr><th>pergunta</th><th>palavras que disparam</th><th>fonte</th></tr>
+    <tr><td>quem está rodando</td><td>rodando, trabalhando, ativo, em andamento</td><td>turnos vivos, missões e disputas</td></tr>
+    <tr><td>o que pede você</td><td>pede, pedindo, esperando, aprovar, aprovação</td><td>fila de pedidos (a do sino)</td></tr>
+    <tr><td>quanto gastei</td><td>gastei, gasto, custo, custou (+ hoje, ontem, semana, nome do motor)</td><td>livro de custos</td></tr>
+    <tr><td>quando a cota volta</td><td>cota, limite, plano, volta, reseta (+ nome do motor)</td><td>leitura dos planos</td></tr>
+    <tr><td>o que terminou</td><td>terminou, acabou, concluiu, sem ver, perdi</td><td>turnos terminados sem visto</td></tr>
+  </table>
+
+  <h3>Decisões</h3>
+  <ul>
+    <li><b>P1. Reconhecimento por palavra, sem modelo.</b> Recomendo: previsível, instantâneo, e cada pergunta tem teste. O custo é não entender perguntas fora da tabela, e aí a paleta faz o de hoje.</li>
+    <li><b>P2. A linha de estado com o campo vazio.</b> Recomendo manter; some quando não há nada rodando nem pedindo.</li>
+    <li><b>P3. "Perguntar ao modelo auxiliar"</b> como item para pergunta não reconhecida: recomendo deixar para depois.</li>
+    <li><b>P4. Escopo:</b> as respostas cobrem todos os projetos (a Frota é uma só). "neste projeto" na pergunta filtra para o projeto aberto.</li>
+  </ul>
+</section>
+
+<script>
+  const botoes = document.querySelectorAll(".abas button")
+  botoes.forEach((b) => b.addEventListener("click", () => {
+    botoes.forEach((o) => {
+      o.setAttribute("aria-pressed", String(o === b))
+      document.querySelectorAll(`[data-e="${o.dataset.alvo}"]`).forEach((el) => el.classList.toggle("on", o === b))
+    })
+  }))
+</script>
+</body>
+</html>

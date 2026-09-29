@@ -10415,3 +10415,30 @@ considerou.
   recebem os segredos (são filhos do app, não do motor). Com o app assinado
   ad-hoc, o Keychain não isola por aplicativo (o mesmo limite registrado no
   `mcp_auth.rs`).
+
+### ADR-289 · A paleta ⌘K responde perguntas sobre o estado da Frota, sem modelo ✅
+- **Contexto (29/09/2026):** F10 do estudo do Maestri, com mock aprovado em
+  duas revisões (`docs/mocks/paleta-que-responde.html`; a segunda tirou o
+  cartão de dentro da paleta a pedido da pessoa).
+- **Decisão:**
+  1. Por palavra, sem modelo (P1): `intencaoDaPergunta` reconhece rodando,
+     pede, gasto, cota e terminou em pt-BR, com motor (pelo registry),
+     período ("semana") e "neste projeto" (P4). Pergunta fora da tabela não
+     ganha resposta; a paleta segue com ações e busca no histórico.
+  2. As respostas saem do que o app já calcula: `buildFleetLines` (a mesma
+     ordem da Frota, quem pede antes de quem roda), o livro de custos da
+     faixa e a pior janela de cada motor (`planosDaFaixa`, a regra da faixa e
+     do Companion). Turno sem preço diz "sem preço", nunca zero; sem leitura
+     de cota, "ainda não li". A fonte do dado vai no cabeçalho da seção.
+  3. No idioma da paleta: manchete sem cartão e linhas que são itens comuns
+     do `cmdk` (setas e Enter; o Enter leva à conversa). O nome do projeto só
+     aparece quando a lista mistura projetos.
+  4. Campo vazio (P2): uma linha de estado ("3 rodando · 1 pede você · US$
+     217,02 hoje") que só existe com algo rodando ou pedindo. É botão fora da
+     navegação por setas: o Enter com o campo vazio continua em "Nova
+     tarefa".
+  5. "Perguntar ao modelo" fica fora (P3).
+- **Visto no navegador da Frota** com o servidor de desenvolvimento e estado
+  injetado: a resposta vazia sem "Nada encontrado" duplicado (o `cmdk` não
+  conta item com `forceMount`), a primeira linha selecionada e as barras de
+  cota alinhadas.

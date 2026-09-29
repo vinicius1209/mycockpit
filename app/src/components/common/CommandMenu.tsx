@@ -31,6 +31,8 @@ import {
   CommandList,
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
+import { RespostaDaPaleta } from "@/components/common/RespostaDaPaleta"
+import { intencaoDaPergunta } from "@/lib/paletaResponde"
 import { SkillDraftDialog } from "@/components/skills/SkillDraftDialog"
 import { currentPlatform, onOpenCommandMenu } from "@/lib/commandMenu"
 import { ehApple } from "@/components/layout/atalhosDasAbas"
@@ -215,7 +217,11 @@ export function CommandMenu() {
           </div>
 
           <CommandList className="max-h-[420px] py-2">
-            <CommandEmpty>Nada encontrado.</CommandEmpty>
+            {/* Resposta do estado conta como resultado (o cmdk não conta item
+                com forceMount): sem isto, "Nada encontrado" vinha junto. */}
+            {!intencaoDaPergunta(query) && <CommandEmpty>Nada encontrado.</CommandEmpty>}
+
+            <RespostaDaPaleta query={query} aberto={open} executar={run} />
 
             <CommandGroup heading="Ações">
               {activeProjectId && (
