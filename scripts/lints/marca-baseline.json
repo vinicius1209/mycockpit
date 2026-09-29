@@ -234,7 +234,7 @@
   "docs/study-waku-gpui.md": 1,
   "docs/telas-de-configuracao-plan.md": 1,
   "docs/work-hierarchy-plan.md": 8,
-  "scripts/build.sh": 9,
+  "scripts/build.sh": 5,
   "scripts/check-marca.mjs": 10,
   "scripts/lints/marcaRatchet.mjs": 6,
   "scripts/lints/marcaRatchet.test.mjs": 11,
