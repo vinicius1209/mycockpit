@@ -185,3 +185,20 @@ describe("o especialista trabalhando", () => {
     expect(html).toContain('aria-label="Íris dando parecer"')
   })
 })
+
+describe("o trabalho em segundo plano trabalhando", () => {
+  it("o sinal de rodando diz o motivo específico quando fornecido", () => {
+    const html = renderToStaticMarkup(
+      <ConversationSlot
+        pede={false}
+        rodando
+        falhou={false}
+        updatedAt={1}
+        motivoRodando="3 trabalhos em segundo plano rodando"
+      />,
+    )
+    expect(html).toContain('title="3 trabalhos em segundo plano rodando"')
+    expect(html).toContain('aria-label="3 trabalhos em segundo plano rodando"')
+  })
+})
+

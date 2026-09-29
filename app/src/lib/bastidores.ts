@@ -178,6 +178,39 @@ export function bastidoresDaConversa(
   return [...vivos, ...terminados]
 }
 
+/** Há algum trabalho diferido ou processo gerenciado vivo nos itens? Puro e barato. */
+export function temBastidorVivo(items?: ChatItem[]): boolean {
+  if (!items) return false
+  for (const it of items) {
+    if (it.kind !== "tool") continue
+    if (it.deferred?.status === "running") return true
+    if (
+      it.managedProcess &&
+      (it.managedProcess.status === "running" || it.managedProcess.status === "stopping")
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Quantos trabalhos diferidos ou processos gerenciados estão vivos nos itens. Puro. */
+export function contarBastidoresVivos(items?: ChatItem[]): number {
+  if (!items) return 0
+  let n = 0
+  for (const it of items) {
+    if (it.kind !== "tool") continue
+    if (it.deferred?.status === "running") n++
+    else if (
+      it.managedProcess &&
+      (it.managedProcess.status === "running" || it.managedProcess.status === "stopping")
+    ) {
+      n++
+    }
+  }
+  return n
+}
+
 export interface PassoDeSubagente {
   id: string
   nome: string

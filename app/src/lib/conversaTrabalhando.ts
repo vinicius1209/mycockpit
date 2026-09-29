@@ -7,17 +7,33 @@
 // (não trava o composer nem finge turno do executor). A barra só olhava o
 // `running`. Esta é a régua única de "tem alguém trabalhando aqui".
 
+import type { ChatItem } from "@/store/chat"
+import { contarBastidoresVivos, temBastidorVivo } from "@/lib/bastidores"
+
 export interface ConversaViva {
   running: boolean
+  finalizing?: boolean
   advising?: { id: string; name: string } | null
+  items?: ChatItem[]
 }
 
-/** Alguém trabalha nesta conversa agora? Puro. */
+/** Alguém ou algum processo trabalha nesta conversa agora? Puro. */
 export function conversaTrabalhando(c: ConversaViva): boolean {
-  return c.running || c.advising != null
+  return c.running || !!c.finalizing || c.advising != null || temBastidorVivo(c.items)
 }
 
 /** O especialista que está dando parecer, para o hover dizer quem. Puro. */
 export function especialistaTrabalhando(c: ConversaViva): string | null {
-  return c.running ? null : (c.advising?.name ?? null)
+  return c.running || c.finalizing ? null : (c.advising?.name ?? null)
 }
+
+/** O que trabalha nesta conversa (especialista ou bastidores), para o hover dizer o motivo. Puro. */
+export function motivoTrabalhando(c: ConversaViva): string | null {
+  if (c.running || c.finalizing) return null
+  if (c.advising?.name) return `${c.advising.name} está dando um parecer`
+  const n = contarBastidoresVivos(c.items)
+  if (n === 1) return "Trabalho em segundo plano rodando"
+  if (n > 1) return `${n} trabalhos em segundo plano rodando`
+  return null
+}
+

@@ -8,10 +8,12 @@ import {
   SAIDA_VAZIA,
   TERMINADOS_NO_INDICE,
   bastidoresDaConversa,
+  contarBastidoresVivos,
   limparLinha,
   passosDoSubagente,
   somarLinhas,
   somarTexto,
+  temBastidorVivo,
 } from "./bastidores"
 import type { ChatItem } from "@/store/chat"
 
@@ -259,3 +261,39 @@ describe("saída ao vivo", () => {
     expect(s.descartadas).toBe(25)
   })
 })
+
+describe("temBastidorVivo e contarBastidoresVivos", () => {
+  it("detecta DeferredWork e ManagedProcess vivos", () => {
+    const dVivo = diferido({ id: "d1", status: "running" })
+    const dMorto = diferido({ id: "d2", status: "completed" })
+    const pVivo: ChatItem = {
+      kind: "tool",
+      id: "p1",
+      name: "ManagedProcess",
+      input: {},
+      ts: T0,
+      managedProcess: {
+        id: "p1",
+        runId: "r1",
+        convId: "c1",
+        label: "proc",
+        command: "vite",
+        cwd: "/app",
+        pid: 1,
+        status: "running",
+        exitCode: null,
+        output: "",
+        startedAt: T0,
+        updatedAt: T0,
+      },
+    }
+
+    expect(temBastidorVivo([])).toBe(false)
+    expect(temBastidorVivo([dMorto])).toBe(false)
+    expect(temBastidorVivo([dVivo])).toBe(true)
+    expect(temBastidorVivo([pVivo])).toBe(true)
+    expect(contarBastidoresVivos([dMorto])).toBe(0)
+    expect(contarBastidoresVivos([dVivo, pVivo, dMorto])).toBe(2)
+  })
+})
+

@@ -1,4 +1,8 @@
-import { conversaTrabalhando, especialistaTrabalhando } from "@/lib/conversaTrabalhando"
+import {
+  conversaTrabalhando,
+  especialistaTrabalhando,
+  motivoTrabalhando,
+} from "@/lib/conversaTrabalhando"
 import { retomadaAgendada } from "@/lib/autoResume"
 import { useMemo, useRef, useState } from "react"
 import { avisar, mensagemDe } from "@/lib/avisos"
@@ -41,6 +45,19 @@ function useEspecialistasTrabalhando(): Map<string, string> {
       .map(([id, c]) => [id, especialistaTrabalhando(c)] as const)
       .filter(([, nome]) => nome != null)
       .map(([id, nome]) => `${id}\u0000${nome}`)
+      .sort()
+      .join("\u0001"),
+  )
+  return new Map(key ? key.split("\u0001").map((par) => par.split("\u0000") as [string, string]) : [])
+}
+
+/** Motivo de trabalho em cada conversa (id → motivo), para o hover do sinal dizer o que roda. */
+function useMotivosTrabalhando(): Map<string, string> {
+  const key = useChat((s) =>
+    Object.entries(s.byId)
+      .map(([id, c]) => [id, motivoTrabalhando(c)] as const)
+      .filter(([, motivo]) => motivo != null)
+      .map(([id, motivo]) => `${id}\u0000${motivo}`)
       .sort()
       .join("\u0001"),
   )
@@ -173,6 +190,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
   const viewMode = useApp((s) => s.scheduledOpen || s.flightPlansOpen || s.fleetOpen ? "global" : s.viewMode)
   const running = useRunningConvIds()
   const especialistas = useEspecialistasTrabalhando()
+  const motivos = useMotivosTrabalhando()
   const finished = useFinishedUnseen()
   const defaultAgent = useApp((s) => s.settings.defaultAgent)
   const deciding = useDecidingConvIds()
@@ -304,6 +322,7 @@ export function ConversationList({ projectId }: { projectId: string }) {
             defaultAgent={defaultAgent}
             isRunning={running.has(c.id)}
             especialista={especialistas.get(c.id) ?? null}
+            motivoRodando={motivos.get(c.id) ?? null}
             doneUnseen={finished.get(c.id)}
             isDeciding={deciding.has(c.id)}
             hasFusion={fusionAlive.has(c.id)}

@@ -43,6 +43,8 @@ interface ConversationRowProps {
   isRunning: boolean
   /** O especialista dando parecer aqui (ADR-267): o hover do sinal diz quem. */
   especialista?: string | null
+  /** O motivo de estar rodando (especialista ou trabalho em segundo plano). */
+  motivoRodando?: string | null
   doneUnseen?: "ok" | "error"
   isDeciding: boolean
   hasFusion: boolean
@@ -73,6 +75,7 @@ export function ConversationRow({
   defaultAgent,
   isRunning,
   especialista = null,
+  motivoRodando = null,
   doneUnseen,
   isDeciding,
   hasFusion,
@@ -281,6 +284,7 @@ export function ConversationRow({
                 pede={isAwaiting}
                 rodando={isRunning}
                 quem={especialista}
+                motivoRodando={motivoRodando}
                 cor={c.color ?? corDoProjeto}
                 falhou={doneUnseen === "error"}
                 updatedAt={c.updatedAt}
