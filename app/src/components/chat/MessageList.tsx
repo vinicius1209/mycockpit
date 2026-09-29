@@ -68,6 +68,7 @@ const MessageItem = memo(function MessageItem({
   lastTurn,
   reads,
   voz,
+  vivo,
   onApprovePlan,
   onKeepPlanning,
 }: {
@@ -88,6 +89,8 @@ const MessageItem = memo(function MessageItem({
   reads?: ReadLabels
   /** Narração de um turno que já tem resposta (G8). */
   voz?: "narracao"
+  /** O texto ainda está chegando: o trecho novo dissolve (ADR-290). */
+  vivo?: boolean
 }) {
   if (it.kind === "user") {
     // Slack-style: alinhado à esquerda sob o gutter "Você" (o autor está no
@@ -141,7 +144,7 @@ const MessageItem = memo(function MessageItem({
   }
 
   if (it.kind === "text") {
-    return <div data-citavel={it.id} className="min-w-0"><Markdown text={it.text} voz={voz} /></div>
+    return <div data-citavel={it.id} className="min-w-0"><Markdown text={it.text} voz={voz} vivo={vivo} /></div>
   }
 
   // Tools agrupadas por buildNodes/ToolGroup; este guard só fecha a união.
@@ -269,7 +272,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
     const hasText = n.text.trim().length > 0
     return (
       <div className="group/msg flex flex-col gap-1.5" data-citavel={n.itemIds?.[0] ?? n.key}>
-        {hasText && <Markdown text={n.text} voz={vozDoNo(n.itemIds ?? [n.key], ctx.vozes) === "narracao" ? "narracao" : undefined} />}
+        {hasText && <Markdown text={n.text} voz={vozDoNo(n.itemIds ?? [n.key], ctx.vozes) === "narracao" ? "narracao" : undefined} vivo={active} />}
         {n.tools.length > 0 && (
           <ToolGroup
             tools={n.tools}
@@ -310,6 +313,7 @@ function renderNode(n: Node, ctx: NodeCtx): React.ReactNode {
         onKeepPlanning={ctx.onKeepPlanning}
         reads={ctx.attReads.get(n.item.id)}
         voz={n.item.kind === "text" && ctx.vozes.get(n.item.id) === "narracao" ? "narracao" : undefined}
+        vivo={ctx.running && ctx.isLast}
       />
     </>
   )

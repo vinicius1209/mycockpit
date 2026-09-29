@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest"
 import {
+  atrasosDaCascata,
+  JANELA_DA_RAJADA_MS,
   JANELA_NASCIMENTO_MS,
   nasceuAgora,
+  PASSO_DA_CASCATA_MS,
+  PRIMEIRO_ATRASO_MS,
+  TETO_DA_CASCATA,
   registrarTroca,
   tsDaCauda,
 } from "@/lib/nascimento"
@@ -67,5 +72,42 @@ describe("tsDaCauda", () => {
 
   it("fio curto cabe inteiro", () => {
     expect(tsDaCauda(fio.slice(0, 3)).size).toBe(3)
+  })
+})
+
+describe("atrasosDaCascata", () => {
+  // Carimbos REAIS de ações de uma conversa do app (conversation_items,
+  // 0ae552bf…, posições 5 a 9): pares de Read pedidos juntos, a 28 e 6 ms.
+  const LEITURAS_REAIS = [1787453038979, 1787453039007, 1787453039681, 1787453040132, 1787453040138]
+  // E a mesma conversa, posições 35 a 45: um plano de 11 tarefas criado no
+  // mesmo milissegundo.
+  const PLANO_REAL = Array.from({ length: 11 }, () => 1787454182670)
+
+  it("a primeira da rajada entra já; a segunda espera o primeiro atraso", () => {
+    expect(atrasosDaCascata(LEITURAS_REAIS)).toEqual([0, PRIMEIRO_ATRASO_MS, 0, 0, PRIMEIRO_ATRASO_MS])
+  })
+
+  it("dentro da rajada, cada linha espera um passo a mais", () => {
+    const atrasos = atrasosDaCascata(PLANO_REAL)
+    expect(atrasos.slice(0, 4)).toEqual([
+      0,
+      PRIMEIRO_ATRASO_MS,
+      PRIMEIRO_ATRASO_MS + PASSO_DA_CASCATA_MS,
+      PRIMEIRO_ATRASO_MS + 2 * PASSO_DA_CASCATA_MS,
+    ])
+  })
+
+  it("rajada longa tem teto: nenhuma linha fica invisível por meio segundo", () => {
+    const atrasos = atrasosDaCascata(PLANO_REAL)
+    expect(Math.max(...atrasos)).toBe(PRIMEIRO_ATRASO_MS + PASSO_DA_CASCATA_MS * (TETO_DA_CASCATA - 1))
+    expect(Math.max(...atrasos)).toBeLessThan(500)
+  })
+
+  it("linhas separadas por mais que a janela não formam rajada", () => {
+    expect(atrasosDaCascata([1000, 1000 + JANELA_DA_RAJADA_MS])).toEqual([0, 0])
+  })
+
+  it("sem carimbo (item legado), a linha entra sem atraso e quebra a rajada", () => {
+    expect(atrasosDaCascata([1000, undefined, 1001])).toEqual([0, 0, 0])
   })
 })

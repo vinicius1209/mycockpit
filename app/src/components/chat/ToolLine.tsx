@@ -74,8 +74,11 @@ export const ToolLine = memo(function ToolLine({
   namedWork = NO_NAMED_WORK,
   onStop,
   onRetry,
+  atraso,
 }: {
   node: ToolTreeNode
+  /** Posição na cascata da rajada (ms); só vale para quem nasceu agora. */
+  atraso?: number
   activeToolId?: string | null
   agent: string
   depth?: number
@@ -208,7 +211,10 @@ export const ToolLine = memo(function ToolLine({
   }, [active, children.length])
 
   return (
-    <div className={cn("min-w-0", nasceu && "fio-nasce-desliza")}>
+    <div
+      className={cn("min-w-0", nasceu && "fio-nasce-desliza")}
+      style={nasceu && atraso ? { animationDelay: `${atraso}ms` } : undefined}
+    >
       <div className="flex min-w-0 items-center">
         <button
           onClick={() => expandable && setOpen((o) => !o)}

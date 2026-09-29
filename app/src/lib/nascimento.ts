@@ -72,3 +72,32 @@ export function tsDaCauda(
   }
   return mapa
 }
+
+/** Linhas irmãs que nasceram a menos disto uma da outra são uma RAJADA (o
+ *  motor pediu várias ações na mesma mensagem). */
+export const JANELA_DA_RAJADA_MS = 50
+/** A segunda linha da rajada espera isto; as seguintes, mais um passo cada.
+ *  A primeira entra já: resposta a evento não espera (ADR-290). */
+export const PRIMEIRO_ATRASO_MS = 90
+export const PASSO_DA_CASCATA_MS = 65
+/** Da sexta linha em diante a rajada entra junto: plano de dez tarefas criado
+ *  num milissegundo não pode deixar a última invisível por mais de meio
+ *  segundo. */
+export const TETO_DA_CASCATA = 5
+
+/** Puro: o atraso de entrada de cada linha, na ordem em que nasceram. Sem
+ *  carimbo não há rajada a reconhecer, e a linha entra sem atraso. */
+export function atrasosDaCascata(carimbos: readonly (number | null | undefined)[]): number[] {
+  const atrasos: number[] = []
+  let posicao = 0
+  for (let i = 0; i < carimbos.length; i++) {
+    const ts = carimbos[i]
+    const anterior = i > 0 ? carimbos[i - 1] : null
+    const mesmaRajada =
+      ts != null && anterior != null && ts >= anterior && ts - anterior < JANELA_DA_RAJADA_MS
+    posicao = mesmaRajada ? posicao + 1 : 0
+    const passo = Math.min(posicao, TETO_DA_CASCATA)
+    atrasos.push(passo === 0 ? 0 : PRIMEIRO_ATRASO_MS + PASSO_DA_CASCATA_MS * (passo - 1))
+  }
+  return atrasos
+}

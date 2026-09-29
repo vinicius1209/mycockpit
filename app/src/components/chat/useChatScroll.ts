@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react"
 import { useChat, type ChatItem } from "@/store/chat"
+import {
+  alturaDaPista,
+  deveTeleportar,
+  molaParada,
+  passoDaMola,
+  QUADRO_MS,
+  type EstadoDaMola,
+} from "@/components/chat/molaDoFio"
 
 /**
  * Scroll e ANCORAGEM do fio.
@@ -32,6 +40,8 @@ import { useChat, type ChatItem } from "@/store/chat"
  *     nenhuma delas é item novo. Quem acompanha esse crescimento é um
  *     `ResizeObserver` permanente; enquanto você não pedir pra parar, ele
  *     segura o fim.
+ *  4. Seguir é com mola, e enviar arma a pista (ADR-290, física em
+ *     `molaDoFio.ts`). Aterrissar continua seco: abrir não é evento.
  */
 
 /** Distância do fim que ainda conta como "está no fim". */
@@ -95,6 +105,28 @@ export function ehGestoDeSubida(deltaY: number): boolean {
   return deltaY < 0
 }
 
+/** O último pedido SEU no fio: é nele que a pista se ancora. */
+function ultimoPedido(items: ChatItem[]): string | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    if (items[i].kind === "user") return items[i].id
+  }
+  return null
+}
+
+function movimentoReduzido(): boolean {
+  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+}
+
+/** O topo do pedido no conteúdo rolável. Quando ele abre o grupo, conta do
+ *  grupo, para o "Você" ficar à vista junto. */
+function topoDoPedido(scroller: HTMLElement, id: string): number | null {
+  const no = scroller.querySelector<HTMLElement>(`[data-chat-item-ids~="${CSS.escape(id)}"]`)
+  if (!no) return null
+  const grupo = no.closest<HTMLElement>("[data-turn-key]")
+  const alvo = grupo && grupo.querySelector("[data-chat-item-ids]") === no ? grupo : no
+  return alvo.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
+}
+
 export function useChatScroll({
   activeId,
   items,
@@ -106,6 +138,10 @@ export function useChatScroll({
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null)
   const [contentEl, setContentEl] = useState<HTMLDivElement | null>(null)
+  // O espaço reservado da pista, irmão do transcript dentro do scroller. A
+  // altura é escrita direto no DOM: mudar por token via estado seria um render
+  // do ChatPanel por delta.
+  const pistaRef = useRef<HTMLDivElement | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   // Espelho do estado pro efeito de autoscroll não depender DELE: com `atBottom`
   // na lista de deps, voltar pro fim disparava um `scrollTo` instantâneo que
@@ -118,6 +154,33 @@ export function useChatScroll({
   // é o que devolve a leitura quando outra aba da tira sai da frente.
   const posicaoRef = useRef<number | null>(null)
   const visivelRef = useRef(true)
+  // Aterrissar não é evento (ADR-179): enquanto o fio só se acomoda depois de
+  // aberto (janela progressiva, markdown medindo), o fim é seguido seco. O
+  // primeiro conteúdo NOVO na cauda encerra a aterrissagem e a mola assume.
+  const aterrissandoRef = useRef(true)
+  const caudaNaAterrissagemRef = useRef("")
+  // A pista (ADR-290): o pedido enviado fica no topo e a resposta nasce
+  // embaixo, sem a tela andar. `pendente` guarda o último pedido que existia
+  // quando você enviou; o primeiro pedido novo depois dele recebe a pista.
+  const ancoraDaPistaRef = useRef<{ pedido: string } | null>(null)
+  const pistaPendenteRef = useRef<{ antes: string | null } | null>(null)
+  const itemsRef = useRef(items)
+  itemsRef.current = items
+  const molaRef = useRef<{ estado: EstadoDaMola | null; escrito: number; raf: number; tAnt: number }>({
+    estado: null,
+    escrito: 0,
+    raf: 0,
+    tAnt: 0,
+  })
+
+  const pararMola = useCallback(() => {
+    const m = molaRef.current
+    if (m.raf) cancelAnimationFrame(m.raf)
+    m.raf = 0
+    m.tAnt = 0
+    m.estado = null
+  }, [])
+
   // O disclosure das ferramentas consulta a mesma intenção no scroller. Sem
   // isso ele voltaria a inferi-la por posição durante um reflow.
   const setFollowing = useCallback((value: boolean) => {
@@ -125,6 +188,72 @@ export function useChatScroll({
     const el = scrollRef.current
     if (el) el.dataset.threadFollowing = String(value)
   }, [])
+
+  const ajustarPista = useCallback(() => {
+    const el = scrollRef.current
+    const pista = pistaRef.current
+    const ancora = ancoraDaPistaRef.current
+    if (!el || !pista || !ancora || escondido(el)) return
+    const topo = topoDoPedido(el, ancora.pedido)
+    if (topo === null) return
+    const altura = alturaDaPista({
+      alturaAtual: pista.offsetHeight,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      topoDaMensagem: topo,
+    })
+    pista.style.height = `${altura}px`
+    // A resposta passou da tela: a pista cumpriu o papel e a mola segue.
+    if (altura === 0) ancoraDaPistaRef.current = null
+  }, [])
+
+  const quadroDaMola = useCallback(
+    function quadro(t: number) {
+      const m = molaRef.current
+      m.raf = 0
+      const el = scrollRef.current
+      if (!el || !seguindoRef.current || escondido(el)) {
+        pararMola()
+        return
+      }
+      const alvo = el.scrollHeight - el.clientHeight
+      // Alguém mexeu no scroll fora do laço (aterrissagem, gesto que religou):
+      // a mola recomeça de onde a tela está, sem tranco.
+      if (!m.estado || Math.abs(el.scrollTop - m.escrito) > 1.5) {
+        m.estado = { ...molaParada(el.scrollTop), deslizando: m.estado?.deslizando ?? false }
+      }
+      const quadros = m.tAnt ? (t - m.tAnt) / QUADRO_MS : 1
+      m.tAnt = t
+      const r = passoDaMola(m.estado, alvo, quadros)
+      m.estado = r.estado
+      el.scrollTop = r.estado.pos
+      m.escrito = el.scrollTop
+      if (r.assentou) {
+        m.tAnt = 0
+        return
+      }
+      m.raf = requestAnimationFrame(quadro)
+    },
+    [pararMola],
+  )
+
+  /** Leva ao fim: seco quando é aterrissagem, movimento reduzido ou longe
+   *  demais; com a mola quando é conteúdo nascendo na cauda. */
+  const irAoFim = useCallback(
+    (modo: "seco" | "mola") => {
+      const el = scrollRef.current
+      if (!el) return
+      const distancia = el.scrollHeight - el.clientHeight - el.scrollTop
+      if (modo === "seco" || movimentoReduzido() || deveTeleportar(distancia, el.clientHeight)) {
+        pararMola()
+        el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
+        return
+      }
+      const m = molaRef.current
+      if (!m.raf) m.raf = requestAnimationFrame(quadroDaMola)
+    },
+    [pararMola, quadroDaMola],
+  )
 
   const onScroll = useCallback(() => {
     const el = scrollRef.current
@@ -136,29 +265,33 @@ export function useChatScroll({
     // pedir pra ser levado junto). Desligar por posição é o que confundia
     // reflow com gesto e parava o fio no meio do turno.
     const perto = pertoDoFim(el)
-    atBottomRef.current = perto
     if (perto) setFollowing(true)
-    setAtBottom(perto)
+    // Com a mola perseguindo, o fim está a caminho: o botão "Rolar pro fim"
+    // piscaria a cada bloco que cresce mais rápido que ela.
+    const noFim = perto || molaRef.current.raf !== 0
+    atBottomRef.current = noFim
+    setAtBottom(noFim)
   }, [setFollowing])
 
   const scrollToBottom = useCallback(() => {
     const el = scrollRef.current
+    pararMola()
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
     atBottomRef.current = true
     setFollowing(true)
     setAtBottom(true)
-  }, [setFollowing])
+  }, [setFollowing, pararMola])
 
-  // Enviar é um gesto explícito de voltar ao presente. Diferente do botão
-  // "Rolar pro fim", aqui o salto é imediato: o item do humano entra logo
-  // depois e o efeito de crescimento precisa encontrá-lo já ancorado.
+  // Enviar é um gesto explícito de voltar ao presente, e arma a pista: quando
+  // o seu pedido entrar no fio, ele sobe até o topo e a resposta nasce embaixo.
   const followLatest = useCallback(() => {
-    const el = scrollRef.current
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
+    aterrissandoRef.current = false
+    pistaPendenteRef.current = { antes: ultimoPedido(itemsRef.current) }
     atBottomRef.current = true
     setFollowing(true)
     setAtBottom(true)
-  }, [setFollowing])
+    irAoFim("mola")
+  }, [setFollowing, irAoFim])
 
   // Gesto de leitura solta o fio. Ouvido no container porque o alvo real pode
   // ser qualquer filho (um bloco de código, uma imagem).
@@ -167,6 +300,7 @@ export function useChatScroll({
     if (!el) return
     const soltar = () => {
       setFollowing(false)
+      pararMola()
     }
 
     const onWheel = (e: WheelEvent) => {
@@ -220,32 +354,17 @@ export function useChatScroll({
       el.removeEventListener("touchmove", onTouchMove)
       el.removeEventListener("keydown", porTecla)
     }
-  }, [setFollowing])
+  }, [setFollowing, pararMola])
 
-  // Autoscroll enquanto a conversa cresce. `atBottom` NÃO é dependência (ver o
-  // espelho acima): o efeito responde a conteúdo novo, não a mudança de flag.
-  const last = items[items.length - 1]
-  const streamTick = last && last.kind === "text" ? last.text.length : 0
-  const lastKey = last
-    ? last.kind === "text"
-      ? `${last.id}:${last.text.length}`
-      : last.kind === "tool"
-        ? `${last.id}:${last.activityAt ?? 0}:${last.result ? "done" : "run"}`
-        : `${last.id}:${last.kind}`
-    : ""
-  useEffect(() => {
-    const el = scrollRef.current
-    if (el && seguindoRef.current) {
-      el.scrollTo({ top: el.scrollHeight, behavior: "auto" })
-    }
-  }, [items.length, streamTick, lastKey, running])
+  // O laço não sobrevive ao componente.
+  useEffect(() => pararMola, [pararMola])
 
   // O observador PERMANENTE do crescimento.
   //
-  // O efeito acima só acorda com item novo, e é aí que o fio escapava: a linha
-  // de ferramenta chega como um item e CRESCE depois (o resultado volta, o
-  // bloco mede, o diff abre). Sem isto, cada uma dessas alturas empurrava a
-  // conversa e o fim escorregava pra fora da tela no meio do turno.
+  // O efeito da cauda (abaixo) só acorda com item novo, e é aí que o fio
+  // escapava: a linha de ferramenta chega como um item e CRESCE depois (o
+  // resultado volta, o bloco mede, o diff abre). Sem isto, cada uma dessas
+  // alturas empurrava a conversa e o fim escorregava pra fora da tela.
   useEffect(() => {
     const el = scrollRef.current
     if (!el || !contentEl) return
@@ -257,8 +376,11 @@ export function useChatScroll({
       const reapareceu = visivel && !visivelRef.current
       visivelRef.current = visivel
       if (!visivel) return
+      // A pista se ajusta ANTES da pintura, no mesmo quadro em que o conteúdo
+      // cresceu: é isso que deixa a tela parada enquanto a resposta preenche.
+      ajustarPista()
       if (seguindoRef.current) {
-        atual.scrollTo({ top: atual.scrollHeight, behavior: "auto" })
+        irAoFim(aterrissandoRef.current || reapareceu ? "seco" : "mola")
         return
       }
       if (!reapareceu) return
@@ -271,24 +393,47 @@ export function useChatScroll({
     ro.observe(contentEl)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [activeId, contentEl])
+  }, [activeId, contentEl, ajustarPista, irAoFim])
+
+  const last = items[items.length - 1]
+  const streamTick = last && last.kind === "text" ? last.text.length : 0
+  const lastKey = last
+    ? last.kind === "text"
+      ? `${last.id}:${last.text.length}`
+      : last.kind === "tool"
+        ? `${last.id}:${last.activityAt ?? 0}:${last.result ? "done" : "run"}`
+        : `${last.id}:${last.kind}`
+    : ""
+  const lastKeyRef = useRef(lastKey)
+  lastKeyRef.current = lastKey
+
+  const aterrissar = useCallback(() => {
+    aterrissandoRef.current = true
+    caudaNaAterrissagemRef.current = lastKeyRef.current
+  }, [])
 
   // Ao trocar de conversa: aterrissa no fim de imediato (no mesmo commit, antes do paint)
   // para que a nova conversa nunca apareça na posição de rolagem da anterior.
   useLayoutEffect(() => {
     const el = scrollRef.current
     if (!el) return
+    pararMola()
+    aterrissar()
+    ancoraDaPistaRef.current = null
+    pistaPendenteRef.current = null
+    if (pistaRef.current) pistaRef.current.style.height = "0px"
     atBottomRef.current = true
     posicaoRef.current = null
     setFollowing(true)
     setAtBottom(true)
     el.scrollTop = el.scrollHeight
-  }, [activeId, setFollowing])
+  }, [activeId, setFollowing, pararMola, aterrissar])
 
   // Trocar de conversa (ou os itens chegarem do disco) aterrissa no fim e
   // volta a seguir. Acompanha os primeiros frames de layout após o paint.
   const vazio = items.length === 0
   useEffect(() => {
+    aterrissar()
     atBottomRef.current = true
     setFollowing(true)
     setAtBottom(true)
@@ -313,7 +458,40 @@ export function useChatScroll({
     return () => {
       cancelRaf?.()
     }
-  }, [activeId, vazio, setFollowing])
+  }, [activeId, vazio, setFollowing, aterrissar])
 
-  return { scrollRef, contentRef: setContentEl, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom }
+  // Conteúdo novo na cauda. Declarado DEPOIS da aterrissagem de propósito:
+  // no commit da troca, ela carimba a cauda antes, e este efeito a reconhece
+  // como a mesma (logo, ainda aterrissando). `atBottom` NÃO é dependência (ver
+  // o espelho acima): o efeito responde a conteúdo novo, não a mudança de flag.
+  useEffect(() => {
+    if (lastKey !== caudaNaAterrissagemRef.current) aterrissandoRef.current = false
+    const pendente = pistaPendenteRef.current
+    if (pendente) {
+      const pedido = ultimoPedido(itemsRef.current)
+      if (pedido && pedido !== pendente.antes) {
+        pistaPendenteRef.current = null
+        ancoraDaPistaRef.current = { pedido }
+        const m = molaRef.current
+        // O pedido desliza até o lugar; com movimento reduzido, vai direto.
+        m.estado = scrollRef.current
+          ? { ...molaParada(scrollRef.current.scrollTop), deslizando: !movimentoReduzido() }
+          : null
+        m.escrito = scrollRef.current?.scrollTop ?? 0
+      }
+    }
+    ajustarPista()
+    if (seguindoRef.current) irAoFim(aterrissandoRef.current ? "seco" : "mola")
+  }, [items.length, streamTick, lastKey, running, ajustarPista, irAoFim])
+
+  return {
+    scrollRef,
+    contentRef: setContentEl,
+    pistaRef,
+    atBottom,
+    onScroll,
+    scrollToBottom,
+    followLatest,
+    setAtBottom,
+  }
 }

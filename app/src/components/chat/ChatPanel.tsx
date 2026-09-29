@@ -4,7 +4,6 @@ import { dispatchQueuedNow, drainQueued } from "@/components/chat/drenarFila"
 import { stopActiveConversation } from "@/components/chat/filaComposer"
 import { identidadeDoDespacho } from "@/components/chat/composerIdentity"
 import { maybeScheduleAutoResume } from "@/components/chat/autoResumeAgendar"
-import { ArrowDown } from "lucide-react"
 import { avisar, mensagemDe } from "@/lib/avisos"
 import { withNotasDoTurno } from "@/lib/fleet/promptCascade"
 import { CommandConsole } from "@/components/chat/CommandConsole"
@@ -13,6 +12,7 @@ import { useEspecialistas } from "@/store/especialistas"
 import { ScaledMessageList } from "@/components/chat/ScaledMessageList"
 import { TurnScrubber } from "@/components/chat/TurnScrubber"
 import { useChatScroll } from "@/components/chat/useChatScroll"
+import { BotaoRolarProFim } from "@/components/chat/BotaoRolarProFim"
 import { vistaDaConversa } from "@/components/chat/vistaDaConversa"
 import { useFeedbackDoFio } from "@/components/chat/feedbackDoFio"
 import { PresenceBar } from "@/components/chat/PresenceBar"
@@ -113,7 +113,7 @@ export function ChatPanel() {
   const running = conv.running
   const finalizing = conv.finalizing
   const activeId = useChat((s) => s.activeId)
-  const { scrollRef, contentRef, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom } = useChatScroll({
+  const { scrollRef, contentRef, pistaRef, atBottom, onScroll, scrollToBottom, followLatest, setAtBottom } = useChatScroll({
     activeId,
     items,
     running,
@@ -805,18 +805,14 @@ export function ChatPanel() {
             </div>
           </div>
         )}
+        {/* A pista do envio (ADR-290): o espaço que segura o seu pedido no
+            topo enquanto a resposta nasce. A altura é do useChatScroll. */}
+        <div ref={pistaRef} aria-hidden className="shrink-0" />
         {activeId && fusionActive && <FusionBoard convId={activeId} />}
       </div>
 
       <div className="relative z-10 shrink-0 pb-7">
-        {hasConversation && !atBottom && (
-          <button
-            onClick={scrollToBottom}
-            className="absolute -top-2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-full items-center gap-1.5 rounded-full border bg-card/95 px-3 py-1.5 text-[12px] text-foreground shadow-[var(--shadow-pop)] backdrop-blur transition-colors hover:bg-accent"
-          >
-            <ArrowDown className="size-3.5" /> Rolar pro fim
-          </button>
-        )}
+        {hasConversation && !atBottom && <BotaoRolarProFim onClick={scrollToBottom} />}
         {/* px-8 casa a borda do composer com o texto do transcript (que usa
             max-w-[760px] + px-8) — sem isso o composer estoura ~64px pras laterais. */}
         <div className="mx-auto max-w-[760px] px-8">

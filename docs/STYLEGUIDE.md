@@ -543,6 +543,13 @@ proporcionalidade do Orca:
   (o slot da sidebar) usa `useTrocou`: montar não anima, trocar sim. Nunca
   anime na montagem crua; o `PlanMilestone` fazia isso e reencenava a chegada a
   cada reabertura.
+- **O fim do fio se persegue, não se salta** (ADR-290). Conteúdo novo na
+  cauda leva o scroll por uma mola (`molaDoFio.ts`, um laço que para ao
+  assentar); o envio guarda uma pista para o seu pedido ficar no topo com a
+  resposta nascendo embaixo; o trecho novo da resposta viva dissolve
+  (`.fio-trecho`); ações pedidas juntas entram em cascata
+  (`atrasosDaCascata`). Aterrissar continua seco. Movimento reduzido tira o
+  deslize, a mola e o atraso, nunca o conteúdo.
 
 ## 7. Copy
 

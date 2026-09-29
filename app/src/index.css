@@ -763,6 +763,19 @@
 .fio-brasa {
   animation: fio-brasa var(--dur-brasa) ease-out both;
 }
+/* O trecho que acabou de chegar na resposta viva (ADR-290): só opacidade, o
+   layout já está no lugar, então não empurra nada nem briga com a mola. */
+.fio-trecho {
+  animation: fio-surge var(--dur-slow) ease-out both;
+}
+/* A cascata das ações que chegam juntas: o atraso vem inline, por linha.
+   Com movimento reduzido o bloco global zera a duração, mas não o atraso, e
+   com `both` a linha ficaria invisível durante ele: zera aqui também. */
+@media (prefers-reduced-motion: reduce) {
+  .fio-nasce-desliza {
+    animation-delay: 0ms !important;
+  }
+}
 
 /* O trilho da árvore de ações (ADR-241, estudo do Zeron). Cada linha desenha o
    próprio pedaço: o tronco desce por toda a altura dela (inclusive ao lado do

@@ -1,0 +1,429 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Fluidez do fio · mola, pista, fade por trecho e cascata</title>
+<style>
+  /* Fidelidade: mesma fonte do app (Geist), tokens de cor do index.css, e a
+     geometria do fio: gutter de 28px + gap 12px, nome 13px, prosa 14px com
+     leading-relaxed, grupos com gap 20px, linhas de ferramenta de 28px no
+     trilho (ADR-241). Duas colunas recebem o MESMO streaming, no mesmo relógio. */
+  @font-face{font-family:"Geist";src:url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
+  @font-face{font-family:"Geist Mono";src:url("../../app/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
+  :root{
+    --rail:#f6f6f4;--background:#fbfbfa;--card:#fff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--traco:rgba(0,0,0,.036);--sel:rgba(0,0,0,.055);
+    --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);--running:#2f8fbf;
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist",ui-sans-serif,system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,monospace;
+    --dur:200ms;--dur-slow:320ms;--ease-sai:cubic-bezier(.2,.8,.2,1);--ease-expo:cubic-bezier(.16,1,.3,1);
+  }
+  .escuro{
+    --rail:#07080a;--background:#0a0b0d;--card:#141619;--secondary:#191c20;
+    --foreground:#e7e8ea;--muted:#9aa0a7;--faint:#6b7178;
+    --border:rgba(255,255,255,.08);--traco:rgba(255,255,255,.032);--sel:rgba(255,255,255,.07);
+    --brass:#e4a862;--brass-soft:rgba(228,168,98,.14);
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 64px;-webkit-font-smoothing:antialiased}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1080px}
+  .sub b{color:var(--foreground);font-weight:500}
+  code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
+
+  .controles{display:flex;gap:8px;align-items:center;margin:18px 0 16px;flex-wrap:wrap}
+  .btn{all:unset;cursor:pointer;height:28px;padding:0 12px;border-radius:6px;font-size:12px;display:inline-flex;align-items:center;gap:6px;background:var(--card);box-shadow:0 0 0 1px var(--border);color:var(--foreground)}
+  .btn:hover{background:var(--secondary)}
+  .btn.primario{background:var(--foreground);color:var(--background);box-shadow:none}
+  .btn:disabled{opacity:.45;cursor:default}
+  label.chk{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-left:8px;cursor:pointer}
+
+  .palco{display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap}
+  .coluna{width:560px}
+  .titulo{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .titulo b{font-size:14px;font-weight:600}
+  .titulo span{font-size:12px;color:var(--faint)}
+  .janela{height:560px;border-radius:12px;background:var(--background);box-shadow:0 0 0 1px var(--border);display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .scroll{flex:1;overflow-y:auto;overflow-x:hidden;position:relative}
+  .scroll::-webkit-scrollbar{width:9px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:99px;border:2px solid transparent;background-clip:padding-box}
+  .fio{display:flex;flex-direction:column;gap:20px;padding:24px 28px}
+  .pista{flex:none}
+  .grupo{display:flex;gap:12px}
+  .gutter{width:28px;flex:none;padding-top:2px}
+  .av{width:28px;height:28px;border-radius:99px;display:grid;place-items:center;font-size:11px;font-weight:600;color:#fff}
+  .av.voce{background:#6b7280}
+  .av.motor{background:#d97757;border-radius:7px}
+  .corpo{min-width:0;flex:1}
+  .nome{font-size:13px;font-weight:500;margin-bottom:4px;display:flex;gap:8px;align-items:baseline}
+  .nome small{font-size:11px;color:var(--faint);font-weight:400;font-variant-numeric:tabular-nums}
+  .nos{display:flex;flex-direction:column;gap:8px}
+  .prosa{font-size:14px;line-height:1.625;overflow-wrap:anywhere}
+  .prosa p+p,.prosa p+ul,.prosa ul+p{margin-top:8px}
+  .prosa ul{padding-left:20px}
+  .prosa code{font-size:12.5px}
+
+  /* Trilho de ferramentas (ADR-241), simplificado */
+  .ferr-cab{height:28px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .ferr-cab .dot{width:6px;height:6px;border-radius:9px;background:var(--running)}
+  .trilho{display:flex;flex-direction:column;padding-left:26px}
+  .trilho>div{position:relative;height:28px;display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted)}
+  .trilho>div::before{content:"";position:absolute;left:-9px;top:0;bottom:0;border-left:1px solid var(--border)}
+  .trilho>div:last-child::before{bottom:auto;height:8px}
+  .trilho>div::after{content:"";position:absolute;left:-9px;top:8px;width:13px;height:6px;border-left:1px solid var(--border);border-bottom:1px solid var(--border);border-bottom-left-radius:6px}
+  .trilho .verbo{color:var(--foreground)}
+  .trilho .alvo{font:12px var(--mono);color:var(--muted)}
+
+  .trabalhando{font-size:13px;color:var(--faint);height:28px;display:flex;align-items:center;gap:8px}
+  .trabalhando i{width:6px;height:6px;border-radius:9px;background:var(--running);animation:pulsa 1.4s ease-in-out infinite}
+  @keyframes pulsa{50%{opacity:.35}}
+
+  .composer{flex:none;margin:0 20px 16px;border-radius:12px;background:var(--card);box-shadow:0 0 0 1px var(--border);height:76px;padding:12px 14px;font-size:14px;color:var(--faint);position:relative}
+  .rolar{position:absolute;left:50%;bottom:104px;transform:translateX(-50%);height:28px;padding:0 12px;border-radius:99px;background:var(--card);box-shadow:var(--shadow-pop);font-size:12px;display:none;align-items:center;gap:6px;cursor:pointer;z-index:3}
+  .rolar.on{display:inline-flex}
+
+  /* HOJE: o nó inteiro nasce com fade (ADR-179, fio-nasce 200ms); o texto que
+     chega depois aparece seco. */
+  @keyframes surge{from{opacity:0}to{opacity:1}}
+  @keyframes sobe{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .hoje .nasce{animation:surge var(--dur) ease-out both}
+  .hoje .nasce-sobe{animation:sobe var(--dur-slow) var(--ease-sai) both}
+
+  /* PROPOSTA: cada trecho que chega dissolve sozinho (opacidade só, o layout
+     já está no lugar), e as linhas de ferramenta entram em cascata. */
+  .proposta .nasce{animation:surge var(--dur) ease-out both}
+  .proposta .nasce-sobe{animation:sobe var(--dur-slow) var(--ease-sai) both}
+  .trecho{animation:surge var(--fade-trecho,320ms) ease-out both}
+  @keyframes revela{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  @keyframes risca{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+  .proposta .trilho>div.cascata{animation:revela 360ms var(--ease-expo) both}
+  .proposta .trilho>div.cascata::before{transform-origin:top;animation:risca 480ms cubic-bezier(.22,1,.36,1) both;animation-delay:inherit}
+
+  .reduzido *{animation-duration:0ms!important;animation-delay:0ms!important}
+
+  .nota{font-size:12px;line-height:1.6;color:var(--muted);margin-top:10px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .medidor{font:11px var(--mono);color:var(--faint);margin-top:6px;font-variant-numeric:tabular-nums}
+  .legenda{margin-top:28px;max-width:1144px;display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+  .legenda div{background:var(--card);box-shadow:0 0 0 1px var(--border);border-radius:10px;padding:12px 14px;font-size:12px;line-height:1.55;color:var(--muted)}
+  .legenda b{display:block;color:var(--foreground);font-size:13px;font-weight:600;margin-bottom:4px}
+</style>
+</head>
+<body>
+<h1>Fluidez do fio: mola, pista, fade por trecho e cascata</h1>
+<p class="sub">As duas colunas recebem <b>o mesmo streaming, no mesmo relógio</b>. A da esquerda reproduz o que o fio faz hoje (<code>useChatScroll</code>: salto instantâneo a cada token e ao enviar). A da direita é a proposta, com as técnicas do Zeron. Role para cima no meio de uma resposta para ver que as duas soltam o fio do mesmo jeito: <b>só o gesto solta</b>, isso já está certo hoje.</p>
+
+<div class="controles">
+  <button class="btn primario" id="enviarCurta">Enviar · resposta curta</button>
+  <button class="btn primario" id="enviarLonga">Enviar · resposta longa</button>
+  <button class="btn" id="rajada">Rajada de ferramentas</button>
+  <button class="btn" id="reiniciar">Reiniciar</button>
+  <label class="chk"><input type="checkbox" id="lento"> câmera lenta (×3)</label>
+  <label class="chk"><input type="checkbox" id="reduz"> movimento reduzido</label>
+  <label class="chk"><input type="checkbox" id="tema"> tema escuro</label>
+</div>
+
+<div class="palco">
+  <div class="coluna">
+    <div class="titulo"><b>Hoje</b><span>salto a cada token · nó inteiro nasce com fade</span></div>
+    <div class="janela hoje" id="hoje"></div>
+    <p class="medidor" id="medHoje"></p>
+  </div>
+  <div class="coluna">
+    <div class="titulo"><b>Proposta</b><span>pista ao enviar · mola · fade por trecho · cascata</span></div>
+    <div class="janela proposta" id="proposta"></div>
+    <p class="medidor" id="medProp"></p>
+  </div>
+</div>
+
+<div class="legenda">
+  <div><b>1 · Pista ao enviar</b>Sua mensagem desliza até perto do topo (~230ms, desacelerando) e fica ali. Abaixo dela há um espaço reservado: a resposta preenche a tela <b>sem ela rolar</b>. Quando a resposta passa do fim, a mola assume. O espaço fica até você sair da conversa.</div>
+  <div><b>2 · Mola no acompanhamento</b>Em vez de pular para o fim a cada token, o scroll persegue o fim com uma mola (amortecimento 0,7 · rigidez 0,05 · massa 1,25) mais uma estimativa de quanto o texto cresce por quadro. O texto sobe como uma esteira, não em degraus de linha.</div>
+  <div><b>3 · Fade por trecho</b>Só o que acabou de chegar dissolve (opacidade, 320ms, o <code>--dur-slow</code> do §6). O layout já está no lugar, então nada empurra nada. Histórico e troca de conversa chegam prontos, como manda a ADR-179.</div>
+  <div><b>4 · Cascata das ferramentas</b>Quando várias ações chegam no mesmo quadro, elas entram uma a uma: 90ms para a primeira, +65ms por linha, revelação de 360ms, e o trilho desce junto. Uma ação sozinha entra do mesmo jeito, sem atraso.</div>
+</div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Roteiro: o mesmo para as duas colunas.
+// ---------------------------------------------------------------------------
+const HISTORICO = [
+  {autor:"voce", hora:"14:02", texto:"O fio está pulando quando a resposta chega, dá uma olhada?"},
+  {autor:"motor", hora:"14:02", ferr:[["Leu","useChatScroll.ts"],["Buscou","followLatest"]],
+   texto:"<p>Olhei o <code>useChatScroll</code>. O acompanhamento do fim chama <code>scrollTo</code> instantâneo a cada token e a cada mudança de tamanho, então o texto sobe em degraus do tamanho de uma linha.</p><p>O soltar do fio está certo: só gesto solta, reflow não.</p>"},
+  {autor:"voce", hora:"14:05", texto:"E o que você sugere?"},
+  {autor:"motor", hora:"14:05", texto:"<p>Trocar o salto por uma mola que persegue o fim, e reservar espaço abaixo da sua mensagem quando você envia, para a resposta nascer sem a tela andar.</p>"},
+]
+const PARAGRAFOS = [
+  "Comecei pelo que é puro: a integração da mola vira uma função que recebe posição, velocidade e alvo e devolve o próximo quadro, testável sem DOM.",
+  "O laço de animação é um só por fio. Ele acorda quando o alvo se move, persegue com a mola e **para sozinho** quando assenta, então não há quadro ocioso depois que a resposta termina.",
+  "A pista é um espaçador no fim do transcript. A altura dele é o que falta para a sua mensagem ficar no topo com a resposta inteira visível; conforme o texto cresce, ele encolhe na mesma medida.",
+  "Quando a resposta passa da tela, o espaçador já está em zero e a mola continua de onde a pista parou, sem salto na troca.",
+  "O fade é só opacidade no trecho novo. Ele não mexe em layout, então não briga com a mola nem com a medição das linhas.",
+  "Movimento reduzido desliga os três: sem deslize, sem mola (vai direto ao fim) e sem fade. A informação é a mesma, só chega seca.",
+  "Com isso, o custo por token continua sendo o do markdown da mensagem viva, que é o F3 e fica para o final.",
+  "Rodei a suíte do chat e o teste de rolagem de conversa longa; os dois passam.",
+]
+const LISTA = ["mola em função pura, com teste", "um laço de animação por fio, que para ao assentar", "pista que encolhe enquanto a resposta cresce"]
+
+function roteiro(longa){
+  const passos = []
+  passos.push({t:"ferr", itens:[["Leu","useChatScroll.ts"],["Leu","ChatPanel.tsx"],["Buscou","scrollTo"]]})
+  passos.push({t:"espera", ms:500})
+  const pars = longa ? PARAGRAFOS : PARAGRAFOS.slice(0,2)
+  pars.forEach((p,i)=>{
+    passos.push({t:"texto", par:p})
+    if(i===1){ passos.push({t:"lista", itens: LISTA}) }
+    if(longa && i===3){ passos.push({t:"ferr", itens:[["Editou","useChatScroll.ts"],["Editou","ChatPanel.tsx"]]}); passos.push({t:"espera", ms:400}) }
+  })
+  if(longa){ passos.push({t:"ferr", itens:[["Rodou","bun run test"]]}); passos.push({t:"espera", ms:600}); passos.push({t:"texto", par:"Pronto. Pode abrir uma conversa longa e enviar para ver a pista."}) }
+  return passos
+}
+
+// Fatia um parágrafo em pedaços de 3 a 12 caracteres, como os deltas reais.
+function fatiar(txt){
+  const out=[]; let i=0
+  while(i<txt.length){ const n=3+Math.floor(rand()*10); out.push(txt.slice(i,i+n)); i+=n }
+  return out
+}
+let semente=7; function rand(){ semente=(semente*16807)%2147483647; return (semente-1)/2147483646 }
+function mdInline(s){ return s.replace(/\*\*(.+?)\*\*/g,"<b>$1</b>").replace(/`(.+?)`/g,"<code>$1</code>") }
+
+// ---------------------------------------------------------------------------
+// Uma coluna. `modo` = "hoje" | "proposta".
+// ---------------------------------------------------------------------------
+const MOLA = {amortecimento:0.7, rigidez:0.05, massa:1.25}
+const PERTO_DO_FIM = 80, INSET_TOPO = 16, RETEM_DESLIZE = 0.85
+
+function criarColuna(raiz, modo, medidor){
+  raiz.innerHTML = `
+    <div class="scroll"><div class="fio"></div><div class="pista"></div></div>
+    <button class="rolar">↓ Rolar pro fim</button>
+    <div class="composer">Peça a próxima tarefa…</div>`
+  const sc = raiz.querySelector(".scroll"), fio = raiz.querySelector(".fio"), pista = raiz.querySelector(".pista"), rolar = raiz.querySelector(".rolar")
+  const st = {seguindo:true, v:0, pos:null, cresc:0, alvoAnt:null, laco:0, pistaDe:null, deslizando:false, saltos:0, quadrosMola:0}
+
+  const reduzido = () => document.body.classList.contains("reduzido")
+  const max = () => sc.scrollHeight - sc.clientHeight
+  const pertoDoFim = () => max() - sc.scrollTop < PERTO_DO_FIM
+
+  // Gesto solta, igual nas duas colunas (é o que já está certo hoje).
+  sc.addEventListener("wheel", e=>{
+    if(e.deltaY<0){ st.seguindo=false; st.deslizando=false; if(st.pistaDe) st.pistaDe.solta=true }
+    else if(pertoDoFim()) st.seguindo=true
+  }, {passive:true})
+  sc.addEventListener("scroll", ()=>{ const p=pertoDoFim(); if(p) st.seguindo=true; rolar.classList.toggle("on", !p) })
+  rolar.onclick = ()=>{ st.seguindo=true; sc.scrollTo({top:max(), behavior:"smooth"}) }
+
+  // --- HOJE: salto seco ------------------------------------------------------
+  function saltar(){ if(st.seguindo){ sc.scrollTop = sc.scrollHeight; st.saltos++ } }
+
+  // --- PROPOSTA: pista + mola ------------------------------------------------
+  function ajustarPista(){
+    const p = st.pistaDe
+    if(!p){ pista.style.height="0px"; return }
+    // Quanto conteúdo existe da mensagem enviada para baixo.
+    const abaixo = fio.offsetHeight - p.el.offsetTop + INSET_TOPO
+    pista.style.height = Math.max(0, sc.clientHeight - abaixo) + "px"
+  }
+  function alvo(){
+    const p = st.pistaDe
+    if(p && !p.solta && !p.transbordou){
+      const segurar = p.el.offsetTop - INSET_TOPO
+      if(max() > segurar + 2) { p.transbordou = true } // a resposta passou da tela: a mola assume
+      else return segurar
+    }
+    return max()
+  }
+  function acordar(){ if(!st.laco) st.laco = requestAnimationFrame(quadro) }
+  let tAnt = 0
+  function quadro(t){
+    st.laco = 0
+    const dtq = tAnt ? Math.min(8, (t - tAnt) / (1000/60)) : 1
+    tAnt = t
+    if(modo!=="proposta") return
+    ajustarPista()
+    if(reduzido()){ if(st.seguindo) sc.scrollTop = alvo(); tAnt=0; return }
+    const a = alvo()
+    if(st.alvoAnt!==null){ const d = a - st.alvoAnt; st.cresc = st.cresc + 0.12*(Math.max(0,d) - st.cresc) }
+    st.alvoAnt = a
+    if(st.pos===null) st.pos = sc.scrollTop
+    const lento = document.getElementById("lento").checked ? 3 : 1
+    let ativo = false
+    if(st.deslizando){
+      // Deslize de entrada da pista: retém 85% do que falta por quadro (~230ms).
+      const resta = a - st.pos
+      st.pos = a - resta * Math.pow(Math.pow(RETEM_DESLIZE, 1/lento), dtq)
+      if(Math.abs(a - st.pos) < 1){ st.pos = a; st.deslizando = false }
+      ativo = true
+    } else if(st.seguindo){
+      for(let i=0;i<dtq;i++){
+        const dif = a - st.pos
+        st.v = (MOLA.amortecimento*st.v + (MOLA.rigidez/lento)*dif) / MOLA.massa
+        st.pos += st.v + st.cresc/lento
+      }
+      st.pos = Math.min(st.pos, max())
+      st.quadrosMola++
+      ativo = Math.abs(a - st.pos) > 0.5 || Math.abs(st.v) > 0.05
+      if(!ativo){ st.pos = a; st.v = 0 }
+    }
+    if(st.deslizando || st.seguindo) sc.scrollTop = st.pos
+    else st.pos = sc.scrollTop
+    medidor.textContent = `laço ${ativo ? "ativo" : "parado"} · quadros de mola ${st.quadrosMola}`
+    if(ativo) acordar(); else tAnt = 0
+  }
+  function cresceu(){
+    if(modo==="hoje") saltar()
+    else { if(!st.seguindo) st.pos = null; acordar() }
+    if(modo==="hoje") medidor.textContent = `saltos instantâneos ${st.saltos}`
+  }
+
+  // --- Montagem --------------------------------------------------------------
+  function grupo(autor, hora, nascendo){
+    const g = document.createElement("div")
+    g.className = "grupo" + (nascendo ? (autor==="voce" ? " nasce-sobe" : " nasce") : "")
+    g.innerHTML = `<div class="gutter"><div class="av ${autor}">${autor==="voce"?"V":"✳"}</div></div>
+      <div class="corpo"><div class="nome">${autor==="voce"?"Você":"Claude Code"} <small>${hora}</small></div><div class="nos"></div></div>`
+    fio.appendChild(g)
+    return g.querySelector(".nos")
+  }
+  function ferramentas(nos, itens, nascendo){
+    let bloco = nos.querySelector(".ferr:last-child")
+    if(!bloco){
+      bloco = document.createElement("div"); bloco.className = "ferr" + (nascendo ? " nasce" : "")
+      bloco.innerHTML = `<div class="ferr-cab"><span class="dot"></span><span>Trabalhando</span></div><div class="trilho"></div>`
+      nos.appendChild(bloco)
+    }
+    const tr = bloco.querySelector(".trilho")
+    itens.forEach(([verbo, alvo], i)=>{
+      const l = document.createElement("div")
+      l.innerHTML = `<span class="verbo">${verbo}</span><span class="alvo">${alvo}</span>`
+      if(nascendo && modo==="proposta"){
+        l.className = "cascata"
+        // A primeira da rajada espera 90ms; sozinha, entra já.
+        l.style.animationDelay = (itens.length > 1 ? 90 + 65*i : 0) * fator() + "ms"
+        l.style.animationDuration = 360*fator() + "ms"
+      }
+      tr.appendChild(l)
+    })
+    return bloco
+  }
+  function prosa(nos, html, nascendo){
+    const d = document.createElement("div"); d.className = "prosa" + (nascendo ? " nasce" : ""); d.innerHTML = html
+    nos.appendChild(d); return d
+  }
+
+  function carregarHistorico(){
+    fio.innerHTML = ""; st.pistaDe = null; pista.style.height = "0px"; st.seguindo = true; st.pos = null; st.v = 0; st.saltos = 0; st.quadrosMola = 0
+    HISTORICO.forEach(h=>{
+      const nos = grupo(h.autor, h.hora, false)
+      if(h.ferr) ferramentas(nos, h.ferr, false)
+      if(h.autor==="voce") prosa(nos, h.texto, false)
+      else prosa(nos, h.texto, false)
+    })
+    requestAnimationFrame(()=>{ sc.scrollTop = sc.scrollHeight })
+    medidor.textContent = ""
+  }
+
+  // O envio. `pedido` é o texto; devolve a API que o relógio comum dirige.
+  function enviar(pedido){
+    const nos = grupo("voce", "14:09", true)
+    prosa(nos, pedido, false)
+    const el = nos.closest(".grupo")
+    st.seguindo = true
+    if(modo==="hoje"){ saltar() }
+    else {
+      // Pista: a mensagem sobe até o topo e fica; o espaço abaixo é reservado.
+      st.pistaDe = {el, solta:false, transbordou:false}
+      ajustarPista()
+      st.pos = sc.scrollTop; st.v = 0; st.alvoAnt = null; st.cresc = 0
+      st.deslizando = !reduzido()
+      acordar()
+    }
+    let resposta = null, trabalhando = null, alvoTexto = null, ferrAtual = null
+    return {
+      comeca(){
+        resposta = grupo("motor", "14:09", true)
+        trabalhando = document.createElement("div"); trabalhando.className="trabalhando"; trabalhando.innerHTML="<i></i>Trabalhando…"
+        resposta.appendChild(trabalhando); cresceu()
+      },
+      ferr(itens){
+        trabalhando?.remove(); trabalhando = null; alvoTexto = null
+        const novo = !ferrAtual
+        ferrAtual = ferramentas(resposta, itens, true)
+        if(!novo) ferrAtual.classList.remove("nasce")
+        cresceu()
+      },
+      paragrafo(){
+        trabalhando?.remove(); trabalhando = null; ferrAtual = null
+        if(!alvoTexto){ alvoTexto = prosa(resposta, "", true) }
+        const p = document.createElement("p"); alvoTexto.appendChild(p); return p
+      },
+      lista(){ ferrAtual = null; if(!alvoTexto) alvoTexto = prosa(resposta, "", true); const ul=document.createElement("ul"); alvoTexto.appendChild(ul); return ul },
+      trecho(noAlvo, txt){
+        if(modo==="proposta" && !reduzido()){
+          const s = document.createElement("span"); s.className="trecho"; s.style.setProperty("--fade-trecho", 320*fator()+"ms"); s.innerHTML = mdInline(txt); noAlvo.appendChild(s)
+        } else noAlvo.insertAdjacentHTML("beforeend", mdInline(txt))
+        cresceu()
+      },
+      fim(){ resposta.querySelectorAll(".ferr-cab span:last-child").forEach(s=>s.textContent="Trabalhou") ; resposta.querySelectorAll(".ferr-cab .dot").forEach(d=>d.style.background="var(--faint)"); cresceu() },
+    }
+  }
+  return {carregarHistorico, enviar}
+}
+
+// ---------------------------------------------------------------------------
+// Relógio comum
+// ---------------------------------------------------------------------------
+const fator = () => document.getElementById("lento").checked ? 3 : 1
+const esperar = ms => new Promise(r=>setTimeout(r, ms*fator()))
+const colunas = [
+  criarColuna(document.getElementById("hoje"), "hoje", document.getElementById("medHoje")),
+  criarColuna(document.getElementById("proposta"), "proposta", document.getElementById("medProp")),
+]
+let rodando = false
+async function rodar(longa){
+  if(rodando) return; rodando = true; travar(true); semente = 7
+  const envios = colunas.map(c=>c.enviar(longa ? "Implementa a mola e a pista no fio, e me conta o que mudou." : "Resume em duas linhas o que muda."))
+  await esperar(700)
+  envios.forEach(e=>e.comeca())
+  await esperar(500)
+  for(const passo of roteiro(longa)){
+    if(passo.t==="espera") await esperar(passo.ms)
+    else if(passo.t==="ferr"){ envios.forEach(e=>e.ferr(passo.itens)); await esperar(300) }
+    else if(passo.t==="texto"){
+      const alvos = envios.map(e=>e.paragrafo())
+      for(const pedaco of fatiar(passo.par)){ envios.forEach((e,i)=>e.trecho(alvos[i], pedaco)); await esperar(40) }
+    } else if(passo.t==="lista"){
+      const uls = envios.map(e=>e.lista())
+      for(const item of passo.itens){
+        const lis = uls.map(ul=>{ const li=document.createElement("li"); ul.appendChild(li); return li })
+        for(const pedaco of fatiar(item)){ envios.forEach((e,i)=>e.trecho(lis[i], pedaco)); await esperar(40) }
+      }
+    }
+  }
+  envios.forEach(e=>e.fim())
+  rodando = false; travar(false)
+}
+async function rajada(){
+  if(rodando) return; rodando = true; travar(true)
+  const envios = colunas.map(c=>c.enviar("Roda as verificações."))
+  await esperar(600); envios.forEach(e=>e.comeca()); await esperar(400)
+  envios.forEach(e=>e.ferr([["Rodou","bun run test"],["Rodou","bunx tsc -b --force"],["Rodou","bun run check"],["Rodou","cargo test"],["Leu","decisions.md"]]))
+  await esperar(1400)
+  envios.forEach(e=>e.fim()); rodando = false; travar(false)
+}
+function travar(v){ ["enviarCurta","enviarLonga","rajada"].forEach(id=>document.getElementById(id).disabled=v) }
+function reiniciar(){ if(rodando) return; colunas.forEach(c=>c.carregarHistorico()) }
+
+document.getElementById("enviarCurta").onclick = ()=>rodar(false)
+document.getElementById("enviarLonga").onclick = ()=>rodar(true)
+document.getElementById("rajada").onclick = rajada
+document.getElementById("reiniciar").onclick = reiniciar
+document.getElementById("reduz").onchange = e=>document.body.classList.toggle("reduzido", e.target.checked)
+document.getElementById("tema").onchange = e=>document.body.classList.toggle("escuro", e.target.checked)
+reiniciar()
+</script>
+</body>
+</html>

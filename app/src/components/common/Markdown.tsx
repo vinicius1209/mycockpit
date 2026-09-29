@@ -1,9 +1,10 @@
-import { memo, useRef, useState, type ReactNode } from "react"
+import { memo, useMemo, useRef, useState, type ReactNode } from "react"
 import ReactMarkdown, { defaultUrlTransform } from "react-markdown"
-import type { Components } from "react-markdown"
+import type { Components, Options } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { fatiasDaMensagem } from "./markdownBudget"
+import { rehypeTrechos } from "./rehypeTrechos"
 import { BlocoMermaid } from "./BlocoMermaid"
 import { fonteMermaid } from "./fonteMermaid"
 import { Alerta, CaixaDeTarefa, ItemDeLista, ehTipoDeAlerta, remarkAlertas } from "./markdownAlertas"
@@ -410,14 +411,24 @@ const mdComponents: Components = {
   ),
 }
 
-function MarkdownRico({ text }: { text: string }) {
+// detect: highlight também blocos SEM linguagem (```) — agents muitas
+// vezes não anotam a linguagem e ficariam monocromáticos sem isto.
+const REHYPE_ASSENTADO: NonNullable<Options["rehypePlugins"]> = [[rehypeHighlight, { detect: true }]]
+
+function MarkdownRico({ text, desde }: { text: string; desde?: number }) {
+  // Só a bolha viva embrulha palavras para o fade por trecho (ADR-290).
+  const rehype = useMemo<NonNullable<Options["rehypePlugins"]>>(
+    () =>
+      desde === undefined
+        ? REHYPE_ASSENTADO
+        : [...REHYPE_ASSENTADO, [rehypeTrechos, { desde }]],
+    [desde],
+  )
   return (
     <ReactMarkdown
       remarkPlugins={[remarkGfm, remarkAlertas]}
       urlTransform={customUrlTransform}
-      // detect: highlight também blocos SEM linguagem (```) — agents muitas
-      // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
-      rehypePlugins={[[rehypeHighlight, { detect: true }]]}
+      rehypePlugins={rehype}
       components={mdComponents}
     >
       {text}
@@ -433,12 +444,17 @@ function MarkdownRico({ text }: { text: string }) {
 export const Markdown = memo(function Markdown({
   text,
   voz,
+  vivo,
 }: {
   text: string
   /** Narração do meio de um turno que já tem resposta (G8): um tom abaixo,
    *  para a conclusão se achar sem ler o caminho inteiro. */
   voz?: "narracao"
+  /** A resposta ainda está chegando: o trecho novo dissolve (ADR-290). */
+  vivo?: boolean
 }) {
+  // O que já existia quando a bolha montou chega pronto (ADR-179).
+  const [desde] = useState(() => text.length)
   const fatias = fatiasDaMensagem(text)
   return (
     <div
@@ -450,7 +466,12 @@ export const Markdown = memo(function Markdown({
     >
       {fatias.map((fatia, indice) =>
         fatia.tipo === "rico" ? (
-          <MarkdownRico key={indice} text={fatia.texto} />
+          <MarkdownRico
+            key={indice}
+            text={fatia.texto}
+            // Com fatias, os offsets são da fatia e não da mensagem: sem fade.
+            desde={vivo && fatias.length === 1 ? desde : undefined}
+          />
         ) : (
           <TextoCru
             key={indice}

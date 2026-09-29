@@ -32,6 +32,7 @@ import {
 import { ToolLine } from "@/components/chat/ToolLine"
 import { controle } from "@/components/ui/controle"
 import { fmtDuration } from "@/lib/format"
+import { atrasosDaCascata } from "@/lib/nascimento"
 import { describeToolGroup, summarizeToolGroup } from "@/lib/toolGroup"
 import { cn } from "@/lib/utils"
 
@@ -107,11 +108,18 @@ export function ToolNodeList({
   )
   const okCount = okNodes.reduce((acc, node) => acc + branchSize(node), 0)
   const historyId = `history:${parentId ?? "root"}:${depth}`
+  // Ações pedidas juntas entram uma a uma (ADR-290). Calculado na ordem em
+  // que nasceram, não na de exibição: a cascata conta a chegada.
+  const atrasos = useMemo(() => {
+    const porLinha = atrasosDaCascata(nodes.map((node) => node.item.ts))
+    return new Map(nodes.map((node, i) => [node.item.id, porLinha[i]]))
+  }, [nodes])
 
   const renderNode = (node: ToolTreeNode) => (
     <ToolLine
       key={node.item.id}
       node={node}
+      atraso={atrasos.get(node.item.id)}
       activeToolId={activeToolId}
       agent={agent}
       depth={depth}

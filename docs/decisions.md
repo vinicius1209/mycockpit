@@ -10442,3 +10442,48 @@ considerou.
   injetado: a resposta vazia sem "Nada encontrado" duplicado (o `cmdk` não
   conta item com `forceMount`), a primeira linha selecionada e as barras de
   cota alinhadas.
+
+### ADR-290 · O fio segue o fim com mola, guarda uma pista ao enviar, dissolve o trecho novo e solta as ações em cascata ✅
+- **Contexto (29/09/2026):** estudo do Zeron (app em GPUI, `~/projetos/zeron`,
+  `docs/research/mugen-pretext.md` de lá). A fluidez dele vem da coreografia
+  do scroll, portada de bibliotecas React da versão Electron, e não do motor
+  gráfico. Mock aprovado lado a lado em `docs/mocks/fluidez-do-fio.html`.
+- **Decisão:**
+  1. **Mola** (`components/chat/molaDoFio.ts`, puro, e `useChatScroll`): o
+     fim é perseguido por uma mola (amortecimento 0,7 · rigidez 0,05 · massa
+     1,25, as constantes da use-stick-to-bottom) mais uma média do
+     crescimento por quadro, num único laço de `requestAnimationFrame` que
+     para ao assentar. Mais de 2,5 telas de distância teleporta. Aterrissar
+     (abrir, trocar de conversa, a janela progressiva, reaparecer) continua
+     seco: não é evento (ADR-179). O primeiro conteúdo novo na cauda encerra
+     a aterrissagem. Só gesto solta o fio, como antes; o botão "Rolar pro
+     fim" não aparece enquanto a mola está a caminho.
+  2. **Pista ao enviar:** `followLatest` arma a pista; quando o seu pedido
+     entra no fio, um espaço irmão do transcript (`pistaRef`) ganha a altura
+     que falta para ele ficar 24px abaixo do topo, e ele desliza até lá
+     (retém 85% do caminho por quadro, ~230ms). A altura é reajustada no
+     `ResizeObserver`, antes da pintura, então a resposta preenche a tela
+     sem ela andar. Quando a resposta passa da tela a pista zera e a mola
+     segue. Trocar de conversa desfaz a pista.
+  3. **Fade por trecho** (`components/common/rehypeTrechos.ts`): só na bolha
+     viva, cada palavra vira um `span`, e as que nasceram depois da montagem
+     levam `.fio-trecho` (opacidade, `--dur-slow`). As `key` do react-markdown
+     são por posição entre irmãos da mesma tag, por isso TODA palavra é
+     embrulhada: a velha mantém o elemento e a nova monta e anima. `code` e
+     `pre` não são embrulhados por dentro (leem os filhos como texto); código
+     inline entra inteiro. Assentada, a mensagem volta a texto corrido.
+  4. **Cascata** (`atrasosDaCascata` em `lib/nascimento.ts`): ações irmãs
+     nascidas a menos de 50ms uma da outra são uma rajada. A primeira entra
+     já, a segunda espera 90ms e as seguintes +65ms, com teto na quinta
+     posição (um plano de 11 tarefas criado no mesmo milissegundo, visto no
+     banco real, deixaria a última invisível por 675ms).
+  5. Movimento reduzido: sem deslize e sem mola (vai direto ao fim), e o
+     `.fio-nasce-desliza` zera o atraso, porque o bloco global zera a duração
+     mas não o `animation-delay`.
+- **Fora (por ora):** o F3 de `docs/fluidez-do-fio-plan.md` (markdown por
+  bloco na bolha viva) continua aberto; o fade por trecho soma um `span` por
+  palavra à bolha viva e fica mais barato quando ele entrar.
+- **Não visto na tela:** o navegador da Frota não abriu esta worktree. A
+  física, a pista e a cascata têm testes puros; o fade, teste em DOM (jsdom)
+  que prova a identidade dos elementos entre renders. A sensação precisa ser
+  conferida num build.

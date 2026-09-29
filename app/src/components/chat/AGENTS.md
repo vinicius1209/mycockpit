@@ -120,6 +120,10 @@ o composer continuava cheio do texto da pessoa. Espera de 4s com tela imóvel n�
     ele fica só para falha e para superfícies fora do fio (Mesa, bandeja).
     Nunca desenhe o corte a partir do Enter: com steering nativo o Enter
     corrige SEM parar, e só o evento pode dizer que houve corte.
+14a. **O envio arma a pista, a bolha continua nascendo do manifesto.**
+    `followLatest` só marca qual era o último pedido; a pista se ancora no
+    primeiro pedido NOVO que o fio mostrar, ou seja, no que o backend aceitou
+    (item 6). Nunca desenhe a pista a partir do texto do composer (ADR-290).
 
 ## O inventário do "/"
 
