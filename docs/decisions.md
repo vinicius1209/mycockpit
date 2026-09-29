@@ -10227,3 +10227,37 @@ considerou.
      registry de cada motor; o valor enviado ao CLI não muda.
 - **Não mudou:** especialistas, modo (sempre visível, ADR-167), "Planejar", o
   chevron de disputa e missão, e o seletor de motor e modelo.
+
+### ADR-283 · Quatro gestos pequenos do estudo do Maestri: próxima que pede você, alertas no Markdown, cor nos Bastidores e números ao segurar ⌘ ✅
+- **Contexto (29/09/2026):** o bloco pequeno do estudo
+  (`docs/competitors-maestri-2026-09-27.md`, F7, G6, G4 e G9), escolhido pela
+  pessoa depois do composer (ADR-282).
+- **Decisão:**
+  1. **F7 · Próxima que pede você.** ⌘⇧A (Ctrl+Shift+A no Linux) e o item no
+     ⌘K, que só aparece com alguém pedindo, abrem a conversa com pedido
+     pendente que espera há mais tempo; repetido, passa à seguinte e volta ao
+     começo. A régua de quem pede é a do sino (`ownerByRunId`) e a ordem é a
+     de chegada na fila (`lib/proximaQuePede.ts`). O gesto só navega: quem
+     responde continua sendo a pessoa, no cartão da conversa.
+  2. **G6 · Alertas do GitHub e tarefa feita.** `> [!NOTE]`, `[!TIP]`,
+     `[!IMPORTANT]`, `[!WARNING]` e `[!CAUTION]` viram caixa com ícone e
+     rótulo em pt-BR (`markdownAlertas.tsx`, plugin remark). A caixa é
+     neutra nos cinco: o aviso que o agente escreve não é decisão pendente
+     nem falha, então não leva âmbar nem vermelho (§2). O marcador na mesma
+     linha do texto também vale. A tarefa feita sai riscada e esmaecida, e a
+     caixinha substitui o checkbox nativo.
+  3. **G4 · Cor nos Bastidores.** A linha guardada mantém só o SGR
+     (`limparLinha(_, { cor: true })` e `bastidores::limpar_linha_com_cor`,
+     espelhos), e o render (`lib/corDoTerminal.ts`) mapeia negrito,
+     esmaecido e as 16 cores de base para tokens `terminal-*`, com o estado
+     atravessando linhas como num terminal. Fundo, 256 cores fora das 16
+     primeiras e truecolor caem no neutro. Tokens novos, só dos Bastidores:
+     `terminal-success`, `terminal-warning` e `terminal-info`. Copiar a saída
+     continua sem cor. Ferramenta que só colore em TTY chega sem cor, e está
+     certo: é o que ela emitiu.
+  4. **G9 · Segurar ⌘ mostra os números.** Depois de 350 ms com o
+     modificador sozinho, o ícone de cada aba vira o número do ⌘1–9, na
+     mesma caixa de 14px (o nome não anda). Outra tecla, soltar, perder o
+     foco ou um diálogo na frente escondem. Liga no mesmo instalador do
+     teclado das abas.
+- **Não fizemos:** o selo nas abas além da nona, e cor de fundo no terminal.

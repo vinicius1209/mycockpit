@@ -314,7 +314,10 @@ com recolher e dispensar (ADR-281, commits `0a47eba` e `22595b8`).
 
 ## 10. O que falta, em ordem
 
-1. **Composer** (nova frente, pedido de 28/09). Mock
+1. ✅ **Composer** (ADR-282, commit `b9683da`). Mudou na implementação: só o
+   motor fica à direita (com logo), o contexto é pizza sem texto e sem
+   vermelho, e o esforço virou deslizador. O texto abaixo é o pedido original.
+   (nova frente, pedido de 28/09). Mock
    `docs/mocks/composer-refino.html`: instrução do campo no tom de metadado e
    com teclas desenhadas; motor em texto de gente ("Opus mais recente",
    "raciocínio alto"); modo seguro só com ícone e Liberado com texto âmbar;
@@ -324,9 +327,9 @@ com recolher e dispensar (ADR-281, commits `0a47eba` e `22595b8`).
    pelo `codex exec` (colher o formato quando houver conta com geração); meta
    extra do cartão de entrega (páginas, linhas, dimensões); soltar imagem do
    Finder no ponto do texto; o "Padrão" do Codex sem modelo explícito (§8).
-3. **Do estudo, ainda não feitos** (`docs/competitors-maestri-2026-09-27.md`):
-   F7 atalho "próxima que pede você" (pequeno); G6 callouts `[!NOTE]` e tarefa
-   feita esmaecida (pequeno); G4 cor ANSI nos Bastidores; F3 worktree que
+3. **Do estudo** (`docs/competitors-maestri-2026-09-27.md`): ✅ F7, G6, G4 e
+   G9 entregues em 29/09 (ADR-283). Ainda não feitos: F3 worktree que
    nasce pronto; F4 `@conversa`; F5 ferramenta `deliver`; F6 Mermaid; G5
-   aparelho no navegador; F8 segredos no Keychain; G9 números ao segurar ⌘.
+   aparelho no navegador; F8 segredos no Keychain; o resto de F1 (volta às
+   e cota no Companion).
    G2 continua fora por decisão sua.
