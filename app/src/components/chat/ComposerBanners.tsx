@@ -9,6 +9,7 @@
 import {
   Copy,
   FolderGit2,
+  KeyRound,
   Monitor,
   PackageX,
   Timer,
@@ -29,6 +30,13 @@ function gateCopy(gate: McpPreflightGate): { title: string; detail: string } {
     return {
       title: "Capacidade necessária indisponível",
       detail: "O turno ainda não começou. Revise as integrações deste projeto.",
+    }
+  }
+  if (issue.code === "secret-unavailable") {
+    const nomes = gate.issues.map((i) => i.sourceLabel)
+    return {
+      title: nomes.length === 1 ? `O Keychain não entregou ${nomes[0]}` : `O Keychain não entregou ${nomes.length} segredos`,
+      detail: `${issue.detail ?? "O Mac negou o acesso ou o item foi apagado"}. Sem o segredo o turno rodaria diferente do que você espera, então ele ainda não começou.`,
     }
   }
   if (
@@ -52,6 +60,7 @@ export function PreflightGateBanner({
   onStartBrowser,
   startBrowserSends = false,
   onOpenSettings,
+  onOpenSecrets,
   onContinueWithout,
   onRetryReadonly,
 }: {
@@ -59,6 +68,8 @@ export function PreflightGateBanner({
   onStartBrowser?: () => void
   startBrowserSends?: boolean
   onOpenSettings: () => void
+  /** O portão é de segredo (ADR-288): o gesto de revisar abre os Segredos. */
+  onOpenSecrets?: () => void
   onContinueWithout?: () => void
   onRetryReadonly?: () => void
 }) {
@@ -72,9 +83,14 @@ export function PreflightGateBanner({
   const canRetryReadonly = gate.allowedRecoveries.some(
     (recovery) => recovery.kind === "retry-readonly",
   )
+  const deSegredo = gate.issues.some((issue) => issue.code === "secret-unavailable")
   return (
     <div className={cn("mb-2 flex items-center gap-2.5 rounded-lg border px-3 py-2", PENDING_DECISION)}>
-      <Monitor className="size-4 shrink-0 text-st-warning" />
+      {deSegredo ? (
+        <KeyRound className="size-4 shrink-0 text-st-warning" />
+      ) : (
+        <Monitor className="size-4 shrink-0 text-st-warning" />
+      )}
       <div className="min-w-0 flex-1">
         <p className="text-[13px] font-medium text-foreground">{copy.title}</p>
         <p className="text-[11px] leading-snug text-muted-foreground">
@@ -103,16 +119,20 @@ export function PreflightGateBanner({
           variant={canStartBrowser ? "ghost" : "default"}
           onClick={onContinueWithout}
         >
-          Continuar sem {gate.issues[0]?.sourceLabel ?? "esta capacidade"}
+          {deSegredo && gate.issues.length > 1
+            ? "Enviar sem estes segredos"
+            : deSegredo
+              ? `Enviar sem ${gate.issues[0]?.sourceLabel}`
+              : `Continuar sem ${gate.issues[0]?.sourceLabel ?? "esta capacidade"}`}
         </Button>
       )}
       <Button
         type="button"
         size="compacto"
         variant={canStartBrowser || canOmit || canRetryReadonly ? "ghost" : "default"}
-        onClick={onOpenSettings}
+        onClick={deSegredo && onOpenSecrets ? onOpenSecrets : onOpenSettings}
       >
-        Revisar vínculo
+        {deSegredo ? "Abrir Segredos" : "Revisar vínculo"}
       </Button>
     </div>
   )

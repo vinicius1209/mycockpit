@@ -22,6 +22,7 @@ export type McpPlanIssueCode =
   | "browser-busy"
   | "proxy-unavailable"
   | "inventory-unavailable"
+  | "secret-unavailable"
 
 export type McpPlanDisposition =
   | "omitted"

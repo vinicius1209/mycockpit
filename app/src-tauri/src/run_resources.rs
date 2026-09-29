@@ -145,7 +145,8 @@ where
         if self.frame.last() == Some(&b'\r') {
             self.frame.pop();
         }
-        let frame = String::from_utf8_lossy(&self.frame).into_owned();
+        // Segredo do projeto que aparecer na saída não chega ao fio (ADR-288).
+        let frame = crate::segredos::mascarar(String::from_utf8_lossy(&self.frame).into_owned());
         self.frame.clear();
         frame
     }
@@ -198,7 +199,7 @@ where
                 if byte == b'\n' {
                     if !linha_estourou {
                         let texto = String::from_utf8_lossy(&linha);
-                        let _ = tx.try_send(texto.trim_end_matches('\r').to_string());
+                        let _ = tx.try_send(crate::segredos::mascarar(texto.trim_end_matches('\r').to_string()));
                     }
                     linha.clear();
                     linha_estourou = false;
@@ -238,7 +239,7 @@ where
             .collect()
     };
     CapturedTail {
-        text: String::from_utf8_lossy(&ordered).into_owned(),
+        text: crate::segredos::mascarar(String::from_utf8_lossy(&ordered).into_owned()),
         truncated,
     }
 }

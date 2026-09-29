@@ -18,6 +18,7 @@ import {
   Cpu,
   Globe,
   Info,
+  KeyRound,
   Layers,
   Mic,
   MonitorCog,
@@ -56,6 +57,7 @@ export type SecaoFixa =
   | "sandbox"
   | "desktop"
   | "resources"
+  | "secrets"
   | "extensions"
   | "models"
   | "ledger"
@@ -334,6 +336,15 @@ export const SETTINGS_SECTIONS: SettingsSection[] = [
     icon: Globe,
     group: "projeto",
     busca: ["navegador", "browser", "chromium", "chrome", "playwright", "recurso", "ligar"],
+  },
+  {
+    id: "secrets",
+    label: "Segredos",
+    title: "Segredos do projeto",
+    question: "Chaves e tokens que os motores recebem como variável de ambiente, guardados no Keychain.",
+    icon: KeyRound,
+    group: "projeto",
+    busca: ["segredo", "chave", "token", "api key", "keychain", "variável", "ambiente", "env", "senha"],
   },
 ]
 

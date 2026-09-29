@@ -21,6 +21,7 @@ export const MOTIVO_DA_OMISSAO: Record<McpPlanIssueCode, string> = {
   "browser-busy": "navegador deste projeto em uso",
   "proxy-unavailable": "rota autenticada indisponível",
   "inventory-unavailable": "inventário indisponível",
+  "secret-unavailable": "o Keychain não entregou o segredo",
 }
 
 export type AcaoDaExcecao =

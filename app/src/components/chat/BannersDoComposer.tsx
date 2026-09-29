@@ -199,6 +199,7 @@ export function BannersDoComposer({
           onStartBrowser={onLigarNavegador}
           startBrowserSends={ligarNavegadorEnvia}
           onOpenSettings={onRevisarMcp}
+          onOpenSecrets={() => useApp.getState().setSettingsOpen(true, "secrets")}
           onContinueWithout={onContinuarSemMcp}
           onRetryReadonly={onContinuarSoLendo}
         />

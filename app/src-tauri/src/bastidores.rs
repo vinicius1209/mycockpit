@@ -119,7 +119,8 @@ pub fn limpar_linha(bruta: &str) -> String {
 /// Como `limpar_linha`, mas as sequências de cor (SGR) ficam para o render
 /// dos Bastidores (ADR-283). Espelho de `limparLinha(_, { cor: true })`. Puro.
 pub fn limpar_linha_com_cor(bruta: &str) -> String {
-    limpar(bruta, true)
+    // A saída de tarefa em segundo plano também mascara segredo (ADR-288).
+    crate::segredos::mascarar(limpar(bruta, true))
 }
 
 fn limpar(bruta: &str, manter_cor: bool) -> String {

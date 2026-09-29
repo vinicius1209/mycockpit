@@ -511,7 +511,7 @@ pub async fn run_agent(
     let mut mcp_plan = if matches!(permission, adapters::Permission::FusionRo) {
         crate::mcp_control::McpRunPlan::default()
     } else {
-        match crate::mcp_control::plan_for_run(
+        match crate::segredos::plano_do_run(
             &app,
             &conv_id,
             &run_id,

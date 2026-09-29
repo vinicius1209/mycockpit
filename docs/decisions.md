@@ -10376,3 +10376,42 @@ considerou.
   a carrega ainda) e o aviso no composer para motor sem `contextMcp` (hoje o
   Antigravity): nele a moldura vai, a concessão não, e o agente diz que não
   consegue ler.
+
+### ADR-288 · Segredos do projeto no Keychain: o motor recebe o valor no ambiente, o agente só o nome, e a saída mascara ✅
+- **Contexto (29/09/2026):** E6 do lote 2 do Maestri (F8, D10, D11 e D12).
+  No Maestri a credencial ia numa nota colada no agente, ou seja, no texto.
+- **Decisão:**
+  1. Seção "Segredos" em Configurações › Deste projeto: nome e valor. O nome
+     mora no banco (migração 65, `project_secrets`); o valor vai do campo
+     direto ao Keychain (serviço `dev.vinicius.frota.segredos`, mesmo
+     `keyring` do login de MCP) e nunca volta à tela. Nome de variável de
+     verdade, fora de PATH, HOME e afins e do prefixo `FROTA_` (regra gêmea
+     em TS e Rust).
+  2. Por projeto, todos os motores (D10): o valor entra como variável de
+     ambiente do processo do motor, no ponto por onde passa todo processo de
+     motor (`hook_sessions::correlate_run`).
+  3. O agente sabe os NOMES pela doutrina (`Doctrine.segredos`, fora do
+     `content`, então o editor não os grava no arquivo), na mesma cadência
+     dela (D11): motor que retoma sessão recebe no 1º turno e de novo se a
+     lista mudar; com canal de sistema, vai no canal; sem retomada, todo
+     turno. O valor nunca entra no prompt.
+  4. Fail-closed (D12): o preflight do run (`segredos::plano_do_run`, que
+     envolve o `plan_for_run` de MCP) segura o envio quando o Keychain não
+     entrega, com o motivo novo `secret-unavailable` no mesmo portão do
+     composer. "Enviar sem este segredo" é o `omit-for-this-run` de sempre,
+     numa recuperação só para o conjunto que falhou, presa à impressão
+     digital dele; "Abrir Segredos" leva à seção.
+  5. Máscara por VALOR: toda linha de motor passa pelo leitor único
+     (`LimitedLineReader::take_frame`), e o stderr e a saída dos Bastidores
+     também; o valor vira `••••••••(NOME)` antes de chegar ao fio, ao banco,
+     ao Companion e ao log. Valor com menos de 6 caracteres não é mascarado
+     (casaria pedaço de palavra comum).
+  6. Cada valor é lido do Keychain uma vez por processo e fica em memória,
+     como o token de MCP: o primeiro envio paga a leitura (milissegundos, ou
+     um pedido de senha se a assinatura mudou, ADR-201); os seguintes, não.
+- **Prova:** `sonda_real_do_keychain` (ignorada por padrão) grava, lê pelo
+  caminho do run e apaga um item no Keychain da máquina.
+- **Limites:** processos iniciados pelo `process_start` do `frota-work` não
+  recebem os segredos (são filhos do app, não do motor). Com o app assinado
+  ad-hoc, o Keychain não isola por aplicativo (o mesmo limite registrado no
+  `mcp_auth.rs`).

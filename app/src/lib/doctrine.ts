@@ -15,6 +15,7 @@
 import { invoke } from "@tauri-apps/api/core"
 import { agentDef } from "@/lib/agents"
 import { isTauri } from "@/lib/db"
+import { linhaDosSegredos, segredosDoProjeto } from "@/lib/segredos"
 
 /** Onde a doutrina mora por padrão (projeto novo ou já migrado). O caminho
  *  REAL de cada projeto vem do Rust em `Doctrine.path`; este é só o fallback
@@ -30,6 +31,10 @@ export interface Doctrine {
    *  campo e mandava ao prompt de TODO turno `.mycockpit/instructions.md`,
    *  um arquivo que não existe em projeto migrado. */
   path?: string
+  /** Os NOMES dos segredos do projeto (ADR-288). Fora do `content` de
+   *  propósito: o editor da doutrina não os vê nem os grava no arquivo; só o
+   *  bloco do prompt os leva, na mesma cadência da doutrina. */
+  segredos?: string[]
 }
 
 const VAZIA: Doctrine = { exists: false, content: "", bytes: 0 }
@@ -38,11 +43,17 @@ const VAZIA: Doctrine = { exists: false, content: "", bytes: 0 }
  *  doutrina é contexto opcional, nunca motivo pra travar um envio. */
 export async function readDoctrine(projectPath: string): Promise<Doctrine> {
   if (!isTauri()) return VAZIA
-  try {
-    return await invoke<Doctrine>("read_project_doctrine", { path: projectPath })
-  } catch {
-    return VAZIA
-  }
+  const [doutrina, segredos] = await Promise.all([
+    invoke<Doctrine>("read_project_doctrine", { path: projectPath }).catch(() => VAZIA),
+    segredosDoProjeto(projectPath).then(
+      (lista) => lista.map((s) => s.nome),
+      (e: unknown) => {
+        console.error("[doutrina] não li os nomes dos segredos", e)
+        return [] as string[]
+      },
+    ),
+  ])
+  return segredos.length ? { ...doutrina, segredos } : doutrina
 }
 
 /** Grava a doutrina. AQUI o erro sobe: salvar é ação explícita do usuário e
@@ -72,8 +83,10 @@ export const DOCTRINE_MAX_CHARS = 12000
 
 /** O bloco da doutrina lida do disco, com o caminho REAL dela. É o que os
  *  envios usam; `buildDoctrineBlock` é o núcleo puro. */
-export function blocoDaDoutrina(doutrina: Pick<Doctrine, "content" | "path">): string | null {
-  return buildDoctrineBlock(doutrina.content, doutrina.path || DOCTRINE_PATH)
+export function blocoDaDoutrina(doutrina: Pick<Doctrine, "content" | "path" | "segredos">): string | null {
+  const linha = linhaDosSegredos(doutrina.segredos ?? [])
+  const conteudo = linha ? [doutrina.content.trim(), linha].filter(Boolean).join("\n\n") : doutrina.content
+  return buildDoctrineBlock(conteudo, doutrina.path || DOCTRINE_PATH)
 }
 
 /** Monta o bloco de doutrina prependido ao prompt. null = nada a injetar

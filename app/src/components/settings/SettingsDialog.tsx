@@ -37,6 +37,7 @@ import { MissionSettings } from "@/components/settings/MissionSettings"
 import { CompanionSettings } from "@/components/settings/CompanionSettings"
 import { McpSettings } from "@/components/settings/McpSettings"
 import { LocalResourcesSettings } from "@/components/settings/LocalResourcesSettings"
+import { SegredosDoProjeto } from "@/components/settings/SegredosDoProjeto"
 import { SettingsRail } from "@/components/settings/SettingsRail"
 import { ExtensionsSettings } from "@/components/settings/ExtensionsSettings"
 import { CostMaintenance } from "@/components/settings/CostMaintenance"
@@ -469,6 +470,7 @@ export function SettingsDialog() {
           {section === "integrations" && <McpSettings />}
 
           {section === "resources" && <LocalResourcesSettings />}
+          {section === "secrets" && <SegredosDoProjeto />}
 
           {section === "extensions" && <ExtensionsSettings />}
 

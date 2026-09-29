@@ -1,6 +1,6 @@
 # Plano · Estudo do Maestri, lote 2
 
-> **Status (29/09/2026):** E1 a E5 entregues. Decisões respondidas (tabela no fim).
+> **Status (29/09/2026):** lote 2 entregue, E1 a E6. Decisões respondidas (tabela no fim).
 > Mock canônico: `docs/mocks/maestri-lote-2.html`. Origem: §11 de
 > `docs/prototipos-maestri-plan.md` e o estudo
 > `docs/competitors-maestri-2026-09-27.md`.
@@ -82,7 +82,7 @@ mesma viewport; reabrir o projeto mantém o tamanho.
 Aceite: sem citação, nada muda (teste que segura o filtro atual); com
 citação, busca e leitura da citada funcionam e a de outra é recusada.
 
-## E6 · F8, segredos no Keychain (G) · depende de D10, D11 e D12
+## E6 · F8, segredos no Keychain (G) · ✅ entregue (ADR-288)
 
 1. Seção "Segredos" em Configurações › Deste projeto; valor no Keychain (Secret
    Service no Linux), nome no banco.

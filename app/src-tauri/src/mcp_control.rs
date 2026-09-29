@@ -532,7 +532,7 @@ pub enum McpPlanIssueCode {
     BrowserUnavailable,
     BrowserBusy,
     ProxyUnavailable,
-    InventoryUnavailable,
+    InventoryUnavailable, SecretUnavailable, // segredo do projeto que o Keychain não entregou (ADR-288)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

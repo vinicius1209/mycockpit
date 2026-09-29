@@ -44,8 +44,8 @@ pub const RUN_ENV_LEGADO: &str = "MYCOCKPIT_RUN_ID";
 /// a dupla contagem. `run_id` real nos runs; sentinela `"oneshot"` nas
 /// meta-tarefas (o gateway só exige NÃO-VAZIO).
 pub fn correlate_run(cmd: &mut tokio::process::Command, run_id: &str) {
-    cmd.env(RUN_ENV, run_id);
-    cmd.env(RUN_ENV_LEGADO, run_id);
+    cmd.env(RUN_ENV, run_id).env(RUN_ENV_LEGADO, run_id);
+    crate::segredos::aplicar(cmd, run_id); // o ambiente POR RUN passa todo por aqui (ADR-288)
 }
 
 /// Sessão externa sem sinal há mais que isto é podada (o CLI pode ter morrido

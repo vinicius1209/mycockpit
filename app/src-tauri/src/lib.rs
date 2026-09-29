@@ -45,6 +45,7 @@ mod manutencao_do_banco;
 mod menu_da_janela;
 mod arquivo_ao_vivo;
 mod abrir_documento;
+mod segredos;
 mod migrar_pasta;
 mod browser_script;
 mod desktop;
@@ -740,6 +741,13 @@ pub fn run() {
             sql: "CREATE TABLE IF NOT EXISTS browser_viewport (project_id TEXT PRIMARY KEY, tamanho TEXT NOT NULL, updated_at INTEGER NOT NULL)",
             kind: MigrationKind::Up,
         },
+        // ADR-288: o NOME dos segredos do projeto; o valor mora no Keychain.
+        Migration {
+            version: 65,
+            description: "project_secrets",
+            sql: "CREATE TABLE IF NOT EXISTS project_secrets (project_id TEXT NOT NULL, nome TEXT NOT NULL, created_at INTEGER NOT NULL, used_at INTEGER, PRIMARY KEY (project_id, nome))",
+            kind: MigrationKind::Up,
+        },
     ];
 
     tauri::Builder::default()
@@ -834,9 +842,7 @@ pub fn run() {
             statusline_install::usage_statusline_status,
             statusline_install::usage_statusline_install,
             statusline_install::usage_statusline_uninstall,
-            hooks_install::hooks_status,
-            hooks_install::hooks_install,
-            hooks_install::hooks_uninstall,
+            hooks_install::hooks_status, hooks_install::hooks_install, hooks_install::hooks_uninstall,
             hook_sessions::hook_sessions,
             catalog::refresh_models_catalog,
             catalog::get_models_catalog,
@@ -846,21 +852,14 @@ pub fn run() {
             browser_autorizacao::browser_agente_pode_ligar,
             browser_autorizacao::set_browser_agente_pode_ligar,
             browser_gateway::browser_pedido_recusado,
-            frota_dir::read_project_config,
-            frota_dir::write_project_config,
-            frota_dir::read_project_doctrine,
-            frota_dir::write_project_doctrine,
-            frota_dir::read_doctrine_seed,
-            frota_dir::read_agent_defs,
-            frota_dir::write_agent_def,
-            frota_dir::delete_agent_def,
+            frota_dir::read_project_config, frota_dir::write_project_config,
+            frota_dir::read_project_doctrine, frota_dir::write_project_doctrine, frota_dir::read_doctrine_seed,
+            frota_dir::read_agent_defs, frota_dir::write_agent_def, frota_dir::delete_agent_def,
             frota_dir::export_conv_context,
             frota_dir::export_context_bundle,
             sources::read_project_sources,
             sources::read_text_file,
-            edicao::abrir_para_edicao,
-            edicao::versao_no_disco,
-            edicao::salvar_arquivo,
+            edicao::abrir_para_edicao, edicao::versao_no_disco, edicao::salvar_arquivo,
             sources::read_project_file_bytes,
             sources::read_project_commands,
             command_inventory::read_command_inventory,
@@ -957,6 +956,7 @@ pub fn run() {
             migrar_pasta::migrar_pasta_do_projeto,
             browser_orfaos::browser_encerrar_orfao,
             soltura::caminhos_soltos, abrir_documento::abrir_documento,
+            segredos::segredos_do_projeto, segredos::salvar_segredo, segredos::apagar_segredo,
             browser_panel::browser_panel_open,
             browser_panel::browser_panel_context,
             despertador::set_keep_awake,

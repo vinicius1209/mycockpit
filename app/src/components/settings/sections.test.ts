@@ -153,9 +153,9 @@ describe("ADR-268: a árvore segue as perguntas de quem usa", () => {
     expect(secaoDoMotor("agy")).toBe("motor:agy")
   })
 
-  it("MCPs, Skills e Navegador são do projeto; o resto é deste Mac", () => {
+  it("MCPs, Skills, Navegador e Segredos (ADR-288) são do projeto; o resto é deste Mac", () => {
     const doProjeto = SETTINGS_SECTIONS.filter((s) => zonaDaSecao(s.id) === "projeto").map((s) => s.id)
-    expect(doProjeto).toEqual(["integrations", "extensions", "resources"])
+    expect(doProjeto).toEqual(["integrations", "extensions", "resources", "secrets"])
     expect(zonaDaSecao("desktop")).toBe("mac")
     expect(zonaDaSecao("motor:agy")).toBe("mac")
   })
