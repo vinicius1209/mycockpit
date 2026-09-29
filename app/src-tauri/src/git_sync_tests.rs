@@ -279,3 +279,37 @@ fn referencia_de_stash_so_aceita_o_formato_do_git() {
     assert!(!referencia_valida("--all"));
     assert!(!referencia_valida("stash@{}"));
 }
+
+#[test]
+fn detalhes_e_diff_do_commit_leem_metadados_arquivos_e_patch() {
+    let c = Cenario::new("detalhes-diff");
+    let a = c.clone("a");
+    commit(&a, "x.txt", "linha 1\nlinha 2\n", "primeiro commit\n\nEste é o corpo detalhado.");
+    commit(&a, "novo.txt", "adicionado\n", "segundo commit");
+
+    let h = historico_sync(&a, 10).unwrap();
+    assert_eq!(h.len(), 2);
+    let primeiro_hash = &h[1].hash;
+    let segundo_hash = &h[0].hash;
+
+    // Detalhes do primeiro commit
+    let det = detalhes_do_commit_sync(&a, primeiro_hash).unwrap();
+    assert_eq!(det.mensagem, "primeiro commit");
+    assert_eq!(det.corpo, "Este é o corpo detalhado.");
+    assert_eq!(det.autor, "Teste");
+    assert_eq!(det.autor_email, "teste@frota.local");
+    assert_eq!(det.arquivos.len(), 1);
+    assert_eq!(det.arquivos[0].caminho, "x.txt");
+    assert_eq!(det.arquivos[0].status, "added");
+    assert_eq!(det.arquivos[0].additions, 2);
+    assert_eq!(det.arquivos[0].deletions, 0);
+
+    // Diff do segundo commit
+    let patch = diff_do_commit_sync(&a, segundo_hash).unwrap();
+    assert!(patch.contains("diff --git a/novo.txt b/novo.txt"));
+    assert!(patch.contains("+adicionado"));
+
+    // Hash inválido retorna erro
+    assert!(detalhes_do_commit_sync(&a, "invalido").is_err());
+    assert!(diff_do_commit_sync(&a, "invalido").is_err());
+}

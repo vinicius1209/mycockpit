@@ -6,7 +6,7 @@
 // ao lado da conversa leva o ícone de "lado" em vez do de tipo.
 
 import { useEffect, useRef, useState } from "react"
-import { ChevronDown, Columns2, FileDiff, PanelRightClose, RotateCcw, X } from "lucide-react"
+import { ChevronDown, Columns2, FileDiff, GitCommit, PanelRightClose, RotateCcw, X } from "lucide-react"
 import {
   ContextMenu,
   ContextMenuContent,
@@ -98,15 +98,17 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
     <>
       <span aria-hidden className="mx-1 h-4 shrink-0 border-l border-border/40" />
       {abas.abertas.map((chave, i) => {
-        // A aba é um arquivo aberto para ler, ou as ALTERAÇÕES de um arquivo
-        // (aberta pelo painel do git, com o ícone de diff).
-        const { tipo, caminho } = lerChave(chave)
-        const diff = tipo === "diff"
-        const rotulo = rotulos.get(chave) ?? { nome: caminho, pasta: null }
+        // A aba é um arquivo aberto para ler, as ALTERAÇÕES de um arquivo, ou
+        // um commit do histórico.
+        const info = lerChave(chave)
+        const diff = info.tipo === "diff"
+        const commit = info.tipo === "commit"
+        const caminho = info.tipo === "commit" ? info.caminho ?? "" : info.caminho
+        const rotulo = rotulos.get(chave) ?? { nome: caminho || "commit", pasta: null }
         const aoLado = ladoCabe && abas.aoLado === chave
         const ativa = vista === chave
         const sumiu = Boolean(sumidos[chaveDoSumido(convId, chave)])
-        const suja = !diff && raiz !== null && Boolean(sujos[caminhoDaAba(raiz, chave) ?? ""])
+        const suja = !diff && !commit && raiz !== null && Boolean(sujos[caminhoDaAba(raiz, chave) ?? ""])
         const alvo = arrasto?.ativo && arrasto.para === i && arrasto.de !== i
         const doMenu: AlvoDeArquivo = { tipo: "arquivo", rel: caminho, fora: caminho.startsWith("/") }
         return (
@@ -130,7 +132,17 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                 <button
                   role="tab"
                   aria-selected={ativa}
-                  title={diff ? `Alterações em ${caminho}` : aoLado ? `${caminho} (ao lado da conversa)` : caminho}
+                  title={
+                    commit
+                      ? info.caminho
+                        ? `Alterações em ${info.caminho} no commit ${info.commitHash}`
+                        : `Commit ${info.commitHash}`
+                      : diff
+                        ? `Alterações em ${caminho}`
+                        : aoLado
+                          ? `${caminho} (ao lado da conversa)`
+                          : caminho
+                  }
                   onClick={() => {
                     if (acabouDeArrastar.current) {
                       acabouDeArrastar.current = false
@@ -168,6 +180,8 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                 >
                   {aoLado ? (
                     <Columns2 className="size-3.5 shrink-0 text-st-running" />
+                  ) : commit ? (
+                    <GitCommit className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
                   ) : diff ? (
                     <FileDiff className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
                   ) : (
@@ -204,7 +218,7 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent onCloseAutoFocus={(e) => e.preventDefault()} className="w-64">
-              {diff ? null : aoLado ? (
+              {diff || commit ? null : aoLado ? (
                 <ContextMenuItem onSelect={fecharOLado}>
                   <PanelRightClose /> Tirar do lado da conversa
                 </ContextMenuItem>
@@ -217,19 +231,21 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                   <Columns2 /> Abrir ao lado da conversa
                 </ContextMenuItem>
               )}
-              {!diff && <ContextMenuSeparator />}
+              {!diff && !commit && <ContextMenuSeparator />}
               {/* O resto vem do catálogo de arquivo, o mesmo da árvore e do fio. */}
-              <LinhasDoMenuDeArquivo
-                linhas={itensDoArquivo(
-                  doMenu,
-                  { noApp: isTauri(), conversa: true, ladoCabe, alterado: !diff && alterados.has(caminho), expandida: false },
-                  "aba",
-                )}
-                alvo={doMenu}
-                aoEscolher={(acao) => setTimeout(() => void executarAcaoDeArquivo(acao, doMenu, { root: raiz ?? "" }), 0)}
-                Item={ContextMenuItem}
-                Separador={ContextMenuSeparator}
-              />
+              {!commit && (
+                <LinhasDoMenuDeArquivo
+                  linhas={itensDoArquivo(
+                    doMenu,
+                    { noApp: isTauri(), conversa: true, ladoCabe, alterado: !diff && alterados.has(caminho), expandida: false },
+                    "aba",
+                  )}
+                  alvo={doMenu}
+                  aoEscolher={(acao) => setTimeout(() => void executarAcaoDeArquivo(acao, doMenu, { root: raiz ?? "" }), 0)}
+                  Item={ContextMenuItem}
+                  Separador={ContextMenuSeparator}
+                />
+              )}
               <ContextMenuSeparator />
               <ContextMenuItem onSelect={() => fecharArquivos([chave])}>
                 Fechar
@@ -285,16 +301,27 @@ export function TodasAsAbas({ vista }: { vista: string | null }) {
           Abertas nesta conversa
         </DropdownMenuLabel>
         {abas.abertas.map((chave, i) => {
-          const { tipo, caminho } = lerChave(chave)
-          const rotulo = rotulos.get(chave) ?? { nome: caminho, pasta: null }
+          const info = lerChave(chave)
+          const commit = info.tipo === "commit"
+          const diff = info.tipo === "diff"
+          const caminho = info.tipo === "commit" ? info.caminho ?? "" : info.caminho
+          const rotulo = rotulos.get(chave) ?? { nome: caminho || "commit", pasta: null }
           return (
             <DropdownMenuItem
               key={chave}
               onSelect={() => mostrar(chave)}
               className={cn("text-[12px]", vista === chave && "bg-sel")}
-              title={tipo === "diff" ? `Alterações em ${caminho}` : caminho}
+              title={
+                commit
+                  ? info.caminho
+                    ? `Alterações em ${info.caminho} no commit ${info.commitHash}`
+                    : `Commit ${info.commitHash}`
+                  : diff
+                    ? `Alterações em ${caminho}`
+                    : caminho
+              }
             >
-              {tipo === "diff" ? <FileDiff /> : <FileIcon path={caminho} size={14} />}
+              {commit ? <GitCommit /> : diff ? <FileDiff /> : <FileIcon path={caminho} size={14} />}
               <span className="min-w-0 truncate">
                 {rotulo.nome}
                 {rotulo.pasta && <span className="text-muted-foreground/60"> · {rotulo.pasta}</span>}

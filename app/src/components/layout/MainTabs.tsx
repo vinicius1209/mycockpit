@@ -244,7 +244,7 @@ export function MainTabs({
         <AbasDeArquivo vista={vista} />
         {/* O diff de UM arquivo é aba da tira (`AbasDeArquivo`); só o diff
             inteiro segue como a aba passageira "Alterações". */}
-        {tab.kind === "diff" && !tab.focusPath && (
+        {tab.kind === "diff" && !tab.focusPath && !tab.commitHash && (
           <AbaComFechar
             ativa
             label="Alterações"

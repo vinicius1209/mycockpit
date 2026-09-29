@@ -8,6 +8,7 @@ import { listen } from "@tauri-apps/api/event"
 import { acaoDoAtalho, type AcaoDoAtalho } from "@/components/layout/atalhosDasAbas"
 import {
   abaVizinha,
+  chaveDoCommit,
   chaveDoDiff,
   lerChave,
   vizinhaAoFechar,
@@ -27,10 +28,13 @@ function conversaAtiva(): string | null {
 }
 
 /** A chave da aba da tira que está à vista: o arquivo, ou as alterações de
- *  um arquivo; `null` para a Conversa, o Navegador e o diff inteiro. Puro. */
+ *  um arquivo, ou um commit do histórico; `null` para a Conversa, o Navegador e o diff inteiro. Puro. */
 export function chaveDaVista(tab: MainTab): string | null {
   if (tab.kind === "arquivo") return tab.path
-  if (tab.kind === "diff" && tab.focusPath) return chaveDoDiff(tab.focusPath)
+  if (tab.kind === "diff") {
+    if (tab.commitHash) return chaveDoCommit(tab.commitHash, tab.focusPath)
+    if (tab.focusPath) return chaveDoDiff(tab.focusPath)
+  }
   return null
 }
 
@@ -49,9 +53,10 @@ export function ladoEmUso(): string | null {
 export function mostrar(chave: string | null): void {
   const app = useApp.getState()
   if (chave === null || chave === ladoEmUso()) return app.closeMainTab()
-  const { tipo, caminho } = lerChave(chave)
-  if (tipo === "diff") app.openDiffTab(caminho)
-  else app.openFileTab(caminho)
+  const info = lerChave(chave)
+  if (info.tipo === "commit") app.openDiffTab(info.caminho, info.commitHash)
+  else if (info.tipo === "diff") app.openDiffTab(info.caminho)
+  else app.openFileTab(info.caminho)
 }
 
 export function fecharArquivos(pedidos: readonly string[]): void {
@@ -166,11 +171,13 @@ export function vistaGuardada(a: AbasDaConversa): { mainTab: MainTab; navegadorA
   const mainTab: MainTab =
     a.navegador === "a-vista"
       ? { kind: "navegador" }
-      : aba?.tipo === "diff"
-        ? { kind: "diff", focusPath: aba.caminho, focusSeq: 1 }
-        : aba
-          ? { kind: "arquivo", path: aba.caminho }
-          : { kind: "conversa" }
+      : aba?.tipo === "commit"
+        ? { kind: "diff", focusPath: aba.caminho, commitHash: aba.commitHash, focusSeq: 1 }
+        : aba?.tipo === "diff"
+          ? { kind: "diff", focusPath: aba.caminho, focusSeq: 1 }
+          : aba
+            ? { kind: "arquivo", path: aba.caminho }
+            : { kind: "conversa" }
   return { mainTab, navegadorAberto: a.navegador !== "fechado" }
 }
 

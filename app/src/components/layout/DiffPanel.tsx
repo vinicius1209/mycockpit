@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ChevronRight, Copy, GitBranch, Loader2, MessageSquareQuote, RefreshCw } from "lucide-react"
+import {
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  GitBranch,
+  GitCommit,
+  Loader2,
+  MessageSquare,
+  MessageSquareQuote,
+  RefreshCw,
+} from "lucide-react"
 import {
   loadGitDiff,
   type CorteDoDiff,
@@ -20,6 +30,24 @@ import { FilePathLabel, STATUS_META } from "./DiffPanel/parts"
 import { detectLanguage } from "@/lib/syntaxHighlight"
 import { DiffCommentsFooter } from "./DiffPanel/sendBar"
 import { DiffImagem } from "./DiffPanel/imagem"
+import {
+  detalhesDoCommit,
+  loadCommitDiff,
+  remoteUrl,
+  urlDoCommitNaWeb,
+  type DetalhesDoCommit,
+} from "@/lib/gitSync"
+import { avisar } from "@/lib/avisos"
+import { openUrl } from "@tauri-apps/plugin-opener"
+import { Button } from "@/components/ui/button"
+import { controle } from "@/components/ui/controle"
+
+function iniciais(nome: string): string {
+  const partes = nome.trim().split(/\s+/)
+  if (partes.length === 0 || !partes[0]) return "?"
+  if (partes.length === 1) return partes[0].slice(0, 2).toUpperCase()
+  return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
+}
 
 // (M1) O "abrir no editor" vive no CABEÇALHO, um por painel, e abre o PROJETO.
 // Nasceu como ícone por linha de arquivo, revertido em 20/08/2026: o hover
@@ -27,31 +55,30 @@ import { DiffImagem } from "./DiffPanel/imagem"
 // janela órfã sem árvore nem language server. Quem quer ver a mudança usa o
 // diff; quem vai ao editor quer o projeto aberto.
 /** Painel de alterações: diff da working tree do `cwd` (v1: não-commitado vs HEAD +
- *  arquivos novos). Lista por arquivo, colapsável; expande pros hunks.
- *  `delivery` (P3 — Entrega→diff): o painel abriu pelo clique numa entrega —
- *  ganha o header de correção no topo (Pedir correção / Fechar). */
+ *  arquivos novos) ou de um commit específico. Lista por arquivo, colapsável; expande pros hunks. */
 export function DiffPanel({
   cwd,
   focusPath,
   focusSeq,
   soArquivo,
+  commitHash,
   onSendToComposer,
 }: {
   cwd: string
   /** Mostra só este arquivo, aberto: é a aba das alterações dele (ADR-248). */
   soArquivo?: string
-  /** Arquivo que a coluna pediu pra abrir. Chega expandido e com scroll até ele
-   *  — sem isso, clicar num arquivo lá e cair no topo de uma lista de 11
-   *   deixaria o clique sem resposta. */
+  /** Arquivo que a coluna pediu pra abrir. Chega expandido e com scroll até ele */
   focusPath?: string
-  /** Selo do pedido: muda mesmo quando o arquivo é o mesmo, pra o segundo
-   *  clique na coluna rolar de novo em vez de virar no-op. */
+  /** Selo do pedido: muda mesmo quando o arquivo é o mesmo. */
   focusSeq?: number
-  /** Prefill do composer com os comentários soltos no diff (gate humano — não
-   *  envia sozinho, só propõe o texto composto). */
+  /** Commit específico a inspecionar. */
+  commitHash?: string
+  /** Prefill do composer com comentários ou pedido de análise ao agente. */
   onSendToComposer?: (text: string) => void
 }) {
   const [diff, setDiff] = useState<GitDiff | null>(null)
+  const [detalhes, setDetalhes] = useState<DetalhesDoCommit | null>(null)
+  const [remoto, setRemoto] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Selo da recarga: a imagem expandida relê o disco quando ele muda.
   const [versao, setVersao] = useState(0)
@@ -69,20 +96,37 @@ export function DiffPanel({
 
   function reload() {
     setLoading(true)
-    void loadGitDiff(cwd).then((d) => {
-      esquecerImagensCitadas(cwd)
-      setDiff(d)
-      setVersao((v) => v + 1)
-      setLoading(false)
-    })
+    if (commitHash) {
+      void Promise.all([
+        loadCommitDiff(cwd, commitHash),
+        detalhesDoCommit(cwd, commitHash).catch(() => null),
+        remoteUrl(cwd).catch(() => null),
+      ]).then(([d, det, rem]) => {
+        esquecerImagensCitadas(cwd)
+        setDiff(d)
+        setDetalhes(det)
+        if (rem) setRemoto(rem)
+        setVersao((v) => v + 1)
+        setLoading(false)
+        if (d && d.files.length > 0) {
+          setOpen(new Set(focusPath ? [focusPath] : d.files.map((f) => f.path)))
+        }
+      })
+    } else {
+      void loadGitDiff(cwd).then((d) => {
+        esquecerImagensCitadas(cwd)
+        setDiff(d)
+        setDetalhes(null)
+        setVersao((v) => v + 1)
+        setLoading(false)
+      })
+    }
   }
-  // Trocar de `cwd` não limpa mais nada à mão: os comentários de outro
-  // repositório moram em outra chave (acima). Limpar aqui apagava a revisão a
-  // cada vez que a aba montava, que é justamente trocar de aba.
+
   useEffect(() => {
     reload()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cwd])
+  }, [cwd, commitHash])
 
   // Pedido novo de foco (outro arquivo, com a aba já aberta): expande e rola.
   //
@@ -112,6 +156,15 @@ export function DiffPanel({
   const stale = staleComments(Object.values(commentApi.comments), todos)
   const galeria = galeriaDoDiff(files, cwd)
 
+  const todosAbertos = files.length > 0 && files.every((f) => open.has(f.path))
+  function alternarTodos() {
+    if (todosAbertos) {
+      setOpen(new Set())
+    } else {
+      setOpen(new Set(files.map((f) => f.path)))
+    }
+  }
+
   // Barra STICKY (branch + stat + refresh): fica no topo enquanto a lista rola.
   // bg sólido (sem backdrop-blur, que custa por-frame e travaria o scroll longo).
   // `bg-card` porque o painel virou CARTÃO (ADR-043, Fase 2): barra sticky tem
@@ -120,7 +173,12 @@ export function DiffPanel({
   // de ação de lista de dados, que é a exceção que a regra do §4 preserva.
   const bar = (
     <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-4 py-2 text-[11px]">
-      {diff?.branch ? (
+      {commitHash ? (
+        <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground">
+          <GitCommit className="size-3 shrink-0" />
+          <span className="truncate">commit {commitHash.slice(0, 7)}</span>
+        </span>
+      ) : diff?.branch ? (
         <span className="flex min-w-0 items-center gap-1 font-mono text-muted-foreground">
           <GitBranch className="size-3 shrink-0" />
           <span className="truncate">{diff.branch}</span>
@@ -132,6 +190,19 @@ export function DiffPanel({
         {totalAdd > 0 && <span className="text-st-success">+{totalAdd}</span>}
         {totalDel > 0 && <span className="text-st-error">−{totalDel}</span>}
       </span>
+      {files.length > 1 && (
+        <button
+          type="button"
+          onClick={alternarTodos}
+          className={cn(
+            controle("chip"),
+            "text-muted-foreground hover:text-foreground",
+          )}
+          title={todosAbertos ? "Recolher todos os arquivos" : "Expandir todos os arquivos"}
+        >
+          {todosAbertos ? "Recolher todos" : "Expandir todos"}
+        </button>
+      )}
       {/* Um por painel, ao lado do refresh: os dois são ação sobre o CONJUNTO,
           não sobre uma linha. `rel` vazio = a raiz — abre o projeto. */}
       <OpenInEditor projectPath={cwd} rel="" alvo="o projeto" />
@@ -165,11 +236,30 @@ export function DiffPanel({
             className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
           {bar}
+          {detalhes && (
+            <CommitHeaderCard
+              det={detalhes}
+              remoto={remoto}
+              onPedirAnalise={() => {
+                if (!onSendToComposer) return
+                const lista = detalhes.arquivos
+                  .map(
+                    (a) =>
+                      `- ${a.caminho} (${a.status}${a.binario ? ", binário" : `, +${a.additions} −${a.deletions}`})`,
+                  )
+                  .join("\n")
+                const prompt = `Por favor, analise as alterações do commit ${detalhes.curto} ("${detalhes.mensagem}"):\n\nArquivos modificados:\n${lista}\n\nIdentifique possíveis regressões, impactos e pontos de atenção.`
+                onSendToComposer(prompt)
+              }}
+            />
+          )}
           {files.length === 0 ? (
             <div className="px-6 py-16 text-center text-[13px] text-muted-foreground">
-              {soArquivo
-                ? `${soArquivo} não tem alterações agora: foi commitado, revertido ou saiu do disco.`
-                : "Nenhuma alteração não-commitada. Working tree limpa."}
+              {commitHash
+                ? "Este commit não possui alterações de arquivo visíveis."
+                : soArquivo
+                  ? `${soArquivo} não tem alterações agora: foi commitado, revertido ou saiu do disco.`
+                  : "Nenhuma alteração não-commitada. Working tree limpa."}
             </div>
           ) : (
             <div className="flex flex-col pb-2">
@@ -377,4 +467,99 @@ function FileBlock({
         ))}
     </div>
   )
+}
+
+function CommitHeaderCard({
+  det,
+  remoto,
+  onPedirAnalise,
+}: {
+  det: DetalhesDoCommit
+  remoto: string | null
+  onPedirAnalise: () => void
+}) {
+  const commitUrl = urlDoCommitNaWeb(remoto, det.hash)
+
+  async function copiarSha() {
+    await copyText(det.hash)
+    avisar.feito("SHA copiado para a área de transferência.")
+  }
+
+  async function abrirNoNavegador() {
+    if (!commitUrl) return
+    await openUrl(commitUrl).catch(() => avisar.erro("Não consegui abrir o link no navegador."))
+  }
+
+  return (
+    <div className="border-b border-border/40 bg-secondary/20 p-4 text-[12px]">
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="min-w-0 flex-1 text-[14px] font-semibold text-foreground leading-snug">
+            {det.mensagem}
+          </h2>
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={copiarSha}
+              title="Clique para copiar o SHA completo"
+              className={cn(
+                controle("chip"),
+                "font-mono text-[11px] gap-1.5 border border-border/40 bg-card text-foreground hover:bg-accent",
+              )}
+            >
+              <span>{det.curto}</span>
+              <Copy className="size-3 text-muted-foreground" />
+            </button>
+            {commitUrl && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="chip"
+                onClick={abrirNoNavegador}
+                title="Ver commit no GitHub"
+              >
+                <ExternalLink className="size-3" />
+                GitHub
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              size="chip"
+              onClick={onPedirAnalise}
+              title="Enviar resumo deste commit para o rascunho da conversa"
+            >
+              <MessageSquare className="size-3" />
+              Analisar com agente
+            </Button>
+          </div>
+        </div>
+
+        {det.corpo && (
+          <div className="w-full rounded border border-border/40 bg-card p-3 text-[12px] text-muted-foreground whitespace-pre-wrap leading-relaxed font-sans">
+            {det.corpo}
+          </div>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3 text-muted-foreground border-t border-border/40 pt-2.5">
+        <div className="flex items-center gap-1.5">
+          <span className="flex size-4 items-center justify-center rounded-full bg-secondary font-mono text-[11px] font-medium text-muted-foreground">
+            {iniciais(det.autor)}
+          </span>
+          <span className="font-medium text-foreground">{det.autor}</span>
+          {det.autorEmail && (
+            <span className="opacity-70">&lt;{det.autorEmail}&gt;</span>
+          )}
+        </div>
+        <span>·</span>
+        <span>{new Date(det.quando).toLocaleString("pt-BR")}</span>
+        {det.pais.length > 0 && (
+          <span className="ml-auto font-mono text-[11px] text-muted-foreground/70">
+            Parent: {det.pais.map((p) => p.slice(0, 7)).join(", ")}
+          </span>
+        )}
+      </div>
+    </div>
+  </div>
+)
 }

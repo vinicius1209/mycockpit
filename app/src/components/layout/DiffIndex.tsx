@@ -459,6 +459,8 @@ export function DiffIndex({
             <HistoricoGit
               cwd={cwd}
               versao={`${status.branch}:${status.ahead}:${status.behind}:${totalChanges}`}
+              activeCommitHash={mainTab.kind === "diff" ? mainTab.commitHash : undefined}
+              onSelectCommit={(hash, caminho) => openDiffTab(caminho, hash)}
             />
           </div>
 

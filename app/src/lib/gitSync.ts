@@ -4,6 +4,7 @@
 
 import { invoke } from "@tauri-apps/api/core"
 import { idadeCurta } from "@/lib/processos"
+import { parsePatch, type GitDiff } from "@/lib/git"
 
 export type TipoDeErroDeGit =
   | "acesso"
@@ -55,8 +56,32 @@ export interface CommitDoHistorico {
   curto: string
   mensagem: string
   autor: string
+  autorEmail?: string
   quando: number
   naoEnviado: boolean
+}
+
+export interface ArquivoDoCommit {
+  caminho: string
+  caminhoAntigo: string | null
+  status: "modified" | "added" | "deleted" | "renamed"
+  additions: number
+  deletions: number
+  binario: boolean
+}
+
+export interface DetalhesDoCommit {
+  hash: string
+  curto: string
+  mensagem: string
+  corpo: string
+  autor: string
+  autorEmail: string
+  quando: number
+  pais: string[]
+  arquivos: ArquivoDoCommit[]
+  totalAdditions: number
+  totalDeletions: number
 }
 
 const TIPOS = new Set<string>([
@@ -93,9 +118,45 @@ export const recuperarGuardada = (cwd: string, referencia: string, apagar: boole
   invoke<void>("git_recuperar_guardada", { cwd, referencia, apagar })
 export const historico = (cwd: string, quantos: number) =>
   invoke<CommitDoHistorico[]>("git_historico", { cwd, quantos })
+export const detalhesDoCommit = (cwd: string, hash: string) =>
+  invoke<DetalhesDoCommit>("git_detalhes_do_commit", { cwd, hash })
+export const diffDoCommit = (cwd: string, hash: string) =>
+  invoke<string>("git_diff_do_commit", { cwd, hash })
+
+/** Carrega e parseia o diff unificado de um commit específico. */
+export async function loadCommitDiff(cwd: string, hash: string): Promise<GitDiff> {
+  try {
+    const patch = await diffDoCommit(cwd, hash)
+    return {
+      isRepo: true,
+      branch: null,
+      files: parsePatch(patch),
+    }
+  } catch {
+    return { isRepo: false, branch: null, files: [] }
+  }
+}
+
+export const remoteUrl = (cwd: string) =>
+  invoke<string | null>("git_remote_url", { cwd })
 export const desfazerUltimoCommit = (cwd: string) => invoke<void>("git_desfazer_ultimo_commit", { cwd })
 export const continuarOuAbortar = (cwd: string, continuar: boolean) =>
   invoke<void>("git_operacao", { cwd, continuar })
+
+/** Transforma uma URL de remoto (ssh ou https) em link web do commit. Puro. */
+export function urlDoCommitNaWeb(remote: string | null, hash: string): string | null {
+  if (!remote || !hash) return null
+  const limpo = remote.trim()
+  if (limpo.startsWith("git@github.com:")) {
+    const slug = limpo.replace(/^git@github\.com:/, "").replace(/\.git$/, "")
+    return `https://github.com/${slug}/commit/${hash}`
+  }
+  if (limpo.startsWith("https://github.com/")) {
+    const slug = limpo.replace(/^https:\/\/github\.com\//, "").replace(/\.git$/, "")
+    return `https://github.com/${slug}/commit/${hash}`
+  }
+  return null
+}
 
 /** O gesto de rede que a faixa pode repetir depois de trocar de conta ou de
  *  trazer com rebase. */

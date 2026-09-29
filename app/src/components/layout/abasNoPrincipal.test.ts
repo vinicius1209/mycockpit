@@ -12,7 +12,7 @@ import {
   vistaGuardada,
   vistaParaGuardar,
 } from "./abasNoPrincipal"
-import { SEM_ABAS, chaveDoDiff } from "@/lib/abasDeArquivo"
+import { SEM_ABAS, chaveDoCommit, chaveDoDiff } from "@/lib/abasDeArquivo"
 import { abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
@@ -265,6 +265,20 @@ describe("as alterações de um arquivo ficam na tira (ADR-248)", () => {
 
   it("o diff inteiro (sem arquivo) segue passageiro", () => {
     useApp.getState().openDiffTab(undefined)
+    expect(abas().abertas).toEqual([])
+  })
+
+  it("abrir um commit mantém a aba na tira ao voltar para a Conversa", () => {
+    const HASH = "22595b8"
+    useApp.getState().openDiffTab(undefined, HASH)
+    expect(abas().abertas).toEqual([chaveDoCommit(HASH)])
+    mostrar(null)
+    expect(vista()).toEqual({ kind: "conversa" })
+    expect(abas().abertas).toEqual([chaveDoCommit(HASH)])
+    mostrar(chaveDoCommit(HASH))
+    expect(vista()).toMatchObject({ kind: "diff", commitHash: HASH })
+    fecharAVista()
+    expect(vista()).toEqual({ kind: "conversa" })
     expect(abas().abertas).toEqual([])
   })
 })

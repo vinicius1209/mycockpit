@@ -117,8 +117,8 @@ export interface AppState {
   toggleContext: () => void
   setContextPanelTab: (tab: ContextPanelTab) => void
   setViewMode: (m: ViewMode) => void
-  /** Abre (ou refoca) a aba do diff, opcionalmente já num arquivo. */
-  openDiffTab: (focusPath?: string) => void
+  /** Abre (ou refoca) a aba do diff, opcionalmente num arquivo ou commit. */
+  openDiffTab: (focusPath?: string, commitHash?: string) => void
   /** Abre um arquivo real na aba principal, fora da coluna estreita. */
   openFileTab: (path: string) => void
   /** A aba Navegador está na tira da conversa ATIVA, mesmo sem estar à
@@ -293,12 +293,13 @@ export const useApp = create<AppState>()(
         }),
       // Cada pedido ganha um selo (`focusSeq`): pedir o mesmo arquivo de novo
       // tem que rolar até ele, mesmo com o `focusPath` igual.
-      openDiffTab: (focusPath) =>
+      openDiffTab: (focusPath, commitHash) =>
         set((s) => ({
           branchSplitOpen: false,
           mainTab: {
             kind: "diff",
             focusPath,
+            commitHash,
             focusSeq:
               (s.mainTab.kind === "diff" ? (s.mainTab.focusSeq ?? 0) : 0) + 1,
           },

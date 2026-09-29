@@ -297,7 +297,7 @@ function stripPrefix(p: string): string {
 }
 
 /** Quebra o patch em blocos por arquivo (cada um começa em "diff --git"). */
-function parsePatch(patch: string): DiffFile[] {
+export function parsePatch(patch: string): DiffFile[] {
   if (!patch.trim()) return []
   const files: DiffFile[] = []
   const blocks = patch.split(/^diff --git /m).slice(1)

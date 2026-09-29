@@ -379,16 +379,44 @@ fn recuperar_sync(cwd: &str, referencia: &str, apagar: bool) -> Result<(), ErroD
 
 // ---------------- Histórico e desfazer ----------------
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct Commit {
     pub hash: String,
     pub curto: String,
     pub mensagem: String,
     pub autor: String,
+    pub autor_email: String,
     pub quando: i64,
     /// Ainda não está em nenhum remoto.
     pub nao_enviado: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct ArquivoDoCommit {
+    pub caminho: String,
+    pub caminho_antigo: Option<String>,
+    pub status: String,
+    pub additions: u32,
+    pub deletions: u32,
+    pub binario: bool,
+}
+
+#[derive(Debug, Serialize, PartialEq, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct DetalhesDoCommit {
+    pub hash: String,
+    pub curto: String,
+    pub mensagem: String,
+    pub corpo: String,
+    pub autor: String,
+    pub autor_email: String,
+    pub quando: i64,
+    pub pais: Vec<String>,
+    pub arquivos: Vec<ArquivoDoCommit>,
+    pub total_additions: u32,
+    pub total_deletions: u32,
 }
 
 pub(crate) fn parse_historico(saida: &str, nao_enviados: &std::collections::HashSet<String>) -> Vec<Commit> {
@@ -400,11 +428,13 @@ pub(crate) fn parse_historico(saida: &str, nao_enviados: &std::collections::Hash
                 return None;
             }
             let hash = p[0].trim().to_string();
+            let autor_email = if p.len() >= 6 { p[5].trim().to_string() } else { String::new() };
             Some(Commit {
                 nao_enviado: nao_enviados.contains(&hash),
                 curto: p[1].trim().to_string(),
                 mensagem: p[2].trim().to_string(),
                 autor: p[3].trim().to_string(),
+                autor_email,
                 quando: p[4].trim().parse::<i64>().unwrap_or(0) * 1000,
                 hash,
             })
@@ -415,7 +445,8 @@ pub(crate) fn parse_historico(saida: &str, nao_enviados: &std::collections::Hash
 fn historico_sync(cwd: &str, quantos: u32) -> Result<Vec<Commit>, ErroDeGit> {
     let cwd = local(cwd)?;
     let n = format!("-n{}", quantos.clamp(1, 200));
-    let saida = match run_git(&cwd, &["log", &n, "--format=%H\u{1f}%h\u{1f}%s\u{1f}%an\u{1f}%ct"]) {
+    let formato = format!("--format=%H{SEP}%h{SEP}%s{SEP}%an{SEP}%ct{SEP}%ae");
+    let saida = match run_git(&cwd, &["log", &n, &formato]) {
         Ok(s) => s,
         // Repositório sem commit ainda: histórico vazio, não erro.
         Err(_) if git(&cwd, &["rev-parse", "HEAD"]).is_none() => return Ok(vec![]),
@@ -425,6 +456,130 @@ fn historico_sync(cwd: &str, quantos: u32) -> Result<Vec<Commit>, ErroDeGit> {
         .map(|s| s.lines().map(|l| l.trim().to_string()).collect())
         .unwrap_or_default();
     Ok(parse_historico(&saida, &nao_enviados))
+}
+
+fn detalhes_do_commit_sync(cwd: &str, hash: &str) -> Result<DetalhesDoCommit, ErroDeGit> {
+    let cwd = local(cwd)?;
+    let hash = hash.trim();
+    if hash.is_empty() || hash.len() > 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ErroDeGit::de("outro", "hash de commit inválido"));
+    }
+
+    let meta_format = format!("--format=%H{SEP}%h{SEP}%s{SEP}%b{SEP}%an{SEP}%ae{SEP}%ct{SEP}%P");
+    let meta_saida = match run_git(&cwd, &["show", "-s", &meta_format, hash]) {
+        Ok(s) => s,
+        Err(e) => return Err(erro_de(&cwd, e)),
+    };
+    let parts: Vec<&str> = meta_saida.split(SEP).collect();
+    if parts.len() < 8 {
+        return Err(ErroDeGit::de("outro", "falha ao ler metadados do commit"));
+    }
+    let full_hash = parts[0].trim().to_string();
+    let curto = parts[1].trim().to_string();
+    let mensagem = parts[2].trim().to_string();
+    let corpo = parts[3].trim().to_string();
+    let autor = parts[4].trim().to_string();
+    let autor_email = parts[5].trim().to_string();
+    let quando = parts[6].trim().parse::<i64>().unwrap_or(0) * 1000;
+    let pais: Vec<String> = parts[7]
+        .split_whitespace()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    let status_saida = run_git(&cwd, &["show", "--name-status", "--format=", hash]).unwrap_or_default();
+    let numstat_saida = run_git(&cwd, &["show", "--numstat", "--format=", hash]).unwrap_or_default();
+
+    let mut numstats: std::collections::HashMap<String, (u32, u32, bool)> = std::collections::HashMap::new();
+    let mut total_additions = 0u32;
+    let mut total_deletions = 0u32;
+
+    for line in numstat_saida.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 3 {
+            continue;
+        }
+        let raw_path = cols[2].trim();
+        let norm_path = if let Some(idx) = raw_path.find(" => ") {
+            if let (Some(open), Some(close)) = (raw_path.find('{'), raw_path.find('}')) {
+                let prefix = &raw_path[..open];
+                let suffix = &raw_path[close + 1..];
+                let inside = &raw_path[open + 1..close];
+                let new_part = inside.split(" => ").nth(1).unwrap_or(inside);
+                format!("{prefix}{new_part}{suffix}")
+            } else {
+                raw_path[idx + 4..].to_string()
+            }
+        } else {
+            raw_path.to_string()
+        };
+
+        let is_binary = cols[0] == "-" && cols[1] == "-";
+        let adds = if is_binary { 0 } else { cols[0].parse::<u32>().unwrap_or(0) };
+        let dels = if is_binary { 0 } else { cols[1].parse::<u32>().unwrap_or(0) };
+
+        total_additions += adds;
+        total_deletions += dels;
+        numstats.insert(norm_path, (adds, dels, is_binary));
+    }
+
+    let mut arquivos = Vec::new();
+    for line in status_saida.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+        if cols.len() < 2 {
+            continue;
+        }
+        let code = cols[0].trim();
+        let (status, caminho_antigo, caminho) = if code.starts_with('R') && cols.len() >= 3 {
+            ("renamed", Some(cols[1].trim().to_string()), cols[2].trim().to_string())
+        } else if code.starts_with('A') {
+            ("added", None, cols[1].trim().to_string())
+        } else if code.starts_with('D') {
+            ("deleted", None, cols[1].trim().to_string())
+        } else {
+            ("modified", None, cols[1].trim().to_string())
+        };
+
+        let (additions, deletions, binario) = numstats
+            .get(&caminho)
+            .cloned()
+            .unwrap_or((0, 0, false));
+
+        arquivos.push(ArquivoDoCommit {
+            caminho,
+            caminho_antigo,
+            status: status.to_string(),
+            additions,
+            deletions,
+            binario,
+        });
+    }
+
+    Ok(DetalhesDoCommit {
+        hash: full_hash,
+        curto,
+        mensagem,
+        corpo,
+        autor,
+        autor_email,
+        quando,
+        pais,
+        arquivos,
+        total_additions,
+        total_deletions,
+    })
+}
+
+fn diff_do_commit_sync(cwd: &str, hash: &str) -> Result<String, ErroDeGit> {
+    let cwd = local(cwd)?;
+    let hash = hash.trim();
+    if hash.is_empty() || hash.len() > 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(ErroDeGit::de("outro", "hash de commit inválido"));
+    }
+    match run_git(&cwd, &["show", "--patch", "--format=", hash]) {
+        Ok(s) => Ok(s),
+        Err(e) => Err(erro_de(&cwd, e)),
+    }
 }
 
 /// Desfaz o último commit devolvendo as alterações à área de trabalho
@@ -513,6 +668,27 @@ pub async fn git_recuperar_guardada(cwd: String, referencia: String, apagar: boo
 #[tauri::command]
 pub async fn git_historico(cwd: String, quantos: u32) -> Result<Vec<Commit>, ErroDeGit> {
     bloqueante(move || historico_sync(&cwd, quantos)).await
+}
+
+#[tauri::command]
+pub async fn git_detalhes_do_commit(cwd: String, hash: String) -> Result<DetalhesDoCommit, ErroDeGit> {
+    bloqueante(move || detalhes_do_commit_sync(&cwd, &hash)).await
+}
+
+#[tauri::command]
+pub async fn git_diff_do_commit(cwd: String, hash: String) -> Result<String, ErroDeGit> {
+    bloqueante(move || diff_do_commit_sync(&cwd, &hash)).await
+}
+
+#[tauri::command]
+pub async fn git_remote_url(cwd: String) -> Result<Option<String>, ErroDeGit> {
+    bloqueante(move || {
+        let cwd = local(&cwd)?;
+        Ok(git(&cwd, &["config", "--get", "remote.origin.url"])
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty()))
+    })
+    .await
 }
 
 #[tauri::command]

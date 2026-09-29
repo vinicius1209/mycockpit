@@ -7,6 +7,7 @@ import {
   idadeDaBusca,
   pedidoDeConflito,
   quandoDaBranch,
+  urlDoCommitNaWeb,
   type ErroDeGit,
 } from "@/lib/gitSync"
 
@@ -78,5 +79,15 @@ describe("branches e conflito", () => {
     const texto = pedidoDeConflito({ tipo: "rebase", atual: 2, total: 3 }, ["app/src-tauri/src/lib.rs", "app/src/store/chat.ts"])
     expect(texto).toContain("- app/src-tauri/src/lib.rs\n- app/src/store/chat.ts")
     expect(texto).toContain("Não continue nem aborte o rebase")
+  })
+
+  it("urlDoCommitNaWeb resolve urls SSH e HTTPS do GitHub", () => {
+    expect(urlDoCommitNaWeb("git@github.com:vinicius1209/frota.git", "1f59338")).toBe(
+      "https://github.com/vinicius1209/frota/commit/1f59338",
+    )
+    expect(urlDoCommitNaWeb("https://github.com/vinicius1209/frota.git", "1f59338")).toBe(
+      "https://github.com/vinicius1209/frota/commit/1f59338",
+    )
+    expect(urlDoCommitNaWeb(null, "1f59338")).toBeNull()
   })
 })

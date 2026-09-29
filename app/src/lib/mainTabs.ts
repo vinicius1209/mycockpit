@@ -16,7 +16,7 @@
 // retrabalho no meio. Aqui a leitura de arquivo entra como a terceira variante
 // depois de o diff provar a fronteira entre índice e leitor.
 
-import { chaveDoDiff, lerChave } from "@/lib/abasDeArquivo"
+import { chaveDoCommit, chaveDoDiff, lerChave } from "@/lib/abasDeArquivo"
 
 /** Ícone fica com o componente; aqui é só identidade e rótulo. */
 export type MainTab =
@@ -29,6 +29,8 @@ export type MainTab =
        *  que rolar duas vezes; com `focusPath` sozinho, o segundo clique não
        *  mudava nada e quem rolou pra longe não voltava. */
       focusSeq?: number
+      /** Commit específico cujo diff está sendo inspecionado. */
+      commitHash?: string
     }
   /** O navegador do projeto ativo, ao vivo (navegador PRD R1). */
   | { kind: "navegador" }
@@ -65,11 +67,30 @@ export function mainTabEntries(
   const abertas = [...(contexto.arquivosAbertos ?? [])]
   if (tab.kind === "arquivo" && !abertas.includes(tab.path)) abertas.push(tab.path)
   for (const chave of abertas) {
-    const { tipo, caminho } = lerChave(chave)
-    base.push({ kind: tipo, label: caminho.split("/").pop() || caminho, closable: true })
+    const info = lerChave(chave)
+    if (info.tipo === "commit") {
+      base.push({
+        kind: "diff",
+        label: info.caminho
+          ? `${info.caminho.split("/").pop() || info.caminho} · commit ${info.commitHash.slice(0, 7)}`
+          : `commit ${info.commitHash.slice(0, 7)}`,
+        closable: true,
+      })
+    } else {
+      base.push({
+        kind: info.tipo,
+        label: info.caminho.split("/").pop() || info.caminho,
+        closable: true,
+      })
+    }
   }
-  if (tab.kind === "diff" && !(tab.focusPath && abertas.includes(chaveDoDiff(tab.focusPath)))) {
-    base.push({ kind: "diff", label: "Alterações", closable: true })
+  const commitOuDiffAberto =
+    tab.kind === "diff" &&
+    ((tab.commitHash && abertas.includes(chaveDoCommit(tab.commitHash, tab.focusPath))) ||
+      (tab.focusPath && abertas.includes(chaveDoDiff(tab.focusPath))))
+  if (tab.kind === "diff" && !commitOuDiffAberto) {
+    const label = tab.commitHash ? `commit ${tab.commitHash.slice(0, 7)}` : "Alterações"
+    base.push({ kind: "diff", label, closable: true })
   }
   return base
 }

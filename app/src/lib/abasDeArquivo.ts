@@ -26,15 +26,38 @@
  * (ADR-248).
  */
 const PREFIXO_DO_DIFF = "\u0000diff:"
+const PREFIXO_DO_COMMIT = "\u0000commit:"
 
 export function chaveDoDiff(caminho: string): string {
   return PREFIXO_DO_DIFF + caminho
 }
 
-export function lerChave(chave: string): { tipo: "arquivo" | "diff"; caminho: string } {
-  return chave.startsWith(PREFIXO_DO_DIFF)
-    ? { tipo: "diff", caminho: chave.slice(PREFIXO_DO_DIFF.length) }
-    : { tipo: "arquivo", caminho: chave }
+export function chaveDoCommit(hash: string, caminho?: string): string {
+  return PREFIXO_DO_COMMIT + hash + (caminho ? ":" + caminho : "")
+}
+
+export type TipoDeChave =
+  | { tipo: "arquivo"; caminho: string }
+  | { tipo: "diff"; caminho: string }
+  | { tipo: "commit"; commitHash: string; caminho?: string }
+
+export function lerChave(chave: string): TipoDeChave {
+  if (chave.startsWith(PREFIXO_DO_COMMIT)) {
+    const resto = chave.slice(PREFIXO_DO_COMMIT.length)
+    const idx = resto.indexOf(":")
+    if (idx >= 0) {
+      return {
+        tipo: "commit",
+        commitHash: resto.slice(0, idx),
+        caminho: resto.slice(idx + 1),
+      }
+    }
+    return { tipo: "commit", commitHash: resto }
+  }
+  if (chave.startsWith(PREFIXO_DO_DIFF)) {
+    return { tipo: "diff", caminho: chave.slice(PREFIXO_DO_DIFF.length) }
+  }
+  return { tipo: "arquivo", caminho: chave }
 }
 
 export interface AbasDaConversa {
@@ -113,7 +136,17 @@ function nomeDe(caminho: string): string {
 export function rotulosDasAbas(chaves: readonly string[]): Map<string, { nome: string; pasta: string | null }> {
   // O mesmo arquivo aberto para ler e nas alterações não é "nome repetido":
   // o ícone já diferencia as duas abas.
-  const caminhos = [...new Set(chaves.map((c) => lerChave(c).caminho))]
+  const infoMap = new Map(chaves.map((c) => [c, lerChave(c)]))
+  const caminhos = [
+    ...new Set(
+      chaves
+        .map((c) => {
+          const info = infoMap.get(c)!
+          return info.tipo === "commit" ? info.caminho ?? "" : info.caminho
+        })
+        .filter(Boolean),
+    ),
+  ]
   const porNome = new Map<string, string[]>()
   for (const c of caminhos) porNome.set(nomeDe(c), [...(porNome.get(nomeDe(c)) ?? []), c])
   const porCaminho = new Map<string, { nome: string; pasta: string | null }>()
@@ -129,7 +162,28 @@ export function rotulosDasAbas(chaves: readonly string[]): Map<string, { nome: s
     while (niveis < maximo && new Set(pastas.map(sufixo)).size < mesmos.length) niveis++
     mesmos.forEach((c, i) => porCaminho.set(c, { nome, pasta: sufixo(pastas[i]) || "raiz" }))
   }
-  return new Map(chaves.map((c) => [c, porCaminho.get(lerChave(c).caminho) ?? { nome: c, pasta: null }]))
+
+  const resultado = new Map<string, { nome: string; pasta: string | null }>()
+  for (const c of chaves) {
+    const info = infoMap.get(c)!
+    if (info.tipo === "commit") {
+      if (info.caminho) {
+        const arqRotulo = porCaminho.get(info.caminho) ?? { nome: nomeDe(info.caminho), pasta: null }
+        resultado.set(c, {
+          nome: arqRotulo.nome,
+          pasta: `commit ${info.commitHash.slice(0, 7)}`,
+        })
+      } else {
+        resultado.set(c, {
+          nome: `commit ${info.commitHash.slice(0, 7)}`,
+          pasta: null,
+        })
+      }
+    } else {
+      resultado.set(c, porCaminho.get(info.caminho) ?? { nome: c, pasta: null })
+    }
+  }
+  return resultado
 }
 
 /** A vista na ordem da tira: `null` é a Conversa, que é sempre a primeira. */

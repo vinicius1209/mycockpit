@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Detalhes do Histórico de Alterações — Frota</title>
+<style>
+  :root {
+    --background: #fbfbfa; --rail: #f6f6f4; --card: #ffffff; --popover: #ffffff; --secondary: #f4f4f2;
+    --foreground: #16181b; --muted-foreground: #5c6166; --faint: #8a9099;
+    --border: rgba(0,0,0,.09); --divisor: rgba(0,0,0,.036);
+    --sel: rgba(0,0,0,.055); --sel-hover: rgba(0,0,0,.028);
+    --add: #2f8a57; --del: #cf4a3e; --mod: #c1861f; --warn: #c1861f;
+    --shadow-pop: 0 12px 40px -8px rgba(20,22,25,.18), 0 0 0 1px rgba(0,0,0,.08);
+    --sans: "Geist", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body { background: var(--rail); color: var(--foreground); font: 13px/1.5 var(--sans); padding: 28px 32px 80px; }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -.01em; }
+  h2 { font-size: 14px; font-weight: 600; margin: 38px 0 4px; }
+  .sub { color: var(--muted-foreground); font-size: 13px; margin-top: 4px; max-width: 1040px; }
+  .legenda { font: 500 11px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted-foreground); margin: 18px 0 8px; }
+  .nota { font-size: 12px; line-height: 1.55; color: var(--muted-foreground); max-width: 820px; margin-top: 12px; }
+  .nota b { color: var(--foreground); font-weight: 500; }
+  .kbd { font: 11px var(--mono); padding: 1px 5px; border-radius: 4px; box-shadow: inset 0 0 0 1px var(--border); color: var(--muted-foreground); white-space: nowrap; }
+  svg.i { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+  .palco { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+
+  /* Coluna / Sidebar da aba Alterações */
+  .aba { width: 380px; background: var(--card); border-radius: 12px; box-shadow: 0 0 0 1px var(--border); position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .cab { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 10px; border-bottom: 1px solid var(--border); font: 11px var(--mono); color: var(--muted-foreground); }
+  .cab .branch { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 6px; border-radius: 6px; color: var(--foreground); }
+  .cab .esp { flex: 1; }
+  .add { color: var(--add); } .del { color: var(--del); }
+  
+  .secao-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px 4px; font-size: 11px; font-weight: 500; color: var(--muted-foreground); }
+  .secao-header button { background: none; border: none; font: inherit; color: inherit; display: flex; align-items: center; gap: 5px; cursor: pointer; padding: 0; }
+  .secao-header .acoes { display: flex; align-items: center; gap: 4px; }
+  
+  .busca-hist { margin: 4px 10px 6px; height: 26px; border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); display: flex; align-items: center; gap: 6px; padding: 0 8px; font-size: 11px; color: var(--muted-foreground); background: var(--secondary); }
+  .busca-hist input { border: none; background: transparent; outline: none; font: inherit; color: var(--foreground); width: 100%; }
+
+  /* Linhas do Histórico */
+  .commit-item { border-bottom: 1px solid var(--divisor); cursor: pointer; transition: background .12s; }
+  .commit-item:hover { background: var(--sel-hover); }
+  .commit-item.ativo { background: var(--sel); }
+  .commit-linha { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 4px 12px; font-size: 12px; }
+  .commit-item .h { font: 11px var(--mono); color: var(--muted-foreground); flex-shrink: 0; }
+  .commit-item .m { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--foreground); }
+  .commit-item .q { font: 11px var(--mono); color: var(--faint); flex-shrink: 0; }
+  .commit-item .nao { font: 11px var(--mono); color: var(--muted-foreground); background: var(--secondary); border-radius: 4px; padding: 0 5px; flex-shrink: 0; }
+  .commit-item .avatar { width: 16px; height: 16px; border-radius: 50%; background: var(--secondary); font: 9px/16px var(--mono); text-align: center; color: var(--muted-foreground); flex-shrink: 0; }
+
+  /* Detalhes inline (accordion) */
+  .commit-detalhes-inline { padding: 6px 12px 10px 24px; background: rgba(0,0,0,.018); border-top: 1px solid var(--divisor); font-size: 11px; }
+  .commit-detalhes-inline .meta { color: var(--muted-foreground); margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+  .commit-detalhes-inline .msg-corpo { color: var(--foreground); font-size: 11px; line-height: 1.45; margin-bottom: 8px; padding: 6px 8px; background: var(--card); border-radius: 6px; box-shadow: inset 0 0 0 1px var(--border); }
+  .arq-item { display: flex; align-items: center; gap: 6px; height: 22px; font-family: var(--mono); color: var(--foreground); }
+  .arq-item .badge { font-weight: 600; width: 10px; font-size: 11px; }
+  .arq-item .caminho { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .arq-item .delta { font-size: 10px; }
+
+  .botoes-acao { display: flex; gap: 4px; margin-top: 6px; }
+  .btn-chip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 6px; border-radius: 4px; font-size: 11px; color: var(--muted-foreground); background: var(--secondary); border: none; cursor: pointer; }
+  .btn-chip:hover { color: var(--foreground); background: var(--sel); }
+  .btn-chip.prim { background: var(--foreground); color: var(--background); }
+
+  /* Painel Principal (Aba de Commit / Diff Inspector) */
+  .painel-principal { flex: 1; min-width: 580px; max-width: 860px; background: var(--card); border-radius: 12px; box-shadow: 0 0 0 1px var(--border); overflow: hidden; display: flex; flex-direction: column; }
+  .tira-abas { display: flex; align-items: center; height: 38px; border-bottom: 1px solid var(--border); padding: 0 10px; background: var(--rail); gap: 4px; }
+  .aba-tab { display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px; border-radius: 6px; font-size: 12px; color: var(--muted-foreground); background: transparent; cursor: pointer; }
+  .aba-tab.ativa { background: var(--card); color: var(--foreground); font-weight: 500; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+
+  .commit-header-card { padding: 16px 20px; border-bottom: 1px solid var(--border); background: var(--background); }
+  .commit-header-topo { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .commit-titulo { font-size: 14px; font-weight: 600; line-height: 1.4; color: var(--foreground); }
+  .commit-hash-pill { display: inline-flex; align-items: center; gap: 5px; font: 11px var(--mono); padding: 2px 8px; border-radius: 6px; background: var(--secondary); color: var(--foreground); box-shadow: inset 0 0 0 1px var(--border); cursor: pointer; }
+  .commit-autor-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; color: var(--muted-foreground); }
+  .commit-autor-row .nome { color: var(--foreground); font-weight: 500; }
+  .commit-stats-bar { display: flex; align-items: center; gap: 14px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--divisor); font-size: 12px; }
+
+  .diff-view-placeholder { padding: 16px 20px; font-family: var(--mono); font-size: 12px; line-height: 1.6; }
+  .diff-line { display: flex; gap: 12px; padding: 1px 6px; border-radius: 3px; }
+  .diff-line.add { background: rgba(47,138,87,.1); color: var(--add); }
+  .diff-line.del { background: rgba(207,74,62,.1); color: var(--del); }
+  .diff-line .num { width: 32px; color: var(--faint); text-align: right; user-select: none; }
+</style>
+</head>
+<body>
+
+<svg style="display:none">
+  <defs>
+    <g id="branch"><path d="M4 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 10a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm10-7a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM4 7v6m0-3c2 0 6 0 8-3"/></g>
+    <g id="commit"><circle cx="7" cy="7" r="3"/><path d="M1 7h3m6 0h3"/></g>
+    <g id="chev"><path d="m3 5 4 4 4-4"/></g>
+    <g id="chev-r"><path d="m5 3 4 4-4 4"/></g>
+    <g id="copy"><rect width="8" height="8" x="5" y="5" rx="1.5"/><path d="M3 9H2.5A1.5 1.5 0 0 1 1 7.5v-5A1.5 1.5 0 0 1 2.5 1h5A1.5 1.5 0 0 1 9 2.5V3"/></g>
+    <g id="github"><path d="M8 1a7 7 0 0 0-2.2 13.6c.35.06.48-.15.48-.34v-1.3c-1.95.42-2.36-.94-2.36-.94-.32-.8-.78-1.02-.78-1.02-.64-.44.05-.43.05-.43.7.05 1.08.73 1.08.73.63 1.07 1.65.76 2.05.58.06-.45.24-.76.44-.94-1.56-.18-3.2-.78-3.2-3.47 0-.77.27-1.39.73-1.88-.07-.18-.32-.9.07-1.87 0 0 .59-.19 1.93.72a6.7 6.7 0 0 1 3.5 0c1.34-.91 1.93-.72 1.93-.72.39.97.14 1.69.07 1.87.45.49.73 1.11.73 1.88 0 2.7-1.64 3.29-3.2 3.47.25.22.48.65.48 1.3v1.93c0 .19.13.4.48.34A7 7 0 0 0 8 1z"/></g>
+    <g id="undo"><path d="M3 7h7a3 3 0 0 1 3 3v0a3 3 0 0 1-3 3H7M3 7l3-3M3 7l3 3"/></g>
+    <g id="agent"><circle cx="7" cy="7" r="6"/><path d="M7 4v3l2 2"/></g>
+  </defs>
+</svg>
+
+<h1>Detalhes do Histórico de Alterações</h1>
+<p class="sub">Proposta de evolução do Histórico na aba Alterações (estilo VS Code / Zed), mantendo o rigor do STYLEGUIDE da Frota: decidibilidade, tipografia fechada (11, 12, 13, 14), controles em chip/compacto e zero teatro.</p>
+
+<h2>1. Duas superfícies complementares (Coluna lateral + Painel principal)</h2>
+
+<div class="palco" style="margin-top:14px">
+  
+  <!-- Coluna Lateral -->
+  <div>
+    <p class="legenda">Coluna: Histórico interativo com inline preview</p>
+    <div class="aba">
+      <div class="cab">
+        <span class="branch"><svg class="i" style="width:12px"><use href="#branch"/></svg>feat/olist-product-sync</span>
+        <span class="esp"></span>
+        <span class="add">+33</span>
+      </div>
+
+      <div class="secao-header">
+        <button type="button">
+          <svg class="i" style="width:10px"><use href="#chev"/></svg>
+          Histórico
+        </button>
+        <div class="acoes">
+          <span style="font-size:11px;color:var(--faint)">20 commits</span>
+        </div>
+      </div>
+
+      <div class="busca-hist">
+        <svg class="i" style="width:11px"><use href="#commit"/></svg>
+        <input type="text" placeholder="Filtrar por mensagem, autor ou hash…" value="" />
+      </div>
+
+      <!-- Item Ativo / Expandido -->
+      <div class="commit-item ativo">
+        <div class="commit-linha">
+          <svg class="i" style="width:10px;color:var(--muted-foreground)"><use href="#chev"/></svg>
+          <span class="h">1f59338</span>
+          <span class="m" title="Merge pull request #81 from MACLAN-TECH/feat/olist-stock-sync">Merge pull request #81 from MACLAN-TECH…</span>
+          <span class="q">hoje</span>
+        </div>
+        
+        <!-- Detalhes inline rápidos (ao expandir) -->
+        <div class="commit-detalhes-inline">
+          <div class="meta">
+            <span class="avatar">VM</span>
+            <span>viniimachadoprime</span>
+            <span>·</span>
+            <span>28/09/2026 15:19</span>
+          </div>
+          <div class="msg-corpo">
+            Sincronização de estoque do ERP com o CRM via webhook automático.
+          </div>
+          <div style="font-weight:500;color:var(--muted-foreground);margin-bottom:4px">2 arquivos alterados:</div>
+          <div class="arq-item">
+            <span class="badge" style="color:var(--mod)">M</span>
+            <span class="caminho">src/lib/stockSync.ts</span>
+            <span class="delta"><span class="add">+24</span> <span class="del">−6</span></span>
+          </div>
+          <div class="arq-item">
+            <span class="badge" style="color:var(--add)">A</span>
+            <span class="caminho">src/types/olist.ts</span>
+            <span class="delta"><span class="add">+15</span></span>
+          </div>
+
+          <div class="botoes-acao">
+            <button class="btn-chip prim">Abrir diff na aba</button>
+            <button class="btn-chip" title="Copiar hash completo"><svg class="i" style="width:10px"><use href="#copy"/></svg> Copiar SHA</button>
+            <button class="btn-chip" title="Ver no GitHub"><svg class="i" style="width:10px"><use href="#github"/></svg> GitHub</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Item não enviado -->
+      <div class="commit-item">
+        <div class="commit-linha">
+          <svg class="i" style="width:10px;color:var(--faint)"><use href="#chev-r"/></svg>
+          <span class="h">e32943a</span>
+          <span class="m">docs(plan): vincular PR #81 ao manifest</span>
+          <span class="nao">não enviado</span>
+        </div>
+      </div>
+
+      <!-- Outros commits normais -->
+      <div class="commit-item">
+        <div class="commit-linha">
+          <svg class="i" style="width:10px;color:var(--faint)"><use href="#chev-r"/></svg>
+          <span class="h">0b7f87a</span>
+          <span class="m">feat(erp): estoque do olist chega ao crm</span>
+          <span class="q">hoje</span>
+        </div>
+      </div>
+
+      <div class="commit-item">
+        <div class="commit-linha">
+          <svg class="i" style="width:10px;color:var(--faint)"><use href="#chev-r"/></svg>
+          <span class="h">eed84c2</span>
+          <span class="m">Merge pull request #80 from MACLAN-TECH…</span>
+          <span class="q">hoje</span>
+        </div>
+      </div>
+
+      <div class="commit-item">
+        <div class="commit-linha">
+          <svg class="i" style="width:10px;color:var(--faint)"><use href="#chev-r"/></svg>
+          <span class="h">c715173</span>
+          <span class="m">fix(ssw): agenda o rastreio de entregas</span>
+          <span class="q">hoje</span>
+        </div>
+      </div>
+
+      <div style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid var(--divisor)">
+        <button class="btn-chip" style="color:var(--muted-foreground)">
+          <svg class="i" style="width:10px"><use href="#undo"/></svg>
+          Desfazer último commit
+        </button>
+        <button class="btn-chip" style="color:var(--muted-foreground)">
+          Ver mais
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Painel Principal -->
+  <div class="painel-principal">
+    <div class="tira-abas">
+      <div class="aba-tab">Conversa</div>
+      <div class="aba-tab ativa">
+        <svg class="i" style="width:12px"><use href="#commit"/></svg>
+        commit 1f59338
+      </div>
+    </div>
+
+    <!-- Cabeçalho do Commit no Painel -->
+    <div class="commit-header-card">
+      <div class="commit-header-topo">
+        <div>
+          <div class="commit-titulo">Merge pull request #81 from MACLAN-TECH/feat/olist-stock-sync</div>
+          <div style="font-size:12px;color:var(--muted-foreground);margin-top:4px">
+            Sincronização de estoque do ERP com o CRM via webhook automático.
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="commit-hash-pill" title="Clique para copiar">
+            <span>1f593384</span>
+            <svg class="i" style="width:11px"><use href="#copy"/></svg>
+          </div>
+          <button class="btn-chip" title="Abrir no navegador"><svg class="i" style="width:12px"><use href="#github"/></svg></button>
+          <button class="btn-chip" title="Pedir ao agente para analisar"><svg class="i" style="width:12px"><use href="#agent"/></svg> Analisar com agente</button>
+        </div>
+      </div>
+
+      <div class="commit-autor-row">
+        <span class="avatar" style="width:18px;height:18px;font-size:10px;line-height:18px">VM</span>
+        <span class="nome">viniimachadoprime</span>
+        <span>&lt;vinicius@prime.com&gt;</span>
+        <span>·</span>
+        <span>28/09/2026, 15:19:50 (-03:00)</span>
+      </div>
+
+      <div class="commit-stats-bar">
+        <span><b>2</b> arquivos alterados</span>
+        <span class="add"><b>+39</b> adições</span>
+        <span class="del"><b>−6</b> remoções</span>
+        <span style="margin-left:auto;color:var(--faint)">Parent: e32943a</span>
+      </div>
+    </div>
+
+    <!-- Diff Content -->
+    <div class="diff-view-placeholder">
+      <div style="color:var(--muted-foreground);margin-bottom:8px;font-weight:600">src/lib/stockSync.ts</div>
+      <div class="diff-line"><span class="num">42</span><span>@@ -42,6 +42,12 @@ export async function syncStock() {</span></div>
+      <div class="diff-line"><span class="num">43</span><span>   const estoque = await fetchStock();</span></div>
+      <div class="diff-line del"><span class="num">44</span><span>-  if (!estoque) return false;</span></div>
+      <div class="diff-line add"><span class="num">44</span><span>+  if (!estoque || estoque.items.length === 0) {</span></div>
+      <div class="diff-line add"><span class="num">45</span><span>+    logger.warn("Nenhum item retornado pelo ERP");</span></div>
+      <div class="diff-line add"><span class="num">46</span><span>+    return false;</span></div>
+      <div class="diff-line add"><span class="num">47</span><span>+  }</span></div>
+      <div class="diff-line"><span class="num">48</span><span>   return applyChanges(estoque);</span></div>
+    </div>
+  </div>
+
+</div>
+
+<p class="nota">
+  <b>Diretrizes de implementação na Frota:</b><br/>
+  1. <b>Lazy Loading no Rust</b>: a listagem continua leve com <span class="kbd">git log</span>. Detalhes completos de arquivos e diffs só são chamados sob demanda por commit (<span class="kbd">git_detalhes_do_commit</span> e <span class="kbd">git_diff_do_commit</span> em <span class="kbd">git_sync.rs</span>).<br/>
+  2. <b>Reuso do DiffPanel existente</b>: o visualizador de hunks, syntax highlighting e limites de linha já existem em <span class="kbd">DiffPanel.tsx</span> e <span class="kbd">lib/git.ts</span>; basta receber um commit opcional.<br/>
+  3. <b>Decisão Humana e Agentes</b>: o botão "Analisar com agente" transfere o resumo do commit para o composer da conversa ativa sem enviar sozinho, respeitando a lei fundamental do Cockpit.
+</p>
+
+</body>
+</html>

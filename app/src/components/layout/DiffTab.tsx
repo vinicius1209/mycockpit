@@ -20,11 +20,14 @@ export function DiffTab({
   focusPath,
   focusSeq,
   soArquivo,
+  commitHash,
 }: {
   focusPath?: string
   focusSeq?: number
   /** A aba das alterações de UM arquivo (ADR-248): só ele. */
   soArquivo?: string
+  /** Commit específico sendo inspecionado. */
+  commitHash?: string
 }) {
   const project = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId) ?? null)
   const activeConvId = useChat((s) => s.activeId)
@@ -50,6 +53,7 @@ export function DiffTab({
       focusPath={focusPath}
       focusSeq={focusSeq}
       soArquivo={soArquivo}
+      commitHash={commitHash}
       // Mandar os comentários pro composer VOLTA para a Conversa: o texto foi
       // parar lá, e deixar você olhando o diff enquanto o rascunho espera do
       // outro lado é esconder o resultado do próprio gesto. A aba do arquivo

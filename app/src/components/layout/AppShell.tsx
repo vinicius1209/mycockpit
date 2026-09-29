@@ -232,7 +232,14 @@ export function AppShell() {
                   )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "diff" && (
                   <div className={HOST_SUPERFICIE}>
-                    <Fronteira area="a aba de alterações" resetKey={mainTab.focusPath}><DiffTab focusPath={mainTab.focusPath} focusSeq={mainTab.focusSeq} soArquivo={mainTab.focusPath} /></Fronteira>
+                    <Fronteira area="a aba de alterações" resetKey={mainTab.commitHash ?? mainTab.focusPath}>
+                      <DiffTab
+                        focusPath={mainTab.focusPath}
+                        focusSeq={mainTab.focusSeq}
+                        soArquivo={mainTab.focusPath}
+                        commitHash={mainTab.commitHash}
+                      />
+                    </Fronteira>
                   </div>
                 )}
                 {viewMode === "linear" && !coberto && mainTab.kind === "navegador" && (
