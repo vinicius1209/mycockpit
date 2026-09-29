@@ -13,7 +13,7 @@
 // Fora do Tauri (teste, browser puro) cai no `navigator.clipboard`, que lá é o
 // único caminho que existe.
 
-import { writeText as writeTextNativo } from "@tauri-apps/plugin-clipboard-manager"
+import { writeImage as writeImageNativo, writeText as writeTextNativo } from "@tauri-apps/plugin-clipboard-manager"
 import { avisar } from "@/lib/avisos"
 
 import { isTauri } from "@/lib/db"
@@ -53,6 +53,19 @@ export async function copyText(
     return true
   } catch (e) {
     return falhou("copyText", e)
+  }
+}
+
+/** Copia uma imagem PNG (os bytes do arquivo) + toast. Nativo no app; fora
+ *  dele, `ClipboardItem`. */
+export async function copyImage(png: Uint8Array, label = "Imagem copiada"): Promise<boolean> {
+  try {
+    if (isTauri()) await writeImageNativo(png)
+    else await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([png as BlobPart], { type: "image/png" }) })])
+    avisar.feito(label)
+    return true
+  } catch (e) {
+    return falhou("copyImage", e)
   }
 }
 

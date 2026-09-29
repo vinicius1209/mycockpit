@@ -10261,3 +10261,24 @@ considerou.
      foco ou um diálogo na frente escondem. Liga no mesmo instalador do
      teclado das abas.
 - **Não fizemos:** o selo nas abas além da nona, e cor de fundo no terminal.
+
+### ADR-284 · Mermaid no fio e nas notas, carregado só quando aparece ✅
+- **Contexto (29/09/2026):** F6 do lote 2 do Maestri
+  (`docs/maestri-lote-2-plan.md`, E2). O agente escreve diagrama em
+  ` ```mermaid ` e a Frota mostrava o código cru.
+- **Decisão:**
+  1. O bloco vira diagrama (`BlocoMermaid`), com "Código", "Copiar fonte" e
+     "Copiar imagem" (PNG 2×, com o fundo do cartão). A lib entra por import
+     dinâmico (`lib/mermaid.ts`) e vira chunk próprio: o bundle principal
+     não cresce.
+  2. Tema `base` com os tokens do app lidos na hora (claro ou escuro),
+     `securityLevel: "strict"` e rótulos em SVG puro (`htmlLabels: false`),
+     que é o que deixa o diagrama ser desenhado no canvas para a imagem.
+  3. Fail-open: enquanto carrega, ou se não compila, o código aparece. O erro
+     de sintaxe diz a linha ("não compilou na linha 3"), com a linha
+     destacada; a mensagem crua do parser fica na dica. A fonte que ainda
+     chega pelo stream espera 300 ms parada antes de tentar desenhar.
+  4. Vale nas notas pelo mesmo `Markdown`. Companion fica para depois (D7).
+  5. Copiar imagem usa o `writeImage` nativo do plugin de clipboard (permissão
+     `clipboard-manager:allow-write-image`); se o PNG falhar, copia a fonte e
+     diz isso.

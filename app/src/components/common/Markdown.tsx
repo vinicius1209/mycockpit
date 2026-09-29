@@ -4,6 +4,8 @@ import type { Components } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { fatiasDaMensagem } from "./markdownBudget"
+import { BlocoMermaid } from "./BlocoMermaid"
+import { fonteMermaid } from "./fonteMermaid"
 import { Alerta, CaixaDeTarefa, ItemDeLista, ehTipoDeAlerta, remarkAlertas } from "./markdownAlertas"
 import { TextoCru } from "./TextoCru"
 import { Check, Copy } from "lucide-react"
@@ -372,7 +374,10 @@ const mdComponents: Components = {
   h3: ({ children }) => (
     <h4 className="mt-2 mb-1 text-[13px] font-semibold">{children}</h4>
   ),
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  pre: ({ children, node }) => {
+    const fonte = fonteMermaid(node)
+    return fonte != null ? <BlocoMermaid fonte={fonte} /> : <CodeBlock>{children}</CodeBlock>
+  },
   code: ({ className, children }) => {
     const block =
       String(children).includes("\n") || /language-|hljs/.test(className ?? "")

@@ -1,6 +1,6 @@
 # Plano · Estudo do Maestri, lote 2
 
-> **Status (29/09/2026):** E1 entregue. Decisões respondidas (tabela no fim).
+> **Status (29/09/2026):** E1 e E2 entregues. Decisões respondidas (tabela no fim).
 > Mock canônico: `docs/mocks/maestri-lote-2.html`. Origem: §11 de
 > `docs/prototipos-maestri-plan.md` e o estudo
 > `docs/competitors-maestri-2026-09-27.md`.
@@ -33,7 +33,7 @@ Aceite: com Claude em 72% da sessão, o celular mostra "Claude · 5h · 72% ·
 volta às 18:00" em âmbar; motor sem leitura fresca some; teste do builder e do
 núcleo puro.
 
-## E2 · F6, Mermaid no fio (P) · depende de D7
+## E2 · F6, Mermaid no fio (P) · ✅ entregue (ADR-284)
 
 1. Bloco ` ```mermaid ` no `Markdown`, com import dinâmico da lib só quando o
    bloco aparece e tema neutro com os tokens do app.
