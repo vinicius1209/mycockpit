@@ -15,7 +15,7 @@
 - Cada etapa fecha com `bun run test`, `bunx tsc -b --force`, `cargo test`,
   `bun run check`, ADR quando for estrutural, e commit por etapa.
 
-## E1 · F1, a cota no Companion (P) · sem decisão pendente · ✅ implementada
+## E1 · F1, a cota no Companion (P) · ✅ entregue
 
 O painel do app fica como está (decisão da pessoa, 29/09).
 
