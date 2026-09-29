@@ -70,19 +70,33 @@
   .gaveta b{color:var(--foreground);font-weight:500}
   .btn{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;color:var(--foreground)}
 
-  /* seletor de identidade de hoje, aberto (fiel ao componente) */
-  .pop{position:absolute;right:40px;bottom:46px;width:380px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);display:flex;overflow:hidden;z-index:3}
+  /* seletor de identidade de hoje (IdentityPicker), com o esforço em slider */
+  .pop{position:absolute;right:40px;bottom:46px;width:440px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);overflow:hidden;z-index:3}
+  .pop .preset{display:flex;align-items:center;gap:4px;padding:8px 12px 0;font-size:12px;color:var(--faint)}
+  .pop .busca{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-bottom:1px solid var(--border);font-size:13px;color:var(--faint)}
+  .pop .corpo{display:flex;height:236px}
   .rail{width:44px;border-right:1px solid var(--border);background:rgba(244,244,242,.6);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
   .rail span{width:32px;height:32px;border-radius:8px;display:grid;place-items:center}
   .rail span.on{background:var(--sel)}
-  .lista{flex:1;padding:6px;font-size:13px}
-  .lista .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 2px}
-  .lista .it{display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 8px;border-radius:6px}
+  .lista{flex:1;padding:6px;overflow:hidden}
+  .lista .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 4px}
+  .lista .it{padding:6px 8px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start}
+  .lista .it small{display:block;font-size:11px;color:var(--faint)}
   .lista .it.on{background:var(--sel)}
-  .lista .it span{font-size:11px;color:var(--faint)}
-  .esforco{display:flex;gap:2px;padding:6px 8px 4px}
-  .esforco span{flex:1;height:24px;border-radius:6px;display:grid;place-items:center;font-size:11px;color:var(--muted);box-shadow:inset 0 0 0 1px var(--border)}
-  .esforco span.on{background:var(--sel);color:var(--foreground)}
+  .lista .it .ok{color:var(--brass,#a9742b);font-size:12px}
+  /* o slider por etapas, discreto (referência: o seletor de esforço do GPT) */
+  .esforco{border-top:1px solid var(--border);padding:10px 14px 12px}
+  .esforco .topo{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .esforco .topo b{font-size:13px;font-weight:500}
+  .esforco .topo span{font-size:11px;color:var(--faint)}
+  .esforco .topo .reset{margin-left:auto;font-size:11px;color:var(--muted)}
+  .trilho{position:relative;height:20px;display:flex;align-items:center}
+  .trilho .base-t{position:absolute;left:0;right:0;height:4px;border-radius:2px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border)}
+  .trilho .cheio{position:absolute;left:0;height:4px;border-radius:2px;background:var(--foreground)}
+  .trilho .ponto{position:absolute;width:4px;height:4px;border-radius:50%;background:var(--faint);transform:translateX(-2px)}
+  .trilho .botao{position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25),0 0 0 1px var(--border-strong);transform:translateX(-8px)}
+  .rotulos{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--faint)}
+  .rotulos .on{color:var(--foreground)}
 
   [data-e]{display:none}
   [data-e].on{display:revert}
@@ -174,20 +188,32 @@
         <span data-e="rodando digitando" class="parar"><i></i></span>
       </div>
       <div data-e="seletor" class="pop">
-        <div class="rail"><span class="on"><span class="lg">C</span></span><span><span class="lg" style="background:#16181b">X</span></span><span><span class="lg" style="background:#6b4ce6">A</span></span></div>
-        <div class="lista">
-          <div class="grp">Mesmo motor · mantém a sessão</div>
-          <div class="it on">Opus 5.5 <span>1M de contexto</span></div>
-          <div class="it">Sonnet 5 <span>mais rápido</span></div>
-          <div class="it">Fable 5.1 <span>topo de linha</span></div>
-          <div class="grp">Esforço</div>
-          <div class="esforco"><span>baixo</span><span>médio</span><span class="on">alto</span><span>máximo</span></div>
+        <div class="preset">Sem preset <svg class="i s14"><use href="#down"/></svg></div>
+        <div class="busca">Buscar modelo do Claude Code…</div>
+        <div class="corpo">
+          <div class="rail"><span class="on"><span class="lg">C</span></span><span><span class="lg" style="background:#16181b">X</span></span><span><span class="lg" style="background:#6b4ce6">A</span></span><span><span class="lg" style="background:#5c6166">O</span></span></div>
+          <div class="lista">
+            <div class="grp">Mesmo motor · mantém a sessão</div>
+            <div class="it"><div>Padrão<small>Deixa o Claude Code escolher</small></div></div>
+            <div class="it on"><div>Opus 5.5<small>Pin exato · o Opus mais novo, 1M nativo ($4/$20)</small></div><span class="ok">✓</span></div>
+            <div class="it"><div>Sonnet 5<small>Pin exato · 1M nativo, rápido e equilibrado</small></div></div>
+            <div class="it"><div>Fable 5.1<small>Pin exato · topo de linha, 1M nativo ($10/$50)</small></div></div>
+          </div>
+        </div>
+        <div class="esforco">
+          <div class="topo"><b>Esforço alto</b><span>raciocina mais fundo</span><span class="reset">↺ Padrão</span></div>
+          <div class="trilho">
+            <div class="base-t"></div><div class="cheio" style="width:50%"></div>
+            <div class="ponto" style="left:0%"></div><div class="ponto" style="left:25%"></div><div class="ponto" style="left:75%"></div><div class="ponto" style="left:100%"></div>
+            <div class="botao" style="left:50%"></div>
+          </div>
+          <div class="rotulos"><span>baixo</span><span>médio</span><span class="on">alto</span><span>extra</span><span>máximo</span></div>
         </div>
       </div>
     </div>
     <table class="tabela">
       <tr><td>Linha de baixo</td><td>5 coisas em repouso: clipe, modo (só quando não é o seguro), especialistas, motor, microfone e enviar. O anel do contexto fica pequeno, sem número e sem cor.</td></tr>
-      <tr><td>Motor</td><td>Logo e nome do motor, à direita como no Codex. Modelo e esforço saem da linha: estão no hover e no seletor de hoje, que abre no clique (aba "Clique no motor"). O cadeado também sai; quem explica que trocar vira revezamento é o próprio seletor, como já faz.</td></tr>
+      <tr><td>Motor</td><td>Logo e nome do motor, à direita como no Codex. Modelo e esforço saem da linha: estão no hover e no seletor de hoje, que abre no clique (aba "Clique no motor"). O seletor fica igual, com uma troca: a faixa de botões do esforço vira um slider discreto por etapas, as etapas vindas do próprio motor, e "Padrão" vira o ↺ de voltar. O cadeado também sai; quem explica que trocar vira revezamento é o próprio seletor, como já faz.</td></tr>
       <tr><td>Modo</td><td>Padrão e Só lê não aparecem (é o estado de sempre, e o seletor continua no menu do motor ou por atalho). Liberado aparece em âmbar, como o "Acesso completo" do Codex.</td></tr>
       <tr><td>Contexto</td><td>Em repouso, só o anel cinza, número no hover. Quando pede ação (80%+), vira segmento da tira, com "Compactar agora" na gaveta, no mesmo molde da cota (ADR-281). A linha do enviar nunca fica vermelha.</td></tr>
       <tr><td>Instrução</td><td>"Peça algo ao seu time", no tom de metadado, sem "…" e sem atalho em prosa. Rodando: "Corrigir agora ou deixar para depois"; quem mostra as duas saídas é o par Depois | ⚡ quando você digita.</td></tr>
