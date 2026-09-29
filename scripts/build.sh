@@ -7,6 +7,9 @@
 #   ./scripts/build.sh promote 12 promove o teste nº 12
 #   ./scripts/build.sh dmg        empacota o OFICIAL num DMG pessoal arrastável
 #   ./scripts/build.sh list       histórico
+#
+# Depois do build de teste o target/ é varrido (ver enxugar.sh). Ajuste com
+# MC_SWEEP_DIAS=30 (mais conservador) ou MC_SWEEP_DIAS=0 (desliga).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -84,6 +87,15 @@ EOF
       [[ -n "$d" ]] && rm -rf "$d" && N=$((N+1))
     done < <(find "$BUILDS/test" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*' | sort -r | tail -n +$((KEEP+1)))
     [[ "$N" -gt 0 ]] && echo "  (auto-limpeza: $N build(s) antigo(s) apagado(s); mantidos os $KEEP mais recentes)"
+
+    # O .app antigo saiu acima, mas o caro é o target/: o cargo nunca recolhe o
+    # que ficou para trás (dependência que subiu de versão, branch trocada,
+    # compilador novo) e o diretório só cresce. Em set/2026 tinha 93 GB. Varre
+    # o que não é tocado há MC_SWEEP_DIAS; MC_SWEEP_DIAS=0 desliga.
+    DIAS="${MC_SWEEP_DIAS:-10}"
+    if [[ "$DIAS" != "0" ]]; then
+      ./scripts/enxugar.sh "$DIAS" || echo "  (varredura do target/ pulada)"
+    fi
 
     echo ""
     echo "✓ teste #$((10#$NUM)) pronto: $OUT/Frota.app"
