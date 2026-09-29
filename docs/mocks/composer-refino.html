@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Composer: onde a gente digita, escolhe o motor, vê o contexto</title>
+<title>Composer: menos coisa à vista, o resto no clique</title>
 <style>
   /* Tokens de :root do index.css (tema claro). Escala 11/12/13/14 (20 no título).
      Controles: chip 24 · compacto 28 · padrão 32. Sem travessão na copy. */
   :root{
-    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--secondary:#f4f4f2;
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--secondary:#f4f4f2;--popover:#fff;
     --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;
     --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
     --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
@@ -20,10 +20,9 @@
   body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px}
   h1{font-size:20px;font-weight:600}
   h2{font-size:14px;font-weight:600;margin:0 0 4px}
-  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1040px}
-  .sub b,.nota b{color:var(--foreground);font-weight:500}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1080px}
+  .sub b{color:var(--foreground);font-weight:500}
   .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
-  .nota{font-size:12px;line-height:1.55;color:var(--muted);max-width:760px;margin-top:10px}
   code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
   svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
   svg.i.s14{width:14px;height:14px}
@@ -31,59 +30,65 @@
   .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:12px 0 14px;flex-wrap:wrap}
   .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted);display:inline-flex;align-items:center}
   .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
-  .lado{display:grid;grid-template-columns:repeat(2,minmax(0,640px));gap:28px;align-items:start}
+  .lado{display:grid;grid-template-columns:repeat(2,minmax(0,660px));gap:28px;align-items:start}
 
-  /* ---- a casca do composer (ComposerShell) ---- */
-  .comp{background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow-pop)}
-  .comp.foco{border-color:rgba(22,24,27,.25)}
-  .campo{min-height:56px;padding:14px 16px 4px;font-size:14px;line-height:1.6;position:relative}
+  .comp{background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow-pop);position:relative}
+  .campo{min-height:56px;padding:14px 16px 4px;font-size:14px;line-height:1.6}
+  .campo .ph{color:var(--faint)}
+  .hoje .campo .ph{color:var(--muted)}
   .caret{display:inline-block;width:1px;height:16px;background:var(--foreground);vertical-align:-3px}
-  .base{display:flex;align-items:center;gap:6px;padding:4px 10px 10px}
+  .ficha{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px 0 2px;border-radius:6px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);font:11px var(--mono);color:var(--muted);vertical-align:-6px;margin:0 2px}
+  .ficha i{width:20px;height:20px;border-radius:4px;background:#2a2d31;display:block}
+  .base{display:flex;align-items:center;gap:4px;padding:4px 10px 10px}
   .esp{flex:1}
-  .ic{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;color:var(--muted)}
-  .ic.s28{width:28px;height:28px;border-radius:7px}
-
-  /* HOJE (fiel ao print de 28/09) */
-  .hoje .ph{color:var(--muted)}
-  .hoje .id{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:8px;color:var(--muted);font-size:12px;white-space:nowrap}
-  .hoje .modo{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;color:var(--muted);font-size:12px}
-  .caras{display:inline-flex;align-items:center;height:32px;padding:0 6px}
-  .caras i{width:20px;height:20px;border-radius:6px;display:inline-block;margin-left:-6px;box-shadow:0 0 0 2px var(--card)}
+  .ic{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted)}
+  .ic:hover{background:var(--sel-hover)}
+  .txt{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--muted);white-space:nowrap}
+  .txt:hover{background:var(--sel-hover)}
+  .risco{color:var(--warning)}
+  .lg{width:16px;height:16px;border-radius:4px;background:var(--claude);display:grid;place-items:center;color:#fff;font:600 11px var(--sans)}
+  .caras{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px;border-radius:7px;font-size:12px;color:var(--muted)}
+  .caras span{display:inline-flex}
+  .caras i{width:18px;height:18px;border-radius:5px;display:inline-block;margin-left:-5px;box-shadow:0 0 0 2px var(--card)}
   .caras i:first-child{margin-left:0}
-  .anel{width:18px;height:18px}
-  .parar{width:32px;height:32px;border-radius:50%;background:var(--error);display:grid;place-items:center}
-  .parar i{width:10px;height:10px;border-radius:2px;background:#fff;display:block}
-  .enviar{width:32px;height:32px;border-radius:50%;background:var(--foreground);color:#fff;display:grid;place-items:center}
+  .ctxtxt{font:11px var(--mono);color:var(--error)}
+  .anel{width:16px;height:16px}
+  .enviar{width:28px;height:28px;border-radius:50%;background:var(--foreground);color:#fff;display:grid;place-items:center}
   .enviar.off{background:var(--secondary);color:var(--faint)}
-
-  /* PROPOSTA */
-  .prop .ph{color:var(--faint)}
-  .kbd{display:inline-flex;align-items:center;height:18px;padding:0 5px;border-radius:4px;font:11px var(--mono);color:var(--faint);box-shadow:inset 0 0 0 1px var(--border);vertical-align:1px;margin:0 2px}
-  .porta{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--foreground);white-space:nowrap}
-  .porta:hover{background:var(--sel-hover)}
-  .porta .lg{width:16px;height:16px;border-radius:4px;background:var(--claude);display:grid;place-items:center;color:#fff;font:600 11px var(--sans)}
-  .porta .fraco{color:var(--faint)}
-  .porta .trava{color:var(--faint)}
-  .modo-p{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--muted)}
-  .modo-p.risco{color:var(--warning);background:rgba(193,134,31,.08)}
-  .sep{width:1px;height:16px;background:var(--divisor);margin:0 2px}
-  .ctx{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 6px;border-radius:7px;font:11px var(--mono);color:var(--faint)}
-  .ctx.alto{color:var(--warning)}
-  .ctx svg{width:14px;height:14px}
-  .caras-p{display:inline-flex;align-items:center;height:28px;padding:0 6px;border-radius:7px}
-  .caras-p i{width:18px;height:18px;border-radius:5px;display:inline-block;margin-left:-5px;box-shadow:0 0 0 2px var(--card)}
-  .caras-p i:first-child{margin-left:0}
-  .dica{font-size:11px;color:var(--faint);white-space:nowrap}
+  .parar{width:28px;height:28px;border-radius:50%;background:var(--error);display:grid;place-items:center}
+  .parar i{width:9px;height:9px;border-radius:2px;background:#fff;display:block}
   .par{display:inline-flex;height:28px;border-radius:999px;background:rgba(193,134,31,.10);box-shadow:inset 0 0 0 1px rgba(193,134,31,.32);overflow:hidden;color:var(--warning);font-size:12px}
   .par span{display:inline-flex;align-items:center;gap:5px;padding:0 10px}
   .par span+span{box-shadow:inset 1px 0 0 rgba(193,134,31,.32);padding:0 8px}
 
+  /* tira presa ao topo do composer (ADR-247) */
+  .tira{display:flex;align-items:center;gap:2px;height:32px;padding:0 6px;margin:0 14px;border-radius:10px 10px 0 0;background:var(--card);box-shadow:0 0 0 1px var(--border);font-size:12px;color:var(--muted)}
+  .seg{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px}
+  .seg:hover{background:var(--sel-hover)}
+  .seg.alerta{color:var(--warning)}
+  .gaveta{margin:0 14px;padding:10px 12px;background:var(--card);box-shadow:0 0 0 1px var(--border);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:10px}
+  .gaveta b{color:var(--foreground);font-weight:500}
+  .btn{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;color:var(--foreground)}
+
+  /* seletor de identidade de hoje, aberto (fiel ao componente) */
+  .pop{position:absolute;right:40px;bottom:46px;width:380px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);display:flex;overflow:hidden;z-index:3}
+  .rail{width:44px;border-right:1px solid var(--border);background:rgba(244,244,242,.6);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
+  .rail span{width:32px;height:32px;border-radius:8px;display:grid;place-items:center}
+  .rail span.on{background:var(--sel)}
+  .lista{flex:1;padding:6px;font-size:13px}
+  .lista .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 2px}
+  .lista .it{display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 8px;border-radius:6px}
+  .lista .it.on{background:var(--sel)}
+  .lista .it span{font-size:11px;color:var(--faint)}
+  .esforco{display:flex;gap:2px;padding:6px 8px 4px}
+  .esforco span{flex:1;height:24px;border-radius:6px;display:grid;place-items:center;font-size:11px;color:var(--muted);box-shadow:inset 0 0 0 1px var(--border)}
+  .esforco span.on{background:var(--sel);color:var(--foreground)}
+
   [data-e]{display:none}
-  [data-e].on{display:block}
-  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1100px;margin-top:10px}
-  .tabela td,.tabela th{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
-  .tabela th{color:var(--foreground);font-weight:500}
-  .tabela td:first-child{color:var(--foreground);font-weight:500;width:160px}
+  [data-e].on{display:revert}
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;margin-top:12px}
+  .tabela td{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
+  .tabela td:first-child{color:var(--foreground);font-weight:500;width:130px}
   ol.dec{max-width:1040px;margin:10px 0 0 18px;color:var(--muted)}
   ol.dec li{margin:6px 0}
   ol.dec b{color:var(--foreground);font-weight:500}
@@ -101,123 +106,109 @@
   <symbol id="escudo-ok" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
   <symbol id="zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
   <symbol id="fila" viewBox="0 0 24 24"><path d="M16 5H3M16 12H3M9 19H3M16 16l5 3-5 3z"/></symbol>
+  <symbol id="camadas" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></symbol>
 </svg>
 
-<h1>Composer: onde a gente digita, escolhe o motor e vê o contexto</h1>
-<p class="sub">Print de 28/09: o texto de instrução do campo ("Enter corrige agora · Tab envia no próximo turno…") tem o mesmo peso de um texto que você digitou, e a linha de baixo fala tudo no mesmo tom. À esquerda, como é hoje (fiel ao print e ao código); à direita, a proposta. As abas trocam o estado dos dois lados ao mesmo tempo.</p>
+<h1>Composer: menos coisa à vista, o resto no clique</h1>
+<p class="sub">Revisão 2, depois dos prints de 28/09. Referência: o composer do Codex (<b>"Peça qualquer coisa"</b> quase sumindo; à esquerda o <b>+</b> e o modo, que só aparece porque é arriscado; à direita o modelo em texto curto, o microfone e o enviar; o esforço mora dentro do seletor). O que fica do nosso: os especialistas como estão, e o seletor de motor, que abre no clique como hoje.</p>
 
 <div class="abas" id="estados">
   <button aria-pressed="true" data-alvo="vazio">Vazio, em repouso</button>
+  <button aria-pressed="false" data-alvo="digitando">Digitando com imagens</button>
   <button aria-pressed="false" data-alvo="rodando">Turno rodando</button>
-  <button aria-pressed="false" data-alvo="digitando">Digitando com o turno rodando</button>
-  <button aria-pressed="false" data-alvo="risco">Liberado e contexto alto</button>
-  <button aria-pressed="false" data-alvo="estreito">Coluna estreita</button>
+  <button aria-pressed="false" data-alvo="alto">Contexto alto</button>
+  <button aria-pressed="false" data-alvo="seletor">Clique no motor</button>
 </div>
 
 <div class="lado">
   <div>
-    <div class="legenda">Hoje</div>
-    <div class="comp hoje" id="hoje">
+    <div class="legenda">Hoje (print de 28/09)</div>
+    <div class="comp hoje">
       <div class="campo">
-        <span data-e="vazio" class="ph on">Peça algo…  ou / para comandos</span>
+        <span data-e="vazio alto seletor" class="ph on">Peça algo…  ou / para comandos</span>
+        <span data-e="digitando">olha o que o codex faz aqui <span class="ficha"><i></i>1 · image.png</span> e o nosso <span class="ficha"><i></i>3 · image.png</span> polui muito<span class="caret"></span></span>
         <span data-e="rodando" class="ph">Enter corrige agora · Tab envia no próximo turno…</span>
-        <span data-e="digitando">na verdade usa o parser novo das faturas<span class="caret"></span></span>
-        <span data-e="risco" class="ph">Peça algo…  ou / para comandos</span>
-        <span data-e="estreito" class="ph">Enter corrige agora · Tab envia no próximo turno…</span>
       </div>
       <div class="base">
         <span class="ic"><svg class="i"><use href="#clip"/></svg></span>
-        <span class="id">Claude Code · Opus (alias) · high <svg class="i s14"><use href="#cad"/></svg><svg class="i s14"><use href="#down"/></svg></span>
-        <span class="modo"><svg class="i s14" style="color:var(--warning)"><use href="#escudo"/></svg>Liberado</span>
-        <span class="caras"><i style="background:#5b8def"></i><i style="background:#e0679b"></i><i style="background:#9b7be8"></i></span><span style="color:var(--muted);font-size:12px">6</span>
+        <span class="txt">Claude Code · Opus 5.5 · h… <svg class="i s14"><use href="#cad"/></svg><svg class="i s14"><use href="#down"/></svg></span>
+        <span class="txt"><svg class="i s14 risco"><use href="#escudo"/></svg>Liberado</span>
+        <span class="caras"><span><i style="background:#5b8def"></i><i style="background:#f0b73c"></i><i style="background:#5b8def"></i></span>10</span>
         <span class="ic"><svg class="i"><use href="#mic"/></svg></span>
         <span class="esp"></span>
-        <svg class="anel" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--warning)" stroke-width="2" stroke-dasharray="30 50" transform="rotate(-90 10 10)"/></svg>
-        <span data-e="vazio" class="enviar off on" style="display:none"></span>
-        <span class="parar"><i></i></span>
+        <span class="ctxtxt">contexto 85%</span>
+        <svg class="anel" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="rgba(207,74,62,.2)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--error)" stroke-width="2.4" stroke-dasharray="43 50" transform="rotate(-90 10 10)"/></svg>
+        <span class="ic"><svg class="i s14"><use href="#down"/></svg></span>
+        <span class="enviar"><svg class="i s14"><use href="#up"/></svg></span>
       </div>
     </div>
     <table class="tabela">
-      <tr><td>Instrução no campo</td><td>Cinza <code>muted-foreground</code> (#5c6166, contraste ~6:1), o mesmo dos rótulos da linha de baixo e perto do texto digitado. Atalho explicado em prosa e "…" no fim, que parece continuação de frase.</td></tr>
-      <tr><td>Motor</td><td>"Opus (alias)" é termo interno (o CLI escolhe a versão mais nova). "high" é o valor cru do CLI. O cadeado diz "trocar aqui vira revezamento", mas só no hover.</td></tr>
-      <tr><td>Contexto</td><td>O anel sozinho, laranja, ao lado do Parar, lê como um spinner de carregando. O número só aparece no hover.</td></tr>
-      <tr><td>Especialistas</td><td>"6" é quantos existem no time, mas lê como "6 na conversa".</td></tr>
-      <tr><td>Peso</td><td>Sete controles com o mesmo cinza e o mesmo tamanho. O que é risco (Liberado) tem cor só no ícone.</td></tr>
+      <tr><td>Linha de baixo</td><td>9 coisas à vista: clipe, motor com modelo e esforço cortados, cadeado, chevron, modo, especialistas, microfone, "contexto 85%" com anel, chevron do enviar.</td></tr>
+      <tr><td>Contexto</td><td>Texto vermelho e anel vermelho ao lado do enviar: o maior ruído da linha, e ele não pede nada agora.</td></tr>
+      <tr><td>Instrução</td><td>Mesmo cinza dos rótulos, atalho em prosa, "…" no fim.</td></tr>
     </table>
   </div>
 
   <div>
     <div class="legenda">Proposta</div>
-    <div class="comp prop foco" id="prop">
+    <div data-e="alto">
+      <div class="tira"><span class="seg alerta" title="Contexto em 85% da janela do motor"><svg class="i s14"><use href="#camadas"/></svg>Contexto 85%</span><span class="esp"></span><span class="seg" style="color:var(--faint)">recolher</span></div>
+      <div class="gaveta"><span><b>85% do contexto usado.</b> Perto de o Claude Code resumir a conversa sozinho.</span><span class="esp"></span><span class="btn">Compactar agora</span></div>
+    </div>
+    <div class="comp">
       <div class="campo">
-        <span data-e="vazio" class="ph on">Peça algo ao seu time. <span class="kbd">/</span> para comandos, <span class="kbd">@</span> para chamar alguém</span>
-        <span data-e="rodando" class="ph">Corrija o rumo agora ou deixe para depois <span class="kbd">↵</span> agora <span class="kbd">⇥</span> depois</span>
-        <span data-e="digitando">na verdade usa o parser novo das faturas<span class="caret"></span></span>
-        <span data-e="risco" class="ph">Peça algo ao seu time. <span class="kbd">/</span> para comandos, <span class="kbd">@</span> para chamar alguém</span>
-        <span data-e="estreito" class="ph">Corrija o rumo ou deixe para depois</span>
+        <span data-e="vazio alto seletor" class="ph on">Peça algo ao seu time</span>
+        <span data-e="digitando">olha o que o codex faz aqui <span class="ficha"><i></i>1 · image.png</span> e o nosso <span class="ficha"><i></i>3 · image.png</span> polui muito<span class="caret"></span></span>
+        <span data-e="rodando" class="ph">Corrigir agora ou deixar para depois</span>
       </div>
       <div class="base">
-        <span class="ic s28"><svg class="i"><use href="#clip"/></svg></span>
-        <span class="sep"></span>
-        <span class="porta" title="Trocar de motor nesta conversa vira revezamento, com sessão nova"><span class="lg">C</span>Opus <span class="fraco">mais recente · raciocínio alto</span><svg class="i s14 trava"><use href="#cad"/></svg></span>
-        <span data-e="vazio" class="modo-p on" style="display:none"></span>
-        <span class="modo-p" data-modo="padrao" title="Modo Padrão: pede antes de ações com efeito"><svg class="i s14"><use href="#escudo-ok"/></svg></span>
-        <span class="modo-p risco" data-modo="liberado" style="display:none"><svg class="i s14"><use href="#escudo"/></svg>Liberado</span>
-        <span class="caras-p" title="Especialistas: 6 no time. Chamar com @"><i style="background:#5b8def"></i><i style="background:#e0679b"></i><i style="background:#9b7be8"></i></span>
+        <span class="ic"><svg class="i"><use href="#clip"/></svg></span>
+        <span class="txt risco" title="Liberado: o agente age sem pedir"><svg class="i s14"><use href="#escudo"/></svg>Liberado</span>
+        <span class="caras" title="10 especialistas no time. Chamar com @"><span><i style="background:#5b8def"></i><i style="background:#f0b73c"></i><i style="background:#5b8def"></i></span>10</span>
         <span class="esp"></span>
-        <span class="dica" data-dica="digitando" style="display:none">o agente está trabalhando</span>
-        <span class="ctx" data-ctx="normal"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="19 50" transform="rotate(-90 10 10)"/></svg>38%</span>
-        <span class="ctx alto" data-ctx="alto" style="display:none"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.4" stroke-dasharray="41 50" transform="rotate(-90 10 10)"/></svg>82% · compactar</span>
-        <span class="ic s28"><svg class="i"><use href="#mic"/></svg></span>
-        <span class="par" data-par style="display:none"><span><svg class="i s14"><use href="#fila"/></svg>Depois</span><span><svg class="i s14"><use href="#zap"/></svg></span></span>
-        <span class="enviar off" data-enviar style="display:none"><svg class="i s14"><use href="#up"/></svg></span>
-        <span class="parar" data-parar><i></i></span>
+        <svg data-e="vazio digitando rodando seletor" class="anel on" viewBox="0 0 20 20" title="Contexto 38%"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--faint)" stroke-width="2.4" stroke-dasharray="19 50" transform="rotate(-90 10 10)"/></svg>
+        <span class="txt" title="Claude Code · Opus 5.5 · raciocínio alto. Clique para trocar"><span class="lg">C</span>Claude Code<svg class="i s14"><use href="#down"/></svg></span>
+        <span class="ic"><svg class="i"><use href="#mic"/></svg></span>
+        <span data-e="digitando" class="par"><span><svg class="i s14"><use href="#fila"/></svg>Depois</span><span><svg class="i s14"><use href="#zap"/></svg></span></span>
+        <span data-e="vazio alto seletor" class="enviar off on"><svg class="i s14"><use href="#up"/></svg></span>
+        <span data-e="rodando digitando" class="parar"><i></i></span>
+      </div>
+      <div data-e="seletor" class="pop">
+        <div class="rail"><span class="on"><span class="lg">C</span></span><span><span class="lg" style="background:#16181b">X</span></span><span><span class="lg" style="background:#6b4ce6">A</span></span></div>
+        <div class="lista">
+          <div class="grp">Mesmo motor · mantém a sessão</div>
+          <div class="it on">Opus 5.5 <span>1M de contexto</span></div>
+          <div class="it">Sonnet 5 <span>mais rápido</span></div>
+          <div class="it">Fable 5.1 <span>topo de linha</span></div>
+          <div class="grp">Esforço</div>
+          <div class="esforco"><span>baixo</span><span>médio</span><span class="on">alto</span><span>máximo</span></div>
+        </div>
       </div>
     </div>
     <table class="tabela">
-      <tr><td>Instrução no campo</td><td>Tom <code>faint</code> (#8a9099), o mesmo de metadado: lê como instrução, nunca como texto seu. Atalho vira tecla desenhada, não prosa. Sem "…". Na coluna estreita, só a frase.</td></tr>
-      <tr><td>Motor</td><td>Logo do motor + modelo em texto de gente ("Opus mais recente") + esforço em pt-BR ("raciocínio alto"), com o secundário em tom mais fraco. O cadeado fica, e o hover diz o que ele quer dizer.</td></tr>
-      <tr><td>Modo</td><td>Padrão e Só lê viram só o ícone (o estado seguro não precisa gritar). Liberado ganha texto e fundo âmbar: é o único que pede atenção.</td></tr>
-      <tr><td>Contexto</td><td>Anel com o número ao lado ("38%"), em tom fraco. A partir de 60% fica âmbar; perto de compactar, diz "compactar", que é o gesto. Deixa de parecer carregando.</td></tr>
-      <tr><td>Especialistas</td><td>Só as caras; o "6 no time" vai para o hover. Quem está NA conversa já aparece no fio.</td></tr>
-      <tr><td>Ditado e enviar</td><td>O microfone vai para perto do enviar: falar e mandar são o mesmo gesto de saída. O clipe fica à esquerda, junto do texto que ele alimenta.</td></tr>
+      <tr><td>Linha de baixo</td><td>5 coisas em repouso: clipe, modo (só quando não é o seguro), especialistas, motor, microfone e enviar. O anel do contexto fica pequeno, sem número e sem cor.</td></tr>
+      <tr><td>Motor</td><td>Logo e nome do motor, à direita como no Codex. Modelo e esforço saem da linha: estão no hover e no seletor de hoje, que abre no clique (aba "Clique no motor"). O cadeado também sai; quem explica que trocar vira revezamento é o próprio seletor, como já faz.</td></tr>
+      <tr><td>Modo</td><td>Padrão e Só lê não aparecem (é o estado de sempre, e o seletor continua no menu do motor ou por atalho). Liberado aparece em âmbar, como o "Acesso completo" do Codex.</td></tr>
+      <tr><td>Contexto</td><td>Em repouso, só o anel cinza, número no hover. Quando pede ação (80%+), vira segmento da tira, com "Compactar agora" na gaveta, no mesmo molde da cota (ADR-281). A linha do enviar nunca fica vermelha.</td></tr>
+      <tr><td>Instrução</td><td>"Peça algo ao seu time", no tom de metadado, sem "…" e sem atalho em prosa. Rodando: "Corrigir agora ou deixar para depois"; quem mostra as duas saídas é o par Depois | ⚡ quando você digita.</td></tr>
     </table>
   </div>
 </div>
 
 <section>
-  <h2>O que não muda</h2>
-  <p class="sub">A casca E2, a altura mínima do campo, a tira presa ao topo (plano, fila, avisos e cota, ADR-247 e ADR-281), o par Depois | ⚡ com o turno rodando (ADR-240), o painel da identidade e o menu de modo por dentro. A proposta mexe em tom, texto e ordem, não em comportamento.</p>
-</section>
-
-<section>
   <h2>Decisões para você</h2>
   <ol class="dec">
-    <li><b>Microfone perto do enviar</b> (proposta) ou continua à esquerda, junto do clipe?</li>
-    <li><b>Modo seguro só com ícone</b> (proposta) ou continua com o nome sempre ("Padrão")?</li>
-    <li><b>Contexto com número sempre</b> (proposta) ou só a partir de 60%?</li>
-    <li><b>Nome do modelo</b>: "Opus mais recente" (proposta) ou "Opus 5.5" quando a versão for conhecida pela leitura do CLI?</li>
-    <li><b>Esforço</b>: "raciocínio alto" (proposta), "esforço alto", ou só "alto"?</li>
+    <li><b>Modo seguro some da linha</b> (proposta), e o seletor de modo mora onde? Opções: dentro do seletor do motor (junto do esforço), ou no clique do próprio escudo que aparece só em hover.</li>
+    <li><b>Contexto alto vai para a tira</b> (proposta) ou continua na linha, só que sem texto e sem vermelho?</li>
+    <li><b>Motor à direita, perto do enviar</b> (como o Codex) ou continua à esquerda, logo depois do clipe?</li>
+    <li><b>O chevron do enviar</b> (disputa e missão) continua ao lado do enviar, ou vai para o clique longo / menu do enviar?</li>
   </ol>
 </section>
 
 <script>
   const botoes = document.querySelectorAll("#estados button")
   function aplicar(e) {
-    document.querySelectorAll("[data-e]").forEach((el) => el.classList.toggle("on", el.dataset.e === e))
-    const prop = document.getElementById("prop")
-    const rodando = e !== "vazio" && e !== "risco"
-    prop.querySelector("[data-parar]").style.display = rodando ? "grid" : "none"
-    prop.querySelector("[data-enviar]").style.display = rodando ? "none" : "grid"
-    prop.querySelector("[data-par]").style.display = e === "digitando" ? "inline-flex" : "none"
-    prop.querySelector("[data-modo=padrao]").style.display = e === "risco" ? "none" : "inline-flex"
-    prop.querySelector("[data-modo=liberado]").style.display = e === "risco" ? "inline-flex" : "none"
-    prop.querySelector("[data-ctx=normal]").style.display = e === "risco" ? "none" : "inline-flex"
-    prop.querySelector("[data-ctx=alto]").style.display = e === "risco" ? "inline-flex" : "none"
-    prop.querySelector(".porta").querySelector(".fraco").style.display = e === "estreito" ? "none" : "inline"
-    document.querySelectorAll(".comp").forEach((c) => (c.style.maxWidth = e === "estreito" ? "420px" : ""))
-    const hoje = document.getElementById("hoje")
-    hoje.querySelector(".parar").style.display = rodando ? "grid" : "none"
+    document.querySelectorAll("[data-e]").forEach((el) => el.classList.toggle("on", el.dataset.e.split(" ").includes(e)))
   }
   botoes.forEach((b) => b.addEventListener("click", () => {
     botoes.forEach((o) => o.setAttribute("aria-pressed", String(o === b)))
