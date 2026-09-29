@@ -1,0 +1,770 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Estudo do Maestri, lote 2 · F4, F1, F5, F6, tamanhos do navegador e F8</title>
+<style>
+  /* Tema CLARO, tokens de :root do index.css (os mesmos de composer-vira-nota).
+     Escala fechada de fonte: 11, 12, 13, 14 (20 só no título do mock).
+     Controles: chip 24 · compacto 28 · padrão 32. Sem travessão na copy. */
+  :root{
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--popover:#ffffff;--secondary:#f4f4f2;
+    --foreground:#16181b;--muted-foreground:#5c6166;--faint:#8a9099;
+    --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
+    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --brass:#a9742b;--brass-soft:rgba(169,116,43,.12);
+    --warning:#c1861f;--warning-soft:rgba(193,134,31,.10);--warning-line:rgba(193,134,31,.30);
+    --error:#cf4a3e;--running:#2f8fbf;--ok:#3f8f5a;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
+    --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
+    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0}
+  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
+  h2{font-size:14px;font-weight:600;margin:0 0 4px}
+  .sub{color:var(--muted-foreground);font-size:13px;margin-top:4px;max-width:1040px}
+  .sub b,.nota b{color:var(--foreground);font-weight:500}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted-foreground);margin:20px 0 8px}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted-foreground);max-width:760px;margin-top:10px}
+  .kbd{font:11px var(--mono);padding:1px 5px;border-radius:4px;box-shadow:inset 0 0 0 1px var(--border);color:var(--muted-foreground);white-space:nowrap}
+  code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
+  svg.i{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  svg.i.s16{width:16px;height:16px}
+  .palco{display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start}
+  .col{display:flex;flex-direction:column;gap:10px}
+
+  /* ---- navegação do mock ---- */
+  .indice{display:flex;gap:6px;flex-wrap:wrap;margin:18px 0 6px;position:sticky;top:0;background:var(--rail);padding:10px 0;z-index:20;box-shadow:0 1px 0 var(--border)}
+  .indice a{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--card);box-shadow:0 0 0 1px var(--border);color:var(--foreground);text-decoration:none;font-size:12px}
+  .indice a span{font:11px var(--mono);color:var(--faint)}
+  section.bloco{margin-top:40px;padding-top:8px}
+  .cab{display:flex;align-items:baseline;gap:10px}
+  .cab .id{font:500 11px var(--mono);color:var(--faint);letter-spacing:.04em}
+  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:14px 0 12px;flex-wrap:wrap}
+  .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted-foreground);display:inline-flex;align-items:center}
+  .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
+  [data-estado]{display:none}
+  [data-estado].on{display:block}
+
+  /* ---- janela do app (fio + composer) ---- */
+  .janela{width:720px;background:var(--background);border-radius:12px;box-shadow:0 0 0 1px var(--border);padding:18px 20px 16px;position:relative}
+  .janela.estreita{width:640px}
+  .grupo{display:flex;gap:10px;margin-bottom:14px}
+  .av{width:24px;height:24px;border-radius:6px;flex:none;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .av.voce{background:#3a3f45;border-radius:50%}
+  .av.claude{background:#d97757}
+  .av.codex{background:#16181b}
+  .corpo{min-width:0;flex:1}
+  .quem{font-size:13px;font-weight:600;display:flex;align-items:baseline;gap:8px}
+  .quem span{font:11px var(--mono);color:var(--faint);font-weight:400}
+  .bolha{display:inline-block;max-width:100%;background:var(--secondary);border-radius:6px 16px 16px 16px;padding:9px 14px;font-size:14px;margin-top:4px}
+  .prosa{font-size:14px;line-height:1.6;margin-top:4px}
+  .prosa p+p{margin-top:8px}
+  .prosa ul{margin:6px 0 0 18px}
+  .acao{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-foreground);margin:6px 0;min-height:22px}
+  .acao svg{color:var(--faint)}
+  .acao .obj{font:12px var(--mono);color:var(--foreground)}
+  .acao .ok{margin-left:auto;font:11px var(--mono);color:var(--faint)}
+  .grupo-acoes{margin:6px 0 8px;padding-left:2px}
+  .recibo{display:flex;gap:10px;align-items:center;font:11px var(--mono);color:var(--faint);margin-top:10px}
+  .tabela-md{border-collapse:collapse;font-size:13px;margin-top:8px}
+  .tabela-md th,.tabela-md td{text-align:left;padding:5px 12px 5px 0;border-bottom:1px solid var(--divisor)}
+  .tabela-md th{font-weight:500}
+
+  /* ---- composer ---- */
+  .composer{background:var(--card);border-radius:14px;box-shadow:0 0 0 1px var(--border),var(--shadow-sm);padding:12px 12px 10px 14px}
+  .texto{font-size:14px;line-height:1.75;min-height:44px}
+  .caret{display:inline-block;width:1px;height:16px;background:var(--foreground);vertical-align:-3px}
+  .base{display:flex;align-items:center;gap:6px;margin-top:10px;color:var(--muted-foreground);font-size:12px}
+  .base .esp{flex:1}
+  .porta{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--foreground)}
+  .porta .lg{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .icone{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .enviar{display:inline-flex;height:28px;width:30px;border-radius:999px;background:var(--foreground);color:var(--background);align-items:center;justify-content:center}
+
+  /* ---- banner da continuidade (ContinuityBanner) ---- */
+  .banner{border-radius:10px;box-shadow:0 0 0 1px var(--border-strong),var(--shadow-sm);background:var(--card);margin-bottom:8px}
+  .banner .l1{display:flex;gap:10px;align-items:flex-start;padding:10px 12px}
+  .banner .l1 svg{margin-top:2px}
+  .banner .tit{font-size:13px;font-weight:500}
+  .banner .det{font-size:11px;line-height:1.5;color:var(--muted-foreground);margin-top:2px}
+  .banner .rodape{display:flex;align-items:center;gap:8px;border-top:1px solid var(--divisor);padding:7px 10px 7px 36px;flex-wrap:wrap}
+  .banner .rodape .rot{font-size:11px;color:var(--muted-foreground)}
+  .opcoes{display:flex;gap:2px;padding:2px;border-radius:7px;box-shadow:inset 0 0 0 1px var(--border);background:var(--background);flex-wrap:wrap}
+  .opcao{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 9px;border-radius:5px;font-size:12px;cursor:pointer}
+  .opcao:hover{background:var(--sel-hover)}
+  .opcao .folga{font:11px var(--mono);color:var(--muted-foreground)}
+  .opcao .folga.sem{color:var(--faint)}
+  .opcao.muda{color:var(--faint);cursor:default}
+  .opcao.muda:hover{background:none}
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:7px;background:var(--secondary);font-size:12px;color:var(--foreground);white-space:nowrap;cursor:pointer;border:0;font-family:var(--sans)}
+  .btn.ghost{background:transparent;color:var(--muted-foreground)}
+  .btn.chip{height:24px;padding:0 8px;font-size:11px}
+  .esp{flex:1}
+  .ico-aviso{color:var(--warning)}
+  .ico-neutro{color:var(--muted-foreground)}
+  .medidor{display:flex;align-items:center;gap:8px;margin-top:8px;font:11px var(--mono);color:var(--muted-foreground)}
+  .medidor .barra{position:relative;width:180px;height:6px;border-radius:3px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);overflow:hidden}
+  .medidor .barra i{position:absolute;inset:0 auto 0 0;background:var(--warning);border-radius:3px}
+  .idade{font:11px var(--mono);color:var(--faint)}
+
+  /* ---- seletor de identidade (IdentityPicker) aberto ---- */
+  .menu{width:320px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px}
+  .menu .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:7px 8px 3px}
+  .menu .it{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px}
+  .menu .it.foco{background:var(--sel)}
+  .menu .it .lg{width:16px;height:16px;border-radius:4px;display:grid;place-items:center;font:600 11px var(--sans);color:#fff}
+  .menu .it .dir{margin-left:auto;font:11px var(--mono);color:var(--muted-foreground)}
+  .menu .it .dir.sem{color:var(--faint)}
+  .menu .sep{height:1px;background:var(--divisor);margin:4px 2px}
+
+  /* ---- G1 cartões de arquivo (geometria do CartaoDeArquivo) ---- */
+  .cartoes{display:flex;flex-direction:column;gap:6px;margin-top:10px;align-items:flex-start}
+  .cartao{display:flex;align-items:center;gap:10px;height:52px;padding:0 8px 0 6px;border-radius:10px;background:var(--card);box-shadow:0 0 0 1px var(--border);min-width:260px;max-width:340px;position:relative;cursor:pointer}
+  .cartao:hover{box-shadow:0 0 0 1px var(--border-strong)}
+  .cartao .q{width:40px;height:40px;border-radius:7px;background:var(--secondary);display:grid;place-items:center;color:var(--muted-foreground);flex:none;font:600 11px var(--mono)}
+  .cartao .q.img{background:linear-gradient(135deg,#dfe9f2,#f7fafc);box-shadow:inset 0 0 0 1px var(--border)}
+  .cartao .n{font-size:12px;font-weight:500;white-space:nowrap}
+  .cartao .m{font:11px var(--mono);color:var(--muted-foreground)}
+  .cartao .acs{position:absolute;right:6px;top:50%;transform:translateY(-50%);display:none;gap:2px;background:var(--card);padding-left:6px}
+  .cartao:hover .acs{display:flex}
+  .cartao .acs span{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .cartao .acs span:hover{background:var(--sel)}
+  .cartao.sumiu{opacity:.62;cursor:default}
+  .cartao.sumiu .m{color:var(--error)}
+  .pilula-arq{font:12px var(--mono);background:var(--secondary);padding:1px 6px;border-radius:5px;color:var(--foreground)}
+
+  /* ---- G3 composer com imagem no texto ---- */
+  .tok{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 7px 0 2px;border-radius:6px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);vertical-align:-6px;font-size:12px;margin:0 2px;cursor:default}
+  .tok i{width:20px;height:20px;border-radius:4px;display:block;box-shadow:inset 0 0 0 1px var(--border)}
+  .tok i.a{background:linear-gradient(160deg,#eef1f4 0 38%,#cfd8e3 38% 42%,#eef1f4 42%)}
+  .tok i.b{background:linear-gradient(160deg,#8a05be 0 30%,#f2eaf7 30%)}
+  .tok b{font:500 11px var(--mono);color:var(--muted-foreground)}
+  .tok.foco{box-shadow:inset 0 0 0 1px var(--border-strong),0 0 0 3px var(--sel)}
+  .payload{width:560px;background:#16181b;color:#e7e9ec;border-radius:10px;padding:12px 14px;font:12px/1.6 var(--mono);white-space:pre-wrap}
+  .payload .c{color:#8a9099}
+  .payload .k{color:#e0b36a}
+  .payload .s{color:#9fd1a8}
+  .quadro{width:560px;background:var(--card);border-radius:10px;box-shadow:0 0 0 1px var(--border);padding:12px 14px;font-size:12px;color:var(--muted-foreground)}
+  .quadro b{color:var(--foreground);font-weight:500}
+
+  /* ---- G7 imagem gerada ---- */
+  .gerada{display:flex;gap:10px;align-items:flex-start;margin-top:8px}
+  .mini{width:120px;height:120px;border-radius:10px;box-shadow:0 0 0 1px var(--border);background:#fff;display:grid;place-items:center;flex:none;cursor:zoom-in}
+  .mini svg{width:72px;height:72px}
+  .gerada .info{font-size:12px;color:var(--muted-foreground);max-width:360px}
+  .gerada .info b{color:var(--foreground);font-weight:500}
+  .gerada .info .rp{margin-top:6px;font-size:12px;line-height:1.5;border-left:2px solid var(--divisor);padding-left:8px}
+  .falhou{display:flex;gap:8px;align-items:flex-start;font-size:12px;color:var(--muted-foreground);margin-top:8px}
+  .falhou svg{color:var(--error);margin-top:2px}
+
+  /* ---- G8 resposta com peso ---- */
+  .narra{font-size:13px;line-height:1.55;color:var(--muted-foreground);margin:4px 0}
+  .resposta{margin-top:10px;font-size:14px;line-height:1.6}
+  .resposta.trilho{border-left:2px solid var(--border-strong);padding-left:12px}
+  .resposta .rot{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:4px}
+  .recolhido{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted-foreground);cursor:pointer;height:24px;padding:0 6px;margin-left:-6px;border-radius:6px}
+  .recolhido:hover{background:var(--sel-hover)}
+
+  .tabela{border-collapse:collapse;font-size:12px;width:100%;max-width:1040px;margin-top:12px}
+  .tabela td,.tabela th{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted-foreground)}
+  .tabela th{color:var(--foreground);font-weight:500;width:190px}
+  .decisoes{max-width:1040px;font-size:13px;line-height:1.6;color:var(--muted-foreground)}
+  .decisoes h3{font-size:14px;font-weight:500;color:var(--foreground);margin:18px 0 6px}
+  .decisoes li{margin:4px 0 4px 18px}
+  .decisoes b{color:var(--foreground);font-weight:500}
+
+  /* ---- lote 2 ---- */
+  .popover{position:absolute;bottom:calc(100% + 6px);left:14px;width:400px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px;z-index:5}
+  .popover .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:7px 8px 3px}
+  .popover .it{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px;color:var(--foreground)}
+  .popover .it.foco{background:var(--sel)}
+  .popover .it .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+  .popover .it .dir{margin-left:auto;font:11px var(--mono);color:var(--muted-foreground);white-space:nowrap}
+  .popover .it svg{color:var(--muted-foreground)}
+  .popover .pe{border-top:1px solid var(--divisor);margin-top:4px;padding:7px 8px 3px;font-size:11px;color:var(--faint)}
+  .mencao{display:inline;border-radius:4px;background:var(--brass-soft);color:var(--brass);font-weight:500;padding:0 4px}
+  .lg-mini{width:14px;height:14px;border-radius:4px;display:inline-grid;place-items:center;font:600 11px var(--sans);color:#fff;flex:none}
+  .lg-mini.claude{background:#d97757}.lg-mini.codex{background:#16181b}.lg-mini.agy{background:#4f6bd8}
+  .veem{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-foreground);padding:6px 4px 0}
+  .veem b{color:var(--foreground);font-weight:500}
+  .rel{position:relative}
+
+  .uso{width:420px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:12px 14px;font-size:12px}
+  .uso .top{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .uso .top .plano{font-size:11px;font-weight:500;color:var(--muted-foreground);background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);border-radius:4px;padding:1px 6px}
+  .uso .top .idade{margin-left:auto}
+  .jan{display:grid;grid-template-columns:118px 1fr 36px auto;align-items:center;gap:8px;font-size:11px;min-height:22px}
+  .jan .nome{font-weight:500;color:var(--muted-foreground)}
+  .jan .bar{height:6px;border-radius:3px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);position:relative;overflow:hidden}
+  .jan .bar i{position:absolute;inset:0 auto 0 0;border-radius:3px;background:#8a9099}
+  .jan .bar i.amb{background:var(--warning)}
+  .jan .pct{font:11px var(--mono);text-align:right;color:var(--muted-foreground)}
+  .jan .pct.amb{color:var(--warning)}
+  .jan .volta{font:11px var(--mono);color:var(--muted-foreground);text-align:right;white-space:nowrap}
+  .jan .volta span{color:var(--faint)}
+  .ritmo{grid-column:2 / -1;font-size:11px;color:var(--faint);margin:-2px 0 4px}
+  .ritmo b{font:11px var(--mono);color:var(--muted-foreground);font-weight:400}
+  .jan+.jan{margin-top:4px}
+
+  .celular{width:340px;border-radius:30px;background:#111;padding:12px;box-shadow:var(--shadow-pop)}
+  .celular .tela{border-radius:20px;background:#fbfbfa;overflow:hidden;min-height:560px;font-size:13px}
+  .celular .barra-st{display:flex;justify-content:space-between;padding:8px 18px 4px;font:600 11px var(--sans)}
+  .celular .cab{padding:6px 16px 10px;font-size:14px;font-weight:600;display:flex;align-items:center}
+  .planos{margin:0 12px 10px;border-radius:12px;background:var(--card);box-shadow:0 0 0 1px var(--border);padding:8px 10px}
+  .planos .p{display:flex;align-items:center;gap:8px;font-size:12px;min-height:26px}
+  .planos .p .b{flex:1;height:5px;border-radius:3px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);position:relative;overflow:hidden;max-width:80px}
+  .planos .p .b i{position:absolute;inset:0 auto 0 0;background:#8a9099;border-radius:3px}
+  .planos .p .b i.amb{background:var(--warning)}
+  .planos .p .v{margin-left:auto;font:11px var(--mono);color:var(--muted-foreground)}
+  .conv-m{display:flex;gap:10px;padding:10px 16px;border-top:1px solid var(--divisor)}
+  .conv-m .t{font-weight:500;font-size:13px}
+  .conv-m .s{font-size:12px;color:var(--muted-foreground)}
+
+  .rotulo-entrega{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-top:12px}
+  .cartao .frase{font-size:11px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
+  .painel-dir{width:340px;background:var(--background);border-radius:12px;box-shadow:0 0 0 1px var(--border);overflow:hidden}
+  .painel-dir .tabs{display:flex;gap:2px;padding:6px 8px;border-bottom:1px solid var(--divisor)}
+  .painel-dir .tabs span{height:26px;padding:0 9px;display:inline-flex;align-items:center;border-radius:6px;font-size:11px;font-weight:500;color:var(--muted-foreground)}
+  .painel-dir .tabs span.on{background:var(--sel);color:var(--foreground)}
+  .painel-dir .sec{padding:10px 12px}
+  .painel-dir .sec h4{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin-bottom:6px;display:flex;gap:6px}
+  .painel-dir .linha{display:flex;align-items:center;gap:8px;height:32px;padding:0 6px;margin:0 -6px;border-radius:6px;font-size:12px}
+  .painel-dir .linha:hover{background:var(--sel-hover)}
+  .painel-dir .linha .q{width:22px;height:22px;border-radius:5px;background:var(--secondary);display:grid;place-items:center;color:var(--muted-foreground);font:600 11px var(--mono);flex:none}
+  .painel-dir .linha .m{margin-left:auto;font:11px var(--mono);color:var(--faint);white-space:nowrap}
+  .painel-dir .linha.sumiu{color:var(--faint)}
+
+  .bloco-cod{width:600px;border-radius:10px;box-shadow:0 0 0 1px var(--border);background:var(--card);overflow:hidden;margin-top:8px}
+  .bloco-cod .cabeca{display:flex;align-items:center;gap:6px;height:32px;padding:0 6px 0 12px;border-bottom:1px solid var(--divisor);font:11px var(--mono);color:var(--faint)}
+  .bloco-cod .cabeca .btn{height:24px;padding:0 8px;font-size:11px;background:transparent;color:var(--muted-foreground)}
+  .bloco-cod .cabeca .btn.on{background:var(--sel);color:var(--foreground)}
+  .bloco-cod pre{margin:0;padding:10px 12px;font:12px/1.6 var(--mono);color:var(--foreground);white-space:pre}
+  .bloco-cod pre .ruim{display:block;background:var(--secondary);margin:0 -12px;padding:0 12px}
+  .diagrama{padding:18px 12px 14px;display:grid;place-items:center}
+  .diagrama text{font:12px var(--sans);fill:#16181b}
+  .diagrama .no{fill:#fff;stroke:rgba(0,0,0,.18);stroke-width:1}
+  .diagrama .no.d{fill:#f4f4f2}
+  .diagrama .aresta{stroke:#8a9099;stroke-width:1.2;fill:none}
+  .diagrama .rot{font:11px var(--mono);fill:#5c6166}
+  .erro-diag{display:flex;gap:8px;align-items:flex-start;padding:10px 12px 0;font-size:12px;color:var(--muted-foreground)}
+  .erro-diag svg{margin-top:2px;color:var(--muted-foreground)}
+
+  .nav{width:900px;border-radius:12px;box-shadow:0 0 0 1px var(--border);background:var(--background);overflow:visible}
+  .nav .barra{display:flex;align-items:center;gap:4px;height:40px;padding:0 8px;border-bottom:1px solid var(--divisor);position:relative}
+  .nav .barra .ic{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted-foreground)}
+  .nav .end{flex:1;height:28px;border-radius:7px;background:var(--secondary);display:flex;align-items:center;padding:0 10px;font:12px var(--mono);color:var(--foreground);margin:0 4px}
+  .nav .tam{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--muted-foreground);white-space:nowrap}
+  .nav .tam:hover,.nav .tam.aberto{background:var(--sel);color:var(--foreground)}
+  .nav .tam b{font:11px var(--mono);font-weight:400;color:var(--faint)}
+  .nav .palco-nav{height:520px;background:var(--rail);display:grid;place-items:center;position:relative;border-radius:0 0 12px 12px}
+  .nav .medida{position:absolute;bottom:8px;left:0;right:0;text-align:center;font:11px var(--mono);color:var(--faint)}
+  .pagina{background:#fff;box-shadow:0 0 0 1px var(--border-strong),var(--shadow-sm);overflow:hidden;font-size:12px;color:#222;display:flex;flex-direction:column}
+  .pagina .topo{height:34px;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid #eee;font-weight:600;gap:8px}
+  .pagina .topo .mn{margin-left:auto;display:flex;gap:10px;font-weight:400;color:#666}
+  .pagina .conteudo{display:flex;gap:12px;padding:12px;flex:1}
+  .pagina .itens{flex:1.4;display:flex;flex-direction:column;gap:8px}
+  .pagina .item{height:44px;border-radius:6px;background:#f3f3f3;display:flex;align-items:center;padding:0 10px;gap:8px}
+  .pagina .item i{width:28px;height:28px;border-radius:5px;background:#ddd;display:block}
+  .pagina .resumo{flex:1;border-radius:6px;background:#f7f7f7;padding:10px;display:flex;flex-direction:column;gap:6px}
+  .pagina .pagar{margin-top:auto;height:30px;border-radius:6px;background:#1d1d1f;color:#fff;display:grid;place-items:center;font-weight:600}
+  .pagina.movel .conteudo{flex-direction:column}
+  .pagina.movel .topo .mn{display:none}
+  .menu-tam{position:absolute;top:36px;right:8px;width:300px;background:var(--popover);border-radius:10px;box-shadow:var(--shadow-pop);padding:5px;font-size:13px;z-index:6}
+  .menu-tam .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:7px 8px 3px}
+  .menu-tam .it{display:flex;align-items:center;gap:10px;height:32px;padding:0 8px;border-radius:6px}
+  .menu-tam .it.foco{background:var(--sel)}
+  .menu-tam .it .dir{margin-left:auto;font:11px var(--mono);color:var(--muted-foreground)}
+  .menu-tam .it .ok{width:14px;color:var(--foreground)}
+  .menu-tam .sep{height:1px;background:var(--divisor);margin:4px 2px}
+  .menu-tam .cx{width:14px;height:14px;border-radius:3px;box-shadow:inset 0 0 0 1px var(--border-strong)}
+  .menu-tam .campos{display:flex;align-items:center;gap:6px;padding:4px 8px 6px;font:12px var(--mono);color:var(--muted-foreground)}
+  .menu-tam .campos span{height:28px;width:70px;border-radius:6px;box-shadow:inset 0 0 0 1px var(--border);display:inline-flex;align-items:center;padding:0 8px;color:var(--foreground)}
+
+  .config{width:900px;height:520px;display:flex;border-radius:14px;background:var(--card);box-shadow:var(--shadow-pop);overflow:hidden}
+  .config .rail{width:220px;background:var(--rail);border-right:1px solid var(--divisor);padding:12px 8px;font-size:12px}
+  .config .rail .zona{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:10px 8px 4px}
+  .config .rail .it{height:28px;display:flex;align-items:center;padding:0 8px;border-radius:6px;color:var(--muted-foreground)}
+  .config .rail .it.on{background:var(--sel);color:var(--foreground);font-weight:500}
+  .config .rail .proj{display:flex;align-items:center;gap:6px;height:28px;margin:2px 0 4px;padding:0 8px;border-radius:7px;box-shadow:inset 0 0 0 1px var(--border);background:var(--card);color:var(--foreground)}
+  .config .rail .proj svg{margin-left:auto;color:var(--faint)}
+  .config .cont{flex:1;padding:18px 22px;overflow:auto}
+  .config h3{font-size:14px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .config h3 .escopo{font:11px var(--mono);font-weight:400;color:var(--muted-foreground);background:var(--secondary);border-radius:4px;padding:1px 6px}
+  .config .desc{font-size:12px;color:var(--muted-foreground);margin:4px 0 14px;max-width:560px;line-height:1.55}
+  .seg{border-radius:10px;box-shadow:0 0 0 1px var(--border);overflow:hidden}
+  .seg .l{display:grid;grid-template-columns:200px 1fr auto;align-items:center;gap:12px;height:44px;padding:0 12px;border-top:1px solid var(--divisor);font-size:12px}
+  .seg .l:first-child{border-top:0}
+  .seg .l .nm{font:12px var(--mono);color:var(--foreground)}
+  .seg .l .vl{font:12px var(--mono);color:var(--faint);letter-spacing:.1em}
+  .seg .l .ac{display:flex;gap:2px;color:var(--muted-foreground)}
+  .seg .l .ac span{width:24px;height:24px;border-radius:6px;display:grid;place-items:center}
+  .seg .l .ac span:hover{background:var(--sel)}
+  .seg .l .usado{font-size:11px;color:var(--faint);font-family:var(--sans);letter-spacing:0}
+  .form{display:grid;grid-template-columns:200px 1fr auto;gap:12px;align-items:center;padding:10px 12px;border-top:1px solid var(--divisor);background:var(--rail)}
+  .campo{height:28px;border-radius:6px;background:var(--card);box-shadow:inset 0 0 0 1px var(--border-strong);display:flex;align-items:center;padding:0 8px;font:12px var(--mono)}
+  .btn.prim{background:var(--foreground);color:var(--background)}
+  .saida{background:#0e0f11;color:#cfd3d8;border-radius:8px;padding:10px 12px;font:12px/1.6 var(--mono);margin:6px 0 0;width:560px}
+  .saida .p{color:#e4a862}
+  .saida .mask{color:#7d838a;letter-spacing:.08em}
+  .saida .tag{font:11px var(--sans);color:#7d838a;letter-spacing:0}
+  .chip-mask{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;color:var(--muted-foreground);margin-top:6px}
+  .aviso-env{border-radius:10px;background:var(--card);box-shadow:0 0 0 1px var(--warning-line),var(--shadow-sm);margin-bottom:8px}
+  .aviso-env .l1{display:flex;gap:10px;align-items:flex-start;padding:10px 12px}
+  .aviso-env .tit{font-size:13px;font-weight:500}
+  .aviso-env .det{font-size:11px;color:var(--muted-foreground);margin-top:2px;line-height:1.5}
+  .aviso-env .rodape{display:flex;gap:6px;padding:0 12px 10px 36px}
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
+  <symbol id="ler" viewBox="0 0 24 24"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="term" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+  <symbol id="pasta" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="abrir" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="doc" viewBox="0 0 24 24"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v5h6"/></symbol>
+  <symbol id="alerta" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="balao" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="busca" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="cadeado" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="chave" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6M15.5 7.5l3 3L22 7l-3-3"/></symbol>
+  <symbol id="lapis" viewBox="0 0 24 24"><path d="M21.17 6.81a2.83 2.83 0 0 0-4-4L3.84 16.17a2 2 0 0 0-.5.83l-1.32 4.35a.5.5 0 0 0 .62.62l4.35-1.32a2 2 0 0 0 .83-.5z"/></symbol>
+  <symbol id="lixo" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+  <symbol id="mais" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="chev" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="volta" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="vai" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="recarregar" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
+  <symbol id="girar" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2" transform="rotate(90 12 12)"/><path d="M12 18h.01"/></symbol>
+  <symbol id="telefone" viewBox="0 0 24 24"><rect x="7" y="2" width="10" height="20" rx="2"/><path d="M12 18h.01"/></symbol>
+  <symbol id="tablet" viewBox="0 0 24 24"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M12 18h.01"/></symbol>
+  <symbol id="note" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M2 20h20"/></symbol>
+  <symbol id="monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="copiar" viewBox="0 0 24 24"><rect x="8" y="8" width="14" height="14" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></symbol>
+  <symbol id="imagem" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/></symbol>
+  <symbol id="codigo" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol>
+  <symbol id="entrega" viewBox="0 0 24 24"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></symbol>
+</svg>
+
+<h1>Estudo do Maestri, lote 2</h1>
+<p class="sub">F4 <b>@conversa</b>, F1 <b>a cota no Companion</b>, F5 <b>entrega declarada</b>, F6 <b>Mermaid</b>, o <b>tamanho da página</b> no navegador da Frota (o G5 reduzido ao que você pediu) e F8 <b>segredos no Keychain</b>. Cada bloco tem abas com os estados; no fim, as decisões que faltam, com a minha recomendação. Tema claro, escala 11/12/13/14, controles 24/28/32.</p>
+
+<nav class="indice">
+  <a href="#f4">@conversa <span>F4</span></a>
+  <a href="#f1">Cota no Companion <span>F1</span></a>
+  <a href="#f5">Entrega declarada <span>F5</span></a>
+  <a href="#f6">Mermaid <span>F6</span></a>
+  <a href="#nav">Tamanho da página <span>G5</span></a>
+  <a href="#f8">Segredos <span>F8</span></a>
+  <a href="#decisoes">Decisões</a>
+</nav>
+
+<!-- ============================ F4 ============================ -->
+<section class="bloco" id="f4">
+  <div class="cab"><h2>Citar outra conversa com @</h2><span class="id">F4</span></div>
+  <p class="sub">O mesmo menu do <code>@arquivo</code> ganha a seção <b>Conversas</b>. Citar dá ao agente leitura <b>daquela</b> conversa, <b>só neste envio</b>: o MCP de contexto aceita a conversa citada e nenhuma outra.</p>
+  <div class="quadro" style="margin-top:12px;width:760px"><b>Hoje o agente não tem isso.</b> O MCP de contexto (<code>frota-context</code>) só enxerga a conversa em que ele está: toda busca filtra pela conversa do turno (<code>context_gateway.rs:463</code>). O F4 <b>não</b> vira "o agente lê qualquer conversa do projeto quando quiser": a porta abre só para a conversa que <b>você</b> citou, e fecha no fim do turno. Quem escolhe o que ele lê continua sendo você. A variante ampla (buscar em todas as conversas do projeto) está na decisão D13.</div>
+  <div class="abas">
+    <button aria-pressed="true" data-alvo="f4-menu">Menu do @</button>
+    <button aria-pressed="false" data-alvo="f4-caixa">Citada no composer</button>
+    <button aria-pressed="false" data-alvo="f4-fio">No fio</button>
+    <button aria-pressed="false" data-alvo="f4-recusa">Leitura fora da citação</button>
+  </div>
+
+  <div data-estado="f4-menu" class="on">
+    <div class="janela estreita" style="padding-top:250px">
+      <div class="composer rel">
+        <div class="popover">
+          <div class="grp">Arquivos</div>
+          <div class="it"><svg class="i"><use href="#doc"/></svg><span class="t">src/lib/ofx/parser.ts</span></div>
+          <div class="grp">Conversas</div>
+          <div class="it foco"><svg class="i"><use href="#balao"/></svg><span class="t">Refatorar o parser de OFX</span><span class="dir"><span class="lg-mini codex">C</span> ontem</span></div>
+          <div class="it"><svg class="i"><use href="#balao"/></svg><span class="t">Parcelas duplicadas na fatura</span><span class="dir"><span class="lg-mini claude">A</span> 3 dias</span></div>
+          <div class="it"><svg class="i"><use href="#balao"/></svg><span class="t">Migração 63, índice de custo</span><span class="dir"><span class="lg-mini agy">G</span> 5 dias</span></div>
+          <div class="grp">De outros projetos</div>
+          <div class="it"><svg class="i"><use href="#balao"/></svg><span class="t">Checkout lento no celular</span><span class="dir">loja · 2 sem</span></div>
+          <div class="pe">A conversa citada vira leitura deste envio, e só dele.</div>
+        </div>
+        <div class="texto">Continue de onde paramos em @par<span class="caret"></span></div>
+        <div class="base"><span class="icone"><svg class="i s16"><use href="#clip"/></svg></span><span class="esp"></span><span class="porta"><span class="lg" style="background:#d97757">A</span>Claude Code</span><span class="icone"><svg class="i s16"><use href="#mic"/></svg></span><span class="enviar"><svg class="i"><use href="#up"/></svg></span></div>
+      </div>
+    </div>
+    <p class="nota">Ordem: as do projeto primeiro, por última atividade; depois as de outros projetos, com o nome do projeto no lugar do motor. A busca filtra pelo título e pelo resumo da conversa. O logo diz qual motor falou por último.</p>
+  </div>
+
+  <div data-estado="f4-caixa">
+    <div class="janela estreita">
+      <div class="composer">
+        <div class="texto">Continue de onde paramos em <span class="mencao">@Refatorar o parser de OFX</span> e compare com o que o Codex decidiu sobre o fuso<span class="caret"></span></div>
+        <div class="base"><span class="icone"><svg class="i s16"><use href="#clip"/></svg></span><span class="esp"></span><span class="porta"><span class="lg" style="background:#d97757">A</span>Claude Code</span><span class="icone"><svg class="i s16"><use href="#mic"/></svg></span><span class="enviar"><svg class="i"><use href="#up"/></svg></span></div>
+      </div>
+      <div class="veem"><svg class="i"><use href="#ler"/></svg>Neste envio o agente pode ler <b>1 conversa</b>: Refatorar o parser de OFX · 142 mensagens</div>
+    </div>
+    <p class="nota">A linha de baixo só aparece com conversa citada. É a mesma informação que entra em "O que o agente vê" (ADR-237) e no recibo do turno.</p>
+  </div>
+
+  <div data-estado="f4-fio">
+    <div class="janela">
+      <div class="grupo"><div class="av voce">V</div><div class="corpo"><div class="quem">Você <span>10:42</span></div><div class="bolha">Continue de onde paramos em <span class="mencao">@Refatorar o parser de OFX</span> e compare com o que o Codex decidiu sobre o fuso</div></div></div>
+      <div class="grupo"><div class="av claude">A</div><div class="corpo"><div class="quem">Claude Code <span>10:42</span></div>
+        <div class="grupo-acoes">
+          <div class="acao"><svg class="i"><use href="#busca"/></svg>Buscou <span class="obj">"fuso"</span> na conversa <b style="font-weight:500;color:var(--foreground)">Refatorar o parser de OFX</b><span class="ok">6 trechos</span></div>
+          <div class="acao"><svg class="i"><use href="#ler"/></svg>Leu 3 trechos da conversa <b style="font-weight:500;color:var(--foreground)">Refatorar o parser de OFX</b><span class="ok">ontem, 16:10 a 16:48</span></div>
+          <div class="acao"><svg class="i"><use href="#ler"/></svg>Leu <span class="obj">src/lib/ofx/parser.ts</span></div>
+        </div>
+        <div class="prosa"><p>Ontem o Codex decidiu tratar a data do OFX como horário local do banco e só converter no fim. O parser atual ainda converte na leitura, então as compras perto da meia-noite caem no dia errado. Sigo com a decisão dele?</p></div>
+        <div class="recibo">O que o agente viu: doutrina · 1 conversa citada · 1 arquivo</div>
+      </div></div>
+    </div>
+  </div>
+
+  <div data-estado="f4-recusa">
+    <div class="janela">
+      <div class="grupo"><div class="av claude">A</div><div class="corpo"><div class="quem">Claude Code <span>10:44</span></div>
+        <div class="grupo-acoes">
+          <div class="acao"><svg class="i"><use href="#ler"/></svg>Leu 3 trechos da conversa <b style="font-weight:500;color:var(--foreground)">Refatorar o parser de OFX</b></div>
+          <div class="acao"><svg class="i"><use href="#cadeado"/></svg>Tentou ler a conversa <b style="font-weight:500;color:var(--foreground)">Migração 63, índice de custo</b><span class="ok">fora da citação deste envio</span></div>
+        </div>
+        <div class="prosa"><p>Não consigo ler a conversa da migração sem que você a cite. Se ela importa, é só mencionar com @ no próximo envio.</p></div>
+      </div></div>
+    </div>
+    <p class="nota">A recusa é do servidor de contexto, não do modelo: a lista do que pode ser lido nasce do envio. Cor neutra: não é falha do trabalho, é a regra funcionando.</p>
+  </div>
+</section>
+
+<!-- ============================ F1 ============================ -->
+<section class="bloco" id="f1">
+  <div class="cab"><h2>A cota no Companion</h2><span class="id">F1</span></div>
+  <p class="sub">No app, o painel de uso <b>fica como está hoje</b>. O que entra é a leitura de cota no topo da lista do Companion, para ver do celular quanto sobra e quando volta.</p>
+  <div data-estado="f1-celular" class="on" style="margin-top:14px">
+    <div class="palco">
+      <div class="celular"><div class="tela">
+        <div class="barra-st"><span>15:50</span><span>5G</span></div>
+        <div class="cab">Conversas</div>
+        <div class="planos">
+          <div class="p"><span class="lg-mini claude">A</span>Claude<span class="b"><i class="amb" style="width:72%"></i></span><span class="v">72% · volta 18:00</span></div>
+          <div class="p"><span class="lg-mini codex">C</span>Codex<span class="b"><i style="width:31%"></i></span><span class="v">31% · volta amanhã 09:00</span></div>
+        </div>
+        <div class="conv-m"><span class="lg-mini claude">A</span><div><div class="t">Refatorar o parser de OFX</div><div class="s">Rodando há 4 min</div></div></div>
+        <div class="conv-m"><span class="lg-mini codex">C</span><div><div class="t">Parcelas duplicadas na fatura</div><div class="s">Pede você: aprovar <code>bun test</code></div></div></div>
+        <div class="conv-m"><span class="lg-mini agy">G</span><div><div class="t">Migração 63, índice de custo</div><div class="s">Terminou há 1h</div></div></div>
+      </div></div>
+      <div class="col" style="max-width:360px">
+        <p class="nota" style="margin-top:0">No Companion, a mesma leitura no topo da lista, só a janela mais apertada de cada motor. É leitura pura: nenhuma ação nova no servidor, e o Companion continua sem poder trocar de motor.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================ F5 ============================ -->
+<section class="bloco" id="f5">
+  <div class="cab"><h2>O agente declara o que entregou</h2><span class="id">F5</span></div>
+  <p class="sub">Ferramenta <code>deliver</code> no <code>frota-work</code>: caminho e uma frase. A Frota confere no disco (existe, tipo, tamanho) e põe o cartão do G1 no fim do turno, com a frase do agente. Serve para o que o G1 não enxerga: o PDF gerado em <code>/tmp</code>, o vídeo exportado, o zip de fora do projeto.</p>
+  <div class="abas">
+    <button aria-pressed="true" data-alvo="f5-fio">No fio</button>
+    <button aria-pressed="false" data-alvo="f5-sumiu">Saiu do disco</button>
+  </div>
+
+  <div data-estado="f5-fio" class="on">
+    <div class="janela">
+      <div class="grupo"><div class="av codex">C</div><div class="corpo"><div class="quem">Codex <span>11:20</span></div>
+        <div class="grupo-acoes">
+          <div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">bun run relatorio --mes 09</span><span class="ok">12s</span></div>
+        </div>
+        <div class="prosa"><p>O relatório de setembro está pronto. O abandono caiu de 38% para 29% depois do pagamento em uma etapa.</p></div>
+        <div class="rotulo-entrega">Entregue</div>
+        <div class="cartoes">
+          <div class="cartao"><span class="q">PDF</span><div style="min-width:0"><div class="n">relatorio-checkout-set…bro.pdf</div><div class="frase">PDF · 280 KB · Relatório de desempenho do checkout</div></div><div class="acs"><span><svg class="i"><use href="#abrir"/></svg></span><span><svg class="i"><use href="#pasta"/></svg></span></div></div>
+          <div class="cartao"><span class="q img"></span><div style="min-width:0"><div class="n">funil.png</div><div class="frase">PNG · 1600×900 · 94 KB · O funil de setembro</div></div><div class="acs"><span><svg class="i"><use href="#abrir"/></svg></span><span><svg class="i"><use href="#pasta"/></svg></span></div></div>
+        </div>
+      </div></div>
+    </div>
+    <p class="nota">Só os cartões, no fim do turno: a ferramenta <code>deliver</code> não ganha linha própria no grupo de ações, porque o cartão já diz o que foi entregue. Declarada e inferida numa fileira só: quando o agente declara, a fileira mostra o que ele declarou; sem declaração, fica o que o G1 infere das edições. Nada vai para a aba Conversa: a lista do que mudou no projeto já é a aba Alterações. Arrastar o cartão solta o arquivo onde você quiser, como no Finder.</p>
+  </div>
+
+  <div data-estado="f5-sumiu">
+    <div class="janela">
+      <div class="rotulo-entrega" style="margin-top:0">Entregue</div>
+      <div class="cartoes">
+        <div class="cartao sumiu"><span class="q">PDF</span><div style="min-width:0"><div class="n">relatorio-checkout-set…bro.pdf</div><div class="m">não está mais no disco</div></div></div>
+      </div>
+    </div>
+    <p class="nota">Conferido na hora de mostrar, como no G1. O cartão fica, com o motivo, para o histórico não mentir.</p>
+  </div>
+
+</section>
+
+<!-- ============================ F6 ============================ -->
+<section class="bloco" id="f6">
+  <div class="cab"><h2>Mermaid no fio</h2><span class="id">F6</span></div>
+  <p class="sub">O bloco <code>```mermaid</code> vira diagrama, com a lib carregada só quando um bloco aparece (o bundle não cresce para quem não usa). Cores neutras do app, nunca a paleta padrão do Mermaid. Se não compila, mostra o código com a linha do erro: o render nunca quebra.</p>
+  <div class="abas">
+    <button aria-pressed="true" data-alvo="f6-diag">Diagrama</button>
+    <button aria-pressed="false" data-alvo="f6-cod">Ver código</button>
+    <button aria-pressed="false" data-alvo="f6-erro">Não compilou</button>
+  </div>
+
+  <div data-estado="f6-diag" class="on">
+    <div class="bloco-cod">
+      <div class="cabeca">mermaid<span class="esp"></span><span class="btn"><svg class="i"><use href="#codigo"/></svg>Código</span><span class="btn"><svg class="i"><use href="#copiar"/></svg>Copiar fonte</span><span class="btn"><svg class="i"><use href="#imagem"/></svg>Copiar imagem</span></div>
+      <div class="diagrama">
+        <svg width="560" height="170" viewBox="0 0 560 170">
+          <defs><marker id="ponta" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 10 5 0 10z" fill="#8a9099"/></marker></defs>
+          <rect class="no" x="4" y="60" width="96" height="36" rx="7"/><text x="52" y="82" text-anchor="middle">Composer</text>
+          <rect class="no" x="140" y="60" width="104" height="36" rx="7"/><text x="192" y="82" text-anchor="middle">handleSend</text>
+          <polygon class="no d" points="330,44 384,78 330,112 276,78"/><text x="330" y="82" text-anchor="middle">cota ok?</text>
+          <rect class="no" x="440" y="14" width="112" height="36" rx="7"/><text x="496" y="36" text-anchor="middle">run_agent</text>
+          <rect class="no" x="440" y="110" width="112" height="36" rx="7"/><text x="496" y="132" text-anchor="middle">aviso na tira</text>
+          <path class="aresta" d="M100 78H138" marker-end="url(#ponta)"/>
+          <path class="aresta" d="M244 78H274" marker-end="url(#ponta)"/>
+          <path class="aresta" d="M384 78C410 78 410 32 438 32" marker-end="url(#ponta)"/>
+          <path class="aresta" d="M384 78C410 78 410 128 438 128" marker-end="url(#ponta)"/>
+          <text class="rot" x="408" y="44">sim</text><text class="rot" x="408" y="120">não</text>
+        </svg>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="f6-cod">
+    <div class="bloco-cod">
+      <div class="cabeca">mermaid<span class="esp"></span><span class="btn on"><svg class="i"><use href="#codigo"/></svg>Código</span><span class="btn"><svg class="i"><use href="#copiar"/></svg>Copiar fonte</span><span class="btn"><svg class="i"><use href="#imagem"/></svg>Copiar imagem</span></div>
+<pre>flowchart LR
+  A[Composer] --> B[handleSend]
+  B --> C{cota ok?}
+  C -- sim --> D[run_agent]
+  C -- não --> E[aviso na tira]</pre>
+    </div>
+  </div>
+
+  <div data-estado="f6-erro">
+    <div class="bloco-cod">
+      <div class="cabeca">mermaid<span class="esp"></span><span class="btn"><svg class="i"><use href="#copiar"/></svg>Copiar fonte</span></div>
+      <div class="erro-diag"><svg class="i"><use href="#alerta"/></svg><span>O diagrama não compilou na linha 3: <code>-->></code> não é uma seta do flowchart. Mostrando o código.</span></div>
+<pre>flowchart LR
+  A[Composer] --> B[handleSend]
+<span class="ruim">  B -->> C{cota ok?}</span>  C -- sim --> D[run_agent]</pre>
+    </div>
+  </div>
+  <p class="nota">Vale nas notas (ADR-270) pelo mesmo componente. "Copiar imagem" copia PNG em 2×, com fundo branco, para colar em documento.</p>
+</section>
+
+<!-- ============================ NAVEGADOR ============================ -->
+<section class="bloco" id="nav">
+  <div class="cab"><h2>Tamanho da página no navegador da Frota</h2><span class="id">G5, reduzido</span></div>
+  <p class="sub">Nada de moldura de aparelho nem simulador: um seletor de <b>tamanho</b> na barra. A página muda de viewport de verdade (por CDP, <code>Emulation.setDeviceMetricsOverride</code>), então o CSS responsivo reage, e o <b>agente vê a mesma página que você</b>. O quadro se ajusta ao espaço da aba, com a medida embaixo.</p>
+  <div class="abas">
+    <button aria-pressed="true" data-alvo="nav-note">Notebook (hoje)</button>
+    <button aria-pressed="false" data-alvo="nav-cel">Celular</button>
+    <button aria-pressed="false" data-alvo="nav-tab">Tablet</button>
+    <button aria-pressed="false" data-alvo="nav-menu">Menu de tamanhos</button>
+  </div>
+
+  <div data-estado="nav-note" class="on">
+    <div class="nav">
+      <div class="barra"><span class="ic"><svg class="i s16"><use href="#volta"/></svg></span><span class="ic"><svg class="i s16"><use href="#vai"/></svg></span><span class="ic"><svg class="i s16"><use href="#recarregar"/></svg></span><span class="end">localhost:5173/checkout</span><span class="tam"><svg class="i"><use href="#note"/></svg>Notebook <b>1280×800</b><svg class="i"><use href="#chev"/></svg></span></div>
+      <div class="palco-nav">
+        <div class="pagina" style="width:800px;height:500px"><div class="topo">Loja<span class="mn"><span>Produtos</span><span>Pedidos</span><span>Conta</span></span></div><div class="conteudo"><div class="itens"><div class="item"><i></i>Tênis de corrida</div><div class="item"><i></i>Meias, 3 pares</div><div class="item"><i></i>Garrafa térmica</div></div><div class="resumo"><b>Resumo</b><span>Subtotal R$ 612,00</span><span>Frete R$ 0,00</span><span class="pagar">Pagar</span></div></div></div>
+        <span class="medida">1280×800 · mostrado a 62%</span>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="nav-cel">
+    <div class="nav">
+      <div class="barra"><span class="ic"><svg class="i s16"><use href="#volta"/></svg></span><span class="ic"><svg class="i s16"><use href="#vai"/></svg></span><span class="ic"><svg class="i s16"><use href="#recarregar"/></svg></span><span class="end">localhost:5173/checkout</span><span class="tam"><svg class="i"><use href="#telefone"/></svg>Celular <b>390×844</b><svg class="i"><use href="#chev"/></svg></span><span class="ic" title="Girar"><svg class="i s16"><use href="#girar"/></svg></span></div>
+      <div class="palco-nav">
+        <div class="pagina movel" style="width:230px;height:497px"><div class="topo">Loja<span style="margin-left:auto;color:#666">☰</span></div><div class="conteudo"><div class="itens"><div class="item"><i></i>Tênis de corrida</div><div class="item"><i></i>Meias, 3 pares</div><div class="item"><i></i>Garrafa térmica</div></div><div class="resumo"><b>Resumo</b><span>Subtotal R$ 612,00</span><span class="pagar">Pagar</span></div></div></div>
+        <span class="medida">390×844 · toque e identificação de celular · mostrado a 59%</span>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="nav-tab">
+    <div class="nav">
+      <div class="barra"><span class="ic"><svg class="i s16"><use href="#volta"/></svg></span><span class="ic"><svg class="i s16"><use href="#vai"/></svg></span><span class="ic"><svg class="i s16"><use href="#recarregar"/></svg></span><span class="end">localhost:5173/checkout</span><span class="tam"><svg class="i"><use href="#tablet"/></svg>Tablet <b>820×1180</b><svg class="i"><use href="#chev"/></svg></span><span class="ic" title="Girar"><svg class="i s16"><use href="#girar"/></svg></span></div>
+      <div class="palco-nav">
+        <div class="pagina" style="width:340px;height:490px"><div class="topo">Loja<span class="mn"><span>Produtos</span><span>Conta</span></span></div><div class="conteudo" style="flex-direction:column"><div class="itens"><div class="item"><i></i>Tênis de corrida</div><div class="item"><i></i>Meias, 3 pares</div><div class="item"><i></i>Garrafa térmica</div></div><div class="resumo"><b>Resumo</b><span>Subtotal R$ 612,00</span><span>Frete R$ 0,00</span><span class="pagar">Pagar</span></div></div></div>
+        <span class="medida">820×1180 · mostrado a 41%</span>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="nav-menu">
+    <div class="nav">
+      <div class="barra"><span class="ic"><svg class="i s16"><use href="#volta"/></svg></span><span class="ic"><svg class="i s16"><use href="#vai"/></svg></span><span class="ic"><svg class="i s16"><use href="#recarregar"/></svg></span><span class="end">localhost:5173/checkout</span><span class="tam aberto"><svg class="i"><use href="#note"/></svg>Notebook <b>1280×800</b><svg class="i"><use href="#chev"/></svg></span>
+        <div class="menu-tam">
+          <div class="grp">Tamanho da página</div>
+          <div class="it"><span class="ok"></span><svg class="i"><use href="#telefone"/></svg>Celular<span class="dir">390×844</span></div>
+          <div class="it"><span class="ok"></span><svg class="i"><use href="#telefone"/></svg>Celular grande<span class="dir">430×932</span></div>
+          <div class="it"><span class="ok"></span><svg class="i"><use href="#tablet"/></svg>Tablet<span class="dir">820×1180</span></div>
+          <div class="it foco"><span class="ok"><svg class="i"><use href="#check"/></svg></span><svg class="i"><use href="#note"/></svg>Notebook<span class="dir">1280×800</span></div>
+          <div class="it"><span class="ok"></span><svg class="i"><use href="#monitor"/></svg>Desktop<span class="dir">1440×900</span></div>
+          <div class="sep"></div>
+          <div class="grp">Personalizado</div>
+          <div class="campos"><span>1024</span>×<span>768</span></div>
+          <div class="sep"></div>
+          <div class="it"><span class="cx"></span>Como celular: toque e identificação</div>
+        </div>
+      </div>
+      <div class="palco-nav"><div class="pagina" style="width:800px;height:500px;opacity:.5"></div></div>
+    </div>
+    <p class="nota">"Como celular" liga o toque e a identificação de navegador móvel junto com o tamanho; os tamanhos de celular e tablet já vêm com ele ligado. O tamanho fica guardado por projeto, e o padrão continua 1280×800 (ADR-229). O que a Frota não promete: Safari de verdade. É o mesmo Chromium, com a viewport e o toque do aparelho.</p>
+  </div>
+</section>
+
+<!-- ============================ F8 ============================ -->
+<section class="bloco" id="f8">
+  <div class="cab"><h2>Segredos do projeto no Keychain</h2><span class="id">F8</span></div>
+  <p class="sub">Nome e valor; o valor mora no Keychain do Mac (Secret Service no Linux). No turno, entra como <b>variável de ambiente do processo do motor</b>, qualquer motor. O agente sabe o <b>nome</b> pela doutrina do projeto e nunca recebe o valor no texto. Se o valor aparecer na saída, o fio, o log e o Companion mascaram.</p>
+  <div class="abas">
+    <button aria-pressed="true" data-alvo="f8-conf">Configurações</button>
+    <button aria-pressed="false" data-alvo="f8-add">Adicionar</button>
+    <button aria-pressed="false" data-alvo="f8-fio">Mascarado no fio</button>
+    <button aria-pressed="false" data-alvo="f8-falha">Keychain não abriu</button>
+  </div>
+
+  <div data-estado="f8-conf" class="on">
+    <div class="config">
+      <div class="rail">
+        <div class="zona">Neste Mac</div>
+        <div class="it">Início</div><div class="it">Motores</div><div class="it">Uso e custo</div><div class="it">Segurança</div><div class="it">Conexões</div>
+        <div class="zona">Deste projeto</div>
+        <div class="proj">loja<svg class="i"><use href="#chev"/></svg></div>
+        <div class="it">MCPs</div><div class="it">Skills e plugins</div><div class="it">Navegador</div><div class="it on">Segredos</div>
+      </div>
+      <div class="cont">
+        <h3>Segredos <span class="escopo">projeto loja</span></h3>
+        <p class="desc">O valor fica no Keychain e entra no turno como variável de ambiente. O agente vê só o nome. Vale para todos os motores deste projeto.</p>
+        <div class="seg">
+          <div class="l"><span class="nm">SUPABASE_URL</span><span class="vl">••••••••••••<span class="usado"> · usado há 2h</span></span><span class="ac"><span><svg class="i"><use href="#lapis"/></svg></span><span><svg class="i"><use href="#lixo"/></svg></span></span></div>
+          <div class="l"><span class="nm">SUPABASE_ANON_KEY</span><span class="vl">••••••••••••<span class="usado"> · usado há 2h</span></span><span class="ac"><span><svg class="i"><use href="#lapis"/></svg></span><span><svg class="i"><use href="#lixo"/></svg></span></span></div>
+          <div class="l"><span class="nm">STRIPE_SECRET_KEY</span><span class="vl">••••••••••••<span class="usado"> · nunca usado</span></span><span class="ac"><span><svg class="i"><use href="#lapis"/></svg></span><span><svg class="i"><use href="#lixo"/></svg></span></span></div>
+        </div>
+        <div style="margin-top:10px"><span class="btn"><svg class="i"><use href="#mais"/></svg>Adicionar segredo</span></div>
+        <p class="desc" style="margin-top:16px">Na doutrina do turno entra só: "Variáveis disponíveis: SUPABASE_URL, SUPABASE_ANON_KEY, STRIPE_SECRET_KEY. Use pelo nome; nunca imprima o valor."</p>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="f8-add">
+    <div class="config" style="height:auto;min-height:300px">
+      <div class="rail">
+        <div class="zona">Deste projeto</div>
+        <div class="proj">loja<svg class="i"><use href="#chev"/></svg></div>
+        <div class="it">MCPs</div><div class="it">Skills e plugins</div><div class="it">Navegador</div><div class="it on">Segredos</div>
+      </div>
+      <div class="cont">
+        <h3>Segredos <span class="escopo">projeto loja</span></h3>
+        <p class="desc">O valor fica no Keychain e entra no turno como variável de ambiente. O agente vê só o nome.</p>
+        <div class="seg">
+          <div class="l"><span class="nm">SUPABASE_URL</span><span class="vl">••••••••••••</span><span class="ac"><span><svg class="i"><use href="#lapis"/></svg></span><span><svg class="i"><use href="#lixo"/></svg></span></span></div>
+          <div class="form"><span class="campo">RESEND_API_KEY</span><span class="campo" style="letter-spacing:.1em;color:var(--muted-foreground)">••••••••••••••••</span><span style="display:flex;gap:6px"><span class="btn ghost">Cancelar</span><span class="btn prim">Salvar no Keychain</span></span></div>
+        </div>
+        <p class="desc" style="margin-top:10px">O nome segue o padrão de variável de ambiente (maiúsculas, número e _). O valor não volta a aparecer depois de salvo: para trocar, escreva outro.</p>
+      </div>
+    </div>
+  </div>
+
+  <div data-estado="f8-fio">
+    <div class="janela">
+      <div class="grupo"><div class="av claude">A</div><div class="corpo"><div class="quem">Claude Code <span>14:05</span></div>
+        <div class="grupo-acoes"><div class="acao"><svg class="i"><use href="#term"/></svg>Rodou <span class="obj">curl -s "$SUPABASE_URL/rest/v1/pedidos?limit=1" -H "apikey: $SUPABASE_ANON_KEY" -v</span></div></div>
+<div class="saida"><span class="p">$</span> curl -s … -v
+&gt; GET /rest/v1/pedidos?limit=1 HTTP/2
+&gt; apikey: <span class="mask">••••••••</span> <span class="tag">SUPABASE_ANON_KEY</span>
+&lt; HTTP/2 200
+[{"id":8812,"status":"pago"}]</div>
+        <div class="chip-mask"><svg class="i"><use href="#chave"/></svg>1 segredo mascarado nesta saída</div>
+      </div></div>
+    </div>
+    <p class="nota">A máscara é por valor, não por nome: qualquer ocorrência do valor na saída vira bolinhas com o nome do segredo ao lado, no fio, nos Bastidores, no log da Frota e no Companion. Guardado no banco já mascarado.</p>
+  </div>
+
+  <div data-estado="f8-falha">
+    <div class="janela estreita">
+      <div class="aviso-env">
+        <div class="l1"><svg class="i s16 ico-aviso"><use href="#chave"/></svg><div><div class="tit">O envio não saiu: o Keychain não entregou STRIPE_SECRET_KEY</div><div class="det">O Mac negou o acesso ou o item foi apagado. Sem o segredo o turno rodaria diferente do que você espera, então ele espera.</div></div></div>
+        <div class="rodape"><span class="btn prim">Tentar de novo</span><span class="btn ghost">Abrir Segredos</span><span class="btn ghost">Enviar sem este segredo</span></div>
+      </div>
+      <div class="composer">
+        <div class="texto">Cria o webhook do Stripe para pagamento aprovado</div>
+        <div class="base"><span class="icone"><svg class="i s16"><use href="#clip"/></svg></span><span class="esp"></span><span class="porta"><span class="lg" style="background:#d97757">A</span>Claude Code</span><span class="icone"><svg class="i s16"><use href="#mic"/></svg></span><span class="enviar"><svg class="i"><use href="#up"/></svg></span></div>
+      </div>
+    </div>
+    <p class="nota">Fail-closed: segredo que não abre não é pulado em silêncio. "Enviar sem este segredo" é o gesto explícito, e vale só para este envio. Âmbar porque pede decisão.</p>
+  </div>
+</section>
+
+<!-- ============================ DECISÕES ============================ -->
+<section class="bloco decisoes" id="decisoes">
+  <div class="cab"><h2>Decisões que faltam</h2></div>
+
+  <h3>F4 · @conversa</h3>
+  <ul>
+    <li><b>D1. Outros projetos entram no menu?</b> Recomendo sim, numa seção própria abaixo, com o nome do projeto. "Compare com o que fizemos na loja" é um dos usos.</li>
+    <li><b>D2. O que o agente recebe:</b> acesso de busca e leitura àquela conversa pelo MCP de contexto (recomendo), ou um resumo colado no prompt. A busca gasta contexto só com o que ele procurar, e cada leitura aparece no fio.</li>
+    <li><b>D3. Limite por envio:</b> recomendo até 3 conversas citadas.</li>
+    <li><b>D13. A variante ampla:</b> o agente buscar sozinho em todas as conversas do projeto. Recomendo começar só pela citação e deixar a ampla para depois, se fizer falta: ela tira de você a escolha do que o agente lê, e cada busca puxaria trechos de conversas que você nem lembrava. Se um dia entrar, entra como gesto explícito no envio ("buscar nas conversas do projeto"), nunca ligada por padrão.</li>
+  </ul>
+
+  <h3>F1 · Quando volta</h3>
+  <ul>
+    <li><b>D4. Resolvida:</b> o painel do app fica como hoje. No Companion, a janela mais apertada de cada motor com o horário da volta, só leitura.</li>
+  </ul>
+
+  <h3>F5 · Entrega</h3>
+  <ul>
+    <li><b>Resolvida:</b> sem seção "Entregas" na aba Conversa e sem linha "Entregou" no grupo de ações; só os cartões no fim do turno, com o estado "não está mais no disco".</li>
+    <li><b>D5. Declarada e inferida na mesma fileira:</b> recomendo que a declarada substitua a inferida no turno em que existir; sem declaração, fica o G1 como hoje.</li>
+    <li><b>D6. Arquivo fora do projeto:</b> recomendo aceitar (é o caso principal), abrindo no app padrão ou mostrando na pasta. Precisa do comando Rust que abre só documento, a pendência do <code>openPath</code>.</li>
+  </ul>
+
+  <h3>F6 · Mermaid</h3>
+  <ul>
+    <li><b>D7. Onde vale:</b> fio e notas agora; Companion depois.</li>
+  </ul>
+
+  <h3>Tamanho da página</h3>
+  <ul>
+    <li><b>D8. Guardado por projeto</b>, padrão 1280×800. Os cinco tamanhos do menu, mais o personalizado.</li>
+    <li><b>D9. O agente pode mudar o tamanho?</b> Recomendo sim, por uma ferramenta do <code>frota-browser</code> que aparece no fio ("mudou a página para Celular, 390×844"), e o seletor mostra a troca. É ação sem risco e o agente precisa dela para testar responsivo sozinho.</li>
+  </ul>
+
+  <h3>F8 · Segredos</h3>
+  <ul>
+    <li><b>D10. Escopo:</b> por projeto, todos os motores (a variável de ambiente é agnóstica). Recomendo não ter segredo por conversa agora.</li>
+    <li><b>D11. Todo turno recebe todos?</b> Recomendo sim, dentro do projeto, com o nome visível em "O que o agente vê". Segredo por turno viraria atrito a cada envio.</li>
+    <li><b>D12. "Enviar sem este segredo"</b> no aviso de falha: manter (gesto explícito) ou tirar e só permitir tentar de novo.</li>
+  </ul>
+
+  <h3>Ordem que eu proporia</h3>
+  <ul>
+    <li><b>1. F1 no Companion</b>: pequeno, a leitura já existe.</li>
+    <li><b>2. F6</b>: isolado no Markdown.</li>
+    <li><b>3. Tamanho da página</b>: CDP no Rust e o seletor.</li>
+    <li><b>4. F5</b>: ferramenta nova no <code>frota-work</code> e o comando de abrir documento.</li>
+    <li><b>5. F4</b>: mexe no MCP de contexto e no composer.</li>
+    <li><b>6. F8</b>: Keychain, ambiente do processo nos quatro motores e a máscara em todas as saídas; é a mais sensível.</li>
+  </ul>
+</section>
+
+<script>
+  document.querySelectorAll(".abas").forEach((abas) => {
+    const botoes = abas.querySelectorAll("button")
+    botoes.forEach((b) => b.addEventListener("click", () => {
+      botoes.forEach((o) => {
+        o.setAttribute("aria-pressed", String(o === b))
+        document.querySelectorAll(`[data-estado="${o.dataset.alvo}"]`).forEach((el) => el.classList.toggle("on", o === b))
+      })
+    }))
+  })
+</script>
+</body>
+</html>

@@ -333,3 +333,17 @@ com recolher e dispensar (ADR-281, commits `0a47eba` e `22595b8`).
    aparelho no navegador; F8 segredos no Keychain; o resto de F1 (volta às
    e cota no Companion).
    G2 continua fora por decisão sua.
+
+## 11. Lote 2 (29/09): F4, F1, F5, F6, tamanho da página e F8
+
+Escolhidos pela pessoa depois do bloco pequeno (ADR-283). F3 ficou de fora
+por ora, e o G5 foi reduzido ao que ela pediu: redimensionar a página do
+navegador da Frota para testar tamanhos de aparelho, sem moldura nem
+simulador. Mock com os estados e as decisões D1 a D12:
+`docs/mocks/maestri-lote-2.html`. Nada de código antes das decisões.
+
+Revisão do mesmo dia, pela pessoa: F1 fica como hoje no app e entra só no
+Companion; F5 sem seção "Entregas" na aba Conversa (a aba Alterações já cumpre
+esse papel) e sem linha "Entregou" repetida no fio, só os cartões e o estado
+"não está mais no disco"; F4 explicita que hoje o agente só enxerga a própria
+conversa, e a variante ampla ficou como D13.
