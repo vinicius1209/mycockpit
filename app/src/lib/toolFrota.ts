@@ -11,6 +11,7 @@
 // aqui compara nome de motor.
 
 import type { ToolView } from "@/lib/toolview"
+import { PERSONALIZADO, nomeDoTamanho } from "@/lib/tamanhoDaPagina"
 
 function str(i: Record<string, unknown>, k: string): string | null {
   const v = i[k]
@@ -112,6 +113,17 @@ function servidorDaTool(name: string): string | null {
   return partes.length >= 3 && partes[0] === "mcp" ? partes[1] : null
 }
 
+/** "Celular", "Tablet · girado", "Personalizado 1024×768". */
+function tamanhoPedido(i: Record<string, unknown>): string | null {
+  const preset = str(i, "tamanho")
+  if (!preset) return null
+  const base =
+    preset === PERSONALIZADO
+      ? `Personalizado ${Number(i.largura) || "?"}×${Number(i.altura) || "?"}`
+      : nomeDoTamanho({ preset, largura: 0, altura: 0, celular: false, girado: false })
+  return i.girado === true ? `${base} · girado` : base
+}
+
 function presentNavegadorDaFrota(
   tool: string,
   i: Record<string, unknown>,
@@ -132,6 +144,8 @@ function presentNavegadorDaFrota(
       return view("Clicar na página", null, "web", detail)
     case "browser_type":
       return view("Digitar na página", null, "web", detail)
+    case "browser_resize":
+      return view("Mudar o tamanho da página", tamanhoPedido(i), "web", detail)
     default:
       return view("Usar o navegador", tool, "web", detail)
   }

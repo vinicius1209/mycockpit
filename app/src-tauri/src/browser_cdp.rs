@@ -384,6 +384,8 @@ pub async fn browser_preview_start(
         page = janela_propria::mover(&app, &project_path, &page, conversa.as_deref()).await?;
     }
     let target_id = page.id.clone();
+    // A página nasce no tamanho do projeto antes do primeiro quadro (ADR-285).
+    crate::browser_janela::tamanho::garantir(&app, &project_id, &page).await;
     // A página que a pessoa olha numa conversa é onde o próximo turno do
     // agente dela começa (ADR-244).
     if let Some(conv) = conversa.as_deref() {
@@ -678,8 +680,17 @@ async fn send_history(websocket_url: &str, direction: &str) -> Result<(), String
 /// Os comandos CDP de uma ação de input, sem o transporte. Compartilhado pela
 /// barra humana e pelo `frota-browser` (ADR-224): um vocabulário de input só.
 /// `Navigate` passa pela `politica_da_barra` com a raiz do projeto.
-pub(crate) fn comandos_de_input(action: BrowserInputAction, raiz_do_projeto: &Path) -> Result<Vec<Value>, String> {
+/// Com `toque` (modo celular, ADR-285) o clique é um toque: a página recebe
+/// `touchstart`, `touchend` e o `click` sintetizado, como num celular.
+pub(crate) fn comandos_de_input(action: BrowserInputAction, raiz_do_projeto: &Path, toque: bool) -> Result<Vec<Value>, String> {
     Ok(match action {
+        BrowserInputAction::Click { x, y } if toque => {
+            let (x, y) = (finite(x)?, finite(y)?);
+            vec![
+                json!({"id": 1, "method": "Input.dispatchTouchEvent", "params": {"type": "touchStart", "touchPoints": [{"x": x, "y": y}]}}),
+                json!({"id": 2, "method": "Input.dispatchTouchEvent", "params": {"type": "touchEnd", "touchPoints": []}}),
+            ]
+        }
         BrowserInputAction::Click { x, y } => {
             let (x, y) = (finite(x)?, finite(y)?);
             vec![
@@ -837,7 +848,8 @@ pub async fn browser_input(
     if let BrowserInputAction::History { direction } = &action {
         return send_history(websocket_url, direction).await;
     }
-    let commands = comandos_de_input(action, Path::new(&project_path))?;
+    let toque = crate::browser_janela::tamanho::toque(&app, &project_id);
+    let commands = comandos_de_input(action, Path::new(&project_path), toque)?;
     send_cdp(websocket_url, commands).await
 }
 

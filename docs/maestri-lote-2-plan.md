@@ -1,6 +1,6 @@
 # Plano · Estudo do Maestri, lote 2
 
-> **Status (29/09/2026):** E1 e E2 entregues. Decisões respondidas (tabela no fim).
+> **Status (29/09/2026):** E1, E2 e E3 entregues. Decisões respondidas (tabela no fim).
 > Mock canônico: `docs/mocks/maestri-lote-2.html`. Origem: §11 de
 > `docs/prototipos-maestri-plan.md` e o estudo
 > `docs/competitors-maestri-2026-09-27.md`.
@@ -44,7 +44,7 @@ núcleo puro.
 Aceite: diagrama real renderiza; sintaxe inválida mostra a linha; o bundle
 principal não cresce (a lib vira chunk próprio).
 
-## E3 · Tamanho da página no navegador da Frota (M) · depende de D8 e D9
+## E3 · Tamanho da página no navegador da Frota (M) · ✅ entregue (ADR-285)
 
 1. Rust: viewport por projeto por CDP (`Emulation.setDeviceMetricsOverride`,
    toque e user agent no modo "como celular"), guardada por projeto; o padrão

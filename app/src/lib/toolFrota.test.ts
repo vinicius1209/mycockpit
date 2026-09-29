@@ -80,6 +80,19 @@ describe("toolFrota · a Frota reconhece as próprias tools", () => {
     expect(nav.meta).toBeNull()
   })
 
+  it("a troca de tamanho da página diz o aparelho pedido (ADR-285)", () => {
+    const cel = presentTool("mcp__frota-browser__browser_resize", { tamanho: "celular" })
+    expect(cel.verb).toBe("Mudar o tamanho da página")
+    expect(cel.object).toEqual({ kind: "text", text: "Celular" })
+    expect(presentTool("mcp__frota-browser__browser_resize", { tamanho: "tablet", girado: true }).object).toEqual({
+      kind: "text",
+      text: "Tablet · girado",
+    })
+    expect(
+      presentTool("mcp__frota-browser__browser_resize", { tamanho: "personalizado", largura: 1024, altura: 768 }).object,
+    ).toEqual({ kind: "text", text: "Personalizado 1024×768" })
+  })
+
   it("browser_* puro segue sem dono: é ambíguo com as tools nativas de outros motores", () => {
     expect(presentTool("browser_snapshot", {}).verb).toBe("Usar")
   })

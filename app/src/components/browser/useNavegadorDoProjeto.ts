@@ -51,6 +51,8 @@ export interface FrameNotice {
 }
 
 export interface NavegadorDoProjeto {
+  /** O projeto da vista; sem alvo, vazio. */
+  projectPath: string
   pages: BrowserPage[]
   selected: BrowserPage | null
   frame: BrowserPreviewFrame | null
@@ -332,6 +334,7 @@ export function useNavegadorDoProjeto(
   const selected = pages.find((page) => page.id === selectedId) ?? null
 
   return {
+    projectPath: projectPath ?? "",
     pages,
     selected,
     frame,

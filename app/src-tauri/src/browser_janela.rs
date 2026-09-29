@@ -55,8 +55,10 @@ pub async fn ajustar_na_pagina(app: &tauri::AppHandle, project_path: &str, alvo:
 }
 
 async fn ajustar(app: &tauri::AppHandle, project_path: &str, alvo: Option<&str>) -> Result<(), String> {
-    let (_, sessao) = crate::browser_cdp::project_session(app, project_path).await?;
-    if sessao.window_visible {
+    let (project_id, sessao) = crate::browser_cdp::project_session(app, project_path).await?;
+    // Com tamanho emulado (ADR-285) a página já está no tamanho pedido; medir
+    // a janela por ela a esticaria à toa.
+    if sessao.window_visible || !tamanho::ler(app, &project_id).e_padrao() {
         return Ok(());
     }
     let pagina = match alvo {
@@ -89,6 +91,9 @@ async fn ajustar(app: &tauri::AppHandle, project_path: &str, alvo: Option<&str>)
     .await?;
     Ok(())
 }
+
+#[path = "browser_tamanho.rs"]
+pub mod tamanho;
 
 #[cfg(test)]
 mod tests {

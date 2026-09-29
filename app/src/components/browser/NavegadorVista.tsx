@@ -37,6 +37,9 @@ import type { BrowserPage } from "@/lib/browser"
 import { cn } from "@/lib/utils"
 import type { BrowserPreviewFrame } from "@/lib/browser"
 import { MarcacaoNoQuadro } from "./MarcacaoNoQuadro"
+import { SeletorDeTamanho } from "./SeletorDeTamanho"
+import { useTamanhoDaPagina } from "./useTamanhoDaPagina"
+import { ehPadrao, medidaDoTamanho } from "@/lib/tamanhoDaPagina"
 import type { NavegadorDoProjeto } from "./useNavegadorDoProjeto"
 
 function pageLabel(page: BrowserPage): string {
@@ -57,6 +60,7 @@ export function NavegadorVista({
   // vista mostra ele parado em vez do stream.
   const [congelado, setCongelado] = useState<BrowserPreviewFrame | null>(null)
   const [enviandoMarcacao, setEnviandoMarcacao] = useState(false)
+  const tamanho = useTamanhoDaPagina(nav.projectPath)
 
   const framePoint = (clientX: number, clientY: number) => {
     const image = imageRef.current
@@ -178,6 +182,7 @@ export function NavegadorVista({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {nav.projectPath && <SeletorDeTamanho t={tamanho} />}
         <Button
           type="button"
           size="icone-compacto"
@@ -257,6 +262,11 @@ export function NavegadorVista({
       </form>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-card/30 p-3">
+        {frame && !congelado && !ehPadrao(tamanho.tamanho) && (
+          <span className="pointer-events-none absolute inset-x-0 bottom-0.5 text-center font-mono text-[11px] text-faint">
+            {medidaDoTamanho(tamanho.tamanho)}
+          </span>
+        )}
         {congelado ? (
           <MarcacaoNoQuadro
             quadro={congelado}

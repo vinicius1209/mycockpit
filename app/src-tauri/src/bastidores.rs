@@ -109,7 +109,9 @@ fn validar(caminho: &str) -> Result<PathBuf, String> {
 // ------------------------------------------------------------------- texto ----
 
 /// Uma linha como o terminal mostraria: sem sequência ANSI e, havendo `\r`
-/// (barra de progresso), só o que ficou depois do último. Puro.
+/// (barra de progresso), só o que ficou depois do último. A leitura usa a
+/// versão com cor; esta fica como a régua sem cor dos testes. Puro.
+#[cfg(test)]
 pub fn limpar_linha(bruta: &str) -> String {
     limpar(bruta, false)
 }

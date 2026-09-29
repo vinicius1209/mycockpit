@@ -39,6 +39,8 @@ pub const TABS_TOOL: &str = "browser_tabs";
 pub const TAB_SELECT_TOOL: &str = "browser_tab_select";
 pub const TAB_NEW_TOOL: &str = "browser_tab_new";
 pub const TAB_CLOSE_TOOL: &str = "browser_tab_close";
+/// Tamanho da página e aparelho emulado (ADR-285).
+pub const RESIZE_TOOL: &str = "browser_resize";
 
 /// Texto da página que vai ao modelo por chamada. Página inteira é contexto
 /// que ninguém pediu; quem quer mais, pede de novo com `offset`.
@@ -63,6 +65,7 @@ pub fn is_browser_tool(name: &str) -> bool {
             | TAB_SELECT_TOOL
             | TAB_NEW_TOOL
             | TAB_CLOSE_TOOL
+            | RESIZE_TOOL
     )
 }
 
@@ -72,9 +75,9 @@ pub fn is_effect_tool(name: &str) -> bool {
     matches!(name, EVALUATE_TOOL | UPLOAD_TOOL)
 }
 
-pub const TOOLS: [&str; 13] = [
+pub const TOOLS: [&str; 14] = [
     STATUS_TOOL, NAVIGATE_TOOL, SNAPSHOT_TOOL, CAPTURE_TOOL, CLICK_TOOL, TYPE_TOOL, KEY_TOOL,
-    EVALUATE_TOOL, UPLOAD_TOOL, TABS_TOOL, TAB_SELECT_TOOL, TAB_NEW_TOOL, TAB_CLOSE_TOOL,
+    EVALUATE_TOOL, UPLOAD_TOOL, TABS_TOOL, TAB_SELECT_TOOL, TAB_NEW_TOOL, TAB_CLOSE_TOOL, RESIZE_TOOL,
 ];
 
 /// O que o motor recebe para subir o MCP. Mesmo socket do `frota-work`: a
@@ -379,6 +382,8 @@ pub async fn handle(
         return Ok(status_json(&alvo, cwd));
     }
     let alvo = alvo(app, gateway, run_id, conv_id, cwd).await?;
+    // O agente age e captura no tamanho do projeto (ADR-285).
+    crate::browser_janela::tamanho::garantir(app, &alvo.project_id, &alvo.page).await;
     let ws = websocket(&alvo.page)?;
     let resultado: Result<Value, String> = match action {
         SNAPSHOT_TOOL => {
@@ -428,6 +433,7 @@ pub async fn handle(
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Click { x, y },
                 Path::new(cwd),
+                crate::browser_janela::tamanho::toque(app, &alvo.project_id),
             )?)
             .await?;
             Ok(json!({ "ok": true }))
@@ -441,6 +447,7 @@ pub async fn handle(
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Text { text: text.into() },
                 Path::new(cwd),
+                crate::browser_janela::tamanho::toque(app, &alvo.project_id),
             )?)
             .await?;
             Ok(json!({ "ok": true }))
@@ -459,6 +466,7 @@ pub async fn handle(
             crate::browser_cdp::pilotar(ws, crate::browser_cdp::comandos_de_input(
                 crate::browser_cdp::BrowserInputAction::Key { key, code },
                 Path::new(cwd),
+                crate::browser_janela::tamanho::toque(app, &alvo.project_id),
             )?)
             .await?;
             Ok(json!({ "ok": true }))
@@ -518,6 +526,8 @@ pub async fn handle(
                 Some(crate::browser_cdp::politica_da_barra(url, Path::new(cwd))?)
             };
             let nova = crate::browser_cdp::nova_aba(app, cwd).await?;
+            // Antes de navegar: o primeiro pedido já sai com o user agent certo.
+            crate::browser_janela::tamanho::garantir(app, &alvo.project_id, &nova).await;
             assegurar_lease(app, gateway, &alvo.project_id, &nova.id, run_id)?;
             crate::browser_donos::com(|d| {
                 d.tomar(&nova.id, conv_id);
@@ -556,6 +566,10 @@ pub async fn handle(
                 aba_json(&p, cwd)
             });
             Ok(json!({ "ok": true, "fechada": id, "ativa": ativa }))
+        }
+        RESIZE_TOOL => {
+            assegurar_lease(app, gateway, &alvo.project_id, &alvo.page.id, run_id)?;
+            crate::browser_janela::tamanho::pelo_agente(app, cwd, args).await
         }
         _ => Err("ação desconhecida".into()),
     };
@@ -809,6 +823,21 @@ fn tool_specs() -> Vec<Value> {
             "name": TAB_CLOSE_TOOL,
             "description": "Fecha uma aba (a sua, se não informar o id). Não fecha a última. Fechando a sua, você passa para a primeira que sobrou. Toma o controle.",
             "inputSchema": { "type": "object", "properties": { "id": { "type": "string" } } }
+        }),
+        json!({
+            "name": RESIZE_TOOL,
+            "description": "Muda o tamanho da página do navegador da Frota neste projeto, emulando o aparelho: celular (390×844), celular-grande (430×932), tablet (820×1180), notebook (1280×800, o padrão), desktop (1440×900) ou personalizado com largura e altura (e celular: true para toque e user agent móvel). girado troca a orientação. Celular e tablet emulam toque, user agent móvel e escala de tela, e o clique vira toque. A pessoa vê a troca. Toma o controle.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "tamanho": { "type": "string", "enum": ["celular", "celular-grande", "tablet", "notebook", "desktop", "personalizado"] },
+                    "largura": { "type": "integer", "minimum": 200, "maximum": 3840 },
+                    "altura": { "type": "integer", "minimum": 200, "maximum": 3840 },
+                    "celular": { "type": "boolean" },
+                    "girado": { "type": "boolean" }
+                },
+                "required": ["tamanho"]
+            }
         }),
     ]
 }

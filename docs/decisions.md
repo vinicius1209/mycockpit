@@ -10282,3 +10282,40 @@ considerou.
   5. Copiar imagem usa o `writeImage` nativo do plugin de clipboard (permissão
      `clipboard-manager:allow-write-image`); se o PNG falhar, copia a fonte e
      diz isso.
+
+### ADR-285 · A página do navegador da Frota muda de tamanho emulando o aparelho de verdade ✅
+- **Contexto (29/09/2026):** E3 do lote 2 do Maestri. A página era fixa em
+  1280×800 (ADR-229). Pedido da pessoa: testar tamanhos de aparelho, com a
+  regra de que "o nosso navegador simula um navegador real, então ter as
+  funções certinhas e funcionais" (D8).
+- **Medido antes de decidir** (Chrome for Testing 153, sonda com duas sessões
+  CDP): a emulação pedida por uma sessão vale para as outras (a captura do
+  agente sai no tamanho emulado), mas só enquanto aquela sessão fica aberta;
+  ao fechar, user agent, toque e escala voltam e o tamanho da página fica
+  preso. Com `mobile` e sem `<meta viewport>` a largura de layout é 980, como
+  num celular. Um toque emulado gera `touchstart`, `touchend`, `mousedown` e
+  `click`.
+- **Decisão:**
+  1. Cinco tamanhos (celular 390×844, celular grande 430×932, tablet
+     820×1180, notebook 1280×800, desktop 1440×900), personalizado de 200 a
+     3840 por lado e girar. Guardado por projeto (migração 64,
+     `browser_viewport`); o padrão continua o notebook sem emulação.
+  2. Emulação completa (`browser_tamanho.rs`): viewport, escala de tela,
+     `mobile`, orientação, toque e user agent de Chrome móvel na versão do
+     Chromium que roda (sem "Headless"); o tablet sem "Mobile", como o Chrome
+     de tablet.
+  3. Uma sessão CDP por página emulada, que fica aberta enquanto a página
+     vive. Voltar ao padrão limpa a emulação antes de fechar a sessão.
+  4. A emulação se garante onde a página é usada: ao abrir o quadro, em toda
+     ação do `frota-browser` e na aba nova do agente antes de navegar (o
+     primeiro pedido já sai com o user agent certo). O ajuste de janela da
+     ADR-229 não mede página emulada.
+  5. No modo celular o clique vira toque, para a pessoa e para o agente.
+  6. O agente muda o tamanho pela ferramenta `browser_resize` (D9); a troca
+     aparece no fio ("Mudar o tamanho da página · Celular") e no seletor,
+     pelo evento `browser://tamanho`.
+- **Prova:** `sonda_real_da_emulacao` (ignorada por padrão) sobe o Chromium e
+  confere 390 px, user agent móvel, toque e ponteiro grosso durante, e 1280
+  px sem toque depois de parar.
+- **Não promete:** Safari nem WebKit. É o Chromium, com a tela, o toque e a
+  identificação do aparelho.
