@@ -2,239 +2,290 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Composer: menos coisa à vista, o resto no clique</title>
+<title>Composer: menos coisa à vista, o resto no clique (revisão 3, fiel)</title>
 <style>
-  /* Tokens de :root do index.css (tema claro). Escala 11/12/13/14 (20 no título).
-     Controles: chip 24 · compacto 28 · padrão 32. Sem travessão na copy. */
+  /* Fidelidade: a MESMA fonte do app (Geist variável, dos arquivos do projeto),
+     os tokens de :root do index.css (tema claro) e as classes reais de cada
+     peça, convertidas em px: casca rounded-2xl + shadow-pop; campo px-4 pt-3.5
+     text-[14px] min-h-56; rodapé p-2.5 pt-1 gap-1.5; controles h-8 (32px) com
+     text-[12px] font-medium; ícones size-3.5/size-4; caras de 20px com -ml-1.5;
+     anel size-4 num alvo size-6. */
+  @font-face{font-family:"Geist";src:url("../../app/node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
+  @font-face{font-family:"Geist Mono";src:url("../../app/node_modules/@fontsource-variable/geist-mono/files/geist-mono-latin-wght-normal.woff2") format("woff2");font-weight:100 900}
   :root{
-    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--secondary:#f4f4f2;--popover:#fff;
-    --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;
+    --background:#fbfbfa;--rail:#f6f6f4;--card:#ffffff;--secondary:#f4f4f2;--popover:#ffffff;--accent:rgba(0,0,0,.045);
+    --foreground:#16181b;--muted:#5c6166;--faint:#8a9099;--brass:#a9742b;
     --border:rgba(0,0,0,.09);--border-strong:rgba(0,0,0,.14);--divisor:rgba(0,0,0,.036);
-    --sel:rgba(0,0,0,.055);--sel-hover:rgba(0,0,0,.028);
+    --sel:rgba(0,0,0,.055);
     --warning:#c1861f;--error:#cf4a3e;--claude:#d97757;
+    --shadow-sm:0 1px 2px rgba(20,22,25,.08);
     --shadow-pop:0 12px 40px -8px rgba(20,22,25,.18),0 0 0 1px rgba(0,0,0,.08);
-    --sans:"Geist","Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    --mono:"Geist Mono","SF Mono",ui-monospace,Menlo,monospace;
+    --sans:"Geist",ui-sans-serif,system-ui,sans-serif;
+    --mono:"Geist Mono",ui-monospace,"SF Mono",monospace;
   }
   *{box-sizing:border-box;margin:0}
-  body{background:var(--rail);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 96px}
-  h1{font-size:20px;font-weight:600}
+  body{background:var(--background);color:var(--foreground);font:13px/1.5 var(--sans);padding:28px 32px 120px;-webkit-font-smoothing:antialiased}
+  h1{font-size:20px;font-weight:600;letter-spacing:-.01em}
   h2{font-size:14px;font-weight:600;margin:0 0 4px}
-  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1080px}
+  .sub{color:var(--muted);font-size:13px;margin-top:4px;max-width:1100px}
   .sub b{color:var(--foreground);font-weight:500}
-  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+  .legenda{font:500 11px/1 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:0 0 10px}
   code{font:12px var(--mono);background:var(--secondary);padding:0 4px;border-radius:4px}
-  svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  section{margin-top:40px}
+  svg.i{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
   svg.i.s14{width:14px;height:14px}
-  section{margin-top:36px}
-  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:12px 0 14px;flex-wrap:wrap}
+  svg.i.s12{width:12px;height:12px}
+  .abas{display:inline-flex;gap:2px;padding:2px;border-radius:8px;background:var(--card);box-shadow:0 0 0 1px var(--border);margin:6px 0 16px;flex-wrap:wrap}
   .abas button{all:unset;cursor:pointer;height:28px;padding:0 10px;border-radius:6px;font-size:12px;color:var(--muted);display:inline-flex;align-items:center}
   .abas button[aria-pressed="true"]{background:var(--sel);color:var(--foreground);font-weight:500}
-  .lado{display:grid;grid-template-columns:repeat(2,minmax(0,660px));gap:28px;align-items:start}
+  .corte{width:762px;height:150px;overflow:hidden;border-radius:12px;box-shadow:0 0 0 1px var(--border);background:#fff}
+  .print{width:762px;display:block;margin-top:-18px}
+  .palco{width:762px;position:relative;padding-top:250px}
+  .palco.estreito{width:440px}
 
-  .comp{background:var(--card);border-radius:16px;border:1px solid var(--border);box-shadow:var(--shadow-pop);position:relative}
-  .campo{min-height:56px;padding:14px 16px 4px;font-size:14px;line-height:1.6}
-  .campo .ph{color:var(--faint)}
-  .hoje .campo .ph{color:var(--muted)}
-  .caret{display:inline-block;width:1px;height:16px;background:var(--foreground);vertical-align:-3px}
+  /* ComposerShell */
+  .comp{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-pop);position:relative}
+  .campo{min-height:56px;max-height:240px;padding:14px 16px 0;font-size:14px;line-height:1.625;color:var(--foreground)}
+  .ph{color:var(--faint)}
+  .caret{display:inline-block;width:1px;height:17px;background:var(--foreground);vertical-align:-3px}
   .ficha{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px 0 2px;border-radius:6px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border);font:11px var(--mono);color:var(--muted);vertical-align:-6px;margin:0 2px}
-  .ficha i{width:20px;height:20px;border-radius:4px;background:#2a2d31;display:block}
-  .base{display:flex;align-items:center;gap:4px;padding:4px 10px 10px}
-  .esp{flex:1}
-  .ic{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--muted)}
-  .ic:hover{background:var(--sel-hover)}
-  .txt{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 8px;border-radius:7px;font-size:12px;color:var(--muted);white-space:nowrap}
-  .txt:hover{background:var(--sel-hover)}
-  .risco{color:var(--warning)}
-  .lg{width:16px;height:16px;border-radius:4px;background:var(--claude);display:grid;place-items:center;color:#fff;font:600 11px var(--sans)}
-  .caras{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 6px;border-radius:7px;font-size:12px;color:var(--muted)}
-  .caras span{display:inline-flex}
-  .caras i{width:18px;height:18px;border-radius:5px;display:inline-block;margin-left:-5px;box-shadow:0 0 0 2px var(--card)}
-  .caras i:first-child{margin-left:0}
-  .ctxtxt{font:11px var(--mono);color:var(--error)}
-  .anel{width:16px;height:16px}
-  .enviar{width:28px;height:28px;border-radius:50%;background:var(--foreground);color:#fff;display:grid;place-items:center}
-  .enviar.off{background:var(--secondary);color:var(--faint)}
-  .parar{width:28px;height:28px;border-radius:50%;background:var(--error);display:grid;place-items:center}
-  .parar i{width:9px;height:9px;border-radius:2px;background:#fff;display:block}
-  .par{display:inline-flex;height:28px;border-radius:999px;background:rgba(193,134,31,.10);box-shadow:inset 0 0 0 1px rgba(193,134,31,.32);overflow:hidden;color:var(--warning);font-size:12px}
-  .par span{display:inline-flex;align-items:center;gap:5px;padding:0 10px}
-  .par span+span{box-shadow:inset 1px 0 0 rgba(193,134,31,.32);padding:0 8px}
+  .ficha i{width:20px;height:20px;border-radius:4px;background:#26292d;display:block}
+  .rodape{display:flex;align-items:center;gap:8px;padding:4px 10px 10px}
+  .esq{display:flex;align-items:center;gap:6px;min-width:0;flex:1}
+  .dir{display:flex;align-items:center;gap:6px;margin-left:auto}
+  .btn-ic{width:32px;height:32px;border-radius:999px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+  .btn-ic:hover{background:var(--accent);color:var(--foreground)}
+  .btn-tx{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px;border-radius:8px;font-size:12px;font-weight:500;color:var(--muted);white-space:nowrap;cursor:pointer}
+  .btn-tx:hover{background:var(--accent);color:var(--foreground)}
+  .alerta{color:var(--warning)}
+  .caras{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 8px;border-radius:8px;font-size:12px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums}
+  .caras:hover{background:var(--accent)}
+  .caras .pilha{display:flex;align-items:center}
+  .cara{width:20px;height:20px;border-radius:6px;position:relative;box-shadow:0 0 0 1.5px var(--card)}
+  .cara+.cara{margin-left:-6px}
+  .cara::before,.cara::after{content:"";position:absolute;top:6px;width:4px;height:5px;border-radius:2px;background:#fff}
+  .cara::before{left:5px}.cara::after{right:5px}
+  .cara b{position:absolute;left:6px;right:6px;bottom:4px;height:3px;border-bottom:1.5px solid #fff;border-radius:0 0 6px 6px}
+  .anel{width:24px;height:24px;border-radius:999px;display:grid;place-items:center;cursor:pointer}
+  .anel:hover{background:var(--accent)}
+  .anel svg{width:16px;height:16px;transform:rotate(-90deg)}
+  .anel svg circle:first-child{opacity:.55}
+  .ctx-txt{font:11px var(--mono);font-variant-numeric:tabular-nums}
+  .enviar{width:32px;height:32px;border-radius:999px;background:var(--foreground);color:#fff;display:grid;place-items:center}
+  .enviar.off{opacity:.35}
+  .parar{width:32px;height:32px;border-radius:999px;background:var(--error);color:#fff;display:grid;place-items:center}
+  .par{display:inline-flex;height:28px;overflow:hidden;border-radius:999px;background:rgba(193,134,31,.12);box-shadow:inset 0 0 0 1px rgba(193,134,31,.30);color:var(--warning);font-size:12px}
+  .par span{display:inline-flex;align-items:center;gap:6px;padding:0 10px}
+  .par span+span{width:28px;padding:0;justify-content:center;box-shadow:inset 1px 0 0 rgba(193,134,31,.25)}
+  .logo{width:16px;height:16px;flex:none}
 
-  /* tira presa ao topo do composer (ADR-247) */
-  .tira{display:flex;align-items:center;gap:2px;height:32px;padding:0 6px;margin:0 14px;border-radius:10px 10px 0 0;background:var(--card);box-shadow:0 0 0 1px var(--border);font-size:12px;color:var(--muted)}
-  .seg{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px}
-  .seg:hover{background:var(--sel-hover)}
-  .seg.alerta{color:var(--warning)}
-  .gaveta{margin:0 14px;padding:10px 12px;background:var(--card);box-shadow:0 0 0 1px var(--border);font-size:12px;color:var(--muted);display:flex;align-items:center;gap:10px}
+  /* tira presa ao topo (BaseDoComposer, ADR-247/281) */
+  .tira{position:absolute;left:14px;right:14px;bottom:100%;display:flex;flex-direction:column}
+  .gaveta{background:var(--card);border:1px solid var(--border);border-bottom:0;border-radius:10px 10px 0 0;padding:10px 12px;font-size:12px;color:var(--muted);display:flex;align-items:center;gap:12px}
   .gaveta b{color:var(--foreground);font-weight:500}
-  .btn{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;background:var(--secondary);font-size:11px;color:var(--foreground)}
+  .faixa{height:30px;display:flex;align-items:center;gap:2px;padding:0 4px;background:var(--card);border:1px solid var(--border);border-bottom:0;border-radius:10px 10px 0 0;font-size:12px;color:var(--muted)}
+  .gaveta+.faixa{border-radius:0}
+  .seg{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 8px;border-radius:6px;white-space:nowrap}
+  .seg.aberto{background:var(--sel);color:var(--foreground)}
+  .seg.alerta,.seg.aberto.alerta{color:var(--warning)}
+  .btn-chip{display:inline-flex;align-items:center;height:24px;padding:0 8px;border-radius:6px;font-size:11px;font-weight:500;background:var(--secondary);color:var(--foreground);white-space:nowrap}
+  .btn-chip.ghost{background:transparent;color:var(--muted)}
 
-  /* seletor de identidade de hoje (IdentityPicker), com o esforço em slider */
-  .pop{position:absolute;right:40px;bottom:46px;width:440px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);overflow:hidden;z-index:3}
-  .pop .preset{display:flex;align-items:center;gap:4px;padding:8px 12px 0;font-size:12px;color:var(--faint)}
-  .pop .busca{display:flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-bottom:1px solid var(--border);font-size:13px;color:var(--faint)}
-  .pop .corpo{display:flex;height:236px}
-  .rail{width:44px;border-right:1px solid var(--border);background:rgba(244,244,242,.6);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
-  .rail span{width:32px;height:32px;border-radius:8px;display:grid;place-items:center}
-  .rail span.on{background:var(--sel)}
-  .lista{flex:1;padding:6px;overflow:hidden}
-  .lista .grp{font:11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 4px}
-  .lista .it{padding:6px 8px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;align-items:flex-start}
-  .lista .it small{display:block;font-size:11px;color:var(--faint)}
-  .lista .it.on{background:var(--sel)}
-  .lista .it .ok{color:var(--brass,#a9742b);font-size:12px}
-  /* o slider por etapas, discreto (referência: o seletor de esforço do GPT) */
+  /* seletor do motor (o de hoje), com o esforço em slider */
+  .pop{position:absolute;right:60px;bottom:calc(100% + 6px);width:456px;background:var(--popover);border-radius:12px;box-shadow:var(--shadow-pop);overflow:hidden;z-index:4}
+  .pop .preset{display:flex;align-items:center;gap:4px;padding:8px 14px 0;font-size:12px;color:var(--faint)}
+  .pop .busca{display:flex;align-items:center;gap:10px;height:42px;padding:0 14px;border-bottom:1px solid var(--border);font-size:14px;color:var(--faint)}
+  .pop .busca .caret{height:18px;margin-right:-6px}
+  .pop .corpo{display:flex;height:266px}
+  .pop .trilho-m{width:44px;border-right:1px solid var(--border);background:rgba(244,244,242,.55);display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
+  .pop .trilho-m span{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;color:var(--muted)}
+  .pop .trilho-m span.on{background:var(--sel)}
+  .pop .lista{flex:1;padding:6px;overflow:hidden}
+  .pop .grp{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint);padding:6px 8px 6px}
+  .pop .it{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;border-radius:6px;font-size:13px;color:var(--foreground)}
+  .pop .it small{display:block;font-size:11px;color:var(--faint);margin-top:1px}
+  .pop .it.on{background:var(--sel)}
+  .pop .it.foco{background:rgba(0,0,0,.035)}
+  .pop .it svg{color:var(--brass)}
   .esforco{border-top:1px solid var(--border);padding:10px 14px 12px}
-  .esforco .topo{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
-  .esforco .topo b{font-size:13px;font-weight:500}
-  .esforco .topo span{font-size:11px;color:var(--faint)}
-  .esforco .topo .reset{margin-left:auto;font-size:11px;color:var(--muted)}
-  .trilho{position:relative;height:20px;display:flex;align-items:center}
-  .trilho .base-t{position:absolute;left:0;right:0;height:4px;border-radius:2px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border)}
-  .trilho .cheio{position:absolute;left:0;height:4px;border-radius:2px;background:var(--foreground)}
-  .trilho .ponto{position:absolute;width:4px;height:4px;border-radius:50%;background:var(--faint);transform:translateX(-2px)}
-  .trilho .botao{position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25),0 0 0 1px var(--border-strong);transform:translateX(-8px)}
-  .rotulos{display:flex;justify-content:space-between;margin-top:6px;font-size:11px;color:var(--faint)}
-  .rotulos .on{color:var(--foreground)}
+  .esforco .topo{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .esforco .rot{font:500 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+  .esforco b{font-size:13px;font-weight:500}
+  .esforco .desc{font-size:11px;color:var(--faint)}
+  .esforco .volta{margin-left:auto;font-size:11px;color:var(--muted)}
+  .slider{position:relative;height:20px;display:flex;align-items:center;margin:0 8px}
+  .slider .t{position:absolute;left:0;right:0;height:4px;border-radius:2px;background:var(--secondary);box-shadow:inset 0 0 0 1px var(--border)}
+  .slider .c{position:absolute;left:0;height:4px;border-radius:2px;background:var(--foreground)}
+  .slider .p{position:absolute;width:4px;height:4px;border-radius:50%;background:var(--faint);transform:translateX(-2px)}
+  .slider .b{position:absolute;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.28),0 0 0 1px var(--border-strong);transform:translateX(-8px)}
+  .rotulos{display:flex;justify-content:space-between;margin:6px 0 0;font-size:11px;color:var(--faint)}
+  .rotulos .on{color:var(--foreground);font-weight:500}
 
-  [data-e]{display:none}
-  [data-e].on{display:revert}
-  .tabela{border-collapse:collapse;font-size:12px;width:100%;margin-top:12px}
-  .tabela td{text-align:left;padding:8px 14px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
-  .tabela td:first-child{color:var(--foreground);font-weight:500;width:130px}
-  ol.dec{max-width:1040px;margin:10px 0 0 18px;color:var(--muted)}
-  ol.dec li{margin:6px 0}
-  ol.dec b{color:var(--foreground);font-weight:500}
+  [data-e]:not(.on){display:none!important}
+  .duas{display:grid;grid-template-columns:repeat(2,minmax(0,560px));gap:32px;align-items:start;margin-top:16px}
+  .duas .palco{width:auto;padding-top:96px}
+  .duas .legenda{margin-bottom:0}
+  .nota{font-size:12px;line-height:1.55;color:var(--muted);max-width:560px;margin-top:12px}
+  .nota b{color:var(--foreground);font-weight:500}
+  .tabela{border-collapse:collapse;font-size:12px;max-width:1100px;margin-top:12px}
+  .tabela td{text-align:left;padding:8px 16px 8px 0;border-bottom:1px solid var(--divisor);vertical-align:top;color:var(--muted)}
+  .tabela td:first-child{color:var(--foreground);font-weight:500;width:150px}
 </style>
 </head>
 <body>
 
 <svg width="0" height="0" style="position:absolute">
-  <symbol id="clip" viewBox="0 0 24 24"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></symbol>
-  <symbol id="mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v3"/></symbol>
-  <symbol id="cad" viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></symbol>
+  <symbol id="clip" viewBox="0 0 24 24"><path d="m16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551"/></symbol>
+  <symbol id="mic" viewBox="0 0 24 24"><path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/></symbol>
   <symbol id="down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
-  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7M12 19V5"/></symbol>
-  <symbol id="escudo" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4M12 16h.01"/></symbol>
-  <symbol id="escudo-ok" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
-  <symbol id="zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
-  <symbol id="fila" viewBox="0 0 24 24"><path d="M16 5H3M16 12H3M9 19H3M16 16l5 3-5 3z"/></symbol>
-  <symbol id="camadas" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"/><path d="m3 12 9 5 9-5M3 17l9 5 9-5"/></symbol>
+  <symbol id="up" viewBox="0 0 24 24"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></symbol>
+  <symbol id="sq" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="shield-ok" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="shield-alert" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="M12 8v4"/><path d="M12 16h.01"/></symbol>
+  <symbol id="list-end" viewBox="0 0 24 24"><path d="M16 5H3"/><path d="M16 12H3"/><path d="M9 19H3"/><path d="m16 16-3 3 3 3"/><path d="M21 5v12a2 2 0 0 1-2 2h-6"/></symbol>
+  <symbol id="zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z" fill="currentColor"/></symbol>
+  <symbol id="search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83z"/><path d="M2 12a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 12"/><path d="M2 17a1 1 0 0 0 .58.91l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9A1 1 0 0 0 22 17"/></symbol>
+  <!-- marca do Claude (asterisco de raios), como o AgentLogo desenha -->
+  <symbol id="claude" viewBox="0 0 24 24"><g stroke="#d97757" stroke-width="2.6" stroke-linecap="round"><path d="M12 3v6"/><path d="M12 15v6"/><path d="M3 12h6"/><path d="M15 12h6"/><path d="m5.6 5.6 4.2 4.2"/><path d="m14.2 14.2 4.2 4.2"/><path d="m18.4 5.6-4.2 4.2"/><path d="m9.8 14.2-4.2 4.2"/></g></symbol>
+  <symbol id="codex" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5" fill="none" stroke="#16181b" stroke-width="2"/><path d="m9 10 2.5 2L9 14M13 14h3" fill="none" stroke="#16181b" stroke-width="2" stroke-linecap="round"/></symbol>
+  <symbol id="agy" viewBox="0 0 24 24"><path d="M4 19 12 5l8 14" fill="none" stroke="#16181b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="oc" viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="16" rx="1.5" fill="none" stroke="#16181b" stroke-width="2"/><rect x="9" y="9" width="6" height="6" fill="#16181b"/></symbol>
 </svg>
 
 <h1>Composer: menos coisa à vista, o resto no clique</h1>
-<p class="sub">Revisão 2, depois dos prints de 28/09. Referência: o composer do Codex (<b>"Peça qualquer coisa"</b> quase sumindo; à esquerda o <b>+</b> e o modo, que só aparece porque é arriscado; à direita o modelo em texto curto, o microfone e o enviar; o esforço mora dentro do seletor). O que fica do nosso: os especialistas como estão, e o seletor de motor, que abre no clique como hoje.</p>
+<p class="sub">Revisão 3. <b>Hoje</b> é o seu print real. A <b>proposta</b> é desenhada com a mesma fonte do app e as medidas das classes reais de cada peça. Decidido até aqui: motor à direita, perto do enviar; o chevron do enviar (disputa e missão) continua; o seletor de motor é o de hoje, com o esforço em slider por etapas; os especialistas ficam como estão; o modo continua sempre à vista, como hoje (Pede, Só lê, Planejar, Auto, Liberado), e só o ícone do Liberado ganha âmbar (ADR-167).</p>
 
-<div class="abas" id="estados">
-  <button aria-pressed="true" data-alvo="vazio">Vazio, em repouso</button>
-  <button aria-pressed="false" data-alvo="digitando">Digitando com imagens</button>
-  <button aria-pressed="false" data-alvo="rodando">Turno rodando</button>
-  <button aria-pressed="false" data-alvo="alto">Contexto alto</button>
-  <button aria-pressed="false" data-alvo="seletor">Clique no motor</button>
-</div>
+<section style="margin-top:24px">
+  <div class="legenda">Hoje · print de 28/09</div>
+  <div class="corte"><img class="print" src="../assets/composer/hoje-2026-09-28.png" alt="O composer de hoje"></div>
+</section>
 
-<div class="lado">
-  <div>
-    <div class="legenda">Hoje (print de 28/09)</div>
-    <div class="comp hoje">
-      <div class="campo">
-        <span data-e="vazio alto seletor" class="ph on">Peça algo…  ou / para comandos</span>
-        <span data-e="digitando">olha o que o codex faz aqui <span class="ficha"><i></i>1 · image.png</span> e o nosso <span class="ficha"><i></i>3 · image.png</span> polui muito<span class="caret"></span></span>
-        <span data-e="rodando" class="ph">Enter corrige agora · Tab envia no próximo turno…</span>
-      </div>
-      <div class="base">
-        <span class="ic"><svg class="i"><use href="#clip"/></svg></span>
-        <span class="txt">Claude Code · Opus 5.5 · h… <svg class="i s14"><use href="#cad"/></svg><svg class="i s14"><use href="#down"/></svg></span>
-        <span class="txt"><svg class="i s14 risco"><use href="#escudo"/></svg>Liberado</span>
-        <span class="caras"><span><i style="background:#5b8def"></i><i style="background:#f0b73c"></i><i style="background:#5b8def"></i></span>10</span>
-        <span class="ic"><svg class="i"><use href="#mic"/></svg></span>
-        <span class="esp"></span>
-        <span class="ctxtxt">contexto 85%</span>
-        <svg class="anel" viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="rgba(207,74,62,.2)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--error)" stroke-width="2.4" stroke-dasharray="43 50" transform="rotate(-90 10 10)"/></svg>
-        <span class="ic"><svg class="i s14"><use href="#down"/></svg></span>
-        <span class="enviar"><svg class="i s14"><use href="#up"/></svg></span>
-      </div>
-    </div>
-    <table class="tabela">
-      <tr><td>Linha de baixo</td><td>9 coisas à vista: clipe, motor com modelo e esforço cortados, cadeado, chevron, modo, especialistas, microfone, "contexto 85%" com anel, chevron do enviar.</td></tr>
-      <tr><td>Contexto</td><td>Texto vermelho e anel vermelho ao lado do enviar: o maior ruído da linha, e ele não pede nada agora.</td></tr>
-      <tr><td>Instrução</td><td>Mesmo cinza dos rótulos, atalho em prosa, "…" no fim.</td></tr>
-    </table>
+<section>
+  <div class="legenda">Proposta</div>
+  <div class="abas" id="estados">
+    <button aria-pressed="true" data-alvo="vazio">Vazio, em repouso</button>
+    <button aria-pressed="false" data-alvo="imagens">Digitando com imagens</button>
+    <button aria-pressed="false" data-alvo="rodando">Turno rodando</button>
+    <button aria-pressed="false" data-alvo="corrigindo">Digitando com o turno rodando</button>
+    <button aria-pressed="false" data-alvo="liberado">No Liberado</button>
+    <button aria-pressed="false" data-alvo="seletor">Clique no motor</button>
+    <button aria-pressed="false" data-alvo="estreito">Coluna estreita</button>
   </div>
 
-  <div>
-    <div class="legenda">Proposta</div>
-    <div data-e="alto">
-      <div class="tira"><span class="seg alerta" title="Contexto em 85% da janela do motor"><svg class="i s14"><use href="#camadas"/></svg>Contexto 85%</span><span class="esp"></span><span class="seg" style="color:var(--faint)">recolher</span></div>
-      <div class="gaveta"><span><b>85% do contexto usado.</b> Perto de o Claude Code resumir a conversa sozinho.</span><span class="esp"></span><span class="btn">Compactar agora</span></div>
-    </div>
+  <div class="palco" id="palco">
     <div class="comp">
       <div class="campo">
-        <span data-e="vazio alto seletor" class="ph on">Peça algo ao seu time</span>
-        <span data-e="digitando">olha o que o codex faz aqui <span class="ficha"><i></i>1 · image.png</span> e o nosso <span class="ficha"><i></i>3 · image.png</span> polui muito<span class="caret"></span></span>
-        <span data-e="rodando" class="ph">Corrigir agora ou deixar para depois</span>
+        <span class="ph" data-e="vazio liberado seletor">Peça algo ao seu time</span>
+        <span data-e="imagens">sobre o composer, olha como o codex faz <span class="ficha"><i></i>1 · image.png</span> e o seletor <span class="ficha"><i></i>2 · image.png</span> que eu gosto<span class="caret"></span></span>
+        <span class="ph" data-e="rodando estreito">Corrigir agora ou deixar para depois</span>
+        <span data-e="corrigindo">na verdade usa o parser novo das faturas<span class="caret"></span></span>
       </div>
-      <div class="base">
-        <span class="ic"><svg class="i"><use href="#clip"/></svg></span>
-        <span class="txt risco" title="Liberado: o agente age sem pedir"><svg class="i s14"><use href="#escudo"/></svg>Liberado</span>
-        <span class="caras" title="10 especialistas no time. Chamar com @"><span><i style="background:#5b8def"></i><i style="background:#f0b73c"></i><i style="background:#5b8def"></i></span>10</span>
-        <span class="esp"></span>
-        <svg data-e="vazio digitando rodando seletor" class="anel on" viewBox="0 0 20 20" title="Contexto 38%"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--border)" stroke-width="2.4"/><circle cx="10" cy="10" r="8" fill="none" stroke="var(--faint)" stroke-width="2.4" stroke-dasharray="19 50" transform="rotate(-90 10 10)"/></svg>
-        <span class="txt" title="Claude Code · Opus 5.5 · raciocínio alto. Clique para trocar"><span class="lg">C</span>Claude Code<svg class="i s14"><use href="#down"/></svg></span>
-        <span class="ic"><svg class="i"><use href="#mic"/></svg></span>
-        <span data-e="digitando" class="par"><span><svg class="i s14"><use href="#fila"/></svg>Depois</span><span><svg class="i s14"><use href="#zap"/></svg></span></span>
-        <span data-e="vazio alto seletor" class="enviar off on"><svg class="i s14"><use href="#up"/></svg></span>
-        <span data-e="rodando digitando" class="parar"><i></i></span>
+      <div class="rodape">
+        <div class="esq">
+          <span class="btn-ic" title="Anexar arquivo"><svg class="i"><use href="#clip"/></svg></span>
+          <span class="btn-tx" data-e="vazio imagens rodando corrigindo seletor estreito" title="Modo de execução: Pede"><svg class="i s14"><use href="#shield-ok"/></svg><span data-e="vazio imagens rodando corrigindo seletor">Pede</span></span>
+          <span class="btn-tx" data-e="liberado" title="Modo de execução: Liberado"><svg class="i s14 alerta"><use href="#shield-alert"/></svg>Liberado</span>
+          <span class="caras" title="10 especialistas"><span class="pilha"><span class="cara" style="background:#5b8def"><b></b></span><span class="cara" style="background:#f0b73c"><b></b></span><span class="cara" style="background:#6fa3f5"><b></b></span></span>10</span>
+        </div>
+        <div class="dir">
+          <span class="anel" title="contexto: 38% até a compactação automática"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--faint)" stroke-width="1.5"/><circle cx="10" cy="10" r="4" fill="none" stroke="var(--faint)" stroke-width="8" stroke-dasharray="9.6 25.1"/></svg></span>
+          <span class="btn-tx" title="Claude Code · Opus 5.5 · esforço alto. Clique para trocar"><svg class="logo"><use href="#claude"/></svg><span data-e="vazio imagens rodando corrigindo liberado seletor">Claude Code</span><svg class="i s12"><use href="#down"/></svg></span>
+          <span class="btn-ic" title="Ditar"><svg class="i"><use href="#mic"/></svg></span>
+          <span class="par" data-e="corrigindo"><span><svg class="i s14"><use href="#list-end"/></svg>Enfileirar</span><span><svg class="i s12"><use href="#zap"/></svg></span></span>
+          <span class="btn-ic" data-e="vazio imagens liberado seletor" title="Disputa e missão"><svg class="i"><use href="#down"/></svg></span>
+          <span class="enviar off" data-e="vazio liberado seletor"><svg class="i s14"><use href="#up"/></svg></span>
+          <span class="enviar" data-e="imagens"><svg class="i s14"><use href="#up"/></svg></span>
+          <span class="parar" data-e="rodando corrigindo estreito"><svg class="i s12"><use href="#sq"/></svg></span>
+        </div>
       </div>
-      <div data-e="seletor" class="pop">
-        <div class="preset">Sem preset <svg class="i s14"><use href="#down"/></svg></div>
-        <div class="busca">Buscar modelo do Claude Code…</div>
+
+      <div class="pop" data-e="seletor">
+        <div class="preset">Sem preset <svg class="i s12"><use href="#down"/></svg></div>
+        <div class="busca"><svg class="i"><use href="#search"/></svg><span class="caret"></span>Buscar modelo do Claude Code…</div>
         <div class="corpo">
-          <div class="rail"><span class="on"><span class="lg">C</span></span><span><span class="lg" style="background:#16181b">X</span></span><span><span class="lg" style="background:#6b4ce6">A</span></span><span><span class="lg" style="background:#5c6166">O</span></span></div>
+          <div class="trilho-m">
+            <span class="on"><svg class="logo"><use href="#claude"/></svg></span>
+            <span><svg class="logo"><use href="#codex"/></svg></span>
+            <span><svg class="logo"><use href="#agy"/></svg></span>
+            <span><svg class="logo"><use href="#oc"/></svg></span>
+          </div>
           <div class="lista">
             <div class="grp">Mesmo motor · mantém a sessão</div>
-            <div class="it"><div>Padrão<small>Deixa o Claude Code escolher</small></div></div>
-            <div class="it on"><div>Opus 5.5<small>Pin exato · o Opus mais novo, 1M nativo ($4/$20)</small></div><span class="ok">✓</span></div>
+            <div class="it foco"><div>Padrão<small>Deixa o Claude Code escolher</small></div></div>
+            <div class="it on"><div>Opus 5.5<small>Pin exato · o Opus mais novo, 1M nativo ($4/$20)</small></div><svg class="i"><use href="#check"/></svg></div>
             <div class="it"><div>Sonnet 5<small>Pin exato · 1M nativo, rápido e equilibrado</small></div></div>
             <div class="it"><div>Fable 5.1<small>Pin exato · topo de linha, 1M nativo ($10/$50)</small></div></div>
+            <div class="it"><div>Opus 5<small>Pin da versão anterior (1M nativo, $5/$25)</small></div></div>
           </div>
         </div>
         <div class="esforco">
-          <div class="topo"><b>Esforço alto</b><span>raciocina mais fundo</span><span class="reset">↺ Padrão</span></div>
-          <div class="trilho">
-            <div class="base-t"></div><div class="cheio" style="width:50%"></div>
-            <div class="ponto" style="left:0%"></div><div class="ponto" style="left:25%"></div><div class="ponto" style="left:75%"></div><div class="ponto" style="left:100%"></div>
-            <div class="botao" style="left:50%"></div>
+          <div class="topo"><span class="rot">Esforço</span><b>Alto</b><span class="desc">raciocina mais fundo</span><span class="volta"><svg class="i s12" style="vertical-align:-2px"><use href="#rotate"/></svg> Padrão</span></div>
+          <div class="slider">
+            <div class="t"></div><div class="c" style="width:50%"></div>
+            <div class="p" style="left:0%"></div><div class="p" style="left:25%"></div><div class="p" style="left:75%"></div><div class="p" style="left:100%"></div>
+            <div class="b" style="left:50%"></div>
           </div>
           <div class="rotulos"><span>baixo</span><span>médio</span><span class="on">alto</span><span>extra</span><span>máximo</span></div>
         </div>
       </div>
     </div>
-    <table class="tabela">
-      <tr><td>Linha de baixo</td><td>5 coisas em repouso: clipe, modo (só quando não é o seguro), especialistas, motor, microfone e enviar. O anel do contexto fica pequeno, sem número e sem cor.</td></tr>
-      <tr><td>Motor</td><td>Logo e nome do motor, à direita como no Codex. Modelo e esforço saem da linha: estão no hover e no seletor de hoje, que abre no clique (aba "Clique no motor"). O seletor fica igual, com uma troca: a faixa de botões do esforço vira um slider discreto por etapas, as etapas vindas do próprio motor, e "Padrão" vira o ↺ de voltar. O cadeado também sai; quem explica que trocar vira revezamento é o próprio seletor, como já faz.</td></tr>
-      <tr><td>Modo</td><td>Padrão e Só lê não aparecem (é o estado de sempre, e o seletor continua no menu do motor ou por atalho). Liberado aparece em âmbar, como o "Acesso completo" do Codex.</td></tr>
-      <tr><td>Contexto</td><td>Em repouso, só o anel cinza, número no hover. Quando pede ação (80%+), vira segmento da tira, com "Compactar agora" na gaveta, no mesmo molde da cota (ADR-281). A linha do enviar nunca fica vermelha.</td></tr>
-      <tr><td>Instrução</td><td>"Peça algo ao seu time", no tom de metadado, sem "…" e sem atalho em prosa. Rodando: "Corrigir agora ou deixar para depois"; quem mostra as duas saídas é o par Depois | ⚡ quando você digita.</td></tr>
-    </table>
   </div>
-</div>
+  <table class="tabela">
+    <tr><td>Instrução no campo</td><td>No cinza de metadado (<code>faint</code>), curta e sem "…". Rodando: "Corrigir agora ou deixar para depois"; quem mostra as duas saídas é o par Enfileirar | ⚡, que aparece quando você digita.</td></tr>
+    <tr><td>Motor</td><td>Só o logo e "Claude Code", à direita. Modelo e esforço ficam na dica e no seletor de hoje. O cadeado sai da linha: o seletor já separa "mesmo motor, mantém a sessão" de "outro motor".</td></tr>
+    <tr><td>Modo</td><td>Igual a hoje. Abaixo de 520px de rodapé, só o escudo (aba "Coluna estreita"), que é a regra que já existe.</td></tr>
+    <tr><td>Esforço</td><td>No seletor, a faixa de seis botões vira slider por etapas; as etapas vêm do motor (o Codex tem quatro), e "Padrão" é o voltar no canto.</td></tr>
+    <tr><td>Contexto</td><td>Em repouso, um medidor pequeno em pizza (lê como medida, não como carregando), cinza, número na dica. O que acontece quando ele sobe é a decisão abaixo.</td></tr>
+  </table>
+</section>
 
 <section>
-  <h2>Decisões para você</h2>
-  <ol class="dec">
-    <li><b>Modo seguro some da linha</b> (proposta), e o seletor de modo mora onde? Opções: dentro do seletor do motor (junto do esforço), ou no clique do próprio escudo que aparece só em hover.</li>
-    <li><b>Contexto alto vai para a tira</b> (proposta) ou continua na linha, só que sem texto e sem vermelho?</li>
-    <li><b>Motor à direita, perto do enviar</b> (como o Codex) ou continua à esquerda, logo depois do clipe?</li>
-    <li><b>O chevron do enviar</b> (disputa e missão) continua ao lado do enviar, ou vai para o clique longo / menu do enviar?</li>
-  </ol>
+  <h2>Contexto alto: A ou B?</h2>
+  <p class="sub">O mesmo momento nas duas: contexto em 85%, perto de o motor resumir a conversa sozinho.</p>
+  <div class="duas">
+    <div>
+      <div class="legenda">A · vai para a tira</div>
+      <div class="palco">
+        <div class="comp">
+          <div class="tira">
+            <div class="gaveta"><span style="white-space:nowrap"><b>85% do contexto.</b> Perto de resumir sozinho.</span><span style="flex:1"></span><span class="btn-chip ghost">Dispensar</span><span class="btn-chip">Compactar agora</span></div>
+            <div class="faixa"><span class="seg aberto alerta"><svg class="i s14"><use href="#layers"/></svg>Contexto 85%</span></div>
+          </div>
+          <div class="campo"><span class="ph">Peça algo ao seu time</span></div>
+          <div class="rodape">
+            <div class="esq"><span class="btn-ic"><svg class="i"><use href="#clip"/></svg></span><span class="btn-tx"><svg class="i s14"><use href="#shield-ok"/></svg>Pede</span><span class="caras"><span class="pilha"><span class="cara" style="background:#5b8def"><b></b></span><span class="cara" style="background:#f0b73c"><b></b></span><span class="cara" style="background:#6fa3f5"><b></b></span></span>10</span></div>
+            <div class="dir"><span class="anel"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--faint)" stroke-width="1.5"/><circle cx="10" cy="10" r="4" fill="none" stroke="var(--faint)" stroke-width="8" stroke-dasharray="21.4 25.1"/></svg></span><span class="btn-tx"><svg class="logo"><use href="#claude"/></svg>Claude Code<svg class="i s12"><use href="#down"/></svg></span><span class="btn-ic"><svg class="i"><use href="#mic"/></svg></span><span class="btn-ic"><svg class="i"><use href="#down"/></svg></span><span class="enviar off"><svg class="i s14"><use href="#up"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+      <p class="nota">Vira um segmento da tira, como a cota (ADR-281): nasce aberto na primeira vez, recolhe no clique, <b>Compactar agora</b> é o gesto, <b>Dispensar</b> encerra até a compactação. A linha do enviar nunca fica vermelha. Custo: o contexto passa a morar em dois lugares (anel sempre, segmento quando pede ação).</p>
+    </div>
+    <div>
+      <div class="legenda">B · fica na linha, sem texto e sem vermelho</div>
+      <div class="palco">
+        <div class="comp">
+          <div class="campo"><span class="ph">Peça algo ao seu time</span></div>
+          <div class="rodape">
+            <div class="esq"><span class="btn-ic"><svg class="i"><use href="#clip"/></svg></span><span class="btn-tx"><svg class="i s14"><use href="#shield-ok"/></svg>Pede</span><span class="caras"><span class="pilha"><span class="cara" style="background:#5b8def"><b></b></span><span class="cara" style="background:#f0b73c"><b></b></span><span class="cara" style="background:#6fa3f5"><b></b></span></span>10</span></div>
+            <div class="dir"><span class="anel" title="contexto: 85% até a compactação automática · clique para compactar"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="8" fill="none" stroke="var(--warning)" stroke-width="1.5"/><circle cx="10" cy="10" r="4" fill="none" stroke="var(--warning)" stroke-width="8" stroke-dasharray="21.4 25.1"/></svg></span><span class="btn-tx"><svg class="logo"><use href="#claude"/></svg>Claude Code<svg class="i s12"><use href="#down"/></svg></span><span class="btn-ic"><svg class="i"><use href="#mic"/></svg></span><span class="btn-ic"><svg class="i"><use href="#down"/></svg></span><span class="enviar off"><svg class="i s14"><use href="#up"/></svg></span></div>
+          </div>
+        </div>
+      </div>
+      <p class="nota">Só o medidor muda: fica âmbar a partir de 80%, sem o texto "contexto 85%" e sem vermelho. O clique abre o painel de contexto que já existe, com o compactar. Mais simples, e o aviso é mais discreto: dá para não ver.</p>
+    </div>
+  </div>
 </section>
 
 <script>
   const botoes = document.querySelectorAll("#estados button")
+  const palco = document.getElementById("palco")
   function aplicar(e) {
-    document.querySelectorAll("[data-e]").forEach((el) => el.classList.toggle("on", el.dataset.e.split(" ").includes(e)))
+    palco.querySelectorAll("[data-e]").forEach((el) => el.classList.toggle("on", el.dataset.e.split(" ").includes(e)))
+    palco.classList.toggle("estreito", e === "estreito")
+    palco.style.paddingTop = e === "seletor" ? "470px" : "12px"
   }
   botoes.forEach((b) => b.addEventListener("click", () => {
     botoes.forEach((o) => o.setAttribute("aria-pressed", String(o === b)))
