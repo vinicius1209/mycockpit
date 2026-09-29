@@ -71,6 +71,8 @@ export function presentFrotaTool(
     }
     case "conversation_title":
       return view("Dar título à conversa", str(i, "title"), "coordinate", detail)
+    case "deliver":
+      return view("Entregar arquivo", str(i, "path")?.split("/").pop() ?? null, "coordinate", detail)
     case "approval_prompt":
       return view("Pedir aprovação", str(i, "tool_name"), "coordinate", detail)
     case "process_start":

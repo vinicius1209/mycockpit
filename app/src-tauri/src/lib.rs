@@ -44,6 +44,7 @@ mod browser_janela;
 mod manutencao_do_banco;
 mod menu_da_janela;
 mod arquivo_ao_vivo;
+mod abrir_documento;
 mod migrar_pasta;
 mod browser_script;
 mod desktop;
@@ -912,9 +913,7 @@ pub fn run() {
             mcp_auth::mcp_oauth_login,
             mcp_auth::mcp_oauth_status,
             mcp_auth::mcp_oauth_logout,
-            browser::browser_start,
-            browser::browser_stop,
-            browser::browser_status,
+            browser::browser_start, browser::browser_stop, browser::browser_status,
             work_gateway::managed_process_stop,
             work_gateway::managed_process_stop_by_conv,
             work_gateway::managed_process_retry,
@@ -957,7 +956,7 @@ pub fn run() {
             browser_orfaos::browser_orfaos,
             migrar_pasta::migrar_pasta_do_projeto,
             browser_orfaos::browser_encerrar_orfao,
-            soltura::caminhos_soltos,
+            soltura::caminhos_soltos, abrir_documento::abrir_documento,
             browser_panel::browser_panel_open,
             browser_panel::browser_panel_context,
             despertador::set_keep_awake,

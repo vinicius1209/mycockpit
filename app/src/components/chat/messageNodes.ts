@@ -2,6 +2,7 @@
 // results…) nos blocos que a UI desenha. Fica FORA do componente pra ser testável
 // puro e não estragar o fast-refresh do MessageList.
 import { isTaskTool } from "@/lib/tasks"
+import { ehEntregaDeclarada } from "@/lib/entregas"
 import type { ChatItem } from "@/store/chat"
 
 export type ToolItem = Extract<ChatItem, { kind: "tool" }>
@@ -291,6 +292,9 @@ export function foldNodes(
       childrenByParent.has(it.parentToolId)
     )
       continue
+    // A entrega declarada aparece como cartão no fim do turno (ADR-286); a
+    // linha no grupo só repetiria. Se falhou, a linha fica: a falha é do fio.
+    if (it.kind === "tool" && ehEntregaDeclarada(it) && it.result?.ok !== false) continue
     if (it.kind === "tool" && isTaskTool(it.name)) {
       flush()
       if (it.name === "TaskCreate" && !planShownInTurn) {

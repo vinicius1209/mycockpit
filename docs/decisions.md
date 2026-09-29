@@ -10319,3 +10319,29 @@ considerou.
   px sem toque depois de parar.
 - **Não promete:** Safari nem WebKit. É o Chromium, com a tela, o toque e a
   identificação do aparelho.
+
+### ADR-286 · O agente declara o que entregou, e o documento abre no app padrão por uma porta que só abre documento ✅
+- **Contexto (29/09/2026):** E4 do lote 2 do Maestri (F5, D5 e D6). O cartão
+  de entrega do G1 só enxergava arquivo que o motor disse ter escrito
+  (`Write`, `add` do Codex): o PDF gerado por script em `/tmp`, o vídeo
+  exportado e o zip ficavam de fora. E o "Abrir no app padrão" do
+  visualizador de arquivos chamava `openPath`, que o `opener:default` não
+  libera: o botão falhava.
+- **Decisão:**
+  1. Ferramenta `deliver` no `frota-work` (caminho e uma frase de até 140
+     caracteres). O Rust confere que existe e é arquivo; relativo vale a
+     partir da raiz do turno. É declaração, não efeito: vale em todo modo,
+     inclusive o restrito. A instrução do `frota-work` pede o uso em uma
+     frase.
+  2. O fio: quando o turno tem entrega declarada, o cartão mostra só as
+     declaradas, com "tipo · tamanho · frase"; sem declaração, fica a
+     inferência do G1 (D5). A `deliver` que deu certo não vira linha no grupo
+     de ações (o cartão já diz); a que falhou fica, com nome humano ("Entregar
+     arquivo"). Sem seção "Entregas" na aba Conversa: a lista do que mudou já
+     é a aba Alterações (decisão da pessoa).
+  3. `abrir_documento` (Rust) abre no app padrão só o que está numa lista de
+     tipos de documento e mídia, e recusa arquivo com permissão de execução
+     mesmo com extensão de documento. Fica de fora o que roda código ao abrir
+     (html, svg, scripts, pacotes, apps). Entrega fora do projeto abre por
+     ela (D6); a recusa mostra na pasta, com o motivo. O visualizador de
+     arquivos passa a usar a mesma porta, e o botão volta a funcionar.

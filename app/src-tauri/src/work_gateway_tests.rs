@@ -27,14 +27,15 @@ fn processos_respeitam_modo_e_planejamento_enquanto_etapas_continuam_disponiveis
         .into_iter()
         .map(|tool| tool["name"].as_str().unwrap().to_owned())
         .collect();
-    // o título (ADR-246) não é efeito na máquina: vale até no modo restrito
-    assert_eq!(names, [WORK_PLAN_TOOL, WORK_UPDATE_TOOL, CONVERSATION_TITLE_TOOL]);
+    // o título (ADR-246) e a entrega declarada não são efeito na máquina:
+    // valem até no modo restrito
+    assert_eq!(names, [WORK_PLAN_TOOL, WORK_UPDATE_TOOL, CONVERSATION_TITLE_TOOL, ferramentas::DELIVER_TOOL]);
     assert_eq!(
         available_tools(Some(
             &json!({"ok":true,"result":{"ready":true,"processesAllowed":true}})
         ))
         .len(),
-        6
+        7
     );
 }
 
@@ -54,7 +55,7 @@ async fn listener_restrito_aceita_plano_mas_recusa_efeito_mesmo_em_chamada_diret
     let readiness = request_socket(listener.path(), "work_ready", &json!({}))
         .await
         .unwrap();
-    assert_eq!(available_tools(Some(&readiness)).len(), 3);
+    assert_eq!(available_tools(Some(&readiness)).len(), 4);
     for action in [PROCESS_START_TOOL, PROCESS_POLL_TOOL, PROCESS_STOP_TOOL] {
         let reply = request_socket(
             listener.path(),

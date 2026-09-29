@@ -3,11 +3,13 @@
 // relatório, planilha, imagem, vídeo. Vira cartão acima do recibo do turno
 // (G1, `docs/prototipos-maestri-plan.md`).
 //
-// Só o que o motor DISSE que escreveu conta. Arquivo gerado por comando de
-// shell (`pandoc -o`, script Python) não tem sinal confiável no stream, e
+// Só o que o motor DISSE conta: o arquivo que ele declarou com `deliver`
+// (ADR-286) ou, sem declaração, o que ele disse que escreveu. Arquivo gerado
+// por comando de shell (`pandoc -o`, script Python) só entra declarado:
 // adivinhar pelo comando seria inventar entrega.
 
 import type { ChatItem } from "@/store/chat"
+import { nomeDaTool } from "@/lib/toolFrota"
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>
 
@@ -22,6 +24,24 @@ const EXTENSOES = new Set([
 export interface Entrega {
   /** Como o motor escreveu: absoluto ou relativo à raiz da conversa. */
   caminho: string
+  /** A frase do agente, quando ele declarou a entrega (`deliver`). */
+  frase?: string
+}
+
+/** A ferramenta `deliver` do `frota-work` (ADR-286): o agente DECLARA o que
+ *  entregou, qualquer tipo, dentro ou fora do projeto. */
+export function ehEntregaDeclarada(tool: ToolItem): boolean {
+  return nomeDaTool(tool.name) === "deliver"
+}
+
+function declarada(tool: ToolItem): Entrega | null {
+  const r = tool.result
+  if (!ehEntregaDeclarada(tool) || !r || r.ok === false || r.interrupted) return null
+  const input = tool.input && typeof tool.input === "object" && !Array.isArray(tool.input) ? (tool.input as Record<string, unknown>) : {}
+  const caminho = typeof input.path === "string" ? input.path.trim() : ""
+  if (!caminho) return null
+  const frase = typeof input.summary === "string" ? input.summary.trim() : ""
+  return frase ? { caminho, frase } : { caminho }
 }
 
 export function ehEntregavel(caminho: string): boolean {
@@ -54,9 +74,19 @@ function caminhosEscritos(tool: ToolItem): string[] {
   return []
 }
 
-/** Entregas de UM trecho de itens, sem repetir caminho e na ordem em que o
- *  arquivo foi escrito pela última vez. Puro. */
+/** Entregas de UM trecho de itens, sem repetir caminho e na ordem da última
+ *  vez. Quando o agente declarou alguma, valem só as declaradas: ele disse o
+ *  que é entrega, e a inferência pelas edições cede (D5). Puro. */
 export function entregasDoTrecho(items: readonly ChatItem[]): Entrega[] {
+  const declaradas = new Map<string, Entrega>()
+  for (const it of items) {
+    if (it.kind !== "tool") continue
+    const e = declarada(it)
+    if (!e) continue
+    declaradas.delete(e.caminho)
+    declaradas.set(e.caminho, e)
+  }
+  if (declaradas.size) return [...declaradas.values()]
   const vistos = new Map<string, Entrega>()
   for (const it of items) {
     if (it.kind !== "tool") continue

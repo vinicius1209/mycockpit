@@ -15,6 +15,35 @@ use super::{
 /// agente já leu o pedido: ele é quem sabe dizer o assunto.
 pub const CONVERSATION_TITLE_TOOL: &str = "conversation_title";
 
+/// O agente declara o arquivo que entregou (F5 do lote 2 do Maestri): vira
+/// cartão no fim do turno. É declaração, não efeito: vale em todo modo, e
+/// abrir o arquivo continua gesto da pessoa.
+pub const DELIVER_TOOL: &str = "deliver";
+const FRASE_MAX: usize = 140;
+
+/// Confere no disco o que o agente diz ter entregado: existe, é arquivo. O
+/// caminho relativo vale a partir da raiz do turno.
+pub fn entregar(cwd: &str, args: &Value) -> Result<Value, String> {
+    let bruto = args.get("path").and_then(Value::as_str).map(str::trim).unwrap_or("");
+    if bruto.is_empty() {
+        return Err("path ausente".into());
+    }
+    let dado = std::path::Path::new(bruto);
+    let caminho = if dado.is_absolute() { dado.to_path_buf() } else { std::path::Path::new(cwd).join(dado) };
+    let meta = std::fs::metadata(&caminho).map_err(|_| format!("não achei {bruto}: gere o arquivo antes de entregar"))?;
+    if !meta.is_file() {
+        return Err("entregue um arquivo, não uma pasta".into());
+    }
+    let frase = args.get("summary").and_then(Value::as_str).map(str::trim).unwrap_or("");
+    if frase.chars().count() > FRASE_MAX || frase.contains('\n') {
+        return Err(format!("summary é uma frase de até {FRASE_MAX} caracteres"));
+    }
+    let caminho = caminho.canonicalize().unwrap_or(caminho);
+    Ok(json!({ "delivered": true, "path": caminho.to_string_lossy(), "bytes": meta.len() }))
+}
+
+const PEDIDO_DE_ENTREGA: &str = "Quando o trabalho produzir um arquivo para a pessoa abrir (relatório, planilha, imagem, vídeo, pacote), declare-o com";
+
 /// Aqui só se recusa o que não é título (vazio, várias linhas, parágrafo). O
 /// corte na régua da lista (44) e a limpeza fina são do front (`parseTitulo`),
 /// que já é o único dono delas.
@@ -41,7 +70,7 @@ pub fn titulo(args: &Value) -> Result<String, String> {
 /// de título vai só no primeiro turno, que é o único em que ele serve.
 pub fn instrucao(first_turn: bool) -> String {
     let mut s = format!(
-        "TELEMETRIA DE TRABALHO: em tarefas com várias etapas, use o MCP `{MCP_SERVER_NAME}` para publicar e atualizar o plano. Para processos longos (dev servers, watchers, containers), use `{PROCESS_START_TOOL}` quando disponível neste modo de permissão. Publique o plano por `{WORK_PLAN_TOOL}` e mantenha cada etapa atualizada ao iniciar/concluir por `{WORK_UPDATE_TOOL}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota."
+        "TELEMETRIA DE TRABALHO: em tarefas com várias etapas, use o MCP `{MCP_SERVER_NAME}` para publicar e atualizar o plano. Para processos longos (dev servers, watchers, containers), use `{PROCESS_START_TOOL}` quando disponível neste modo de permissão. Publique o plano por `{WORK_PLAN_TOOL}` e mantenha cada etapa atualizada ao iniciar/concluir por `{WORK_UPDATE_TOOL}`. Se usar a checklist nativa do provider, atualize os estados equivalentes também. Isso dá ao usuário visibilidade e controles honestos na Frota. {PEDIDO_DE_ENTREGA} `{DELIVER_TOOL}` (caminho e uma frase curta): ele vira um cartão na conversa."
     );
     if first_turn {
         s.push(' ');
@@ -66,10 +95,11 @@ pub fn pedido_de_titulo(tool: &str) -> String {
 pub fn instrucao_qualificada(first_turn: bool) -> String {
     let q = |tool: &str| format!("mcp__{MCP_SERVER_NAME}__{tool}");
     let mut s = format!(
-        "Use {} para dev servers, watchers, containers e outros processos longos quando disponível neste modo de permissão; isso mantém PID, saída e controle na Frota. Publique planos vivos com {} quando a tarefa tiver várias etapas e marque cada início/conclusão com {}. Se usar a checklist nativa, atualize os estados equivalentes também.",
+        "Use {} para dev servers, watchers, containers e outros processos longos quando disponível neste modo de permissão; isso mantém PID, saída e controle na Frota. Publique planos vivos com {} quando a tarefa tiver várias etapas e marque cada início/conclusão com {}. Se usar a checklist nativa, atualize os estados equivalentes também. {PEDIDO_DE_ENTREGA} {} (caminho e uma frase curta): ele vira um cartão na conversa.",
         q(PROCESS_START_TOOL),
         q(WORK_PLAN_TOOL),
         q(WORK_UPDATE_TOOL),
+        q(DELIVER_TOOL),
     );
     if first_turn {
         s.push(' ');
@@ -156,6 +186,18 @@ pub(super) fn tool_specs() -> Vec<Value> {
                 "required": ["title"]
             }
         }),
+        json!({
+            "name": DELIVER_TOOL,
+            "description": "Declara um arquivo que você entregou para a pessoa abrir (relatório, planilha, imagem, vídeo, pacote), dentro ou fora do projeto. A Frota confere que ele existe e mostra um cartão no fim do turno, com a sua frase. Não use para cada arquivo de código editado.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "path": { "type": "string", "description": "Caminho do arquivo, absoluto ou relativo à raiz do projeto" },
+                    "summary": { "type": "string", "description": "Uma frase curta em pt-BR dizendo o que é, até 140 caracteres" }
+                },
+                "required": ["path"]
+            }
+        }),
     ]
 }
 
@@ -190,5 +232,27 @@ mod tests {
         // e o resto da telemetria segue igual nos dois
         assert!(instrucao(false).starts_with("TELEMETRIA DE TRABALHO"));
         assert!(instrucao(true).starts_with(&instrucao(false)));
+    }
+
+    #[test]
+    fn entrega_confere_o_disco_e_aceita_relativo_a_raiz() {
+        let raiz = std::env::temp_dir().join(format!("frota-entrega-{}", std::process::id()));
+        std::fs::create_dir_all(raiz.join("saida")).unwrap();
+        std::fs::write(raiz.join("saida/relatorio.pdf"), b"%PDF-1.7").unwrap();
+        let cwd = raiz.to_string_lossy();
+        let ok = entregar(&cwd, &json!({ "path": "saida/relatorio.pdf", "summary": "Relatório de setembro" })).unwrap();
+        assert_eq!(ok["bytes"], 8);
+        assert!(ok["path"].as_str().unwrap().ends_with("saida/relatorio.pdf"));
+        assert!(entregar(&cwd, &json!({ "path": "saida/nao-existe.pdf" })).unwrap_err().contains("não achei"));
+        assert!(entregar(&cwd, &json!({ "path": "saida" })).unwrap_err().contains("pasta"));
+        assert!(entregar(&cwd, &json!({ "path": "saida/relatorio.pdf", "summary": "a\nb" })).is_err());
+        assert!(entregar(&cwd, &json!({})).unwrap_err().contains("path"));
+        let _ = std::fs::remove_dir_all(&raiz);
+    }
+
+    #[test]
+    fn a_instrucao_apresenta_a_entrega_nos_dois_caminhos() {
+        assert!(instrucao(false).contains("`deliver`"));
+        assert!(instrucao_qualificada(false).contains("mcp__frota-work__deliver"));
     }
 }

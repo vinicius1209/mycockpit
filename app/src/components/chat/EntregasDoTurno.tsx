@@ -16,6 +16,7 @@ import { iniciarArrasto } from "@/components/common/CamadaDeArrasto"
 import { useRaizEfetiva } from "@/components/layout/raizEfetiva"
 import { controle } from "@/components/ui/controle"
 import { avisar } from "@/lib/avisos"
+import { abrirDocumento } from "@/lib/abrirDocumento"
 import { nomeDoCaminho } from "@/lib/arquivoCitado"
 import { isImagePath } from "@/lib/fileLink"
 import { isTauri } from "@/lib/db"
@@ -79,26 +80,37 @@ function useNoDisco(caminhos: string[]): Map<string, number> | undefined {
 }
 
 /** Dentro da raiz, abre na aba do arquivo; imagem de fora também. Outro
- *  arquivo de fora a aba não lê (raízes permitidas, `sources.rs`) e abrir no
- *  app padrão pede permissão que o app não tem: mostra na pasta. */
+ *  arquivo de fora a aba não lê (raízes permitidas, `sources.rs`): abre no app
+ *  padrão pela porta que só abre documento (ADR-286), e o que ela recusa
+ *  (executável, tipo que roda código) aparece na pasta, com o motivo. */
 function abrirEntrega(caminho: string, rel: string | null, projectPath: string | null): void {
   if (rel) {
     void abrirMencaoDeArquivo({ rel, abs: caminho, line: null }, projectPath)
   } else if (isImagePath(caminho)) {
     useApp.getState().openFileTab(caminho)
   } else {
-    void revealItemInDir(caminho).catch(() => avisar.erro("Não encontrei o arquivo (ele ainda existe?)"))
+    void abrirDocumento(caminho).catch((motivo: unknown) => {
+      avisar.nota(String(motivo))
+      void revealItemInDir(caminho).catch(() => avisar.erro("Não encontrei o arquivo (ele ainda existe?)"))
+    })
   }
 }
 
+/** A linha de baixo do cartão: tipo, tamanho e a frase do agente. Puro. */
+export function linhaDaEntrega(caminho: string, bytes: number | null, frase?: string): string {
+  const meta = metaDaEntrega(caminho, bytes)
+  return frase ? `${meta} · ${frase}` : meta
+}
+
 export function EntregasDoTurno({ entregas }: { entregas: Entrega[] }) {
+  const frases = useMemo(() => entregas.map((e) => e.frase), [entregas])
   const raiz = useRaizEfetiva()
   const projectPath = useApp((s) => s.projects.find((p) => p.id === s.activeProjectId)?.path ?? null)
   const abs = useMemo(() => entregas.map((e) => caminhoAbsoluto(e.caminho, raiz)), [entregas, raiz])
   const disco = useNoDisco(abs)
   return (
     <div className="flex flex-col items-start gap-1.5" aria-label="Arquivos entregues neste turno">
-      {abs.map((caminho) => {
+      {abs.map((caminho, i) => {
         const sumiu = disco !== undefined && !disco.has(caminho)
         const rel = relativoARaiz(caminho, raiz)
         return (
@@ -117,11 +129,12 @@ export function EntregasDoTurno({ entregas }: { entregas: Entrega[] }) {
                       )
                   : undefined
               }
-              className={cn(CASCA_DO_CARTAO_DE_ARQUIVO, "min-w-[220px] pr-9", sumiu && "cursor-default opacity-60 hover:bg-secondary/60")}
+              title={frases[i]}
+              className={cn(CASCA_DO_CARTAO_DE_ARQUIVO, "min-w-[220px] max-w-[360px] pr-9", sumiu && "cursor-default opacity-60 hover:bg-secondary/60")}
             >
               <QuadroDeArquivo
                 caminho={caminho}
-                meta={sumiu ? "não está mais no disco" : metaDaEntrega(caminho, disco?.get(caminho) ?? null)}
+                meta={sumiu ? "não está mais no disco" : linhaDaEntrega(caminho, disco?.get(caminho) ?? null, frases[i])}
               />
             </button>
             {!sumiu && (

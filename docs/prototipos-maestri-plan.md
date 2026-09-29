@@ -303,7 +303,7 @@ Conferido no código depois de entregue. Corrigido no commit `d635dc1`:
 
 Achado que NÃO é desta frente, deixado para quem cuida:
 
-- **"Abrir no app padrão" do `ProjectFileViewer.tsx:373` não tem permissão.**
+- ✅ (ADR-286, porta `abrir_documento`) **"Abrir no app padrão" do `ProjectFileViewer.tsx:373` não tem permissão.**
   Ele chama `openPath` do plugin opener, e o `opener:default` do Tauri 2.5.4
   só libera abrir URL e mostrar na pasta (conferido no `default.toml` do
   plugin). O caminho certo é um comando Rust que abra só documento, nunca

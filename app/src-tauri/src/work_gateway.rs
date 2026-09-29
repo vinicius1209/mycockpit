@@ -24,7 +24,7 @@ pub const WORK_PLAN_TOOL: &str = "work_plan";
 pub const WORK_UPDATE_TOOL: &str = "work_update";
 pub mod ferramentas;
 pub use ferramentas::CONVERSATION_TITLE_TOOL;
-use ferramentas::tool_specs;
+use ferramentas::{tool_specs, DELIVER_TOOL};
 pub const SOCK_ENV: &str = "FROTA_WORK_SOCK";
 
 const TAIL_LINES: usize = 240;
@@ -770,13 +770,10 @@ async fn handle_request<R: tauri::Runtime>(
             Ok(json!({ "accepted": true }))
         }
         WORK_UPDATE_TOOL => {
-            emit_work(
-                &app,
-                "work_update",
-                json!({ "runId": run_id, "convId": conv_id, "task": args }),
-            );
+            emit_work(&app, "work_update", json!({ "runId": run_id, "convId": conv_id, "task": args }));
             Ok(json!({ "accepted": true }))
         }
+        DELIVER_TOOL => ferramentas::entregar(&cwd, &args),
         CONVERSATION_TITLE_TOOL => ferramentas::titulo(&args).map(|title| {
             emit_work(&app, "conversation_title", json!({ "runId": run_id, "convId": conv_id, "title": title }));
             json!({ "accepted": true })

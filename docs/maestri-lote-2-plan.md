@@ -1,6 +1,6 @@
 # Plano · Estudo do Maestri, lote 2
 
-> **Status (29/09/2026):** E1, E2 e E3 entregues. Decisões respondidas (tabela no fim).
+> **Status (29/09/2026):** E1 a E4 entregues. Decisões respondidas (tabela no fim).
 > Mock canônico: `docs/mocks/maestri-lote-2.html`. Origem: §11 de
 > `docs/prototipos-maestri-plan.md` e o estudo
 > `docs/competitors-maestri-2026-09-27.md`.
@@ -60,7 +60,7 @@ principal não cresce (a lib vira chunk próprio).
 Aceite: página responsiva real muda de layout no celular; o agente captura a
 mesma viewport; reabrir o projeto mantém o tamanho.
 
-## E4 · F5, entrega declarada (M) · depende de D5 e D6
+## E4 · F5, entrega declarada (M) · ✅ entregue (ADR-286)
 
 1. Ferramenta `deliver` no `frota-work` (caminho e frase), conferida no disco.
 2. Cartão do G1 no fim do turno com a frase; declarada substitui a inferida no

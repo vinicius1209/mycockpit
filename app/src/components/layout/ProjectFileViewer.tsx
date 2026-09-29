@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { Copy, Eye, FileWarning, FolderOpen, LoaderCircle, Lock, Pencil, SquareArrowOutUpRight } from "lucide-react"
-import { openPath, revealItemInDir } from "@tauri-apps/plugin-opener"
+import { revealItemInDir } from "@tauri-apps/plugin-opener"
+import { abrirDocumento } from "@/lib/abrirDocumento"
 import { avisar } from "@/lib/avisos"
 import { Markdown } from "@/components/common/Markdown"
 import { OpenInEditor } from "@/components/common/OpenInEditor"
@@ -370,7 +371,7 @@ function SemPrevia({ caminho, completo, tamanho }: { caminho: string; completo: 
         </div>
         {isTauri() && (
           <div className="mt-3 flex gap-2">
-            <Button size="compacto" onClick={() => void openPath(completo).catch(falhou)}>
+            <Button size="compacto" onClick={() => void abrirDocumento(completo).catch(falhou)}>
               <SquareArrowOutUpRight />
               Abrir no app padrão
             </Button>
