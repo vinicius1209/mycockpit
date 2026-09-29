@@ -20,6 +20,8 @@ import { emoldurarCitacoes } from "@/lib/citacao"
 import { emoldurarColagens } from "@/lib/colagem"
 import { emoldurarMarcacoes } from "@/lib/marcacao"
 import { withNotasDoBloco } from "@/store/stickyNotes"
+import { useChat } from "@/store/chat"
+import { comporConversasNoPrompt } from "@/lib/conversaCitada"
 import { finalizeSlashExpansion } from "@/lib/slashDispatch"
 import type { SlashExpansion } from "@/lib/slashCommands"
 import type { Attachment } from "@/lib/attachments"
@@ -58,7 +60,9 @@ export function withNotasDoTurno(
 ): { prompt: string; attachments: Attachment[] } {
   // Citações (capricho R4), colagens grandes (R7), marcações e arquivos soltos
   // (ADR-252) viram moldura de dado antes das notas.
-  const material = emoldurarArquivos(texto, (corpo) => emoldurarMarcacoes(emoldurarColagens(emoldurarCitacoes(corpo))))
+  const emoldurado = emoldurarArquivos(texto, (corpo) => emoldurarMarcacoes(emoldurarColagens(emoldurarCitacoes(corpo))))
+  // Conversas citadas com "@" (ADR-287): a moldura é também a concessão do run.
+  const material = comporConversasNoPrompt(emoldurado, useChat.getState().conversationsByProject?.[projectId] ?? [])
   const bloco = withNotasDoBloco(withNotes(convId, items, material), { projectId, convId })
   return { prompt: bloco.prompt, attachments: juntarAnexos(attachments, bloco.anexos) }
 }

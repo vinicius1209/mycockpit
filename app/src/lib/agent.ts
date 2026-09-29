@@ -1,4 +1,5 @@
 import { pastasDoTurno as pastasCitadas } from "@/lib/arquivoCitado"
+import { concessaoDoPrompt } from "@/lib/conversaCitada"
 import type { CausaDoCorte } from "@/lib/corte"
 import type { DeferredKind } from "@/lib/work"
 import { invoke, Channel } from "@tauri-apps/api/core"
@@ -189,6 +190,9 @@ export async function runAgent(
   // envio. Sai da moldura do próprio prompt (o acesso é exatamente o que ele
   // manda ler) e só vai para motor que recebe pasta extra (capability).
   const pastasDoTurno = agentDef(agent)?.pastasExtras ? pastasCitadas(prompt, cwd) : []
+  // ADR-287: as conversas citadas saem da moldura do próprio prompt, e só vão
+  // para motor que consulta o MCP de contexto (capability).
+  const conversasCitadas = agentDef(agent)?.contextMcp ? concessaoDoPrompt(prompt) : null
   // Thread desta execução: o `resume` é a aposta; o `session` confirma (ou
   // desmente, quando o resume falhou e o CLI abriu outra).
   let threadId = resume
@@ -231,6 +235,7 @@ export async function runAgent(
     usageBaseline: baseline,
     costBaseline,
     pastasDoTurno,
+    conversasCitadas,
     onEvent: channel,
   })
 }

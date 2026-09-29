@@ -435,6 +435,8 @@ pub async fn run_agent(
     // ADR-252: pastas dos arquivos soltos de fora do projeto, só para este run.
     // Option = invoke antigo → None (nenhuma pasta a mais).
     pastas_do_turno: Option<Vec<String>>,
+    // ADR-287: conversas citadas com @, lidas pelo MCP de contexto neste run.
+    conversas_citadas: Option<crate::context_gateway::citadas::Concessao>,
     attachments: Vec<Attachment>,
     on_event: Channel<AgentEvent>,
     registry: tauri::State<'_, RunRegistry>,
@@ -595,11 +597,8 @@ pub async fn run_agent(
                     server_bin: bin.to_string_lossy().to_string(),
                     root: cwd.clone(),
                     conv_id: conv_id.clone(),
-                    db_path: app
-                        .path()
-                        .app_data_dir()
-                        .ok()
-                        .map(|p| p.join(crate::BANCO).to_string_lossy().to_string()),
+                    db_path: app.path().app_data_dir().ok().map(|p| p.join(crate::BANCO).to_string_lossy().to_string()),
+                    citadas: conversas_citadas.clone().unwrap_or_default(),
                 })
         };
     // Substrato uniforme de trabalho/processos. O listener vive pelo run inteiro;

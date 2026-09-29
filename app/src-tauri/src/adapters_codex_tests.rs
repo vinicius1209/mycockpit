@@ -34,7 +34,7 @@ fn codex_context_gateway_vem_antes_do_exec_e_nao_toca_config_global() {
         server_bin: "/app/frota".into(),
         root: "/repo".into(),
         conv_id: "c1".into(),
-        db_path: None,
+        db_path: None, citadas: Default::default(),
     });
     let mut a = CodexAdapter::default();
     let args = argv(&a.build_command(&r).unwrap());
@@ -110,7 +110,7 @@ fn codex_nenhum_override_de_config_depois_do_subcomando_exec() {
         server_bin: "/app/frota".into(),
         root: "/repo".into(),
         conv_id: "c1".into(),
-        db_path: None,
+        db_path: None, citadas: Default::default(),
     });
     r.work_gateway = Some(crate::work_gateway::GatewayConfig {
         server_bin: "/app/frota".into(),

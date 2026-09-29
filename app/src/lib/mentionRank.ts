@@ -27,7 +27,7 @@
  * sinais, sai lista ordenada.
  */
 
-export type KindDeMencao = "agent" | "nota" | "file"
+export type KindDeMencao = "agent" | "nota" | "conversa" | "file"
 
 export interface ItemDeMencao {
   value: string
@@ -57,10 +57,13 @@ const NAO_CASOU = 99
 const PESO_KIND: Record<KindDeMencao, number> = {
   agent: 0,
   nota: 1,
-  file: 2,
+  conversa: 2,
+  file: 3,
 }
 
 function nomeDe(value: string, kind: KindDeMencao): string {
+  // A conversa casa pelo nome, não pelo `conversa/` que todas têm.
+  if (kind === "conversa") return value.slice(value.indexOf("/") + 1)
   if (kind !== "file") return value
   const corte = value.lastIndexOf("/")
   return corte < 0 ? value : value.slice(corte + 1)
@@ -81,7 +84,8 @@ export function indexarMencoes(
       ...it,
       base,
       baseLower: base.toLowerCase(),
-      valueLower: it.value.toLowerCase(),
+      // Na conversa o "caminho" é o próprio nome: o `conversa/` casaria tudo.
+      valueLower: it.kind === "conversa" ? base.toLowerCase() : it.value.toLowerCase(),
       ordem,
     }
   })

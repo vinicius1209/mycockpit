@@ -48,7 +48,7 @@ fn claude_registra_context_gateway_e_allowlist_read_only() {
         server_bin: "/app/frota".into(),
         root: "/repo".into(),
         conv_id: "c1".into(),
-        db_path: Some("/data/frota.db".into()),
+        db_path: Some("/data/frota.db".into()), citadas: Default::default(),
     });
     let mut a = ClaudeAdapter::default();
     let args = argv(&a.build_command(&r).unwrap());

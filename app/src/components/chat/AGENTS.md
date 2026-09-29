@@ -229,6 +229,15 @@ nesses gestos que apagava o que a pessoa estava digitando (K1).
   projeto vale só naquele envio: `runAgent` a lê da moldura e manda
   `pastasDoTurno`, só para motor com `pastasExtras`.
 
+## Conversa citada com @ (ADR-287)
+
+- `@conversa/<slug>-<id8>` segue o idioma da nota: o menu oferece, o pill
+  mostra o nome, e o envio resolve na porta `withNotasDoTurno`, que põe a
+  moldura `<conversas-citadas>` antes do texto. A concessão do MCP de contexto
+  sai DESSA moldura no `runAgent` (`concessaoDoPrompt`): não crie outro
+  caminho para abrir leitura de conversa, ou o agente poderia ler o que o
+  prompt não disse que ele pode.
+
 ## Mantenha este arquivo verdadeiro
 
 Mudou a ordem do `despacharEnvio`, o que aparece durante o preparo, ou quando a

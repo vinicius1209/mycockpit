@@ -30,6 +30,7 @@ import { useSlashCommands } from "@/hooks/useSlashCommands"
 import { slashEmptyHint } from "@/lib/slashCommands"
 import { useStickyNotes, selectNotesFor } from "@/store/stickyNotes"
 import { itensDeNota } from "@/components/notes/noteMention"
+import { enderecosDeConversa } from "@/lib/conversaCitada"
 import { arquivosTocados } from "@/lib/mentionRank"
 import { usePromptHistory } from "@/hooks/usePromptHistory"
 import { useAttachments } from "@/hooks/useAttachments"
@@ -431,6 +432,12 @@ export function CommandConsole({
     () => itensDeNota(notasVisiveis).map((i) => i.value),
     [notasVisiveis],
   )
+  // ADR-287: as outras conversas do projeto, estáveis por CONTEÚDO (a lib do
+  // "@" refaz a busca quando a prop troca de identidade).
+  const chaveDasConversas = useChat((s) =>
+    enderecosDeConversa(s.conversationsByProject?.[project?.id ?? ""] ?? [], activeId).join("\n"),
+  )
+  const enderecosDasConversas = useMemo(() => (chaveDasConversas ? chaveDasConversas.split("\n") : []), [chaveDasConversas])
 
   const slashOpen = showSlash && !hasCommandPill
   const slashBridge = {
@@ -470,6 +477,7 @@ export function CommandConsole({
         mentionPersisted={persistedMentions}
         mentionProjectRoot={project?.path}
         mentionNotes={enderecosDeNota}
+        mentionConversas={enderecosDasConversas}
         mentionTouched={arquivosDaConversa}
         onMentionValuesChange={(values) => {
           const id = useChat.getState().activeId

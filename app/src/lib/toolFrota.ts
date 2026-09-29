@@ -83,10 +83,15 @@ export function presentFrotaTool(
       return view("Parar processo", str(i, "process_id"), "execute", detail)
     case "context_manifest":
       return view("Ler o índice da memória", null, "inspect", detail)
-    case "context_search":
-      return view("Buscar na memória", str(i, "query"), "inspect", detail)
+    case "context_search": {
+      const conversa = str(i, "conversation")
+      const verbo = !conversa ? "Buscar na memória" : conversa === "todas" ? "Buscar nas conversas do projeto" : "Buscar na conversa citada"
+      return view(verbo, str(i, "query"), "inspect", detail)
+    }
     case "context_read":
-      return view("Ler a memória", str(i, "ref"), "inspect", detail)
+      return /^conversation:[^:]+:item:/.test(str(i, "ref") ?? "")
+        ? view("Ler a conversa citada", null, "inspect", detail)
+        : view("Ler a memória", str(i, "ref"), "inspect", detail)
     // frota-desktop: nomes só nossos, casam puros também.
     case "desktop_status":
       return view("Ver o estado da tela", null, "inspect", detail)

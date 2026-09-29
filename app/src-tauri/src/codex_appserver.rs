@@ -1314,7 +1314,7 @@ mod tests {
             server_bin: "/app/mycockpit".into(),
             root: "/repo".into(),
             conv_id: "c1".into(),
-            db_path: Some("/data/mycockpit.db".into()),
+            db_path: Some("/data/mycockpit.db".into()), citadas: Default::default(),
         });
         let cmd = app_server_command(&r);
         let args: Vec<String> = cmd

@@ -21,6 +21,7 @@ pub const READ_TOOL: &str = "context_read";
 pub const ROOT_ENV: &str = "FROTA_CONTEXT_ROOT";
 pub const CONV_ENV: &str = "FROTA_CONTEXT_CONV_ID";
 pub const DB_ENV: &str = "FROTA_CONTEXT_DB";
+#[path = "context_citadas.rs"] pub mod citadas;
 
 const MCP_PROTOCOL_VERSION: &str = "2024-11-05";
 const MCP_KNOWN_VERSIONS: [&str; 3] = ["2024-11-05", "2025-03-26", "2025-06-18"];
@@ -39,11 +40,13 @@ pub struct GatewayConfig {
     pub root: String,
     pub conv_id: String,
     pub db_path: Option<String>,
+    /// Conversas citadas com `@` neste envio (ADR-287); vazia não abre nada.
+    pub citadas: citadas::Concessao,
 }
 
 impl GatewayConfig {
     pub fn apply_env(&self, cmd: &mut Command) {
-        cmd.env(ROOT_ENV, &self.root).env(CONV_ENV, &self.conv_id);
+        cmd.env(ROOT_ENV, &self.root).env(CONV_ENV, &self.conv_id).envs(self.citadas.ambiente());
         if let Some(db) = &self.db_path {
             cmd.env(DB_ENV, db);
         }
@@ -54,6 +57,7 @@ impl GatewayConfig {
         let mut env = serde_json::Map::new();
         env.insert(ROOT_ENV.into(), json!(self.root));
         env.insert(CONV_ENV.into(), json!(self.conv_id));
+        env.extend(self.citadas.ambiente().map(|(k, v)| (k.to_string(), json!(v))));
         if let Some(db) = &self.db_path {
             env.insert(DB_ENV.into(), json!(db));
         }
@@ -78,11 +82,8 @@ impl GatewayConfig {
         // O Codex não herda o ambiente arbitrário do processo pai ao spawnar
         // MCPs. Declare cada valor também no bloco `env` do server; os
         // overrides continuam efêmeros e o CLI mascara os valores em `mcp get`.
-        for (key, value) in [
-            (ROOT_ENV, Some(self.root.as_str())),
-            (CONV_ENV, Some(self.conv_id.as_str())),
-            (DB_ENV, self.db_path.as_deref()),
-        ] {
+        let [(ce, cv), (te, tv)] = self.citadas.ambiente();
+        for (key, value) in [(ROOT_ENV, Some(self.root.as_str())), (CONV_ENV, Some(self.conv_id.as_str())), (DB_ENV, self.db_path.as_deref()), (ce, Some(cv.as_str())), (te, Some(tv.as_str()))] {
             if let Some(value) = value {
                 let value = serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
                 cmd.arg("-c")
@@ -206,11 +207,12 @@ fn tool_specs() -> Vec<Value> {
         }),
         json!({
             "name": SEARCH_TOOL,
-            "description": "Busca sob demanda somente no histórico SQLite da conversa atual. Retorna referências compactas; use context_read para expandir apenas as relevantes.",
+            "description": format!("Busca sob demanda no histórico SQLite da conversa atual (ou de uma conversa que a pessoa citou com @ neste envio, pelo parâmetro conversation). Retorna referências compactas; use context_read para expandir apenas as relevantes.{}", citadas::aviso_da_busca(&citadas::Concessao::da_env())),
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Termos ou frase a localizar." },
+                    "conversation": { "type": "string", "description": "Id de uma conversa citada neste envio, ou \"todas\" quando a pessoa citou todas as do projeto. Sem ele, a conversa atual." },
                     "limit": { "type": "integer", "minimum": 1, "maximum": MAX_SEARCH_RESULTS }
                 },
                 "required": ["query"],
@@ -224,7 +226,7 @@ fn tool_specs() -> Vec<Value> {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "ref": { "type": "string", "description": "conversation:item:N, manifest ou path relativo ao cwd." },
+                    "ref": { "type": "string", "description": "conversation:item:N, conversation:<id>:item:N (conversa citada), manifest ou path relativo ao cwd." },
                     "start_line": { "type": "integer", "minimum": 1 },
                     "max_lines": { "type": "integer", "minimum": 1, "maximum": MAX_READ_LINES },
                     "max_chars": { "type": "integer", "minimum": 256, "maximum": MAX_READ_CHARS }
@@ -242,26 +244,19 @@ fn call_tool(name: &str, args: &Value) -> Value {
         MANIFEST_TOOL => read_manifest_from_env(),
         SEARCH_TOOL => {
             let query = args.get("query").and_then(Value::as_str).unwrap_or("");
-            let limit = args
-                .get("limit")
-                .and_then(Value::as_u64)
-                .unwrap_or(6)
-                .clamp(1, MAX_SEARCH_RESULTS as u64) as usize;
-            search_from_env(query, limit)
+            let limit = args.get("limit").and_then(Value::as_u64).unwrap_or(6).clamp(1, MAX_SEARCH_RESULTS as u64) as usize;
+            match args.get("conversation").and_then(Value::as_str).map(str::trim).filter(|c| !c.is_empty()) {
+                Some(pedida) => env_context().and_then(|(_, conv, db)| {
+                    citadas::buscar(&db.ok_or("SQLite da Frota indisponível neste run")?, &conv, pedida, query, limit, &citadas::Concessao::da_env())
+                }),
+                None => search_from_env(query, limit),
+            }
         }
         READ_TOOL => {
             let reference = args.get("ref").and_then(Value::as_str).unwrap_or("");
             let start = args.get("start_line").and_then(Value::as_u64).unwrap_or(1) as usize;
-            let lines = args
-                .get("max_lines")
-                .and_then(Value::as_u64)
-                .unwrap_or(DEFAULT_READ_LINES as u64)
-                .clamp(1, MAX_READ_LINES as u64) as usize;
-            let chars = args
-                .get("max_chars")
-                .and_then(Value::as_u64)
-                .unwrap_or(DEFAULT_READ_CHARS as u64)
-                .clamp(256, MAX_READ_CHARS as u64) as usize;
+            let lines = args.get("max_lines").and_then(Value::as_u64).unwrap_or(DEFAULT_READ_LINES as u64).clamp(1, MAX_READ_LINES as u64) as usize;
+            let chars = args.get("max_chars").and_then(Value::as_u64).unwrap_or(DEFAULT_READ_CHARS as u64).clamp(256, MAX_READ_CHARS as u64) as usize;
             read_ref_from_env(reference, start, lines, chars)
         }
         _ => Err("tool desconhecida".into()),
@@ -565,6 +560,9 @@ fn read_ref_from_env(
     if reference == "manifest" || reference == "context:manifest" {
         return read_manifest(&root, &conv);
     }
+    if let Some(lido) = citadas::ler(db.as_deref(), &conv, reference, max_chars, &citadas::Concessao::da_env()) {
+        return lido;
+    }
     if let Some(raw) = reference.strip_prefix("conversation:item:") {
         let index = raw
             .parse::<usize>()
@@ -779,6 +777,7 @@ mod tests {
             root: "/repo".into(),
             conv_id: "c1".into(),
             db_path: Some("/data/mycockpit.db".into()),
+            citadas: Default::default(),
         };
         let mut cmd = Command::new("codex");
         cfg.configure_codex(&mut cmd);

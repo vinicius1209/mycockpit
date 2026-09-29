@@ -505,7 +505,7 @@ fn contrato_capabilities_x_comportamento_por_agent() {
             server_bin: "/app/frota".into(),
             root: "/repo".into(),
             conv_id: "c-contrato".into(),
-            db_path: None,
+            db_path: None, citadas: Default::default(),
         });
         r.work_gateway = Some(crate::work_gateway::GatewayConfig {
             server_bin: "/app/frota".into(),

@@ -27,8 +27,44 @@ import { cn } from "@/lib/utils"
 import { FichaDeImagem, ImagensDoRascunho } from "@/components/chat/FichaDeImagem"
 import type { Attachment } from "@/lib/attachments"
 import { referencias } from "@/lib/imagemNoTexto"
+import { CONVERSA_TODAS, conversasCitadas, partesComConversas, rotuloDaConversa } from "@/lib/conversaCitada"
+
+/** `@conversa/…` (ADR-287): chip com o nome, que abre a conversa citada
+ *  quando ela ainda existe. */
+function ChipDeConversa({ endereco }: { endereco: string }) {
+  const projectId = useApp((s) => s.activeProjectId)
+  const metas = useChat((s) => s.conversationsByProject?.[projectId ?? ""])
+  const valor = endereco.slice(1)
+  const alvo = valor === CONVERSA_TODAS ? null : conversasCitadas(endereco, metas ?? []).conversas[0]
+  const chip = "rounded bg-brass/[0.12] px-1 font-medium text-brass"
+  const nome = `@${rotuloDaConversa(valor)}`
+  if (!alvo) return <span className={chip}>{nome}</span>
+  return (
+    <button
+      type="button"
+      title={`Abrir a conversa ${alvo.title ?? ""}`.trim()}
+      onClick={() => void useChat.getState().switchConversation(alvo.id)}
+      className={cn(chip, "transition-colors hover:bg-brass/20 hover:underline")}
+    >
+      {nome}
+    </button>
+  )
+}
 
 export function MentionText({ text }: { text: string }) {
+  if (text.includes("@conversa/")) {
+    return (
+      <>
+        {partesComConversas(text).map((p, i) =>
+          p.conversa ? <ChipDeConversa key={i} endereco={p.texto} /> : <MentionSemConversa key={i} text={p.texto} />,
+        )}
+      </>
+    )
+  }
+  return <MentionSemConversa text={text} />
+}
+
+function MentionSemConversa({ text }: { text: string }) {
   const list = usePresets((s) => s.list)
   const segs = useMemo(
     () => splitMentions(text, list.map((p) => p.name)),

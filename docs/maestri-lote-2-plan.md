@@ -1,6 +1,6 @@
 # Plano · Estudo do Maestri, lote 2
 
-> **Status (29/09/2026):** E1 a E4 entregues. Decisões respondidas (tabela no fim).
+> **Status (29/09/2026):** E1 a E5 entregues. Decisões respondidas (tabela no fim).
 > Mock canônico: `docs/mocks/maestri-lote-2.html`. Origem: §11 de
 > `docs/prototipos-maestri-plan.md` e o estudo
 > `docs/competitors-maestri-2026-09-27.md`.
@@ -70,7 +70,7 @@ mesma viewport; reabrir o projeto mantém o tamanho.
 4. Comando Rust que abre só documento (resolve também o `openPath` do
    `ProjectFileViewer`), se D6 = sim.
 
-## E5 · F4, @conversa (G) · depende de D1, D2, D3 e D13
+## E5 · F4, @conversa (G) · ✅ entregue (ADR-287)
 
 1. Menu do `@`: seção "Conversas", só do mesmo projeto (D1), e o item
    "Todas as conversas deste projeto" (D13).

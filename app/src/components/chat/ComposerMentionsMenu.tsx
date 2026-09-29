@@ -46,6 +46,9 @@ export function ComposerMentionComponent({
     if (value.startsWith(PREFIXO_NOTA)) {
       return <span {...props}>{`@${rotuloDaMencao(value)}`}</span>
     }
+    if (value.startsWith(PREFIXO_CONVERSA)) {
+      return <span {...props}>{`@${rotuloDaConversa(value)}`}</span>
+    }
     // DOM igual ao default da lib: children é o `trigger+value` já pronto.
     return <span {...props}>{children}</span>
   }
@@ -74,7 +77,8 @@ export function ComposerMentionComponent({
 
 import { Children, isValidElement, useLayoutEffect, useState } from "react"
 import { useLexicalComposerContext } from "@lexical/react/LexicalComposerContext"
-import { FileText, StickyNote } from "lucide-react"
+import { FileText, MessageSquare, StickyNote } from "lucide-react"
+import { PREFIXO_CONVERSA, rotuloDaConversa } from "@/lib/conversaCitada"
 import {
   SLASH_TRIGGER,
 } from "@/components/chat/slashPill"
@@ -109,13 +113,13 @@ const MENU_GAP_PX = 8
 /** Kind do item de um filho do menu (o plugin renderiza cada opção como
  *  <MentionsMenuItem item={{value, data}}> — o `kind` que pusemos no item viaja
  *  em `item.data`). Sem data → persona (itens antigos só-string). */
-function childKind(child: React.ReactNode): "agent" | "file" | "nota" {
+function childKind(child: React.ReactNode): "agent" | "file" | "nota" | "conversa" {
   if (!isValidElement(child)) return "agent"
   const item = (
     child.props as { item?: { data?: { kind?: unknown } } }
   ).item
   const kind = item?.data?.kind
-  return kind === "file" || kind === "nota" ? kind : "agent"
+  return kind === "file" || kind === "nota" || kind === "conversa" ? kind : "agent"
 }
 
 export function MentionsMenu({
@@ -199,7 +203,9 @@ export function MentionsMenu({
                   ? "Arquivos"
                   : kind === "nota"
                     ? "Notas"
-                    : "Especialistas"}
+                    : kind === "conversa"
+                      ? "Conversas"
+                      : "Especialistas"}
               </li>
             ) : null
           return header ? [header, child] : [child]
@@ -221,13 +227,14 @@ export function MentionsMenuItem({
   ...props
 }: {
   selected: boolean
-  item: { value: string; data?: { kind?: "agent" | "file" | "nota" } }
-  kind?: "agent" | "file" | "nota"
+  item: { value: string; data?: { kind?: "agent" | "file" | "nota" | "conversa" } }
+  kind?: "agent" | "file" | "nota" | "conversa"
 } & React.LiHTMLAttributes<HTMLLIElement>) {
   const isFile = item.data?.kind === "file"
   const isNota = item.data?.kind === "nota"
+  const isConversa = item.data?.kind === "conversa"
   const def = usePresets((s) =>
-    isFile || isNota ? undefined : s.list.find((d) => d.name === item.value),
+    isFile || isNota || isConversa ? undefined : s.list.find((d) => d.name === item.value),
   )
   return (
     <li
@@ -237,7 +244,9 @@ export function MentionsMenuItem({
       )}
       {...props}
     >
-      {isNota ? (
+      {isConversa ? (
+        <MessageSquare className="size-[18px] shrink-0 text-muted-foreground/70" />
+      ) : isNota ? (
         <StickyNote className="size-[18px] shrink-0 text-muted-foreground/70" />
       ) : isFile ? (
         <FileText className="size-[18px] shrink-0 text-muted-foreground/70" />
@@ -258,7 +267,7 @@ export function MentionsMenuItem({
             pelo cabeçalho "NOTAS" e pelo ícone, e repetido em cada linha vira
             ruído que empurra o que importa pra fora da largura. O valor
             serializado no texto continua sendo o endereço inteiro. */}
-        {isNota ? rotuloDaMencao(item.value) : item.value}
+        {isNota ? rotuloDaMencao(item.value) : isConversa ? rotuloDaConversa(item.value) : item.value}
       </span>
     </li>
   )

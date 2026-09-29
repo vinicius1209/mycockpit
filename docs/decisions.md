@@ -10345,3 +10345,34 @@ considerou.
      (html, svg, scripts, pacotes, apps). Entrega fora do projeto abre por
      ela (D6); a recusa mostra na pasta, com o motivo. O visualizador de
      arquivos passa a usar a mesma porta, e o botão volta a funcionar.
+
+### ADR-287 · Citar outra conversa do projeto com @ dá ao agente leitura dela, só naquele envio ✅
+- **Contexto (29/09/2026):** E5 do lote 2 do Maestri (F4, D1, D2, D3 e D13).
+  O MCP de contexto só enxergava a conversa do turno (toda busca filtrava
+  `conversation_id` do run). A pessoa queria "continue de onde paramos
+  naquela conversa", sem dar ao agente acesso livre ao histórico.
+- **Decisão:**
+  1. O menu do `@` ganha a seção "Conversas", só do MESMO projeto (D1), sem a
+     conversa aberta, por última atividade, com "Todas as conversas deste
+     projeto" no topo (D13). O endereço é `@conversa/<slug>-<8 do id>`, no
+     idioma da nota: o rótulo sai do valor e o id resolve mesmo depois de
+     renomear. Sem limite de citações (D3).
+  2. No envio, pela porta única `withNotasDoTurno`, a menção vira a moldura
+     `<conversas-citadas>` com os ids, antes do texto; o texto mantém os
+     endereços, e a bolha os desenha como chip que abre a conversa.
+  3. A concessão sai da própria moldura (`concessaoDoPrompt`, como a pasta do
+     turno sai da moldura dos arquivos) e só vai para motor com `contextMcp`.
+     Ela chega ao servidor de contexto por ambiente (`FROTA_CONTEXT_CITADAS`,
+     `FROTA_CONTEXT_TODAS`), como a conversa do turno.
+  4. `context_search` aceita `conversation` (o id citado, ou `todas`) e
+     devolve refs `conversation:<id>:item:N`; `context_read` lê esses refs. A
+     porta confere no banco: a conversa pedida é a do turno, ou foi citada e é
+     do mesmo projeto, ou "todas" foi citado e ela é do mesmo projeto. Fora
+     disso, recusa com o motivo ("peça à pessoa que a mencione com @"). Busca
+     e leitura sob demanda, não resumo colado (D2).
+  5. No fio: "Buscar na conversa citada", "Buscar nas conversas do projeto",
+     "Ler a conversa citada".
+- **Não fizemos:** a citação em "O que o agente vê" (o manifesto do run não
+  a carrega ainda) e o aviso no composer para motor sem `contextMcp` (hoje o
+  Antigravity): nele a moldura vai, a concessão não, e o agente diz que não
+  consegue ler.

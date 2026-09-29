@@ -489,6 +489,7 @@ export function LexicalComposer({
   mentionPersisted,
   mentionProjectRoot,
   mentionNotes,
+  mentionConversas,
   mentionTouched,
   onMentionValuesChange,
   className,
@@ -520,6 +521,8 @@ export function LexicalComposer({
   /** N5 — endereços das notas (`nota/slug`): entram sob "Notas" e, no envio, o
    *  endereço vira o conteúdo ATUAL da nota, emoldurado. */
   mentionNotes?: string[]
+  /** ADR-287: endereços das conversas do projeto (`conversa/…`), sob "Conversas". */
+  mentionConversas?: string[]
   /** N7 — caminhos que a conversa TOCOU: sobem no ranqueamento dentro da mesma
    *  classe de casamento. */
   mentionTouched?: ReadonlySet<string>
@@ -558,8 +561,8 @@ export function LexicalComposer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nomes = useMemo(() => mentionNames, [nomesChave])
   const atItems = useMemo(
-    () => buildLexicalAtItems(nomes, localFiles, mentionNotes ?? []),
-    [nomes, localFiles, mentionNotes],
+    () => buildLexicalAtItems(nomes, localFiles, mentionNotes ?? [], mentionConversas ?? []),
+    [nomes, localFiles, mentionNotes, mentionConversas],
   )
   const buscarMencoes = useMentionSearch(atItems, mentionTouched, mentionProjectRoot)
   // Tudo que pode virar pill (persona OU caminho) — é o vocabulário que o
