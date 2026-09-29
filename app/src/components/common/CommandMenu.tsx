@@ -4,6 +4,7 @@ import {
   FileText,
   FolderGit2,
   GitBranch,
+  MessageCircleQuestion,
   MessageSquare,
   PanelLeft,
   PanelRight,
@@ -31,7 +32,10 @@ import {
 } from "@/components/ui/command"
 import { Kbd, KbdGroup } from "@/components/ui/kbd"
 import { SkillDraftDialog } from "@/components/skills/SkillDraftDialog"
-import { onOpenCommandMenu } from "@/lib/commandMenu"
+import { currentPlatform, onOpenCommandMenu } from "@/lib/commandMenu"
+import { ehApple } from "@/components/layout/atalhosDasAbas"
+import { irParaProximaQuePede } from "@/components/layout/sino/navegar"
+import { ehAtalhoDaProxima } from "@/lib/proximaQuePede"
 import { draftSkill, type SkillDraft } from "@/lib/skills"
 import {
   SETTINGS_SECTIONS,
@@ -41,6 +45,7 @@ import {
 import { useApp } from "@/store/app"
 import { helperDoProjeto } from "@/lib/helperDoProjeto"
 import { useChat } from "@/store/chat"
+import { useAwaiting } from "@/store/interactions"
 import { useStickyNotes } from "@/store/stickyNotes"
 
 const ACTIONS = [
@@ -73,6 +78,7 @@ export function CommandMenu() {
   const toggleSidebar = useApp((s) => s.toggleSidebar)
   const toggleContext = useApp((s) => s.toggleContext)
   const setSettingsOpen = useApp((s) => s.setSettingsOpen)
+  const nPede = useAwaiting().convIds.size
   const conversations = useChat((s) => s.conversations)
   const switchConversation = useChat((s) => s.switchConversation)
   const newConversation = useChat((s) => s.newConversation)
@@ -100,6 +106,10 @@ export function CommandMenu() {
       } else if (e.key === "," && (e.metaKey || e.ctrlKey)) {
         e.preventDefault()
         useApp.getState().setSettingsOpen(true)
+      } else if (ehAtalhoDaProxima(e, currentPlatform())) {
+        e.preventDefault()
+        setOpen(false)
+        irParaProximaQuePede()
       }
     }
     document.addEventListener("keydown", down)
@@ -220,6 +230,27 @@ export function CommandMenu() {
                   <KbdGroup className="ml-auto">
                     <Kbd>⌘</Kbd>
                     <Kbd>N</Kbd>
+                  </KbdGroup>
+                </CommandItem>
+              )}
+              {nPede > 0 && (
+                <CommandItem className={ITEM} onSelect={() => run(irParaProximaQuePede)}>
+                  <MessageCircleQuestion aria-hidden className="text-st-warning" />
+                  Próxima que pede você
+                  <span className="font-mono text-[11px] tabular-nums text-faint">{nPede}</span>
+                  <KbdGroup className="ml-auto">
+                    {ehApple(currentPlatform()) ? (
+                      <>
+                        <Kbd>⌘</Kbd>
+                        <Kbd>⇧</Kbd>
+                      </>
+                    ) : (
+                      <>
+                        <Kbd>Ctrl</Kbd>
+                        <Kbd>Shift</Kbd>
+                      </>
+                    )}
+                    <Kbd>A</Kbd>
                   </KbdGroup>
                 </CommandItem>
               )}

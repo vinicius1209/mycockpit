@@ -4,6 +4,10 @@
 import { openCardConversation } from "@/store/cards"
 import { useApp } from "@/store/app"
 import { useChat } from "@/store/chat"
+import { useInteractions } from "@/store/interactions"
+import { useMission } from "@/store/mission"
+import { avisar } from "@/lib/avisos"
+import { conversasQuePedem, proximaQuePede } from "@/lib/proximaQuePede"
 import type { Decision } from "@/lib/inbox"
 import type { Espera } from "@/lib/sino/esperando"
 
@@ -37,4 +41,17 @@ export function abrirEspera(e: Espera, abrirMotor: (agent: string) => void) {
   if (e.tipo === "ferramenta") return abrirMotor(e.agent)
   if (e.tipo === "decisao") return void abrirDecisao(e.decisao)
   if (e.convId) return void abrirConversa(e.projectId, e.convId)
+}
+
+/** "Próxima que pede você" (⌘⇧A e ⌘K): abre a conversa com pedido pendente
+ *  que espera há mais tempo e, repetido, a seguinte. */
+export function irParaProximaQuePede() {
+  const chat = useChat.getState()
+  const conversas = conversasQuePedem(useInteractions.getState().queue, chat, useMission.getState())
+  const alvo = proximaQuePede(conversas, chat.activeId)
+  if (!alvo) {
+    avisar.nota("Nenhuma conversa pede você agora")
+    return
+  }
+  void abrirConversa(alvo.projectId, alvo.convId)
 }
