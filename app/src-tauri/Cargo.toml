@@ -82,3 +82,18 @@ tower = { version = "0.5", features = ["util"] } # oneshot() nos testes do guard
 # Resolver MSRV-aware (boa prática). Toolchain local: rustc 1.96 (Homebrew).
 [workspace]
 resolver = "3"
+
+# Tamanho do target/. Sem isto o default é debuginfo DWARF completo nas 762
+# crates do grafo, e o target/debug passava de 80 GB em algumas semanas de uso.
+[profile.dev]
+# O nosso crate segue com debuginfo completo: é 1 entre 763, o custo é ruído.
+debug = true
+
+[profile.dev.package."*"]
+# As 762 dependências, não — a gente não abre nenhuma no lldb, e é nelas que
+# estava o grosso dos GB. ("*" pega só dependência, não o pacote local.)
+debug = false
+
+[profile.dev.build-override]
+# build.rs e macro procedural rodam, não se debugam.
+debug = false
