@@ -1,11 +1,12 @@
 // A saída de um trabalho no terminal dos Bastidores, colada no fim enquanto
 // você não rola para cima (quem sobe para ler não é puxado de volta).
 
-import { useLayoutEffect, useRef, type ReactNode } from "react"
+import { useLayoutEffect, useMemo, useRef, type ReactNode } from "react"
 import { Copy } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { SaidaViva } from "@/lib/bastidores"
 import { copyText } from "@/lib/clipboard"
+import { semCor, trechosComCor } from "@/lib/corDoTerminal"
 
 export function SaidaDeLog({
   saida,
@@ -24,6 +25,7 @@ export function SaidaDeLog({
   const caixa = useRef<HTMLDivElement>(null)
   const colado = useRef(true)
   const texto = saida.resto ? [...saida.linhas, saida.resto].join("\n") : saida.linhas.join("\n")
+  const trechos = useMemo(() => trechosComCor(texto), [texto])
 
   useLayoutEffect(() => {
     const el = caixa.current
@@ -53,7 +55,7 @@ export function SaidaDeLog({
               type="button"
               variant="ghost"
               size="icone-chip"
-              onClick={() => void copyText(texto, "Saída copiada")}
+              onClick={() => void copyText(semCor(texto), "Saída copiada")}
               title="Copiar a saída"
               aria-label="Copiar a saída"
               className="bg-terminal-raised text-terminal-dim opacity-0 group-hover/saida:opacity-100 focus-visible:opacity-100 hover:bg-terminal-line hover:text-terminal-strong dark:hover:bg-terminal-line"
@@ -62,7 +64,7 @@ export function SaidaDeLog({
             </Button>
           </div>
           <pre data-selectable className="font-mono break-words whitespace-pre-wrap text-terminal-strong [overflow-wrap:anywhere]">
-            {texto}
+            {trechos.map((t, i) => (t.classe ? <span key={i} className={t.classe}>{t.texto}</span> : t.texto))}
           </pre>
         </div>
       ) : (

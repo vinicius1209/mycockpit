@@ -215,12 +215,15 @@ export const SAIDA_VAZIA: SaidaViva = { linhas: [], descartadas: 0, resto: "" }
 const ANSI = /\u001b\[[0-?]*[ -/]*[@-~]|\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)|\u001b[@-Z\\-_]/g
 
 /** A linha como o terminal mostraria: sem ANSI e, com `\r`, só o último
- *  trecho. Espelho de `bastidores::limpar_linha` no Rust. Puro. */
-export function limparLinha(bruta: string): string {
+ *  trecho. Com `cor`, as sequências de cor (SGR) ficam para o render
+ *  (ADR-283). Espelho de `bastidores::limpar_linha` no Rust. Puro. */
+export function limparLinha(bruta: string, { cor = false }: { cor?: boolean } = {}): string {
   const semCr = bruta.endsWith("\r") ? bruta.slice(0, -1) : bruta
   const visivel = semCr.slice(semCr.lastIndexOf("\r") + 1)
-  // eslint-disable-next-line no-control-regex
-  const limpa = visivel.replace(ANSI, "").replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
+  const limpa = visivel
+    .replace(ANSI, (seq) => (cor && /^\u001b\[[0-9;]*m$/.test(seq) ? seq : ""))
+    // eslint-disable-next-line no-control-regex
+    .replace(cor ? /[\u0000-\u0008\u000b-\u001a\u001c-\u001f\u007f]|\u001b(?!\[[0-9;]*m)/g : /[\u0000-\u0008\u000b-\u001f\u007f]/g, "")
   return limpa.length > LINHA_MAX ? `${limpa.slice(0, LINHA_MAX)}…` : limpa
 }
 
@@ -240,6 +243,6 @@ export function somarLinhas(atual: SaidaViva, novas: string[], descartadasAntes 
 export function somarTexto(atual: SaidaViva, texto: string): SaidaViva {
   const partes = (atual.resto + texto).split("\n")
   const resto = partes.pop() ?? ""
-  const somado = somarLinhas(atual, partes.map(limparLinha))
+  const somado = somarLinhas(atual, partes.map((p) => limparLinha(p, { cor: true })))
   return { ...somado, resto }
 }

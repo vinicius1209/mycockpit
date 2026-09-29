@@ -111,6 +111,16 @@ fn validar(caminho: &str) -> Result<PathBuf, String> {
 /// Uma linha como o terminal mostraria: sem sequência ANSI e, havendo `\r`
 /// (barra de progresso), só o que ficou depois do último. Puro.
 pub fn limpar_linha(bruta: &str) -> String {
+    limpar(bruta, false)
+}
+
+/// Como `limpar_linha`, mas as sequências de cor (SGR) ficam para o render
+/// dos Bastidores (ADR-283). Espelho de `limparLinha(_, { cor: true })`. Puro.
+pub fn limpar_linha_com_cor(bruta: &str) -> String {
+    limpar(bruta, true)
+}
+
+fn limpar(bruta: &str, manter_cor: bool) -> String {
     let bruta = bruta.strip_suffix('\r').unwrap_or(bruta);
     let visivel = bruta.rsplit('\r').next().unwrap_or(bruta);
     let mut out = String::with_capacity(visivel.len());
@@ -125,10 +135,17 @@ pub fn limpar_linha(bruta: &str) -> String {
         match chars.next() {
             // CSI: parâmetros até o byte final 0x40..=0x7E.
             Some('[') => {
+                let mut params = String::new();
                 for f in chars.by_ref() {
                     if ('\u{40}'..='\u{7e}').contains(&f) {
+                        if manter_cor && f == 'm' && params.chars().all(|p| p.is_ascii_digit() || p == ';') {
+                            out.push_str("\u{1b}[");
+                            out.push_str(&params);
+                            out.push('m');
+                        }
                         break;
                     }
+                    params.push(f);
                 }
             }
             // OSC: até BEL ou ESC \.
@@ -167,14 +184,14 @@ impl Fatiador {
             if self.resto.len() > LEITURA_MAX as usize {
                 let linha = String::from_utf8_lossy(&self.resto).into_owned();
                 self.resto.clear();
-                return vec![limpar_linha(&linha)];
+                return vec![limpar_linha_com_cor(&linha)];
             }
             return Vec::new();
         };
         let completas: Vec<u8> = self.resto.drain(..=ultima).collect();
         String::from_utf8_lossy(&completas[..completas.len() - 1])
             .split('\n')
-            .map(limpar_linha)
+            .map(limpar_linha_com_cor)
             .collect()
     }
 
@@ -397,6 +414,20 @@ mod tests {
         assert_eq!(limpar_linha("linha windows\r"), "linha windows");
         let gigante = "x".repeat(LINHA_MAX + 50);
         assert!(limpar_linha(&gigante).ends_with('…'));
+    }
+
+    #[test]
+    fn com_cor_guarda_so_o_sgr() {
+        let bruta = "\u{1b}]0;titulo\u{7}\u{1b}[2K\u{1b}[32m✓\u{1b}[0m 12 testes\u{1b}[?25l";
+        assert_eq!(limpar_linha_com_cor(bruta), "\u{1b}[32m✓\u{1b}[0m 12 testes");
+        assert_eq!(limpar_linha(bruta), "✓ 12 testes");
+    }
+
+    #[test]
+    fn fatiador_entrega_as_linhas_com_cor() {
+        let mut f = Fatiador::default();
+        let linhas = f.empurrar("\u{1b}[31mFAIL\u{1b}[39m src/a.test.ts\n".as_bytes());
+        assert_eq!(linhas, vec!["\u{1b}[31mFAIL\u{1b}[39m src/a.test.ts".to_string()]);
     }
 
     #[test]

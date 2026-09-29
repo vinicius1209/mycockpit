@@ -32,6 +32,11 @@
   --terminal-dim: #7d838a;
   --terminal-prompt: #e4a862;
   --terminal-error: #f2766b;
+  /* As cores que a ferramenta emite (ADR-283): verde, amarelo e ciano do SGR
+     básico, legíveis sobre o escuro. São do terminal, não do app. */
+  --terminal-success: #7cc98e;
+  --terminal-warning: #e2cc6f;
+  --terminal-info: #6fc4d4;
   --primary: #16181b;
   --primary-foreground: #fbfbfa;
   --secondary: #f4f4f2;
@@ -192,6 +197,9 @@
   --color-terminal-dim: var(--terminal-dim);
   --color-terminal-prompt: var(--terminal-prompt);
   --color-terminal-error: var(--terminal-error);
+  --color-terminal-success: var(--terminal-success);
+  --color-terminal-warning: var(--terminal-warning);
+  --color-terminal-info: var(--terminal-info);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);

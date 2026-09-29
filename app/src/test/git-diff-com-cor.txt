@@ -1,0 +1,8 @@
+[1mdiff --git a/b.txt b/b.txt[m
+[1mindex 2395415..c653fdb 100644[m
+[1m--- a/b.txt[m
+[1m+++ b/b.txt[m
+[36m@@ -1,2 +1,2 @@[m
+ um[m
+[31m-dois[m
+[32m+[m[32mDOIS[m
