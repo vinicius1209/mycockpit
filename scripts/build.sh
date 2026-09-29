@@ -15,7 +15,12 @@ cd "$(dirname "$0")/.."
 
 APP_DIR="app"
 BUILDS="builds"
-APPDATA="$HOME/Library/Application Support/dev.vinicius.mycockpit"
+# O identificador é dev.vinicius.frota desde o rename; o legado
+# dev.vinicius.mycockpit ficou só com hook-scripts e NÃO tem banco. Enquanto
+# isto apontava pro legado o snapshot abaixo nunca rodou (nenhum build de 1 a
+# 461 tem .db.backup): o `if` dava falso calado e o build seguia sem rede.
+APPDATA="$HOME/Library/Application Support/dev.vinicius.frota"
+DB="$APPDATA/frota.db"
 BASE_VERSION=$(python3 -c "import json;print(json.load(open('$APP_DIR/src-tauri/tauri.conf.json'))['version'])")
 
 next_num() {
@@ -38,10 +43,17 @@ case "${1:-test}" in
     echo "  (release build: a primeira vez leva alguns minutos)"
 
     # seguro: os builds compartilham o SQLite real → snapshot antes do teste.
+    # `.backup` do sqlite e não `cp`: o banco roda em WAL (o -wal tinha 4,4 MB
+    # de escrita pendente), e copiar só o .db pega um estado sem essas páginas.
     mkdir -p "$OUT"
-    if [[ -f "$APPDATA/mycockpit.db" ]]; then
-      cp "$APPDATA/mycockpit.db" "$OUT/mycockpit.db.backup"
-      echo "  backup do banco → $OUT/mycockpit.db.backup"
+    if [[ -f "$DB" ]]; then
+      if sqlite3 "$DB" ".backup '$OUT/frota.db.backup'" 2>/dev/null; then
+        echo "  backup do banco → $OUT/frota.db.backup ($(du -h "$OUT/frota.db.backup" | cut -f1))"
+      else
+        echo "  AVISO: falhou o snapshot de $DB — build seguindo SEM rede" >&2
+      fi
+    else
+      echo "  AVISO: banco não encontrado em $DB — build seguindo SEM rede" >&2
     fi
 
     # Carimbo do build no binário (ADR-264): a faixa do app diz qual Frota é,
