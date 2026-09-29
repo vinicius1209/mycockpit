@@ -14,6 +14,7 @@ import { useCards } from "@/store/cards"
 import { useChat, type ConvState } from "@/store/chat"
 import { useInteractions } from "@/store/interactions"
 import { useMission } from "@/store/mission"
+import { useUsage } from "@/store/usage"
 import {
   buildCompanionSnapshot,
   startCompanionBridge,
@@ -396,6 +397,25 @@ describe("buildCompanionSnapshot", () => {
     expect(snap.costs.totalUsd).toBe(9)
     expect(snap.running).toHaveLength(0)
     expect(snap.missions[0].status).toBe("done")
+  })
+
+  it("leva a cota de cada motor com leitura fresca (F1), e nada sem leitura", () => {
+    useUsage.setState({ byAgent: {}, failures: {} })
+    expect(buildCompanionSnapshot().planos).toEqual([])
+    useUsage.setState({
+      byAgent: {
+        codex: {
+          agent: "codex",
+          source: "rpc",
+          planType: "plus",
+          fetchedAt: Date.now(),
+          windows: [{ id: "5h", label: "5 h", usedPercent: 64, resetsAt: null, windowMinutes: 300 }],
+        },
+      },
+    })
+    expect(buildCompanionSnapshot().planos).toEqual([
+      { agent: "codex", rotulo: "Codex", janela: "5h", pct: 64, tom: "warn", detalhe: "64%" },
+    ])
   })
 })
 

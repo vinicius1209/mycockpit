@@ -112,6 +112,19 @@ code { font-family: var(--font-mono); font-size: 0.86em; background: var(--accen
 .pulse.roda .d { background: var(--st-running); }
 .pulse.pede .d { background: var(--st-queued); }
 .pulse.wait .d { background: var(--st-idle); }
+/* F1: a cota de cada motor, só leitura. Cor pela régua de severidade do app. */
+.planos { margin: 6px 16px 4px; padding: 4px 14px; border-radius: 16px; background: var(--card); box-shadow: 0 0 0 1px var(--border); }
+.planos .pl { display: grid; grid-template-columns: auto minmax(40px, 1fr) auto; align-items: center; gap: 10px; min-height: 36px; font-size: 14px; }
+.planos .pl + .pl { box-shadow: 0 -1px 0 var(--border); }
+.planos .n { white-space: nowrap; }
+.planos .n small { margin-left: 4px; font: 13px var(--font-mono); color: var(--faint); }
+.planos .b { height: 5px; border-radius: 3px; background: var(--accent); overflow: hidden; }
+.planos .b i { display: block; height: 100%; border-radius: 3px; background: var(--st-idle); }
+.planos .warn .b i { background: var(--st-queued); }
+.planos .danger .b i { background: var(--st-error); }
+.planos .v { font: 13px var(--font-mono); color: var(--muted-foreground); white-space: nowrap; }
+.planos .warn .v { color: var(--st-queued); }
+.planos .danger .v { color: var(--st-error); }
 .pulse.off { color: var(--muted-foreground); } .pulse.off .d { background: var(--st-error); }
 
 .filters { display: flex; gap: 8px; overflow-x: auto; padding: 14px 20px 6px; scrollbar-width: none; }
@@ -381,6 +394,7 @@ button.it:active { background: var(--accent); }
         <div class="who" id="heroWho">Frota</div>
         <button class="pulse" id="pulse" data-nav="painel"></button>
       </div>
+      <div class="planos" id="planos" hidden></div>
       <div class="filters" id="convFilter"></div>
       <div class="list" id="conversas"></div>
     </div>
@@ -1731,9 +1745,25 @@ function renderConversas() {
   host.innerHTML = h || '<div class="empty">Nenhuma conversa ainda. Toque em “Nova conversa” para começar uma no seu Mac.</div>';
 }
 
+/* F1: a cota de cada motor, com o texto pronto do snapshot. Sem o Mac, a
+   leitura é velha: a faixa some em vez de mostrar número de antes. */
+function renderPlanos() {
+  var ps = (!S.off && S.snap && S.snap.planos) || [];
+  var sig = JSON.stringify(ps);
+  if (!sigChanged("planos", sig)) return;
+  var el = $("#planos");
+  el.hidden = !ps.length;
+  el.innerHTML = ps.map(function (p) {
+    return '<div class="pl ' + esc(p.tom) + '"><span class="n">' + esc(p.rotulo) + '<small>' + esc(p.janela) + '</small></span>' +
+      '<span class="b"><i style="width:' + Math.max(0, Math.min(100, Number(p.pct) || 0)) + '%"></i></span>' +
+      '<span class="v">' + esc(p.detalhe) + '</span></div>';
+  }).join("");
+}
+
 function renderBrief() {
-  // Início (R4): a cara da frota → conversas. Painel: agora → acabou → entregue.
+  // Início (R4): a cara da frota → cota → conversas. Painel: agora → acabou → entregue.
   renderHero();
+  renderPlanos();
   renderConversas();
   renderRunning();
   renderLastTurns();

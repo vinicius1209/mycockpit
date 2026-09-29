@@ -46,6 +46,8 @@ import { usePresets } from "@/store/presets"
 import { DESK_TITLE_PREFIX } from "@/lib/fleet/send"
 import { frasesDoFeed, projetosDoCompanion } from "@/lib/companionProjetos"
 import { perfSpan } from "@/lib/fleet/perf"
+import { planosDoCompanion } from "@/lib/companionPlanos"
+import { useUsage } from "@/store/usage"
 
 // ─────────────────────────────────────────────────────────── shape do snapshot
 // A onda 2 (página do celular) constrói EM CIMA deste shape — mudar é breaking.
@@ -262,6 +264,7 @@ export function buildCompanionSnapshot(
     costs: { totalUsd, byProject, unpriced },
     projects,
     specialists,
+    planos: planosDoCompanion(useUsage.getState().byAgent, useUsage.getState().failures, Date.now()),
   }
 }
 
@@ -336,6 +339,8 @@ export function startCompanionBridge(): () => void {
     // mutação de card não muda nada que o celular veja.
     // C2 — Especialistas no snapshot: load/CRUD de persona re-empurra.
     usePresets.subscribe(() => schedulePush()),
+    // F1: leitura nova de cota chega ao celular sem esperar outro evento.
+    useUsage.subscribe(() => schedulePush()),
   )
 
   let disposed = false

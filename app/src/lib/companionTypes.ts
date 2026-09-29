@@ -193,6 +193,21 @@ export interface CompanionTurn {
   at: number
 }
 
+/** A cota de um motor no topo do Companion, com o texto pronto. */
+export interface CompanionPlano {
+  agent: string
+  /** Nome do motor ("Claude Code"). */
+  rotulo: string
+  /** A janela mais apertada, curta ("5h", "7d"). */
+  janela: string
+  /** 0 a 100, inteiro, para a largura da barra. */
+  pct: number
+  /** A régua de severidade do app (`usageTone`). */
+  tom: "ok" | "warn" | "danger"
+  /** "72% · volta às 18:00" (sem reset conhecido, só o percentual). */
+  detalhe: string
+}
+
 export interface CompanionSnapshot {
   attention: CompanionAttention[]
   running: CompanionRunning[]
@@ -205,6 +220,9 @@ export interface CompanionSnapshot {
   projects: CompanionProject[]
   /** Especialistas globais (C2): opcional no shape, o builder sempre emite. */
   specialists?: CompanionSpecialist[]
+  /** Cota de cada motor com leitura fresca (F1): opcional no shape, o builder
+   *  sempre emite; lista vazia some da página. */
+  planos?: CompanionPlano[]
 }
 
 /** Dados assíncronos (DB) que temperam o snapshot; cacheados pelo bridge. */

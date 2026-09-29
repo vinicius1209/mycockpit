@@ -13,7 +13,7 @@
    shell + banner honesto, nunca tela branca.
    ============================================================ */
 
-var CACHE = "frota-companion-shell-v8"; /* 19/09: aviso com a tela fechada (A6) */
+var CACHE = "frota-companion-shell-v9"; /* 29/09: a cota no início (F1) */
 var SHELL = [
   "/",
   "/core.js",

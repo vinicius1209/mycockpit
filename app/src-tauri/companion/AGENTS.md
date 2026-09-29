@@ -36,7 +36,9 @@ do app e devolve veredito real. O `202` do `POST /api/action` nunca é sucesso.
 - `lib/companion.ts` monta o que o celular **lê** (snapshot). Pedaços puros saíram
   para irmãos quando o arquivo bateu no teto: `companionProjetos.ts` (mesa de cada
   motor e conversas recentes por projeto), `companionEndereco.ts` (info do
-  servidor e URL do QR), `companionAparelhos.ts` (aparelhos pareados).
+  servidor e URL do QR), `companionAparelhos.ts` (aparelhos pareados),
+  `companionPlanos.ts` (a cota de cada motor no topo do início, pela mesma
+  regra da faixa do app; só leitura, e some com o Mac fora do ar).
 - `lib/companionAction.ts` executa o que o celular **manda fazer** e devolve o
   veredito por `companion_action_result`.
 - `lib/companionPing.ts` é o único fio compartilhado ("conversa mudou"). Ninguém o
@@ -167,7 +169,8 @@ Nada de relay, VPS ou Cloudflare sem ADR nova.
   (rótulo de expiração), `companionWeb.cara.test.ts` (cara, pulso, prévia e
   grupo de ferramentas), `companionEndereco.test.ts` (URL do QR e aviso da
   Tailscale), `companionProjetos.test.ts` (mesa e recentes),
-  `companion.board.test.ts` (Board fora do Companion).
+  `companion.board.test.ts` (Board fora do Companion), `companionPlanos.test.ts`
+  (cota do início).
 
 ## Mantenha este arquivo verdadeiro
 
