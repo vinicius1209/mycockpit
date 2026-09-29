@@ -47,6 +47,13 @@ function embrulhar(filhos: (ElementContent | RootContent)[], desde: number): Ele
   const out: ElementContent[] = []
   for (const no of filhos) {
     if (no.type === "text") {
+      // Espaço solto entre blocos, itens ou linhas de tabela fica texto: o
+      // react-markdown o descarta dentro de `table`/`tr`, e um `span` ali
+      // seria HTML inválido (célula anônima na tabela).
+      if ((no as Text).value.trim() === "") {
+        out.push(no as Text)
+        continue
+      }
       const base = inicio(no)
       for (const { pedaco, em } of palavras((no as Text).value)) {
         // Sem posição, o texto é histórico: nada inventado dissolve.

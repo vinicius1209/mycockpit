@@ -85,6 +85,16 @@ describe("fade por trecho na resposta viva", () => {
     expect(container.textContent).toContain("antes de seguir.")
   })
 
+  it("espaço entre linhas de tabela e itens de lista não vira span (HTML inválido)", () => {
+    const { container, rerender } = render(<Markdown text="Resultado:" vivo />)
+    rerender(<Markdown text={"Resultado:\n\n| Ação | Resultado |\n|---|---|\n| teste | passou |\n\n- um\n- dois"} vivo />)
+    const invalidos = container.querySelectorAll(
+      "table > span, thead > span, tbody > span, tr > span, ul > span, ol > span",
+    )
+    expect(invalidos).toHaveLength(0)
+    expect(container.querySelector("td")?.textContent).toBe("teste")
+  })
+
   it("mensagem que nunca foi viva não ganha span nenhum", () => {
     const { container } = render(<Markdown text={MOMENTO_3} />)
     expect(container.querySelector("p > span")).toBeNull()

@@ -27,7 +27,7 @@
     "check:config-de-agent": "node ../scripts/check-config-de-agent.mjs",
     "check:tauri-hot-paths": "node ../scripts/check-tauri-hot-paths.mjs",
     "check:avisos": "node ../scripts/check-avisos.mjs",
-    "check:fluidez": "vitest run src/components/chat/fio.fluidez.test.ts"
+    "check:fluidez": "vitest run src/components/chat/fio.fluidez.test.ts src/components/common/Markdown.fluidez.test.tsx"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",

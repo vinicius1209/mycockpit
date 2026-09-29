@@ -5,6 +5,7 @@ import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { fatiasDaMensagem } from "./markdownBudget"
 import { rehypeTrechos } from "./rehypeTrechos"
+import { blocosDaMensagem } from "./blocosDaMensagem"
 import { BlocoMermaid } from "./BlocoMermaid"
 import { fonteMermaid } from "./fonteMermaid"
 import { Alerta, CaixaDeTarefa, ItemDeLista, ehTipoDeAlerta, remarkAlertas } from "./markdownAlertas"
@@ -415,7 +416,8 @@ const mdComponents: Components = {
 // vezes não anotam a linguagem e ficariam monocromáticos sem isto.
 const REHYPE_ASSENTADO: NonNullable<Options["rehypePlugins"]> = [[rehypeHighlight, { detect: true }]]
 
-function MarkdownRico({ text, desde }: { text: string; desde?: number }) {
+/** `memo`: na bolha viva, bloco que já tem texto final não reparsa (ADR-291). */
+const MarkdownRico = memo(function MarkdownRico({ text, desde }: { text: string; desde?: number }) {
   // Só a bolha viva embrulha palavras para o fade por trecho (ADR-290).
   const rehype = useMemo<NonNullable<Options["rehypePlugins"]>>(
     () =>
@@ -434,7 +436,7 @@ function MarkdownRico({ text, desde }: { text: string; desde?: number }) {
       {text}
     </ReactMarkdown>
   )
-}
+})
 
 /** Render de markdown (GFM + highlight) reusado no chat e no detalhe de contexto.
  *  `memo`: blocos antigos não re-rodam react-markdown+highlight a cada token (F12).
@@ -464,27 +466,27 @@ export const Markdown = memo(function Markdown({
         voz === "narracao" ? "text-[13px] text-muted-foreground" : "text-[14px] text-foreground",
       )}
     >
-      {fatias.map((fatia, indice) =>
-        fatia.tipo === "rico" ? (
-          <MarkdownRico
-            key={indice}
-            text={fatia.texto}
-            // Com fatias, os offsets são da fatia e não da mensagem: sem fade.
-            desde={vivo && fatias.length === 1 ? desde : undefined}
-          />
-        ) : (
-          <TextoCru
-            key={indice}
-            texto={fatia.texto}
-            limitarAltura={fatias.length > 1}
-            aviso={
-              fatias.length > 1
-                ? "Trecho longo demais para formatar, mostrado como texto."
-                : "Mensagem muito longa, mostrada como texto, completa e na ordem."
-            }
-          />
-        ),
-      )}
+      {vivo && fatias.length === 1 && fatias[0].tipo === "rico"
+        ? // Viva: um memo por bloco, e só o último reparsa a cada token.
+          blocosDaMensagem(text).map((bloco) => (
+            <MarkdownRico key={bloco.inicio} text={bloco.texto} desde={desde - bloco.inicio} />
+          ))
+        : fatias.map((fatia, indice) =>
+            fatia.tipo === "rico" ? (
+              <MarkdownRico key={indice} text={fatia.texto} />
+            ) : (
+              <TextoCru
+                key={indice}
+                texto={fatia.texto}
+                limitarAltura={fatias.length > 1}
+                aviso={
+                  fatias.length > 1
+                    ? "Trecho longo demais para formatar, mostrado como texto."
+                    : "Mensagem muito longa, mostrada como texto, completa e na ordem."
+                }
+              />
+            ),
+          )}
     </div>
   )
 })

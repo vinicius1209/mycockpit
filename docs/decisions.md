@@ -10487,3 +10487,30 @@ considerou.
   física, a pista e a cascata têm testes puros; o fade, teste em DOM (jsdom)
   que prova a identidade dos elementos entre renders. A sensação precisa ser
   conferida num build.
+
+### ADR-291 · A bolha viva reparsa só o último bloco (F3) ✅
+- **Contexto (29/09/2026):** F3 de `docs/fluidez-do-fio-plan.md`, aberto desde
+  09/09. A bolha viva passava o texto acumulado inteiro por remark-gfm,
+  rehype-highlight e o React a cada token: O(n²) somado ao longo da resposta.
+- **Decisão:**
+  1. `blocosDaMensagem` (`components/common/`) corta a mensagem em blocos de
+     topo: antes de linha sem recuo que vem depois de linha em branco, fora de
+     cerca, e nunca entre itens da mesma lista. Definição de link, nota de
+     rodapé ou HTML em bloco deixam a mensagem inteira. Na dúvida, não corta:
+     bloco maior é só mais lento, nunca diferente.
+  2. Só a bolha viva usa os blocos, cada um num `MarkdownRico` com `memo` e
+     `key` no offset; assentada, a mensagem volta a um parse só. O fade por
+     trecho (ADR-290) recebe o offset relativo de cada bloco.
+  3. O DOM sai igual porque o react-markdown não embrulha a saída: os blocos
+     viram irmãos no mesmo container. Provado sobre as 39 falas reais do
+     fio de referência que têm mais de um bloco (a única diferença é o `"\n"`
+     entre blocos de topo, invisível).
+- **Medida (contador, não relógio):** a maior fala real (10.395 caracteres),
+  transmitida da metade em diante em deltas de 4, passa **166 caracteres por
+  token** pelo pipeline; sem a divisão, **5.299**. O medidor
+  (`Markdown.fluidez.test.tsx`) entrou no `check:fluidez` e reprova quando a
+  divisão é desligada.
+- **Achado no caminho:** a mesma prova de forma pegou um defeito da ADR-290: o
+  fade embrulhava o `"\n"` entre linhas de tabela e itens de lista num
+  `span`, que o react-markdown não descarta (ele só descarta texto). Espaço em
+  branco solto agora fica texto.

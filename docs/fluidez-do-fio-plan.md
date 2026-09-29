@@ -1,7 +1,8 @@
 # Fluidez do fio: catraca, perfil e virtualização (plano)
 
-> Status: **F1 ✅ · F2 ✅ (09/09/2026)** · **F3 aberto e REORDENADO pela revisão
-> de 09/09** (ver §4.1) · F4 aberto. Nasce do reestudo do GPUI
+> Status: **F1 ✅ · F2 ✅ (09/09/2026)** · **F3 ✅ (29/09/2026, ADR-291: a
+> maior fala real reparsa 166 caracteres por token, contra 5.299 antes)** ·
+> F4 aberto. Nasce do reestudo do GPUI
 > pedido nesta data: o bloqueio de licença do GPUI caiu em 01/09/2026 (8 dias atrás), e a
 > pergunta "trocar de substrato?" voltou. A resposta continua **não**, mas por
 > custo/benefício, e não mais por impedimento. Este plano existe porque a
@@ -269,7 +270,15 @@ A virtualização continua valendo (o penhasco do `showAll` é real, e é de
 MONTAGEM), mas ela é a peça cara, com dependência nova e três acoplamentos a
 desfazer antes.
 
-## 5. F3 — Markdown por blocos na bolha viva
+## 5. F3 — Markdown por blocos na bolha viva ✅
+
+> Entregue em 29/09/2026 (ADR-291). `blocosDaMensagem` corta em blocos de
+> topo e o `MarkdownRico` é `memo` por bloco, só na bolha viva. A cerca aberta
+> segura o resto no mesmo bloco (a primeira armadilha abaixo), e o corte é
+> feito sobre o texto do NÓ, que é o que o `Markdown` recebe (a segunda). O
+> medidor é `Markdown.fluidez.test.tsx`, dentro do `check:fluidez`: conta os
+> caracteres que passam pelo pipeline por token, e reprova com 5.299 quando a
+> divisão é desligada.
 
 > **Era o "P3" de `study-waku-gpui.md:381`, perdido quando `perf-fio-plan.md`
 > reusou o rótulo.** Não reusar rótulo é regra desta frente daqui pra frente.

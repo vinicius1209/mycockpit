@@ -37,12 +37,12 @@ function temLinhaPesada(texto: string): boolean {
 
 /** Abertura de cerca (``` ou ~~~, até 3 espaços de recuo), devolvendo o
  *  marcador para o fecho ter que ser do mesmo tipo e do mesmo tamanho ou maior. */
-function aberturaDeCerca(linha: string): string | null {
+export function aberturaDeCerca(linha: string): string | null {
   const achado = /^ {0,3}(`{3,}|~{3,})/.exec(linha)
   return achado ? achado[1] : null
 }
 
-function fechaCerca(linha: string, abertura: string): boolean {
+export function fechaCerca(linha: string, abertura: string): boolean {
   const achado = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(linha)
   return (
     achado != null &&
