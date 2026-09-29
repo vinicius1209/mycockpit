@@ -40,6 +40,7 @@ import {
 } from "@/components/layout/conversationTree"
 import { controle } from "@/components/ui/controle"
 import { AbasDeArquivo, TodasAsAbas } from "@/components/layout/AbasDeArquivo"
+import { IconeOuSelo } from "@/components/layout/SeloDoAtalho"
 import { chaveDaVista, instalarAtalhosDasAbas } from "@/components/layout/abasNoPrincipal"
 import { CARTAO_PARA_O_LADO, abasDo, useAbasDeArquivo } from "@/store/abasDeArquivo"
 import { cn } from "@/lib/utils"
@@ -202,7 +203,9 @@ export function MainTabs({
                       : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
                   )}
                 >
-                  <MessageSquare className="size-3.5 shrink-0" />
+                  <IconeOuSelo n={isBranchActive ? 1 : null}>
+                    <MessageSquare className="size-3.5 shrink-0" />
+                  </IconeOuSelo>
                   <span className="max-w-[120px] truncate">{label}</span>
                 </button>
               </div>
@@ -226,7 +229,9 @@ export function MainTabs({
                   : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
               )}
             >
-              <MessageSquare className="size-3.5 shrink-0" />
+              <IconeOuSelo n={1}>
+                <MessageSquare className="size-3.5 shrink-0" />
+              </IconeOuSelo>
               Conversa
             </button>
           </div>

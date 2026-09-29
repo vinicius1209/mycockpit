@@ -15,6 +15,7 @@ import {
   type AbasDaConversa,
 } from "@/lib/abasDeArquivo"
 import { currentPlatform } from "@/lib/commandMenu"
+import { ligarSeloDasAbas } from "@/components/layout/seloDasAbas"
 import { isTauri } from "@/lib/db"
 import { planoDoPortao, resolverPerguntas, soltarAsFechadas } from "@/lib/edicao/portao"
 import { raizEfetivaAgora } from "@/components/layout/raizEfetiva"
@@ -259,6 +260,7 @@ export function instalarAtalhosDasAbas(): () => void {
     executar(acao)
   }
   window.addEventListener("keydown", aoTeclar)
+  const desligarSelo = ligarSeloDasAbas(currentPlatform(), haDialogoAberto)
   let desligarMenu: (() => void) | null = null
   let desligado = false
   if (isTauri()) {
@@ -272,6 +274,7 @@ export function instalarAtalhosDasAbas(): () => void {
   return () => {
     desligado = true
     window.removeEventListener("keydown", aoTeclar)
+    desligarSelo()
     desligarMenu?.()
   }
 }

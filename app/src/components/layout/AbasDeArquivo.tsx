@@ -24,6 +24,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { FileIcon } from "@/components/ui/file-icon"
+import { IconeOuSelo } from "@/components/layout/SeloDoAtalho"
+import { numeroDoSelo } from "@/components/layout/seloDasAbas"
 import { indiceDeSoltura } from "@/components/chat/FilaDoComposer"
 import {
   abrirAoLado,
@@ -178,15 +180,17 @@ export function AbasDeArquivo({ vista }: { vista: string | null }) {
                       : "text-muted-foreground/50 group-hover/aba:text-muted-foreground",
                   )}
                 >
-                  {aoLado ? (
-                    <Columns2 className="size-3.5 shrink-0 text-st-running" />
-                  ) : commit ? (
-                    <GitCommit className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
-                  ) : diff ? (
-                    <FileDiff className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
-                  ) : (
-                    <FileIcon path={caminho} size={14} className={cn(!ativa && "opacity-70 group-hover/aba:opacity-100")} />
-                  )}
+                  <IconeOuSelo n={numeroDoSelo(i)}>
+                    {aoLado ? (
+                      <Columns2 className="size-3.5 shrink-0 text-st-running" />
+                    ) : commit ? (
+                      <GitCommit className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
+                    ) : diff ? (
+                      <FileDiff className={cn("size-3.5 shrink-0", !ativa && "opacity-70 group-hover/aba:opacity-100")} />
+                    ) : (
+                      <FileIcon path={caminho} size={14} className={cn(!ativa && "opacity-70 group-hover/aba:opacity-100")} />
+                    )}
+                  </IconeOuSelo>
                   <span className={cn("max-w-[180px] truncate", sumiu && "text-muted-foreground/60 line-through")}>
                     {rotulo.nome}
                     {rotulo.pasta && <span className="font-normal text-muted-foreground/60"> · {rotulo.pasta}</span>}

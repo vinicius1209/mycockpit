@@ -39,6 +39,13 @@ export function acaoDoAtalho(e: TeclaDoAtalho, plataforma: string): AcaoDoAtalho
   return null
 }
 
+/** A tecla é o modificador das abas sozinho (⌘ no Mac, Ctrl no Linux)?
+ *  Segurá-lo mostra os números. Pura. */
+export function ehSoOModificador(e: TeclaDoAtalho, plataforma: string): boolean {
+  if (e.altKey || e.shiftKey) return false
+  return ehApple(plataforma) ? e.key === "Meta" && !e.ctrlKey : e.key === "Control" && !e.metaKey
+}
+
 /** O rótulo do atalho no menu, na convenção da plataforma. */
 export function rotuloDoAtalho(teclas: "fechar" | "reabrir" | number, plataforma: string): string {
   const apple = ehApple(plataforma)
