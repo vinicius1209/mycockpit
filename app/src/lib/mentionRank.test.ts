@@ -147,6 +147,21 @@ describe("rankearMencoes", () => {
     expect(valores(rankearMencoes(idx, "", { tocados }))[0]).toBe("src/z.ts")
   })
 
+  it("sem consulta, toda seção aparece mesmo com muitos arquivos tocados", () => {
+    const arqs = Array.from({ length: 30 }, (_, i) => `src/t${i}.ts`)
+    const idx = indexarMencoes([
+      ...["Aline", "Bruno", "Carla", "Davi"].map((value) => ({ value, kind: "agent" as const })),
+      { value: "nota/deploy", kind: "nota" as const },
+      ...["conversa/todas", "conversa/parser-1a2b3c4d", "conversa/migracao-9f8e7d6c"].map((value) => ({ value, kind: "conversa" as const })),
+      ...arquivos(...arqs),
+    ])
+    const menu = rankearMencoes(idx, "", { tocados: new Set(arqs) }, 8)
+    expect(menu.map((i) => i.kind)).toEqual([
+      "agent", "agent", "agent", "nota", "conversa", "conversa", "conversa", "file", "file", "file", "file", "file",
+    ])
+    expect(menu.find((i) => i.kind === "conversa")?.value).toBe("conversa/todas")
+  })
+
   it("respeita o teto e não devolve a listagem inteira", () => {
     const idx = indexarMencoes(
       arquivos(...Array.from({ length: 500 }, (_, i) => `src/send${i}.ts`)),

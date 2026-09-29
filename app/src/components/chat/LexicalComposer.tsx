@@ -67,6 +67,7 @@ import { historyRecallIntent } from "@/hooks/usePromptHistory"
 import { collectPaste } from "@/hooks/useAttachments"
 import { buildLexicalAtItems } from "@/hooks/useAtMentions"
 import { useMentionSearch } from "@/hooks/useMentionSearch"
+import { TETO_SEM_CONSULTA } from "@/lib/mentionRank"
 import { MAX_POPOVER_ITEMS } from "@/hooks/useSlashCommands"
 import { cn } from "@/lib/utils"
 import { ComposerSubmitKeys } from "@/components/chat/composerSubmitKeys"
@@ -621,7 +622,9 @@ export function LexicalComposer({
           menuComponent={MentionsMenu}
           menuItemComponent={MentionsMenuItem}
           // paridade com o popover do textarea: mesmo teto de itens…
-          menuItemLimit={MAX_POPOVER_ITEMS}
+          // O "@" vazio mostra um pouco de cada seção (TETO_SEM_CONSULTA);
+          // com texto, o ranqueamento já devolve no máximo MAX_POPOVER_ITEMS.
+          menuItemLimit={Math.max(MAX_POPOVER_ITEMS, TETO_SEM_CONSULTA)}
           // …e query que atravessa `/` `.` `_` (caminhos de arquivo).
           punctuation={AT_PUNCTUATION}
           // O menu mostra as duas listas canônicas (personas e arquivos), não

@@ -110,6 +110,33 @@ export interface SinaisDeRank {
   tocados?: ReadonlySet<string>
 }
 
+/** Quantos de cada seção o "@" recém-aberto mostra. Sem cota, os arquivos que
+ *  a conversa tocou enchiam o menu e as outras seções nem apareciam (numa
+ *  conversa longa, só "Arquivos"). O resto das vagas vai para os arquivos. */
+const COTA_SEM_CONSULTA: Record<Exclude<KindDeMencao, "file">, number> = { agent: 3, nota: 2, conversa: 4 }
+/** O menu recém-aberto é um mapa das seções; ele rola. */
+export const TETO_SEM_CONSULTA = 12
+
+function semConsulta(
+  indice: readonly CandidatoIndexado[],
+  tocados: ReadonlySet<string> | undefined,
+  teto: number,
+): ItemDeMencao[] {
+  let vagas = Math.max(teto, TETO_SEM_CONSULTA)
+  const out: ItemDeMencao[] = []
+  for (const kind of ["agent", "nota", "conversa"] as const) {
+    const doKind = indice.filter((c) => c.kind === kind).slice(0, Math.min(COTA_SEM_CONSULTA[kind], vagas))
+    out.push(...doKind.map((c) => ({ value: c.value, kind: c.kind })))
+    vagas -= doKind.length
+  }
+  // Nos arquivos, o tocado sobe: é o único sinal que já existe antes da tecla.
+  const arquivos = indice
+    .filter((c) => c.kind === "file")
+    .sort((a, b) => Number(!tocados?.has(a.value)) - Number(!tocados?.has(b.value)) || a.ordem - b.ordem)
+  out.push(...arquivos.slice(0, vagas).map((c) => ({ value: c.value, kind: c.kind })))
+  return out
+}
+
 /**
  * Filtra e ordena. Sem consulta, devolve a ordem original (o menu recém-aberto
  * não deve reordenar nada: você ainda não disse o que procura) — só com os
@@ -124,6 +151,7 @@ export function rankearMencoes(
 ): ItemDeMencao[] {
   const tocados = sinais.tocados
   const q = (query ?? "").trim().toLowerCase()
+  if (!q) return semConsulta(indice, tocados, teto)
 
   const comClasse = q
     ? indice
