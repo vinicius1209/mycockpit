@@ -23,15 +23,13 @@ describe("a navegação do painel direito", () => {
     expect(html).toContain(">2</span>")
   })
 
-  it("preserva o nome acessível quando a largura mostra apenas ícones", () => {
+  it("usa sempre apenas ícones preservando o nome acessível e tooltip", () => {
     const html = renderToStaticMarkup(
       <ContextPanelTabs tab="arquivos" changedCount={0} onSelect={() => {}} />,
     )
 
     expect(html).toContain('aria-label="Arquivos"')
     expect(html).toContain('title="Arquivos"')
-    // Limiar medido para CINCO rótulos inteiros com o pior contador (ADR-200);
-    // era 400px com quatro abas de largura igual.
-    expect(html).toContain("@min-[492px]:inline")
+    expect(html).not.toContain("@min-[492px]:inline")
   })
 })
