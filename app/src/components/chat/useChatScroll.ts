@@ -9,11 +9,17 @@ import {
   type EstadoDaMola,
 } from "@/components/chat/molaDoFio"
 import {
+  desvioAcimaDaCauda,
   ehGestoDeLeitura,
   ehGestoDeSubida,
   escondido,
+  marcaDaCauda,
+  movimentoReduzido,
   pertoDoFim,
   rolagemAoReaparecer,
+  topoDoPedido,
+  ultimoPedido,
+  type MarcaDaCauda,
 } from "@/components/chat/medidaDoFio"
 
 export {
@@ -60,28 +66,6 @@ export {
  *  4. Seguir é com mola, e enviar arma a pista (ADR-290, física em
  *     `molaDoFio.ts`). Aterrissar continua seco: abrir não é evento.
  */
-
-/** O último pedido SEU no fio: é nele que a pista se ancora. */
-function ultimoPedido(items: ChatItem[]): string | null {
-  for (let i = items.length - 1; i >= 0; i--) {
-    if (items[i].kind === "user") return items[i].id
-  }
-  return null
-}
-
-function movimentoReduzido(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
-}
-
-/** O topo do pedido no conteúdo rolável. Quando ele abre o grupo, conta do
- *  grupo, para o "Você" ficar à vista junto. */
-function topoDoPedido(scroller: HTMLElement, id: string): number | null {
-  const no = scroller.querySelector<HTMLElement>(`[data-chat-item-ids~="${CSS.escape(id)}"]`)
-  if (!no) return null
-  const grupo = no.closest<HTMLElement>("[data-turn-key]")
-  const alvo = grupo && grupo.querySelector("[data-chat-item-ids]") === no ? grupo : no
-  return alvo.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop
-}
 
 export function useChatScroll({
   activeId,
@@ -152,6 +136,27 @@ export function useChatScroll({
     const el = scrollRef.current
     if (el) el.dataset.threadFollowing = String(value)
   }, [])
+
+  // A âncora da cauda (ver `desvioAcimaDaCauda`): o que muda acima do último
+  // grupo é compensado no mesmo quadro; a mola cuida só do que nasce embaixo.
+  const caudaRef = useRef<MarcaDaCauda | null>(null)
+  const ancorarCauda = useCallback(() => {
+    const el = scrollRef.current
+    if (!el || !contentEl || escondido(el)) return
+    const agora = marcaDaCauda(el, contentEl)
+    // Lendo o passado, a tela é de quem rolou: só se ancora quem segue o fim.
+    const desvio = seguindoRef.current ? desvioAcimaDaCauda(caudaRef.current, agora) : 0
+    caudaRef.current = agora
+    if (!desvio) return
+    el.scrollTop = (topoVistoRef.current ?? el.scrollTop) + desvio
+    topoVistoRef.current = el.scrollTop
+    const m = molaRef.current
+    if (m.estado) {
+      const { alvoAnt } = m.estado
+      m.estado = { ...m.estado, pos: m.estado.pos + desvio, alvoAnt: alvoAnt === null ? null : alvoAnt + desvio }
+      m.escrito = el.scrollTop
+    }
+  }, [contentEl])
 
   const ajustarPista = useCallback(() => {
     const el = scrollRef.current
@@ -353,6 +358,7 @@ export function useChatScroll({
       if (!visivel) return
       // A pista se ajusta ANTES da pintura, no mesmo quadro em que o conteúdo
       // cresceu: é isso que deixa a tela parada enquanto a resposta preenche.
+      ancorarCauda()
       ajustarPista()
       if (seguindoRef.current) {
         irAoFim(aterrissandoRef.current || reapareceu ? "seco" : "mola")
@@ -368,7 +374,7 @@ export function useChatScroll({
     ro.observe(contentEl)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [activeId, contentEl, ajustarPista, irAoFim])
+  }, [activeId, contentEl, ancorarCauda, ajustarPista, irAoFim])
 
   const last = items[items.length - 1]
   const streamTick = last && last.kind === "text" ? last.text.length : 0
@@ -398,6 +404,7 @@ export function useChatScroll({
     pistaPendenteRef.current = null
     alturaDaPistaRef.current = 0
     topoVistoRef.current = null
+    caudaRef.current = null
     if (pistaRef.current) pistaRef.current.style.height = "0px"
     atBottomRef.current = true
     posicaoRef.current = null
@@ -437,6 +444,15 @@ export function useChatScroll({
     }
   }, [activeId, vazio, setFollowing, aterrissar])
 
+  // Antes da pintura: o que mudou acima da cauda e o que encolheu no fim são
+  // compensados no mesmo quadro do commit que os causou. Esperar o
+  // ResizeObserver deixava um quadro com a tela 30px fora do lugar (vídeo de
+  // 30/09, 62,7s). A mola fica no efeito abaixo, que conhece a aterrissagem.
+  useLayoutEffect(() => {
+    ancorarCauda()
+    ajustarPista()
+  }, [items.length, streamTick, lastKey, running, ancorarCauda, ajustarPista])
+
   // Conteúdo novo na cauda. Declarado DEPOIS da aterrissagem de propósito:
   // no commit da troca, ela carimba a cauda antes, e este efeito a reconhece
   // como a mesma (logo, ainda aterrissando). `atBottom` NÃO é dependência (ver
@@ -457,9 +473,10 @@ export function useChatScroll({
         m.escrito = scrollRef.current?.scrollTop ?? 0
       }
     }
+    ancorarCauda()
     ajustarPista()
     if (seguindoRef.current) irAoFim(aterrissandoRef.current ? "seco" : "mola")
-  }, [items.length, streamTick, lastKey, running, ajustarPista, irAoFim])
+  }, [items.length, streamTick, lastKey, running, ancorarCauda, ajustarPista, irAoFim])
 
   return {
     scrollRef,

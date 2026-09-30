@@ -10497,6 +10497,16 @@ considerou.
   (devolvida antes da pintura, só enquanto segue); (c) o markdown muda de
   forma no meio do streaming e recriava palavras já lidas, que refaziam o
   fade, então só o que chegou há menos de 320ms (`--dur-slow`) dissolve.
+- **Correção 2 (30/09/2026, vídeo do segundo build):** o piscar restante era
+  a tela inteira pulando para trás no FIM do turno (quadros 8 → 9, 76,17s) e
+  a mola trazendo de volta em ~1s. O fim do turno muda a lista de nós, a
+  janela de 150 desliza e um nó antigo entra pelo topo; o WebKit não tem
+  ancoragem de scroll, e antes o salto instantâneo escondia isso. Agora o
+  último grupo é a âncora (`desvioAcimaDaCauda`): se o topo dele anda sem a
+  cauda crescer, a diferença é compensada no mesmo quadro. Âncora e pista
+  rodam num `useLayoutEffect`, antes da pintura; esperar o ResizeObserver
+  deixava um quadro 30px fora do lugar quando o detalhe de uma ação recolhia
+  (62,7s). A mola segue no efeito normal.
 
 ### ADR-291 · A bolha viva reparsa só o último bloco (F3) ✅
 - **Contexto (29/09/2026):** F3 de `docs/fluidez-do-fio-plan.md`, aberto desde
