@@ -22,13 +22,6 @@ import { ScheduledView } from "@/components/scheduled/ScheduledView"
 import { FleetView } from "@/components/fleet/FleetView"
 import { BranchSplitView } from "@/components/layout/BranchSplitView"
 import {
-  TETO_COM_TERMINAL,
-  useLarguraDoTerminal,
-} from "@/components/bastidores/useLarguraDoTerminal"
-import { useBastidores, vistasDa } from "@/store/bastidores"
-import { useChat } from "@/store/chat"
-import { usePanelRef } from "react-resizable-panels"
-import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
@@ -79,17 +72,7 @@ export function AppShell() {
   const flightPlansOpen = useApp((s) => s.flightPlansOpen)
   const fleetOpen = useApp((s) => s.fleetOpen)
   const coberto = scheduledOpen || flightPlansOpen || fleetOpen
-  const activeConvId = useChat((s) => s.activeId)
-  // ADR-200: o terminal dos Bastidores mora no painel direito, que alarga
-  // enquanto ele está à vista.
-  const vistasAbertas = useBastidores((s) => vistasDa(s.vistas, activeConvId).length > 0)
-  const contextPanelTab = useApp((s) => s.contextPanelTab)
   const painelVisivel = contextOpen && viewMode === "linear" && !coberto
-  const painelDireito = usePanelRef()
-  useLarguraDoTerminal(
-    painelDireito,
-    painelVisivel && vistasAbertas && contextPanelTab === "bastidores",
-  )
   // As views que COBREM o centro. Extraídas pra variável porque agora precisam
   // de uma caixa `flex-1` própria: o cartão virou coluna flex (a tira de abas
   // mora nele), e nesse regime um filho sem `flex-1` cresce até a altura do
@@ -272,10 +255,9 @@ export function AppShell() {
                 <ResizableHandle className={HANDLE} />
                 <ResizablePanel
                   id="context"
-                  panelRef={painelDireito}
                   defaultSize="30%"
                   minSize="240px"
-                  maxSize={vistasAbertas && contextPanelTab === "bastidores" ? TETO_COM_TERMINAL : "42%"}
+                  maxSize="50%"
                 >
                   <Fronteira area="o painel lateral"><ContextPanel /></Fronteira>
                 </ResizablePanel>
