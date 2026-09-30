@@ -9,9 +9,9 @@
 
 import { useEffect, useRef, useState } from "react"
 import {
-  Check,
   CheckCheck,
   FolderTree,
+  GitMerge,
   GitPullRequest,
   List,
   Loader2,
@@ -42,6 +42,8 @@ import { useGitSync } from "@/store/gitSync"
 import { useAlteracoesVivas } from "./DiffPanel/useAlteracoesVivas"
 import { GitSection, GitFileList } from "./DiffPanel/GitSection"
 import { PrComposer } from "./DiffPanel/shipBar"
+import { CartaoDePr } from "./DiffPanel/CartaoDePr"
+import { consultarPrStatus, invalidarCacheDePr, type PrStatusInfo } from "@/lib/github"
 import { openUrl } from "@tauri-apps/plugin-opener"
 import { useApp } from "@/store/app"
 import { controle } from "@/components/ui/controle"
@@ -85,11 +87,12 @@ export function DiffIndex({
   const [unstagedOpen, setUnstagedOpen] = useState(true)
   const [prOpen, setPrOpen] = useState(false)
   const [prUrl, setPrUrl] = useState<string | null>(null)
+  const [prStatus, setPrStatus] = useState<PrStatusInfo | null>(null)
 
   const openDiffTab = useApp((s) => s.openDiffTab)
   const mainTab = useApp((s) => s.mainTab)
 
-  function reload() {
+  function reload(forcarPr = false) {
     if (lendo.current) {
       pendente.current = true
       return
@@ -109,10 +112,24 @@ export function DiffIndex({
         if (loadEpoch.current !== epoch) return
         setStatus(next)
         setEstado(repo)
+
+        // Consulta desacoplada do PR em segundo plano (fail-open)
+        if (next.branch && repo?.remotoGithub) {
+          void consultarPrStatus(pasta, next.branch, forcarPr)
+            .then((pr) => {
+              if (loadEpoch.current === epoch) setPrStatus(pr)
+            })
+            .catch(() => {
+              if (loadEpoch.current === epoch) setPrStatus(null)
+            })
+        } else {
+          setPrStatus(null)
+        }
       })
       .catch((error) => {
         if (loadEpoch.current !== epoch) return
         setStatus(null)
+        setPrStatus(null)
         setLoadError(
           typeof error === "string"
             ? error
@@ -133,6 +150,7 @@ export function DiffIndex({
     // Pasta nova: mostra a última lista conhecida dela (ou nada) e relê.
     setStatus(ultimaLeitura.get(cwd) ?? null)
     setEstado(ultimoEstado.get(cwd) ?? null)
+    setPrStatus(null)
     pendente.current = false
     lendo.current = false
     reload()
@@ -211,6 +229,8 @@ export function DiffIndex({
           onOpened={(url) => {
             setPrUrl(url)
             setPrOpen(false)
+            invalidarCacheDePr(cwd)
+            reload(true)
           }}
         />
       )}
@@ -261,7 +281,7 @@ export function DiffIndex({
           <p className="text-[12px] text-muted-foreground">{loadError}</p>
           <button
             type="button"
-            onClick={reload}
+            onClick={() => reload()}
             className={cn(controle("compacto"), "border hover:bg-accent")}
           >
             Tentar novamente
@@ -279,6 +299,28 @@ export function DiffIndex({
               <SeletorDeBranch cwd={cwd} branch={status.branch} alteracoes={totalChanges} />
             ) : (
               <span className="text-muted-foreground/60">Alterações</span>
+            )}
+
+            {prStatus && (
+              <button
+                type="button"
+                onClick={() => void openUrl(prStatus.url)}
+                title={`PR #${prStatus.number}: ${prStatus.title}`}
+                className={cn(
+                  controle("chip"),
+                  "font-mono text-[11px] gap-1 px-1.5",
+                  prStatus.state === "OPEN" && "bg-git-open/15 text-git-open hover:bg-git-open/25",
+                  prStatus.state === "MERGED" && "bg-git-merged/15 text-git-merged hover:bg-git-merged/25",
+                  prStatus.state === "CLOSED" && "bg-st-error/15 text-st-error hover:bg-st-error/25",
+                )}
+              >
+                {prStatus.state === "MERGED" ? (
+                  <GitMerge className="size-2.5" />
+                ) : (
+                  <GitPullRequest className="size-2.5" />
+                )}
+                #{prStatus.number}
+              </button>
             )}
 
             <span className="ml-auto flex items-center gap-1.5 font-mono text-[11px] tabular-nums">
@@ -308,7 +350,10 @@ export function DiffIndex({
 
             <button
               type="button"
-              onClick={reload}
+              onClick={() => {
+                invalidarCacheDePr(cwd, status.branch ?? undefined)
+                reload(true)
+              }}
               className={cn(
                 controle("chip", { quadrado: true }),
                 "text-muted-foreground hover:bg-accent/40 hover:text-foreground",
@@ -464,50 +509,19 @@ export function DiffIndex({
             />
           </div>
 
-          {/* Rodapé: Abrir Pull Request ou link de PR aberto */}
-          {prUrl ? (
-            <div className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-[12px]">
-              <button
-                type="button"
-                onClick={() =>
-                  void openUrl(prUrl).catch((error) =>
-                    avisar.erro("Não consegui abrir o pull request.", { detalhe: mensagemDe(error) }),
-                  )
-                }
-                className={cn(
-                  controle("chip"),
-                  "text-git-open transition-colors hover:underline",
-                )}
-              >
-                <GitPullRequest className="size-3.5" /> PR aberto, abrir no GitHub
-              </button>
-              <button
-                type="button"
-                onClick={() => setPrUrl(null)}
-                aria-label="Fechar aviso do pull request"
-                className={cn(
-                  controle("chip", { quadrado: true }),
-                  "ml-auto text-muted-foreground hover:text-foreground",
-                )}
-                title="Fechar aviso"
-              >
-                <Check className="size-3.5" />
-              </button>
-            </div>
-          ) : (
-            <div className="flex shrink-0 items-center justify-end border-t border-border/40 px-3 py-2">
-              <button
-                type="button"
-                onClick={() => setPrOpen(true)}
-                className={cn(
-                  controle("chip"),
-                  "border text-foreground hover:bg-accent",
-                )}
-              >
-                <GitPullRequest className="size-3" /> Abrir pull request
-              </button>
-            </div>
-          )}
+          {/* Rodapé: Card contextual de Pull Request */}
+          <CartaoDePr
+            cwd={cwd}
+            branch={status.branch}
+            pr={prStatus}
+            prUrl={prUrl}
+            onAbrirComposer={() => setPrOpen(true)}
+            onLimparPrUrl={() => setPrUrl(null)}
+            onBranchTrocada={() => {
+              invalidarCacheDePr(cwd)
+              reload(true)
+            }}
+          />
         </>
       )}
     </div>

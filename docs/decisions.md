@@ -10534,3 +10534,29 @@ considerou.
   fade embrulhava o `"\n"` entre linhas de tabela e itens de lista num
   `span`, que o react-markdown não descarta (ele só descarta texto). Espaço em
   branco solto agora fica texto.
+
+### ADR-292 · A aba Alterações detecta o PR da branch ativa, sinaliza status de CI e facilita o retorno após merge ✅
+- **Contexto (30/09/2026):** a aba Alterações exibia estaticamente o botão
+  "Abrir pull request" mesmo quando a branch ativa já possuía um PR aberto ou
+  já havia sido mergeada no GitHub (evidência na branch
+  `fix/olist-product-brand-fallback`, anexo `95b8c12f932ce620.png` e mock
+  `docs/mocks/pull-requests-git.html`). Clicar para abrir falhava ao reenviar
+  o mesmo PR, e branches já mergeadas continuavam recebendo commits locais sem
+  aviso de incorporação.
+- **Decisão:**
+  1. **Comando dedicado em `github.rs`:** `gh_pr_status(cwd, branch)` consulta
+     o PR correspondente com `gh pr view` em JSON tipado. O comando mora em
+     `github.rs` (o `git.rs` está congelado no teto da baseline).
+  2. **Fail-open e zero bloqueio:** a consulta roda desacoplada em background
+     (`consultarPrStatus`). O status local do Git continua abrindo em ~5ms sem
+     aguardar a rede, e repositórios sem remoto do GitHub não chamam o `gh`.
+  3. **Cache com invalidação explícita:** resultado guardado por pasta e branch
+     (`Map<string, CacheEntry>`), invalidado no clique de recarregar (↻), na
+     troca de branch e na criação de PR.
+  4. **Dois pontos de contato na UI:**
+     - No cabeçalho: chip compacto ao lado do nome da branch (`#467`) com cor
+       semântica de git (verde para aberto, roxo para mergeado) e link web.
+     - No rodapé: `CartaoDePr` substitui o botão estático quando há PR. Se
+       aberto, mostra checks de CI e aprovações; se mergeado, avisa com clareza
+       e fornece o botão de retorno à branch base (`Voltar para main`).
+

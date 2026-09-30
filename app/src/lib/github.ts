@@ -83,3 +83,65 @@ export function diagnosticoDoGh(s: GhStatus): DiagnosticoGh {
   if (!ativa) return { estado: "sem-ativa", contas: s.accounts }
   return { estado: "ok", contas: s.accounts, ativa }
 }
+
+export interface PrStatusInfo {
+  number: number
+  title: string
+  state: "OPEN" | "MERGED" | "CLOSED"
+  isDraft: boolean
+  url: string
+  baseRefName: string
+  headRefName: string
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
+  checksPassing: number
+  checksFailing: number
+  checksPending: number
+}
+
+interface CacheEntry {
+  status: PrStatusInfo | null
+  carregadoEm: number
+}
+
+const prCache = new Map<string, CacheEntry>()
+const TTL_MS = 60_000
+
+export function invalidarCacheDePr(cwd?: string, branch?: string) {
+  if (!cwd) {
+    prCache.clear()
+    return
+  }
+  if (!branch) {
+    for (const key of prCache.keys()) {
+      if (key.startsWith(`${cwd}:`)) prCache.delete(key)
+    }
+    return
+  }
+  prCache.delete(`${cwd}:${branch}`)
+}
+
+/** Consulta o PR correspondente à branch no diretório. Fail-open e em cache. */
+export async function consultarPrStatus(
+  cwd: string,
+  branch: string,
+  forcar = false,
+): Promise<PrStatusInfo | null> {
+  if (!isTauri() || !branch || branch === "HEAD") return null
+  const chave = `${cwd}:${branch}`
+  const cache = prCache.get(chave)
+  const agora = Date.now()
+
+  if (!forcar && cache && agora - cache.carregadoEm < TTL_MS) {
+    return cache.status
+  }
+
+  try {
+    const res = await invoke<PrStatusInfo | null>("gh_pr_status", { cwd, branch })
+    prCache.set(chave, { status: res, carregadoEm: agora })
+    return res
+  } catch {
+    prCache.set(chave, { status: null, carregadoEm: agora })
+    return null
+  }
+}
+

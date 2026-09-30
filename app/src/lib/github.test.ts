@@ -72,3 +72,19 @@ describe("diagnosticoDoGh — quatro estados, quatro remédios", () => {
     expect(diagnosticoDoGh(GH_DESCONHECIDO).estado).toBe("sem-cli")
   })
 })
+
+describe("consultarPrStatus e cache", () => {
+  it("fora do Tauri ou branch inválida devolve null sem chamar invoke", async () => {
+    const { consultarPrStatus } = await import("@/lib/github")
+    expect(await consultarPrStatus("/tmp", "")).toBeNull()
+    expect(await consultarPrStatus("/tmp", "HEAD")).toBeNull()
+  })
+
+  it("invalidação de cache funciona por branch e global", async () => {
+    const { invalidarCacheDePr } = await import("@/lib/github")
+    expect(() => invalidarCacheDePr("/repo", "feat/nova")).not.toThrow()
+    expect(() => invalidarCacheDePr("/repo")).not.toThrow()
+    expect(() => invalidarCacheDePr()).not.toThrow()
+  })
+})
+

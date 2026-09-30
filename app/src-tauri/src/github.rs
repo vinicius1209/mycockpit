@@ -212,6 +212,128 @@ pub async fn gh_switch_account(user: String) -> Result<(), String> {
     .map(|_| ())
 }
 
+/// Detalhes de um Pull Request consultado via `gh pr view`.
+#[derive(serde::Serialize, serde::Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PrStatusInfo {
+    pub number: u64,
+    pub title: String,
+    /// "OPEN" | "MERGED" | "CLOSED"
+    pub state: String,
+    pub is_draft: bool,
+    pub url: String,
+    pub base_ref_name: String,
+    pub head_ref_name: String,
+    pub review_decision: Option<String>,
+    pub checks_passing: u32,
+    pub checks_failing: u32,
+    pub checks_pending: u32,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CheckRunRaw {
+    #[serde(default)]
+    status: String,
+    #[serde(default)]
+    conclusion: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PrViewRaw {
+    number: u64,
+    title: String,
+    state: String,
+    #[serde(default)]
+    is_draft: bool,
+    url: String,
+    #[serde(default)]
+    base_ref_name: String,
+    #[serde(default)]
+    head_ref_name: String,
+    #[serde(default)]
+    review_decision: String,
+    #[serde(default)]
+    status_check_rollup: Vec<CheckRunRaw>,
+}
+
+pub(crate) fn parse_pr_view(json_str: &str) -> Option<PrStatusInfo> {
+    let raw: PrViewRaw = serde_json::from_str(json_str).ok()?;
+    let mut checks_passing = 0;
+    let mut checks_failing = 0;
+    let mut checks_pending = 0;
+
+    for check in raw.status_check_rollup {
+        let conc = check.conclusion.to_uppercase();
+        let stat = check.status.to_uppercase();
+        if conc == "SUCCESS" {
+            checks_passing += 1;
+        } else if conc == "FAILURE" || conc == "TIMED_OUT" || conc == "ACTION_REQUIRED" {
+            checks_failing += 1;
+        } else if stat != "COMPLETED" || conc.is_empty() {
+            checks_pending += 1;
+        }
+    }
+
+    let review_decision = if raw.review_decision.trim().is_empty() {
+        None
+    } else {
+        Some(raw.review_decision.trim().to_string())
+    };
+
+    Some(PrStatusInfo {
+        number: raw.number,
+        title: raw.title,
+        state: raw.state.to_uppercase(),
+        is_draft: raw.is_draft,
+        url: raw.url,
+        base_ref_name: raw.base_ref_name,
+        head_ref_name: raw.head_ref_name,
+        review_decision,
+        checks_passing,
+        checks_failing,
+        checks_pending,
+    })
+}
+
+/// Consulta o PR associado à branch especificada no `cwd`.
+/// Fail-open: se não houver PR, se a máquina estiver offline ou gh não estiver
+/// instalado, devolve `Ok(None)` para que a aba de alterações não quebre.
+#[tauri::command]
+pub async fn gh_pr_status(cwd: String, branch: String) -> Result<Option<PrStatusInfo>, String> {
+    let branch = branch.trim();
+    if branch.is_empty() || branch == "HEAD" {
+        return Ok(None);
+    }
+    let cwd_path = match crate::git::validated_git_cwd(&cwd) {
+        Ok(p) => p,
+        Err(_) => return Ok(None),
+    };
+
+    let mut cmd = Command::new("gh");
+    cmd.current_dir(cwd_path);
+    cmd.args([
+        "pr",
+        "view",
+        branch,
+        "--json",
+        "number,title,state,isDraft,url,reviewDecision,statusCheckRollup,mergedAt,baseRefName,headRefName",
+    ]);
+
+    let out = match timeout(Duration::from_secs(5), cmd.output()).await {
+        Ok(Ok(o)) => o,
+        _ => return Ok(None),
+    };
+
+    if !out.status.success() {
+        return Ok(None);
+    }
+
+    let stdout_str = String::from_utf8_lossy(&out.stdout);
+    Ok(parse_pr_view(&stdout_str))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,5 +407,79 @@ mod tests {
         // Formato irreconhecível NUNCA vira "versão" com a linha crua dentro.
         assert_eq!(parse_gh_version("alguma outra coisa"), None);
         assert_eq!(parse_gh_version(""), None);
+    }
+
+    const PR_VIEW_REAL: &str = r#"{
+      "baseRefName": "main",
+      "headRefName": "composer-inventario-e-fio-integro",
+      "isDraft": false,
+      "mergedAt": "2026-09-15T18:38:40Z",
+      "number": 1,
+      "reviewDecision": "",
+      "state": "MERGED",
+      "statusCheckRollup": [
+        {
+          "conclusion": "SUCCESS",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "status": "COMPLETED"
+        },
+        {
+          "conclusion": "SUCCESS",
+          "status": "COMPLETED"
+        }
+      ],
+      "title": "Composer por motor, fio íntegro, notas com anexos e helper no prazo",
+      "url": "https://github.com/vinicius1209/frota/pull/1"
+    }"#;
+
+    #[test]
+    fn parse_pr_view_com_fixture_real_de_pr_mergeado() {
+        let pr = parse_pr_view(PR_VIEW_REAL).expect("deveria parsear JSON real de PR");
+        assert_eq!(pr.number, 1);
+        assert_eq!(pr.state, "MERGED");
+        assert_eq!(pr.title, "Composer por motor, fio íntegro, notas com anexos e helper no prazo");
+        assert_eq!(pr.base_ref_name, "main");
+        assert_eq!(pr.head_ref_name, "composer-inventario-e-fio-integro");
+        assert_eq!(pr.checks_passing, 3);
+        assert_eq!(pr.checks_failing, 0);
+        assert_eq!(pr.checks_pending, 0);
+        assert_eq!(pr.review_decision, None);
+        assert!(!pr.is_draft);
+    }
+
+    #[test]
+    fn parse_pr_view_com_checks_falhando_e_review_approved() {
+        let json = r#"{
+          "number": 470,
+          "title": "fix: taxa",
+          "state": "OPEN",
+          "isDraft": true,
+          "url": "https://github.com/org/repo/pull/470",
+          "baseRefName": "develop",
+          "headRefName": "fix/taxa",
+          "reviewDecision": "APPROVED",
+          "statusCheckRollup": [
+            { "status": "COMPLETED", "conclusion": "FAILURE" },
+            { "status": "COMPLETED", "conclusion": "SUCCESS" },
+            { "status": "IN_PROGRESS", "conclusion": "" }
+          ]
+        }"#;
+        let pr = parse_pr_view(json).expect("deveria parsear");
+        assert_eq!(pr.number, 470);
+        assert_eq!(pr.state, "OPEN");
+        assert!(pr.is_draft);
+        assert_eq!(pr.checks_failing, 1);
+        assert_eq!(pr.checks_passing, 1);
+        assert_eq!(pr.checks_pending, 1);
+        assert_eq!(pr.review_decision, Some("APPROVED".to_string()));
+    }
+
+    #[test]
+    fn parse_pr_view_invalido_devolve_none() {
+        assert!(parse_pr_view("não é json").is_none());
+        assert!(parse_pr_view("{}").is_none());
     }
 }

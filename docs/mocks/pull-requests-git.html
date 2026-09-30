@@ -1,0 +1,909 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Aba Alterações: Pull Requests Abertos e Mergeados</title>
+<style>
+  :root {
+    /* Tema ESCURO (padrão da Frota) */
+    --background: #0a0b0d;
+    --rail: #0c0d10;
+    --card: #141619;
+    --popover: #191c20;
+    --foreground: #e7e8ea;
+    --muted-foreground: #9aa0a7;
+    --faint: #687078;
+    --border: rgba(255, 255, 255, 0.08);
+    --divisor: rgba(255, 255, 255, 0.04);
+    --sel: rgba(255, 255, 255, 0.065);
+    --sel-hover: rgba(255, 255, 255, 0.032);
+    --accent: #1e2126;
+    --secondary: #191c20;
+    --primary: #ecedee;
+    --primary-fg: #0a0b0d;
+    
+    /* Domínio Git & Status */
+    --git-open: #3fb950;
+    --git-open-bg: rgba(63, 185, 80, 0.12);
+    --git-merged: #a371f7;
+    --git-merged-bg: rgba(163, 113, 247, 0.12);
+    --git-closed: #f2766b;
+    --git-closed-bg: rgba(242, 118, 107, 0.12);
+    --git-draft: #9aa0a7;
+    --git-draft-bg: rgba(154, 160, 167, 0.12);
+    
+    --add: #5bd6a0;
+    --del: #f2766b;
+    --mod: #d99138;
+    --warn: #d99138;
+    
+    --sans: "Geist Variable", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "Geist Mono Variable", "SF Mono", ui-monospace, Menlo, monospace;
+    --shadow-pop: 0 12px 40px -8px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  }
+
+  [data-theme="light"] {
+    /* Tema CLARO */
+    --background: #fbfbfa;
+    --rail: #f6f6f4;
+    --card: #ffffff;
+    --popover: #ffffff;
+    --foreground: #16181b;
+    --muted-foreground: #5c6166;
+    --faint: #8a9099;
+    --border: rgba(0, 0, 0, 0.09);
+    --divisor: rgba(0, 0, 0, 0.036);
+    --sel: rgba(0, 0, 0, 0.055);
+    --sel-hover: rgba(0, 0, 0, 0.028);
+    --accent: #f1f1ef;
+    --secondary: #f4f4f2;
+    --primary: #16181b;
+    --primary-fg: #fbfbfa;
+    
+    --git-open: #1a7f37;
+    --git-open-bg: rgba(26, 127, 55, 0.10);
+    --git-merged: #8250df;
+    --git-merged-bg: rgba(130, 80, 223, 0.10);
+    --git-closed: #cf4a3e;
+    --git-closed-bg: rgba(207, 74, 62, 0.10);
+    --git-draft: #5c6166;
+    --git-draft-bg: rgba(92, 97, 102, 0.10);
+    
+    --add: #1f9d6b;
+    --del: #cf4a3e;
+    --mod: #c1861f;
+    --warn: #c1861f;
+    
+    --shadow-pop: 0 12px 40px -8px rgba(20, 22, 25, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--rail);
+    color: var(--foreground);
+    font: 13px/1.5 var(--sans);
+    padding: 32px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .title-group h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .title-group p { font-size: 13px; color: var(--muted-foreground); margin-top: 4px; }
+  
+  .theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    padding: 4px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    cursor: pointer;
+    color: var(--foreground);
+    font-weight: 500;
+  }
+  .theme-toggle:hover { background: var(--accent); }
+
+  .grid-palco {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 28px;
+    align-items: start;
+  }
+
+  .col-mock {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .col-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .col-tag {
+    font: 600 11px/1 var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted-foreground);
+  }
+  .col-status-pill {
+    font: 500 11px var(--sans);
+    padding: 2px 8px;
+    border-radius: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .col-status-pill.open { background: var(--git-open-bg); color: var(--git-open); }
+  .col-status-pill.merged { background: var(--git-merged-bg); color: var(--git-merged); }
+  .col-status-pill.none { background: var(--sel); color: var(--faint); }
+  .col-status-pill.failing { background: var(--git-closed-bg); color: var(--git-closed); }
+
+  /* Superfície da Aba Lateral da Frota */
+  .aba-frota {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Cabeçalho da Aba */
+  .aba-cab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    font: 11px var(--mono);
+    color: var(--muted-foreground);
+  }
+  .branch-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 24px;
+    padding: 0 6px;
+    border-radius: 6px;
+    color: var(--foreground);
+    font-weight: 500;
+    max-width: 210px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .branch-btn:hover { background: var(--sel); }
+  .branch-pr-badge {
+    font: 500 10px var(--mono);
+    padding: 1px 5px;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .branch-pr-badge.open { background: var(--git-open-bg); color: var(--git-open); }
+  .branch-pr-badge.merged { background: var(--git-merged-bg); color: var(--git-merged); }
+  .branch-pr-badge.failing { background: var(--git-closed-bg); color: var(--git-closed); }
+
+  .aba-esp { flex: 1; }
+  .delta-stat { font: 11px var(--mono); font-variant-numeric: tabular-nums; }
+  .delta-add { color: var(--add); }
+  .delta-del { color: var(--del); }
+
+  .icon-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: grid;
+    place-items: center;
+    color: var(--muted-foreground);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--foreground); background: var(--sel); }
+
+  /* Composer de Commit */
+  .commit-box {
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .commit-input {
+    height: 32px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--background);
+    color: var(--foreground);
+    padding: 0 10px;
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .commit-input-ph { color: var(--faint); }
+  .commit-action-row {
+    display: flex;
+  }
+  .commit-btn {
+    flex: 1;
+    height: 30px;
+    border-radius: 6px 0 0 6px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-right: none;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+  .commit-dropdown-btn {
+    width: 28px;
+    height: 30px;
+    border-radius: 0 6px 6px 0;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--muted-foreground);
+    display: grid;
+    place-items: center;
+  }
+
+  /* Seções de Lista */
+  .secao-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px 4px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    cursor: pointer;
+    user-select: none;
+  }
+  .secao-head:hover { color: var(--foreground); }
+  .badge-count {
+    font: 11px var(--mono);
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 0 4px;
+    color: var(--foreground);
+  }
+
+  .file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 28px;
+    padding: 0 12px;
+    font: 12px var(--mono);
+  }
+  .file-item:hover { background: var(--sel-hover); }
+  .file-status { font-weight: 600; width: 10px; }
+  .file-status.m { color: var(--mod); }
+  .file-name { color: var(--foreground); font-weight: 500; }
+  .file-path { color: var(--faint); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-left: 2px; }
+
+  /* Acordeão do Histórico e PRs */
+  .acordeon-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--muted-foreground);
+    border-top: 1px solid var(--divisor);
+    cursor: pointer;
+    user-select: none;
+  }
+  .acordeon-head:hover { color: var(--foreground); background: var(--sel-hover); }
+
+  /* Lista de PRs no Acordeão */
+  .pr-repo-list {
+    background: var(--background);
+    border-top: 1px solid var(--divisor);
+    padding: 4px 0;
+  }
+  .pr-repo-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .pr-repo-item:hover { background: var(--sel); }
+  .pr-repo-title { flex: 1; color: var(--foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pr-repo-meta { font: 11px var(--mono); color: var(--faint); display: flex; align-items: center; gap: 4px; }
+
+  /* Rodapé Dinâmico da Aba */
+  .aba-rodape {
+    border-top: 1px solid var(--divisor);
+    padding: 10px 12px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    background: var(--card);
+  }
+
+  /* Cartão de PR no Rodapé (Quando Aberto ou Mergeado) */
+  .pr-footer-card {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    padding: 9px 11px;
+    background: var(--background);
+  }
+  .pr-footer-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .pr-footer-badge {
+    font: 600 11px var(--mono);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    border-radius: 5px;
+  }
+  .pr-footer-badge.open { background: var(--git-open-bg); color: var(--git-open); }
+  .pr-footer-badge.merged { background: var(--git-merged-bg); color: var(--git-merged); }
+  .pr-footer-badge.failing { background: var(--git-closed-bg); color: var(--git-closed); }
+
+  .pr-footer-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--foreground);
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pr-footer-meta {
+    font-size: 11px;
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .pr-footer-meta span { display: inline-flex; align-items: center; gap: 4px; }
+
+  .pr-actions-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    margin-top: 2px;
+    padding-top: 6px;
+    border-top: 1px solid var(--divisor);
+  }
+
+  /* Botões de Estilo Frota (§13: chip 24, compacto 28, padrao 32) */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 6px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    color: var(--foreground);
+    transition: background 0.1s, border-color 0.1s;
+    text-decoration: none;
+    user-select: none;
+  }
+  .btn:hover { background: var(--accent); }
+  .btn.chip { height: 24px; padding: 0 8px; font-size: 11px; }
+  .btn.compacto { height: 28px; padding: 0 10px; font-size: 12px; }
+  .btn.padrao { height: 32px; padding: 0 12px; font-size: 13px; }
+  
+  .btn.primario {
+    background: var(--foreground);
+    color: var(--background);
+    border-color: var(--foreground);
+  }
+  .btn.primario:hover { opacity: 0.92; }
+
+  .btn.merged-action {
+    background: var(--git-merged-bg);
+    color: var(--git-merged);
+    border-color: rgba(163, 113, 247, 0.25);
+  }
+  .btn.merged-action:hover {
+    background: rgba(163, 113, 247, 0.20);
+  }
+
+  .btn.ghost {
+    background: transparent;
+    border-color: transparent;
+    color: var(--muted-foreground);
+  }
+  .btn.ghost:hover {
+    background: var(--sel);
+    color: var(--foreground);
+  }
+
+  .icon {
+    width: 14px;
+    height: 14px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+  }
+  .icon.sm { width: 12px; height: 12px; }
+  .icon.xs { width: 10px; height: 10px; }
+
+  /* Seção de Análise e Arquitetura */
+  .doc-section {
+    margin-top: 48px;
+    max-width: 960px;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--muted-foreground);
+  }
+  .doc-section h2 { font-size: 16px; font-weight: 600; color: var(--foreground); margin-bottom: 12px; }
+  .doc-section h3 { font-size: 14px; font-weight: 600; color: var(--foreground); margin: 20px 0 6px; }
+  .doc-section p { margin-bottom: 10px; }
+  .doc-section ul { margin-left: 20px; margin-bottom: 16px; }
+  .doc-section li { margin-bottom: 6px; }
+  .doc-section code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    color: var(--foreground);
+  }
+  .kbd {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: var(--secondary);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+</style>
+</head>
+<body data-theme="dark">
+
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-10 6"/></symbol>
+  <symbol id="pr" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="18" r="2"/><path d="M6 8v8M18 16V9a3 3 0 0 0-3-3h-4"/></symbol>
+  <symbol id="git-merge" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/></symbol>
+  <symbol id="chev-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="chev-right" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="refresh" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></symbol>
+  <symbol id="external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="sparkle" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></symbol>
+  <symbol id="check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></symbol>
+  <symbol id="x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></symbol>
+  <symbol id="user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+  <symbol id="clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+  <symbol id="arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M5 12h14"/></symbol>
+</svg>
+
+<header>
+  <div class="title-group">
+    <h1>Aba Alterações: Pull Requests na Frota</h1>
+    <p>Visualização dos 4 estados operacionais de PR (Aberto, Mergeado, Falha de CI e Sem PR) e da seção de repositório.</p>
+  </div>
+  <button class="theme-toggle" onclick="toggleTheme()">
+    Alternar Tema (Dark / Claro)
+  </button>
+</header>
+
+<div class="grid-palco">
+
+  <!-- CENÁRIO 1: PR ABERTO E SAUDÁVEL (Cenário do print do usuário) -->
+  <div class="col-mock">
+    <div class="col-header">
+      <span class="col-tag">1. PR Aberto na branch atual</span>
+      <span class="col-status-pill open">
+        <svg class="icon xs"><use href="#check-circle"/></svg> CI passando
+      </span>
+    </div>
+
+    <div class="aba-frota">
+      <!-- Cabeçalho com chip de PR -->
+      <div class="aba-cab">
+        <div class="branch-btn" title="fix/olist-product-brand-fallback">
+          <svg class="icon sm"><use href="#branch"/></svg>
+          fix/olist-product-brand-fallback
+          <svg class="icon xs"><use href="#chev-down"/></svg>
+        </div>
+        <a class="branch-pr-badge open" href="#github" title="Abrir PR #467 no GitHub">
+          <svg class="icon xs"><use href="#pr"/></svg>#467
+        </a>
+        <span class="aba-esp"></span>
+        <span class="delta-stat delta-add">+33</span>
+        <button class="icon-btn" title="Recarregar status"><svg class="icon sm"><use href="#refresh"/></svg></button>
+      </div>
+
+      <!-- Composer de commit -->
+      <div class="commit-box">
+        <div class="commit-input">
+          <span class="commit-input-ph">Mensagem do commit</span>
+          <svg class="icon sm" style="color:var(--faint)"><use href="#sparkle"/></svg>
+        </div>
+        <div class="commit-action-row">
+          <button class="commit-btn">
+            <svg class="icon sm"><use href="#check"/></svg> Criar commit
+          </button>
+          <button class="commit-dropdown-btn">
+            <svg class="icon xs"><use href="#chev-down"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Seção Alterações -->
+      <div class="secao-head">
+        <svg class="icon xs"><use href="#chev-down"/></svg>
+        <span>Alterações</span>
+        <span class="badge-count">1</span>
+      </div>
+      <div class="file-item">
+        <span class="file-status m">M</span>
+        <span class="file-name">LOG.md</span>
+        <span class="file-path">.claude/plans/olist-seller-auto-sync/</span>
+        <span class="delta-stat delta-add">+33</span>
+      </div>
+
+      <!-- Histórico recolhido -->
+      <div class="acordeon-head" style="margin-top:auto">
+        <svg class="icon xs"><use href="#chev-right"/></svg>
+        <span>Histórico</span>
+      </div>
+
+      <!-- Rodapé: Card inteligente substituindo botão estático -->
+      <div class="aba-rodape">
+        <div class="pr-footer-card">
+          <div class="pr-footer-top">
+            <span class="pr-footer-badge open">
+              <svg class="icon sm"><use href="#pr"/></svg> PR #467 · Aberto
+            </span>
+            <span class="delta-stat" style="color:var(--faint)">há 42 min</span>
+          </div>
+          <div class="pr-footer-title" title="fix: fallback para marcas sem id no catálogo Olist">
+            fix: fallback para marcas sem id no catálogo Olist
+          </div>
+          <div class="pr-footer-meta">
+            <span style="color:var(--git-open)"><svg class="icon xs"><use href="#check-circle"/></svg> 4 checks passaram</span>
+            <span>·</span>
+            <span>1 aprovação</span>
+            <span>·</span>
+            <span>base: develop</span>
+          </div>
+          <div class="pr-actions-row">
+            <span style="font-size:11px;color:var(--muted-foreground)">Por vinicius1209</span>
+            <div style="display:flex;gap:4px">
+              <button class="btn chip ghost" title="Copiar link do PR">Copiar link</button>
+              <button class="btn chip" title="Abrir no GitHub">
+                <svg class="icon xs"><use href="#external"/></svg> Abrir no GitHub
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENÁRIO 2: PR MERGEADO (Gesto chave de higiene e prevenção de erro) -->
+  <div class="col-mock">
+    <div class="col-header">
+      <span class="col-tag">2. PR Mergeado no GitHub</span>
+      <span class="col-status-pill merged">
+        <svg class="icon xs"><use href="#git-merge"/></svg> Pronto para limpar
+      </span>
+    </div>
+
+    <div class="aba-frota">
+      <div class="aba-cab">
+        <div class="branch-btn" title="feat/export-csv-reports">
+          <svg class="icon sm"><use href="#branch"/></svg>
+          feat/export-csv-reports
+          <svg class="icon xs"><use href="#chev-down"/></svg>
+        </div>
+        <a class="branch-pr-badge merged" href="#github" title="PR #462 Mergeado">
+          <svg class="icon xs"><use href="#git-merge"/></svg>#462
+        </a>
+        <span class="aba-esp"></span>
+        <button class="icon-btn"><svg class="icon sm"><use href="#refresh"/></svg></button>
+      </div>
+
+      <div class="commit-box">
+        <div class="commit-input">
+          <span class="commit-input-ph">Mensagem do commit</span>
+          <svg class="icon sm" style="color:var(--faint)"><use href="#sparkle"/></svg>
+        </div>
+        <div class="commit-action-row">
+          <button class="commit-btn" disabled style="opacity:0.5">
+            <svg class="icon sm"><use href="#check"/></svg> Criar commit
+          </button>
+          <button class="commit-dropdown-btn" disabled style="opacity:0.5">
+            <svg class="icon xs"><use href="#chev-down"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="secao-head" style="color:var(--faint)">
+        <svg class="icon xs"><use href="#chev-right"/></svg>
+        <span>Nenhuma alteração pendente</span>
+      </div>
+
+      <div class="acordeon-head" style="margin-top:auto">
+        <svg class="icon xs"><use href="#chev-right"/></svg>
+        <span>Histórico</span>
+      </div>
+
+      <!-- Rodapé: Banner propositivo de PR Mergeado -->
+      <div class="aba-rodape">
+        <div class="pr-footer-card" style="border-color:rgba(163, 113, 247, 0.3);">
+          <div class="pr-footer-top">
+            <span class="pr-footer-badge merged">
+              <svg class="icon sm"><use href="#git-merge"/></svg> PR #462 · Mergeado em main
+            </span>
+            <span class="delta-stat" style="color:var(--faint)">há 2 h</span>
+          </div>
+          <div class="pr-footer-title">
+            feat: exportação consolidada de relatórios em CSV
+          </div>
+          <p style="font-size:11px;color:var(--muted-foreground);line-height:1.4">
+            Esta branch já foi incorporada ao repositório principal.
+          </p>
+          <div class="pr-actions-row">
+            <button class="btn chip ghost" title="Ver detalhes do PR no navegador">
+              Ver no GitHub
+            </button>
+            <button class="btn chip merged-action" title="Faz checkout para main e remove a branch local que já foi mergeada">
+              <svg class="icon xs"><use href="#arrow-left"/></svg> Voltar para main
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENÁRIO 3: PR ABERTO COM FALHA DE CI -->
+  <div class="col-mock">
+    <div class="col-header">
+      <span class="col-tag">3. PR Aberto com Falha de CI</span>
+      <span class="col-status-pill failing">
+        <svg class="icon xs"><use href="#x-circle"/></svg> 1 check quebrando
+      </span>
+    </div>
+
+    <div class="aba-frota">
+      <div class="aba-cab">
+        <div class="branch-btn" title="fix/tax-rounding">
+          <svg class="icon sm"><use href="#branch"/></svg>
+          fix/tax-rounding
+          <svg class="icon xs"><use href="#chev-down"/></svg>
+        </div>
+        <a class="branch-pr-badge failing" href="#github" title="PR #470 com falha de CI">
+          <svg class="icon xs"><use href="#x-circle"/></svg>#470
+        </a>
+        <span class="aba-esp"></span>
+        <span class="delta-stat delta-add">+12</span><span class="delta-stat delta-del">−4</span>
+        <button class="icon-btn"><svg class="icon sm"><use href="#refresh"/></svg></button>
+      </div>
+
+      <div class="commit-box">
+        <div class="commit-input">
+          <span class="commit-input-ph">Mensagem do commit</span>
+        </div>
+        <div class="commit-action-row">
+          <button class="commit-btn"><svg class="icon sm"><use href="#check"/></svg> Criar commit</button>
+          <button class="commit-dropdown-btn"><svg class="icon xs"><use href="#chev-down"/></svg></button>
+        </div>
+      </div>
+
+      <div class="secao-head">
+        <svg class="icon xs"><use href="#chev-down"/></svg>
+        <span>Alterações</span>
+        <span class="badge-count">1</span>
+      </div>
+      <div class="file-item">
+        <span class="file-status m">M</span>
+        <span class="file-name">tax.ts</span>
+        <span class="file-path">src/lib/</span>
+        <span class="delta-stat delta-add">+12</span><span class="delta-stat delta-del">−4</span>
+      </div>
+
+      <div class="acordeon-head" style="margin-top:auto">
+        <svg class="icon xs"><use href="#chev-right"/></svg>
+        <span>Histórico</span>
+      </div>
+
+      <!-- Rodapé: Aviso de CI falhando -->
+      <div class="aba-rodape">
+        <div class="pr-footer-card" style="border-color:rgba(242, 118, 107, 0.3);">
+          <div class="pr-footer-top">
+            <span class="pr-footer-badge failing">
+              <svg class="icon sm"><use href="#pr"/></svg> PR #470 · Aberto
+            </span>
+            <span class="delta-stat" style="color:var(--faint)">há 15 min</span>
+          </div>
+          <div class="pr-footer-title">
+            fix: arredondamento de centavos em alíquota ICMS
+          </div>
+          <div class="pr-footer-meta">
+            <span style="color:var(--del)">
+              <svg class="icon xs"><use href="#x-circle"/></svg> 1 check falhou (vitest e2e)
+            </span>
+          </div>
+          <div class="pr-actions-row">
+            <button class="btn chip ghost" title="Ver logs no GitHub Actions">Ver log do erro ↗</button>
+            <button class="btn chip" title="Pede ao agente para ler o erro e corrigir">
+              <svg class="icon xs"><use href="#sparkle"/></svg> Pedir correção ao agente
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CENÁRIO 4: SEÇÃO EXPANSÍVEL DE PRS DO REPOSITÓRIO -->
+  <div class="col-mock">
+    <div class="col-header">
+      <span class="col-tag">4. Visão do Repositório (Acordeão)</span>
+      <span class="col-status-pill none">3 abertos</span>
+    </div>
+
+    <div class="aba-frota">
+      <div class="aba-cab">
+        <div class="branch-btn">
+          <svg class="icon sm"><use href="#branch"/></svg>
+          main
+          <svg class="icon xs"><use href="#chev-down"/></svg>
+        </div>
+        <span class="aba-esp"></span>
+        <button class="icon-btn"><svg class="icon sm"><use href="#refresh"/></svg></button>
+      </div>
+
+      <!-- Acordeão de Pull Requests aberto -->
+      <div class="acordeon-head" style="border-top:none;background:var(--sel);">
+        <svg class="icon xs"><use href="#chev-down"/></svg>
+        <span style="font-weight:500;color:var(--foreground)">Pull requests</span>
+        <span class="badge-count">3 abertos</span>
+      </div>
+
+      <div class="pr-repo-list">
+        <!-- PR 1 -->
+        <div class="pr-repo-item">
+          <svg class="icon sm" style="color:var(--git-open)"><use href="#pr"/></svg>
+          <div style="flex:1;overflow:hidden">
+            <div class="pr-repo-title">#467 fix: fallback de marca Olist</div>
+            <div class="pr-repo-meta">
+              <span>vinicius1209</span>
+              <span>·</span>
+              <span style="color:var(--git-open)">✓ CI ok</span>
+              <span>·</span>
+              <span>há 42 min</span>
+            </div>
+          </div>
+          <button class="btn chip ghost" title="Trocar para a branch desta PR">Checkout</button>
+        </div>
+
+        <!-- PR 2 -->
+        <div class="pr-repo-item">
+          <svg class="icon sm" style="color:var(--git-open)"><use href="#pr"/></svg>
+          <div style="flex:1;overflow:hidden">
+            <div class="pr-repo-title">#465 feat: suporte a dark mode nativo</div>
+            <div class="pr-repo-meta">
+              <span>marcos</span>
+              <span>·</span>
+              <span style="color:var(--mod)">Revisão pedida</span>
+              <span>·</span>
+              <span>há 3 h</span>
+            </div>
+          </div>
+          <button class="btn chip ghost" title="Ver PR na web">↗</button>
+        </div>
+
+        <!-- PR 3 (Mergeado recentemente) -->
+        <div class="pr-repo-item" style="opacity:0.85">
+          <svg class="icon sm" style="color:var(--git-merged)"><use href="#git-merge"/></svg>
+          <div style="flex:1;overflow:hidden">
+            <div class="pr-repo-title">#462 feat: exportação de CSV</div>
+            <div class="pr-repo-meta">
+              <span style="color:var(--git-merged)">Mergeado</span>
+              <span>·</span>
+              <span>há 2 h</span>
+            </div>
+          </div>
+          <button class="btn chip ghost" title="Ver detalhes">↗</button>
+        </div>
+      </div>
+
+      <div class="acordeon-head">
+        <svg class="icon xs"><use href="#chev-right"/></svg>
+        <span>Histórico</span>
+      </div>
+
+      <!-- Rodapé padrão quando não há PR no branch atual -->
+      <div class="aba-rodape">
+        <button class="btn chip">
+          <svg class="icon xs"><use href="#pr"/></svg> Abrir pull request
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="doc-section">
+  <h2>Decisões de Design e Engenharia (Benchmark VS Code / Frota)</h2>
+  
+  <h3>1. Foco no Contexto Imediato (A Branch Ativa)</h3>
+  <p>
+    No VS Code tradicional e extensões como GitLens, a informação mais crítica é o estado da branch atual. O rodapé da aba Alterações é hoje ocupado por um botão estático <code>Abrir pull request</code>. Ao transformá-lo em um <b>card contextual de estado</b>:
+  </p>
+  <ul>
+    <li><b>Sem PR:</b> Exibe o botão clássico <code>Abrir pull request</code> (nada muda para quem está iniciando um trabalho).</li>
+    <li><b>PR Aberto:</b> Revela o número do PR, o título, o status dos checks de CI (verde/vermelho) e reviews, com atalho direto para a web.</li>
+    <li><b>PR Mergeado:</b> Fornece o feedback mais valioso de todos: informa que a branch já está em <code>main</code> e oferece um botão seguro de um clique para voltar para a branch principal.</li>
+  </ul>
+
+  <h3>2. Desempenho Local-First e Carga em Background</h3>
+  <p>
+    Seguindo as leis de arquitetura da Frota:
+  </p>
+  <ul>
+    <li>O <code>loadGitStatus</code> local roda em menos de 10ms. A consulta de PR no GitHub (via <code>gh pr view</code>) leva entre 300ms e 1.2s.</li>
+    <li><b>A renderização nunca bloqueia:</b> a tela abre instantaneamente com o estado local. A promessa de PR resolve em segundo plano e injeta as informações de forma suave (stale-while-revalidate).</li>
+    <li>Se o repositório não for do GitHub (<code>remoto_github: false</code>) ou se estiver sem conexão, a UI faz degradação honesta (fail-open), mostrando o botão neutro sem disparar erros invasivos.</li>
+  </ul>
+
+  <h3>3. Seção de Repositório (Acordeão de PRs)</h3>
+  <p>
+    Assim como o <code>Histórico</code> (que lê commits locais sob demanda), a seção <code>Pull requests</code> lê a lista de PRs abertos apenas quando o usuário a expande. Isso permite revisar o trabalho da equipe ou fazer checkout rápido sem poluir o consumo de rede no boot da aba.
+  </p>
+</div>
+
+<script>
+  function toggleTheme() {
+    const b = document.body;
+    const current = b.getAttribute('data-theme');
+    const next = current === 'dark' ? 'light' : 'dark';
+    b.setAttribute('data-theme', next);
+  }
+</script>
+</body>
+</html>
