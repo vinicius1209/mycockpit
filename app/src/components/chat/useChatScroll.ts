@@ -8,6 +8,23 @@ import {
   QUADRO_MS,
   type EstadoDaMola,
 } from "@/components/chat/molaDoFio"
+import {
+  ehGestoDeLeitura,
+  ehGestoDeSubida,
+  escondido,
+  pertoDoFim,
+  rolagemAoReaparecer,
+} from "@/components/chat/medidaDoFio"
+
+export {
+  PERTO_DO_FIM_PX,
+  ehGestoDeLeitura,
+  ehGestoDeSubida,
+  escondido,
+  pertoDoFim,
+  rolagemAoReaparecer,
+  type Medida,
+} from "@/components/chat/medidaDoFio"
 
 /**
  * Scroll e ANCORAGEM do fio.
@@ -43,67 +60,6 @@ import {
  *  4. Seguir é com mola, e enviar arma a pista (ADR-290, física em
  *     `molaDoFio.ts`). Aterrissar continua seco: abrir não é evento.
  */
-
-/** Distância do fim que ainda conta como "está no fim". */
-export const PERTO_DO_FIM_PX = 80
-
-export interface Medida {
-  scrollHeight: number
-  scrollTop: number
-  clientHeight: number
-}
-
-export function pertoDoFim(m: Medida): boolean {
-  return m.scrollHeight - m.scrollTop - m.clientHeight < PERTO_DO_FIM_PX
-}
-
-/**
- * O fio está escondido (outra aba da tira à vista, host em `display: none`)?
- * Sem layout, a medida não diz nada sobre leitura: o scroll zera e a altura
- * vira 0. Puro.
- */
-export function escondido(m: Pick<Medida, "clientHeight">): boolean {
-  return m.clientHeight === 0
-}
-
-/**
- * Onde o fio fica ao reaparecer. Quem seguia volta ao fim; quem tinha subido
- * pra ler volta onde estava. Pedido de 24/09/2026: fechar o arquivo com ⌘W
- * devolvia a conversa no COMEÇO, porque o WebKit descarta a rolagem de quem
- * fica em `display: none`. Puro.
- */
-export function rolagemAoReaparecer(
-  seguindo: boolean,
-  guardada: number | null,
-  scrollHeight: number,
-): number | null {
-  return seguindo ? scrollHeight : guardada
-}
-
-/**
- * A tecla significa "quero ler" (e não "quero acompanhar")?
- *
- * Seta pra baixo e End entram: quem navega pra baixo com o teclado também está
- * conduzindo a leitura, e ser puxado pelo autoscroll no meio disso é o mesmo
- * incômodo. O que fica de fora é digitação: ela acontece no composer, não aqui.
- */
-export function ehGestoDeLeitura(key: string): boolean {
-  return (
-    key === "ArrowUp" ||
-    key === "ArrowDown" ||
-    key === "PageUp" ||
-    key === "PageDown" ||
-    key === "Home" ||
-    key === "End"
-  )
-}
-
-/**
- * O movimento da roda ou toque significa intenção de ler o passado (subir)?
- */
-export function ehGestoDeSubida(deltaY: number): boolean {
-  return deltaY < 0
-}
 
 /** O último pedido SEU no fio: é nele que a pista se ancora. */
 function ultimoPedido(items: ChatItem[]): string | null {
@@ -142,6 +98,14 @@ export function useChatScroll({
   // altura é escrita direto no DOM: mudar por token via estado seria um render
   // do ChatPanel por delta.
   const pistaRef = useRef<HTMLDivElement | null>(null)
+  // A última altura ESCRITA na pista: reler `offsetHeight` arredondado fazia
+  // o cálculo oscilar.
+  const alturaDaPistaRef = useRef(0)
+  // Onde a tela estava da última vez que a VIMOS (evento de scroll ou quadro
+  // da mola). Quando o fim encolhe, o navegador corrige o `scrollTop` no
+  // layout, antes do ResizeObserver: é por esta que a pista sabe para onde
+  // devolver a tela.
+  const topoVistoRef = useRef<number | null>(null)
   const [atBottom, setAtBottom] = useState(true)
   // Espelho do estado pro efeito de autoscroll não depender DELE: com `atBottom`
   // na lista de deps, voltar pro fim disparava um `scrollTo` instantâneo que
@@ -196,15 +160,24 @@ export function useChatScroll({
     if (!el || !pista || !ancora || escondido(el)) return
     const topo = topoDoPedido(el, ancora.pedido)
     if (topo === null) return
+    const visto = topoVistoRef.current ?? el.scrollTop
     const altura = alturaDaPista({
-      alturaAtual: pista.offsetHeight,
+      alturaAtual: alturaDaPistaRef.current,
       scrollHeight: el.scrollHeight,
       clientHeight: el.clientHeight,
+      scrollTop: visto,
       topoDaMensagem: topo,
     })
-    pista.style.height = `${altura}px`
-    // A resposta passou da tela: a pista cumpriu o papel e a mola segue.
-    if (altura === 0) ancoraDaPistaRef.current = null
+    // A pista fica até você sair da conversa ou enviar de novo: zerada, ela
+    // ainda absorve o que encolher no fim (ver `alturaDaPista`).
+    if (altura !== alturaDaPistaRef.current) {
+      alturaDaPistaRef.current = altura
+      pista.style.height = `${altura}px`
+    }
+    // O navegador já puxou a tela para baixo no encolhimento: devolve antes
+    // da pintura, e ninguém vê o vai e vem. Só seguindo: o gesto de subir
+    // desliga o seguir antes do scroll, e aí a tela é de quem rolou.
+    if (seguindoRef.current && el.scrollTop < visto - 1) el.scrollTop = visto
   }, [])
 
   const quadroDaMola = useCallback(
@@ -228,6 +201,7 @@ export function useChatScroll({
       m.estado = r.estado
       el.scrollTop = r.estado.pos
       m.escrito = el.scrollTop
+      topoVistoRef.current = m.escrito
       if (r.assentou) {
         m.tAnt = 0
         return
@@ -261,6 +235,7 @@ export function useChatScroll({
     // Escondido, o scroll que chega é o WebKit zerando a rolagem, não leitura.
     if (escondido(el)) return
     posicaoRef.current = el.scrollTop
+    topoVistoRef.current = el.scrollTop
     // SÓ mede; e a única coisa que a posição LIGA é o seguir (chegar no fim é
     // pedir pra ser levado junto). Desligar por posição é o que confundia
     // reflow com gesto e parava o fio no meio do turno.
@@ -421,6 +396,8 @@ export function useChatScroll({
     aterrissar()
     ancoraDaPistaRef.current = null
     pistaPendenteRef.current = null
+    alturaDaPistaRef.current = 0
+    topoVistoRef.current = null
     if (pistaRef.current) pistaRef.current.style.height = "0px"
     atBottomRef.current = true
     posicaoRef.current = null

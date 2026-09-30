@@ -4,7 +4,7 @@ import type { Components, Options } from "react-markdown"
 import remarkGfm from "remark-gfm"
 import rehypeHighlight from "rehype-highlight"
 import { fatiasDaMensagem } from "./markdownBudget"
-import { rehypeTrechos } from "./rehypeTrechos"
+import { inicioDosJovens, registrarTrechos, rehypeTrechos, type RegistroDeTrechos } from "./rehypeTrechos"
 import { blocosDaMensagem } from "./blocosDaMensagem"
 import { BlocoMermaid } from "./BlocoMermaid"
 import { fonteMermaid } from "./fonteMermaid"
@@ -455,8 +455,11 @@ export const Markdown = memo(function Markdown({
   /** A resposta ainda está chegando: o trecho novo dissolve (ADR-290). */
   vivo?: boolean
 }) {
-  // O que já existia quando a bolha montou chega pronto (ADR-179).
-  const [desde] = useState(() => text.length)
+  // O que já existia quando a bolha montou chega pronto (ADR-179), e o que
+  // chegou há mais que a duração do fade não anima de novo (ADR-290).
+  const trechos = useRef<RegistroDeTrechos>({ tamanho: text.length, jovens: [] })
+  trechos.current = registrarTrechos(trechos.current, text.length, Date.now())
+  const desde = inicioDosJovens(trechos.current)
   const fatias = fatiasDaMensagem(text)
   return (
     <div
@@ -469,7 +472,13 @@ export const Markdown = memo(function Markdown({
       {vivo && fatias.length === 1 && fatias[0].tipo === "rico"
         ? // Viva: um memo por bloco, e só o último reparsa a cada token.
           blocosDaMensagem(text).map((bloco) => (
-            <MarkdownRico key={bloco.inicio} text={bloco.texto} desde={desde - bloco.inicio} />
+            <MarkdownRico
+              key={bloco.inicio}
+              text={bloco.texto}
+              // Preso ao bloco: o que está inteiro fora da faixa que dissolve
+              // recebe um valor fixo, e o memo dele continua valendo.
+              desde={Math.min(Math.max(desde - bloco.inicio, 0), bloco.texto.length)}
+            />
           ))
         : fatias.map((fatia, indice) =>
             fatia.tipo === "rico" ? (

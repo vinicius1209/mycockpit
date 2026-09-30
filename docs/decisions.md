@@ -10487,6 +10487,16 @@ considerou.
   física, a pista e a cascata têm testes puros; o fade, teste em DOM (jsdom)
   que prova a identidade dos elementos entre renders. A sensação precisa ser
   conferida num build.
+- **Correção (29/09/2026, depois do primeiro build):** a pista funcionou, mas
+  a resposta "piscava, como se forçasse subir". Três causas: (a) a altura da
+  pista saía fracionária e era relida arredondada, e o fim oscilava 1px por
+  token, agora é inteira e só se escreve quando muda; (b) a pista se desligava
+  ao zerar, e o que encolhia no fim (grupo de ações recolhendo) deixava o
+  navegador puxar a tela para baixo e a mola subi-la de novo, então ela fica
+  até a troca de conversa ou o próximo envio, com piso na última posição vista
+  (devolvida antes da pintura, só enquanto segue); (c) o markdown muda de
+  forma no meio do streaming e recriava palavras já lidas, que refaziam o
+  fade, então só o que chegou há menos de 320ms (`--dur-slow`) dissolve.
 
 ### ADR-291 · A bolha viva reparsa só o último bloco (F3) ✅
 - **Contexto (29/09/2026):** F3 de `docs/fluidez-do-fio-plan.md`, aberto desde

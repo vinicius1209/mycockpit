@@ -103,29 +103,50 @@ describe("teleporte", () => {
 })
 
 describe("pista ao enviar", () => {
+  // Cenário: tela de 600px, você estava no fim de um fio de 1100px (scrollTop
+  // 500) e o seu pedido entrou em 1000.
+  const base = { clientHeight: 600, topoDaMensagem: 1000 }
+
   it("reserva o espaço que falta para a mensagem ficar no topo", () => {
-    // Mensagem em 1000; tela de 600; conteúdo acaba em 1100 (a mensagem e um
-    // pouco de resposta). O fim do scroll precisa cair em 1000 - recuo.
-    const h = alturaDaPista({ alturaAtual: 0, scrollHeight: 1100, clientHeight: 600, topoDaMensagem: 1000 })
-    const maxScroll = 1100 + h - 600
-    expect(maxScroll).toBe(1000 - RECUO_DA_PISTA_PX)
+    const h = alturaDaPista({ ...base, alturaAtual: 0, scrollHeight: 1100, scrollTop: 500 })
+    expect(1100 + h - 600).toBe(1000 - RECUO_DA_PISTA_PX)
   })
 
   it("encolhe na mesma medida em que a resposta cresce: a tela não anda", () => {
-    const antes = alturaDaPista({ alturaAtual: 0, scrollHeight: 1100, clientHeight: 600, topoDaMensagem: 1000 })
+    const antes = alturaDaPista({ ...base, alturaAtual: 0, scrollHeight: 1100, scrollTop: 500 })
+    const noTopo = 1000 - RECUO_DA_PISTA_PX
     // A resposta cresceu 50px; o scrollHeight inclui a pista atual.
-    const depois = alturaDaPista({ alturaAtual: antes, scrollHeight: 1100 + antes + 50, clientHeight: 600, topoDaMensagem: 1000 })
+    const depois = alturaDaPista({ ...base, alturaAtual: antes, scrollHeight: 1100 + antes + 50, scrollTop: noTopo })
     expect(antes - depois).toBe(50)
-    expect(1100 + 50 + depois - 600).toBe(1000 - RECUO_DA_PISTA_PX)
+    expect(1100 + 50 + depois - 600).toBe(noTopo)
   })
 
   it("quando a resposta passa da tela, a pista zera", () => {
-    const h = alturaDaPista({ alturaAtual: 0, scrollHeight: 1900, clientHeight: 600, topoDaMensagem: 1000 })
+    const h = alturaDaPista({ ...base, alturaAtual: 0, scrollHeight: 1900, scrollTop: 1300 })
     expect(h).toBe(0)
   })
 
   it("conversa curta (mensagem perto do topo) não segura abaixo de zero", () => {
-    const h = alturaDaPista({ alturaAtual: 0, scrollHeight: 300, clientHeight: 600, topoDaMensagem: 10 })
+    const h = alturaDaPista({ clientHeight: 600, topoDaMensagem: 10, alturaAtual: 0, scrollHeight: 300, scrollTop: 0 })
     expect(300 + h - 600).toBe(0)
+  })
+
+  it("o fim que encolhe não puxa a tela: a pista absorve, e o crescimento seguinte a consome", () => {
+    // Seguindo no fim de 1900px (scrollTop 1300), um grupo de ações recolhe
+    // 80px. Sem piso, o navegador puxaria a tela 80px para baixo e a mola a
+    // subiria de volta: era o "piscar forçando para cima".
+    const encolheu = alturaDaPista({ ...base, alturaAtual: 0, scrollHeight: 1820, scrollTop: 1300 })
+    expect(encolheu).toBe(80)
+    expect(1820 + encolheu - 600).toBe(1300)
+    const voltou = alturaDaPista({ ...base, alturaAtual: encolheu, scrollHeight: 1900 + encolheu, scrollTop: 1300 })
+    expect(voltou).toBe(0)
+  })
+
+  it("posição fracionária não faz a pista oscilar: a altura é inteira e estável", () => {
+    const um = alturaDaPista({ clientHeight: 600, topoDaMensagem: 1000.4, alturaAtual: 0, scrollHeight: 1100, scrollTop: 500.5 })
+    expect(Number.isInteger(um)).toBe(true)
+    // Recalcular com a própria altura escrita devolve a mesma altura.
+    const dois = alturaDaPista({ clientHeight: 600, topoDaMensagem: 1000.4, alturaAtual: um, scrollHeight: 1100 + um, scrollTop: 976 })
+    expect(dois).toBe(um)
   })
 })

@@ -91,19 +91,26 @@ export function deveTeleportar(distancia: number, alturaDaTela: number): boolean
 }
 
 /**
- * Altura do espaço reservado abaixo do fio para a mensagem enviada ficar no
- * topo com a resposta nascendo embaixo, sem a tela andar.
+ * Altura do espaço reservado abaixo do fio depois de um envio seu.
  *
- * `topoDaMensagem` é a posição da mensagem no conteúdo rolável. O resultado
- * faz o fim do scroll cair exatamente em `topoDaMensagem - RECUO`; quando a
- * resposta passa da tela, dá zero, e a pista acabou.
+ * Duas garantias, e vale a maior: o fim do scroll não fica acima de
+ * `topoDaMensagem - RECUO` (o pedido segura no topo enquanto a resposta
+ * nasce embaixo) nem acima de onde a tela está agora (conteúdo que encolhe no
+ * fim, como um grupo de ações recolhendo, não arrasta a tela para baixo; o
+ * espaço absorve, e o crescimento seguinte o consome antes de mover nada).
+ *
+ * Em px inteiros: meio pixel relido arredondado fazia o fim oscilar 1px a
+ * cada token, e a tela tremia junto.
  */
 export function alturaDaPista(m: {
   alturaAtual: number
   scrollHeight: number
   clientHeight: number
+  scrollTop: number
   topoDaMensagem: number
 }): number {
-  const segurar = Math.max(0, m.topoDaMensagem - RECUO_DA_PISTA_PX)
-  return Math.max(0, m.alturaAtual + segurar + m.clientHeight - m.scrollHeight)
+  const conteudo = m.scrollHeight - m.alturaAtual
+  const segurar = Math.max(0, Math.round(m.topoDaMensagem) - RECUO_DA_PISTA_PX)
+  const piso = Math.max(segurar, Math.round(m.scrollTop))
+  return Math.max(0, piso + m.clientHeight - conteudo)
 }

@@ -81,8 +81,37 @@ export function embrulharTrechos(arvore: Root, desde: number): Root {
   return { ...arvore, children: embrulhar(arvore.children, desde) as RootContent[] }
 }
 
-/** O plugin de rehype. `desde` é o tamanho do texto quando a bolha montou:
- *  o que já estava lá chega pronto (ADR-179). */
+/** A duração do fade do trecho: a mesma do `--dur-slow` do `.fio-trecho`. */
+export const DURACAO_DO_TRECHO_MS = 320
+
+/** Os trechos que chegaram há menos de `DURACAO_DO_TRECHO_MS`, em ordem. */
+export interface RegistroDeTrechos {
+  tamanho: number
+  jovens: readonly { de: number; ts: number }[]
+}
+
+/** Puro: anota o crescimento do texto e esquece o que já terminou de
+ *  dissolver. Começa com o tamanho da montagem: o que já estava lá chega
+ *  pronto (ADR-179). */
+export function registrarTrechos(r: RegistroDeTrechos, tamanho: number, agora: number): RegistroDeTrechos {
+  let jovens = r.jovens
+  if (tamanho > r.tamanho) jovens = [...jovens, { de: r.tamanho, ts: agora }]
+  else if (tamanho < r.tamanho) jovens = jovens.filter((j) => j.de < tamanho)
+  jovens = jovens.filter((j) => agora - j.ts < DURACAO_DO_TRECHO_MS)
+  return { tamanho, jovens }
+}
+
+/** Onde começa o texto que ainda está dissolvendo. Antes dele, nada anima:
+ *  enquanto a resposta chega, o markdown muda de forma por um instante (a
+ *  linha vira título até o "-" da lista completar, o código inline só fecha na
+ *  segunda crase) e recria elementos; palavra que você já está lendo não pode
+ *  piscar de novo por isso. */
+export function inicioDosJovens(r: RegistroDeTrechos): number {
+  return r.jovens.length > 0 ? r.jovens[0].de : r.tamanho
+}
+
+/** O plugin de rehype. `desde` é onde começa o texto ainda dissolvendo
+ *  (`inicioDosJovens`), no offset do texto que o plugin recebe. */
 export function rehypeTrechos(opcoes: { desde: number }) {
   return (arvore: Root) => embrulharTrechos(arvore, opcoes.desde)
 }
