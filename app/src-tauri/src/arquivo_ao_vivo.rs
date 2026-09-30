@@ -21,6 +21,26 @@ pub const ESQUEMA: &str = "frota-arquivo";
 
 /// Pedaço máximo por resposta: o player pede o próximo quando precisa.
 const PEDACO: u64 = 2 * 1024 * 1024;
+/// Teto do arquivo servido inteiro (PDF, SVG, imagem): acima disso, recusa em
+/// vez de carregar o arquivo todo na memória.
+const INTEIRO_MAX: u64 = 256 * 1024 * 1024;
+
+/// O que a tela desenha INTEIRO: PDF e imagem (SVG incluso). O PDF do WebView
+/// faz um pedido só e precisa do arquivo todo, porque o índice dele fica no
+/// fim (um PDF de 2,2 MB cortado aos 2 MB abria em branco). Vídeo, áudio e o
+/// resto seguem em pedaços. Puro.
+pub fn inteiro(tipo: &str) -> bool {
+    tipo == "application/pdf" || tipo.starts_with("image/")
+}
+
+/// `bytes=a-b` com fim: um pedido fechado (a sonda de tamanho pede
+/// `bytes=0-0`), que vale mesmo para documento. Puro.
+fn range_fechado(range: Option<&str>) -> bool {
+    range
+        .and_then(|r| r.trim().strip_prefix("bytes="))
+        .and_then(|spec| spec.split_once('-'))
+        .is_some_and(|(a, b)| !a.is_empty() && !b.is_empty())
+}
 
 /// Tipo pelo nome: o que a tela sabe tocar ou mostrar. Puro.
 pub fn tipo_do_arquivo(caminho: &str) -> &'static str {
@@ -116,11 +136,20 @@ fn servir(anexos: Option<&Path>, uri: &str, range: Option<&str>) -> Response<Vec
     };
     let tamanho = arquivo.metadata().map(|m| m.len()).unwrap_or(0);
     let tipo = tipo_do_arquivo(&caminho);
-    // Sem Range: arquivo pequeno vai inteiro; grande vai o primeiro pedaço.
-    let (inicio, fim, parcial) = match intervalo(range, tamanho) {
-        Some((a, b)) => (a, b, true),
-        None if tamanho <= PEDACO => (0, tamanho.saturating_sub(1), false),
-        None => (0, PEDACO - 1, true),
+    // Documento (PDF, imagem) vai inteiro, até o teto, sem `Range` ou com um
+    // aberto (`bytes=0-`). O pedido fechado (a sonda de tamanho) e o resto
+    // (vídeo, áudio, binário) seguem em pedaços.
+    let (inicio, fim, parcial) = if inteiro(tipo) && !range_fechado(range.as_deref()) {
+        if tamanho > INTEIRO_MAX {
+            return erro(StatusCode::PAYLOAD_TOO_LARGE, "grande demais para a prévia");
+        }
+        (0, tamanho.saturating_sub(1), false)
+    } else {
+        match intervalo(range, tamanho) {
+            Some((a, b)) => (a, b, true),
+            None if tamanho <= PEDACO => (0, tamanho.saturating_sub(1), false),
+            None => (0, PEDACO - 1, true),
+        }
     };
     let mut corpo = Vec::with_capacity((fim + 1 - inicio) as usize);
     if tamanho > 0 {
@@ -192,8 +221,12 @@ mod tests {
     }
 
     fn projeto(conteudo: &[u8]) -> (std::path::PathBuf, String) {
+        // O relógio do macOS tem microssegundo: dois testes em paralelo podiam
+        // ganhar a mesma pasta, e um apagava a do outro. O contador separa.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("frota-arquivo-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("frota-arquivo-{}-{nanos}-{seq}", std::process::id()));
         std::fs::create_dir_all(dir.join("docs")).unwrap();
         std::fs::write(dir.join("docs/clip.mp4"), conteudo).unwrap();
         let raiz = dir.to_string_lossy().into_owned();
@@ -238,6 +271,33 @@ mod tests {
         let pasta = servir(None, &uri(&raiz, "docs"), None);
         // o cerco já recusa a pasta antes (403); o que importa: nunca é servida
         assert!(pasta.status().is_client_error(), "diretório não é servido: {}", pasta.status());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn pdf_maior_que_o_pedaco_vai_inteiro_e_video_continua_em_pedacos() {
+        // O PDF que abria em branco: 2.227.232 bytes, índice no byte 2.211.329.
+        let (dir, raiz) = projeto(b"");
+        let grande = vec![b'x'; (PEDACO + 130_080) as usize];
+        std::fs::write(dir.join("docs/Sabia-ExpoSale.pdf"), &grande).unwrap();
+        std::fs::write(dir.join("docs/clip.mp4"), &grande).unwrap();
+        for range in [None, Some("bytes=0-")] {
+            let pdf = servir(None, &uri(&raiz, "docs/Sabia-ExpoSale.pdf"), range);
+            assert_eq!(pdf.status(), StatusCode::OK, "{range:?}");
+            assert_eq!(pdf.body().len(), grande.len(), "o PDF precisa chegar inteiro ({range:?})");
+        }
+        let video = servir(None, &uri(&raiz, "docs/clip.mp4"), None);
+        assert_eq!(video.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(video.body().len() as u64, PEDACO);
+        assert!(inteiro("application/pdf") && inteiro("image/svg+xml") && !inteiro("audio/mpeg") && !inteiro("application/octet-stream"));
+        // A sonda de tamanho (bytes=0-0) segue recebendo 1 byte e o total.
+        let sonda = servir(None, &uri(&raiz, "docs/Sabia-ExpoSale.pdf"), Some("bytes=0-0"));
+        assert_eq!(sonda.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(sonda.headers()[header::CONTENT_RANGE], format!("bytes 0-0/{}", grande.len()).as_str());
+        // Binário sem prévia não é lido inteiro para medir.
+        std::fs::write(dir.join("docs/pacote.zip"), &grande).unwrap();
+        let zip = servir(None, &uri(&raiz, "docs/pacote.zip"), Some("bytes=0-0"));
+        assert_eq!(zip.body().len(), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
