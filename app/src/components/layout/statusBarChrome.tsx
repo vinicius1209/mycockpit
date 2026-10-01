@@ -202,9 +202,23 @@ export function DicaDaFaixa({
   calada?: boolean
 }) {
   const [aberta, setAberta] = useState(false)
+  // Com o painel aberto o `open` do Radix já é false, e ele só avisa quando o
+  // valor muda: o "fechar" do mouse saindo se perdia e a dica voltava junto com
+  // o fechar do painel. Além disso o foco volta ao gatilho e o HoverCard abre
+  // no foco. Por isso, ao fechar o painel, a dica fica contida até um gesto
+  // novo na zona (mouse entrando ou foco saindo).
+  const [contida, setContida] = useState(false)
+  const [caladaAntes, setCaladaAntes] = useState(calada)
+  if (calada !== caladaAntes) {
+    setCaladaAntes(calada)
+    setAberta(false)
+    if (!calada) setContida(true)
+  }
   return (
-    <HoverCard open={aberta && !calada} onOpenChange={setAberta} openDelay={350}>
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+    <HoverCard open={aberta && !calada} onOpenChange={(v) => setAberta(v && !contida)} openDelay={350}>
+      <HoverCardTrigger asChild onPointerEnter={() => setContida(false)} onBlur={() => setContida(false)}>
+        {children}
+      </HoverCardTrigger>
       <HoverCardContent side={side} align={align} className="w-80 overflow-hidden p-0 text-[12px]">
         <div className="flex flex-col gap-2 px-3 pt-3 pb-2.5">{conteudo}</div>
         {pe && (
