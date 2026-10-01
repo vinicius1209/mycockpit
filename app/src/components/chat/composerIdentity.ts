@@ -54,35 +54,12 @@ export interface EntradaDaIdentidade {
 }
 
 /**
- * A identidade efetiva do PRÓXIMO envio.
+ * A identidade efetiva do próximo envio.
  *
- * Conversa nova: vale o que está nos seletores. Conversa estabelecida: vale o
- * que ela carimbou, e o seletor apenas reflete — é a diferença entre "escolher"
- * e "exibir estado", e confundir as duas foi o que fez o composer prometer um
- * modelo que o despacho ia descartar.
- *
- * A exceção é o MODELO, e ela deixou de ser "de emergência" em 23/08/2026.
- *
- * O que mudou: trocar de modelo DENTRO do mesmo agent preserva a sessão. O
- * `--resume` continua valendo, o histórico continua no CLI, nada se perde — e é
- * o que Claude Code, Codex e agy deixam fazer no meio da conversa (`/model`). A
- * trava antiga era mais rígida que os motores que a gente orquestra, sem razão
- * técnica: ela só existia porque nasceu junto com a do AGENT, onde a razão é
- * real.
- *
- * A razão real (que continua valendo pro agent): trocar de MOTOR no meio não é
- * mudar um parâmetro, é HANDOFF. Cada CLI guarda a sessão dela por um id
- * próprio e nenhuma retoma a da outra, então o `beginTransplant` abre sessão
- * NOVA com recap + ponteiro pro histórico exportado. Um seletor sugere
- * reversibilidade barata; handoff não é reversível.
- *
- * O caso de emergência (turno que falhou) continua coberto — ele virou um
- * subcaso de "pode trocar quando não está em voo", não uma regra própria.
- *
- * O ESFORÇO segue o modelo desde 11/09/2026: o destrave de 23/08 esqueceu
- * dele, e a régua ficava apagada numa conversa em que o modelo ao lado
- * trocava. A razão técnica é a mesma (flag de spawn do próximo turno, sessão
- * preservada), então a regra também é.
+ * Conversa nova: vale a escolha nos seletores. Conversa estabelecida: preserva
+ * o motor carimbado (troca de motor exige handoff explícito via revezamento).
+ * Modelo e esforço podem ser alterados entre turnos dentro do mesmo motor,
+ * pois a sessão é preservada.
  */
 export function identidadeEfetiva(e: EntradaDaIdentidade): IdentidadeEfetiva {
   if (!e.travada) {

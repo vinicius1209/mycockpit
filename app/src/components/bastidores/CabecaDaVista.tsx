@@ -1,9 +1,5 @@
-// O começo de toda vista dos Bastidores: como está, desde quando, e o comando
-// que lançou. A aba existe para ACOMPANHAR o que roda em segundo plano, então a
-// primeira linha é o ESTADO (era um sussurro no rodapé, na ponta oposta da hora
-// de início) e quem manda na vista é a saída: o comando é contexto, em tom
-// médio, e o longo nasce recolhido. Visto em 21/09/2026: um heredoc de 20
-// linhas ocupava 80% da vista e a saída ficava no rodapé.
+// Cabeçalho da vista dos Bastidores: estado do processo, início e comando de lançamento.
+// O comando longo inicia recolhido para priorizar a saída do processo.
 
 import { createContext, useContext, useState } from "react"
 import { Copy, Square } from "lucide-react"

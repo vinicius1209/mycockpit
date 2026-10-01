@@ -1,15 +1,6 @@
 // Caminhos de arquivo citados em comandos de shell de uma conversa.
-//
-// Visto em 22/09/2026: o agente editou `app/src-tauri/src/AGENTS.md` por um
-// script dentro do `Bash` (`python3 - <<'EOF' p='app/src-tauri/src/AGENTS.md'`),
-// e o clique em "`AGENTS.md`" no fio não sabia qual dos quatro abrir: para a
-// Frota, só Read/Edit/Write "tocam" arquivo.
-//
-// Texto livre de shell erra fácil, então este extrator é DESEMPATE, nunca
-// fonte: o clique só usa o que sair daqui para escolher entre candidatos que o
-// índice do projeto já confirmou existir (`abrirMencaoDeArquivo`). E só conta
-// token com pasta: nome solto (`AGENTS.md` dentro de um comentário) não diz
-// qual pasta, que é justamente a dúvida.
+// Usado como critério de desempate ao clicar em menções de arquivo, priorizando
+// caminhos confirmados no índice do projeto (abrirMencaoDeArquivo).
 
 /** Separa o comando em trechos na ordem em que rodam. */
 const SEPARADOR = /&&|\|\||;|\||\n/

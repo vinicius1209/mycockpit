@@ -112,9 +112,7 @@ export function AppShell() {
           <ResizableHandle className={HANDLE} />
         </>
       )}
-      {/* Conteúdo: dois cartões IRMÃOS flutuando no rail, com um vão de 8px
-          entre eles (o da direita mora no ContextPanel, E1) — antes era um
-          cartão só com um hairline no meio. */}
+      {/* Conteúdo: dois cartões irmãos flutuando no rail, com um vão de 8px entre eles. */}
       <ResizablePanel
         id="main"
         defaultSize="81%"

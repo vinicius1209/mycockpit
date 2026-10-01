@@ -49,11 +49,7 @@ function iniciais(nome: string): string {
   return (partes[0][0] + partes[partes.length - 1][0]).toUpperCase()
 }
 
-// (M1) O "abrir no editor" vive no CABEÇALHO, um por painel, e abre o PROJETO.
-// Nasceu como ícone por linha de arquivo, revertido em 20/08/2026: o hover
-// pipocando em cada linha poluía a lista, e abrir o arquivo solto entregava uma
-// janela órfã sem árvore nem language server. Quem quer ver a mudança usa o
-// diff; quem vai ao editor quer o projeto aberto.
+// O "abrir no editor" vive no cabeçalho e abre o projeto completo com LSP.
 /** Painel de alterações: diff da working tree do `cwd` (v1: não-commitado vs HEAD +
  *  arquivos novos) ou de um commit específico. Lista por arquivo, colapsável; expande pros hunks. */
 export function DiffPanel({

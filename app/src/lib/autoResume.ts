@@ -21,11 +21,8 @@
 import type { ChatItem } from "@/store/chat"
 
 /** A retomada automática de uma conversa (efêmera, não persiste). O estado
- *  sobrevive ao disparo DE PROPÓSITO: é ele que conta as tentativas até o
- *  turno retomado terminar. Por isso existir não quer dizer agendada: depois
- *  do disparo, `disparou` fica true e nenhuma tela pode dizer "retoma às…".
- *  Visto em 23/09/2026: o turno retomou às 19:40 e o banner seguia prometendo
- *  "Retoma às 19:40" no meio dele. */
+ *  sobrevive ao disparo para controlar tentativas até o turno terminar.
+ *  Após o disparo, disparou fica true para evitar promessas desatualizadas na tela. */
 export interface EstadoDaRetomada {
   tries: number
   maxTries: number

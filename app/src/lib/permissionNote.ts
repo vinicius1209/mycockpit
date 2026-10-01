@@ -39,15 +39,8 @@ export function permissionNote(
         tone: "warn",
       }
     }
-    // "Só lê" no agy DEIXOU de ser best-effort em 22/08/2026: o Frota confina o
-    // processo no sandbox do sistema (docs/sandbox-plan.md), e isso independe do
-    // que a CLI promete. Provado com turno real — mandado editar, o agy não
-    // escreveu. Manter o aviso antigo agora ENGANA pra baixo: assustaria o
-    // usuário justamente onde a garantia ficou mais forte.
-    //
-    // Sem nota: quem conta o que "Só lê" garante é o selo do ModeSelect
-    // ("confinamento parcial"), que sabe se o sandbox existe NESTA máquina —
-    // coisa que esta função, que só recebe agent e modo, não tem como saber.
+    // "Só lê" no agy é garantido pelo confinamento no sandbox do sistema
+    // (docs/sandbox-plan.md). O selo do ModeSelect reporta a disponibilidade local.
     return null
   }
   return null

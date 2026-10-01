@@ -1,33 +1,16 @@
-// Nota do HUMANO ancorada num turno (docs/notas-no-fio-plan.md, N1).
+// Nota do humano ancorada em um turno (docs/notas-no-fio-plan.md, N1).
 //
-// Mora em arquivo próprio porque o MessageList está no teto da catraca — e o
-// recorte é natural: "bloco de nota + caixa de escrever nota" é uma peça
-// fechada, não um pedaço partido pra caber.
-//
-// Modelo A (decidido em 19/08/2026): a nota SEMPRE viaja pro agente — entra no
-// recap (`contextEntries`) e no transcript pleno (`renderTranscript`), sempre
-// enquadrada como DIREÇÃO do humano, nunca como fala do agente. Não existe
-// nota privada: esconder parte do fio criaria uma segunda verdade.
+// A nota sempre viaja para o agente: entra no recap (contextEntries) e no
+// transcript pleno (renderTranscript) como direção humana, sem nota privada.
 
 import { useState } from "react"
 import { Check, PenLine, X } from "lucide-react"
 import { useChat } from "@/store/chat"
 import { cn } from "@/lib/utils"
 
-/**
- * O bloco de uma nota já gravada, ancorado sob o turno que ela comenta.
- *
- * PENDENTE vs ENTREGUE é a informação que faltava. A caixa promete "o agente
- * vai ler", mas a entrega só acontece no PRÓXIMO envio (`withNotes`): uma nota
- * escrita e nunca seguida de envio nunca chega, e antes disso ela era
- * pixel-a-pixel idêntica a uma que já tinha chegado. Promessa sem estado é
- * promessa que o usuário não tem como cobrar.
- *
- * E por que a diferença é MATIZ, não animação: o §6 reserva movimento pro que
- * está vivo E termina sozinho. Nota pendente não termina sozinha — ela espera
- * VOCÊ mandar a próxima mensagem. É o mesmo caso da falha, que o §6 resolveu
- * com "matiz próprio, não animação" depois de já ter pulsado uma vez.
- */
+/** Bloco de nota gravada sob o turno correspondente.
+ *  Exibe estado pendente vs entregue (a entrega ocorre no próximo envio via withNotes).
+ *  Usa matiz sem animação, reservada a processos que encerram sozinhos (§6). */
 export function TurnNoteBlock({
   convId,
   id,

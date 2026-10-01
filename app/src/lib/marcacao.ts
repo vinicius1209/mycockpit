@@ -1,10 +1,5 @@
-// Marcar uma região da página vira BLOCO do rascunho (navegador PRD R4, B3).
-//
-// Antes, a descrição que o Rust monta (página, viewport, região, elementos)
-// era despejada como texto no editor e tomava o composer inteiro. Relato do
-// usuário em 17/09/2026: "fica no composer esse texto jogado assim?". Não: é
-// material que acompanha o pedido, igual à citação e à colagem, então usa o
-// mesmo modelo de bloco e o mesmo envelope no texto enviado.
+// Marcação de região da página como bloco do rascunho (navegador PRD R4, B3).
+// Usa envelope estruturado no texto enviado, preservando a área do composer.
 
 import { comEnvelopes, linhasDe, separarEnvelopes } from "@/lib/envelopeDeBloco"
 

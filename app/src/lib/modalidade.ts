@@ -1,23 +1,6 @@
-// COMO você chegou no elemento: mouse ou teclado.
-//
-// Existe porque o `:focus-visible` do navegador NÃO resolve o nosso caso, e a
-// medição mostra: abrir um dropdown do Radix com o mouse e fechar com o mouse
-// deixa o gatilho com `:focus-visible = true`. Medido em 23/08/2026, no
-// `dist/` buildado, com clique puro dos dois lados.
-//
-// O motivo é o Radix devolver o foco ao gatilho por código quando o menu
-// fecha. Foco programático herda o "modo teclado" da navegação que aconteceu
-// DENTRO do menu — e aí o anel acende depois de uma interação em que o usuário
-// não tocou no teclado uma vez.
-//
-// O resultado é um anel dourado piscando em botão que você acabou de clicar,
-// que é o que o usuário descreveu como "aplicação web disfarçada de desktop":
-// app nativo não acende contorno quando você clica, só quando você TABULA.
-//
-// A saída é não perguntar ao navegador e sim rastrear a última intenção real.
-// `pointerdown` marca mouse; só as teclas de NAVEGAÇÃO marcam teclado — digitar
-// num campo de texto não é navegar, e trocaria o modo sem que ninguém tivesse
-// saído do lugar.
+// Rastreamento da modalidade de entrada (mouse vs teclado).
+// Impede que retornos de foco programático em menus disparem estilos de focus-visible
+// indevidos após cliques com o mouse. Apenas teclas de navegação ativam o modo teclado.
 
 const NAVEGACAO = new Set([
   "Tab",

@@ -169,13 +169,7 @@ export function avisoDeAnexoNaoEntregue(
 }
 
 /** O que o parecer recebe de anexo: os do pedido em que foi chamado e os mais
- *  recentes das mensagens anteriores da conversa, sem repetir. PURO.
- *
- *  Visto em 22/09/2026 (Íris, projeto nova-lading-page): "Não consegui abrir as
- *  duas imagens anexadas: os caminhos em `attachments/` não existem no
- *  workspace". O parecer só listava o caminho RELATIVO à pasta de dados da
- *  Frota e não entregava o anexo ao motor, que é quem resolve o caminho e
- *  libera a pasta (`--add-dir`, `-i`) depois de o Rust validar o arquivo. */
+ *  recentes das mensagens anteriores da conversa, sem repetir. Puro. */
 export function anexosDoParecer(
   pedido: readonly Attachment[],
   itens: readonly ChatItem[],

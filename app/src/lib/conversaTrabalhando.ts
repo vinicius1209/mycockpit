@@ -1,11 +1,6 @@
-// Uma conversa está TRABALHANDO quando roda um turno do executor ou quando um
-// especialista está dando um parecer nela (ADR-267).
-//
-// Visto em 26/09/2026: a Íris "lendo o contexto" no fio, e a linha da conversa
-// na barra lateral dizendo "agora", sem o sinal de rodando. O parecer é uma
-// consulta à parte: marca `advising` e não mexe em `running`, de propósito
-// (não trava o composer nem finge turno do executor). A barra só olhava o
-// `running`. Esta é a régua única de "tem alguém trabalhando aqui".
+// Uma conversa está trabalhando quando roda um turno do executor, quando um
+// especialista está dando parecer (advising, ADR-267), ou quando há processos
+// vivos em segundo plano. Régua única para a barra lateral e indicadores.
 
 import type { ChatItem } from "@/store/chat"
 import { contarBastidoresVivos, temBastidorVivo } from "@/lib/bastidores"

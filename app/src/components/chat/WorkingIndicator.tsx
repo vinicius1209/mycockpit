@@ -66,12 +66,9 @@ export function WorkingIndicator({
   startedAt: number | null
   /** Trabalhos em background vivos (derivado de items, replay-safe). */
   deferred?: DeferredWork[]
-  /** O vigia (lib/watchdog.checkStalledTurns) já marcou este turno como mudo
-   *  (> `settings.stalledAfterMin`, default 10min) — o toast dele dura só
-   *  15s, então sem isto a linha viva ficava dizendo "está trabalhando…"
-   *  genérico pro resto do silêncio inteiro, sem nenhum jeito de saber
-   *  depois que o toast passou (achado real do usuário, 18/08/2026: 22min
-   *  de silêncio sem sinal nenhum na linha). */
+  /** O vigia (lib/watchdog.checkStalledTurns) marcou este turno como mudo
+   *  (> settings.stalledAfterMin, default 10min). Permite sinalizar o estado
+   *  na linha viva mesmo após o toast expirar. */
   stalledSince?: number
   /** Sonda factual da árvore do processo. Não move o relógio de atividade. */
   runLiveness?: RunLiveness

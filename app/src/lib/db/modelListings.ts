@@ -1,20 +1,6 @@
-// A ÚLTIMA LISTA VIVA de cada motor, no banco.
-//
-// POR QUE existe: a lista viva é uma sonda, e sonda falha (CLI atualizando,
-// máquina sem rede, app-server pendurado). Sem cache, cada falha jogava o
-// seletor de volta na lista ESCRITA À MÃO do bundle — que é justamente a que
-// envelhece: em 09/09/2026 ela ainda abria em "Sol" e oferecia dois modelos
-// (gpt-5.4, gpt-5.4-mini) que o CLI já não conhecia.
-//
-// Com o cache, o pior caso deixa de ser "a lista de quando a versão foi
-// compilada" e passa a ser "a última lista que o SEU CLI deu". O seletor também
-// abre certo no primeiro frame do boot, antes de a sonda responder.
-//
-// Uma linha por motor: a pergunta é "o que este CLI conhece agora", e resposta
-// nova SUBSTITUI a anterior (histórico de modelo é assunto do ledger, que tem
-// tabela própria e motivo escrito). Mesmo padrão idempotente das outras tabelas
-// que o frontend acessa direto: CREATE IF NOT EXISTS + cache de promessa que
-// RESETA em falha.
+// Cache persistido da lista viva de modelos de cada motor no SQLite.
+// Evita cair em defaults estáticos quando sondas falham e garante renderização
+// correta no boot inicial.
 
 import type Database from "@tauri-apps/plugin-sql"
 import { getDb } from "@/lib/db"

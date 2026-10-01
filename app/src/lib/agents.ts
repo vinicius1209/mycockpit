@@ -45,24 +45,21 @@ export const AGENTS: AgentDef[] = [
     sandboxProprio: "nenhum",
     workMcp: true,
     workMcpGlobalEnv: false,
-    // claude 2.1.280 (medido em 22/09/2026): `mcp__<servidor>` no
-    // `--disallowedTools` tira TODAS as tools do servidor do `system/init`.
+    // mcp__<servidor> no --disallowedTools desativa todas as tools do servidor.
     runMcpDeny: true,
     mcpEscopo: "por-run",
     disputes: true,
-    // claude 2.1.220: `--output-format stream-json` emite evento por ação.
+    // --output-format stream-json emite evento por ação.
     structuredOutput: true,
-    // o `result` traz `total_cost_usd` pronto ⇒ CostSource::Reported.
+    // o result traz total_cost_usd pronto (CostSource::Reported).
     reportsCost: true,
-    // o `result` do stream-json traz usage e USD DO TURNO.
+    // o result do stream-json traz usage e USD do turno.
     cumulativeUsage: false,
-    // claude 2.1.220: `-p --resume <sid> "/compact"` processa o comando em
-    // modo print (empírico 04/08/2026, agent-runner §7.1).
+    // -p --resume <sid> "/compact" processa o comando em modo print (agent-runner §7.1).
     nativeCompact: true,
-    // `--add-dir` por pasta (adapters.rs).
+    // --add-dir por pasta (adapters.rs).
     pastasExtras: true,
-    // claude 2.1.220: rate_limits no stdin da statusline por turno (payload
-    // real capturado 12/08/2026).
+    // rate_limits no stdin da statusline por turno.
     usageWindow: "statusline",
     // …mas a statusline não roda em `-p`, e o app roda headless: o medidor do
     // claude vem da conta (GET /api/oauth/usage com o bearer do CLI).

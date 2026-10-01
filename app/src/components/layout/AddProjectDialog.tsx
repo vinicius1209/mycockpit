@@ -201,10 +201,7 @@ export function AddProjectDialog() {
         )}
 
         {/* 4. Pré-visualização na barra lateral */}
-        {/* Uma superfície só (§4): antes era um cartão com borda DENTRO de um
-            cartão com borda, dentro do diálogo — três hairlines aninhadas. E a
-            linha de dentro ficou sem borda também por fidelidade: ela imita uma
-            linha da sidebar, e linha de sidebar não tem contorno. */}
+        {/* Uma superfície só (§4): espelha a linha da sidebar sem contorno aninhado. */}
         <div className="rounded-lg bg-muted/25 p-2.5">
           <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
             Pré-visualização
