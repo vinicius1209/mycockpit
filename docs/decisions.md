@@ -10507,6 +10507,24 @@ considerou.
   rodam num `useLayoutEffect`, antes da pintura; esperar o ResizeObserver
   deixava um quadro 30px fora do lugar quando o detalhe de uma ação recolhia
   (62,7s). A mola segue no efeito normal.
+- **Correção 3 (01/10/2026, prints do Claude Code e do Antigravity):** ao ler
+  ou editar arquivo, o grupo "Leu 4 arquivos" virava duas linhas por um
+  instante e voltava, e a conversa subia e descia junto. O grupo abria a cada
+  `tool_use` e recolhia a cada `tool_result`; no banco real uma leitura leva
+  87ms e um `Edit` 102ms, então cada ação era um abre-e-fecha, e a mola
+  perseguia os dois. Com o grupo aberto (pela pessoa ou com o leitor
+  desancorado), o intervalo entre ações despejava todas as concluídas e a
+  ação seguinte as dobrava de novo no histórico. Agora:
+  1. o grupo só abre se a ação corrente seguir rodando depois de 1s
+     (`ABRE_APOS_MS`, a régua do §6), medido pelo carimbo dela
+     (`esperaParaAbrir`); ação mais curta só acende o cabeçalho, e a espera é
+     limpa no mesmo commit em que a ação termina. Remontar com a ação rodando
+     há mais de 1s nasce aberto;
+  2. aberto e vivo, entre uma ação e a próxima a última concluída segura o
+     lugar da corrente, então a lista fica em histórico + uma linha;
+  3. o recolhimento roda antes da pintura (`useLayoutEffect`) e só quando o
+     grupo está aberto.
+  Teste: `ToolGroup.piscar.test.tsx`, sobre os carimbos reais do turno.
 
 ### ADR-291 · A bolha viva reparsa só o último bloco (F3) ✅
 - **Contexto (29/09/2026):** F3 de `docs/fluidez-do-fio-plan.md`, aberto desde

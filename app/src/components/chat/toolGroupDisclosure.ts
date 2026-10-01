@@ -10,7 +10,10 @@
 //    recolhido. Falha assentada nasce ABERTA mostrando só a linha falhada
 //    (o stub esconde as concluídas) — falha nunca recolhe quieta.
 // 2. Grupo VIVO (turno rodando nele, processo gerenciado ou trabalho diferido)
-//    fica aberto, a menos que o usuário o tenha recolhido manualmente.
+//    abre quando a ação corrente segue rodando depois de `ABRE_APOS_MS`, e
+//    fica aberto a menos que o usuário o tenha recolhido manualmente. Ação
+//    mais curta só acende o cabeçalho: uma leitura leva ~100ms, e abrir e
+//    recolher a cada uma fazia o fio piscar (ADR-290, correção 3).
 // 3. Na transição vivo → assentado, recolhe automaticamente SÓ quando não
 //    puxa o tapete de ninguém:
 //    - nunca se o usuário togglou o grupo manualmente (ele assumiu o
@@ -31,6 +34,21 @@
  *  culpada); todo o resto do passado nasce recolhido numa linha. */
 export function bornOpen(input: { live: boolean; failed: boolean }): boolean {
   return input.live || input.failed
+}
+
+/** Quanto a ação corrente precisa durar para abrir o grupo. É a régua do §6:
+ *  até 1s basta o sinal mínimo, e o cabeçalho vivo já diz que há trabalho. */
+export const ABRE_APOS_MS = 1000
+
+/** Quanto falta (ms) para a ação corrente abrir o grupo; 0 abre já. Sem
+ *  carimbo a ação não está nascendo agora (histórico, remontagem), como em
+ *  `nasceuAgora`, e abre já. Carimbo no futuro espera a régua inteira. */
+export function esperaParaAbrir(
+  inicio: number | null | undefined,
+  now: number,
+): number {
+  if (inicio == null || !Number.isFinite(inicio)) return 0
+  return Math.max(0, ABRE_APOS_MS - Math.max(0, now - inicio))
 }
 
 /** Decide o recolhimento na transição vivo → assentado. Ver a regra exata no

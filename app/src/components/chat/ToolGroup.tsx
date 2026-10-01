@@ -3,7 +3,6 @@
 // trilho com cotovelo (ADR-241): a hierarquia vem do traço, não de recuo solto.
 import {
   memo,
-  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -26,6 +25,7 @@ import {
 } from "@/components/chat/toolTree"
 import {
   bornOpen,
+  esperaParaAbrir,
   settledOkStubLabel,
   shouldAutoCollapseOnSettle,
 } from "@/components/chat/toolGroupDisclosure"
@@ -82,7 +82,7 @@ export function ToolNodeList({
   onApprovePlan?: (id: string) => void
 }) {
   const [historyOpen, setHistoryOpen] = useState(false)
-  const activeNodes = live
+  const ativos = live
     ? nodes.filter(
         (node) =>
           branchContains(node, activeToolId) ||
@@ -91,6 +91,9 @@ export function ToolNodeList({
           branchHasLiveDeferred(node),
       )
     : []
+  // Entre uma ação e a próxima, a última segura o lugar da corrente: a lista
+  // aberta não troca de forma a cada leitura (ADR-290, correção 3).
+  const activeNodes = live && ativos.length === 0 ? nodes.slice(-1) : ativos
   const settledNodes = nodes.filter((node) => !activeNodes.includes(node))
   // Ramo com falha fica EXPOSTO; só as concluídas se recolhem atrás do stub.
   // A culpada rende ANTES do stub mesmo quando cronologicamente veio depois
@@ -98,7 +101,7 @@ export function ToolNodeList({
   // tempo — a cronologia completa volta ao abrir o stub).
   const failedNodes = settledNodes.filter(branchHasFailure)
   const okNodes = settledNodes.filter((node) => !failedNodes.includes(node))
-  // Em voo, recolhe só com nó ATIVO; sem nó ativo, todas rendem direto (sem acordeão duplo).
+  // Em voo, as concluídas recolhem atrás do histórico e a corrente fica exposta.
   const foldOk = live
     ? okNodes.length >= 2 && activeNodes.length > 0
     : failedNodes.length > 0 && okNodes.length >= 1
@@ -242,6 +245,10 @@ export const ToolGroup = memo(function ToolGroup({
     : null
   // Entre tool_result e tool_use o turno vive, mas não há atividade presente.
   const executing = live && activeToolId != null
+  // É a duração da ação corrente que decide se o grupo abre.
+  const inicioDoAtivo = activeToolId
+    ? tools.find((tool) => tool.id === activeToolId)?.ts
+    : undefined
   const wasActive = useRef(executing)
   // Digest do cabeçalho numa passada só, memoizado por grupo: este é o
   // componente mais quente do app — nada de varredura extra por render.
@@ -258,7 +265,10 @@ export const ToolGroup = memo(function ToolGroup({
   const failedInGroup = digest.failed > 0
   // Só atividade PRESENTE e falha nascem abertas (toolGroupDisclosure.ts).
   const [open, setOpen] = useState(() =>
-    bornOpen({ live: executing, failed: failedInGroup }),
+    bornOpen({
+      live: executing && esperaParaAbrir(inicioDoAtivo, Date.now()) === 0,
+      failed: failedInGroup,
+    }),
   )
   const lastActivity = tools.reduce(
     (latest, tool) =>
@@ -284,11 +294,26 @@ export const ToolGroup = memo(function ToolGroup({
     [tools],
   )
 
-  // Atividade presente abre; ao terminar, recolhe sem contrariar toggle,
-  // falha ou leitor desancorado (regra exata em toolGroupDisclosure.ts).
-  useEffect(() => {
-    if (executing && !manuallyToggled.current) setOpen(true)
-    if (wasActive.current && !executing) {
+  // Atividade presente que dura abre; a curta só acende o cabeçalho. A espera
+  // é limpa no mesmo commit em que a ação termina, então não abre depois.
+  useLayoutEffect(() => {
+    if (!executing || manuallyToggled.current) return
+    const espera = esperaParaAbrir(inicioDoAtivo, Date.now())
+    if (espera === 0) {
+      setOpen(true)
+      return
+    }
+    const abrir = window.setTimeout(() => {
+      if (!manuallyToggled.current) setOpen(true)
+    }, espera)
+    return () => window.clearTimeout(abrir)
+  }, [executing, inicioDoAtivo])
+
+  // Ao terminar, recolhe sem contrariar toggle, falha ou leitor desancorado
+  // (regra exata em toolGroupDisclosure.ts). Antes da pintura, senão um
+  // quadro mostra a árvore aberta sob o cabeçalho já assentado.
+  useLayoutEffect(() => {
+    if (wasActive.current && !executing && open) {
       const el = rootRef.current
       const container = el ? scrollContainerOf(el) : null
       const rect = el?.getBoundingClientRect()
@@ -317,7 +342,7 @@ export const ToolGroup = memo(function ToolGroup({
       }
     }
     wasActive.current = executing
-  }, [executing, failedInGroup])
+  }, [executing, failedInGroup, open])
 
   // Aplica a compensação no MESMO frame do colapso (antes do paint): desconta
   // do scrollTop exatamente o quanto o grupo encolheu, e o que o leitor vê não
