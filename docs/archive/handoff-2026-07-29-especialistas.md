@@ -71,9 +71,9 @@
   rodar `./scripts/build.sh test` antes de considerar pronto (e `open` o `.app`).
 - **Worktrees em paralelo**: agentes nasciam da **base errada** repetidamente. Sempre
   `git merge-base --is-ancestor <base> <branch>` antes de `git merge --ff-only`.
-- **`.mycockpit/` fica untracked de propósito**: o `.gitignore` dela versiona só
+- **`.frota/` fica untracked de propósito**: o `.gitignore` dela versiona só
   `instructions.md` + `agents/`; o resto (`config.toml`, `context/`) é estado local. `git
-  add .mycockpit` não pega nada — é esperado.
+  add .frota` não pega nada (é esperado).
 - **Conta GitHub**: pushes vão pela conta `vinicius1209`; "Repository not found" =
   `gh auth switch --user vinicius1209`.
 - **Package manager = `bun`**. Testes: `bun run test` (vitest, pt-BR). Build: `./scripts/build.sh test`.

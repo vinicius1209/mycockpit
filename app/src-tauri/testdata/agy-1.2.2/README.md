@@ -16,4 +16,4 @@ O replay não inicia CLI nem chama modelo. As capturas contêm caminhos de um
 workspace de teste temporário, ids de sessões de teste e nomes do inventário
 do CLI, sem conteúdo de projetos externos ou credenciais.
 
-Relatório: `docs/teste-agy-e2e-2026-09-13.md`.
+Relatório: `docs/archive/teste-agy-e2e-2026-09-13.md`.

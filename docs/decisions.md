@@ -6538,7 +6538,7 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
   Chromium; primeira montagem 12,9 ms e 100 remontagens com máximo de 0,7 ms.
   WKWebView nativo: primeira montagem 11 ms, máximo de 1 ms em 100 remontagens.
   Essas medições são do componente com o item completo, não do app instalado.
-  Detalhes e limites em `docs/incidente-maclan-2026-09-12.md`.
+  Detalhes e limites em `docs/archive/incidente-maclan-2026-09-12.md`.
 
 ### ADR-185 · A aba Features (SDD) sai do app; o custo histórico dela fica no Painel ✅
 
@@ -6593,7 +6593,7 @@ simétrico, sem o qual quem subisse uma vez teria que reabrir a conversa.
 - **Restos deliberados:** comentários históricos citando `SddView` em
   `scripts/lints/deadTokens.mjs`/`.test.mjs` e no STYLEGUIDE (registro de
   passadas antigas); `mode: "sdd"` em `permission.test.ts` como valor opaco;
-  `docs/missions/sdd-mode.md` e `docs/sdd-evolution.md` viram histórico.
+  `docs/archive/sdd-mode.md` e `docs/archive/sdd-evolution.md` viram histórico.
 
 ### ADR-186 · Drenar a cauda do stdout antes de encerrar o turno
 

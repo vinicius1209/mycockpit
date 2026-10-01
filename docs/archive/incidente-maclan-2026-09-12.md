@@ -17,7 +17,7 @@ evidência suficiente para atribuir o incidente antigo de 48 GB a esta causa.
 
 ## Evidência e reprodução
 
-- Cópia de `mycockpit.db`, WAL e SHM em `/tmp/frota-maclan-incident`, com
+- Cópia do banco `frota.db`, WAL e SHM em `/tmp/frota-maclan-incident`, com
   checkpoint na cópia e `PRAGMA integrity_check` retornando `ok`.
 - Conversa: 111 itens incrementais, sendo 88 ferramentas, 10 textos, 6
   mensagens humanas, 6 resultados e 1 aviso. Snapshot legado: 222.623 caracteres.

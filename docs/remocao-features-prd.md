@@ -128,8 +128,8 @@ ignorados) que só existem por causa dele.
   commit.
 
 **Docs**
-- `docs/missions/sdd-mode.md`, `docs/sdd-evolution.md`: marcar como histórico
-  no topo, não apagar (mesmo tratamento do `agent-office.md`).
+- `docs/archive/sdd-mode.md`, `docs/archive/sdd-evolution.md`: arquivados como histórico
+  em `docs/archive/` (mesmo tratamento do `agent-office.md`).
 - `docs/onboarding.md:67`: a pendência do `SEED_REPO` se resolve pela remoção.
 - `docs/architecture.md`, `README.md`: conferir e tirar a terceira superfície
   se aparecer.
