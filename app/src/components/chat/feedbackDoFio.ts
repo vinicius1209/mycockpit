@@ -7,7 +7,7 @@
 
 import { useMemo, type RefObject } from "react"
 import { distillCandidate, reinforceLessons, saveLesson } from "@/lib/learning"
-import { helperDoProjeto } from "@/lib/helperDoProjeto"
+import { helperDoProjeto, helperFeatureAtiva } from "@/lib/helperDoProjeto"
 import { useChat } from "@/store/chat"
 
 export function useFeedbackDoFio(
@@ -42,7 +42,12 @@ export function useFeedbackDoFio(
         return added
       },
       distill: (agentTurn: string, userNote: string) =>
-        distillCandidate({ cwd, helperModel, agentTurn, userNote }),
+        distillCandidate({
+          cwd,
+          helperModel: helperFeatureAtiva("learningLessons", project.id) ? helperModel : null,
+          agentTurn,
+          userNote,
+        }),
       save: (
         rule: string,
         scope: "global" | "project",

@@ -24,6 +24,7 @@
 
 import { useApp } from "@/store/app"
 import type { ProjectConfig } from "@/store/appTypes"
+import type { HelperFeatures } from "@/lib/settings"
 
 /** As duas fontes, sem store no meio — é o que torna a regra testável. */
 export interface FontesDoHelper {
@@ -54,4 +55,15 @@ export function helperDoProjeto(projectId: string | undefined | null): string | 
  *  desenha não quer o nome do modelo, quer saber se o gesto existe. */
 export function temInteligencia(projectId: string | undefined | null): boolean {
   return helperDoProjeto(projectId) !== null
+}
+
+/** Uma funcionalidade granular do modelo auxiliar está ativa neste projeto?
+ *  Verifica se há modelo configurado E se a preferência específica está ligada. */
+export function helperFeatureAtiva(
+  feature: keyof HelperFeatures,
+  projectId?: string | null,
+): boolean {
+  if (!temInteligencia(projectId)) return false
+  const app = useApp.getState()
+  return app.settings.helperFeatures?.[feature] ?? true
 }

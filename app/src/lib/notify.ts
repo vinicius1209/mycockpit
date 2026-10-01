@@ -9,7 +9,7 @@ import { agentLabel } from "@/lib/agent"
 import { receiptBody, turnReceipt } from "@/lib/turnReceipt"
 import { clipTitle, nativeNotify } from "@/lib/notify/native"
 import { playTaskDoneChime } from "@/lib/userProfile"
-import { helperDoProjeto } from "@/lib/helperDoProjeto"
+import { helperDoProjeto, helperFeatureAtiva } from "@/lib/helperDoProjeto"
 import { nomearConversa } from "@/store/chat/titulo"
 // A porta de entrada continua sendo `@/lib/notify`: quem já importava
 // `nativeNotify` daqui (App, onboarding, companion) não precisa saber que o
@@ -46,7 +46,7 @@ export async function notifyTurnEnd(convId: string, agent: string) {
   // Background = você não estava olhando. É o único caso que merece recibo (no
   // primeiro plano o fio já te contou) e o único que paga a chamada extra.
   const background = chat.activeId !== convId
-  const recibo = background
+  const recibo = background && helperFeatureAtiva("turnReceipt", c.projectId)
     ? await turnReceipt({
         helperModel: helperDoProjeto(c.projectId),
         cwd: c.worktreePath ?? proj?.path ?? "",

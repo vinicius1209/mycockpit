@@ -15,7 +15,7 @@ import {
 } from "@/lib/suggestions"
 import { isTauri } from "@/lib/db"
 import { useApp } from "@/store/app"
-import { helperDoProjeto } from "@/lib/helperDoProjeto"
+import { helperDoProjeto, helperFeatureAtiva } from "@/lib/helperDoProjeto"
 
 type Get = () => ChatState
 
@@ -49,7 +49,7 @@ export async function generateSuggestionsImpl(get: Get, convId: string) {
   }
   // modelo helper por projeto (.frota/config.toml); null = off
   const helperModel = helperDoProjeto(c.projectId)
-  if (!helperModel) return
+  if (!helperModel || !helperFeatureAtiva("composerSuggestions", c.projectId)) return
   // token desta geração: se um novo run começar enquanto geramos, descartamos.
   const myGen = gen[convId] ?? 0
   get().setSuggesting(convId, true)

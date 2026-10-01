@@ -14,6 +14,25 @@ import {
   type UtilityInferenceSettings,
 } from "@/lib/utility/types"
 
+/** Usos granulares do modelo auxiliar configuráveis pelo usuário. */
+export interface HelperFeatures {
+  /** Nomeia a conversa no primeiro turno quando o motor não dá nome. */
+  conversationTitle: boolean
+  /** Resumo em uma frase do turno concluído para notificações e bandeja. */
+  turnReceipt: boolean
+  /** Sugestões de próximos passos no composer. */
+  composerSuggestions: boolean
+  /** Destilação de lições e regras a partir do feedback do usuário. */
+  learningLessons: boolean
+}
+
+export const DEFAULT_HELPER_FEATURES: HelperFeatures = {
+  conversationTitle: true,
+  turnReceipt: true,
+  composerSuggestions: true,
+  learningLessons: true,
+}
+
 // Preferências GLOBAIS do app (persistidas via zustand persist → localStorage,
 // que o webview do Tauri guarda em disco entre reinícios). Distinto do config
 // POR-PROJETO (.frota/config.toml), que segue vivendo no ContextPanel.
@@ -30,6 +49,8 @@ export interface GlobalSettings {
   /** Modelo helper das sugestões quando o projeto não define um no config.toml.
    *  null = sugestões desligadas por padrão. */
   helperModel: string | null
+  /** Usos ativos do modelo auxiliar (Nome da conversa, Recibo, Sugestões, Lições). */
+  helperFeatures: HelperFeatures
   /** Inferências auxiliares, separadas dos runs. A política remota é por
    *  finalidade; autorizar pills não autoriza ler o histórico da conversa. */
   utilityInference: UtilityInferenceSettings
@@ -165,6 +186,7 @@ export const DEFAULT_SETTINGS: GlobalSettings = {
   defaultModel: "claude-opus-5[1m]",
   defaultEffort: null,
   helperModel: "haiku",
+  helperFeatures: DEFAULT_HELPER_FEATURES,
   utilityInference: DEFAULT_UTILITY_INFERENCE,
   dictationEnabled: true,
   dictationHotkey: DEFAULT_DICTATION_HOTKEY,

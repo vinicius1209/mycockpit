@@ -18,7 +18,7 @@
 // com `deriveTitle`.
 
 import { deriveTitle } from "@/lib/convTitle"
-import { helperDoProjeto } from "@/lib/helperDoProjeto"
+import { helperDoProjeto, helperFeatureAtiva } from "@/lib/helperDoProjeto"
 import { generateUtilityText } from "@/lib/utility"
 import {
   contextoDoTitulo,
@@ -73,7 +73,7 @@ export async function nomearConversa(convId: string): Promise<void> {
   )
   if (!podeNomear(meta?.title, c.items)) return
   const helperModel = helperDoProjeto(c.projectId)
-  if (!helperModel) return // sem inteligência aqui: fica o nome cru, sem teatro
+  if (!helperModel || !helperFeatureAtiva("conversationTitle", c.projectId)) return // sem inteligência aqui: fica o nome cru, sem teatro
   const proj = useApp.getState().projects.find((p) => p.id === c.projectId)
   const cwd = c.worktreePath ?? proj?.path ?? ""
   if (!cwd) return // o one-shot precisa de um diretório que exista

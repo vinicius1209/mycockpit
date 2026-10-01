@@ -431,6 +431,10 @@ export const useApp = create<AppState>()(
               ...current.settings.userPreferences,
               ...persistedSettings.userPreferences,
             },
+            helperFeatures: {
+              ...current.settings.helperFeatures,
+              ...persistedSettings.helperFeatures,
+            },
             utilityInference: {
               ...current.settings.utilityInference,
               ...persistedSettings.utilityInference,
