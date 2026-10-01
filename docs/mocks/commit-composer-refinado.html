@@ -1,0 +1,552 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Refino de Design: Commit Composer na aba Alterações</title>
+<style>
+  :root {
+    --background: #fbfbfa;
+    --rail: #f6f6f4;
+    --card: #ffffff;
+    --popover: #ffffff;
+    --secondary: #f4f4f2;
+    --foreground: #16181b;
+    --muted-foreground: #5c6166;
+    --faint: #8a9099;
+    --border: rgba(0,0,0,.09);
+    --border-strong: rgba(0,0,0,.14);
+    --divisor: rgba(0,0,0,.04);
+    --sel: rgba(0,0,0,.055);
+    --sel-hover: rgba(0,0,0,.028);
+    --brass: #a9742b;
+    --brass-soft: rgba(169, 116, 43, 0.12);
+    --warn: #c1861f;
+    --add: #2f8a57;
+    --del: #cf4a3e;
+    --sans: "Geist", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --mono: "Geist Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #0a0b0d;
+      --rail: #0c0d10;
+      --card: #141619;
+      --popover: #191c20;
+      --secondary: #191c20;
+      --foreground: #e7e8ea;
+      --muted-foreground: #9aa0a7;
+      --faint: #687078;
+      --border: rgba(255,255,255,.08);
+      --border-strong: rgba(255,255,255,.14);
+      --divisor: rgba(255,255,255,.04);
+      --sel: rgba(255,255,255,.065);
+      --sel-hover: rgba(255,255,255,.032);
+      --brass: #e4a862;
+      --brass-soft: rgba(228, 168, 98, 0.14);
+      --warn: #d99138;
+      --add: #34d399;
+      --del: #f87171;
+    }
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--rail);
+    color: var(--foreground);
+    font: 13px/1.5 var(--sans);
+    padding: 32px 40px 100px;
+  }
+  h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 6px; }
+  p.intro { color: var(--muted-foreground); font-size: 13px; max-width: 900px; margin-bottom: 28px; line-height: 1.6; }
+
+  .comparativo {
+    display: flex;
+    gap: 32px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .coluna {
+    width: 340px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .coluna-titulo {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted-foreground);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tag {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--sel);
+    font-family: var(--mono);
+  }
+  .tag.problema { background: rgba(207, 74, 62, 0.12); color: var(--del); }
+  .tag.recomendado { background: rgba(47, 138, 87, 0.12); color: var(--add); }
+
+  .cartao-painel {
+    background: var(--card);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+    display: flex;
+    flex-direction: column;
+    height: 600px;
+  }
+  .cabecalho-git {
+    height: 38px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--border);
+    font: 11px var(--mono);
+    color: var(--muted-foreground);
+    flex-shrink: 0;
+  }
+  .cabecalho-git .branch {
+    color: var(--foreground);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .cabecalho-git .delta { margin-left: auto; }
+  .cabecalho-git .add { color: var(--add); margin-right: 4px; }
+  .cabecalho-git .del { color: var(--del); }
+
+  /* ---------------- ESTADO ATUAL (COM O PROBLEMA) ---------------- */
+  .atual-box {
+    padding: 12px;
+    border-bottom: 1px solid var(--divisor);
+    flex-shrink: 0;
+  }
+  .atual-input-titulo {
+    width: 100%;
+    height: 34px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    padding: 0 34px 0 10px;
+    font-size: 14px; /* herdado de md:text-sm */
+    color: var(--foreground);
+    outline: none;
+    font-family: var(--sans);
+  }
+  .atual-textarea-wrap {
+    margin-top: 8px;
+  }
+  .atual-textarea {
+    width: 100%;
+    height: 250px; /* simulando field-sizing-content expandido */
+    border-radius: 6px;
+    border: 1px solid var(--brass);
+    box-shadow: 0 0 0 3px var(--brass-soft);
+    background: var(--secondary);
+    padding: 8px 10px;
+    font-family: var(--mono);
+    font-size: 14px; /* herdado de md:text-sm */
+    line-height: 1.45;
+    color: var(--foreground);
+    resize: none;
+    outline: none;
+  }
+  .atual-acoes {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    gap: 8px;
+  }
+  .atual-btn {
+    flex: 1;
+    height: 28px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--foreground);
+    font-family: var(--sans);
+  }
+
+  /* ---------------- PROPOSTA 1: COMPACTO & REFINADO ---------------- */
+  .prop1-box {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--divisor);
+    flex-shrink: 0;
+  }
+  .prop1-input {
+    width: 100%;
+    height: 30px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    padding: 0 30px 0 8px;
+    font-size: 12px;
+    color: var(--foreground);
+    outline: none;
+    font-family: var(--sans);
+    transition: border-color .15s, background .15s;
+  }
+  .prop1-input:focus {
+    border-color: var(--border-strong);
+    background: var(--card);
+  }
+  .prop1-textarea {
+    width: 100%;
+    max-height: 96px; /* teto para não engolir os arquivos */
+    min-height: 56px;
+    margin-top: 6px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    padding: 6px 8px;
+    font-family: var(--sans);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--foreground);
+    resize: none;
+    outline: none;
+    overflow-y: auto;
+    transition: border-color .15s, background .15s;
+  }
+  .prop1-textarea:focus {
+    border-color: var(--border-strong);
+    background: var(--card);
+  }
+
+  /* ---------------- PROPOSTA 2: CARTÃO UNIFICADO (RECOMENDADO) ---------------- */
+  .prop2-box {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--divisor);
+    flex-shrink: 0;
+  }
+  .prop2-card {
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--secondary);
+    overflow: hidden;
+    transition: border-color .15s, background .15s, box-shadow .15s;
+  }
+  .prop2-card:focus-within {
+    border-color: var(--border-strong);
+    background: var(--card);
+    box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  }
+  .prop2-card-head {
+    display: flex;
+    align-items: center;
+    position: relative;
+    padding: 2px 6px 2px 8px;
+  }
+  .prop2-card-title {
+    flex: 1;
+    height: 28px;
+    border: none;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--foreground);
+    outline: none;
+    font-family: var(--sans);
+  }
+  .prop2-card-sparkle {
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: grid;
+    place-items: center;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    color: var(--muted-foreground);
+    transition: color .15s, background .15s;
+  }
+  .prop2-card-sparkle:hover {
+    color: var(--foreground);
+    background: var(--sel);
+  }
+  .prop2-divider {
+    height: 1px;
+    background: var(--divisor);
+    margin: 0 8px;
+  }
+  .prop2-card-body {
+    width: 100%;
+    max-height: 105px;
+    min-height: 48px;
+    border: none;
+    background: transparent;
+    padding: 6px 8px;
+    font-family: var(--sans);
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--foreground);
+    resize: none;
+    outline: none;
+    overflow-y: auto;
+  }
+  .prop2-card-body::placeholder {
+    color: var(--faint);
+  }
+  .prop2-card-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 8px;
+    background: var(--sel-hover);
+    border-top: 1px solid var(--divisor);
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--faint);
+  }
+
+  /* Lista de arquivos simulada */
+  .arquivos-lista {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .secao-titulo {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .arquivo-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--foreground);
+  }
+  .arquivo-letra {
+    font-weight: 600;
+    color: var(--warn);
+    width: 12px;
+  }
+  .arquivo-caminho {
+    color: var(--faint);
+    font-size: 10px;
+    margin-left: auto;
+  }
+
+  /* Rodapé PR */
+  .rodape-pr {
+    height: 40px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 12px;
+    flex-shrink: 0;
+  }
+  .btn-pr {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: transparent;
+    font-size: 11px;
+    font-family: var(--sans);
+    color: var(--foreground);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+  }
+
+  /* Diagnóstico list */
+  .diagnostico {
+    margin-top: 40px;
+    max-width: 900px;
+    border-top: 1px solid var(--border);
+    padding-top: 24px;
+  }
+  .diagnostico h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .diagnostico ul { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .diagnostico li { font-size: 12px; line-height: 1.5; color: var(--muted-foreground); }
+  .diagnostico li b { color: var(--foreground); }
+</style>
+</head>
+<body>
+
+<h1>Refino do Commit Composer na aba Alterações</h1>
+<p class="intro">
+  Comparativo entre a visualização atual (do print recebido) e as duas propostas de alinhamento visual com o <code>STYLEGUIDE.md</code> da Frota.
+</p>
+
+<div class="comparativo">
+  <!-- COLUNA 1: ATUAL -->
+  <div class="coluna">
+    <div class="coluna-titulo">
+      <span>1. Estado Atual</span>
+      <span class="tag problema">Problema</span>
+    </div>
+
+    <div class="cartao-painel">
+      <div class="cabecalho-git">
+        <span class="branch">⑂ main</span>
+        <span class="delta"><span class="add">+552</span><span class="del">−220</span></span>
+      </div>
+
+      <div class="atual-box">
+        <input class="atual-input-titulo" value="refactor(process): interrompe com escala gradu..." readonly>
+        <div class="atual-textarea-wrap">
+          <textarea class="atual-textarea" readonly>- Tira lógica MCP de `work_gateway.rs` para novo módulo `mcp_server.rs`, documentando contrato e timeouts
+- Interrupção de processo agora tenta SIGINT/SIGTERM com graça (2s), escala para SIGKILL se ainda vivo
+- Segundo clique em processo "stopping" força saída imediata (SIGKILL); UI reflete status em botão
+- Índice de bastidores exibe atalho "X" para parar processo vivo; bastidor aberto mostra botão de parar na cabeceira
+- Testes: novo caso em `work_gateway_tests.rs` valida re-stop de processo já parando</textarea>
+        </div>
+        <div class="atual-acoes">
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--muted-foreground);">71/72</span>
+          <div class="atual-btn">✓ Criar commit ▾</div>
+        </div>
+      </div>
+
+      <div class="arquivos-lista">
+        <div class="secao-titulo">▾ Alterações 16</div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway.rs <span class="arquivo-caminho">+54 −151</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway_tests.rs <span class="arquivo-caminho">+33</span></div>
+        <div class="arquivo-item" style="color: var(--faint);"><i>(restante da lista cortado)</i></div>
+      </div>
+
+      <div class="rodape-pr">
+        <button class="btn-pr">⑂ Abrir pull request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUNA 2: PROPOSTA 1 -->
+  <div class="coluna">
+    <div class="coluna-titulo">
+      <span>2. Proposta A: Compacto</span>
+      <span class="tag">Refino Direto</span>
+    </div>
+
+    <div class="cartao-painel">
+      <div class="cabecalho-git">
+        <span class="branch">⑂ main</span>
+        <span class="delta"><span class="add">+552</span><span class="del">−220</span></span>
+      </div>
+
+      <div class="prop1-box">
+        <input class="prop1-input" value="refactor(process): interrompe com escala gradu..." readonly>
+        <textarea class="prop1-textarea" readonly>- Tira lógica MCP de `work_gateway.rs` para novo módulo `mcp_server.rs`, documentando contrato e timeouts
+- Interrupção de processo agora tenta SIGINT/SIGTERM com graça (2s), escala para SIGKILL se ainda vivo
+- Segundo clique em processo "stopping" força saída imediata (SIGKILL); UI reflete status em botão
+- Índice de bastidores exibe atalho "X" para parar processo vivo; bastidor aberto mostra botão de parar na cabeceira</textarea>
+        <div class="atual-acoes" style="margin-top: 6px;">
+          <span style="font-family: var(--mono); font-size: 11px; color: var(--muted-foreground);">71/72</span>
+          <div class="atual-btn" style="height: 26px; font-size: 11px;">✓ Criar commit ▾</div>
+        </div>
+      </div>
+
+      <div class="arquivos-lista">
+        <div class="secao-titulo">▾ Alterações 16</div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway.rs <span class="arquivo-caminho">+54 −151</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway_tests.rs <span class="arquivo-caminho">+33</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> BastidorVista.tsx <span class="arquivo-caminho">+19 −16</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> CabecaDaVista.tsx <span class="arquivo-caminho">+48 −3</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> IndiceDeBastidores.tsx <span class="arquivo-caminho">+64 −16</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> TerminalDeBastidores.tsx <span class="arquivo-caminho">+20 −1</span></div>
+      </div>
+
+      <div class="rodape-pr">
+        <button class="btn-pr">⑂ Abrir pull request</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUNA 3: PROPOSTA 2 -->
+  <div class="coluna">
+    <div class="coluna-titulo">
+      <span>3. Proposta B: Cartão Unificado</span>
+      <span class="tag recomendado">Recomendado</span>
+    </div>
+
+    <div class="cartao-painel">
+      <div class="cabecalho-git">
+        <span class="branch">⑂ main</span>
+        <span class="delta"><span class="add">+552</span><span class="del">−220</span></span>
+      </div>
+
+      <div class="prop2-box">
+        <div class="prop2-card">
+          <div class="prop2-card-head">
+            <input class="prop2-card-title" value="refactor(process): interrompe com escala gradu..." readonly>
+            <button class="prop2-card-sparkle" title="Sugerir mensagem">✨</button>
+          </div>
+          <div class="prop2-divider"></div>
+          <textarea class="prop2-card-body" readonly>- Tira lógica MCP de `work_gateway.rs` para novo módulo `mcp_server.rs`, documentando contrato e timeouts
+- Interrupção de processo agora tenta SIGINT/SIGTERM com graça (2s), escala para SIGKILL se ainda vivo
+- Segundo clique em processo "stopping" força saída imediata (SIGKILL); UI reflete status em botão
+- Índice de bastidores exibe atalho "X" para parar processo vivo; bastidor aberto mostra botão de parar na cabeceira</textarea>
+          <div class="prop2-card-foot">
+            <span>71/72</span>
+            <span style="cursor: pointer; color: var(--muted-foreground);">Retificar ▢</span>
+          </div>
+        </div>
+        <div class="atual-acoes" style="margin-top: 6px;">
+          <div class="atual-btn" style="height: 28px; background: var(--foreground); color: var(--background); font-weight: 500;">✓ Criar commit ▾</div>
+        </div>
+      </div>
+
+      <div class="arquivos-lista">
+        <div class="secao-titulo">▾ Alterações 16</div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway.rs <span class="arquivo-caminho">+54 −151</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> work_gateway_tests.rs <span class="arquivo-caminho">+33</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> BastidorVista.tsx <span class="arquivo-caminho">+19 −16</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> CabecaDaVista.tsx <span class="arquivo-caminho">+48 −3</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> IndiceDeBastidores.tsx <span class="arquivo-caminho">+64 −16</span></div>
+        <div class="arquivo-item"><span class="arquivo-letra">M</span> TerminalDeBastidores.tsx <span class="arquivo-caminho">+20 −1</span></div>
+      </div>
+
+      <div class="rodape-pr">
+        <button class="btn-pr">⑂ Abrir pull request</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="diagnostico">
+  <h3>Diagnóstico Técnico do Problema Atual</h3>
+  <ul>
+    <li>
+      <b>1. Fonte de 14px sobrescrevendo a escala:</b> O componente primitivo <code>components/ui/textarea.tsx</code> possui a classe <code>md:text-sm</code> (14px). Como o app roda em desktop (&ge; 768px), o CSS da media query prevalece sobre o <code>text-[11px]</code> passado pelo composer. O mesmo ocorre no <code>Input</code> do título.
+    </li>
+    <li>
+      <b>2. Expansão vertical descontrolada:</b> A propriedade moderna <code>field-sizing-content</code> no textarea faz com que qualquer commit gerado com 4 ou 5 tópicos cresça indefinidamente para mais de 250px, canibalizando a visualização dos arquivos alterados.
+    </li>
+    <li>
+      <b>3. Anel de foco âmbar de 3px:</b> A classe <code>focus-visible:ring-[3px]</code> cria uma borda espessa de atenção ao redor de todo o bloco quando em foco, causando peso visual excessivo comparado ao restante da interface.
+    </li>
+    <li>
+      <b>4. Monospace em bloco de texto denso:</b> Usar <code>font-mono</code> em 14px num parágrafo de 5 tópicos gera uma textura pesada. O corpo deve ser em <code>font-sans text-[11px]</code> (ou mono compacto de 11px com entrelinha ajustada).
+    </li>
+  </ul>
+</div>
+
+</body>
+</html>

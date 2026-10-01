@@ -49,4 +49,16 @@ describe("CommitComposer", () => {
     })
     expect(html).toBe("")
   })
+
+  it("aplica escala de fonte e foco sutis para não inflar no desktop", () => {
+    const html = renderComposer({
+      cwd: "/fake",
+      stagedCount: 1,
+      totalChanges: 1,
+      onCommitted: vi.fn(),
+    })
+    expect(html).toContain("text-[12px]")
+    expect(html).toContain("md:text-[12px]")
+    expect(html).toContain("focus-visible:ring-0")
+  })
 })

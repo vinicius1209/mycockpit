@@ -130,8 +130,8 @@ export function CommitComposer({
           aria-label="Mensagem do commit"
           aria-invalid={isTitleLong}
           className={cn(
-            "h-8 bg-secondary/40 px-2.5 pr-10 text-[12px] shadow-none",
-            "focus-visible:bg-secondary/60",
+            "h-8 bg-secondary/40 px-2.5 pr-10 text-[12px] md:text-[12px] shadow-none",
+            "focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-secondary/60",
             isTitleLong && "border-st-warning/60 focus-visible:border-st-warning",
           )}
         />
@@ -177,7 +177,11 @@ export function CommitComposer({
             rows={3}
             placeholder="Descrição do commit (opcional)"
             aria-label="Descrição do commit"
-            className="min-h-20 resize-none bg-secondary/40 px-2.5 py-2 font-mono text-[11px] shadow-none focus-visible:bg-secondary/60"
+            className={cn(
+              "min-h-20 max-h-40 resize-none overflow-y-auto bg-secondary/40 px-2.5 py-2",
+              "font-mono text-[11px] md:text-[11px] leading-relaxed shadow-none",
+              "focus-visible:ring-0 focus-visible:outline-none focus-visible:bg-secondary/60",
+            )}
           />
         </div>
       )}
