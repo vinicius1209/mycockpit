@@ -28,8 +28,7 @@
     "src-tauri/sandbox.rs": 1056,
     "src-tauri/sources.rs": 1176,
     "src-tauri/usage_window.rs": 1023,
-    "src-tauri/work_gateway.rs": 1086,
-    "store/chat.ts": 1717,
+    "store/chat.ts": 1700,
     "store/interactions.ts": 555,
     "store/mission.ts": 1231
   }

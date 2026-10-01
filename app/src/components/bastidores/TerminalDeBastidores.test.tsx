@@ -182,4 +182,35 @@ describe("TerminalView", () => {
     expect(html.indexOf("concluído")).toBeLessThan(html.indexOf("python3"))
     expect(html).not.toContain("<footer")
   })
+
+  const PROCESSO: Bastidor = {
+    itemId: "proc-sabia",
+    tipo: "processo",
+    titulo: "Sabiá",
+    detalhe: null,
+    comando: "npm run dev",
+    estado: "vivo",
+    desde: T0,
+    atualizadoEm: T0,
+    fonte: { tipo: "processo" },
+    tokens: null,
+    processId: "proc-123",
+    processStatus: "running",
+  }
+
+  it("processo vivo no terminal mostra botão Parar ao lado da linha de estado", () => {
+    const html = render([PROCESSO], ["proc-sabia"])
+    expect(html).toContain('aria-label="Parar Sabiá"')
+    expect(html).toContain(">Parar</span>")
+  })
+
+  it("processo parando no terminal mostra botão Forçar parada", () => {
+    const html = render(
+      [{ ...PROCESSO, processStatus: "stopping" }],
+      ["proc-sabia"],
+    )
+    expect(html).toContain('aria-label="Forçar parada de Sabiá"')
+    expect(html).toContain(">Forçar parada</span>")
+  })
 })
+

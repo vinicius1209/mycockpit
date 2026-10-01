@@ -53,13 +53,11 @@ import type { WorkEvent } from "@/lib/work"
 import { duplicateConversationImpl, forkConversationAtImpl } from "@/store/chat/clone"
 import { argsDaSessao, commitTransplantState, stageAgentImpl } from "@/store/chat/revezamento"
 import { comResumeFalhado } from "@/store/chat/retomada"
-import {
-  removeAdviceImpl,
-} from "@/store/chat/advice"
+import { removeAdviceImpl } from "@/store/chat/advice"
 import { markNotesSentImpl } from "@/store/chat/notes"
-import { settleOrphanedTool } from "@/store/chat/terminalTools"
 import { tomarCausaDoCorte } from "@/lib/corte"
-export { pendingDeferred } from "@/store/chat/terminalTools"
+import { markOrphanedProcesses, pendingDeferred } from "@/store/chat/terminalTools"
+export { markOrphanedProcesses, pendingDeferred }
 import { reduceRunManifest } from "@/store/chat/runManifest"
 import { removeConversationImpl } from "@/store/chat/remove"
 import { setSessionModeImpl } from "@/store/chat/sessionMode"
@@ -80,31 +78,13 @@ import {
   type ContextSnapshotState,
 } from "@/lib/contextSnapshot"
 
-export type { ChatItem, ParecerLevado } from "@/store/chat/itens"
+import { executorItems, hasExecutorTurn, type ChatItem, type FaseDaFala, type ParecerLevado } from "@/store/chat/itens"
+export { executorItems, hasExecutorTurn, type ChatItem, type ParecerLevado }
 import { reduceItems, type ItemReducible, type ReduceCtx } from "@/store/chat/reduceItems"
 export { reduceItems, type ItemReducible, type ReduceCtx }
 import { uid } from "@/store/chat/uid"
 export { uid }
-import type { ChatItem, FaseDaFala } from "@/store/chat/itens"
 import type { Consultado } from "@/lib/parecerAoVivo"
-
-/** Processo marcado vivo no snapshot anterior não é desta instância: vira
- * órfão (PID e tail preservados), nunca "rodando". O mesmo com o trabalho
- * DIFERIDO do provider, que morreu junto com o CLI: `running` do disco vira
- * `interrupted` (deferred-work-plan D1.5). */
-export const markOrphanedProcesses = (items: ChatItem[]): ChatItem[] =>
-  items.map((item) => settleOrphanedTool(item, Date.now()))
-
-/** Itens de EXECUTOR: exclui a consulta a um especialista (o parecer e a fala
- *  que o pediu). Fonte única de "1º turno / já iniciada / identidade travada":
- *  sem isto, uma consulta antes do 1º envio travaria agent e persona e
- *  roubaria a injeção inicial. Use em todo lugar que derivaria de items.length. */
-export const executorItems = (items: ChatItem[]): ChatItem[] =>
-  items.filter((it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo))
-
-/** A conversa já teve algum turno de EXECUTOR? (ignora a consulta ao conselheiro
- *  inteira: o parecer e a fala endereçada a ele) */
-export const hasExecutorTurn = (items: ChatItem[]): boolean => executorItems(items).length > 0
 
 
 export {
@@ -1302,6 +1282,9 @@ export const useChat = create<ChatState>((set, get) => {
                 ? {
                     result: {
                       ok: process.status === "exited" && process.exitCode === 0,
+                      ...(process.status === "stopped"
+                        ? { interrupted: true as const }
+                        : {}),
                       text: process.output,
                       lines: process.output.trim()
                         ? process.output.split("\n").length

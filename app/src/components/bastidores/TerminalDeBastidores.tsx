@@ -19,8 +19,10 @@ import { PontoDeEstado } from "@/components/bastidores/partes"
 import { useBastidoresDaConversa } from "@/components/bastidores/useBastidoresDaConversa"
 import { Button } from "@/components/ui/button"
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable"
+import { avisar } from "@/lib/avisos"
 import { passosDoSubagente, type Bastidor } from "@/lib/bastidores"
 import { cn } from "@/lib/utils"
+import { stopManagedProcess } from "@/lib/work"
 import { chaveDaSaida, useBastidores, vistasDa, type VistaAberta } from "@/store/bastidores"
 import type { ChatItem } from "@/store/chat"
 
@@ -47,6 +49,14 @@ export function TerminalDeBastidores() {
       onFecharTodas={() => acoes.fecharTodas(convId)}
       onDividir={acoes.alternarDivisao}
       onVerIndice={() => acoes.verIndice(true)}
+      onParar={(b) => {
+        if (!b.processId) return
+        void stopManagedProcess(b.processId).catch((error) =>
+          avisar.erro("Não consegui parar o processo.", {
+            detalhe: String(error),
+          }),
+        )
+      }}
     />
   )
 }
@@ -81,6 +91,7 @@ export function TerminalView({
   onFecharTodas,
   onDividir,
   onVerIndice,
+  onParar,
 }: {
   lista: Bastidor[]
   vistas: VistaAberta[]
@@ -92,6 +103,7 @@ export function TerminalView({
   onFecharTodas: () => void
   onDividir: () => void
   onVerIndice: () => void
+  onParar?: (b: Bastidor) => void
 }) {
   const abertos = vistas
     .map((v) => lista.find((b) => b.itemId === v.itemId))
@@ -245,13 +257,20 @@ export function TerminalView({
                     emFoco={i === iFoco}
                     onFocar={() => onFocar(i)}
                     onFechar={() => onFechar(b.itemId)}
+                    onParar={onParar}
                   />
                 </ResizablePanel>
               </Fragment>
             ))}
           </ResizablePanelGroup>
         ) : (
-          <BastidorVista key={atual.itemId} b={atual} corpo={corpoDe(atual)} tituloNoCorpo={abertos.length > 1} />
+          <BastidorVista
+            key={atual.itemId}
+            b={atual}
+            corpo={corpoDe(atual)}
+            tituloNoCorpo={abertos.length > 1}
+            onParar={onParar}
+          />
         )}
       </div>
 

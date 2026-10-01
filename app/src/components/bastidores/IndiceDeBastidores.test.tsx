@@ -98,6 +98,50 @@ describe("IndiceView", () => {
   it("o gesto de fixar não reserva largura enquanto está escondido", () => {
     const html = render([b("a", "deploy")], [])
     expect(html).not.toContain("opacity-0")
-    expect(html).toContain("group-hover/indice:inline-flex")
+    expect(html).toContain("group-hover/indice:flex")
+  })
+
+  it("processo vivo exibe botão de parar no hover e o atalho no rodapé", () => {
+    const proc: Bastidor = {
+      ...b("p1", "Sabiá"),
+      tipo: "processo",
+      processId: "proc-1",
+      processStatus: "running",
+    }
+    const html = renderToStaticMarkup(
+      <IndiceView
+        lista={[proc]}
+        abertas={[]}
+        itemEmFoco={undefined}
+        onAbrir={nada}
+        onFixar={nada}
+        onFecharTodas={nada}
+        onParar={nada}
+      />,
+    )
+    expect(html).toContain('aria-label="Parar Sabiá"')
+    expect(html).toContain("X para ·")
+  })
+
+  it("processo parando exibe botão de forçar parada", () => {
+    const proc: Bastidor = {
+      ...b("p1", "Sabiá"),
+      tipo: "processo",
+      processId: "proc-1",
+      processStatus: "stopping",
+    }
+    const html = renderToStaticMarkup(
+      <IndiceView
+        lista={[proc]}
+        abertas={[]}
+        itemEmFoco={undefined}
+        onAbrir={nada}
+        onFixar={nada}
+        onFecharTodas={nada}
+        onParar={nada}
+      />,
+    )
+    expect(html).toContain('aria-label="Forçar parada de Sabiá"')
   })
 })
+

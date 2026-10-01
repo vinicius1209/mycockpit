@@ -7,12 +7,14 @@
 // para o teste renderizar sem o estado congelado do SSR.
 
 import { Fragment, useEffect, useState, type KeyboardEvent } from "react"
-import { Pin, SquareTerminal } from "lucide-react"
+import { Pin, Square, SquareTerminal } from "lucide-react"
 import { PontoDeEstado, RotuloDeTempo, TIPO } from "@/components/bastidores/BastidorVista"
 import { useBastidoresDaConversa } from "@/components/bastidores/useBastidoresDaConversa"
 import { Button } from "@/components/ui/button"
+import { avisar } from "@/lib/avisos"
 import type { Bastidor } from "@/lib/bastidores"
 import { cn } from "@/lib/utils"
+import { stopManagedProcess } from "@/lib/work"
 import { useBastidores, vistasDa } from "@/store/bastidores"
 
 export function IndiceDeBastidores() {
@@ -31,6 +33,14 @@ export function IndiceDeBastidores() {
       onFixar={(itemId) => acoes.fixar(convId, itemId)}
       onFecharTodas={() => acoes.fecharTodas(convId)}
       onVoltar={abertas.length ? () => acoes.verIndice(false) : undefined}
+      onParar={(b) => {
+        if (!b.processId) return
+        void stopManagedProcess(b.processId).catch((error) =>
+          avisar.erro("Não consegui parar o processo.", {
+            detalhe: String(error),
+          }),
+        )
+      }}
     />
   )
 }
@@ -43,6 +53,7 @@ export function IndiceView({
   onFixar,
   onFecharTodas,
   onVoltar,
+  onParar,
 }: {
   lista: Bastidor[]
   /** itemIds com vista aberta ao lado da conversa. */
@@ -53,6 +64,7 @@ export function IndiceView({
   onFecharTodas: () => void
   /** Há vistas abertas e você veio à lista sem fechá-las: o caminho de volta. */
   onVoltar?: () => void
+  onParar?: (b: Bastidor) => void
 }) {
   const [sel, setSel] = useState(() => Math.max(0, lista.findIndex((b) => b.itemId === itemEmFoco)))
   // A seleção segue a vista em foco quando ELA muda (abrir pela linha do fio,
@@ -76,6 +88,16 @@ export function IndiceView({
     } else if ((e.key === "f" || e.key === "F") && !e.metaKey && !e.ctrlKey && selecionado) {
       e.preventDefault()
       onFixar(selecionado.itemId)
+    } else if (
+      (e.key === "x" || e.key === "X") &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      selecionado &&
+      selecionado.estado === "vivo" &&
+      selecionado.tipo === "processo"
+    ) {
+      e.preventDefault()
+      onParar?.(selecionado)
     } else if (e.key === "Escape" && abertas.length) {
       e.preventDefault()
       onFecharTodas()
@@ -155,20 +177,46 @@ export function IndiceView({
                     reservava 24px invisíveis em toda linha e o título truncava
                     ao lado de um vazio (mesmo defeito da lista de alterações). */}
                 <RotuloDeTempo b={b} className="group-hover/indice:hidden" />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icone-chip"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onFixar(b.itemId)
-                  }}
-                  title="Abrir em outra aba do terminal"
-                  aria-label={`Abrir ${b.titulo} em outra aba`}
-                  className="hidden text-muted-foreground group-hover/indice:inline-flex hover:text-foreground"
-                >
-                  <Pin className="size-3.5" />
-                </Button>
+                <div className="hidden shrink-0 items-center gap-0.5 group-hover/indice:flex">
+                  {b.tipo === "processo" && b.estado === "vivo" && onParar && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icone-chip"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onParar(b)
+                      }}
+                      title={
+                        b.processStatus === "stopping"
+                          ? "Processo encerrando. Clique para forçar a parada imediata."
+                          : "Parar este processo e os filhos dele"
+                      }
+                      aria-label={
+                        b.processStatus === "stopping"
+                          ? `Forçar parada de ${b.titulo}`
+                          : `Parar ${b.titulo}`
+                      }
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    >
+                      <Square className="size-3 fill-current" />
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icone-chip"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onFixar(b.itemId)
+                    }}
+                    title="Abrir em outra aba do terminal"
+                    aria-label={`Abrir ${b.titulo} em outra aba`}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Pin className="size-3.5" />
+                  </Button>
+                </div>
               </li>
             </Fragment>
           )
@@ -176,7 +224,7 @@ export function IndiceView({
       </ul>
       {lista.length > 0 && (
         <p className="border-t border-border/40 px-5 py-2 text-[11px] text-muted-foreground">
-          ↑↓ · Enter abre no terminal · F outra aba · Esc fecha
+          ↑↓ · Enter abre no terminal · {vivos > 0 ? "X para · " : ""}F outra aba · Esc fecha
         </p>
       )}
     </div>

@@ -6,14 +6,16 @@
 // linhas ocupava 80% da vista e a saída ficava no rodapé.
 
 import { createContext, useContext, useState } from "react"
-import { Copy } from "lucide-react"
+import { Copy, Square } from "lucide-react"
 import { Elapsed } from "@/components/chat/LiveTime"
 import { ESTADO, TIPO, duracaoDe } from "@/components/bastidores/partes"
 import { Button } from "@/components/ui/button"
+import { avisar } from "@/lib/avisos"
 import type { Bastidor } from "@/lib/bastidores"
 import { copyText } from "@/lib/clipboard"
 import { fmtTime, fmtTokens } from "@/lib/format"
 import { cn } from "@/lib/utils"
+import { stopManagedProcess } from "@/lib/work"
 
 /** Linhas do comando que aparecem enquanto ele está recolhido. */
 export const LINHAS_RECOLHIDAS = 3
@@ -76,19 +78,62 @@ function LinhaDoComando({ linha }: { linha: string }) {
   )
 }
 
-export function CabecaDaVista({ b }: { b: Bastidor }) {
+export function CabecaDaVista({
+  b,
+  onParar,
+}: {
+  b: Bastidor
+  onParar?: (b: Bastidor) => void
+}) {
   const comTitulo = useContext(TituloNoCorpo)
   const [inteiro, setInteiro] = useState(false)
   const linhas = b.comando ? b.comando.split("\n") : []
   const recolhe = linhas.length > LINHAS_RECOLHIDAS || (b.comando?.length ?? 0) > COMANDO_LONGO
   const recolhido = recolhe && !inteiro
 
+  function handleParar() {
+    if (onParar) {
+      onParar(b)
+      return
+    }
+    if (!b.processId) return
+    void stopManagedProcess(b.processId).catch((error) =>
+      avisar.erro("Não consegui parar o processo.", {
+        detalhe: String(error),
+      }),
+    )
+  }
+
   return (
     <div className="mb-2 border-b border-terminal-line pb-2">
       {comTitulo && !tituloRepeteComando(b) && (
         <p className="font-sans text-[13px] font-medium break-words text-terminal-strong">{b.titulo}</p>
       )}
-      <LinhaDeEstado b={b} />
+      <div className="flex items-center justify-between gap-2">
+        <LinhaDeEstado b={b} />
+        {b.tipo === "processo" && b.estado === "vivo" && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="chip"
+            onClick={handleParar}
+            title={
+              b.processStatus === "stopping"
+                ? "Processo encerrando. Clique para forçar a parada imediata."
+                : "Para este processo e os filhos dele"
+            }
+            aria-label={
+              b.processStatus === "stopping"
+                ? `Forçar parada de ${b.titulo}`
+                : `Parar ${b.titulo}`
+            }
+            className="shrink-0 text-terminal-dim hover:bg-destructive/20 hover:text-destructive dark:hover:bg-destructive/20"
+          >
+            <Square className="size-2.5 fill-current" />
+            <span>{b.processStatus === "stopping" ? "Forçar parada" : "Parar"}</span>
+          </Button>
+        )}
+      </div>
       {b.detalhe && <p className="text-terminal-dim">{b.detalhe}</p>}
 
       {b.comando && (

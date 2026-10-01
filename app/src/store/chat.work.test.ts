@@ -118,4 +118,31 @@ describe("processos gerenciados no replay", () => {
     }
     expect(markOrphanedProcesses([item])[0]).toBe(item)
   })
+
+  it("processo encerrado com status stopped recebe result com interrupted: true", () => {
+    useChat.setState({ byId: { c1: conv() } })
+    const process = {
+      id: "p1", runId: "r1", convId: "c1", label: "Teste", command: "servidor",
+      cwd: "/repo", pid: 123, status: "running" as const, exitCode: null,
+      output: "inicial", startedAt: 1, updatedAt: 1,
+    }
+    useChat.getState().handleWorkEvent({ kind: "process_started", data: { process } })
+    useChat.getState().handleWorkEvent({
+      kind: "process_exited",
+      data: {
+        process: {
+          ...process,
+          status: "stopped",
+          output: "parado pelo usuário",
+          updatedAt: 2,
+        },
+      },
+    })
+    const item = useChat.getState().byId.c1.items[0]
+    if (item.kind !== "tool") throw new Error("esperava tool")
+    expect(item.managedProcess?.status).toBe("stopped")
+    expect(item.result?.ok).toBe(false)
+    expect(item.result?.interrupted).toBe(true)
+    expect(item.result?.text).toBe("parado pelo usuário")
+  })
 })

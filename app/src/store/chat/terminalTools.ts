@@ -144,3 +144,11 @@ export function reduceTerminalEvent(
     ? { streamingTextId: null }
     : { streamingTextId: null, items: settled }
 }
+
+/** Processo marcado vivo no snapshot anterior não é desta instância: vira
+ * órfão (PID e tail preservados), nunca "rodando". O mesmo com o trabalho
+ * DIFERIDO do provider, que morreu junto com o CLI: `running` do disco vira
+ * `interrupted` (deferred-work-plan D1.5). */
+export const markOrphanedProcesses = (items: ChatItem[]): ChatItem[] =>
+  items.map((item) => settleOrphanedTool(item, Date.now()))
+

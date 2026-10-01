@@ -3,7 +3,7 @@
 // de onde vem a saída que a vista vai mostrar, e quando não há saída ao vivo
 // isso vira texto honesto, não um log vazio "rodando".
 
-import { deferredKind, type DeferredKind } from "@/lib/work"
+import { deferredKind, type DeferredKind, type ManagedProcess } from "@/lib/work"
 import type { ChatItem } from "@/store/chat"
 
 /** `tarefa` é o diferido cujo tipo o motor não disse (ou o contrato não
@@ -54,6 +54,10 @@ export interface Bastidor {
   atualizadoEm: number
   fonte: FonteDaSaida
   tokens: number | null
+  /** Id do processo no backend de trabalho (`work_gateway`), para controle de parada. */
+  processId?: string
+  /** Status operacional do processo gerenciado. */
+  processStatus?: ManagedProcess["status"]
 }
 
 type ToolItem = Extract<ChatItem, { kind: "tool" }>
@@ -167,6 +171,8 @@ export function bastidoresDaConversa(
         atualizadoEm: p.updatedAt,
         fonte: { tipo: "processo" },
         tokens: null,
+        processId: p.id,
+        processStatus: p.status,
       })
     }
   }

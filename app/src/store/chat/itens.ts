@@ -147,3 +147,14 @@ type ChatItemBody =
  *  intersecção sobre a união preserva o discriminante `kind` (narrowing e
  *  Extract<> seguem funcionando) sem repetir o campo em cada variante. */
 export type ChatItem = ChatItemBody & { ts?: number }
+
+/** Itens de EXECUTOR: exclui a consulta a um especialista (o parecer e a fala
+ *  que o pediu). Fonte única de "1º turno / já iniciada / identidade travada":
+ *  sem isto, uma consulta antes do 1º envio travaria agent e persona e
+ *  roubaria a injeção inicial. Use em todo lugar que derivaria de items.length. */
+export const executorItems = (items: ChatItem[]): ChatItem[] =>
+  items.filter((it) => it.kind !== "advice" && !(it.kind === "user" && it.advisorTo))
+
+/** A conversa já teve algum turno de EXECUTOR? (ignora a consulta ao conselheiro
+ *  inteira: o parecer e a fala endereçada a ele) */
+export const hasExecutorTurn = (items: ChatItem[]): boolean => executorItems(items).length > 0

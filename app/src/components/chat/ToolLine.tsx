@@ -119,8 +119,21 @@ export const ToolLine = memo(function ToolLine({
       : "recorded"
   const [nasceu, trocou] = [useNasceuAgora(item.ts), useTrocou(status)]
   const res = resultMeta(item.name, item.result)
+  const processStatusLabel = item.managedProcess
+    ? item.managedProcess.status === "running"
+      ? "em execução"
+      : item.managedProcess.status === "stopping"
+        ? "parando"
+        : item.managedProcess.status === "stopped"
+          ? "parou"
+          : item.managedProcess.status === "failed"
+            ? "falhou"
+            : item.managedProcess.status === "orphaned"
+              ? "órfão"
+              : "encerrado"
+    : null
   const processMeta = item.managedProcess
-    ? `PID ${item.managedProcess.pid} · ${item.managedProcess.status}`
+    ? `PID ${item.managedProcess.pid} · ${processStatusLabel}`
     : null
   // Estado do trabalho diferido no PRÓPRIO rótulo da linha (D1.2). Rodando, o
   // nó é MARCO ("iniciado", onde o trabalho nasceu): quem narra o agora é a
@@ -312,10 +325,15 @@ export const ToolLine = memo(function ToolLine({
         {stopInHeader && (
           <button
             type="button"
-            onClick={() => onStop(item)}
+            onClick={(e) => {
+              e.stopPropagation()
+              onStop(item)
+            }}
             title={
               item.managedProcess
-                ? "Para este processo e os filhos dele"
+                ? item.managedProcess.status === "stopping"
+                  ? "Processo encerrando. Clique para forçar a parada imediata."
+                  : "Para este processo e os filhos dele"
                 : deferredPending
                   ? "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo e o trabalho em background morre junto"
                   : "O provider não expõe cancelamento individual deste subagente; interrompe o turno completo"
@@ -324,7 +342,11 @@ export const ToolLine = memo(function ToolLine({
           >
             <Square className="size-2.5" />
             <span className="hidden lg:inline">
-              {item.managedProcess ? "Parar" : "Interromper turno"}
+              {item.managedProcess
+                ? item.managedProcess.status === "stopping"
+                  ? "Forçar parada"
+                  : "Parar"
+                : "Interromper turno"}
             </span>
           </button>
         )}

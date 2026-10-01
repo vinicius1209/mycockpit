@@ -42,39 +42,39 @@ function Fim({ b }: { b: Bastidor }) {
 }
 
 /** Corpo sem log (passos, espera, aviso): mesma tipografia do terminal. */
-function Texto({ b, children }: { b: Bastidor; children: ReactNode }) {
+function Texto({ b, onParar, children }: { b: Bastidor; onParar?: (b: Bastidor) => void; children: ReactNode }) {
   return (
     <div data-selectable className="min-h-0 flex-1 overflow-auto px-3.5 py-3">
-      <CabecaDaVista b={b} />
+      <CabecaDaVista b={b} onParar={onParar} />
       {children}
       <Fim b={b} />
     </div>
   )
 }
 
-function Log({ b, saida, vazio }: { b: Bastidor; saida: SaidaViva; vazio: string }) {
-  return <SaidaDeLog saida={saida} vazio={vazio} cabeca={<CabecaDaVista b={b} />} fim={<Fim b={b} />} />
+function Log({ b, saida, vazio, onParar }: { b: Bastidor; saida: SaidaViva; vazio: string; onParar?: (b: Bastidor) => void }) {
+  return <SaidaDeLog saida={saida} vazio={vazio} cabeca={<CabecaDaVista b={b} onParar={onParar} />} fim={<Fim b={b} />} />
 }
 
-function VistaDeArquivo({ caminho, b }: { caminho: string; b: Bastidor }) {
+function VistaDeArquivo({ caminho, b, onParar }: { caminho: string; b: Bastidor; onParar?: (b: Bastidor) => void }) {
   const { saida, fim, erro } = useSaidaDeArquivo(caminho)
   return (
     <>
-      <Log b={b} saida={saida} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída foi gravada."} />
+      <Log b={b} saida={saida} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída foi gravada."} onParar={onParar} />
       {(erro || fim) && <Rodape texto={erro ?? fim ?? ""} />}
     </>
   )
 }
 
-function VistaDeResultado({ b, resultado }: { b: Bastidor; resultado: CorpoDaVista["resultado"] }) {
+function VistaDeResultado({ b, resultado, onParar }: { b: Bastidor; resultado: CorpoDaVista["resultado"]; onParar?: (b: Bastidor) => void }) {
   if (b.estado === "vivo") {
-    return <Texto b={b}><p className="text-terminal-dim">A saída deste comando chega quando ele terminar.</p></Texto>
+    return <Texto b={b} onParar={onParar}><p className="text-terminal-dim">A saída deste comando chega quando ele terminar.</p></Texto>
   }
   const texto = resultado?.texto.trimEnd() ?? ""
   const mostradas = texto ? texto.split("\n").length : 0
   return (
     <>
-      <Log b={b} saida={texto ? somarTexto(SAIDA_VAZIA, `${texto}\n`) : SAIDA_VAZIA} vazio="O comando não escreveu nada." />
+      <Log b={b} saida={texto ? somarTexto(SAIDA_VAZIA, `${texto}\n`) : SAIDA_VAZIA} vazio="O comando não escreveu nada." onParar={onParar} />
       {resultado && resultado.linhas > mostradas && (
         <Rodape texto={`Mostrando ${mostradas} de ${resultado.linhas} linhas, o trecho que a conversa guardou.`} />
       )}
@@ -86,9 +86,9 @@ function Rodape({ texto }: { texto: string }) {
   return <p className="shrink-0 border-t border-terminal-line px-3.5 py-1.5 font-sans text-[11px] text-terminal-dim">{texto}</p>
 }
 
-function Passos({ passos, b }: { passos: PassoDeSubagente[]; b: Bastidor }) {
+function Passos({ passos, b, onParar }: { passos: PassoDeSubagente[]; b: Bastidor; onParar?: (b: Bastidor) => void }) {
   return (
-    <Texto b={b}>
+    <Texto b={b} onParar={onParar}>
       {passos.length ? (
         <ol className="flex flex-col">
           {passos.map((p) => (
@@ -130,6 +130,7 @@ export function BastidorVista({
   emFoco = false,
   onFocar,
   onFechar,
+  onParar,
 }: {
   b: Bastidor
   corpo: CorpoDaVista
@@ -139,6 +140,7 @@ export function BastidorVista({
   emFoco?: boolean
   onFocar?: () => void
   onFechar?: () => void
+  onParar?: (b: Bastidor) => void
 }) {
   const aviso = avisoDeFim(b)
   return (
@@ -182,21 +184,22 @@ export function BastidorVista({
       )}
       <TituloNoCorpo.Provider value={tituloNoCorpo && !comCabecalho}>
         {b.fonte.tipo === "arquivo" ? (
-          <VistaDeArquivo caminho={b.fonte.caminho} b={b} />
+          <VistaDeArquivo caminho={b.fonte.caminho} b={b} onParar={onParar} />
         ) : b.fonte.tipo === "resultado" ? (
-          <VistaDeResultado b={b} resultado={corpo.resultado} />
+          <VistaDeResultado b={b} resultado={corpo.resultado} onParar={onParar} />
         ) : b.fonte.tipo === "stream" ? (
-          <Log b={b} saida={corpo.saida ?? SAIDA_VAZIA} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída chegou."} />
+          <Log b={b} saida={corpo.saida ?? SAIDA_VAZIA} vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "Nenhuma saída chegou."} onParar={onParar} />
         ) : b.fonte.tipo === "processo" ? (
           <Log
             b={b}
             saida={somarTexto(SAIDA_VAZIA, `${corpo.processoOutput ?? ""}\n`)}
             vazio={b.estado === "vivo" ? "Aguardando a primeira linha…" : "O processo não escreveu nada."}
+            onParar={onParar}
           />
         ) : b.fonte.tipo === "passos" ? (
-          <Passos passos={corpo.passos ?? []} b={b} />
+          <Passos passos={corpo.passos ?? []} b={b} onParar={onParar} />
         ) : (
-          <Texto b={b}>
+          <Texto b={b} onParar={onParar}>
             <p className="text-terminal-dim">
               {b.estado === "vivo"
                 ? "Este motor só entrega a saída quando o trabalho termina."

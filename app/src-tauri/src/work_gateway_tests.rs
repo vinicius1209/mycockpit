@@ -1,3 +1,4 @@
+use super::mcp_server::{available_tools, request_socket, teto_do_pedido};
 use super::*;
 use tauri::{test::mock_app, Listener};
 
@@ -460,6 +461,38 @@ fn stop_by_conv_interrompe_apenas_processos_daquela_conversa() {
 
     assert_eq!(registry.view("p1").unwrap().status, "stopping");
     assert_eq!(registry.view("p2").unwrap().status, "running");
+}
+
+#[test]
+fn stop_em_processo_ja_parando_aceita_segundo_clique() {
+    let app = mock_app();
+    let registry = ProcessRegistry::default();
+
+    let p = ManagedProcessView {
+        id: "p-re-stop".into(),
+        run_id: "r1".into(),
+        conv_id: "c1".into(),
+        label: "Proc".into(),
+        command: "true".into(),
+        cwd: ".".into(),
+        pid: 2001,
+        status: "stopping".into(),
+        exit_code: None,
+        output: String::new(),
+        output_file: None,
+        started_at: 1,
+        updated_at: 1,
+    };
+    registry
+        .processes
+        .lock()
+        .unwrap()
+        .insert("p-re-stop".into(), ProcessRecord::new(p));
+
+    let res = registry.stop(app.handle(), "p-re-stop");
+    assert!(res.is_ok());
+    assert_eq!(res.unwrap().status, "stopping");
+    assert_eq!(registry.view("p-re-stop").unwrap().status, "stopping");
 }
 
 
